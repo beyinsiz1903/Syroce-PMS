@@ -5,40 +5,60 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Hotel, User, Smartphone, Shield } from 'lucide-react';
+import { Shield } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import LanguageSelector from '@/components/LanguageSelector';
+
+// Marka diline (LandingPage) uygun ortak alan/etiket sinifleri.
+const fieldClass =
+  'mt-1.5 border-white/15 bg-white/[0.05] text-white placeholder:text-slate-500 ' +
+  'focus-visible:border-cyan-400/50 focus-visible:ring-cyan-400/30';
+const labelClass = 'text-sm font-medium text-slate-300';
+const linkClass = 'text-sm font-medium text-cyan-300 transition hover:text-cyan-200';
+
+// Birincil eylem butonu — LandingPage hero CTA'si ile ayni cyan/teal gradyan.
+const CtaButton = ({ className = '', children, ...props }) => (
+  <Button
+    {...props}
+    className={cn(
+      'w-full border-0 bg-gradient-to-r from-cyan-400 to-teal-300 font-semibold text-[#05070f] ' +
+        'shadow-[0_12px_40px_-10px_rgba(34,211,238,0.6)] transition ' +
+        'hover:from-cyan-300 hover:to-teal-200 hover:text-[#05070f] disabled:opacity-60',
+      className,
+    )}
+  >
+    {children}
+  </Button>
+);
 
 const AuthPage = ({ onLogin }) => {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState('hotel-login');
   const [loading, setLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  
+
   // Registration flow states
   const [registrationStep, setRegistrationStep] = useState('form'); // 'form', 'verification'
   const [verificationCode, setVerificationCode] = useState('');
-  
+
   // Forgot password states
   const [forgotPasswordStep, setForgotPasswordStep] = useState('email'); // 'email', 'code', 'newpassword'
   const [resetCode, setResetCode] = useState('');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
-  
+
   // Detect if device is mobile
   useEffect(() => {
     const checkMobile = () => {
       const mobile = window.innerWidth < 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
       setIsMobile(mobile);
     };
-    
+
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
-  
+
   const [hotelLoginData, setHotelLoginData] = useState({ email: '', password: '' });
-  const [guestLoginData, setGuestLoginData] = useState({ email: '', password: '' });
   const [forgotEmail, setForgotEmail] = useState('');
 
   const [hotelRegisterData, setHotelRegisterData] = useState({
@@ -47,10 +67,6 @@ const AuthPage = ({ onLogin }) => {
 
   // After successful registration, show generated hotel_id
   const [registrationSuccess, setRegistrationSuccess] = useState(null); // { hotel_id, username }
-  
-  const [guestRegisterData, setGuestRegisterData] = useState({
-    email: '', password: '', name: '', phone: ''
-  });
 
   // 2FA challenge state — when login returns requires_2fa, we hold the
   // challenge_token here and switch to the code-entry view.
@@ -101,21 +117,6 @@ const AuthPage = ({ onLogin }) => {
     }
   };
 
-  const handleGuestLogin = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const response = await axios.post('/auth/login', guestLoginData);
-      toast.success(t('auth.welcomeBack'));
-      sessionStorage.setItem('postLoginRedirect', '/guest-portal');
-      onLogin(response.data.access_token, response.data.user, response.data.tenant, response.data.refresh_token);
-    } catch (error) {
-      toast.error(error.response?.data?.detail || t('auth.loginFailed'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleHotelRegister = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -143,21 +144,6 @@ const AuthPage = ({ onLogin }) => {
     }
   };
 
-  const handleGuestRegister = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const response = await axios.post('/auth/register-guest', guestRegisterData);
-      toast.success(t('auth.accountCreatedWelcome'));
-      sessionStorage.setItem('postLoginRedirect', '/guest-portal');
-      onLogin(response.data.access_token, response.data.user, response.data.tenant, response.data.refresh_token);
-    } catch (error) {
-      toast.error(error.response?.data?.detail || t('auth.registerFailed'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // New registration with email verification
   const handleRequestVerification = async (e) => {
     e.preventDefault();
@@ -169,9 +155,9 @@ const AuthPage = ({ onLogin }) => {
         password: hotelRegisterData.password,
         property_name: hotelRegisterData.property_name,
         phone: hotelRegisterData.phone,
-        user_type: activeTab === 'hotel-login' ? 'hotel' : 'guest'
+        user_type: 'hotel'
       };
-      
+
       const response = await axios.post('/auth/request-verification', requestData);
       toast.success(t('auth.codeSentToEmail'));
       setRegistrationStep('verification');
@@ -190,10 +176,10 @@ const AuthPage = ({ onLogin }) => {
         email: hotelRegisterData.email,
         code: verificationCode
       });
-      
+
       toast.success(t('auth.accountCreated'));
       onLogin(response.data.access_token, response.data.user, response.data.tenant, response.data.refresh_token);
-      
+
       setTimeout(() => {
         window.location.href = '/';
       }, 500);
@@ -239,547 +225,401 @@ const AuthPage = ({ onLogin }) => {
     }
   };
 
+  const mobileInputStyle = isMobile ? { fontSize: '16px' } : {};
+
   return (
-    <div className="auth-page" style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'linear-gradient(135deg, #1e1b4b 0%, #1e3a8a 50%, #0f172a 100%)',
-      padding: isMobile ? '10px' : '20px',
-      position: 'relative',
-      overflow: 'hidden'
-    }}>
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: '10%', left: '8%', width: '380px', height: '380px', background: '#3b82f6', borderRadius: '9999px', mixBlendMode: 'screen', filter: 'blur(80px)', opacity: 0.35 }} />
-        <div style={{ position: 'absolute', bottom: '5%', right: '10%', width: '460px', height: '460px', background: '#8b5cf6', borderRadius: '9999px', mixBlendMode: 'screen', filter: 'blur(90px)', opacity: 0.3 }} />
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#05070f] px-4 py-10 text-slate-100 antialiased">
+      {/* Arka plan: LandingPage marka gradyan + neon bloblar */}
+      <div aria-hidden className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(34,211,238,0.10),_transparent_60%),radial-gradient(ellipse_at_bottom,_rgba(99,102,241,0.10),_transparent_60%)]" />
+        <div className="absolute left-[-10%] top-[6%] h-[420px] w-[420px] rounded-full bg-cyan-500/25 blur-3xl" />
+        <div className="absolute right-[-8%] top-[14%] h-[480px] w-[480px] rounded-full bg-indigo-500/30 blur-3xl" />
+        <div className="absolute bottom-[-6%] right-[18%] h-[360px] w-[360px] rounded-full bg-teal-400/20 blur-3xl" />
       </div>
-      <div style={{ width: '100%', maxWidth: isMobile ? '100%' : '500px', position: 'relative', zIndex: 1 }}>
-        <div style={{ textAlign: 'center', marginBottom: isMobile ? '1rem' : '1.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.75rem' }}>
-            <a href="/" title="Ana sayfaya dön" style={{ display: 'inline-block', cursor: 'pointer' }}>
-              <picture>
-                <source
-                  type="image/webp"
-                  srcSet="/syroce-circle-128.webp 1x, /syroce-circle-256.webp 2x"
-                />
-                <img
-                  src="/syroce-circle.png"
-                  alt="Syroce Logo"
-                  width={isMobile ? 96 : 112}
-                  height={isMobile ? 96 : 112}
-                  style={{
-                    height: isMobile ? '96px' : '112px',
-                    width: isMobile ? '96px' : '112px',
-                    borderRadius: '50%',
-                    objectFit: 'contain',
-                    boxShadow: '0 10px 30px rgba(0,0,0,0.25)'
-                  }}
-                />
-              </picture>
-            </a>
-          </div>
-          <p style={{ color: 'rgba(255,255,255,0.95)', fontSize: isMobile ? '0.875rem' : '1rem', marginBottom: '0.75rem', fontWeight: '500' }}>
+
+      <div className="relative z-10 w-full max-w-md">
+        {/* Logo + tagline + dil seçici */}
+        <div className="mb-6 text-center">
+          <a href="/" title="Ana sayfaya dön" className="inline-block">
+            <picture>
+              <source
+                type="image/webp"
+                srcSet="/syroce-circle-128.webp 1x, /syroce-circle-256.webp 2x"
+              />
+              <img
+                src="/syroce-circle.png"
+                alt="Syroce Logo"
+                width={isMobile ? 88 : 104}
+                height={isMobile ? 88 : 104}
+                className="mx-auto rounded-full object-contain shadow-[0_18px_50px_-12px_rgba(34,211,238,0.45)]"
+                style={{ height: isMobile ? '88px' : '104px', width: isMobile ? '88px' : '104px' }}
+              />
+            </picture>
+          </a>
+          <p className="mt-4 text-sm font-medium text-slate-300 sm:text-base">
             {isMobile ? t('auth.mobileHotelMgmt') : t('auth.completeHotelPlatform')}
           </p>
-          
-          {/* Language Selector */}
-          <div className="flex justify-center">
+          <div className="mt-3 flex justify-center">
             <LanguageSelector />
           </div>
         </div>
 
-        <Card style={{ 
-          borderRadius: isMobile ? '20px 20px 0 0' : '8px',
-          ...(isMobile && {
-            position: 'fixed',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            maxHeight: '80vh',
-            overflowY: 'auto'
-          })
-        }}>
-          <CardHeader>
-            <CardTitle style={{ fontSize: isMobile ? '1.25rem' : '1.5rem' }}>
+        {/* Cam kart */}
+        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-[0_24px_70px_-24px_rgba(8,18,46,0.85)] backdrop-blur-xl sm:p-8">
+          <div className="mb-6">
+            <h2 className="text-xl font-semibold text-white" style={{ fontFamily: 'Space Grotesk' }}>
               {isMobile ? t('auth.mobileLogin') : t('common.welcome')}
-            </CardTitle>
-            <CardDescription>
+            </h2>
+            <p className="mt-1 text-sm text-slate-400">
               {isMobile ? t('auth.mobileAccess') : t('auth.signIn')}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {twoFAChallenge ? (
-              <div className="space-y-4">
-                <div className="text-center">
-                  <Shield className="w-10 h-10 mx-auto text-violet-600 mb-2" />
-                  <h3 className="text-lg font-semibold">{t('auth.twoFATitle')}</h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {twoFAChallenge.user_email}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-2">
-                    {t('auth.twoFAHint')}
-                  </p>
-                </div>
-                <form onSubmit={handleTwoFAVerify} className="space-y-3">
-                  <Input
-                    autoFocus
-                    autoComplete="one-time-code"
-                    inputMode="text"
-                    placeholder="123 456"
-                    value={twoFACode}
-                    onChange={(e) => setTwoFACode(e.target.value)}
-                    style={{ textAlign: 'center', letterSpacing: '0.3em', fontSize: '1.25rem' }}
-                  />
-                  <Button type="submit" className="w-full" disabled={loading || twoFACode.trim().length < 6}>
-                    {loading ? t('auth.twoFAVerifying') : t('auth.twoFAVerifyButton')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="w-full"
-                    onClick={() => { setTwoFAChallenge(null); setTwoFACode(''); }}
-                  >
-                    {t('auth.twoFACancel')}
-                  </Button>
-                </form>
+            </p>
+          </div>
+
+          {twoFAChallenge ? (
+            <div className="space-y-4">
+              <div className="text-center">
+                <Shield className="mx-auto mb-2 h-10 w-10 text-cyan-300" />
+                <h3 className="text-lg font-semibold text-white">{t('auth.twoFATitle')}</h3>
+                <p className="mt-1 text-sm text-slate-300">{twoFAChallenge.user_email}</p>
+                <p className="mt-2 text-xs text-slate-400">{t('auth.twoFAHint')}</p>
               </div>
-            ) : (
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-2 mb-4">
-                <TabsTrigger value="hotel-login" data-testid="hotel-login-tab">
-                  <Hotel className="w-4 h-4 mr-2" />
-                  {t('auth.hotel')}
+              <form onSubmit={handleTwoFAVerify} className="space-y-3">
+                <Input
+                  autoFocus
+                  autoComplete="one-time-code"
+                  inputMode="text"
+                  placeholder="123 456"
+                  value={twoFACode}
+                  onChange={(e) => setTwoFACode(e.target.value)}
+                  className={cn(fieldClass, 'mt-0 text-center text-xl tracking-[0.3em]')}
+                />
+                <CtaButton type="submit" disabled={loading || twoFACode.trim().length < 6}>
+                  {loading ? t('auth.twoFAVerifying') : t('auth.twoFAVerifyButton')}
+                </CtaButton>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full text-slate-300 hover:bg-white/5 hover:text-white"
+                  onClick={() => { setTwoFAChallenge(null); setTwoFACode(''); }}
+                >
+                  {t('auth.twoFACancel')}
+                </Button>
+              </form>
+            </div>
+          ) : (
+            <Tabs defaultValue="login">
+              <TabsList className="mb-5 grid w-full grid-cols-2 rounded-xl border border-white/10 bg-white/[0.04] p-1">
+                <TabsTrigger
+                  value="login"
+                  className="rounded-lg text-slate-300 data-[state=active]:bg-white/10 data-[state=active]:text-white data-[state=active]:shadow-none"
+                >
+                  {t('common.login')}
                 </TabsTrigger>
-                <TabsTrigger value="guest-login" data-testid="guest-login-tab">
-                  <User className="w-4 h-4 mr-2" />
-                  {t('auth.guest')}
+                <TabsTrigger
+                  value="register"
+                  className="rounded-lg text-slate-300 data-[state=active]:bg-white/10 data-[state=active]:text-white data-[state=active]:shadow-none"
+                >
+                  {t('common.register')}
                 </TabsTrigger>
               </TabsList>
-              
-              {/* Hotel Login */}
-              <TabsContent value="hotel-login" className="space-y-4">
-                <Tabs defaultValue="login">
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="login">{t('common.login')}</TabsTrigger>
-                    <TabsTrigger value="register">{t('common.register')}</TabsTrigger>
-                  </TabsList>
-                  
-                  <TabsContent value="login">
-                    {!showForgotPassword ? (
-                      <form onSubmit={handleHotelLogin} className="space-y-4" style={{ paddingTop: '1rem' }}>
+
+              {/* Otel Girişi */}
+              <TabsContent value="login" className="space-y-4">
+                {!showForgotPassword ? (
+                  <form onSubmit={handleHotelLogin} className="space-y-4">
+                    <div>
+                      <Label className={labelClass}>{t('common.email')}</Label>
+                      <Input
+                        type="email"
+                        value={hotelLoginData.email}
+                        onChange={(e) => setHotelLoginData({ ...hotelLoginData, email: e.target.value })}
+                        required
+                        data-testid="hotel-login-email"
+                        placeholder={t('auth.emailPlaceholder')}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        autoComplete="email"
+                        className={fieldClass}
+                        style={mobileInputStyle}
+                      />
+                    </div>
+                    <div>
+                      <Label className={labelClass}>{t('common.password')}</Label>
+                      <Input
+                        type="password"
+                        value={hotelLoginData.password}
+                        onChange={(e) => setHotelLoginData({ ...hotelLoginData, password: e.target.value })}
+                        required
+                        data-testid="hotel-login-password"
+                        placeholder="••••••••"
+                        autoComplete="current-password"
+                        className={fieldClass}
+                        style={mobileInputStyle}
+                      />
+                    </div>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setShowForgotPassword(true)}
+                        className={linkClass}
+                      >
+                        {t('auth.forgotPassword')}
+                      </button>
+                    </div>
+                    <CtaButton
+                      type="submit"
+                      disabled={loading}
+                      data-testid="hotel-login-btn"
+                      onClick={(e) => {
+                        if (!loading) {
+                          const form = e.target.closest('form');
+                          if (form) {
+                            form.requestSubmit();
+                          }
+                        }
+                      }}
+                      style={isMobile ? { height: '48px', fontSize: '16px' } : {}}
+                    >
+                      {loading ? t('common.loading') : t('common.login')}
+                    </CtaButton>
+                  </form>
+                ) : (
+                  <div className="space-y-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowForgotPassword(false);
+                        setForgotPasswordStep('email');
+                      }}
+                      className={cn(linkClass, 'mb-2 inline-block')}
+                    >
+                      ← {t('auth.backToLogin')}
+                    </button>
+
+                    {forgotPasswordStep === 'email' && (
+                      <form onSubmit={handleForgotPasswordRequest} className="space-y-4">
                         <div>
-                          <Label>{t('common.email')}</Label>
+                          <Label className={labelClass}>{t('auth.yourEmail')}</Label>
                           <Input
                             type="email"
-                            value={hotelLoginData.email}
-                            onChange={(e) => setHotelLoginData({...hotelLoginData, email: e.target.value})}
+                            value={forgotEmail}
+                            onChange={(e) => setForgotEmail(e.target.value)}
                             required
-                            data-testid="hotel-login-email"
-                            placeholder={t('auth.emailPlaceholder')}
-                            autoCapitalize="none"
-                            autoCorrect="off"
                             autoComplete="email"
-                            style={isMobile ? { fontSize: '16px' } : {}}
+                            placeholder={t('auth.emailPlaceholder')}
+                            className={fieldClass}
+                            style={mobileInputStyle}
                           />
+                          <p className="mt-1 text-xs text-slate-500">{t('auth.sendVerificationCode')}</p>
                         </div>
+                        <CtaButton type="submit" disabled={loading}>
+                          {loading ? t('auth.sending') : t('auth.sendCode')}
+                        </CtaButton>
+                      </form>
+                    )}
+
+                    {forgotPasswordStep === 'code' && (
+                      <form onSubmit={(e) => { e.preventDefault(); setForgotPasswordStep('newpassword'); }} className="space-y-4">
                         <div>
-                          <Label>{t('common.password')}</Label>
+                          <Label className={labelClass}>{t('auth.verificationCode')}</Label>
+                          <Input
+                            type="text"
+                            value={resetCode}
+                            onChange={(e) => setResetCode(e.target.value)}
+                            required
+                            placeholder="123456"
+                            maxLength={6}
+                            className={fieldClass}
+                            style={mobileInputStyle}
+                          />
+                          <p className="mt-1 text-xs text-slate-500">{t('auth.enterSixDigitCode')}</p>
+                        </div>
+                        <CtaButton type="submit" disabled={loading}>
+                          {t('auth.continue')}
+                        </CtaButton>
+                      </form>
+                    )}
+
+                    {forgotPasswordStep === 'newpassword' && (
+                      <form onSubmit={handleResetPassword} className="space-y-4">
+                        <div>
+                          <Label className={labelClass}>{t('auth.newPassword')}</Label>
                           <Input
                             type="password"
                             value={hotelLoginData.password}
-                            onChange={(e) => setHotelLoginData({...hotelLoginData, password: e.target.value})}
+                            onChange={(e) => setHotelLoginData({ ...hotelLoginData, password: e.target.value })}
                             required
-                            data-testid="hotel-login-password"
                             placeholder="••••••••"
-                            autoComplete="current-password"
-                            style={isMobile ? { fontSize: '16px' } : {}}
-                          />
-                        </div>
-                        <div className="flex justify-end">
-                          <button
-                            type="button"
-                            onClick={() => setShowForgotPassword(true)}
-                            className="text-sm text-blue-600 hover:text-blue-800"
-                          >
-                            {t('auth.forgotPassword')}
-                          </button>
-                        </div>
-                        <Button 
-                          type="submit" 
-                          className="w-full" 
-                          disabled={loading} 
-                          data-testid="hotel-login-btn"
-                          onClick={(e) => {
-                            if (!loading) {
-                              const form = e.target.closest('form');
-                              if (form) {
-                                form.requestSubmit();
-                              }
-                            }
-                          }}
-                          style={isMobile ? { height: '48px', fontSize: '16px' } : {}}
-                        >
-                          {loading ? t('common.loading') : t('common.login')}
-                        </Button>
-                      </form>
-                    ) : (
-                      <div className="space-y-4" style={{ paddingTop: '1rem' }}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowForgotPassword(false);
-                            setForgotPasswordStep('email');
-                          }}
-                          className="text-sm text-blue-600 hover:text-blue-800 mb-4"
-                        >
-                          ← {t('auth.backToLogin')}
-                        </button>
-                        
-                        {forgotPasswordStep === 'email' && (
-                          <form onSubmit={handleForgotPasswordRequest} className="space-y-4">
-                            <div>
-                              <Label>{t('auth.yourEmail')}</Label>
-                              <Input
-                                type="email"
-                                value={forgotEmail}
-                                onChange={(e) => setForgotEmail(e.target.value)}
-                                required
-                                autoComplete="email"
-                                placeholder={t('auth.emailPlaceholder')}
-                              />
-                              <p className="text-xs text-gray-500 mt-1">
-                                {t('auth.sendVerificationCode')}
-                              </p>
-                            </div>
-                            <Button type="submit" className="w-full" disabled={loading}>
-                              {loading ? t('auth.sending') : t('auth.sendCode')}
-                            </Button>
-                          </form>
-                        )}
-                        
-                        {forgotPasswordStep === 'code' && (
-                          <form onSubmit={(e) => { e.preventDefault(); setForgotPasswordStep('newpassword'); }} className="space-y-4">
-                            <div>
-                              <Label>{t('auth.verificationCode')}</Label>
-                              <Input
-                                type="text"
-                                value={resetCode}
-                                onChange={(e) => setResetCode(e.target.value)}
-                                required
-                                placeholder="123456"
-                                maxLength={6}
-                              />
-                              <p className="text-xs text-gray-500 mt-1">
-                                {t('auth.enterSixDigitCode')}
-                              </p>
-                            </div>
-                            <Button type="submit" className="w-full" disabled={loading}>
-                              {t('auth.continue')}
-                            </Button>
-                          </form>
-                        )}
-                        
-                        {forgotPasswordStep === 'newpassword' && (
-                          <form onSubmit={handleResetPassword} className="space-y-4">
-                            <div>
-                              <Label>{t('auth.newPassword')}</Label>
-                              <Input
-                                type="password"
-                                value={hotelLoginData.password}
-                                onChange={(e) => setHotelLoginData({...hotelLoginData, password: e.target.value})}
-                                required
-                                placeholder="••••••••"
-                                autoComplete="new-password"
-                                minLength={6}
-                              />
-                              <p className="text-xs text-gray-500 mt-1">
-                                {t('auth.minSixChars')}
-                              </p>
-                            </div>
-                            <Button type="submit" className="w-full" disabled={loading}>
-                              {loading ? t('auth.updating') : t('auth.updatePassword')}
-                            </Button>
-                          </form>
-                        )}
-                      </div>
-                    )}
-                  </TabsContent>
-                  
-                  <TabsContent value="register">
-                    {registrationSuccess ? (
-                      <div className="space-y-4 py-4">
-                        <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
-                          <p className="text-sm font-bold text-green-900 mb-2">{t('auth.accountCreatedTitle')}</p>
-                          <p className="text-xs text-green-800 mb-3">
-                            {t('auth.accountCreatedNote')}
-                          </p>
-                          <div className="bg-white border border-green-300 rounded p-3 space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-500">{t('auth.hotelIdLabel')}</span>
-                              <span className="text-lg font-mono font-bold text-green-700">{registrationSuccess.hotel_id || '—'}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-500">{t('auth.username')}</span>
-                              <span className="text-base font-mono font-semibold text-gray-900">{registrationSuccess.username}</span>
-                            </div>
-                          </div>
-                        </div>
-                        <Button
-                          className="w-full"
-                          onClick={() => {
-                            const s = registrationSuccess;
-                            setRegistrationSuccess(null);
-                            onLogin(s.token, s.user, s.tenant);
-                          }}
-                        >
-                          {t('auth.continueButton')}
-                        </Button>
-                      </div>
-                    ) : registrationStep === 'form' ? (
-                      <form onSubmit={handleHotelRegister} className="space-y-4">
-                        <div>
-                          <Label>{t('auth.hotelName')}</Label>
-                          <Input
-                            value={hotelRegisterData.property_name}
-                            onChange={(e) => setHotelRegisterData({...hotelRegisterData, property_name: e.target.value})}
-                            required
-                            placeholder={t('auth.hotelNamePlaceholder')}
-                          />
-                        </div>
-                        <div>
-                          <Label>{t('auth.authorizedPerson')}</Label>
-                          <Input
-                            value={hotelRegisterData.name}
-                            onChange={(e) => setHotelRegisterData({...hotelRegisterData, name: e.target.value})}
-                            required
-                            placeholder={t('auth.authorizedPersonPlaceholder')}
-                          />
-                        </div>
-                        <div>
-                          <Label>{t('common.email')}</Label>
-                          <Input
-                            type="email"
-                            value={hotelRegisterData.email}
-                            onChange={(e) => setHotelRegisterData({...hotelRegisterData, email: e.target.value})}
-                            required
-                            autoComplete="email"
-                            placeholder={t('auth.emailPlaceholder')}
-                          />
-                          <p className="text-xs text-gray-500 mt-1">{t('auth.passwordResetEmailNote')}</p>
-                        </div>
-                        <div>
-                          <Label>{t('auth.username')}</Label>
-                          <Input
-                            value={hotelRegisterData.username}
-                            onChange={(e) => setHotelRegisterData({...hotelRegisterData, username: e.target.value.replace(/\s/g, '').toLowerCase()})}
-                            required
-                            minLength={3}
-                            maxLength={32}
-                            autoCapitalize="none"
-                            autoCorrect="off"
-                            autoComplete="username"
-                            pattern="[a-z0-9_.\-]{3,32}"
-                            placeholder={t('auth.usernamePlaceholder')}
-                          />
-                          <p className="text-xs text-gray-500 mt-1">{t('auth.usernameHint')}</p>
-                        </div>
-                        <div>
-                          <Label>{t('common.phone')}</Label>
-                          <Input
-                            value={hotelRegisterData.phone}
-                            onChange={(e) => setHotelRegisterData({...hotelRegisterData, phone: e.target.value})}
-                            required
-                            autoComplete="tel"
-                            placeholder={t('auth.phonePlaceholder')}
-                          />
-                        </div>
-                        <div>
-                          <Label>{t('common.password')}</Label>
-                          <Input
-                            type="password"
-                            value={hotelRegisterData.password}
-                            onChange={(e) => setHotelRegisterData({...hotelRegisterData, password: e.target.value})}
-                            required
-                            minLength={6}
                             autoComplete="new-password"
-                            placeholder={t('auth.minSixCharsPlaceholder')}
+                            minLength={6}
+                            className={fieldClass}
+                            style={mobileInputStyle}
                           />
+                          <p className="mt-1 text-xs text-slate-500">{t('auth.minSixChars')}</p>
                         </div>
-                        <Button type="submit" className="w-full" disabled={loading}>
-                          {loading ? t('common.loading') : t('auth.createMyAccountSubmit')}
-                        </Button>
+                        <CtaButton type="submit" disabled={loading}>
+                          {loading ? t('auth.updating') : t('auth.updatePassword')}
+                        </CtaButton>
                       </form>
-                    ) : (
-                      <div className="space-y-4">
-                        <div className="bg-blue-50 p-4 rounded-lg">
-                          <p className="text-sm text-blue-800 font-medium mb-2">
-                            {t('auth.emailVerification')}
-                          </p>
-                          <p className="text-xs text-blue-600">
-                            <strong>{hotelRegisterData.email}</strong> {t('auth.verificationSentTo')}
-                          </p>
-                        </div>
-                        <form onSubmit={handleVerifyCode} className="space-y-4">
-                          <div>
-                            <Label>{t('auth.verificationCodeLabel')}</Label>
-                            <Input
-                              type="text"
-                              value={verificationCode}
-                              onChange={(e) => setVerificationCode(e.target.value)}
-                              required
-                              placeholder="123456"
-                              maxLength={6}
-                              style={{ fontSize: '18px', letterSpacing: '4px', textAlign: 'center' }}
-                            />
-                            <p className="text-xs text-gray-500 mt-1">
-                              {t('auth.codeValidFor')}
-                            </p>
-                          </div>
-                          <Button type="submit" className="w-full" disabled={loading}>
-                            {loading ? t('auth.verifying') : t('auth.createMyAccount')}
-                          </Button>
-                          <button
-                            type="button"
-                            onClick={() => setRegistrationStep('form')}
-                            className="text-sm text-blue-600 hover:text-blue-800 w-full text-center"
-                          >
-                            ← {t('auth.goBack')}
-                          </button>
-                        </form>
-                      </div>
                     )}
-                  </TabsContent>
-                </Tabs>
+                  </div>
+                )}
               </TabsContent>
 
-              {/* Guest Login */}
-              <TabsContent value="guest-login" className="space-y-4">
-                <Tabs defaultValue="login">
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="login">{t('common.login')}</TabsTrigger>
-                    <TabsTrigger value="register">{t('common.register')}</TabsTrigger>
-                  </TabsList>
-                  
-                  <TabsContent value="login">
-                    <form onSubmit={handleGuestLogin} className="space-y-4" style={{ paddingTop: '1rem' }}>
-                      {isMobile && (
-                        <div className="bg-indigo-50 p-3 rounded-lg mb-4">
-                          <p className="text-sm text-indigo-800 font-medium">
-                            {t('auth.guestMobileAccess')}
-                          </p>
-                          <p className="text-xs text-indigo-600 mt-1">
-                            {t('auth.viewBookingsManageStay')}
-                          </p>
+              {/* Otel Kaydı */}
+              <TabsContent value="register" className="space-y-4">
+                {registrationSuccess ? (
+                  <div className="space-y-4">
+                    <div className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 p-4">
+                      <p className="mb-2 text-sm font-bold text-emerald-200">{t('auth.accountCreatedTitle')}</p>
+                      <p className="mb-3 text-xs text-emerald-100/80">{t('auth.accountCreatedNote')}</p>
+                      <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.05] p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-400">{t('auth.hotelIdLabel')}</span>
+                          <span className="font-mono text-lg font-bold text-cyan-300">{registrationSuccess.hotel_id || '—'}</span>
                         </div>
-                      )}
-                      <div>
-                        <Label>{t('common.email')}</Label>
-                        <Input
-                          type="email"
-                          value={guestLoginData.email}
-                          onChange={(e) => setGuestLoginData({...guestLoginData, email: e.target.value})}
-                          required
-                          data-testid="guest-login-email"
-                          placeholder={t('auth.emailPlaceholder')}
-                          autoCapitalize="none"
-                          autoCorrect="off"
-                          autoComplete="email"
-                          style={isMobile ? { fontSize: '16px' } : {}}
-                        />
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-400">{t('auth.username')}</span>
+                          <span className="font-mono text-base font-semibold text-white">{registrationSuccess.username}</span>
+                        </div>
                       </div>
+                    </div>
+                    <CtaButton
+                      onClick={() => {
+                        const s = registrationSuccess;
+                        setRegistrationSuccess(null);
+                        onLogin(s.token, s.user, s.tenant);
+                      }}
+                    >
+                      {t('auth.continueButton')}
+                    </CtaButton>
+                  </div>
+                ) : registrationStep === 'form' ? (
+                  <form onSubmit={handleHotelRegister} className="space-y-4">
+                    <div>
+                      <Label className={labelClass}>{t('auth.hotelName')}</Label>
+                      <Input
+                        value={hotelRegisterData.property_name}
+                        onChange={(e) => setHotelRegisterData({ ...hotelRegisterData, property_name: e.target.value })}
+                        required
+                        placeholder={t('auth.hotelNamePlaceholder')}
+                        className={fieldClass}
+                        style={mobileInputStyle}
+                      />
+                    </div>
+                    <div>
+                      <Label className={labelClass}>{t('auth.authorizedPerson')}</Label>
+                      <Input
+                        value={hotelRegisterData.name}
+                        onChange={(e) => setHotelRegisterData({ ...hotelRegisterData, name: e.target.value })}
+                        required
+                        placeholder={t('auth.authorizedPersonPlaceholder')}
+                        className={fieldClass}
+                        style={mobileInputStyle}
+                      />
+                    </div>
+                    <div>
+                      <Label className={labelClass}>{t('common.email')}</Label>
+                      <Input
+                        type="email"
+                        value={hotelRegisterData.email}
+                        onChange={(e) => setHotelRegisterData({ ...hotelRegisterData, email: e.target.value })}
+                        required
+                        autoComplete="email"
+                        placeholder={t('auth.emailPlaceholder')}
+                        className={fieldClass}
+                        style={mobileInputStyle}
+                      />
+                      <p className="mt-1 text-xs text-slate-500">{t('auth.passwordResetEmailNote')}</p>
+                    </div>
+                    <div>
+                      <Label className={labelClass}>{t('auth.username')}</Label>
+                      <Input
+                        value={hotelRegisterData.username}
+                        onChange={(e) => setHotelRegisterData({ ...hotelRegisterData, username: e.target.value.replace(/\s/g, '').toLowerCase() })}
+                        required
+                        minLength={3}
+                        maxLength={32}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        autoComplete="username"
+                        pattern="[a-z0-9_.\-]{3,32}"
+                        placeholder={t('auth.usernamePlaceholder')}
+                        className={fieldClass}
+                        style={mobileInputStyle}
+                      />
+                      <p className="mt-1 text-xs text-slate-500">{t('auth.usernameHint')}</p>
+                    </div>
+                    <div>
+                      <Label className={labelClass}>{t('common.phone')}</Label>
+                      <Input
+                        value={hotelRegisterData.phone}
+                        onChange={(e) => setHotelRegisterData({ ...hotelRegisterData, phone: e.target.value })}
+                        required
+                        autoComplete="tel"
+                        placeholder={t('auth.phonePlaceholder')}
+                        className={fieldClass}
+                        style={mobileInputStyle}
+                      />
+                    </div>
+                    <div>
+                      <Label className={labelClass}>{t('common.password')}</Label>
+                      <Input
+                        type="password"
+                        value={hotelRegisterData.password}
+                        onChange={(e) => setHotelRegisterData({ ...hotelRegisterData, password: e.target.value })}
+                        required
+                        minLength={6}
+                        autoComplete="new-password"
+                        placeholder={t('auth.minSixCharsPlaceholder')}
+                        className={fieldClass}
+                        style={mobileInputStyle}
+                      />
+                    </div>
+                    <CtaButton type="submit" disabled={loading}>
+                      {loading ? t('common.loading') : t('auth.createMyAccountSubmit')}
+                    </CtaButton>
+                  </form>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 p-4">
+                      <p className="mb-2 text-sm font-medium text-cyan-100">{t('auth.emailVerification')}</p>
+                      <p className="text-xs text-cyan-200/80">
+                        <strong>{hotelRegisterData.email}</strong> {t('auth.verificationSentTo')}
+                      </p>
+                    </div>
+                    <form onSubmit={handleVerifyCode} className="space-y-4">
                       <div>
-                        <Label>{t('common.password')}</Label>
+                        <Label className={labelClass}>{t('auth.verificationCodeLabel')}</Label>
                         <Input
-                          type="password"
-                          value={guestLoginData.password}
-                          onChange={(e) => setGuestLoginData({...guestLoginData, password: e.target.value})}
+                          type="text"
+                          value={verificationCode}
+                          onChange={(e) => setVerificationCode(e.target.value)}
                           required
-                          data-testid="guest-login-password"
-                          placeholder="••••••••"
-                          autoComplete="current-password"
-                          style={isMobile ? { fontSize: '16px' } : {}}
+                          placeholder="123456"
+                          maxLength={6}
+                          className={cn(fieldClass, 'text-center text-lg tracking-[0.25em]')}
+                          style={mobileInputStyle}
                         />
+                        <p className="mt-1 text-xs text-slate-500">{t('auth.codeValidFor')}</p>
                       </div>
-                      <Button 
-                        type="submit" 
-                        className="w-full" 
-                        disabled={loading} 
-                        data-testid="guest-login-btn"
-                        onClick={(e) => {
-                          // Ensure form submits when button is clicked
-                          if (!loading) {
-                            const form = e.target.closest('form');
-                            if (form) {
-                              form.requestSubmit();
-                            }
-                          }
-                        }}
-                        style={isMobile ? { height: '48px', fontSize: '16px' } : {}}
+                      <CtaButton type="submit" disabled={loading}>
+                        {loading ? t('auth.verifying') : t('auth.createMyAccount')}
+                      </CtaButton>
+                      <button
+                        type="button"
+                        onClick={() => setRegistrationStep('form')}
+                        className={cn(linkClass, 'w-full text-center')}
                       >
-                        {loading ? t('auth.loggingIn') : t('auth.loginAsGuest')}
-                      </Button>
+                        ← {t('auth.goBack')}
+                      </button>
                     </form>
-                  </TabsContent>
-                  
-                  <TabsContent value="register">
-                    <form onSubmit={handleGuestRegister} className="space-y-4">
-                      <div>
-                        <Label>{t('common.name')}</Label>
-                        <Input
-                          value={guestRegisterData.name}
-                          onChange={(e) => setGuestRegisterData({...guestRegisterData, name: e.target.value})}
-                          required
-                          autoComplete="name"
-                          data-testid="guest-register-name"
-                        />
-                      </div>
-                      <div>
-                        <Label>{t('common.email')}</Label>
-                        <Input
-                          type="email"
-                          value={guestRegisterData.email}
-                          onChange={(e) => setGuestRegisterData({...guestRegisterData, email: e.target.value})}
-                          required
-                          autoComplete="email"
-                          autoCapitalize="none"
-                          autoCorrect="off"
-                          data-testid="guest-register-email"
-                        />
-                      </div>
-                      <div>
-                        <Label>{t('common.phone')}</Label>
-                        <Input
-                          value={guestRegisterData.phone}
-                          onChange={(e) => setGuestRegisterData({...guestRegisterData, phone: e.target.value})}
-                          required
-                          autoComplete="tel"
-                          data-testid="guest-register-phone"
-                        />
-                      </div>
-                      <div>
-                        <Label>{t('common.password')}</Label>
-                        <Input
-                          type="password"
-                          value={guestRegisterData.password}
-                          onChange={(e) => setGuestRegisterData({...guestRegisterData, password: e.target.value})}
-                          required
-                          autoComplete="new-password"
-                          minLength={6}
-                          data-testid="guest-register-password"
-                        />
-                      </div>
-                      <Button type="submit" className="w-full" disabled={loading} data-testid="guest-register-btn">
-                        {loading ? t('auth.creatingAccount') : t('auth.createGuestAccount')}
-                      </Button>
-                    </form>
-                  </TabsContent>
-                </Tabs>
+                  </div>
+                )}
               </TabsContent>
             </Tabs>
-            )}
-          </CardContent>
-        </Card>
+          )}
+        </div>
       </div>
     </div>
   );
