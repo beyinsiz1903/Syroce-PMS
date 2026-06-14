@@ -18,7 +18,7 @@ stored content can never carry markup even if the React escape boundary moves.
 import logging
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, conlist, constr, field_validator
 
 from core.helpers import require_super_admin_guard
