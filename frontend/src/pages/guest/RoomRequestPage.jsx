@@ -36,6 +36,7 @@ const UI = {
         newReq: "Yeni talep oluştur", name: "Adınız (opsiyonel)", phone: "Telefon (opsiyonel)",
         sending: "Gönderiliyor...", language: "Dil", back: "Geri", home: "Ana menü",
         errorTitle: "Talep açılamadı",
+        loadError: "Yükleme hatası", sendError: "Gönderim hatası",
         conversation: "Mesajlar", you: "Siz", team: "Otel Ekibi",
         replyPlaceholder: "Bir mesaj yazın...", send: "Gönder", noMessages: "Henüz mesaj yok." },
   en: { title: "Room Request", room: "Room", welcome: "Welcome", pick: "What is your request about?",
@@ -45,6 +46,7 @@ const UI = {
         newReq: "Make another request", name: "Your name (optional)", phone: "Phone (optional)",
         sending: "Sending...", language: "Language", back: "Back", home: "Main menu",
         errorTitle: "Unable to open request",
+        loadError: "Loading error", sendError: "Sending error",
         conversation: "Messages", you: "You", team: "Hotel Team",
         replyPlaceholder: "Write a message...", send: "Send", noMessages: "No messages yet." },
   de: { title: "Zimmeranfrage", room: "Zimmer", welcome: "Willkommen", pick: "Worum geht es?",
@@ -54,6 +56,7 @@ const UI = {
         newReq: "Neue Anfrage", name: "Name (optional)", phone: "Telefon (optional)",
         sending: "Senden...", language: "Sprache", back: "Zurück", home: "Hauptmenü",
         errorTitle: "Anfrage konnte nicht geöffnet werden",
+        loadError: "Ladefehler", sendError: "Sendefehler",
         conversation: "Nachrichten", you: "Sie", team: "Hotel-Team",
         replyPlaceholder: "Nachricht schreiben...", send: "Senden", noMessages: "Noch keine Nachrichten." },
   ru: { title: "Запрос из номера", room: "Номер", welcome: "Добро пожаловать", pick: "Что вас интересует?",
@@ -63,6 +66,7 @@ const UI = {
         newReq: "Новый запрос", name: "Имя (необяз.)", phone: "Телефон (необяз.)",
         sending: "Отправка...", language: "Язык", back: "Назад", home: "Главное меню",
         errorTitle: "Не удалось открыть запрос",
+        loadError: "Ошибка загрузки", sendError: "Ошибка отправки",
         conversation: "Сообщения", you: "Вы", team: "Команда отеля",
         replyPlaceholder: "Напишите сообщение...", send: "Отправить", noMessages: "Сообщений пока нет." },
   ar: { title: "طلب من الغرفة", room: "غرفة", welcome: "أهلاً بك", pick: "ما هو طلبك؟",
@@ -72,6 +76,7 @@ const UI = {
         newReq: "طلب جديد", name: "الاسم (اختياري)", phone: "الهاتف (اختياري)",
         sending: "جارٍ الإرسال...", language: "اللغة", back: "رجوع", home: "القائمة الرئيسية",
         errorTitle: "تعذّر فتح الطلب",
+        loadError: "خطأ في التحميل", sendError: "خطأ في الإرسال",
         conversation: "الرسائل", you: "أنت", team: "فريق الفندق",
         replyPlaceholder: "اكتب رسالة...", send: "إرسال", noMessages: "لا توجد رسائل بعد." },
 };
@@ -163,7 +168,7 @@ function GuestThread({ tenantId, roomId, token, t, lang, rtl, accent, alwaysShow
       setReply("");
       load();
     } catch (e) {
-      alertDialog({ message: e.response?.data?.detail || "Gönderim hatası" });
+      alertDialog({ message: e.response?.data?.detail || t.sendError });
     } finally {
       if (mountedRef.current) setSending(false);
     }
@@ -253,7 +258,7 @@ export default function RoomRequestPage() {
         setMeta(r.data);
         if (r.data.guest_name) setName(r.data.guest_name);
       } catch (e) {
-        setError(e.response?.data?.detail || "Yükleme hatası");
+        setError(e.response?.data?.detail || t.loadError);
       } finally {
         setLoading(false);
       }
@@ -272,7 +277,7 @@ export default function RoomRequestPage() {
       }, { params: { t: token } });
       setDone(true);
     } catch (e) {
-      alertDialog({ message: e.response?.data?.detail || "Gönderim hatası" });
+      alertDialog({ message: e.response?.data?.detail || t.sendError });
     } finally {
       setSubmitting(false);
     }
