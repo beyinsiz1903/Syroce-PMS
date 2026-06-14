@@ -58,7 +58,11 @@ EXPOSE 8001
 # refuses to boot when this is not 'true' (see infra/production_config.py).
 ENV STRICT_TENANT_MODE=true
 
+# Bind to $PORT when the platform injects one (Render / Heroku-style), else
+# fall back to 8001 (docker-compose, local, Replit). Shell form + `exec` keeps
+# uvicorn as PID 1 so SIGTERM still triggers a graceful shutdown. Worker count
+# is tunable per host plan via WEB_CONCURRENCY (default 4 = unchanged).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8001/api/health/liveness || exit 1
+    CMD curl -f http://localhost:${PORT:-8001}/api/health/liveness || exit 1
 
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "4", "--loop", "uvloop", "--http", "httptools"]
+CMD exec uvicorn server:app --host 0.0.0.0 --port ${PORT:-8001} --workers ${WEB_CONCURRENCY:-4} --loop uvloop --http httptools
