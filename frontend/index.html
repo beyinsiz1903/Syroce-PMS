@@ -104,7 +104,19 @@
                     var stored = false;
                     try { sessionStorage.setItem('syroce_chunk_reload_done', '1'); stored = true; } catch (_) {}
                     if (stored) {
-                        window.location.reload();
+                        // The HMR reload guard (vite.config.js hmrReloadGuard) overrides
+                        // location.reload() to a no-op unless the user interacted within
+                        // the last 3s. A stale-chunk failure on initial load happens with
+                        // NO user interaction, so a raw location.reload() here is silently
+                        // blocked while the one-shot latch above is already spent -> the
+                        // app stays stuck on a blank #root. Use the guard's own unguarded
+                        // escape hatch; fall back to location.replace() (NOT intercepted
+                        // by the guard) if the hatch is somehow absent.
+                        if (typeof window.__syroceReload === 'function') {
+                            window.__syroceReload();
+                        } else {
+                            window.location.replace(window.location.href);
+                        }
                     } else {
                         // No storage: pin the latch in the URL so the next load sees it.
                         var u = new URL(window.location.href);
