@@ -40,6 +40,86 @@ _ALIGN_CENTER = b"\x1b\x61\x01"
 _ALIGN_LEFT = b"\x1b\x61\x00"
 _NL = b"\n"
 
+# Real-time status request commands (DLE EOT n).
+_DLE_EOT_OFFLINE = b"\x10\x04\x02"  # offline cause status (cover/paper/error)
+_DLE_EOT_PAPER = b"\x10\x04\x04"    # paper sensor status (near-end / end)
+
+# ── Character code pages (Turkish certification) ──────────────────────────
+# Real ESC/POS thermal printers do NOT consume UTF-8: each glyph is one byte
+# resolved through the printer's *currently selected* code page. Turkish letters
+# (ç ş ğ ü ö ı İ Ş Ğ Ü Ö Ç) must therefore be encoded with a Turkish single-byte
+# code page (CP857 or CP1254) AND the matching "ESC t n" code-table command must
+# be emitted first, or the printer renders multi-byte UTF-8 as garbage. The exact
+# "ESC t n" table id varies per model, so it is operator-overridable per printer
+# (codepage_table_id) during certification.
+_DEFAULT_CODEPAGE = (os.environ.get("POS_PRINT_CODEPAGE") or "cp857").lower()
+
+_CODEPAGE_TABLE_ID: dict[str, int] = {
+    "cp437": 0,    # PC437 USA / Standard Europe
+    "cp850": 2,    # PC850 Multilingual
+    "cp857": 13,   # PC857 Turkish (common Epson TM code table 13)
+    "cp1254": 47,  # WPC1254 Windows Turkish
+}
+
+# Last-resort transliteration for glyphs absent from the chosen code page, so an
+# unmappable character degrades to a readable ASCII approximation instead of a
+# replacement box.
+_TRANSLIT = str.maketrans({
+    "ı": "i", "İ": "I", "ş": "s", "Ş": "S", "ğ": "g", "Ğ": "G",
+    "ç": "c", "Ç": "C", "ö": "o", "Ö": "O", "ü": "u", "Ü": "U",
+    "₺": "TL", "“": '"', "”": '"', "’": "'", "‘": "'", "–": "-", "—": "-",
+})
+
+
+def _norm_codepage(codepage: str | None) -> str:
+    cp = (codepage or _DEFAULT_CODEPAGE or "cp857").lower()
+    return cp if cp in _CODEPAGE_TABLE_ID else "cp857"
+
+
+def _select_codepage_cmd(codepage: str, table_id: int | None = None) -> bytes:
+    """ESC t n — select the printer character code table for `codepage`."""
+    n = table_id if table_id is not None else _CODEPAGE_TABLE_ID[_norm_codepage(codepage)]
+    return b"\x1b\x74" + bytes([n & 0xFF])
+
+
+def _enc(text: str, codepage: str) -> bytes:
+    """Encode `text` for a single-byte ESC/POS code page (NOT UTF-8).
+
+    Unmappable glyphs are transliterated to ASCII before a final replace pass so
+    nothing is silently dropped.
+    """
+    try:
+        return text.encode(codepage)
+    except (UnicodeEncodeError, LookupError):
+        return text.translate(_TRANSLIT).encode(codepage, "replace")
+
+
+def _interpret_status(offline: int | None, paper: int | None) -> dict:
+    """Decode DLE EOT real-time status bytes into operator-readable conditions."""
+    conditions: list[str] = []
+    if offline is not None:
+        if offline & 0x04:
+            conditions.append("cover_open")
+        if offline & 0x20:
+            conditions.append("paper_end")
+        if offline & 0x40:
+            conditions.append("error")
+    if paper is not None:
+        if paper & 0x60 == 0x60:
+            conditions.append("paper_end")
+        elif paper & 0x0C == 0x0C:
+            conditions.append("paper_near_end")
+    seen: list[str] = []
+    for c in conditions:
+        if c not in seen:
+            seen.append(c)
+    return {
+        "conditions": seen,
+        "offline_byte": offline,
+        "paper_byte": paper,
+        "blocking": any(c in ("cover_open", "paper_end", "error") for c in seen),
+    }
+
 
 class PrintJobCreate(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -54,14 +134,15 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def _render_receipt(payload: dict) -> bytes:
-    """Render a minimal receipt to ESC/POS bytes."""
+def _render_receipt(payload: dict, codepage: str = _DEFAULT_CODEPAGE, table_id: int | None = None) -> bytes:
+    """Render a minimal receipt to ESC/POS bytes (single-byte code page)."""
+    cp = _norm_codepage(codepage)
     out = bytearray()
-    out += _INIT
+    out += _INIT + _select_codepage_cmd(cp, table_id)
     header = (payload.get("header") or "RECEIPT")[:42]
-    out += _ALIGN_CENTER + _BOLD_ON + header.encode("utf-8", "ignore") + _BOLD_OFF + _NL
+    out += _ALIGN_CENTER + _BOLD_ON + _enc(header, cp) + _BOLD_OFF + _NL
     if payload.get("subheader"):
-        out += (str(payload["subheader"])[:42]).encode("utf-8", "ignore") + _NL
+        out += _enc(str(payload["subheader"])[:42], cp) + _NL
     out += b"-" * 32 + _NL
     out += _ALIGN_LEFT
     for item in (payload.get("items") or []):
@@ -69,61 +150,126 @@ def _render_receipt(payload: dict) -> bytes:
         qty = int(item.get("quantity") or 1)
         line_total = float(item.get("line_total") or (item.get("quantity", 1) * item.get("price", 0)))
         line = f"{qty}x {name:<24} {line_total:>7.2f}"
-        out += line.encode("utf-8", "ignore") + _NL
+        out += _enc(line, cp) + _NL
     out += b"-" * 32 + _NL
     total = float(payload.get("total") or 0)
-    out += _BOLD_ON + f"TOTAL {total:>26.2f}".encode("utf-8", "ignore") + _BOLD_OFF + _NL
+    out += _BOLD_ON + _enc(f"TOTAL {total:>26.2f}", cp) + _BOLD_OFF + _NL
     if payload.get("footer"):
-        out += _NL + _ALIGN_CENTER + str(payload["footer"])[:42].encode("utf-8", "ignore") + _NL
+        out += _NL + _ALIGN_CENTER + _enc(str(payload["footer"])[:42], cp) + _NL
     out += _NL * 3 + _CUT
     return bytes(out)
 
 
-def _render_kitchen(payload: dict) -> bytes:
+def _render_kitchen(payload: dict, codepage: str = _DEFAULT_CODEPAGE, table_id: int | None = None) -> bytes:
+    cp = _norm_codepage(codepage)
     out = bytearray()
-    out += _INIT + _ALIGN_CENTER + _BOLD_ON
+    out += _INIT + _select_codepage_cmd(cp, table_id) + _ALIGN_CENTER + _BOLD_ON
     station = str(payload.get("station") or "KITCHEN")[:32]
-    out += station.encode("utf-8", "ignore") + _NL + _BOLD_OFF
+    out += _enc(station, cp) + _NL + _BOLD_OFF
     if payload.get("adisyon_number"):
-        out += _BOLD_ON + f"Adisyon No: {payload['adisyon_number']}".encode("utf-8", "ignore") + _BOLD_OFF + _NL
+        out += _BOLD_ON + _enc(f"Adisyon No: {payload['adisyon_number']}", cp) + _BOLD_OFF + _NL
     if payload.get("business_date"):
-        out += f"Is Gunu: {payload['business_date']}".encode("utf-8", "ignore") + _NL
+        out += _enc(f"Is Gunu: {payload['business_date']}", cp) + _NL
     if payload.get("table"):
-        out += f"Masa: {payload['table']}".encode("utf-8", "ignore") + _NL
+        out += _enc(f"Masa: {payload['table']}", cp) + _NL
     out += b"-" * 32 + _NL + _ALIGN_LEFT
     for item in (payload.get("items") or []):
-        out += f"{int(item.get('quantity') or 1)}x {item.get('name', '')[:28]}".encode("utf-8", "ignore") + _NL
+        out += _enc(f"{int(item.get('quantity') or 1)}x {str(item.get('name', ''))[:28]}", cp) + _NL
         notes = item.get("special_instructions")
         if notes:
-            out += f"  >> {notes[:28]}".encode("utf-8", "ignore") + _NL
+            out += _enc(f"  >> {str(notes)[:28]}", cp) + _NL
     out += _NL * 2 + _CUT
     return bytes(out)
 
 
-def _render(kind: str, payload: dict) -> bytes:
+def _render(kind: str, payload: dict, codepage: str = _DEFAULT_CODEPAGE, table_id: int | None = None) -> bytes:
+    cp = _norm_codepage(codepage)
     if kind == "kitchen":
-        return _render_kitchen(payload)
+        return _render_kitchen(payload, cp, table_id)
     if kind == "test":
-        return _INIT + b"PRINTER TEST OK" + _NL * 3 + _CUT
-    return _render_receipt(payload)
+        # The test ticket doubles as a code-page certification aid: it prints the
+        # full Turkish glyph set so an operator can confirm correct output live.
+        return (
+            _INIT
+            + _select_codepage_cmd(cp, table_id)
+            + _enc(f"PRINTER TEST OK\nKod sayfasi: {cp}\nTurkce: ", cp)
+            + _enc("ç ş ğ ü ö ı  İ Ş Ğ Ü Ö Ç", cp)
+            + _NL * 3
+            + _CUT
+        )
+    return _render_receipt(payload, cp, table_id)
 
 
-async def _send_tcp(host: str, port: int, data: bytes, timeout: float = 5.0) -> None:
+async def _resolve_codepage(tenant_id: str | None, printer_id: str) -> tuple[str, int | None]:
+    """Resolve the code page (and optional ESC t n override) for the target
+    printer. Falls back to the env/default code page when the printer is not
+    registered or the lookup fails."""
+    cp = _DEFAULT_CODEPAGE
+    table_id: int | None = None
+    if tenant_id:
+        try:
+            printer = await db.pos_printers.find_one(
+                {"tenant_id": tenant_id, "printer_id": printer_id},
+                {"_id": 0, "codepage": 1, "codepage_table_id": 1},
+            )
+            if printer:
+                cp = printer.get("codepage") or cp
+                table_id = printer.get("codepage_table_id")
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("codepage resolve failed: %s", exc)
+    return _norm_codepage(cp), table_id
+
+
+async def _send_tcp(
+    host: str,
+    port: int,
+    data: bytes,
+    timeout: float = 5.0,
+    query_status: bool = True,
+    status_timeout: float = 1.5,
+) -> dict | None:
     """Open a short-lived TCP socket to an ESC/POS network printer and stream the
     rendered bytes. Time-bounded so an unreachable printer can't hang the caller.
+    Returns the decoded real-time status (paper/cover/error) when the printer
+    answers, else None.
     """
     reader, writer = await asyncio.wait_for(
         asyncio.open_connection(host, port), timeout=timeout
     )
+    status: dict | None = None
     try:
         writer.write(data)
         await asyncio.wait_for(writer.drain(), timeout=timeout)
+        if query_status:
+            status = await _read_status(reader, writer, status_timeout)
     finally:
         writer.close()
         try:
             await asyncio.wait_for(writer.wait_closed(), timeout=timeout)
         except Exception:
             pass
+    return status
+
+
+async def _read_status(reader, writer, timeout: float = 1.5) -> dict | None:
+    """Best-effort real-time status read (DLE EOT). A printer that doesn't answer
+    over the raw port simply yields None — we never let it fail the print."""
+    offline = paper = None
+    for cmd, slot in ((_DLE_EOT_OFFLINE, "offline"), (_DLE_EOT_PAPER, "paper")):
+        try:
+            writer.write(cmd)
+            await asyncio.wait_for(writer.drain(), timeout=timeout)
+            chunk = await asyncio.wait_for(reader.read(1), timeout=timeout)
+            if chunk:
+                if slot == "offline":
+                    offline = chunk[0]
+                else:
+                    paper = chunk[0]
+        except Exception:
+            pass
+    if offline is None and paper is None:
+        return None
+    return _interpret_status(offline, paper)
 
 
 async def _dispatch(job: dict) -> dict:
@@ -165,15 +311,25 @@ async def _dispatch(job: dict) -> dict:
                 "reason": "printer not registered or host missing",
             }
         try:
-            await _send_tcp(
+            status = await _send_tcp(
                 str(printer["host"]), int(printer.get("port") or 9100), bytes_blob
             )
-            return {
+            result = {
                 "driver": "escpos_tcp",
                 "ok": True,
                 "bytes_len": len(bytes_blob),
                 "host": printer["host"],
             }
+            if status:
+                result["printer_status"] = status
+                if status.get("blocking"):
+                    # Bytes left the host, but the printer is offline/out of paper
+                    # so nothing actually printed — surface it as a failure.
+                    result["ok"] = False
+                    result["reason"] = "yazici donanim hatasi: " + ", ".join(
+                        status.get("conditions") or ["unknown"]
+                    )
+            return result
         except Exception as exc:
             return {"driver": "escpos_tcp", "ok": False, "reason": f"tcp send failed: {exc}"}
     return {"driver": driver, "ok": False, "reason": "unknown driver"}
@@ -254,7 +410,8 @@ async def enqueue_print_job(
 
     Returns (saved_job, was_idempotent_replay).
     """
-    rendered = _render(kind, payload)
+    codepage, table_id = await _resolve_codepage(tenant_id, printer_id)
+    rendered = _render(kind, payload, codepage, table_id)
     job = {
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
@@ -263,6 +420,7 @@ async def enqueue_print_job(
         "copies": int(copies),
         "payload": payload,
         "rendered_bytes": rendered,
+        "codepage": codepage,
         "status": "pending",
         "routing_warning": routing_warning,
         "idempotency_key": idempotency_key,
@@ -292,7 +450,6 @@ async def enqueue_print_job(
 
 @router.post("/jobs")
 async def enqueue(body: PrintJobCreate, current_user: User = Depends(get_current_user)):
-    rendered = _render(body.kind, body.payload)
     saved, replayed = await enqueue_print_job(
         tenant_id=current_user.tenant_id,
         kind=body.kind,
@@ -302,6 +459,7 @@ async def enqueue(body: PrintJobCreate, current_user: User = Depends(get_current
         copies=body.copies,
         created_by=current_user.id,
     )
+    rendered = saved.get("rendered_bytes") or b""
     public = {**saved}
     public.pop("_id", None)
     public["rendered_bytes_len"] = len(rendered)
@@ -374,6 +532,11 @@ class PrinterUpsert(BaseModel):
     station: str | None = None
     outlet_id: str | None = None
     enabled: bool = True
+    # Turkish certification: which single-byte code page the printer is set to.
+    codepage: str = Field(default="cp857", pattern="^(cp437|cp850|cp857|cp1254)$")
+    # Optional ESC t n override when a model's code-table id differs from the
+    # built-in preset (set during certification of a specific model).
+    codepage_table_id: int | None = Field(default=None, ge=0, le=255)
 
 
 @router.get("/printers")

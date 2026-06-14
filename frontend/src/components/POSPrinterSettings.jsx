@@ -25,9 +25,19 @@ const EMPTY = {
   station: '',
   outlet_id: '',
   enabled: true,
+  codepage: 'cp857',
 };
 
 const STATIONS = ['', 'hot_kitchen', 'cold_kitchen', 'bar', 'dessert'];
+
+// Single-byte code pages. Turkish printers need cp857 (PC857) or cp1254
+// (Windows-1254); UTF-8 prints Turkish characters as garbage.
+const CODEPAGES = [
+  { value: 'cp857', label: 'CP857 (PC857 Turkce)' },
+  { value: 'cp1254', label: 'CP1254 (Windows Turkce)' },
+  { value: 'cp850', label: 'CP850 (Cok dilli)' },
+  { value: 'cp437', label: 'CP437 (Standart)' },
+];
 
 const POSPrinterSettings = () => {
   const [printers, setPrinters] = useState([]);
@@ -85,6 +95,7 @@ const POSPrinterSettings = () => {
         station: form.station || null,
         outlet_id: form.outlet_id || null,
         host: form.host || null,
+        codepage: form.codepage || 'cp857',
       });
       setForm(EMPTY);
       await load();
@@ -111,10 +122,12 @@ const POSPrinterSettings = () => {
     try {
       const res = await axios.post(`/pos/ext/print/printers/${printerId}/test`);
       const status = res.data.status || 'unknown';
+      const result = res.data.result || {};
+      const reason = result.reason || result.error || '';
       alertDialog({
         message: status === 'sent'
           ? 'Test fisi gonderildi.'
-          : `Test sonucu: ${status}. ${res.data.result?.error || ''}`,
+          : `Test sonucu: ${status}. ${reason}`,
       });
     } catch (err) {
       alertDialog({ message: err.response?.data?.detail || 'Test gonderilemedi' });
@@ -174,6 +187,18 @@ const POSPrinterSettings = () => {
               </div>
             </div>
           )}
+          <div>
+            <Label>Kod Sayfasi (Turkce karakter)</Label>
+            <Select value={form.codepage || 'cp857'}
+              onValueChange={(v) => setField('codepage', v)}>
+              <SelectTrigger data-testid="printer-codepage"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {CODEPAGES.map(c => (
+                  <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div>
             <Label>Istasyon (KOT yonlendirme)</Label>
             <Select value={form.station || '_none'}
@@ -253,6 +278,7 @@ const POSPrinterSettings = () => {
                     <div className="text-xs text-gray-500 mt-0.5">
                       {p.printer_id}
                       {p.driver === 'escpos_tcp' && p.host ? ` • ${p.host}:${p.port}` : ''}
+                      {p.codepage ? ` • ${p.codepage}` : ''}
                     </div>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
