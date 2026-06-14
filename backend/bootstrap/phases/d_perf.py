@@ -438,7 +438,13 @@ async def _create_perf_indexes_inner():
             ("folios", "created_at_-1"),
             ("folios", "folio_type_1"),
             ("folios", "booking_id_1_folio_type_1"),
-            ("folios", "idx_f_tid_booking"),  # ↔ idx_folio_tenant_booking
+            ("folios", "idx_f_tid_booking"),  # eski/legacy isim (artık yok; no-op)
+            # Atlas Performance Advisor (2026-06-14): canlı isim idx_folio_tenant_booking
+            # (atomic_checkin_checkout.py oluşturuyordu, üst satırdaki eski isim onu
+            # yakalamıyordu). (tenant_id, booking_id) ⊂ idx_folio_booking_status
+            # (tenant_id, booking_id, status) → tam prefix, redundant. Create tarafı da
+            # atomic_checkin_checkout.py'den kaldırıldı; bu drop kalıcı yapar.
+            ("folios", "idx_folio_tenant_booking"),
             ("folios", "idx_f_tid_status"),   # ⊂ idx_folio_status_balance
             # housekeeping_tasks: tenant-prefixsiz duplikatlar + exact-dup'lar
             ("housekeeping_tasks", "idx_hk_tid_status"),  # ⊂ idx_hk_status_room

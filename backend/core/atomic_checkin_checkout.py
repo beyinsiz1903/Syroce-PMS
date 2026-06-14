@@ -495,12 +495,11 @@ async def ensure_checkin_checkout_indexes() -> None:
             "name": "idx_booking_tenant_id",
             "kwargs": {"unique": True},
         },
-        {
-            "collection": "folios",
-            "keys": [("tenant_id", 1), ("booking_id", 1)],
-            "name": "idx_folio_tenant_booking",
-            "kwargs": {},
-        },
+        # Atlas Performance Advisor (2026-06-14): folios (tenant_id, booking_id)
+        # = idx_folio_tenant_booking KALDIRILDI. (tenant_id, booking_id) tam
+        # olarak idx_folio_booking_status (tenant_id, booking_id, status)
+        # prefix'idir; check-in/out lookup'ları superset index ile servis edilir.
+        # Redundant (non-unique) idi; d_perf.py redundant-drop listesine eklendi.
         {
             "collection": "housekeeping_tasks",
             "keys": [("tenant_id", 1), ("booking_id", 1), ("task_type", 1), ("status", 1)],

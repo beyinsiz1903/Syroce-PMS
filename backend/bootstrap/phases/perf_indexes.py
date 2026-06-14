@@ -185,6 +185,27 @@ async def ensure_performance_indexes():
          [("tenant_id", 1), ("created_at", -1)],
          "ix_grm_tenant_created",
          {}),
+        # Atlas Performance Advisor (2026-06-14): folios & folio_charges were
+        # missing the (tenant_id, id) companion that every other hot collection
+        # already has (bookings idx_booking_tenant_id, guests idx_g_tid_id).
+        # Single-doc lookups by the app-level `id` fell back to a tenant-wide
+        # COLLSCAN:
+        #   - folios: ~51.5 queries/hour, 13k scanned / 1 returned (376ms) —
+        #     the single most frequent advisor finding.
+        #   - folio_charges: ~1.2 q/h, 92k scanned / 1 returned (3.6s); the
+        #     collection is very large (stress/E2E residue inflates it), so the
+        #     scan is expensive.
+        # `id` is an equality predicate, so (tenant_id, id) fully serves the
+        # tenant-scoped find_one({tenant_id, id}). NON-unique on purpose: the
+        # collections carry legacy/stress rows and uniqueness is enforced on the
+        # write paths, not here — a unique build could fail on a stray dup.
+        # NAME = the Mongo default "tenant_id_1_id_1" so this declaration stays
+        # idempotent with scripts/index_apply.py (which the operator runs to
+        # apply immediately when a full boot is unavailable, and which creates
+        # with the default name). Same key + a different name would raise an
+        # IndexOptionsConflict on every boot (caught, but noisy).
+        ("folios", [("tenant_id", 1), ("id", 1)], "tenant_id_1_id_1", {}),
+        ("folio_charges", [("tenant_id", 1), ("id", 1)], "tenant_id_1_id_1", {}),
     ]
     for coll_name, keys, name, kwargs in indexes:
         try:

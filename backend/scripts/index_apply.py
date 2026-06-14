@@ -28,6 +28,13 @@ TO_APPLY = [
     ("payments", [("tenant_id", 1), ("payment_date", -1)]),
     ("exely_connections", [("tenant_id", 1), ("is_active", 1)]),
     ("hotelrunner_connections", [("tenant_id", 1), ("is_active", 1)]),
+    # Atlas Performance Advisor (2026-06-14): missing (tenant_id, id) companion
+    # on folios (~51 q/h) and folio_charges — single-doc lookups by app-level
+    # `id` were doing tenant-wide COLLSCANs. Also declared durably in
+    # bootstrap/phases/perf_indexes.py; this lets the operator apply them
+    # immediately without a full boot.
+    ("folios", [("tenant_id", 1), ("id", 1)]),
+    ("folio_charges", [("tenant_id", 1), ("id", 1)]),
 ]
 
 
