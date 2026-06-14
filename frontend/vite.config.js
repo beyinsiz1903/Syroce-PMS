@@ -34,9 +34,16 @@ function hmrReloadGuard() {
       }
     },
 
-    // Layer 3: Runtime guard injected as the FIRST script in <head>
-    transformIndexHtml(html) {
+    // Layer 3: Runtime guard injected as the FIRST script in <head>.
+    // DEV-ONLY: Vite's HMR client -- the source of the proxy-drop auto-reloads
+    // this guard defends against -- exists only during `vite serve`. A production
+    // build has no HMR client, so injecting a Location.prototype.reload override
+    // into prod cannot help and only silently breaks legitimate reloads (e.g. the
+    // stale-chunk self-heal in index.html), which caused the white-screen on
+    // returning tabs after a deploy. ctx.server is set only in dev, so gate on it.
+    transformIndexHtml(html, ctx) {
       if (!enabled) return html;
+      if (!ctx || !ctx.server) return html;
       const guardScript = `<script>
 (function() {
   // Smart reload guard: allows user-initiated reloads, blocks HMR auto-reloads.

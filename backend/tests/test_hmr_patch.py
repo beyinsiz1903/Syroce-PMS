@@ -88,6 +88,28 @@ class TestHmrPatchRegression:
             "vite.config.js plugin must include transformIndexHtml for runtime guard"
         )
 
+    def test_reload_guard_is_dev_only(self):
+        """Layer 3 runtime reload override must be injected ONLY in dev.
+
+        The guard overrides Location.prototype.reload to no-op without recent user
+        interaction. In a production build there is no Vite HMR client (the thing it
+        defends against), so injecting it into prod only silently blocks the
+        stale-chunk self-heal reload -> blank white screen on returning tabs after a
+        deploy. It must therefore be gated on `ctx.server`, which Vite sets only
+        during `vite serve` (dev), never during `vite build`.
+        """
+        config_path = os.path.join(FRONTEND_DIR, 'vite.config.js')
+        with open(config_path, 'r') as f:
+            content = f.read()
+        assert 'transformIndexHtml(html, ctx)' in content, (
+            "transformIndexHtml must accept ctx so it can distinguish dev from prod."
+        )
+        assert 'ctx.server' in content, (
+            "Layer 3 reload guard must be gated on ctx.server (dev-only). Injecting it "
+            "into production builds breaks the stale-chunk self-heal and causes a blank "
+            "white screen on already-open tabs after a deploy."
+        )
+
     def test_patch_is_idempotent(self):
         """Running the patch script twice should not double-patch."""
         result = subprocess.run(
