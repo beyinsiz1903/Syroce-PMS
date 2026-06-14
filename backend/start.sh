@@ -343,12 +343,19 @@ EOF
   #    from the build dir so they NEVER queue behind API work. The `file`
   #    matcher means the immutable Cache-Control is only stamped on assets
   #    that actually EXIST — a missing chunk stays a real 404 and must NOT be
-  #    cached. `encode` is scoped to the static handles ONLY: it must never
-  #    wrap the reverse_proxy, or it would buffer streaming downloads
-  #    (CSV/PDF exports) and the KBS SSE (text/event-stream) feed. Everything
-  #    dynamic proxies to uvicorn unchanged — warm-up gate, no-store
+  #    cached. IMPORTANT: the static handlers serve IDENTITY bytes (NO `encode`).
+  #    On-the-fly `encode gzip zstd` was observed to corrupt delivery of a
+  #    SUBSET of hashed chunks on this VM+edge path: Caddy stat()'d the correct
+  #    size (HEAD content-length matched the on-disk file) but the GET body came
+  #    back EMPTY (200, 0 bytes) and Range returned 502 — deterministically
+  #    per-file, while sibling chunks served fine. Result: a white screen even
+  #    though the build on disk was fully intact (boot-verify saw 0 empty). The
+  #    bundles are hashed + immutably cached and the edge can still compress on
+  #    the wire, so dropping origin compression costs bandwidth, not correctness.
+  #    Everything dynamic proxies to uvicorn unchanged — warm-up gate, no-store
   #    index.html, SPA 404 fallback, /api/uploads and /ws upgrade all stay
-  #    server-side.
+  #    server-side (encode must ALSO never wrap the reverse_proxy, or it would
+  #    buffer streaming CSV/PDF exports and the KBS SSE text/event-stream feed).
   cat > "$CADDYFILE" <<CADDY
 {
         auto_https off
@@ -371,15 +378,12 @@ EOF
         header @logos_existing Cache-Control "public, max-age=3600"
 
         handle /js/* {
-                encode gzip zstd
                 file_server
         }
         handle /assets/* {
-                encode gzip zstd
                 file_server
         }
         handle /logos/* {
-                encode gzip zstd
                 file_server
         }
 
@@ -409,7 +413,6 @@ EOF
                 not path / *.html /api /api/* /ws* /graphql*
         }
         handle @root_static {
-                encode gzip zstd
                 header Cache-Control "public, max-age=3600"
                 file_server
         }
