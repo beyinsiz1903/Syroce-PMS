@@ -547,7 +547,7 @@ const POSWaiterTerminal = () => {
 
             {/* Last order summary (adisyon no + business date visible) */}
             {lastOrder && (
-              <Card className="border-l-4 border-l-green-500 bg-green-50/40">
+              <Card className="border-l-4 border-l-green-500 bg-green-50/40" data-testid="last-order">
                 <CardContent className="p-3 text-sm space-y-1">
                   <div className="font-semibold flex items-center gap-2 text-green-700">
                     <Check className="w-4 h-4" /> Son Adisyon
@@ -555,7 +555,7 @@ const POSWaiterTerminal = () => {
                   {lastOrder.adisyon_number != null && (
                     <div className="flex justify-between">
                       <span>Adisyon No</span>
-                      <span className="font-bold">#{lastOrder.adisyon_number}</span>
+                      <span className="font-bold" data-testid="last-adisyon-number">#{lastOrder.adisyon_number}</span>
                     </div>
                   )}
                   {lastOrder.business_date && (
@@ -563,7 +563,7 @@ const POSWaiterTerminal = () => {
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3 h-3" /> Is Gunu
                       </span>
-                      <span>{lastOrder.business_date}</span>
+                      <span data-testid="last-business-date">{lastOrder.business_date}</span>
                     </div>
                   )}
                   {lastOrder.total_amount != null && (
