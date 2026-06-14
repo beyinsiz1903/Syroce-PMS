@@ -382,6 +382,38 @@ EOF
                 encode gzip zstd
                 file_server
         }
+
+        # The service worker MUST be served from disk as real JS with no-cache.
+        # It lives in the build ROOT (/service-worker.js), so without this it
+        # fell through to uvicorn and returned 500 -> a previously-registered
+        # (and possibly stale/broken) SW could never refetch a newer version ->
+        # browsers stayed stuck on a cached broken shell (= white screen) even
+        # after the bundle itself was fixed. no-cache forces the browser to
+        # revalidate the SW script every load so a fixed SW self-heals.
+        @service_worker path /service-worker.js
+        handle @service_worker {
+                header Cache-Control "no-cache, no-store, must-revalidate"
+                header Service-Worker-Allowed "/"
+                file_server
+        }
+
+        # Other root-level static files (favicons, robots.txt, splash/preview
+        # images) also live in the build root and 500'd when proxied to uvicorn.
+        # Serve any EXISTING, non-HTML root file straight from disk. "/", *.html
+        # and /api,/ws,/graphql still fall through to uvicorn so the no-store
+        # index.html shell, security headers and SPA 404 fallback stay
+        # server-side (the `file` matcher only matches paths that exist on disk,
+        # so SPA routes like /dashboard still reach uvicorn).
+        @root_static {
+                file
+                not path / *.html /api /api/* /ws* /graphql*
+        }
+        handle @root_static {
+                encode gzip zstd
+                header Cache-Control "public, max-age=3600"
+                file_server
+        }
+
         handle {
                 reverse_proxy 127.0.0.1:${UVICORN_PORT}
         }
