@@ -39,25 +39,73 @@ const CODEPAGES = [
   { value: 'cp437', label: 'CP437 (Standart)' },
 ];
 
+// Map a printer's latest print-job outcome to an operator-readable badge.
+// Red = offline / paper-end / cover-open / error / failed dispatch;
+// amber = paper running low; green = last print sent OK; gray = pending / unknown.
+const CONDITION_LABELS = {
+  paper_end: 'Kagit bitti',
+  paper_near_end: 'Kagit azaldi',
+  cover_open: 'Kapak acik',
+  error: 'Yazici hatasi',
+};
+
+const statusBadge = (st) => {
+  if (!st || (!st.job_status && !(st.conditions || []).length)) {
+    return { label: 'Durum yok', className: 'bg-gray-100 text-gray-500 border border-gray-200' };
+  }
+  const conditions = st.conditions || [];
+  if (conditions.includes('paper_end') || conditions.includes('cover_open') || conditions.includes('error')) {
+    const label = conditions.map((c) => CONDITION_LABELS[c] || c).join(', ');
+    return { label, className: 'bg-red-100 text-red-700 border border-red-200' };
+  }
+  if (st.blocking || st.job_status === 'failed') {
+    return { label: 'Cevrimdisi', className: 'bg-red-100 text-red-700 border border-red-200' };
+  }
+  if (conditions.includes('paper_near_end')) {
+    return { label: CONDITION_LABELS.paper_near_end, className: 'bg-amber-100 text-amber-700 border border-amber-200' };
+  }
+  if (st.job_status === 'sent') {
+    return { label: 'Hazir', className: 'bg-green-100 text-green-700 border border-green-200' };
+  }
+  if (st.job_status === 'pending') {
+    return { label: 'Kuyrukta', className: 'bg-blue-100 text-blue-700 border border-blue-200' };
+  }
+  if (st.job_status === 'cancelled') {
+    return { label: 'Iptal', className: 'bg-gray-100 text-gray-500 border border-gray-200' };
+  }
+  return { label: st.job_status, className: 'bg-gray-100 text-gray-600 border border-gray-200' };
+};
+
 const POSPrinterSettings = () => {
   const [printers, setPrinters] = useState([]);
   const [outlets, setOutlets] = useState([]);
+  const [statuses, setStatuses] = useState({});
   const [form, setForm] = useState(EMPTY);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testingId, setTestingId] = useState(null);
+
+  const loadStatuses = useCallback(async () => {
+    try {
+      const res = await axios.get('/pos/ext/print/printers/status');
+      setStatuses(res.data?.statuses || {});
+    } catch (err) {
+      console.error('Yazici durumlari yuklenemedi:', err);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const res = await axios.get('/pos/ext/print/printers');
       setPrinters(res.data.printers || []);
+      await loadStatuses();
     } catch (err) {
       console.error('Yazicilar yuklenemedi:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadStatuses]);
 
   const loadOutlets = useCallback(async () => {
     try {
@@ -133,6 +181,7 @@ const POSPrinterSettings = () => {
       alertDialog({ message: err.response?.data?.detail || 'Test gonderilemedi' });
     } finally {
       setTestingId(null);
+      loadStatuses();
     }
   };
 
@@ -262,8 +311,17 @@ const POSPrinterSettings = () => {
                   className="flex items-center justify-between gap-2 p-3 border rounded"
                   data-testid={`printer-row-${p.printer_id}`}>
                   <div className="min-w-0">
-                    <div className="font-medium flex items-center gap-2">
+                    <div className="font-medium flex flex-wrap items-center gap-2">
                       {p.name}
+                      {(() => {
+                        const sb = statusBadge(statuses[p.printer_id]);
+                        return (
+                          <Badge className={`text-xs ${sb.className}`}
+                            data-testid={`printer-status-${p.printer_id}`}>
+                            {sb.label}
+                          </Badge>
+                        );
+                      })()}
                       <Badge variant="outline" className="text-xs">{p.driver}</Badge>
                       {p.station && (
                         <Badge variant="secondary" className="text-xs">{p.station}</Badge>

@@ -547,6 +547,55 @@ async def list_printers(current_user: User = Depends(get_current_user)):
     return {"printers": rows, "count": len(rows)}
 
 
+@router.get("/printers/status")
+async def printers_status(current_user: User = Depends(get_current_user)):
+    """Return the latest print-job outcome per printer_id so the settings list
+    can show each printer's live hardware status (offline / paper-end / near-end)
+    at a glance, without the operator having to press "Test" on each one.
+
+    The status is read from the most recent print_jobs row for each printer_id,
+    using the dispatch_result.printer_status the dispatcher already records.
+    """
+    pipeline = [
+        {"$match": {"tenant_id": current_user.tenant_id}},
+        {"$sort": {"created_at": -1}},
+        {
+            "$group": {
+                "_id": "$printer_id",
+                "status": {"$first": "$status"},
+                "dispatch_result": {"$first": "$dispatch_result"},
+                "dispatched_at": {"$first": "$dispatched_at"},
+                "created_at": {"$first": "$created_at"},
+                "kind": {"$first": "$kind"},
+                "routing_warning": {"$first": "$routing_warning"},
+            }
+        },
+    ]
+    statuses: dict[str, dict] = {}
+    try:
+        rows = await db.print_jobs.aggregate(pipeline).to_list(500)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("printers_status aggregation failed: %s", exc)
+        rows = []
+    for r in rows:
+        pid = r.get("_id")
+        if not pid:
+            continue
+        printer_status = (r.get("dispatch_result") or {}).get("printer_status") or {}
+        conditions = printer_status.get("conditions") or []
+        reason = (r.get("dispatch_result") or {}).get("reason")
+        statuses[pid] = {
+            "job_status": r.get("status"),
+            "conditions": conditions,
+            "blocking": bool(printer_status.get("blocking")),
+            "reason": reason,
+            "kind": r.get("kind"),
+            "routing_warning": r.get("routing_warning"),
+            "last_at": r.get("dispatched_at") or r.get("created_at"),
+        }
+    return {"statuses": statuses, "count": len(statuses)}
+
+
 @router.post("/printers")
 async def upsert_printer(body: PrinterUpsert, current_user: User = Depends(get_current_user)):
     if body.driver == "escpos_tcp" and not (body.host and body.host.strip()):
