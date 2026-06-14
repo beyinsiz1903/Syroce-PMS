@@ -7,6 +7,7 @@ import POSTableManagement from '../components/POSTableManagement';
 import POSMenuItems from '../components/POSMenuItems';
 import POSOutletManagement from '../components/POSOutletManagement';
 import POSReports from '../components/POSReports';
+import POSPrinterSettings from '../components/POSPrinterSettings';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -18,7 +19,7 @@ import {
 } from '../components/ui/tabs';
 import {
   UtensilsCrossed, Menu, ArrowLeft, BarChart3, Sparkles,
-  Store, LayoutGrid, AlertCircle, Coffee,
+  Store, LayoutGrid, AlertCircle, Coffee, Tablet, Printer,
 } from 'lucide-react';
 
 const POSDashboard = ({ user, tenant, onLogout }) => {
@@ -106,6 +107,11 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
             <p className="text-gray-600 mt-1">{t('posDashboard.subtitle')}</p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
+            <Button onClick={() => navigate('/pos/terminal')}
+              data-testid="nav-waiter-terminal">
+              <Tablet className="w-4 h-4 mr-2" />
+              Garson Terminali
+            </Button>
             <Button variant="outline" onClick={() => navigate('/staff/room-service')}
               data-testid="nav-staff-room-service">
               <Coffee className="w-4 h-4 mr-2" />
@@ -196,7 +202,7 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
 
         {/* Tabs */}
         <Tabs defaultValue="outlets" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 max-w-2xl">
+          <TabsList className="grid w-full grid-cols-3 md:grid-cols-5 max-w-3xl">
             <TabsTrigger value="outlets" data-testid="tab-outlets">
               <Store className="w-4 h-4 mr-2" />
               {t('posDashboard.outlets')}
@@ -212,6 +218,10 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
             <TabsTrigger value="reports" data-testid="tab-reports">
               <BarChart3 className="w-4 h-4 mr-2" />
               {t('posDashboard.reports')}
+            </TabsTrigger>
+            <TabsTrigger value="printers" data-testid="tab-printers">
+              <Printer className="w-4 h-4 mr-2" />
+              Yazicilar
             </TabsTrigger>
           </TabsList>
 
@@ -243,6 +253,10 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
 
           <TabsContent value="reports" className="mt-6">
             <POSReports outletId={currentOutletId} />
+          </TabsContent>
+
+          <TabsContent value="printers" className="mt-6">
+            <POSPrinterSettings />
           </TabsContent>
         </Tabs>
       </div>

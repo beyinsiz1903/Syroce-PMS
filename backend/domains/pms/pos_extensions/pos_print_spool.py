@@ -12,6 +12,8 @@ ile pluggable.
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import uuid
 from datetime import UTC, datetime
@@ -24,6 +26,8 @@ from core.security import get_current_user
 from models.schemas import User
 
 from ._idem import idempotent_insert
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/pos/ext/print", tags=["pos-ext-print"])
 
@@ -80,6 +84,10 @@ def _render_kitchen(payload: dict) -> bytes:
     out += _INIT + _ALIGN_CENTER + _BOLD_ON
     station = str(payload.get("station") or "KITCHEN")[:32]
     out += station.encode("utf-8", "ignore") + _NL + _BOLD_OFF
+    if payload.get("adisyon_number"):
+        out += _BOLD_ON + f"Adisyon No: {payload['adisyon_number']}".encode("utf-8", "ignore") + _BOLD_OFF + _NL
+    if payload.get("business_date"):
+        out += f"Is Gunu: {payload['business_date']}".encode("utf-8", "ignore") + _NL
     if payload.get("table"):
         out += f"Masa: {payload['table']}".encode("utf-8", "ignore") + _NL
     out += b"-" * 32 + _NL + _ALIGN_LEFT
@@ -100,37 +108,141 @@ def _render(kind: str, payload: dict) -> bytes:
     return _render_receipt(payload)
 
 
+async def _send_tcp(host: str, port: int, data: bytes, timeout: float = 5.0) -> None:
+    """Open a short-lived TCP socket to an ESC/POS network printer and stream the
+    rendered bytes. Time-bounded so an unreachable printer can't hang the caller.
+    """
+    reader, writer = await asyncio.wait_for(
+        asyncio.open_connection(host, port), timeout=timeout
+    )
+    try:
+        writer.write(data)
+        await asyncio.wait_for(writer.drain(), timeout=timeout)
+    finally:
+        writer.close()
+        try:
+            await asyncio.wait_for(writer.wait_closed(), timeout=timeout)
+        except Exception:
+            pass
+
+
 async def _dispatch(job: dict) -> dict:
-    """Send rendered bytes to the configured driver."""
-    driver = (os.environ.get("POS_PRINT_DRIVER") or "simulator").lower()
+    """Send rendered bytes to the printer the job targets.
+
+    Driver resolution: the registered printer's own `driver` wins; otherwise the
+    `POS_PRINT_DRIVER` env default (simulator). The escpos_tcp driver streams to
+    the operator-configured printer host:port from the `pos_printers` registry.
+    """
     bytes_blob = job["rendered_bytes"]
+    tenant_id = job.get("tenant_id")
+    printer_id = job.get("printer_id") or "default"
+
+    printer = None
+    if tenant_id:
+        try:
+            printer = await db.pos_printers.find_one(
+                {"tenant_id": tenant_id, "printer_id": printer_id}, {"_id": 0}
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("printer registry lookup failed: %s", exc)
+
+    if printer and not printer.get("enabled", True):
+        return {"driver": "disabled", "ok": False, "reason": "printer disabled"}
+
+    driver = (
+        (printer.get("driver") if printer else None)
+        or os.environ.get("POS_PRINT_DRIVER")
+        or "simulator"
+    ).lower()
+
     if driver == "simulator":
         return {"driver": "simulator", "ok": True, "bytes_len": len(bytes_blob)}
     if driver == "escpos_tcp":
-        # Real network dispatch deliberately not enabled here without a printer
-        # registry. Mark as 'failed' so ops sees the gap and provisions a printer.
-        return {"driver": "escpos_tcp", "ok": False, "reason": "no printer registry configured"}
+        if not printer or not printer.get("host"):
+            return {
+                "driver": "escpos_tcp",
+                "ok": False,
+                "reason": "printer not registered or host missing",
+            }
+        try:
+            await _send_tcp(
+                str(printer["host"]), int(printer.get("port") or 9100), bytes_blob
+            )
+            return {
+                "driver": "escpos_tcp",
+                "ok": True,
+                "bytes_len": len(bytes_blob),
+                "host": printer["host"],
+            }
+        except Exception as exc:
+            return {"driver": "escpos_tcp", "ok": False, "reason": f"tcp send failed: {exc}"}
     return {"driver": driver, "ok": False, "reason": "unknown driver"}
+
+
+async def enqueue_print_job(
+    *,
+    tenant_id: str,
+    kind: str,
+    payload: dict,
+    idempotency_key: str | None = None,
+    printer_id: str = "default",
+    copies: int = 1,
+    created_by: str | None = None,
+    auto_dispatch: bool = False,
+) -> tuple[dict, bool]:
+    """Reusable spooler entry point (callable from other modules, e.g. the POS
+    create-order auto-KOT path). Renders, idempotently inserts, and — when
+    auto_dispatch — immediately attempts delivery, recording the result so a
+    failed/missing printer stays visible in print_jobs status.
+
+    Returns (saved_job, was_idempotent_replay).
+    """
+    rendered = _render(kind, payload)
+    job = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant_id,
+        "kind": kind,
+        "printer_id": printer_id,
+        "copies": int(copies),
+        "payload": payload,
+        "rendered_bytes": rendered,
+        "status": "pending",
+        "idempotency_key": idempotency_key,
+        "created_at": _now(),
+        "created_by": created_by,
+    }
+    saved, replayed = await idempotent_insert(db.print_jobs, tenant_id, idempotency_key, job)
+    if auto_dispatch and not replayed:
+        disp_job = saved if saved.get("rendered_bytes") else {**saved, "rendered_bytes": rendered}
+        result = await _dispatch(disp_job)
+        new_status = "sent" if result.get("ok") else "failed"
+        try:
+            await db.print_jobs.update_one(
+                {"id": saved["id"], "tenant_id": tenant_id},
+                {"$set": {
+                    "status": new_status,
+                    "dispatched_at": _now(),
+                    "dispatch_result": result,
+                }},
+            )
+            saved["status"] = new_status
+            saved["dispatch_result"] = result
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("print job status update failed: %s", exc)
+    return saved, replayed
 
 
 @router.post("/jobs")
 async def enqueue(body: PrintJobCreate, current_user: User = Depends(get_current_user)):
     rendered = _render(body.kind, body.payload)
-    job = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": current_user.tenant_id,
-        "kind": body.kind,
-        "printer_id": body.printer_id,
-        "copies": int(body.copies),
-        "payload": body.payload,
-        "rendered_bytes": rendered,
-        "status": "pending",
-        "idempotency_key": body.idempotency_key,
-        "created_at": _now(),
-        "created_by": current_user.id,
-    }
-    saved, replayed = await idempotent_insert(
-        db.print_jobs, current_user.tenant_id, body.idempotency_key, job
+    saved, replayed = await enqueue_print_job(
+        tenant_id=current_user.tenant_id,
+        kind=body.kind,
+        payload=body.payload,
+        idempotency_key=body.idempotency_key,
+        printer_id=body.printer_id,
+        copies=body.copies,
+        created_by=current_user.id,
     )
     public = {**saved}
     public.pop("_id", None)
@@ -187,3 +299,78 @@ async def cancel_job(job_id: str, current_user: User = Depends(get_current_user)
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Pending job not found")
     return {"success": True, "cancelled": job_id}
+
+
+# ── Printer registry ──────────────────────────────────────────────────────
+# Operators register their network (ESC/POS over TCP) or simulator printers and
+# map each kitchen station / outlet to one. The KOT auto-print path targets a
+# printer_id == station, so a "hot_kitchen" printer here receives the hot KOT.
+
+class PrinterUpsert(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    printer_id: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=120)
+    driver: str = Field(default="simulator", pattern="^(simulator|escpos_tcp)$")
+    host: str | None = None
+    port: int = Field(default=9100, ge=1, le=65535)
+    station: str | None = None
+    outlet_id: str | None = None
+    enabled: bool = True
+
+
+@router.get("/printers")
+async def list_printers(current_user: User = Depends(get_current_user)):
+    rows = await db.pos_printers.find(
+        {"tenant_id": current_user.tenant_id}, {"_id": 0}
+    ).sort("printer_id", 1).to_list(200)
+    return {"printers": rows, "count": len(rows)}
+
+
+@router.post("/printers")
+async def upsert_printer(body: PrinterUpsert, current_user: User = Depends(get_current_user)):
+    if body.driver == "escpos_tcp" and not (body.host and body.host.strip()):
+        raise HTTPException(
+            status_code=400, detail="escpos_tcp yazıcı için host (IP) zorunludur"
+        )
+    doc = body.model_dump()
+    doc["tenant_id"] = current_user.tenant_id
+    doc["updated_at"] = _now()
+    doc["updated_by"] = current_user.id
+    await db.pos_printers.update_one(
+        {"tenant_id": current_user.tenant_id, "printer_id": body.printer_id},
+        {"$set": doc, "$setOnInsert": {"created_at": _now()}},
+        upsert=True,
+    )
+    saved = await db.pos_printers.find_one(
+        {"tenant_id": current_user.tenant_id, "printer_id": body.printer_id}, {"_id": 0}
+    )
+    return {"success": True, "printer": saved}
+
+
+@router.delete("/printers/{printer_id}")
+async def delete_printer(printer_id: str, current_user: User = Depends(get_current_user)):
+    res = await db.pos_printers.delete_one(
+        {"tenant_id": current_user.tenant_id, "printer_id": printer_id}
+    )
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Printer not found")
+    return {"success": True, "deleted": printer_id}
+
+
+@router.post("/printers/{printer_id}/test")
+async def test_printer(printer_id: str, current_user: User = Depends(get_current_user)):
+    """Render + dispatch a test ticket to the given printer so operators can
+    verify connectivity before going live."""
+    saved, _ = await enqueue_print_job(
+        tenant_id=current_user.tenant_id,
+        kind="test",
+        payload={},
+        printer_id=printer_id,
+        created_by=current_user.id,
+        auto_dispatch=True,
+    )
+    return {
+        "success": True,
+        "status": saved.get("status"),
+        "result": saved.get("dispatch_result"),
+    }

@@ -15,6 +15,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, Field
+from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from core.booking_atomicity import (
@@ -69,6 +70,187 @@ async def _broadcast_kitchen_queue(tenant_id: str) -> None:
         await broadcast_kitchen_orders(tenant_id, orders)
     except Exception as exc:
         logging.warning(f"Kitchen broadcast failed: {exc}")
+
+
+# ── Adisyon (check) numbering + business date ──────────────────────────────
+# Restaurant adisyon numbers must be sequential per outlet and reset every
+# business day, mirroring how Turkish F&B outlets number their physical checks.
+# A naive read-max+1 races under concurrent waiters; we use an atomic
+# find_one_and_update counter keyed by (tenant_id, outlet_id, business_date).
+
+_CATEGORY_STATION = {
+    "food": "hot_kitchen",
+    "appetizer": "cold_kitchen",
+    "salad": "cold_kitchen",
+    "dessert": "pastry",
+    "bakery": "pastry",
+    "beverage": "bar",
+    "alcohol": "bar",
+    "wine": "bar",
+    "cocktail": "bar",
+}
+
+_ADISYON_COUNTER_INDEX_READY = False
+
+
+async def _ensure_adisyon_counter_index() -> None:
+    """Best-effort unique index so concurrent upserts can't fork the counter."""
+    global _ADISYON_COUNTER_INDEX_READY
+    if _ADISYON_COUNTER_INDEX_READY:
+        return
+    try:
+        await db.pos_adisyon_counters.create_index(
+            [("tenant_id", 1), ("outlet_id", 1), ("business_date", 1)],
+            unique=True,
+            name="uq_adisyon_counter",
+        )
+        _ADISYON_COUNTER_INDEX_READY = True
+    except Exception as exc:  # pragma: no cover - index race/permission
+        logging.warning(f"adisyon counter index ensure failed: {exc}")
+
+
+def _station_for_category(category: Any) -> str:
+    raw = getattr(category, "value", category)
+    return _CATEGORY_STATION.get(str(raw).lower(), "hot_kitchen")
+
+
+async def _get_pos_business_date(tenant_id: str) -> str:
+    """Current business date (hotel-day) for the tenant.
+
+    Reuses the night-audit business_date stored on tenant_settings so the
+    adisyon reset boundary matches the hotel's operational day rollover rather
+    than naive UTC midnight. Falls back to UTC date when unset.
+    """
+    try:
+        settings = await db.tenant_settings.find_one(
+            {"tenant_id": tenant_id}, {"_id": 0, "business_date": 1}
+        )
+        if settings and settings.get("business_date"):
+            return str(settings["business_date"])
+    except Exception as exc:  # pragma: no cover - defensive
+        logging.warning(f"business_date lookup failed: {exc}")
+    return datetime.now(UTC).date().isoformat()
+
+
+async def _next_adisyon_number(
+    tenant_id: str, outlet_id: str | None, business_date: str
+) -> int:
+    """Atomic, daily-resetting, per-outlet sequential adisyon number."""
+    await _ensure_adisyon_counter_index()
+    key = {
+        "tenant_id": tenant_id,
+        "outlet_id": outlet_id or "default",
+        "business_date": business_date,
+    }
+    for _ in range(3):
+        try:
+            doc = await db.pos_adisyon_counters.find_one_and_update(
+                key,
+                {
+                    "$inc": {"seq": 1},
+                    "$setOnInsert": {"created_at": datetime.now(UTC)},
+                },
+                upsert=True,
+                return_document=ReturnDocument.AFTER,
+            )
+            return int(doc["seq"])
+        except DuplicateKeyError:
+            # Concurrent first-insert raced us; the row now exists, retry $inc.
+            continue
+    # Last resort: plain increment without upsert (row guaranteed to exist).
+    doc = await db.pos_adisyon_counters.find_one_and_update(
+        key, {"$inc": {"seq": 1}}, return_document=ReturnDocument.AFTER
+    )
+    return int(doc["seq"]) if doc else 1
+
+
+async def _auto_kds_and_kot(order: "POSOrder", tenant_id: str, ordered_by: str) -> None:
+    """On a freshly-created POS order, auto-create the KDS ticket and enqueue the
+    kitchen KOT print job(s). Best-effort: a failure here must never roll back the
+    already-durable order — but the gap stays visible (KDS broadcast / print_jobs
+    status). Idempotent via the order id so a replay never double-fires.
+    """
+    items = [
+        {
+            "name": it.item_name,
+            "quantity": it.quantity,
+            "station": _station_for_category(it.category),
+            "special_instructions": None,
+        }
+        for it in order.order_items
+    ]
+    if not items:
+        return
+
+    table_label = order.table_number or (
+        f"Oda {order.booking_id}" if order.booking_id else None
+    )
+
+    # 1. KDS ticket (idempotent on the order id).
+    try:
+        idemp = f"pos-{order.id}"
+        existing = await db.kitchen_orders.find_one(
+            {"tenant_id": tenant_id, "idempotency_key": idemp}, {"_id": 0}
+        )
+        if not existing:
+            kds_doc = {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "order_number": await _next_kitchen_order_number(tenant_id),
+                "adisyon_number": order.adisyon_number,
+                "business_date": order.business_date,
+                "outlet_id": order.outlet_id,
+                "table_number": table_label,
+                "room_number": None,
+                "priority": "normal",
+                "status": "pending",
+                "station": items[0]["station"] if len(items) == 1 else "mixed",
+                "items": items,
+                "notes": order.notes,
+                "source_pos_order_id": order.id,
+                "idempotency_key": idemp,
+                "ordered_by": ordered_by,
+                "ordered_at": datetime.now(UTC).isoformat(),
+            }
+            try:
+                await db.kitchen_orders.insert_one(kds_doc)
+            except DuplicateKeyError:
+                pass  # concurrent create raced us; ticket already exists
+            await _broadcast_kitchen_queue(tenant_id)
+    except Exception as exc:  # pragma: no cover - best effort
+        logging.warning(f"auto KDS create failed for order {order.id}: {exc}")
+
+    # 2. KOT print job(s) — one ticket per kitchen station, best-effort. Failures
+    # surface in print_jobs status (operators see a printer that needs setup).
+    try:
+        from ..pos_extensions.pos_print_spool import enqueue_print_job
+
+        by_station: dict[str, list[dict]] = {}
+        for it in items:
+            by_station.setdefault(it["station"], []).append(it)
+        for station, station_items in by_station.items():
+            try:
+                await enqueue_print_job(
+                    tenant_id=tenant_id,
+                    kind="kitchen",
+                    payload={
+                        "station": station,
+                        "table": table_label,
+                        "adisyon_number": order.adisyon_number,
+                        "business_date": order.business_date,
+                        "items": station_items,
+                    },
+                    idempotency_key=f"kot-{order.id}-{station}",
+                    printer_id=station,
+                    created_by=ordered_by,
+                    auto_dispatch=True,
+                )
+            except Exception as exc:  # pragma: no cover - best effort
+                logging.warning(
+                    f"auto KOT print failed for order {order.id}/{station}: {exc}"
+                )
+    except Exception as exc:  # pragma: no cover - import/best effort
+        logging.warning(f"auto KOT print unavailable for order {order.id}: {exc}")
 
 
 def calculate_table_duration(opened_at: Any) -> int:
@@ -302,6 +484,15 @@ class POSOrderCreateRequest(BaseModel):
     booking_id: str | None = None
     folio_id: str | None = None
     order_items: list[POSOrderItemRequest]
+    # Waiter-terminal context — outlet drives per-outlet adisyon numbering and
+    # the table/notes/payment metadata are carried onto the order + KOT ticket.
+    outlet_id: str | None = None
+    table_number: str | None = None
+    notes: str | None = None
+    payment_method: str | None = None  # room_charge, cash, card
+    # Guest signature (base64 data URL) captured on the touch terminal when a
+    # check is charged to the room — proof of authorization.
+    guest_signature: str | None = None
     # Idempotency: client supplies a fresh key per genuine order attempt; the
     # same key on a retry / double-tap / network replay returns the original
     # order (and its single charge set) instead of double-posting.
@@ -315,6 +506,13 @@ class POSOrder(BaseModel):
     booking_id: str | None = None
     guest_id: str | None = None
     folio_id: str | None = None
+    outlet_id: str | None = None
+    table_number: str | None = None
+    adisyon_number: int | None = None
+    business_date: str | None = None
+    payment_method: str | None = None
+    guest_signature: str | None = None
+    notes: str | None = None
     order_items: list[POSOrderItem]
     subtotal: float
     tax_amount: float
@@ -1263,6 +1461,23 @@ async def create_pos_order(
     if idempotency_key and len(idempotency_key) > 128:
         raise HTTPException(status_code=400, detail="idempotency_key too long (max 128)")
 
+    # Idempotency pre-check — a genuine retry/double-tap must NOT consume a fresh
+    # adisyon number, re-create the KDS ticket, or re-print the KOT. The atomic
+    # persist below still defends the rare concurrent-first-submit race.
+    if idempotency_key:
+        prior = await db.pos_orders.find_one(
+            {"tenant_id": tenant_id, "idempotency_key": idempotency_key}, {"_id": 0}
+        )
+        if prior:
+            return {
+                'success': True,
+                'message': 'POS order created',
+                'idempotent_replay': True,
+                'charge_status': 'queued' if prior.get('folio_id') else 'none',
+                'order_id': prior.get('id'),
+                'order': prior,
+            }
+
     folio_id = data.folio_id
 
     # Resolve booking + guest. When posting to a folio we need its booking_id
@@ -1274,6 +1489,30 @@ async def create_pos_order(
         booking = await db.bookings.find_one({'id': data.booking_id, 'tenant_id': tenant_id})
         if booking:
             guest_id = booking['guest_id']
+
+    # Waiter-terminal room charge: the touch terminal only knows the in-house
+    # booking_id (folio ids are behind a finance-gated endpoint). When the check
+    # is charged to the room we resolve the booking's OPEN folio here so the
+    # charges actually post — instead of silently creating an unposted order.
+    if (
+        not folio_id
+        and booking_id
+        and (data.payment_method or "").lower() == "room_charge"
+    ):
+        open_folio = await db.folios.find_one(
+            {
+                "booking_id": booking_id,
+                "tenant_id": tenant_id,
+                "status": FolioStatus.OPEN.value,
+            },
+            {"_id": 0, "id": 1},
+        )
+        if not open_folio:
+            raise HTTPException(
+                status_code=404,
+                detail="Bu rezervasyon için açık folyo bulunamadı (odaya yazılamaz)",
+            )
+        folio_id = open_folio["id"]
 
     folio_booking_id = booking_id
     if folio_id:
@@ -1326,12 +1565,23 @@ async def create_pos_order(
     tax_amount = subtotal * 0.18
     total_amount = subtotal + tax_amount
 
+    # Adisyon (check) numbering — sequential per outlet, resets each business day.
+    business_date = await _get_pos_business_date(tenant_id)
+    adisyon_number = await _next_adisyon_number(tenant_id, data.outlet_id, business_date)
+
     # Create order
     order = POSOrder(
         tenant_id=tenant_id,
         booking_id=booking_id,
         guest_id=guest_id,
         folio_id=folio_id,
+        outlet_id=data.outlet_id,
+        table_number=data.table_number,
+        adisyon_number=adisyon_number,
+        business_date=business_date,
+        payment_method=data.payment_method,
+        guest_signature=data.guest_signature,
+        notes=data.notes,
         order_items=order_items_list,
         subtotal=subtotal,
         tax_amount=tax_amount,
@@ -1399,6 +1649,11 @@ async def create_pos_order(
         idempotency_key=idempotency_key,
         outbox_payload=outbox_payload,
     )
+
+    # Auto-create the kitchen display ticket + enqueue the KOT print job(s) only
+    # for a genuinely new order (never on an idempotent replay).
+    if not replay:
+        await _auto_kds_and_kot(order, tenant_id, current_user.name)
 
     return {
         'success': True,

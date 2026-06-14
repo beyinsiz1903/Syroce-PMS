@@ -1,0 +1,245 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/button';
+import { Badge } from './ui/badge';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from './ui/select';
+import { Printer, Plus, Trash2, RefreshCw, Send } from 'lucide-react';
+import { alertDialog, confirmDialog } from '@/lib/dialogs';
+
+// Operators register network (ESC/POS over TCP) or simulator printers and map
+// each kitchen station / outlet to one. KOT auto-print targets printer_id ==
+// station, so a "hot_kitchen" printer here receives the hot kitchen ticket.
+
+const EMPTY = {
+  printer_id: '',
+  name: '',
+  driver: 'simulator',
+  host: '',
+  port: 9100,
+  station: '',
+  outlet_id: '',
+  enabled: true,
+};
+
+const STATIONS = ['', 'hot_kitchen', 'cold_kitchen', 'bar', 'dessert'];
+
+const POSPrinterSettings = () => {
+  const [printers, setPrinters] = useState([]);
+  const [form, setForm] = useState(EMPTY);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testingId, setTestingId] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await axios.get('/pos/ext/print/printers');
+      setPrinters(res.data.printers || []);
+    } catch (err) {
+      console.error('Yazicilar yuklenemedi:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const setField = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+
+  const save = async () => {
+    if (!form.printer_id.trim() || !form.name.trim()) {
+      alertDialog({ message: 'Yazici kimligi ve adi zorunludur' });
+      return;
+    }
+    if (form.driver === 'escpos_tcp' && !form.host.trim()) {
+      alertDialog({ message: 'Ag yazicisi (escpos_tcp) icin host (IP) zorunludur' });
+      return;
+    }
+    setSaving(true);
+    try {
+      await axios.post('/pos/ext/print/printers', {
+        ...form,
+        port: Number(form.port) || 9100,
+        station: form.station || null,
+        outlet_id: form.outlet_id || null,
+        host: form.host || null,
+      });
+      setForm(EMPTY);
+      await load();
+    } catch (err) {
+      alertDialog({ message: err.response?.data?.detail || 'Yazici kaydedilemedi' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (printerId) => {
+    const ok = await confirmDialog({ message: `"${printerId}" yazicisini silmek istiyor musunuz?` });
+    if (!ok) return;
+    try {
+      await axios.delete(`/pos/ext/print/printers/${printerId}`);
+      await load();
+    } catch (err) {
+      alertDialog({ message: err.response?.data?.detail || 'Yazici silinemedi' });
+    }
+  };
+
+  const test = async (printerId) => {
+    setTestingId(printerId);
+    try {
+      const res = await axios.post(`/pos/ext/print/printers/${printerId}/test`);
+      const status = res.data.status || 'unknown';
+      alertDialog({
+        message: status === 'sent'
+          ? 'Test fisi gonderildi.'
+          : `Test sonucu: ${status}. ${res.data.result?.error || ''}`,
+      });
+    } catch (err) {
+      alertDialog({ message: err.response?.data?.detail || 'Test gonderilemedi' });
+    } finally {
+      setTestingId(null);
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* Add / edit form */}
+      <Card className="lg:col-span-1">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Plus className="w-4 h-4" /> Yazici Ekle
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div>
+            <Label>Yazici Kimligi</Label>
+            <Input value={form.printer_id}
+              onChange={(e) => setField('printer_id', e.target.value)}
+              placeholder="orn. hot_kitchen"
+              data-testid="printer-id" />
+          </div>
+          <div>
+            <Label>Ad</Label>
+            <Input value={form.name}
+              onChange={(e) => setField('name', e.target.value)}
+              placeholder="orn. Sicak Mutfak Yazicisi"
+              data-testid="printer-name" />
+          </div>
+          <div>
+            <Label>Surucu</Label>
+            <Select value={form.driver} onValueChange={(v) => setField('driver', v)}>
+              <SelectTrigger data-testid="printer-driver"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="simulator">Simulator (test)</SelectItem>
+                <SelectItem value="escpos_tcp">Ag yazicisi (ESC/POS TCP)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {form.driver === 'escpos_tcp' && (
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-2">
+                <Label>Host (IP)</Label>
+                <Input value={form.host}
+                  onChange={(e) => setField('host', e.target.value)}
+                  placeholder="192.168.1.50"
+                  data-testid="printer-host" />
+              </div>
+              <div>
+                <Label>Port</Label>
+                <Input type="number" value={form.port}
+                  onChange={(e) => setField('port', e.target.value)}
+                  data-testid="printer-port" />
+              </div>
+            </div>
+          )}
+          <div>
+            <Label>Istasyon (KOT yonlendirme)</Label>
+            <Select value={form.station || '_none'}
+              onValueChange={(v) => setField('station', v === '_none' ? '' : v)}>
+              <SelectTrigger data-testid="printer-station"><SelectValue placeholder="Secin" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none">Yok</SelectItem>
+                {STATIONS.filter(Boolean).map(s => (
+                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button className="w-full" onClick={save} disabled={saving} data-testid="printer-save">
+            <Plus className="w-4 h-4 mr-2" />
+            {saving ? 'Kaydediliyor...' : 'Kaydet'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* List */}
+      <Card className="lg:col-span-2">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Printer className="w-4 h-4" /> Kayitli Yazicilar
+            </CardTitle>
+            <Button variant="outline" size="sm" onClick={load} data-testid="printer-refresh">
+              <RefreshCw className="w-4 h-4 mr-2" /> Yenile
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="text-center py-8 text-gray-500">Yukleniyor...</div>
+          ) : printers.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              Henuz yazici kaydi yok. Soldan ekleyin.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {printers.map(p => (
+                <div key={p.printer_id}
+                  className="flex items-center justify-between gap-2 p-3 border rounded"
+                  data-testid={`printer-row-${p.printer_id}`}>
+                  <div className="min-w-0">
+                    <div className="font-medium flex items-center gap-2">
+                      {p.name}
+                      <Badge variant="outline" className="text-xs">{p.driver}</Badge>
+                      {p.station && (
+                        <Badge variant="secondary" className="text-xs">{p.station}</Badge>
+                      )}
+                      {p.enabled === false && (
+                        <Badge className="bg-gray-300 text-gray-700 text-xs">pasif</Badge>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      {p.printer_id}
+                      {p.driver === 'escpos_tcp' && p.host ? ` • ${p.host}:${p.port}` : ''}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <Button variant="outline" size="sm"
+                      onClick={() => test(p.printer_id)}
+                      disabled={testingId === p.printer_id}
+                      data-testid={`printer-test-${p.printer_id}`}>
+                      <Send className="w-3.5 h-3.5 mr-1" />
+                      {testingId === p.printer_id ? '...' : 'Test'}
+                    </Button>
+                    <Button variant="ghost" size="sm"
+                      onClick={() => remove(p.printer_id)}
+                      data-testid={`printer-delete-${p.printer_id}`}>
+                      <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
+export default POSPrinterSettings;
