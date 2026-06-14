@@ -396,7 +396,7 @@ except ImportError:
 # ~30s, so when DEFER_STARTUP_BOOTSTRAP=1 we defer the call into a
 # startup callback. The app.py warm-up middleware returns 503 for
 # non-health requests until app.state.routes_ready flips to True.
-from bootstrap.router_registry import register_routers  # noqa: E402
+from bootstrap.router_registry import register_routers, register_routers_async  # noqa: E402
 
 _DEFER_ROUTER_MOUNT = os.getenv("DEFER_STARTUP_BOOTSTRAP", "").lower() in ("1", "true", "yes")
 
@@ -412,7 +412,12 @@ if _DEFER_ROUTER_MOUNT:
         import time as _t
         _t0 = _t.time()
         logger.warning("DEFER_STARTUP_BOOTSTRAP=1 — deferred router registration starting (port already open)")
-        register_routers(app, api_router, require_super_admin_dep=require_super_admin)
+        # Async variant releases the event loop between routers so uvicorn can
+        # keep serving the cheap `/` health probe + SPA shell during the
+        # ~17-34s import window. The sync register_routers() would block the
+        # loop the whole time → healthcheck timeout → edge-proxy
+        # "Internal Server Error" on every cold boot.
+        await register_routers_async(app, api_router, require_super_admin_dep=require_super_admin)
         logger.warning("Deferred router registration complete in %.2fs", _t.time() - _t0)
 else:
     app.state.routes_ready = True

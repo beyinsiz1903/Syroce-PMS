@@ -6,6 +6,7 @@ with proper error isolation so one broken module cannot crash the app.
 import logging
 
 logger = logging.getLogger(__name__)
+import asyncio
 import importlib
 import traceback
 from typing import Callable
@@ -300,9 +301,14 @@ _OPTIONAL_ROUTERS: list[tuple[str, str, list[str], str | None, str | None]] = [
 ]
 
 
-def register_routers(app: FastAPI, api_router, require_super_admin_dep: Callable = None) -> None:
-    """Mount all extracted and optional routers onto the app."""
+def _iter_register(app: FastAPI, api_router, require_super_admin_dep: Callable = None):
+    """Generator core for router mounting.
 
+    Performs exactly the same work as the old register_routers() body, but
+    ``yield``s after each router so an async caller can release the event loop
+    between the (synchronous, import-heavy) steps. Synchronous callers exhaust
+    it in a tight loop, so their behavior is unchanged.
+    """
     # Mount extracted routers onto the api_router (these all use /api prefix already)
     for mod_path, attr, tags, prefix_override, deps in _EXTRACTED_ROUTERS:
         router = _safe_import(mod_path, attr)
@@ -315,6 +321,7 @@ def register_routers(app: FastAPI, api_router, require_super_admin_dep: Callable
                 logger.info(f"  ✅ {mod_path}")
             except Exception as e:
                 logger.info(f"  ❌ {mod_path}: {e}")
+        yield
 
     # Mount optional routers directly on app
     for mod_path, attr, tags, prefix, guard in _OPTIONAL_ROUTERS:
@@ -330,3 +337,40 @@ def register_routers(app: FastAPI, api_router, require_super_admin_dep: Callable
                 logger.info(f"  ✅ {mod_path} (optional)")
             except Exception as e:
                 logger.info(f"  ❌ {mod_path}: {e}")
+        yield
+
+
+def register_routers(app: FastAPI, api_router, require_super_admin_dep: Callable = None) -> None:
+    """Mount all extracted and optional routers onto the app (synchronous)."""
+    for _ in _iter_register(app, api_router, require_super_admin_dep):
+        pass
+
+
+async def register_routers_async(
+    app: FastAPI,
+    api_router,
+    require_super_admin_dep: Callable = None,
+    *,
+    yield_every: int = 1,
+) -> None:
+    """Async variant that releases the event loop every ``yield_every`` routers.
+
+    register_routers() imports ~189 router modules synchronously (~17-34s). On
+    the single-worker combined deployment that one call blocks the event loop
+    for the whole window, so uvicorn cannot serve even the cheap ``/`` health
+    probe or the SPA shell while it runs — the platform health check times out
+    ("context deadline exceeded") and the edge proxy shows a plain
+    "Internal Server Error" on every cold boot.
+
+    Driving the same work as a generator and awaiting ``asyncio.sleep(0)``
+    between routers lets the loop service those pending requests between the
+    (still-synchronous) import steps, keeping ``/`` responsive throughout.
+    Route-table mutation stays on the loop thread (no executor) so there is no
+    concurrent-mutation race; ``/api``, ``/ws`` and ``/graphql`` remain shed by
+    the warm-up gate (503) until ``app.state.routes_ready`` flips to True.
+    """
+    count = 0
+    for _ in _iter_register(app, api_router, require_super_admin_dep):
+        count += 1
+        if yield_every <= 1 or count % yield_every == 0:
+            await asyncio.sleep(0)
