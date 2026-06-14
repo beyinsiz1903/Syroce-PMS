@@ -34,7 +34,8 @@ const UI = {
         low: "Düşük", normal: "Normal", high: "Yüksek", urgent: "Acil", submit: "Talebi Gönder",
         sent: "Talebiniz alındı!", sentDesc: "İlgili departmana iletildi, kısa sürede geri dönülecek.",
         newReq: "Yeni talep oluştur", name: "Adınız (opsiyonel)", phone: "Telefon (opsiyonel)",
-        sending: "Gönderiliyor...", language: "Dil", back: "Geri",
+        sending: "Gönderiliyor...", language: "Dil", back: "Geri", home: "Ana menü",
+        errorTitle: "Talep açılamadı",
         conversation: "Mesajlar", you: "Siz", team: "Otel Ekibi",
         replyPlaceholder: "Bir mesaj yazın...", send: "Gönder", noMessages: "Henüz mesaj yok." },
   en: { title: "Room Request", room: "Room", welcome: "Welcome", pick: "What is your request about?",
@@ -42,7 +43,8 @@ const UI = {
         low: "Low", normal: "Normal", high: "High", urgent: "Urgent", submit: "Submit Request",
         sent: "Request received!", sentDesc: "It has been forwarded to the right team. We'll get back to you shortly.",
         newReq: "Make another request", name: "Your name (optional)", phone: "Phone (optional)",
-        sending: "Sending...", language: "Language", back: "Back",
+        sending: "Sending...", language: "Language", back: "Back", home: "Main menu",
+        errorTitle: "Unable to open request",
         conversation: "Messages", you: "You", team: "Hotel Team",
         replyPlaceholder: "Write a message...", send: "Send", noMessages: "No messages yet." },
   de: { title: "Zimmeranfrage", room: "Zimmer", welcome: "Willkommen", pick: "Worum geht es?",
@@ -50,7 +52,8 @@ const UI = {
         low: "Niedrig", normal: "Normal", high: "Hoch", urgent: "Dringend", submit: "Anfrage senden",
         sent: "Anfrage erhalten!", sentDesc: "Wir haben sie an das Team weitergeleitet.",
         newReq: "Neue Anfrage", name: "Name (optional)", phone: "Telefon (optional)",
-        sending: "Senden...", language: "Sprache", back: "Zurück",
+        sending: "Senden...", language: "Sprache", back: "Zurück", home: "Hauptmenü",
+        errorTitle: "Anfrage konnte nicht geöffnet werden",
         conversation: "Nachrichten", you: "Sie", team: "Hotel-Team",
         replyPlaceholder: "Nachricht schreiben...", send: "Senden", noMessages: "Noch keine Nachrichten." },
   ru: { title: "Запрос из номера", room: "Номер", welcome: "Добро пожаловать", pick: "Что вас интересует?",
@@ -58,7 +61,8 @@ const UI = {
         low: "Низкий", normal: "Обычный", high: "Высокий", urgent: "Срочно", submit: "Отправить",
         sent: "Запрос принят!", sentDesc: "Мы передали его в нужный отдел.",
         newReq: "Новый запрос", name: "Имя (необяз.)", phone: "Телефон (необяз.)",
-        sending: "Отправка...", language: "Язык", back: "Назад",
+        sending: "Отправка...", language: "Язык", back: "Назад", home: "Главное меню",
+        errorTitle: "Не удалось открыть запрос",
         conversation: "Сообщения", you: "Вы", team: "Команда отеля",
         replyPlaceholder: "Напишите сообщение...", send: "Отправить", noMessages: "Сообщений пока нет." },
   ar: { title: "طلب من الغرفة", room: "غرفة", welcome: "أهلاً بك", pick: "ما هو طلبك؟",
@@ -66,7 +70,8 @@ const UI = {
         low: "منخفض", normal: "عادي", high: "مرتفع", urgent: "عاجل", submit: "إرسال الطلب",
         sent: "تم استلام طلبك!", sentDesc: "تم تحويله إلى القسم المختص.",
         newReq: "طلب جديد", name: "الاسم (اختياري)", phone: "الهاتف (اختياري)",
-        sending: "جارٍ الإرسال...", language: "اللغة", back: "رجوع",
+        sending: "جارٍ الإرسال...", language: "اللغة", back: "رجوع", home: "القائمة الرئيسية",
+        errorTitle: "تعذّر فتح الطلب",
         conversation: "الرسائل", you: "أنت", team: "فريق الفندق",
         replyPlaceholder: "اكتب رسالة...", send: "إرسال", noMessages: "لا توجد رسائل بعد." },
 };
@@ -277,6 +282,11 @@ export default function RoomRequestPage() {
     setDone(false); setCategory(null); setDescription(""); setPriority("normal");
   };
 
+  const goHome = () => {
+    setDone(false); setCategory(null); setDescription(""); setPriority("normal");
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-200 dark:bg-none dark:bg-background">
@@ -291,7 +301,7 @@ export default function RoomRequestPage() {
         <Card className="max-w-md w-full">
           <CardContent className="p-8 text-center">
             <div className="flex justify-center mb-4"><AlertTriangle className="w-14 h-14 text-red-600" /></div>
-            <h2 className="text-xl font-semibold mb-2">{t('cm.pages_guest_RoomRequestPage.talep_acilamadi')}</h2>
+            <h2 className="text-xl font-semibold mb-2">{t.errorTitle}</h2>
             <p className="text-gray-600 text-sm">{error}</p>
           </CardContent>
         </Card>
@@ -345,7 +355,10 @@ export default function RoomRequestPage() {
               </div>
               <h2 className="text-2xl font-bold mb-2">{t.sent}</h2>
               <p className="text-gray-600 mb-6">{t.sentDesc}</p>
-              <Button onClick={resetForNew} variant="outline" className="w-full">{t.newReq}</Button>
+              <div className="space-y-3">
+                <Button onClick={resetForNew} className="w-full text-white" style={{ background: accent }}>{t.newReq}</Button>
+                <Button onClick={goHome} variant="outline" className="w-full">{t.home}</Button>
+              </div>
             </CardContent>
           </Card>
         ) : !category ? (
