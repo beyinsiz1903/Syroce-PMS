@@ -124,6 +124,15 @@ const POSPrinterSettings = () => {
 
   useEffect(() => { load(); loadOutlets(); }, [load, loadOutlets]);
 
+  // Periodically refresh only the status badges in the background so operators
+  // see live printer conditions (paper end, offline) without pressing Yenile.
+  // loadStatuses updates only the `statuses` state (never toggles `loading`),
+  // so the list re-renders without a loading flicker.
+  useEffect(() => {
+    const id = setInterval(() => { loadStatuses(); }, 30000);
+    return () => clearInterval(id);
+  }, [loadStatuses]);
+
   const setField = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
   const save = async () => {
