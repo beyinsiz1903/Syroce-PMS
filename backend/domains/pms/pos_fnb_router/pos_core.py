@@ -223,13 +223,29 @@ async def _auto_kds_and_kot(order: "POSOrder", tenant_id: str, ordered_by: str) 
     # 2. KOT print job(s) — one ticket per kitchen station, best-effort. Failures
     # surface in print_jobs status (operators see a printer that needs setup).
     try:
-        from ..pos_extensions.pos_print_spool import enqueue_print_job
+        from ..pos_extensions.pos_print_spool import (
+            enqueue_print_job,
+            resolve_kot_printer,
+        )
 
         by_station: dict[str, list[dict]] = {}
         for it in items:
             by_station.setdefault(it["station"], []).append(it)
         for station, station_items in by_station.items():
             try:
+                # Resolve the physical printer for this (outlet, station) pair so
+                # the same station can target a different printer per outlet.
+                routing = await resolve_kot_printer(tenant_id, order.outlet_id, station)
+                routing_warning = None
+                if not routing.get("matched"):
+                    routing_warning = (
+                        f"({order.outlet_id or 'default'}/{station}) icin kayitli "
+                        f"yazici yok; '{routing['printer_id']}' istasyon adina "
+                        f"yonlendirildi"
+                    )
+                    logging.warning(
+                        "auto KOT for order %s: %s", order.id, routing_warning
+                    )
                 await enqueue_print_job(
                     tenant_id=tenant_id,
                     kind="kitchen",
@@ -241,9 +257,10 @@ async def _auto_kds_and_kot(order: "POSOrder", tenant_id: str, ordered_by: str) 
                         "items": station_items,
                     },
                     idempotency_key=f"kot-{order.id}-{station}",
-                    printer_id=station,
+                    printer_id=routing["printer_id"],
                     created_by=ordered_by,
                     auto_dispatch=True,
+                    routing_warning=routing_warning,
                 )
             except Exception as exc:  # pragma: no cover - best effort
                 logging.warning(

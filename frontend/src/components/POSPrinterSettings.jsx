@@ -12,8 +12,9 @@ import { Printer, Plus, Trash2, RefreshCw, Send } from 'lucide-react';
 import { alertDialog, confirmDialog } from '@/lib/dialogs';
 
 // Operators register network (ESC/POS over TCP) or simulator printers and map
-// each kitchen station / outlet to one. KOT auto-print targets printer_id ==
-// station, so a "hot_kitchen" printer here receives the hot kitchen ticket.
+// each kitchen station to one — optionally per outlet. KOT auto-print resolves
+// the (outlet_id, station) pair to the registered printer, so the same station
+// (e.g. "hot_kitchen") can target a different physical printer in each outlet.
 
 const EMPTY = {
   printer_id: '',
@@ -30,6 +31,7 @@ const STATIONS = ['', 'hot_kitchen', 'cold_kitchen', 'bar', 'dessert'];
 
 const POSPrinterSettings = () => {
   const [printers, setPrinters] = useState([]);
+  const [outlets, setOutlets] = useState([]);
   const [form, setForm] = useState(EMPTY);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -47,7 +49,22 @@ const POSPrinterSettings = () => {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const loadOutlets = useCallback(async () => {
+    try {
+      const res = await axios.get('/pos/outlets');
+      setOutlets(res.data?.outlets || []);
+    } catch (err) {
+      console.error('Outletler yuklenemedi:', err);
+    }
+  }, []);
+
+  const outletName = useCallback((id) => {
+    if (!id) return null;
+    const o = outlets.find((x) => x.id === id);
+    return o ? (o.name || o.id) : id;
+  }, [outlets]);
+
+  useEffect(() => { load(); loadOutlets(); }, [load, loadOutlets]);
 
   const setField = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
@@ -170,6 +187,23 @@ const POSPrinterSettings = () => {
               </SelectContent>
             </Select>
           </div>
+          <div>
+            <Label>Outlet (satis noktasi)</Label>
+            <Select value={form.outlet_id || '_all'}
+              onValueChange={(v) => setField('outlet_id', v === '_all' ? '' : v)}>
+              <SelectTrigger data-testid="printer-outlet"><SelectValue placeholder="Secin" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_all">Tum outletler (varsayilan)</SelectItem>
+                {outlets.map(o => (
+                  <SelectItem key={o.id} value={o.id}>{o.name || o.id}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-gray-500 mt-1">
+              Bir outlet secerseniz, KOT yalnizca o outlet icin bu yaziciya gider.
+              Bos birakirsaniz tum outletler icin paylasilan istasyon yazicisi olur.
+            </p>
+          </div>
           <Button className="w-full" onClick={save} disabled={saving} data-testid="printer-save">
             <Plus className="w-4 h-4 mr-2" />
             {saving ? 'Kaydediliyor...' : 'Kaydet'}
@@ -209,6 +243,9 @@ const POSPrinterSettings = () => {
                       {p.station && (
                         <Badge variant="secondary" className="text-xs">{p.station}</Badge>
                       )}
+                      <Badge variant="outline" className="text-xs">
+                        {p.outlet_id ? outletName(p.outlet_id) : 'tum outletler'}
+                      </Badge>
                       {p.enabled === false && (
                         <Badge className="bg-gray-300 text-gray-700 text-xs">pasif</Badge>
                       )}

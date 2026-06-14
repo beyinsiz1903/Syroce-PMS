@@ -18,18 +18,43 @@ import pytest
 from domains.pms.pos_fnb_router import pos_core
 
 
+def _match(doc: dict, flt: dict) -> bool:
+    for k, v in flt.items():
+        dv = doc.get(k)
+        if isinstance(v, dict) and "$in" in v:
+            if dv not in v["$in"]:
+                return False
+        elif dv != v:
+            return False
+    return True
+
+
 class _FakeKitchenColl:
     def __init__(self):
         self.docs: list[dict] = []
 
     async def find_one(self, flt, proj=None):
         for d in self.docs:
-            if all(d.get(k) == v for k, v in flt.items()):
+            if _match(d, flt):
                 return {k: v for k, v in d.items() if k != "_id"}
         return None
 
     async def insert_one(self, doc):
         self.docs.append(dict(doc))
+        return None
+
+
+class _FakePrintersColl:
+    """Minimal pos_printers stand-in supporting the resolver's find_one queries
+    (plain equality plus the outlet_id ``$in`` membership test)."""
+
+    def __init__(self, docs=None):
+        self.docs: list[dict] = list(docs or [])
+
+    async def find_one(self, flt, proj=None):
+        for d in self.docs:
+            if _match(d, flt):
+                return {k: v for k, v in d.items() if k != "_id"}
         return None
 
 
@@ -53,7 +78,7 @@ class _Order:
 
 
 @pytest.fixture
-def _patch_db(monkeypatch):
+def _patch_db(monkeypatch, request):
     kitchen = _FakeKitchenColl()
     monkeypatch.setattr(pos_core.db, "kitchen_orders", kitchen, raising=False)
     # Stub the kitchen order number + broadcast so the helper is hermetic.
@@ -68,6 +93,10 @@ def _patch_db(monkeypatch):
 
     import domains.pms.pos_extensions.pos_print_spool as spool
     monkeypatch.setattr(spool, "enqueue_print_job", _fake_enqueue)
+    # Hermetic printer registry so the real resolve_kot_printer runs without
+    # touching a live DB. Tests can seed rows via the `printer_rows` marker.
+    printers = _FakePrintersColl(getattr(request, "param", None))
+    monkeypatch.setattr(spool.db, "pos_printers", printers, raising=False)
     return kitchen, enqueued
 
 
@@ -123,3 +152,115 @@ async def test_empty_order_is_noop(_patch_db):
     await pos_core._auto_kds_and_kot(order, "t1", "Waiter")
     assert kitchen.docs == []
     assert enqueued == []
+
+
+@pytest.mark.asyncio
+async def test_unmapped_station_falls_back_with_warning(_patch_db):
+    # Empty registry: the (outletA, hot_kitchen) pair maps nowhere, so the job
+    # falls back to printer_id == station AND carries a visible routing warning.
+    kitchen, enqueued = _patch_db
+    order = _Order([_OrderItem("Kofte", 1, "food")])
+    await pos_core._auto_kds_and_kot(order, "t1", "Waiter")
+
+    assert len(enqueued) == 1
+    job = enqueued[0]
+    assert job["printer_id"] == "hot_kitchen"  # legacy station fallback
+    assert job["routing_warning"]
+    assert "hot_kitchen" in job["routing_warning"]
+
+
+# Seed: outletA has its own hot_kitchen printer; a different outlet has another.
+@pytest.mark.parametrize(
+    "_patch_db",
+    [[
+        {"tenant_id": "t1", "printer_id": "rest1_hot", "station": "hot_kitchen",
+         "outlet_id": "outletA", "enabled": True},
+        {"tenant_id": "t1", "printer_id": "rest2_hot", "station": "hot_kitchen",
+         "outlet_id": "outletB", "enabled": True},
+    ]],
+    indirect=True,
+)
+@pytest.mark.asyncio
+async def test_per_outlet_printer_resolution(_patch_db):
+    kitchen, enqueued = _patch_db
+    order = _Order([_OrderItem("Kofte", 1, "food")])  # order.outlet_id == outletA
+    await pos_core._auto_kds_and_kot(order, "t1", "Waiter")
+
+    assert len(enqueued) == 1
+    job = enqueued[0]
+    # Routed to outletA's physical printer, not the generic station name.
+    assert job["printer_id"] == "rest1_hot"
+    assert job["routing_warning"] is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_exact_outlet_match():
+    import domains.pms.pos_extensions.pos_print_spool as spool
+    rows = [
+        {"tenant_id": "t1", "printer_id": "rest1_hot", "station": "hot_kitchen",
+         "outlet_id": "outletA", "enabled": True},
+        {"tenant_id": "t1", "printer_id": "shared_hot", "station": "hot_kitchen",
+         "outlet_id": None, "enabled": True},
+    ]
+    orig = spool.db.pos_printers if hasattr(spool.db, "pos_printers") else None
+    spool.db.pos_printers = _FakePrintersColl(rows)
+    try:
+        res = await spool.resolve_kot_printer("t1", "outletA", "hot_kitchen")
+        assert res == {"printer_id": "rest1_hot", "matched": True, "reason": "outlet_station"}
+        # An outlet with no per-outlet row falls back to the shared station printer.
+        res2 = await spool.resolve_kot_printer("t1", "outletZ", "hot_kitchen")
+        assert res2["printer_id"] == "shared_hot"
+        assert res2["matched"] is True
+        assert res2["reason"] == "station_shared"
+    finally:
+        if orig is not None:
+            spool.db.pos_printers = orig
+
+
+@pytest.mark.asyncio
+async def test_resolve_legacy_printer_id_equals_station():
+    import domains.pms.pos_extensions.pos_print_spool as spool
+    rows = [
+        {"tenant_id": "t1", "printer_id": "bar", "station": None,
+         "outlet_id": None, "enabled": True},
+    ]
+    orig = spool.db.pos_printers if hasattr(spool.db, "pos_printers") else None
+    spool.db.pos_printers = _FakePrintersColl(rows)
+    try:
+        res = await spool.resolve_kot_printer("t1", "outletA", "bar")
+        assert res == {"printer_id": "bar", "matched": True, "reason": "legacy_id"}
+    finally:
+        if orig is not None:
+            spool.db.pos_printers = orig
+
+
+@pytest.mark.asyncio
+async def test_resolve_unmapped_is_not_matched():
+    import domains.pms.pos_extensions.pos_print_spool as spool
+    orig = spool.db.pos_printers if hasattr(spool.db, "pos_printers") else None
+    spool.db.pos_printers = _FakePrintersColl([])
+    try:
+        res = await spool.resolve_kot_printer("t1", "outletA", "cold_kitchen")
+        assert res == {"printer_id": "cold_kitchen", "matched": False, "reason": "unmapped"}
+    finally:
+        if orig is not None:
+            spool.db.pos_printers = orig
+
+
+@pytest.mark.asyncio
+async def test_resolve_disabled_printer_skipped():
+    import domains.pms.pos_extensions.pos_print_spool as spool
+    rows = [
+        {"tenant_id": "t1", "printer_id": "rest1_hot", "station": "hot_kitchen",
+         "outlet_id": "outletA", "enabled": False},
+    ]
+    orig = spool.db.pos_printers if hasattr(spool.db, "pos_printers") else None
+    spool.db.pos_printers = _FakePrintersColl(rows)
+    try:
+        # The only mapped printer is disabled -> falls through to unmapped.
+        res = await spool.resolve_kot_printer("t1", "outletA", "hot_kitchen")
+        assert res["matched"] is False
+        assert res["reason"] == "unmapped"
+    finally:
+        if orig is not None:
+            spool.db.pos_printers = orig

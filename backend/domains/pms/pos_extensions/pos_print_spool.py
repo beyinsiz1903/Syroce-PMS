@@ -179,6 +179,58 @@ async def _dispatch(job: dict) -> dict:
     return {"driver": driver, "ok": False, "reason": "unknown driver"}
 
 
+async def resolve_kot_printer(
+    tenant_id: str, outlet_id: str | None, station: str
+) -> dict:
+    """Resolve the physical printer for a (outlet_id, station) pair from the
+    `pos_printers` registry so the same kitchen station can target a different
+    physical printer in each outlet/restaurant.
+
+    Resolution priority (first enabled match wins):
+      1. Exact (outlet_id + station) mapping — the per-outlet printer.
+      2. Outlet-agnostic station printer (outlet_id unset) — a shared station
+         printer used across outlets that don't override it.
+      3. Legacy mapping: a printer whose `printer_id` literally equals the
+         station name (the pre-registry convention).
+
+    When nothing maps, falls back to `printer_id == station` (legacy behaviour)
+    but flags `matched=False` so the caller can surface a visible warning.
+
+    Returns {"printer_id": str, "matched": bool, "reason": str}.
+    """
+    base = {"tenant_id": tenant_id, "station": station}
+    try:
+        # 1. Exact per-outlet mapping.
+        if outlet_id:
+            p = await db.pos_printers.find_one(
+                {**base, "outlet_id": outlet_id},
+                {"_id": 0, "printer_id": 1, "enabled": 1},
+            )
+            if p and p.get("enabled", True):
+                return {"printer_id": p["printer_id"], "matched": True, "reason": "outlet_station"}
+
+        # 2. Outlet-agnostic (shared) station printer.
+        p = await db.pos_printers.find_one(
+            {**base, "outlet_id": {"$in": [None, ""]}},
+            {"_id": 0, "printer_id": 1, "enabled": 1},
+        )
+        if p and p.get("enabled", True):
+            return {"printer_id": p["printer_id"], "matched": True, "reason": "station_shared"}
+
+        # 3. Legacy: a printer registered with printer_id == station.
+        legacy = await db.pos_printers.find_one(
+            {"tenant_id": tenant_id, "printer_id": station},
+            {"_id": 0, "printer_id": 1, "enabled": 1},
+        )
+        if legacy and legacy.get("enabled", True):
+            return {"printer_id": station, "matched": True, "reason": "legacy_id"}
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("KOT printer resolution failed: %s", exc)
+
+    # 4. Unmapped — fall back to the station name as printer_id, flag a warning.
+    return {"printer_id": station, "matched": False, "reason": "unmapped"}
+
+
 async def enqueue_print_job(
     *,
     tenant_id: str,
@@ -189,11 +241,16 @@ async def enqueue_print_job(
     copies: int = 1,
     created_by: str | None = None,
     auto_dispatch: bool = False,
+    routing_warning: str | None = None,
 ) -> tuple[dict, bool]:
     """Reusable spooler entry point (callable from other modules, e.g. the POS
     create-order auto-KOT path). Renders, idempotently inserts, and — when
     auto_dispatch — immediately attempts delivery, recording the result so a
     failed/missing printer stays visible in print_jobs status.
+
+    `routing_warning` (set by the KOT path when no registered printer maps to the
+    (outlet, station) pair) is persisted on the job so the unmapped-printer case
+    stays visible in print_jobs status even when a fallback dispatch succeeds.
 
     Returns (saved_job, was_idempotent_replay).
     """
@@ -207,6 +264,7 @@ async def enqueue_print_job(
         "payload": payload,
         "rendered_bytes": rendered,
         "status": "pending",
+        "routing_warning": routing_warning,
         "idempotency_key": idempotency_key,
         "created_at": _now(),
         "created_by": created_by,
