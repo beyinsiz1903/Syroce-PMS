@@ -20,7 +20,7 @@ on:
         description: "Backend API base URL (cold-start pre-warm için). Boş bırakılırsa pre-warm atlanır."
         required: false
         type: string
-        default: "https://emergent-yeni-uygulama-1.syroce.replit.app"
+        default: "https://emergent-yeni-uygulama-1.replit.app"
       note:
         description: "Optional note for the run summary (kim/ne için)"
         required: false
