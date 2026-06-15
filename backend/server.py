@@ -423,6 +423,45 @@ else:
     app.state.routes_ready = True
     register_routers(app, api_router, require_super_admin_dep=require_super_admin)
 
+
+# ── WeasyPrint native-lib EAGER PRELOAD (PDF export robustness) ──────
+# The PDF endpoints (report_builder export, mice BEO, konaklama vergisi)
+# lazy-import weasyprint per request; that import dlopen()s the native libs
+# (libgobject/pango/cairo/fontconfig) via cffi. On the Reserved-VM deploy this
+# dlopen has been observed to raise `OSError: [Errno 5] Input/output error`
+# (NOT the earlier "cannot load library 'libgobject'") when it first runs LATE,
+# under stress load — the nix-store .so read faults under memory/IO pressure
+# (the same pressure that SIGBUS-crashed the uvicorn worker in that window).
+# start.sh's boot probe proves the libs load in a CLEAN subprocess at boot, but
+# that does NOT guarantee the long-lived worker can dlopen them minutes later
+# under load. Fix: import weasyprint ONCE in the serving worker at startup
+# (clean memory, right after port-open via the deferred bootstrap). The native
+# .so handles then stay resident and `from weasyprint import HTML` becomes a
+# sys.modules cache hit on every request — no per-request dlopen, no
+# import-time EIO 503. This does NOT mask a broken deploy: if the libs are
+# genuinely unloadable the warm logs HATA and the per-request 503 path still
+# applies. Fail-OPEN: it must never raise (that would trip the fail-closed
+# warm-up gate and 503 the whole app); real write_pdf() failures stay 500.
+@register_startup
+async def _warm_pdf_renderer():
+    import asyncio as _asyncio
+
+    def _do_import():
+        from weasyprint import HTML  # noqa: F401  # dlopen native libs into sys.modules
+
+    try:
+        await _asyncio.to_thread(_do_import)
+        logger.info(
+            "WeasyPrint PDF renderer worker'a önceden yüklendi "
+            "(native lib resident; per-request import-time EIO/503 önlendi)"
+        )
+    except Exception as _warm_err:  # incl. ImportError / OSError EIO — must NOT propagate
+        logger.error(
+            "WeasyPrint önyükleme BAŞARISIZ (%s); PDF endpoint'leri import "
+            "anında 503 verebilir — replit.nix + LD_LIBRARY_PATH/VM IO baskısını incele",
+            _warm_err,
+        )
+
 # ── Compatibility / stub endpoints (UI-required modules not yet
 # (re)implemented — see backend/routers/missing_endpoints_compat.py) ──
 try:
