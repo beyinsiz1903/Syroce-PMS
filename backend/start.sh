@@ -91,13 +91,16 @@ cd "$(dirname "$0")"
 # Production deployment expects port 5000 (mapped to external 80).
 # Local dev keeps 8000 (the Backend API workflow's waitForPort).
 #
-# Static-front topology (deployment ONLY): a Caddy reverse proxy owns the
-# EXTERNAL port and serves the hashed SPA bundles (/js,/assets,/logos)
-# straight from disk, while uvicorn runs on an INTERNAL port and handles
-# everything dynamic (/api,/ws,/graphql,SPA index). This guarantees static
-# SPA delivery is never starved by API/worker load — the white-screen cause
-# was a single worker serving BOTH the API and the static SPA being unable
-# to flush the /js bundle bodies under heavy load -> edge proxy 502. Dev is
+# Edge-front topology (deployment ONLY): a Caddy reverse proxy owns the
+# EXTERNAL port (HTTP/2, HSTS, warm-up gate) while uvicorn runs on an INTERNAL
+# port. NOTE: Caddy used to file_server the hashed SPA bundles (/js,/assets,
+# /logos) straight from disk, but on this Reserved-VM the Caddy file_server
+# stat()s files correctly yet FAILS to flush their bodies (GET -> edge 502),
+# producing a white screen even with an intact on-disk build. uvicorn reads +
+# delivers the same files fine, so ALL static is now reverse_proxied to uvicorn
+# (see the Caddyfile rationale block below). Caddy still stamps cache/SW headers
+# and owns the warm-up gate. Tradeoff: static delivery shares uvicorn's single
+# worker again, so watch for event-loop starvation under heavy load. Dev is
 # unchanged: uvicorn binds the port directly and Vite serves the frontend on
 # its own port.
 if [ -n "$REPLIT_DEPLOYMENT" ]; then
@@ -339,23 +342,26 @@ EOF
   fi
   echo "✅ uvicorn up on ${UVICORN_HOST}:${UVICORN_PORT} — generating Caddy static-front for :${EXTERNAL_PORT}"
 
-  # 3) Generate the Caddyfile. file_server serves /js,/assets,/logos straight
-  #    from the build dir so they NEVER queue behind API work. The `file`
-  #    matcher means the immutable Cache-Control is only stamped on assets
-  #    that actually EXIST — a missing chunk stays a real 404 and must NOT be
-  #    cached. IMPORTANT: the static handlers serve IDENTITY bytes (NO `encode`).
-  #    On-the-fly `encode gzip zstd` was observed to corrupt delivery of a
-  #    SUBSET of hashed chunks on this VM+edge path: Caddy stat()'d the correct
-  #    size (HEAD content-length matched the on-disk file) but the GET body came
-  #    back EMPTY (200, 0 bytes) and Range returned 502 — deterministically
-  #    per-file, while sibling chunks served fine. Result: a white screen even
-  #    though the build on disk was fully intact (boot-verify saw 0 empty). The
-  #    bundles are hashed + immutably cached and the edge can still compress on
-  #    the wire, so dropping origin compression costs bandwidth, not correctness.
-  #    Everything dynamic proxies to uvicorn unchanged — warm-up gate, no-store
-  #    index.html, SPA 404 fallback, /api/uploads and /ws upgrade all stay
-  #    server-side (encode must ALSO never wrap the reverse_proxy, or it would
-  #    buffer streaming CSV/PDF exports and the KBS SSE text/event-stream feed).
+  # 3) Generate the Caddyfile. Caddy is the edge-facing front (HTTP/2, HSTS,
+  #    warm-up gate) but it does NOT serve static files from disk: on this
+  #    Reserved-VM the Caddy file_server stat()s files correctly (HEAD 200 with
+  #    the right content-length + etag) yet FAILS to deliver the body for /js/*
+  #    and build-root files (GET returns an edge 502 / connection reset), while
+  #    delivering only the single /assets css. The build on disk is intact
+  #    (rebuilt clean, 0 empty, source-hash matched) and it is NOT compression
+  #    (Accept-Encoding: identity also 502s; there is no `encode` directive).
+  #    uvicorn, by contrast, reads+delivers index.html from the same build dir
+  #    fine through the reverse_proxy path. So every static handler below now
+  #    reverse_proxies to uvicorn, whose _CachedStaticFiles mounts (/js,/assets,
+  #    /logos) + SPA 404-handler serve the bytes. We KEEP Caddy's `file`
+  #    matchers + header directives for route/cache policy only: @immutable_existing
+  #    stamps the year-cache on assets that EXIST (a missing chunk stays a real
+  #    404, never cached); @service_worker keeps no-cache + Service-Worker-Allowed;
+  #    @root_static keeps its exclusions so /, *.html, /api, /ws, /graphql and the
+  #    SPA fallback stay uvicorn-owned. NO `encode` anywhere — it must never wrap
+  #    reverse_proxy or it would buffer streaming CSV/PDF exports and the KBS SSE
+  #    text/event-stream feed. If uvicorn-proxied /js ALSO 502s after deploy, the
+  #    failure is VM filesystem/snapshot data-block corruption, not the server.
   cat > "$CADDYFILE" <<CADDY
 {
         auto_https off
@@ -378,43 +384,46 @@ EOF
         header @logos_existing Cache-Control "public, max-age=3600"
 
         handle /js/* {
-                file_server
+                reverse_proxy 127.0.0.1:${UVICORN_PORT}
         }
         handle /assets/* {
-                file_server
+                reverse_proxy 127.0.0.1:${UVICORN_PORT}
         }
         handle /logos/* {
-                file_server
+                reverse_proxy 127.0.0.1:${UVICORN_PORT}
         }
 
-        # The service worker MUST be served from disk as real JS with no-cache.
-        # It lives in the build ROOT (/service-worker.js), so without this it
-        # fell through to uvicorn and returned 500 -> a previously-registered
-        # (and possibly stale/broken) SW could never refetch a newer version ->
-        # browsers stayed stuck on a cached broken shell (= white screen) even
-        # after the bundle itself was fixed. no-cache forces the browser to
-        # revalidate the SW script every load so a fixed SW self-heals.
+        # The service worker is proxied to uvicorn (its 404-handler serves the
+        # root /service-worker.js file) but Caddy still STAMPS no-cache + the
+        # Service-Worker-Allowed scope around the proxied response. Without
+        # no-cache a previously-registered (and possibly stale/broken) SW could
+        # never refetch a newer version -> browsers stayed stuck on a cached
+        # broken shell (= white screen) even after the bundle itself was fixed.
+        # no-cache forces the browser to revalidate the SW script every load so
+        # a fixed SW self-heals. The `file` matcher is intentionally NOT used
+        # here so Caddy proxies the request regardless of its broken disk read.
         @service_worker path /service-worker.js
         handle @service_worker {
                 header Cache-Control "no-cache, no-store, must-revalidate"
                 header Service-Worker-Allowed "/"
-                file_server
+                reverse_proxy 127.0.0.1:${UVICORN_PORT}
         }
 
         # Other root-level static files (favicons, robots.txt, splash/preview
-        # images) also live in the build root and 500'd when proxied to uvicorn.
-        # Serve any EXISTING, non-HTML root file straight from disk. "/", *.html
-        # and /api,/ws,/graphql still fall through to uvicorn so the no-store
-        # index.html shell, security headers and SPA 404 fallback stay
-        # server-side (the `file` matcher only matches paths that exist on disk,
-        # so SPA routes like /dashboard still reach uvicorn).
+        # images) also live in the build root. They are proxied to uvicorn (its
+        # SPA 404-handler serves any EXISTING root file) with a modest cache TTL
+        # stamped by Caddy. "/", *.html and /api,/ws,/graphql still fall through
+        # to the final handle so the no-store index.html shell, security headers
+        # and SPA 404 fallback stay server-side. The `file` matcher keeps this
+        # block scoped to paths that exist on disk, so SPA routes like
+        # /dashboard skip it and reach uvicorn's index.html fallback.
         @root_static {
                 file
                 not path / *.html /api /api/* /ws* /graphql*
         }
         handle @root_static {
                 header Cache-Control "public, max-age=3600"
-                file_server
+                reverse_proxy 127.0.0.1:${UVICORN_PORT}
         }
 
         handle {
@@ -432,7 +441,7 @@ CADDY
   # 4) Start Caddy on the external port.
   caddy run --config "$CADDYFILE" --adapter caddyfile &
   CADDY_PID=$!
-  echo "✅ Caddy static-front on :${EXTERNAL_PORT} -> uvicorn 127.0.0.1:${UVICORN_PORT} (static /js,/assets,/logos from disk)"
+  echo "✅ Caddy front on :${EXTERNAL_PORT} -> uvicorn 127.0.0.1:${UVICORN_PORT} (all static reverse-proxied to uvicorn; Caddy file_server bypassed)"
 
   # 5) Supervisor: forward termination, and if EITHER child exits, tear the
   #    other down and exit nonzero so the platform restarts cleanly. `|| true`
