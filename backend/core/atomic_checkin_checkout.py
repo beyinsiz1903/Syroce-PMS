@@ -67,11 +67,13 @@ async def check_in_booking_atomic(
     now_iso = now.isoformat()
 
     async with await client.start_session() as session:
-        async with session.start_transaction(
-            read_concern=ReadConcern("snapshot"),
-            write_concern=WriteConcern("majority"),
-            read_preference=ReadPreference.PRIMARY,
-        ):
+        # with_transaction auto-retries TransientTransactionError / WriteConflict
+        # (Mongo "please retry the operation") per driver best practice — the
+        # manual start_transaction() context manager did NOT, so a concurrent
+        # walk-in / catalog change surfaced as an unhandled 500. Validation
+        # errors (CheckInError) are NOT labeled TransientTransactionError, so
+        # they still propagate immediately without retry.
+        async def _txn(session):
             # ── 1. Load & validate booking ──
             booking = await db.bookings.find_one(
                 {"id": booking_id, "tenant_id": tenant_id},
@@ -222,6 +224,18 @@ async def check_in_booking_atomic(
             }
             await db.outbox_events.insert_one(outbox_doc, session=session)
 
+            return {"room_id": room_id, "room_number": room.get("room_number")}
+
+        txn_result = await session.with_transaction(
+            _txn,
+            read_concern=ReadConcern("snapshot"),
+            write_concern=WriteConcern("majority"),
+            read_preference=ReadPreference.PRIMARY,
+        )
+
+    room_id = txn_result["room_id"]
+    room_number = txn_result["room_number"]
+
     logger.info(
         "Atomic check-in completed: booking=%s room=%s actor=%s",
         booking_id, room_id, actor_id,
@@ -242,7 +256,7 @@ async def check_in_booking_atomic(
         "success": True,
         "booking_id": booking_id,
         "room_id": room_id,
-        "room_number": room.get("room_number"),
+        "room_number": room_number,
         "checked_in_at": now_iso,
     }
 
@@ -279,11 +293,13 @@ async def check_out_booking_atomic(
     now_iso = now.isoformat()
 
     async with await client.start_session() as session:
-        async with session.start_transaction(
-            read_concern=ReadConcern("snapshot"),
-            write_concern=WriteConcern("majority"),
-            read_preference=ReadPreference.PRIMARY,
-        ):
+        # with_transaction auto-retries TransientTransactionError / WriteConflict
+        # (Mongo "please retry the operation"); the manual start_transaction()
+        # context manager did NOT — force-checkout batches could surface a
+        # concurrent write-conflict as an unhandled 500. Validation errors
+        # (CheckOutError) are not labeled transient, so they propagate
+        # immediately without retry.
+        async def _txn(session):
             # ── 1. Load & validate booking ──
             booking = await db.bookings.find_one(
                 {"id": booking_id, "tenant_id": tenant_id},
@@ -443,6 +459,18 @@ async def check_out_booking_atomic(
             }
             await db.outbox_events.insert_one(outbox_doc, session=session)
 
+            return {"room_id": room_id, "guest_id": booking.get("guest_id")}
+
+        txn_result = await session.with_transaction(
+            _txn,
+            read_concern=ReadConcern("snapshot"),
+            write_concern=WriteConcern("majority"),
+            read_preference=ReadPreference.PRIMARY,
+        )
+
+    room_id = txn_result["room_id"]
+    guest_id = txn_result["guest_id"]
+
     # Af-sadakat marketplace integration: outbound olay (transaction sonrası)
     try:
         from core.afsadakat_outbound import EV_GUEST_CHECKED_OUT, emit_event
@@ -452,7 +480,7 @@ async def check_out_booking_atomic(
             {
                 "booking_id": booking_id,
                 "room_id": room_id,
-                "guest_id": booking.get("guest_id"),
+                "guest_id": guest_id,
                 "checked_out_at": now_iso,
                 "actor_id": actor_id,
             },
