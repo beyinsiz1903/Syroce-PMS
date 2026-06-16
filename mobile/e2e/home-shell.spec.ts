@@ -206,8 +206,15 @@ test.describe.serial('Mobile smoke · home shell · frontdesk', () => {
         ).toBeVisible({ timeout: 20_000 });
         await assertScreenHealthy(page, obs, 'messages');
 
-        // Arama — reached from the header shortcut (Faz 0 placeholder).
-        await page.locator(HEADER.search).first().click();
+        // Arama — reached from the header shortcut (Faz 0 placeholder). By now
+        // we have tapped through the other bottom tabs, and react-navigation
+        // (web) keeps every VISITED tab screen mounted with its OWN header
+        // (headerRight is per-screen). Inactive tab screens are display:none, so
+        // their copy of smoke-header-search lingers in the DOM but is hidden.
+        // A bare `.first()` would resolve the index tab's now-hidden button and
+        // never click — scope to the VISIBLE header (the active tab). Product is
+        // unchanged; this is standard RN-web per-screen header behaviour.
+        await page.locator(`${HEADER.search}:visible`).first().click();
         await expect(
             page.locator(ROOT.search).first(),
             'Arama ekranı header kısayolundan mount olmadı',
