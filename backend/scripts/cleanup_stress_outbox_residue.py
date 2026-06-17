@@ -105,6 +105,8 @@ RECON_COLL = "channel_reconciliation_cases"
 # any OTHER type are NOT swept — don't mask a real stuck-delivery condition.
 from core.outbox_residue import (  # noqa: E402
     DEAD_PENDING_EVENT_TYPES,
+)
+from core.outbox_residue import (
     TERMINAL_OUTBOX_STATUSES as TERMINAL_STATUSES,
 )
 
