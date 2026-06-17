@@ -2,6 +2,15 @@
 
 Sadece doc sayısı > 0 veya startup'ta sorgulanan koleksiyonlara ekler.
 Boş koleksiyonlar Atlas 500 koleksiyon limit'i nedeniyle atlanır.
+
+Entry formatı geriye-uyumlu olarak iki biçimi destekler:
+  (collection, keys)                         -> isimsiz, opsiyonsuz (varsayılan)
+  (collection, keys, name, options)          -> explicit index adı + create
+                                                options (ör. {"unique": True})
+``name`` verildiğinde index, ``bootstrap/phases/perf_indexes.py`` ile AYNI ada
+sahip olmalıdır; aksi halde operatör bu script'i boot öncesi koşunca Mongo iki
+ayrı index oluşturur (name drift). Bu yüzden buraya eklenen kalıcı index'ler
+perf_indexes.py'deki adlarıyla birebir aynı yazılır.
 """
 import asyncio
 import os
@@ -35,7 +44,27 @@ TO_APPLY = [
     # immediately without a full boot.
     ("folios", [("tenant_id", 1), ("id", 1)]),
     ("folio_charges", [("tenant_id", 1), ("id", 1)]),
+    # Atlas Query Targeting (2026-06-17): channel_reconciliation_cases global
+    # (cross-tenant) ops-health shapes from monitoring/aggregator.py
+    # collect_reconciliation_health() — {status:{$in:[open,acknowledged]}} +
+    # count_documents({created_at:{$gte:24h}}). No tenant-leading index serves
+    # them, so they COLLSCANned ~7.3k docs. Names match perf_indexes.py exactly
+    # (idx_recon_cases_status_global / idx_recon_cases_created_global) so an
+    # immediate apply here and a later boot never create duplicates.
+    ("channel_reconciliation_cases", [("status", 1)],
+     "idx_recon_cases_status_global", {}),
+    ("channel_reconciliation_cases", [("created_at", 1)],
+     "idx_recon_cases_created_global", {}),
 ]
+
+
+def _normalize(entry):
+    """Accept (col, keys) or (col, keys, name, options) uniformly."""
+    if len(entry) == 2:
+        col, keys = entry
+        return col, keys, None, {}
+    col, keys, name, options = entry
+    return col, keys, name, options or {}
 
 
 async def main():
@@ -43,7 +72,8 @@ async def main():
     db = client[DB_NAME]
     print(f"DB: {DB_NAME}\n")
 
-    for col, keys in TO_APPLY:
+    for entry in TO_APPLY:
+        col, keys, name, options = _normalize(entry)
         try:
             cnt = await db[col].estimated_document_count()
             existing = await db[col].list_indexes().to_list(50)
@@ -58,8 +88,11 @@ async def main():
                 print(f"  {col} ({cnt} doc): zaten kapsanmis, atlandi")
                 continue
 
-            name = await db[col].create_index(keys, background=True)
-            print(f"  {col} ({cnt} doc): index olusturuldu -> {name}")
+            kwargs = {"background": True, **options}
+            if name:
+                kwargs["name"] = name
+            created = await db[col].create_index(keys, **kwargs)
+            print(f"  {col} ({cnt} doc): index olusturuldu -> {created}")
         except Exception as e:
             print(f"  {col}: HATA -> {str(e)[:80]}")
 

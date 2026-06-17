@@ -2617,3 +2617,99 @@ async def _hrv2_retention_cleanup_async():
     except Exception as e:
         logger.error(f"HRv2 retention cleanup failed: {e}")
         return {'success': False, 'error': str(e)}
+
+
+# ── Outbox terminal-state retention (Atlas Query Targeting 2026-06-17) ──────
+# outbox_events accumulated terminal rows (processed/failed/parked) forever —
+# there was NO purge policy (migration_observability.py flagged the gap). The
+# every-minute platform-wide monitoring count_documents({status: ...}) and the
+# dispatcher pollers then scan an unbounded backlog, tripping Atlas
+# "Scanned/Returned > 1000". This daily janitor deletes ONLY terminal rows
+# older than the retention window, in bounded batches. It NEVER touches
+# pending / retry / processing — a real tenant's undelivered events must
+# survive. A beat task is used instead of a TTL `expire_at` index because
+# terminal writes are fragmented across several writers (outbox_lifecycle,
+# pos_folio_consumer, outbox_admin, health_check); one missed writer would
+# silently never expire its rows. (The existing stress dead-PENDING backlog is
+# cleared separately by scripts/cleanup_stress_outbox_residue.py — pending is
+# out of scope here by design.)
+_OUTBOX_TERMINAL_STATUSES = ("processed", "failed", "parked")
+_OUTBOX_RETENTION_DAYS_DEFAULT = 14
+_OUTBOX_RETENTION_BATCH_DEFAULT = 5000
+
+
+def _env_positive_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return v if v > 0 else default
+
+
+@celery_app.task(name='celery_tasks.outbox_terminal_retention_task')
+def outbox_terminal_retention_task():
+    """Daily: purge outbox_events terminal rows older than the retention window."""
+    return asyncio.run(_outbox_terminal_retention_async())
+
+
+async def _outbox_terminal_retention_async() -> dict[str, Any]:
+    client, db = _fresh_mongo()
+    retention_days = _env_positive_int(
+        "OUTBOX_TERMINAL_RETENTION_DAYS", _OUTBOX_RETENTION_DAYS_DEFAULT
+    )
+    batch = _env_positive_int(
+        "OUTBOX_TERMINAL_RETENTION_BATCH", _OUTBOX_RETENTION_BATCH_DEFAULT
+    )
+    cutoff_dt = datetime.now(UTC) - timedelta(days=retention_days)
+    cutoff_iso = cutoff_dt.isoformat()
+    # created_at is persisted as an ISO-8601 UTC string by outbox_service; a few
+    # legacy rows may carry a BSON datetime. Match either form (lexicographic
+    # ISO compare == chronological for UTC ISO strings) so neither is missed.
+    query = {
+        "status": {"$in": list(_OUTBOX_TERMINAL_STATUSES)},
+        "$or": [
+            {"created_at": {"$lt": cutoff_iso}},
+            {"created_at": {"$lt": cutoff_dt}},
+        ],
+    }
+    total_deleted = 0
+    try:
+        # Bounded-batch delete so a huge backlog never produces one unbounded,
+        # long-running delete that blocks the worker / pins the primary.
+        while True:
+            ids = await db.outbox_events.find(
+                query, {"_id": 1}
+            ).limit(batch).to_list(batch)
+            if not ids:
+                break
+            id_list = [d["_id"] for d in ids]
+            res = await db.outbox_events.delete_many({"_id": {"$in": id_list}})
+            deleted = int(getattr(res, "deleted_count", 0) or 0)
+            total_deleted += deleted
+            if deleted < batch:
+                break
+        logger.info(
+            "outbox terminal retention: deleted=%d retention_days=%d cutoff=%s",
+            total_deleted, retention_days, cutoff_iso,
+        )
+        return {
+            "ran": True,
+            "deleted": total_deleted,
+            "retention_days": retention_days,
+            "cutoff": cutoff_iso,
+            "statuses": list(_OUTBOX_TERMINAL_STATUSES),
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("outbox terminal retention prune failed: %s", exc)
+        return {
+            "ran": False,
+            "error": str(exc)[:200],
+            "deleted": total_deleted,
+            "retention_days": retention_days,
+            "cutoff": cutoff_iso,
+        }
+    finally:
+        client.close()

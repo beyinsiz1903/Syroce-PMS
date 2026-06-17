@@ -122,6 +122,25 @@ async def ensure_performance_indexes():
         #     5745 scan / 101 returned (targeting 57, 256ms).
         ("channel_reconciliation_cases", [("tenant_id", 1), ("created_at", -1)],
          "idx_recon_cases_tenant_created", {}),
+        # Atlas Query Targeting (2026-06-17): monitoring/aggregator.py
+        # collect_reconciliation_health() is a BY-DESIGN cross-tenant
+        # (platform-wide ops health) function with NO tenant_id filter:
+        #   - {status: {$in: ["open","acknowledged"]}}  (case_type + severity
+        #     $group aggregates), and
+        #   - count_documents({created_at: {$gte: <24h ago>}})  (growth rate).
+        # Every OTHER recon site is tenant-scoped (idx_recon_cases_tenant_created
+        # above + unified_repository.py runtime indexes), and all of those lead
+        # with tenant_id — so these two global shapes COLLSCANned the whole
+        # ~7.3k collection every ~5 min, tripping "Scanned/Returned > 1000".
+        # These NON-tenant indexes serve the global shapes directly: the status
+        # index turns the open/ack aggregates into a ~13-key scan, and the
+        # created_at index (ISO-8601 string; lexicographic == chronological)
+        # turns the 24h growth count into a small range scan. The function stays
+        # intentionally cross-tenant; do NOT add a tenant_id filter.
+        ("channel_reconciliation_cases", [("status", 1)],
+         "idx_recon_cases_status_global", {}),
+        ("channel_reconciliation_cases", [("created_at", 1)],
+         "idx_recon_cases_created_global", {}),
         ("exely_sync_logs", [("tenant_id", 1), ("timestamp", -1)],
          "idx_exely_sync_tenant_timestamp", {}),
         # WhatsApp inbound idempotency — Meta retry'larda duplicate önler.

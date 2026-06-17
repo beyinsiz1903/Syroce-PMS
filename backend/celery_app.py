@@ -185,6 +185,17 @@ celery_app.conf.update(
             'task': 'celery_tasks.unique_backstop_deferral_check_task',
             'schedule': crontab(minute=45),
         },
+
+        # Outbox terminal-state retention (Atlas Query Targeting 2026-06-17) —
+        # daily off-peak janitor that deletes outbox_events rows in terminal
+        # states (processed/failed/parked) older than OUTBOX_TERMINAL_RETENTION_
+        # DAYS (default 14) in bounded batches. NEVER touches pending/retry/
+        # processing. Prevents the unbounded terminal backlog that makes the
+        # every-minute outbox monitoring count scan grow without bound.
+        'outbox-terminal-retention-cleanup': {
+            'task': 'celery_tasks.outbox_terminal_retention_task',
+            'schedule': crontab(hour=4, minute=30),
+        },
     }
 )
 
