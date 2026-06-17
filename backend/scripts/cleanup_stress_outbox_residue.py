@@ -104,51 +104,21 @@ RECON_COLL = "channel_reconciliation_cases"
 # (``domains/admin/router/stress.py``) can never drift apart. PENDING rows of
 # any OTHER type are NOT swept — don't mask a real stuck-delivery condition.
 from core.outbox_residue import (  # noqa: E402
-    DEAD_PENDING_EVENT_TYPES,
-)
-from core.outbox_residue import (
-    TERMINAL_OUTBOX_STATUSES as TERMINAL_STATUSES,
+    outbox_age_cutoff_match,
+    stress_outbox_residue_query,
 )
 
 MAX_TIME_MS = 60000
 
 
-def _age_or(cutoff: datetime) -> dict:
-    """Match created_at older than cutoff, ISO-string OR BSON-datetime form.
-
-    outbox_events / channel_reconciliation_cases persist ``created_at`` as an
-    ISO-8601 UTC string; a few legacy rows may carry a BSON datetime. Match
-    either so neither is missed.
-    """
-    cutoff_iso = cutoff.isoformat()
-    return {
-        "$or": [
-            {"created_at": {"$lte": cutoff_iso}},
-            {"created_at": {"$lte": cutoff}},
-        ]
-    }
-
-
 def outbox_query(tenant_id: str, cutoff: datetime) -> dict:
-    return {
-        "tenant_id": tenant_id,
-        "$and": [
-            _age_or(cutoff),
-            {
-                "$or": [
-                    {
-                        "status": "pending",
-                        "event_type": {"$in": list(DEAD_PENDING_EVENT_TYPES)},
-                    },
-                    {"status": {"$in": list(TERMINAL_STATUSES)}},
-                ]
-            },
-        ],
-    }
+    # Single-sourced in core.outbox_residue so this manual sweep and the nightly
+    # Celery beat (stress_outbox_residue_sweep_task) build the identical filter.
+    return stress_outbox_residue_query(tenant_id, cutoff)
 
 
 def recon_query(tenant_id: str, cutoff: datetime) -> dict:
-    return {"tenant_id": tenant_id, "$and": [_age_or(cutoff)]}
+    return {"tenant_id": tenant_id, "$and": [outbox_age_cutoff_match(cutoff)]}
 
 
 async def scan(tenant_id: str, hours: int) -> dict:

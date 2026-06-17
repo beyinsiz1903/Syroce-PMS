@@ -196,6 +196,20 @@ celery_app.conf.update(
             'task': 'celery_tasks.outbox_terminal_retention_task',
             'schedule': crontab(hour=4, minute=30),
         },
+
+        # Stress dead-PENDING outbox residue sweep (Plan A — Task #620) —
+        # dedicated nightly beat (03:50 UTC, non-colliding slot) that sweeps the
+        # stress tenant's no-consumer guest.checked_in/out.v1 PENDING backlog so
+        # it cannot rebuild and re-trip the Atlas query-targeting alert. This is
+        # DECOUPLED from the e2e-stress suite teardown (which only ran the
+        # cleanup when the suite ran end-to-end). Fail-closed: deletes ONLY when
+        # STRESS_OUTBOX_SWEEP_ENABLED=true AND E2E_STRESS_TENANT_ID is set AND
+        # the tenant is not the pilot; otherwise a silent metric-only no-op
+        # (so dev / unconfigured prod behaviour is unchanged). 24h age guard.
+        'stress-outbox-residue-sweep': {
+            'task': 'celery_tasks.stress_outbox_residue_sweep_task',
+            'schedule': crontab(hour=3, minute=50),
+        },
     }
 )
 

@@ -343,6 +343,54 @@ operator drenajı bu durumda zorunlu kalır.
 
 ---
 
+## Stress Outbox Kalıntısı — Gecelik Otomatik Sweep (Plan A)
+
+> **Sorun:** Stress tenant'ı, tüketicisi olmayan `guest.checked_in.v1` /
+> `guest.checked_out.v1` outbox event'lerini PENDING olarak sınırsız
+> biriktirir (canlı Atlas'ta ~36.6k satır). Bu yığın Atlas "Query Targeting:
+> Scanned/Returned > 1000" uyarısını tetikler. Eski temizlik yalnızca nightly
+> e2e-stress suite'i baştan sona koşunca (`/api/admin/stress/cleanup`)
+> tetikleniyordu; suite koşmazsa yığın geri birikir.
+
+> **Çözüm (Plan A):** e2e/CI'den **bağımsız**, kendi başına çalışan adanmış
+> bir Celery beat: `stress_outbox_residue_sweep_task` — her gece **03:50 UTC**
+> (`backend/celery_app.py` `beat_schedule`'da `stress-outbox-residue-sweep`).
+> Manuel script (`backend/scripts/cleanup_stress_outbox_residue.py`) ve e2e
+> teardown ayrı savunma katmanları olarak kalır. Silme filtresi tek-kaynak
+> (`core/outbox_residue.stress_outbox_residue_query`).
+
+### Aktive etme (deploy VM'inde, fail-closed)
+
+Beat **varsayılan olarak sessiz no-op'tur** (yalnızca metrik satırı yazar,
+hiçbir şey silmez). Gerçekten silmesi için deploy VM'inde şu env'ler set
+edilmeli:
+
+| Env | Anlam |
+|-----|-------|
+| `STRESS_OUTBOX_SWEEP_ENABLED=true` | Silmeyi açar (yoksa metrik-only) |
+| `E2E_STRESS_TENANT_ID=<stress uuid>` | Hedef tenant (yoksa no-op) |
+| `STRESS_OUTBOX_SWEEP_AGE_HOURS` | Yaş eşiği (varsayılan 24s) |
+| `STRESS_OUTBOX_SWEEP_BATCH` | Batch başına silme üst sınırı (varsayılan 5000) |
+
+Üçlü fail-closed: silme yalnızca **enable bayrağı + stress tenant set + tenant
+pilot DEĞİL** iken yapılır. Tenant pilot'a eşitse (env veya bilinen pilot UUID)
+görev silmeyi reddeder (`pilot_drift=0`). 24s yaş eşiği, devam eden bir stress
+koşusunun taze event'lerini korur.
+
+> **İlk yığının temizliği bu görevin kapsamı dışıdır:** operatör mevcut ~36.6k
+> yığını bir kez `E2E_STRESS_TENANT_ID=<uuid> E2E_ALLOW_STRESS_CLEANUP=true
+> python -m scripts.cleanup_stress_outbox_residue --apply` ile temizler; bu
+> beat tekrar birikmeyi önler.
+
+### İzleme
+
+Her koşu `stress_outbox_residue_scans` koleksiyonuna bir metrik satırı yazar
+(`source=nightly_beat`, `mode`, `found_total`, `applied`). `found_total > 0`
+(özellikle `mode=disabled` iken) yığının geri biriktiğini gösterir — cron
+alerting için bu alanı yüzeye çıkar.
+
+---
+
 ## KBS Tarayıcı Eklentisi (Otel IP'sinden Polis/Jandarma Gönderimi)
 
 > **Neden eklenti?** KBS, konaklama bildirimini **otelin kendi internet

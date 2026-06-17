@@ -2713,3 +2713,170 @@ async def _outbox_terminal_retention_async() -> dict[str, Any]:
         }
     finally:
         client.close()
+
+
+# ── Stress dead-PENDING outbox residue nightly sweep (Plan A — Task #620) ──
+# The stress tenant emits guest.checked_in/out.v1 SXI events through the
+# production outbox path; NOTHING in the stress tenant consumes them, so they
+# pile up as PENDING forever (observed ~36.6k rows) and the per-minute outbox
+# monitor's count_documents({status:"pending"}) scans the whole dead backlog —
+# exactly what trips the Atlas "Query Targeting: Scanned/Returned > 1000" alert.
+#
+# A cleanup already exists in the e2e-stress teardown (POST /admin/stress/
+# cleanup), but it only fires when the nightly e2e suite runs end-to-end. If the
+# suite is not dispatched, dies early, or the deploy is on stale code, the
+# backlog rebuilds. This dedicated beat (the operator-chosen Plan A) decouples
+# the cleanup from the suite: it runs on its own schedule, with its own failure
+# isolation, mirroring outbox_terminal_retention_task.
+#
+# Triple fail-closed: it only DELETES when STRESS_OUTBOX_SWEEP_ENABLED=true AND
+# E2E_STRESS_TENANT_ID is set AND the resolved tenant is not the pilot. When the
+# enable flag is off (the default) it is a silent no-op that only writes a metric
+# row — so dev and unconfigured prod behaviour never changes. The 24h age guard
+# (overridable) keeps it from racing an in-flight stress run's fresh events. The
+# delete filter is single-sourced via core.outbox_residue.stress_outbox_residue_
+# query so it can never drift from the manual sweep script.
+_STRESS_OUTBOX_SWEEP_BATCH_DEFAULT = 5000
+# Known pilot tenant UUID — the live demo tenant must NEVER be swept, even if
+# E2E_STRESS_TENANT_ID is somehow misconfigured to point at it (pilot_drift=0).
+_PILOT_TENANT_UUID = "5bad4a34-6ee3-4566-9053-741b7375a9cf"
+
+
+def _env_truthy(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() == "true"
+
+
+async def _record_stress_outbox_scan(summary: dict[str, Any]) -> None:
+    """Best-effort metric write into ``stress_outbox_residue_scans``.
+
+    Uses its own fresh Motor client so the early fail-closed branches (no
+    tenant / pilot blocked) can record a metric row before the main client is
+    opened. A failed metric insert never breaks the task.
+    """
+    client = None
+    try:
+        client, db = _fresh_mongo()
+        await db.stress_outbox_residue_scans.insert_one(dict(summary))
+    except Exception as exc:  # noqa: BLE001 — metric is best-effort
+        logger.warning("stress outbox residue metric insert failed: %s", exc)
+    finally:
+        if client is not None:
+            client.close()
+
+
+@celery_app.task(name='celery_tasks.stress_outbox_residue_sweep_task')
+def stress_outbox_residue_sweep_task():
+    """Nightly: sweep the stress tenant's dead-PENDING outbox backlog.
+
+    Decoupled (Plan A) from the e2e-stress suite teardown so the cleanup runs
+    every night regardless of whether the suite dispatched. Fail-closed: a
+    silent, metric-only no-op unless STRESS_OUTBOX_SWEEP_ENABLED=true AND
+    E2E_STRESS_TENANT_ID is set AND the tenant is not the pilot.
+    """
+    return asyncio.run(_stress_outbox_residue_sweep_async())
+
+
+async def _stress_outbox_residue_sweep_async() -> dict[str, Any]:
+    from core.outbox_residue import (
+        STRESS_OUTBOX_SWEEP_AGE_HOURS_DEFAULT,
+        stress_outbox_residue_query,
+    )
+
+    tenant_id = os.environ.get("E2E_STRESS_TENANT_ID", "").strip()
+    enabled = _env_truthy("STRESS_OUTBOX_SWEEP_ENABLED")
+    hours = _env_positive_int(
+        "STRESS_OUTBOX_SWEEP_AGE_HOURS", STRESS_OUTBOX_SWEEP_AGE_HOURS_DEFAULT
+    )
+    batch = _env_positive_int(
+        "STRESS_OUTBOX_SWEEP_BATCH", _STRESS_OUTBOX_SWEEP_BATCH_DEFAULT
+    )
+    scanned_at = datetime.now(UTC).isoformat()
+
+    # Guard 1: stress tenant must be configured (fail-closed; blast radius 0).
+    if not tenant_id:
+        summary = {
+            "scanned_at": scanned_at, "source": "nightly_beat",
+            "mode": "skipped_no_tenant", "enabled": enabled,
+            "tenant_id": None, "found": {"outbox_events": 0},
+            "found_total": 0, "applied": 0,
+        }
+        await _record_stress_outbox_scan(summary)
+        logger.info(
+            "stress outbox sweep: E2E_STRESS_TENANT_ID unset — no-op (metric only)"
+        )
+        return summary
+
+    # Guard 2: never touch the pilot tenant (pilot_drift=0), via either the
+    # PILOT_TENANT_ID env or the known pilot UUID.
+    pilot_tid = os.environ.get("PILOT_TENANT_ID", "").strip()
+    if tenant_id == _PILOT_TENANT_UUID or (pilot_tid and tenant_id == pilot_tid):
+        summary = {
+            "scanned_at": scanned_at, "source": "nightly_beat",
+            "mode": "pilot_blocked", "enabled": enabled,
+            "tenant_id": tenant_id, "found": {"outbox_events": 0},
+            "found_total": 0, "applied": 0,
+        }
+        await _record_stress_outbox_scan(summary)
+        logger.error(
+            "stress outbox sweep: E2E_STRESS_TENANT_ID equals pilot (%s) — "
+            "refusing, pilot must never be swept.", tenant_id,
+        )
+        return summary
+
+    client, db = _fresh_mongo()
+    try:
+        cutoff = datetime.now(UTC) - timedelta(hours=hours)
+        query = stress_outbox_residue_query(tenant_id, cutoff)
+        found_total = await db.outbox_events.count_documents(
+            query, maxTimeMS=60000
+        )
+        sample = (
+            await db.outbox_events.find(
+                query, {"_id": 0, "id": 1, "event_type": 1, "status": 1}
+            ).limit(10).to_list(10)
+        )
+
+        applied = 0
+        # Guard 3: only DELETE when explicitly enabled. Otherwise metric-only
+        # (visibility on a rebuilding backlog without changing any behaviour).
+        if enabled and found_total > 0:
+            # Bounded-batch delete so a huge backlog never produces one
+            # unbounded, long-running delete that pins the primary.
+            while True:
+                ids = (
+                    await db.outbox_events.find(query, {"_id": 1})
+                    .limit(batch).to_list(batch)
+                )
+                if not ids:
+                    break
+                id_list = [d["_id"] for d in ids]
+                res = await db.outbox_events.delete_many(
+                    {"_id": {"$in": id_list}}
+                )
+                deleted = int(getattr(res, "deleted_count", 0) or 0)
+                applied += deleted
+                if deleted < batch:
+                    break
+
+        summary = {
+            "scanned_at": scanned_at, "source": "nightly_beat",
+            "mode": "apply" if enabled else "disabled", "enabled": enabled,
+            "tenant_id": tenant_id, "hours": hours, "cutoff": cutoff.isoformat(),
+            "found": {"outbox_events": found_total},
+            "found_total": found_total, "applied": applied,
+            "sample_outbox_ids": [d.get("id") for d in sample],
+        }
+        await _record_stress_outbox_scan(summary)
+        if found_total > 0:
+            logger.warning(
+                "stress outbox sweep: found=%d applied=%d enabled=%s tenant=%s "
+                "— dead-pending backlog %s",
+                found_total, applied, enabled, tenant_id,
+                "swept" if enabled
+                else "NOT swept (disabled — metric only; cron should alert)",
+            )
+        else:
+            logger.info("stress outbox sweep: residue=0, stress tenant clean")
+        return summary
+    finally:
+        client.close()
