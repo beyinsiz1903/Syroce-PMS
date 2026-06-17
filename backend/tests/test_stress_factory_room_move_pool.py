@@ -24,7 +24,7 @@ def _build():
 
 
 def test_factory_extra_vacant_pool_count_per_type():
-    rooms, _g, _b, _f, _c, _rnl, _hk = _build()
+    rooms, _g, _b, _f, _c, _p, _rnl, _hk = _build()
     extras = [r for r in rooms if r.get("room_move_target") is True]
     assert len(extras) == 3 * len(stress_mod.ROOM_TYPES), (
         f"expected 3 extra per ROOM_TYPE; got {len(extras)}"
@@ -39,7 +39,7 @@ def test_factory_extra_vacant_pool_count_per_type():
 
 
 def test_factory_extras_are_vacant_and_tagged():
-    rooms, _g, _b, _f, _c, _rnl, _hk = _build()
+    rooms, _g, _b, _f, _c, _p, _rnl, _hk = _build()
     extras = [r for r in rooms if r.get("room_move_target") is True]
     for r in extras:
         assert r["status"] == "available", r
@@ -51,7 +51,7 @@ def test_factory_extras_are_vacant_and_tagged():
 
 
 def test_factory_extras_have_no_booking_or_rnl():
-    rooms, _guests, bookings, _f, _c, rnls, _hk = _build()
+    rooms, _guests, bookings, _f, _c, _payments, rnls, _hk = _build()
     extras = [r for r in rooms if r.get("room_move_target") is True]
     extra_ids = {r["id"] for r in extras}
     booking_rids = {b["room_id"] for b in bookings}
@@ -63,7 +63,7 @@ def test_factory_extras_have_no_booking_or_rnl():
 
 
 def test_factory_total_rooms_count_with_extras():
-    rooms, _g, _b, _f, _c, _rnl, _hk = _build()
+    rooms, _g, _b, _f, _c, _p, _rnl, _hk = _build()
     extras = [r for r in rooms if r.get("room_move_target") is True]
     assert len(rooms) == 500 + len(extras), (
         f"total={len(rooms)} base=500 extras={len(extras)}"
@@ -73,7 +73,7 @@ def test_factory_total_rooms_count_with_extras():
 
 def test_factory_base_rooms_unchanged_by_extra_pool():
     """Regression: extra pool must NOT mutate base 500 (no shared refs)."""
-    rooms, _g, _b, _f, _c, _rnl, _hk = _build()
+    rooms, _g, _b, _f, _c, _p, _rnl, _hk = _build()
     base = [r for r in rooms if not r.get("room_move_target")]
     assert len(base) == 500
     occupied_base = [r for r in base if r["status"] == "occupied"]
@@ -88,7 +88,7 @@ def test_seeded_counts_exposes_base_rooms_alias():
     `rooms` (legacy contract — base) AND `base_rooms` (explicit alias) to
     eliminate contract ambiguity for any future consumer."""
     # Replicate the contract derivation that stress.py does post-insert.
-    rooms_docs, _g, _b, _f, _c, _rnl, _hk = _build()
+    rooms_docs, _g, _b, _f, _c, _p, _rnl, _hk = _build()
     extras_count = sum(1 for r in rooms_docs if r.get("room_move_target") is True)
     base_count = len(rooms_docs) - extras_count
     counts: dict = {}
@@ -111,7 +111,7 @@ def test_factory_extras_cover_first_50_demand_per_type():
     bookings is ≤ 3 → 3-per-type extras (EXTRA_VACANT_PER_TYPE=3) satisfies
     demand for every type. This locks in the contract.
     """
-    rooms, _g, bookings, _f, _c, _rnl, _hk = _build()
+    rooms, _g, bookings, _f, _c, _p, _rnl, _hk = _build()
     extras = [r for r in rooms if r.get("room_move_target") is True]
     extras_by_type: dict = {}
     for r in extras:
