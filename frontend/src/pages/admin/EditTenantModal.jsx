@@ -23,6 +23,8 @@ const EditTenantModal = ({ open, onOpenChange, tenant, onSuccess }) => {
     total_rooms: '',
   });
   const [modulesMap, setModulesMap] = useState({});
+  // Kanal yoneticisi altyapisi secimi (super_admin). '' = otomatik tespit.
+  const [channelProvider, setChannelProvider] = useState('');
 
   useEffect(() => {
     if (tenant) {
@@ -48,6 +50,7 @@ const EditTenantModal = ({ open, onOpenChange, tenant, onSuccess }) => {
         });
       });
       setModulesMap(baseModules);
+      setChannelProvider(tenant.channel_manager_provider || '');
       setError(null);
       setActiveTab('info');
     }
@@ -91,7 +94,10 @@ const EditTenantModal = ({ open, onOpenChange, tenant, onSuccess }) => {
     setSaving(true);
     setError(null);
     try {
-      await axios.patch(`/admin/tenants/${tenant.id}/modules`, { modules: modulesMap });
+      await axios.patch(`/admin/tenants/${tenant.id}/modules`, {
+        modules: modulesMap,
+        channel_manager_provider: channelProvider || null,
+      });
       onSuccess?.();
       onOpenChange(false);
     } catch (err) {
@@ -223,6 +229,25 @@ const EditTenantModal = ({ open, onOpenChange, tenant, onSuccess }) => {
                 );
               })}
             </div>
+
+            {(modulesMap.channel_manager || modulesMap.channel_manager_lite) && (
+              <div className="border border-slate-200 rounded-lg p-3">
+                <h4 className="text-sm font-semibold text-slate-800">Kanal yöneticisi altyapısı</h4>
+                <p className="text-[11px] text-slate-500 mt-0.5 mb-2">
+                  Bu otelin fiyat/müsaitlik ekranı hangi altyapı üzerinden çalışsın? Operatör bu adı görmez.
+                </p>
+                <select
+                  data-testid="edit-tenant-cm-provider"
+                  value={channelProvider}
+                  onChange={(e) => setChannelProvider(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="">Otomatik tespit</option>
+                  <option value="exely">Exely</option>
+                  <option value="hotelrunner">HotelRunner</option>
+                </select>
+              </div>
+            )}
 
             {error && <div className="p-2 rounded bg-red-50 text-red-700 text-sm">{error}</div>}
 

@@ -110,12 +110,31 @@ class PricingSettingsRequest(BaseModel):
 
 # ── Provider Detection ───────────────────────────────────────────
 
+async def _tenant_configured_provider(tenant_id: str) -> str | None:
+    """Otelin super_admin tarafindan secilmis kanal yoneticisi altyapisi.
+
+    Yalnizca gecerli bir deger ("exely"/"hotelrunner") dondurur; alan yoksa
+    veya tanimsizsa None doner (=> otomatik tespit korunur, pilot_drift=0).
+    """
+    tdoc = await db.tenants.find_one(
+        {"id": tenant_id}, {"_id": 0, "channel_manager_provider": 1}
+    )
+    val = (tdoc or {}).get("channel_manager_provider")
+    return val if val in ("exely", "hotelrunner") else None
+
+
 async def _detect_active_provider(tenant_id: str, prefer: str | None = None) -> dict:
     """Otelde aktif olan kanal saglayiciyi tespit et.
 
-    `prefer`: caller explicitly asks for "hotelrunner" or "exely". When
-    that provider has an active connection, return it; otherwise fall
-    back to the default order (HR > Exely).
+    Otel icin super_admin bir altyapi sectiyse (channel_manager_provider) bu
+    secim OTORITERDIR ve istemci girdisi (`prefer`) bunu ASLA ezemez:
+    - secilenin aktif baglantisi yoksa FAIL-CLOSED (provider=None,
+      configuration_error="connection_missing", digerine DUSULMEZ).
+    - `prefer` secilenden FARKLI istenirse FAIL-CLOSED
+      (configuration_error="provider_not_selected"); seciliyle AYNI ise o kullanilir.
+
+    Secim YOKSA (alan null/tanimsiz): eski davranis korunur (pilot_drift=0) —
+    `prefer` yumusak tercih (varsa o, yoksa varsayilan sira HR > Exely).
     """
     hr_conn = await db.hotelrunner_connections.find_one(
         {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
@@ -137,6 +156,29 @@ async def _detect_active_provider(tenant_id: str, prefer: str | None = None) -> 
         {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
     )
 
+    # Per-tenant secili altyapi (super_admin) OTORITERDIR; istemci (prefer) ezemez.
+    configured = await _tenant_configured_provider(tenant_id)
+
+    if configured is not None:
+        if prefer is not None and prefer != configured:
+            # Istemci secilmeyen saglayiciyi istedi -> FAIL-CLOSED.
+            return {"provider": None, "connection": None,
+                    "configured_provider": configured,
+                    "configuration_error": "provider_not_selected"}
+        if configured == "exely":
+            if exely_conn:
+                return {"provider": "exely", "connection": exely_conn}
+            return {"provider": None, "connection": None,
+                    "configured_provider": "exely",
+                    "configuration_error": "connection_missing"}
+        # configured == "hotelrunner"
+        if hr_conn:
+            return {"provider": "hotelrunner", "connection": hr_conn}
+        return {"provider": None, "connection": None,
+                "configured_provider": "hotelrunner",
+                "configuration_error": "connection_missing"}
+
+    # Secim yok -> eski otomatik tespit (yumusak prefer + varsayilan sira HR > Exely).
     if prefer == "exely" and exely_conn:
         return {"provider": "exely", "connection": exely_conn}
     if prefer == "hotelrunner" and hr_conn:
@@ -174,14 +216,18 @@ async def detect_provider(current_user: User = Depends(get_current_user)):
         {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
     )
 
+    # Otel icin super_admin bir altyapi sectiyse, operatore YALNIZCA o
+    # saglayici gosterilir (fail-closed: secilenin baglantisi yoksa liste bos).
+    configured = await _tenant_configured_provider(tenant_id)
+
     available: list[dict] = []
-    if hr_conn:
+    if hr_conn and configured in (None, "hotelrunner"):
         available.append({
             "provider": "hotelrunner",
             "provider_name": "HotelRunner",
             "room_count": len(hr_conn.get("cached_rooms", [])),
         })
-    if exely_conn:
+    if exely_conn and configured in (None, "exely"):
         available.append({
             "provider": "exely",
             "provider_name": "Exely",
@@ -558,8 +604,22 @@ async def unified_bulk_grid_update(
         {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
     )
 
+    # Per-tenant secili altyapi (super_admin) OTORITERDIR; istemcinin
+    # request.provider'i bunu ezemez: configured-exely otel yalnizca Exely'ye
+    # push eder (baglantisi yoksa 404), HR'a ASLA. Secimi seciliyle CAKISAN
+    # request.provider -> target bos -> 404 (fail-closed). Secim yoksa (alan
+    # null) eski explicit/fan-out davranisi korunur (pilot_drift=0).
+    configured = await _tenant_configured_provider(tenant_id)
     explicit = request.provider if request.provider in ("hotelrunner", "exely") else None
-    if explicit == "hotelrunner":
+
+    if configured is not None:
+        if explicit is None or explicit == configured:
+            if configured == "hotelrunner" and hr_conn:
+                targets.append({"provider": "hotelrunner", "connection": hr_conn})
+            elif configured == "exely" and exely_conn:
+                targets.append({"provider": "exely", "connection": exely_conn})
+        # explicit != configured -> targets bos kalir -> 404 (fail-closed)
+    elif explicit == "hotelrunner":
         if hr_conn:
             targets.append({"provider": "hotelrunner", "connection": hr_conn})
     elif explicit == "exely":
@@ -1261,12 +1321,17 @@ async def get_push_providers(current_user: User = Depends(get_current_user)):
             return "shadow" if shadow else ("live" if write else "read_only")
         return conn_doc.get("push_mode", "shadow")
 
-    if hr_conn:
+    # Otel icin super_admin bir altyapi sectiyse YALNIZCA o listelenir
+    # ("otel basina tek saglayici"); secim yoksa (configured=None) eski liste
+    # aynen korunur (pilot_drift=0). Syroce B2B her zaman ayri eklenir.
+    configured = await _tenant_configured_provider(tenant_id)
+
+    if hr_conn and configured in (None, "hotelrunner"):
         hr_mode = _derive_mode(hr_flags, hr_conn)
         if hr_mode != "inactive":
             providers.append({"slug": "hotelrunner", "name": "HotelRunner", "mode": hr_mode})
 
-    if exely_conn:
+    if exely_conn and configured in (None, "exely"):
         ex_mode = _derive_mode(ex_flags, exely_conn)
         if ex_mode != "inactive":
             providers.append({"slug": "exely", "name": "Exely", "mode": ex_mode})
@@ -1297,6 +1362,12 @@ async def get_pricing_settings(current_user: User = Depends(get_current_user)):
     tenant_id = current_user.tenant_id
     detection = await _detect_active_provider(tenant_id)
 
+    # Fail-closed: secili saglayici yapilandirilmis ama aktif baglantisi yok ->
+    # yanlis (digerine ait) yerel koleksiyona DUSME, bos don. configured=None
+    # (legacy) tenant'larda configuration_error olusmaz -> eski davranis korunur.
+    if detection.get("configuration_error"):
+        return {"settings": {}}
+
     if detection["provider"] == "hotelrunner":
         docs = await db.hr_pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
     else:
@@ -1314,6 +1385,12 @@ async def update_pricing_settings(
 ):
     tenant_id = current_user.tenant_id
     detection = await _detect_active_provider(tenant_id)
+
+    # Fail-closed: secili saglayicinin aktif baglantisi yoksa yanlis (digerine
+    # ait) yerel koleksiyona YAZMA. configured=None (legacy) -> eski davranis.
+    if detection.get("configuration_error"):
+        raise HTTPException(status_code=409, detail="Secili kanal saglayicinin aktif baglantisi yok")
+
     now = datetime.now(UTC).isoformat()
     updated = 0
 
@@ -1420,6 +1497,11 @@ async def get_stop_sale_summary(
     if not end_date:
         end_date = (datetime.now(UTC) + timedelta(days=14)).date().isoformat()
     detection = await _detect_active_provider(tenant_id)
+
+    # Fail-closed: secili saglayicinin aktif baglantisi yoksa yanlis (digerine
+    # ait) yerel takvimi OKUMA, bos don. configured=None (legacy) -> eski davranis.
+    if detection.get("configuration_error"):
+        return {"stops": []}
 
     cal_collection = "hr_rate_calendar" if detection["provider"] == "hotelrunner" else "rate_calendar"
 

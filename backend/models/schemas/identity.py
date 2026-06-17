@@ -1,6 +1,7 @@
 """Auto-split from schemas.py — domain: identity."""
 import uuid
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -85,6 +86,9 @@ class TenantRegister(BaseModel):
     # can hand-pick which top-level modules and sub-modules (e.g. `pms.frontdesk`,
     # `pms.cashier`) are visible. Missing keys fall back to defaults.
     modules: dict[str, bool] | None = None
+    # Kanal yoneticisi altyapisi secimi (super_admin tesis olustururken). None =
+    # otomatik tespit; explicit deger fail-closed olarak yalnizca o saglayiciya baglar.
+    channel_manager_provider: Literal["exely", "hotelrunner"] | None = None
 
 class GuestRegister(BaseModel):
     email: EmailStr

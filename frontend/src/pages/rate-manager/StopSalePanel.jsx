@@ -28,7 +28,6 @@ const CATEGORY_STYLE = {
 
 export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parentLoading, apiPrefix = '/api/channel-manager/rate-manager' }) => {
   const { t } = useTranslation();
-  const isHotelRunner = apiPrefix.includes('hr-rate-manager');
   const token = localStorage.getItem('token');
   const headers = { Authorization: `Bearer ${token}` };
 
@@ -186,17 +185,17 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
         toast.success(`${data.saved} kayıt için satış acildi`);
       }
       if (data.all_pushed) {
-        toast.success(isHotelRunner ? 'HotelRunner push basarili' : 'Exely push basarili');
+        toast.success('Kanal yoneticisi push basarili');
       } else if (data.background_push) {
         const failed = data.push_results?.filter(r => !r.success) || [];
         const succeeded = data.push_results?.filter(r => r.success) || [];
         if (succeeded.length > 0) {
-          toast.success(`${succeeded.length} oda tipi ${isHotelRunner ? 'HotelRunner' : 'Exely'}'a başarıyla gönderildi`);
+          toast.success(`${succeeded.length} oda tipi kanal yoneticisine başarıyla gönderildi`);
         }
         if (data.queued_count > 0) {
           toast.info(`${data.queued_count} push kuyruga eklendi — "Simdi Dene" ile gonderebilirsiniz`, { duration: 10000 });
         } else if (data.rate_limit_hit) {
-          toast.warning('HotelRunner rate limit: Veriler yerel olarak kaydedildi.', { duration: 12000 });
+          toast.warning('Kanal yoneticisi hiz siniri: Veriler yerel olarak kaydedildi.', { duration: 12000 });
         } else if (failed.length > 0) {
           failed.forEach(f => {
             toast.error(`${f.room_type_code || 'Oda tipi'}: ${f.error || 'Bilinmeyen hata'}`, { duration: 8000 });
@@ -537,10 +536,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
             {/* Warning */}
             <div className="flex items-start gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
               <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <span>{isHotelRunner
-                ? 'Stop sale işlemleri HotelRunner üzerinden tum kanallara anlik yansitilir.'
-                : 'Stop sale işlemleri Exely üzerinden tum kanallara anlik yansitilir.'
-              }</span>
+              <span>Stop sale işlemleri kanal yoneticisi üzerinden tum kanallara anlik yansitilir.</span>
             </div>
           </CardContent>
         </Card>

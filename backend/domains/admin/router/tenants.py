@@ -561,6 +561,8 @@ async def create_tenant(
     tenant_dict['dashboard_layout'] = dashboard_layout
     tenant_dict['hidden_nav_groups'] = nav_config.get("hidden_nav_groups", [])
     tenant_dict['hidden_nav_items'] = nav_config.get("hidden_nav_items", [])
+    if payload.channel_manager_provider:
+        tenant_dict['channel_manager_provider'] = payload.channel_manager_provider
     await sys_db.tenants.insert_one(tenant_dict)
 
     # Create admin user for this tenant
@@ -614,6 +616,10 @@ async def update_tenant_modules(
     query = {"id": tenant_id}
 
     update_doc = {"$set": {"modules": payload.modules}}
+    # Kanal yoneticisi altyapisi secimi yalnizca explicit gonderildiyse yazilir
+    # (modules yazimini bozmadan). None gonderilirse secim temizlenir -> auto-detect.
+    if "channel_manager_provider" in payload.model_fields_set:
+        update_doc["$set"]["channel_manager_provider"] = payload.channel_manager_provider
 
     result = await db.tenants.update_one(query, update_doc)
     if result.matched_count == 0:

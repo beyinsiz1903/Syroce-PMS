@@ -30,8 +30,6 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
 
   // Provider detection
   const [provider, setProvider] = useState(null);
-  const [providerName, setProviderName] = useState('');
-  const [providerOptions, setProviderOptions] = useState([]);
   const [detecting, setDetecting] = useState(true);
 
   // Grid data
@@ -101,41 +99,22 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
     [breakers, provider],
   );
 
-  // Detect active provider
+  // Detect active provider — operatore saglayici ADI gosterilmez; yalnizca
+  // hangi altyapinin aktif oldugunu icsel olarak (grid/push yonlendirmesi
+  // icin) biliriz. Otel icin secili altyapi backend'de fail-closed uygulanir.
   useEffect(() => {
     const detect = async () => {
       try {
         const { data } = await axios.get(`${UNIFIED_PREFIX}/detect-provider`, { headers });
-        const available = Array.isArray(data.available) ? data.available : [];
-        setProviderOptions(available);
-        const remembered = localStorage.getItem('unified_rm_active_provider');
-        const initial = available.find(o => o.provider === remembered) || available[0] || null;
-        if (initial) {
-          setProvider(initial.provider);
-          setProviderName(initial.provider_name || data.provider_name || '');
-        } else {
-          setProvider(data.provider);
-          setProviderName(data.provider_name || '');
-        }
+        setProvider(data.provider || null);
       } catch {
         toast.error('Kanal saglayici tespit edilemedi');
       }
       setDetecting(false);
     };
     detect();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only detection
   }, []);
-
-  // Switch provider tab
-  const switchProvider = (slug) => {
-    if (!slug || slug === provider) return;
-    const opt = providerOptions.find(o => o.provider === slug);
-    setProvider(slug);
-    setProviderName(opt?.provider_name || '');
-    setSelections({}); setRoomValues({}); setExpandedRoomTypes(new Set());
-    setGridRoomType('all'); setGridRatePlan('all');
-    try { localStorage.setItem('unified_rm_active_provider', slug); } catch { /* noop */ }
-  };
 
   // Fetch grid
   const fetchGrid = useCallback(async () => {
@@ -374,7 +353,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
         agency_ids: agencyIds,
       }, { headers });
 
-      const providerLabel = provider === 'hotelrunner' ? 'HotelRunner' : (provider === 'exely' ? 'Exely' : (providerName || 'kanal'));
+      const providerLabel = 'Kanal yöneticisi';
       const breakerState = activeBreaker?.state;
       if (data.channel_push_count > 0 && breakerState === 'open') {
         toast.warning(
@@ -413,7 +392,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
     };
     const meta = map[b.state] || map.closed;
     const { Icon } = meta;
-    const providerLabel = b.provider === 'hotelrunner' ? 'HotelRunner' : 'Exely';
+    const providerLabel = 'Kanal';
     const failBit = b.state !== 'closed' ? ` · ${b.failure_count}/${b.failure_threshold} hata` : '';
     return (
       <div
@@ -503,12 +482,12 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
               return (
                 <Badge key={p.slug} className={cfg.className} data-testid={`unified-push-badge-${p.slug}`}>
                   {cfg.icon}
-                  {p.name}: {cfg.label}
+                  Kanal: {cfg.label}
                 </Badge>
               );
             }) : (
               <Badge className="bg-zinc-600 text-white" data-testid="unified-push-badge-default">
-                {providerName}
+                Kanal Yöneticisi
               </Badge>
             )}
             {selectedAgencies.size > 0 && (
@@ -528,34 +507,6 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
           >
             <span className="text-xs text-zinc-500">Kanal sağlığı:</span>
             {breakers.map(renderBreakerPill)}
-          </div>
-        )}
-
-        {/* Provider tabs (HotelRunner / Exely) */}
-        {providerOptions.length > 0 && (
-          <div
-            className="flex items-center gap-1 p-1 bg-zinc-100 rounded-lg w-fit"
-            data-testid="provider-tabs"
-          >
-            {providerOptions.map(opt => {
-              const active = provider === opt.provider;
-              return (
-                <button
-                  key={opt.provider}
-                  onClick={() => switchProvider(opt.provider)}
-                  data-testid={`provider-tab-${opt.provider}`}
-                  className={
-                    'px-4 py-1.5 text-sm font-medium rounded-md transition ' +
-                    (active
-                      ? 'bg-white text-zinc-900 shadow-sm'
-                      : 'text-zinc-500 hover:text-zinc-700')
-                  }
-                >
-                  {opt.provider_name}
-                  <span className="ml-2 text-xs text-zinc-400">({opt.room_count})</span>
-                </button>
-              );
-            })}
           </div>
         )}
 

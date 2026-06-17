@@ -7505,13 +7505,13 @@
     "pages_ratemanager_BulkUpdatePanel": {
       "tarih_araligi": "Tarih Araligi",
       "oda_adi": "Oda adi",
-      "exely_baglantisi_bulunamadi_veya_oda_tip": "Exely bağlantısı bulunamadı veya oda tipi tanımlı değil",
+      "exely_baglantisi_bulunamadi_veya_oda_tip": "Kanal bağlantısı bulunamadı veya oda tipi tanımlı değil",
       "ozet": "Özet:",
       "oda_adi_8e806": "Oda adi",
       "satis_durdur": "Satış durdur",
-      "hotelrunner_bu_oda_tipi_icin_musaitlik_g": "HotelRunner bu oda tipi için musaitlik guncellemeye izin vermiyor",
+      "hotelrunner_bu_oda_tipi_icin_musaitlik_g": "Kanal yöneticisi bu oda tipi için musaitlik guncellemeye izin vermiyor",
       "musaitlik_kapali": "Musaitlik kapalı",
-      "hotelrunner_bu_oda_tipi_icin_fiyat_gunce": "HotelRunner bu oda tipi için fiyat guncellemeye izin vermiyor",
+      "hotelrunner_bu_oda_tipi_icin_fiyat_gunce": "Kanal yöneticisi bu oda tipi için fiyat guncellemeye izin vermiyor",
       "fiyat_kapali": "Fiyat kapalı"
     },
     "pages_ratemanager_StopSalePanel": {
@@ -8310,7 +8310,7 @@
     },
     "pages_UnifiedRateManager": {
       "aktif_kanal_saglayici_bulunamadi": "Aktif Kanal Saglayici Bulunamadi",
-      "fiyat_ve_musaitlik_yonetimi_icin_once_bi": "Fiyat ve musaitlik yönetimi için once bir kanal saglayici (HotelRunner veya Exely) baglantisi kurulmalidir.",
+      "fiyat_ve_musaitlik_yonetimi_icin_once_bi": "Fiyat ve musaitlik yönetimi için once bir kanal yöneticisi baglantisi kurulmalidir.",
       "fiyat_musaitlik_yonetimi": "Fiyat & Musaitlik Yönetimi",
       "tum_kanallara_ve_acentelere_tek_noktadan": "Tüm kanallara ve acentelere tek noktadan fiyat, musaitlik ve kontenjan gönderin",
       "henuz_aktif_acente_tanimlanmamis": "Henüz aktif acente tanimlanmamis.",

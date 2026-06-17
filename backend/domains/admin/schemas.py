@@ -3,6 +3,7 @@ Admin Domain — Schemas
 Request/response models extracted from admin/router.py.
 """
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, conint
 
@@ -13,6 +14,10 @@ class PermissionCheckRequest(BaseModel):
 
 class TenantModulesUpdate(BaseModel):
     modules: dict[str, bool]
+    # Per-tenant kanal yoneticisi altyapisi secimi (super_admin). Yalnizca
+    # explicit gonderildiginde yazilir; None gonderilirse secim temizlenir
+    # (otomatik tespite doner). Gecersiz deger -> 422.
+    channel_manager_provider: Literal["exely", "hotelrunner"] | None = None
 
 
 class SubscriptionUpdateRequest(BaseModel):
