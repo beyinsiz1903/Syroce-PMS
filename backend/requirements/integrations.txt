@@ -1,10 +1,14 @@
 # Integrations — third-party SDKs (cloud, payments, AI providers, email).
 #
 # litellm pin note (parity preservation, Plan B per requirements-split-plan.md §4.3):
-#   `litellm==1.80.0` is intentionally pinned to mirror current behavior.
-#   `backend/Dockerfile` performs a `--no-deps` override to `litellm>=1.83.2`
-#   AFTER this file is installed. DO NOT bump this pin without coordinating
-#   with the Dockerfile override; clean upgrade (Plan A) is deferred.
+#   `litellm==1.80.0` is intentionally pinned ONLY to provide an openai-1.x
+#   compatible dependency tree; it is NEVER the runtime version. Both
+#   `backend/Dockerfile` and `backend/scripts/post_install.sh` perform a
+#   `--no-deps` override to `litellm>=1.84.0` AFTER this file is installed,
+#   fully overwriting the 1.80.0 package and clearing CVE-2026-49468.
+#   DO NOT bump this base pin without coordinating with those overrides:
+#   litellm>=1.83.0 requires openai>=2.30.0, conflicting with the pinned
+#   openai==1.99.9. Clean upgrade (Plan A) is deferred.
 boto3==1.40.67
 botocore==1.40.67
 google-ai-generativelanguage==0.6.15

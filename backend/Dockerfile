@@ -27,12 +27,15 @@ COPY requirements/ ./requirements/
 #   does NOT import ml stack), reports.txt, dev.txt → meaningful image
 #   reduction (~38% by distribution count, ~137 vs 222 packages).
 # - litellm override below stays IDENTICAL to the all.txt setup: forced
-#   `>=1.83.2 --no-deps` because litellm declares incompatible upper
-#   pins on httpx/openai we resolve via api.txt/integrations.txt directly.
+#   `>=1.84.0 --no-deps`. The >=1.84.0 floor clears CVE-2026-49468 (auth
+#   bypass) and the earlier CVE-2026-35029/35030 (first fixed in 1.83.2);
+#   --no-deps keeps openai at the pinned 1.99.9 (litellm>=1.83.0 would
+#   otherwise force openai>=2.30.0) and avoids litellm's incompatible
+#   httpx/openai upper pins we resolve via api.txt/integrations.txt directly.
 # - See docs/backend_refactors/requirements-split-plan.md §4.5 and run.md
 #   Phase 6.0 (API AST scan) + Phase 6.1 (this swap).
 RUN python -m pip install --no-cache-dir --prefix=/install --timeout=300 --retries=5 -r requirements/api-runtime.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ && \
-    PYTHONPATH=/install/lib/python3.11/site-packages python -m pip install --no-cache-dir --prefix=/install "litellm>=1.83.2" --no-deps
+    PYTHONPATH=/install/lib/python3.11/site-packages python -m pip install --no-cache-dir --prefix=/install "litellm>=1.84.0" --no-deps
 
 # Stage 2: Runtime
 FROM python:3.11-slim AS runtime
