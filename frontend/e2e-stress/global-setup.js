@@ -368,12 +368,14 @@ export default async function globalSetup() {
 
     // 6) Seed 500 rooms
     const dataPrefix = `E2E_STRESS_F7_${Date.now()}_`;
+    // F8L v2 (Task #25) — synthetic pending_assignment bookings for spec 52B's
+    // real-succeeded bulk-resolve coverage (1 consumed by test G, 1 spare for
+    // re-runs / future expansion). Single-source the count so the request param
+    // and the post-seed deploy-stale guard below can never drift apart.
+    const SEED_PENDING_BOOKINGS = 2;
     const seedResp = await api.post('/api/admin/stress/seed', {
         headers: { Authorization: `Bearer ${pilotToken}` },
-        // F8L v2 (Task #25) — seed_pending_bookings: 2 synthetic pending_assignment
-        // bookings for spec 52B's real-succeeded bulk-resolve coverage (1 consumed
-        // by test G, 1 spare for re-runs / future expansion).
-        data: { target_tenant_id: STRESS_TID, room_count: ROOM_COUNT, data_prefix: dataPrefix, seed_pending_bookings: 2 },
+        data: { target_tenant_id: STRESS_TID, room_count: ROOM_COUNT, data_prefix: dataPrefix, seed_pending_bookings: SEED_PENDING_BOOKINGS },
         failOnStatusCode: false,
         timeout: 120_000,
     });
@@ -392,6 +394,21 @@ export default async function globalSetup() {
     const failedGates = requiredGates.filter((g) => backendGates[g] !== true);
     if (failedGates.length) {
         throw new Error(`[stress-setup] NO-GO: backend gates not all-true: failed=${failedGates.join(',')} gates=${JSON.stringify(backendGates)}`);
+    }
+    // F8L v2 (Task #25) — deploy-stale guard. A backend that predates the
+    // `seed_pending_bookings` branch silently ignores the unknown param yet still
+    // returns ok()+all-gates-true, so the seed↔read skew only surfaces ~1.3h later
+    // as a confusing spec-52B "no pending_assignment booking" FAIL. Hard-assert the
+    // requested rows were actually created here, turning a stale deploy into an
+    // immediate, self-diagnosing NO-GO at setup. Additive only — no existing
+    // assertion is loosened.
+    const seededPending = seedBody.seeded_counts?.pending_bookings;
+    if (typeof seededPending !== 'number' || seededPending < SEED_PENDING_BOOKINGS) {
+        throw new Error(
+            `[stress-setup] NO-GO: seed_pending_bookings requested=${SEED_PENDING_BOOKINGS} but ` +
+            `seeded_counts.pending_bookings=${JSON.stringify(seededPending)}. Deployed backend likely ` +
+            `predates the pending_assignment seed branch (stress.py pending_bookings_docs) — redeploy ` +
+            `stress backend to HEAD. seeded_counts=${JSON.stringify(seedBody.seeded_counts)}`);
     }
     console.log(`[stress-setup] ✅ Seed OK n=${ROOM_COUNT} prefix=${dataPrefix} timing_ms=${JSON.stringify(seedBody.timing_ms)}`);
     console.log(`[stress-setup]    counts: ${JSON.stringify(seedBody.seeded_counts)}`);
