@@ -457,7 +457,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
               <Button
                 variant="ghost"
                 size="sm"
-                className="md:hidden h-8 w-8 p-0"
+                className="md:hidden h-8 w-8 p-0 dark:text-gray-100"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 data-testid="mobile-menu-toggle"
               >
@@ -517,7 +517,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                 const isActive = normalizedCurrentModule === normalizeKey(item.key) || isItemPathActive(item);
                 return (
                   <Button key={item.key} variant="ghost" size="sm" onClick={() => handleNavigate(item.path, true)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
-                    className={`w-full justify-start py-2 mb-0.5 ${isActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-100'}`}
+                    className={`w-full justify-start py-2 mb-0.5 ${isActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-100 dark:text-gray-100'}`}
                     data-testid={`nav-${item.key}-button`}>
                     <Icon className="w-4 h-4 mr-2" />{t(`navKeys.${item.key}`, item.label)}
                   </Button>
@@ -545,7 +545,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                           }
                         }
                       }}
-                      className={`w-full justify-between py-2 ${active && !isExpanded ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-100'}`}>
+                      className={`w-full justify-between py-2 ${active && !isExpanded ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-100 dark:text-gray-100'}`}>
                       <div className="flex items-center">
                         <GroupIcon className="w-4 h-4 mr-2" />
                         {t(`navGroups.${groupDef.id}`, groupDef.label)}
@@ -560,7 +560,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                           return (
                             <Button key={item.key} variant="ghost" size="sm"
                               onClick={() => handleNavigate(item.path, true)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
-                              className={`w-full justify-start py-1.5 text-sm ${isItemActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-50'}`}
+                              className={`w-full justify-start py-1.5 text-sm ${isItemActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-50 dark:text-gray-100'}`}
                               data-testid={`nav-${item.key}-button`}>
                               <Icon className="w-3.5 h-3.5 mr-2" />{t(`navKeys.${item.key}`, item.label)}
                             </Button>
@@ -577,7 +577,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                 const isActive = normalizedCurrentModule === normalizeKey(item.key) || location.pathname === item.path;
                 return (
                   <Button key={item.key} variant="ghost" size="sm" onClick={() => handleNavigate(item.path, true)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
-                    className={`w-full justify-start py-2 mb-0.5 ${isActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-100'}`}
+                    className={`w-full justify-start py-2 mb-0.5 ${isActive ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-gray-100 dark:text-gray-100'}`}
                     data-testid={`nav-${item.key}-button`}>
                     <Icon className="w-4 h-4 mr-2" />{t(`navKeys.${item.key}`, item.label)}
                   </Button>
@@ -588,7 +588,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
                 const Icon = ICON_BY_KEY[item.key] || Home;
                 return (
                   <Button key={item.key} variant="ghost" size="sm" onClick={() => handleNavigate(item.path, true)} onMouseEnter={() => preloadRoute(item.path)} onFocus={() => preloadRoute(item.path)}
-                    className="w-full justify-start py-2 mb-0.5 hover:bg-gray-100" data-testid={`nav-${item.key}-button`}>
+                    className="w-full justify-start py-2 mb-0.5 hover:bg-gray-100 dark:text-gray-100" data-testid={`nav-${item.key}-button`}>
                     <Icon className="w-4 h-4 mr-2" />{t(`navKeys.${item.key}`, item.label)}
                   </Button>
                 );

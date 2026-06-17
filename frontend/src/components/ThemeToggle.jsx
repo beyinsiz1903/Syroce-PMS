@@ -29,7 +29,7 @@ const ThemeToggle = () => {
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 w-8 p-0"
+          className="h-8 w-8 p-0 dark:text-gray-100"
           data-testid="theme-toggle"
           aria-label={t('settings.theme', 'Tema')}
         >

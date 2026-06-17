@@ -120,7 +120,7 @@ const NotificationBell = () => {
           variant="ghost"
           size="sm"
           onClick={() => setIsOpen(true)}
-          className="relative p-2 hover:bg-white/20"
+          className="relative p-2 hover:bg-white/20 dark:text-gray-100"
           data-testid="notification-bell-button"
         >
           <Bell className="w-5 h-5" />
