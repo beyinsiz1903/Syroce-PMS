@@ -150,7 +150,7 @@ const PushSubscriptionManager = () => {
           variant="ghost"
           size="sm"
           className={`hidden md:flex items-center gap-2 ${
-            status === 'enabled' ? 'text-green-600' : 'text-gray-500'
+            status === 'enabled' ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-300'
           }`}
         >
           {supportPush ? (

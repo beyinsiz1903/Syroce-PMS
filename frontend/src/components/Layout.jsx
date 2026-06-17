@@ -467,7 +467,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
               {/* User menu */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-8 px-2 text-xs">
+                  <Button variant="outline" size="sm" className="h-8 px-2 text-xs dark:border-gray-600 dark:text-gray-100">
                     <User className="w-3.5 h-3.5 mr-1" />
                     <span className="hidden sm:inline max-w-[70px] truncate">{user?.name || 'User'}</span>
                   </Button>

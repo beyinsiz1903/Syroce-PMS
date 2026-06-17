@@ -34,9 +34,9 @@ const LanguageSelector = () => {
 
   return (
     <div className="flex items-center gap-2">
-      <Languages className="w-4 h-4 text-gray-600" />
+      <Languages className="w-4 h-4 text-gray-600 dark:text-gray-300" />
       <Select value={i18n.language} onValueChange={changeLanguage}>
-        <SelectTrigger className="w-[160px]">
+        <SelectTrigger className="w-[160px] dark:border-gray-600 dark:text-gray-100">
           <SelectValue>
             {languages.find(l => l.code === i18n.language)?.flag}{' '}
             {languages.find(l => l.code === i18n.language)?.name}
