@@ -308,6 +308,61 @@ EOF
   fi
   echo "✅ SPA build verified: $_js_total js chunks, 0 empty, all index.html /js refs present+nonempty"
 
+  # 0c) The checks above inspect st_size ONLY. A deploy-VM materialization
+  #     hiccup (write phase out of disk, or a copy that lands the size but not
+  #     the data blocks) can leave a file whose inode reports the CORRECT size
+  #     but whose data is unreadable/short or all-NUL. HEAD returns the right
+  #     Content-Length, but GET truncates ("Response content shorter than
+  #     Content-Length") -> edge "unexpected EOF" 500 -> WHITE SCREEN, while the
+  #     size-only gate above happily reports "0 empty". FULLY READ every served
+  #     file (bytes-read == st_size, not all-NUL) before fronting traffic.
+  #     Fail closed: refuse to start rather than serve a white screen that
+  #     looks healthy. (We do NOT rebuild at runtime — that risks the boot/
+  #     promote timeout; the build-time gate in build-frontend.sh owns repair.)
+  _fr_verifier="$(dirname "$FRONTEND_BUILD_ABS")/verify_build_readable.py"
+  if [ -f "$_fr_verifier" ] && command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+    if ! "$PYTHON_BIN" "$_fr_verifier" "$FRONTEND_BUILD_ABS"; then
+      echo "ERROR: SPA full-read verify FAILED at $FRONTEND_BUILD_ABS — built files have correct size but unreadable/sparse data (would serve white screen). Refusing to start static-front."
+      exit 1
+    fi
+    echo "✅ SPA full-read verify passed (every served file read to EOF, bytes==size, non-NUL)"
+  else
+    # Dependency-free fallback covering index.html /js refs AND every
+    # build/js/*.js. Two reads per file, both forcing the data blocks off disk:
+    #   - cat|wc -c  : bytes actually readable (short read => truncation). NOTE
+    #                  `wc -c <file` would fstat st_size and MISS the corruption.
+    #   - tr -d '\0'|wc -c : non-NUL bytes; js is text, so any NUL (count<size)
+    #                  is a partially-sparse/hole-punched block even when the
+    #                  total length still equals st_size.
+    echo "WARN: full-read verifier unavailable ($_fr_verifier or \$PYTHON_BIN missing) — shell full-read fallback over index.html /js refs + all build/js"
+    _fr_bad=0
+    _fr_check() {
+      local _p="$1" _exp _act _nonnul
+      _exp=$(stat -c%s "$_p" 2>/dev/null || echo -1)
+      _act=$(cat "$_p" 2>/dev/null | wc -c | tr -d ' ')
+      _nonnul=$(tr -d '\000' < "$_p" 2>/dev/null | wc -c | tr -d ' ')
+      if [ "$_exp" -le 0 ] || [ "$_act" != "$_exp" ] || [ "$_nonnul" != "$_exp" ]; then
+        echo "ERROR: full-read mismatch for $_p (read=$_act nonNUL=$_nonnul size=$_exp)"
+        _fr_bad=1
+      fi
+    }
+    while IFS= read -r _r; do
+      [ -n "$_r" ] || continue
+      _fr_check "$FRONTEND_BUILD_ABS$_r"
+    done <<EOF
+$_js_refs
+EOF
+    for _f in "$FRONTEND_BUILD_ABS"/js/*.js; do
+      [ -e "$_f" ] || continue
+      _fr_check "$_f"
+    done
+    if [ "$_fr_bad" -ne 0 ]; then
+      echo "ERROR: SPA full-read verify (shell fallback) FAILED at $FRONTEND_BUILD_ABS — refusing to start static-front (would serve white screen)"
+      exit 1
+    fi
+    echo "✅ SPA full-read verify (shell fallback) passed for index.html /js refs + all build/js"
+  fi
+
   # 1) uvicorn on the internal port. --proxy-headers trusted only from the
   #    local Caddy hop (127.0.0.1) so the forwarded client IP still drives
   #    rate limiting / audit, exactly as when uvicorn sat behind the edge.
