@@ -98,12 +98,15 @@ PILOT_TENANT_UUID = "5bad4a34-6ee3-4566-9053-741b7375a9cf"
 OUTBOX_COLL = "outbox_events"
 RECON_COLL = "channel_reconciliation_cases"
 
-# PENDING event types that have no consumer in the stress tenant and pile up
-# forever. PENDING rows of any OTHER type are NOT swept — don't mask a real
-# stuck-delivery condition.
-DEAD_PENDING_EVENT_TYPES = ("guest.checked_in.v1", "guest.checked_out.v1")
-# Terminal outbox states — safe to prune once aged out.
-TERMINAL_STATUSES = ("processed", "failed", "parked")
+# PENDING event types with no consumer in the stress tenant (the dead backlog)
+# + the terminal states, single-sourced in ``core.outbox_residue`` so this
+# manual sweep and the nightly teardown auto-clean
+# (``domains/admin/router/stress.py``) can never drift apart. PENDING rows of
+# any OTHER type are NOT swept — don't mask a real stuck-delivery condition.
+from core.outbox_residue import (  # noqa: E402
+    DEAD_PENDING_EVENT_TYPES,
+    TERMINAL_OUTBOX_STATUSES as TERMINAL_STATUSES,
+)
 
 MAX_TIME_MS = 60000
 

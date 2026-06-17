@@ -245,3 +245,72 @@ def test_cleanup_full_wipe_explicit_passes_gate(stress_client, monkeypatch):
     # Idempotency: every collection returns 0 from stub
     assert all(v == 0 for v in body["deleted_counts"].values())
     assert body["idempotent"] is True
+
+
+def test_cleanup_sweeps_dead_pending_outbox(stress_client, monkeypatch):
+    """The cleanup endpoint additionally sweeps the stress tenant's dead-pending
+    outbox backlog (guest.checked_in/out.v1 — no consumer, piles up forever and
+    trips the Atlas query-targeting alert). It MUST use a precision filter
+    (tenant + status=pending + only the dead event types), NOT a blanket tenant
+    wipe, so a genuine stuck-delivery of any OTHER event type is never masked."""
+    monkeypatch.setenv("E2E_ALLOW_DESTRUCTIVE_STRESS", "true")
+    import domains.admin.router.stress as stress_mod
+    from contextlib import contextmanager
+
+    calls: dict = {}
+
+    class _OutboxColl:
+        async def delete_many(self, flt):
+            calls["outbox"] = flt
+            class R: deleted_count = 7
+            return R()
+
+    class _StubColl:
+        async def delete_many(self, flt):
+            class R: deleted_count = 0
+            return R()
+
+    class _StubDb:
+        def __getattr__(self, name):
+            return _OutboxColl() if name == "outbox_events" else _StubColl()
+
+    @contextmanager
+    def _noop_ctx(_tid): yield
+    monkeypatch.setattr(stress_mod, "tenant_context", _noop_ctx)
+    import core.database as _coredb
+    monkeypatch.setattr(_coredb, "db", _StubDb())
+
+    r = stress_client.post(
+        CLEANUP_PATH,
+        json={"target_tenant_id": STRESS_TID, "confirm_full_wipe": True},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # The dead-pending backlog count is reported in deleted_counts.
+    assert body["deleted_counts"].get("outbox_events") == 7
+    # Precision filter: tenant-scoped, pending-only, dead event types only.
+    flt = calls["outbox"]
+    assert flt["tenant_id"] == STRESS_TID
+    assert flt["status"] == "pending"
+    assert set(flt["event_type"]["$in"]) == {
+        "guest.checked_in.v1",
+        "guest.checked_out.v1",
+    }
+
+
+def test_cleanup_outbox_uses_shared_dead_types_constant():
+    """The endpoint's dead-pending event types are single-sourced with the
+    manual sweep script via core.outbox_residue (drift guard)."""
+    import sys
+    from pathlib import Path
+
+    # Mirror the sibling residue test: make `from scripts import ...` resolve.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from core.outbox_residue import DEAD_PENDING_EVENT_TYPES
+    from scripts import cleanup_stress_outbox_residue as sweep
+
+    assert sweep.DEAD_PENDING_EVENT_TYPES == DEAD_PENDING_EVENT_TYPES
+    assert set(DEAD_PENDING_EVENT_TYPES) == {
+        "guest.checked_in.v1",
+        "guest.checked_out.v1",
+    }

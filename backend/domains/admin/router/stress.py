@@ -83,6 +83,7 @@ async def _delete_many_with_retry(col, flt: dict, *, col_name: str, attempts: in
         raise last_exc
 
 from core.helpers import require_super_admin_guard
+from core.outbox_residue import DEAD_PENDING_EVENT_TYPES
 from core.tenant_db import tenant_context
 from models.schemas import User
 
@@ -2893,6 +2894,33 @@ async def stress_cleanup(
             else:
                 res = await _delete_many_with_retry(col, flt, col_name=col_name)
             deleted_counts[col_name] = res.deleted_count
+
+        # Dead-pending outbox backlog self-clean (Atlas query-targeting fix).
+        # Stress check-in/check-out flows emit guest.checked_in/out.v1 SXI
+        # events through the production outbox path (no stress_seed tag), and
+        # NOTHING in the stress tenant consumes them, so they accumulate as
+        # PENDING forever (observed 30k+ rows) — the per-minute outbox monitor's
+        # count_documents({status:"pending"}) then scans the whole dead backlog,
+        # which is exactly what trips the Atlas "Query Targeting: Scanned/
+        # Returned > 1000" alert. Teardown runs after the suite and the stress
+        # workflow is concurrency-guarded (single in-flight run), so deleting
+        # the stress tenant's dead-pending rows here keeps the backlog at ~0
+        # every night. PRECISION filter (not a blanket tenant wipe): only the
+        # no-consumer event types are swept, so PENDING rows of any OTHER type
+        # are never masked — a genuine stuck-delivery condition still surfaces.
+        # No age guard: these types have no consumer, so cleanup#2 (the
+        # idempotency check) deterministically returns 0. Terminal rows are
+        # pruned globally by the outbox_terminal_retention_task Celery beat;
+        # the manual sibling sweep is scripts/cleanup_stress_outbox_residue.py.
+        outbox_flt = {
+            "tenant_id": stress_tid,
+            "status": "pending",
+            "event_type": {"$in": list(DEAD_PENDING_EVENT_TYPES)},
+        }
+        res = await _delete_many_with_retry(
+            db.outbox_events, outbox_flt, col_name="outbox_events",
+        )
+        deleted_counts["outbox_events"] = res.deleted_count
     cleanup_ms = round((time.perf_counter() - t_start) * 1000, 1)
 
     return {
