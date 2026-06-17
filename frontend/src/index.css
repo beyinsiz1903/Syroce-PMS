@@ -451,6 +451,8 @@ code {
 .dark .bg-amber-200 { background-color: #92400e; }
 .dark .hover\:bg-amber-50:hover { background-color: #78350f; }
 .dark .hover\:bg-amber-100:hover { background-color: #92400e; }
+.dark .hover\:bg-amber-200:hover { background-color: #b45309; }
+.dark .group:hover .group-hover\:bg-amber-100 { background-color: #92400e; }
 .dark .text-amber-400,
 .dark .text-amber-500,
 .dark .text-amber-600,
@@ -539,6 +541,8 @@ code {
 .dark .bg-emerald-200 { background-color: #065f46; }
 .dark .hover\:bg-emerald-50:hover { background-color: #064e3b; }
 .dark .hover\:bg-emerald-100:hover { background-color: #065f46; }
+.dark .hover\:bg-emerald-200:hover { background-color: #047857; }
+.dark .hover\:bg-emerald-300:hover { background-color: #059669; }
 .dark .text-emerald-400,
 .dark .text-emerald-500,
 .dark .text-emerald-600,
@@ -627,6 +631,8 @@ code {
 .dark .bg-blue-200 { background-color: #1e40af; }
 .dark .hover\:bg-blue-50:hover { background-color: #1e3a8a; }
 .dark .hover\:bg-blue-100:hover { background-color: #1e40af; }
+.dark .hover\:bg-blue-200:hover { background-color: #1d4ed8; }
+.dark .hover\:bg-blue-300:hover { background-color: #2563eb; }
 .dark .text-blue-400,
 .dark .text-blue-500,
 .dark .text-blue-600,
