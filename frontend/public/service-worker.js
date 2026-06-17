@@ -5,28 +5,45 @@
 
 // Bumped when caching topology değişiyor — eski client'lar otomatik yeni
 // CACHE_NAME'e geçer (activate handler eskileri siler).
-const CACHE_VERSION = 'v1.2.1';
+// v1.3.0: çevrimdışı oda-durumu + çıkış kuyrukları (roomStatusQueue/checkoutQueue)
+// eklendi + #3 finansal-detay cache sızıntısı kapatıldı (full-detail/folios/payments
+// NO_CACHE). Bump → eski client'lar yeni SW'ye geçer ve eski cache'i siler.
+const CACHE_VERSION = 'v1.3.0';
 const CACHE_NAME = `hotel-pms-${CACHE_VERSION}`;
 // Auth ayrımı: kullanıcı değişimi sonrası tüm cache'i drop edebilmek için
 // client'lar `postMessage({ type: 'AUTH_CHANGED' })` gönderir → SW siler.
 const OFFLINE_DB_NAME = 'SyroceOffline';
-// v2: checkinQueue store eklendi (çevrimdışı ön büro girişleri). Frontend
-// tarafı (src/utils/offlineQueueDB.jsx) ile aynı versiyon olmalı.
-const OFFLINE_DB_VERSION = 2;
+// v3: roomStatusQueue + checkoutQueue store'ları eklendi (çevrimdışı kat
+// hizmetleri oda durumu + sıfır-bakiye çıkış). Frontend tarafı
+// (src/utils/offlineQueueDB.jsx) ile aynı versiyon olmalı.
+const OFFLINE_DB_VERSION = 3;
 const MEDIA_QUEUE_STORE = 'mediaQueue';
 const TASK_QUEUE_STORE = 'taskQueue';
 const NOTIFICATION_LOG_STORE = 'notificationLog';
 const CHECKIN_QUEUE_STORE = 'checkinQueue';
+const ROOM_STATUS_QUEUE_STORE = 'roomStatusQueue';
+const CHECKOUT_QUEUE_STORE = 'checkoutQueue';
 const MEDIA_SYNC_TAG = 'sync-media-uploads';
 const TASK_SYNC_TAG = 'sync-task-updates';
 const NOTIFICATION_SYNC_TAG = 'sync-notification-log';
 const CHECKIN_SYNC_TAG = 'sync-checkins';
+const ROOM_STATUS_SYNC_TAG = 'sync-room-status';
+const CHECKOUT_SYNC_TAG = 'sync-checkouts';
 // Çevrimdışı kuyruğun tekrar oynatılacağı tek idempotent uç.
 const CHECKIN_SYNC_ENDPOINT = '/api/frontdesk/v2/checkin';
+// Oda-durumu replay ucu (last-write-wins, idempotent PUT). {roomId} doldurulur.
+const ROOM_STATUS_SYNC_ENDPOINT = '/api/pms/housekeeping/rooms/{roomId}/status';
+// Çıkış replay ucu (idempotent POST; çift çıkış deterministik anahtar + backend
+// ALREADY_CHECKED_OUT guard ile önlenir). {bookingId} doldurulur.
+const CHECKOUT_SYNC_ENDPOINT = '/api/frontdesk/checkout/{bookingId}?auto_close_folios=true';
 // Geçici (401/5xx) hatalar bu sayıya ulaşınca sonsuza dek tekrar denenmez;
 // operatör müdahalesi için çakışmaya dönüştürülür. src/utils/offlineCheckin.js
 // içindeki MAX_CHECKIN_ATTEMPTS ile aynı tutulmalı.
 const MAX_CHECKIN_ATTEMPTS = 8;
+// Oda-durumu + çıkış kuyrukları için aynı tavan (src/utils/offlineRoomStatus.js
+// MAX_ROOM_STATUS_ATTEMPTS + src/utils/offlineCheckout.js MAX_CHECKOUT_ATTEMPTS).
+const MAX_ROOM_STATUS_ATTEMPTS = 8;
+const MAX_CHECKOUT_ATTEMPTS = 8;
 
 // Assets to cache immediately on install.
 // ÖNEMLİ: Bu liste yalnızca SUNUCUDA GERÇEKTEN VAR OLAN yolları içermeli.
@@ -70,6 +87,13 @@ const NO_CACHE_PATTERNS = [
   /\/api\/night-audit/i,
   /\/api\/admin/i,
   /\/api\/quick-?id/i,
+  // #3 finansal-detay sızıntı kapaması: rezervasyon full-detail yanıtı folios/
+  // charges/payments embed eder → at-rest PII. Geniş /api/(pms|bookings)/
+  // networkFirst kuralından ÖNCE burada bloklanır (no-cache döngüsü ROUTE'tan
+  // önce çalışır). Çevrimdışı detay = sadece operasyonel alanlar (liste cache'i
+  // + allBookings client fallback), finansal sekmeler ASLA cache'lenmez.
+  /\/api\/.*\/full-detail/i,
+  /\/api\/.*\/(folios|charges|payments|deposits)(\/|\?|$)/i,
 ];
 
 const ROUTE_STRATEGIES = [
@@ -385,6 +409,12 @@ self.addEventListener('message', (event) => {
   if (data.type === 'PROCESS_CHECKIN_QUEUE') {
     event.waitUntil(processCheckinQueue());
   }
+  if (data.type === 'PROCESS_ROOMSTATUS_QUEUE') {
+    event.waitUntil(processRoomStatusQueue());
+  }
+  if (data.type === 'PROCESS_CHECKOUT_QUEUE') {
+    event.waitUntil(processCheckoutQueue());
+  }
 });
 
 // Background sync for offline actions
@@ -397,6 +427,10 @@ self.addEventListener('sync', (event) => {
     event.waitUntil(processTaskQueue());
   } else if (event.tag === CHECKIN_SYNC_TAG) {
     event.waitUntil(processCheckinQueue());
+  } else if (event.tag === ROOM_STATUS_SYNC_TAG) {
+    event.waitUntil(processRoomStatusQueue());
+  } else if (event.tag === CHECKOUT_SYNC_TAG) {
+    event.waitUntil(processCheckoutQueue());
   } else if (event.tag === NOTIFICATION_SYNC_TAG || event.tag === 'sync-offline-actions') {
     event.waitUntil(broadcastClientMessage({ type: 'SYNC_NOTIFICATION_LOG' }));
   }
@@ -422,7 +456,18 @@ async function openOfflineDB() {
     const request = indexedDB.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION);
 
     request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
+    // Sayfa bağlamı eski sürümde açık bir bağlantı tutuyorsa SW upgrade'i
+    // sonsuza dek bloklanmasın — fail-soft reject (çağıran try/catch yutar).
+    request.onblocked = () => reject(new Error('IndexedDB upgrade blocked'));
+    request.onsuccess = () => {
+      const db = request.result;
+      // Başka bağlam daha yeni sürüm açarsa bu bağlantıyı kapat (sonraki
+      // openOfflineDB çağrısı taze açar) — karşılıklı blok kilidini önler.
+      db.onversionchange = () => {
+        try { db.close(); } catch { /* zaten kapalı */ }
+      };
+      resolve(db);
+    };
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
 
@@ -440,6 +485,14 @@ async function openOfflineDB() {
       }
       if (!db.objectStoreNames.contains(CHECKIN_QUEUE_STORE)) {
         const store = db.createObjectStore(CHECKIN_QUEUE_STORE, { keyPath: 'id' });
+        store.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(ROOM_STATUS_QUEUE_STORE)) {
+        const store = db.createObjectStore(ROOM_STATUS_QUEUE_STORE, { keyPath: 'id' });
+        store.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(CHECKOUT_QUEUE_STORE)) {
+        const store = db.createObjectStore(CHECKOUT_QUEUE_STORE, { keyPath: 'id' });
         store.createIndex('createdAt', 'createdAt', { unique: false });
       }
     };
@@ -718,6 +771,182 @@ async function processCheckinQueue() {
     }
   } catch (error) {
     console.error('[SW] processCheckinQueue error', error);
+  }
+}
+
+// Çevrimdışı oda-durumu kuyruğunu idempotent PUT'a replay eder (last-write-wins).
+// processCheckinQueue ile aynı çakışma/deneme-tavanı sözleşmesi.
+async function processRoomStatusQueue() {
+  try {
+    const items = await getAllFromStore(ROOM_STATUS_QUEUE_STORE);
+    if (!items.length) {
+      return;
+    }
+
+    for (const item of items) {
+      if (item.status === 'conflict') {
+        continue;
+      }
+      if (!item.roomId || !item.roomStatus) {
+        await removeFromStore(ROOM_STATUS_QUEUE_STORE, item.id);
+        continue;
+      }
+
+      const endpoint = ROOM_STATUS_SYNC_ENDPOINT.replace('{roomId}', encodeURIComponent(item.roomId));
+      try {
+        const response = await fetch(endpoint, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...buildAuthHeader(item.authToken)
+          },
+          body: JSON.stringify({ status: item.roomStatus })
+        });
+
+        if (response.ok) {
+          await removeFromStore(ROOM_STATUS_QUEUE_STORE, item.id);
+          await broadcastClientMessage({
+            type: 'ROOMSTATUS_SYNCED',
+            payload: { id: item.id, roomId: item.roomId }
+          });
+        } else if (response.status === 401 || response.status >= 500) {
+          const attempts = (item.attempts || 0) + 1;
+          item.attempts = attempts;
+          item.updatedAt = Date.now();
+          if (attempts >= MAX_ROOM_STATUS_ATTEMPTS) {
+            item.status = 'conflict';
+            item.error = { code: 'MAX_RETRIES_EXCEEDED', httpStatus: response.status };
+            item.httpStatus = response.status;
+            await updateStoreEntry(ROOM_STATUS_QUEUE_STORE, item);
+            await broadcastClientMessage({
+              type: 'ROOMSTATUS_CONFLICT',
+              payload: { id: item.id, roomId: item.roomId, status: response.status, detail: item.error }
+            });
+          } else {
+            await updateStoreEntry(ROOM_STATUS_QUEUE_STORE, item);
+            console.warn('[SW] Room-status sync transient, will retry', response.status, attempts);
+          }
+        } else {
+          // Kalıcı 4xx (404 oda yok / 403 yetki / 422 geçersiz durum) → çakışma.
+          let detail = null;
+          try {
+            const data = await response.json();
+            detail = data?.detail ?? data;
+          } catch (err) {
+            detail = null;
+          }
+          item.status = 'conflict';
+          item.error = detail;
+          item.httpStatus = response.status;
+          item.attempts = (item.attempts || 0) + 1;
+          item.updatedAt = Date.now();
+          await updateStoreEntry(ROOM_STATUS_QUEUE_STORE, item);
+          await broadcastClientMessage({
+            type: 'ROOMSTATUS_CONFLICT',
+            payload: { id: item.id, roomId: item.roomId, status: response.status, detail }
+          });
+        }
+      } catch (err) {
+        console.warn('[SW] Room-status sync network error, still offline', err);
+        break;
+      }
+    }
+  } catch (error) {
+    console.error('[SW] processRoomStatusQueue error', error);
+  }
+}
+
+// Çevrimdışı çıkış kuyruğunu idempotent POST'a replay eder. SADECE sıfır-bakiye
+// girişler kuyruğa alınmıştır; backend hâlâ yetkili sıfır-bakiye guard'ıdır
+// (402 OUTSTANDING_BALANCE → çakışma). "Zaten çıkış yapılmış" (400) idempotent
+// BAŞARI sayılır.
+async function processCheckoutQueue() {
+  try {
+    const items = await getAllFromStore(CHECKOUT_QUEUE_STORE);
+    if (!items.length) {
+      return;
+    }
+
+    for (const item of items) {
+      if (item.status === 'conflict') {
+        continue;
+      }
+      if (!item.bookingId) {
+        await removeFromStore(CHECKOUT_QUEUE_STORE, item.id);
+        continue;
+      }
+
+      const endpoint = CHECKOUT_SYNC_ENDPOINT.replace('{bookingId}', encodeURIComponent(item.bookingId));
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...buildAuthHeader(item.authToken)
+          }
+        });
+
+        if (response.ok) {
+          await removeFromStore(CHECKOUT_QUEUE_STORE, item.id);
+          await broadcastClientMessage({
+            type: 'CHECKOUT_SYNCED',
+            payload: { id: item.id, bookingId: item.bookingId }
+          });
+        } else if (response.status === 401 || response.status >= 500) {
+          const attempts = (item.attempts || 0) + 1;
+          item.attempts = attempts;
+          item.updatedAt = Date.now();
+          if (attempts >= MAX_CHECKOUT_ATTEMPTS) {
+            item.status = 'conflict';
+            item.error = { code: 'MAX_RETRIES_EXCEEDED', httpStatus: response.status };
+            item.httpStatus = response.status;
+            await updateStoreEntry(CHECKOUT_QUEUE_STORE, item);
+            await broadcastClientMessage({
+              type: 'CHECKOUT_CONFLICT',
+              payload: { id: item.id, bookingId: item.bookingId, status: response.status, detail: item.error }
+            });
+          } else {
+            await updateStoreEntry(CHECKOUT_QUEUE_STORE, item);
+            console.warn('[SW] Checkout sync transient, will retry', response.status, attempts);
+          }
+        } else {
+          // Kalıcı 4xx. "Zaten çıkış yapılmış" → idempotent başarı; 402 → açık
+          // bakiye çakışması; diğer 4xx → genel çakışma.
+          let detail = null;
+          let detailText = '';
+          try {
+            const data = await response.json();
+            detail = data?.detail ?? data;
+            detailText = typeof detail === 'string' ? detail : (detail?.message || '');
+          } catch (err) {
+            detail = null;
+          }
+          if (response.status === 400 && /already checked out/i.test(detailText)) {
+            await removeFromStore(CHECKOUT_QUEUE_STORE, item.id);
+            await broadcastClientMessage({
+              type: 'CHECKOUT_SYNCED',
+              payload: { id: item.id, bookingId: item.bookingId, idempotent: true }
+            });
+            continue;
+          }
+          item.status = 'conflict';
+          item.error = response.status === 402 ? { code: 'OUTSTANDING_BALANCE' } : detail;
+          item.httpStatus = response.status;
+          item.attempts = (item.attempts || 0) + 1;
+          item.updatedAt = Date.now();
+          await updateStoreEntry(CHECKOUT_QUEUE_STORE, item);
+          await broadcastClientMessage({
+            type: 'CHECKOUT_CONFLICT',
+            payload: { id: item.id, bookingId: item.bookingId, status: response.status, detail: item.error }
+          });
+        }
+      } catch (err) {
+        console.warn('[SW] Checkout sync network error, still offline', err);
+        break;
+      }
+    }
+  } catch (error) {
+    console.error('[SW] processCheckoutQueue error', error);
   }
 }
 

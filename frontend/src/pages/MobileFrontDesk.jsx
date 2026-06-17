@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { performCheckin } from '@/utils/offlineCheckin';
+import { performCheckout } from '@/utils/offlineCheckout';
 import { 
   ArrowLeft, 
   Users, 
@@ -140,11 +141,26 @@ const MobileFrontDesk = ({ user }) => {
 
   const handleCheckOut = async (bookingId) => {
     try {
-      await axios.post(`/frontdesk/checkout/${bookingId}`);
+      // Mobil liste görünümünde bakiye alanı yok → bilinmeyen bakiye güvenli
+      // tarafta "açık" sayılır: çevrimdışı çıkış kuyruğa ALINMAZ (ödeme asla
+      // çevrimdışı). Çevrimiçi çıkış davranışı aynen korunur; backend 402 guard.
+      const result = await performCheckout(bookingId, {
+        onlineRequest: () => axios.post(`/frontdesk/checkout/${bookingId}`),
+      });
+      if (result.blocked) {
+        toast.error('Çevrimdışı çıkış yapılamıyor: bakiye doğrulanamadı. Lütfen bağlantı sağlayın.');
+        return;
+      }
       toast.success('Check-out');
       loadData();
     } catch (error) {
-      toast.error('Check-out');
+      const detail = error.response?.data?.detail;
+      const msg = (typeof detail === 'object' && detail?.message) || (typeof detail === 'string' ? detail : null);
+      if (error.response?.status === 402) {
+        toast.error('Açık bakiye var. Lütfen önce ödeme alınız.');
+      } else {
+        toast.error(msg || 'Check-out başarısız');
+      }
     }
   };
 

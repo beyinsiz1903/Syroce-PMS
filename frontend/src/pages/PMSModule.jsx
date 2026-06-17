@@ -974,6 +974,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             <ReservationDetailModal
               bookingId={reservationDetailId}
               onClose={() => setReservationDetailId(null)}
+              allBookings={bookings}
             />
           </Suspense>
         )}

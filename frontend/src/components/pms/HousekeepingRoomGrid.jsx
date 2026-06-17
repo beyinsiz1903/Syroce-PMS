@@ -11,6 +11,7 @@ import {
   Eye, Filter, RefreshCw, ChevronDown
 } from 'lucide-react';
 import EmptyState from '@/components/EmptyState';
+import { performRoomStatusUpdate } from '@/utils/offlineRoomStatus';
 
 const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
   const { t } = useTranslation();
@@ -52,9 +53,19 @@ const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
 
   const updateStatus = async (roomId, newStatus) => {
     try {
-      await axios.put(`/pms/housekeeping/rooms/${roomId}/status`, { status: newStatus });
-      toast.success(tg('statusUpdated').replace('{label}', STATUS_CONFIG[newStatus]?.label || newStatus));
-      loadRooms();
+      const result = await performRoomStatusUpdate(roomId, newStatus, {
+        onlineRequest: () => axios.put(`/pms/housekeeping/rooms/${roomId}/status`, { status: newStatus }),
+      });
+      if (result?.offlineQueued) {
+        // Çevrimdışı: ağ-öncelikli denendi, başarısız → kuyruğa alındı. loadRooms
+        // ağa gideceği için optimistik yerel güncelleme yapıyoruz; internet
+        // gelince SW kuyruğu idempotent PUT ile eşitler.
+        setRooms((prev) => prev.map((r) => (r.id === roomId ? { ...r, status: newStatus } : r)));
+        toast.success('Çevrimdışı: oda durumu kuyruğa alındı, internet gelince eşitlenecek');
+      } else {
+        toast.success(tg('statusUpdated').replace('{label}', STATUS_CONFIG[newStatus]?.label || newStatus));
+        loadRooms();
+      }
       if (onChange) onChange();
     } catch (e) {
       toast.error(tg('updateFailed') + ': ' + (e.response?.data?.detail || e.message));
@@ -63,6 +74,28 @@ const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
 
   const bulkUpdate = async (newStatus) => {
     if (selectedRooms.length === 0) { toast.error(tg('selectRoom')); return; }
+    // Çevrimdışı: toplu uç tek bir çağrıdır; her odayı tek tek kuyruğa al
+    // (her biri kendi coalesce anahtarına yazar). İnternet gelince SW idempotent
+    // PUT ile eşitler. Çevrimiçi hot-path (tek bulk çağrısı) DEĞİŞMEZ.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      try {
+        for (const roomId of selectedRooms) {
+          await performRoomStatusUpdate(roomId, newStatus);
+        }
+        setRooms((prev) =>
+          prev.map((r) => (selectedRooms.includes(r.id) ? { ...r, status: newStatus } : r))
+        );
+        toast.success(
+          `Çevrimdışı: ${selectedRooms.length} oda durumu kuyruğa alındı, internet gelince eşitlenecek`
+        );
+        setSelectedRooms([]);
+        setBulkMenuOpen(false);
+        if (onChange) onChange();
+      } catch (e) {
+        toast.error(tg('bulkFailed'));
+      }
+      return;
+    }
     try {
       await axios.put(`/pms/housekeeping/rooms/bulk-status`, null, {
         params: { room_ids: selectedRooms, status: newStatus }

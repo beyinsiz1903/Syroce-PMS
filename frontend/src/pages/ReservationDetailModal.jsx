@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -25,6 +25,7 @@ import GuestAlertModal from '@/components/GuestAlertModal';
 import IdPhotoViewerButton from '@/components/IdPhotoViewerButton';
 
 import { confirmDialog } from '@/lib/dialogs';
+import { performCheckout } from '@/utils/offlineCheckout';
 import { useTranslation } from 'react-i18next';
 
 // Statü için pill rengi (sıkı palet: amber/emerald/rose/slate)
@@ -45,14 +46,32 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('general');
   const [checkinAlertOpen, setCheckinAlertOpen] = useState(false);
+  const [offlineFallback, setOfflineFallback] = useState(null);
+
+  // allBookings kimliği her render değişebilir → loadData dep'ine koymak yerine
+  // ref ile oku (full-detail re-fetch döngüsünü önler).
+  const allBookingsRef = useRef(allBookings);
+  allBookingsRef.current = allBookings;
 
   const loadData = useCallback(async () => {
     if (!bookingId) return;
     try {
       const res = await axios.get(`/pms/reservations/${bookingId}/full-detail`);
       setData(res.data);
+      setOfflineFallback(null);
     } catch (e) {
-      toast.error('Rezervasyon detayı yüklenemedi');
+      // full-detail finansal veri (folyo/ödeme) embed ettiğinden ASLA cache'lenmez
+      // (at-rest PII). Çevrimdışıysak zaten cache'li listeden (allBookings) yalnızca
+      // operasyonel alanları sınırlı, salt-okunur bir görünümle göster.
+      const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+      const fallback = isOffline && Array.isArray(allBookingsRef.current)
+        ? allBookingsRef.current.find((b) => b.id === bookingId)
+        : null;
+      if (fallback) {
+        setOfflineFallback(fallback);
+      } else {
+        toast.error('Rezervasyon detayı yüklenemedi');
+      }
       console.error(e);
     }
     setLoading(false);
@@ -74,12 +93,61 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
     </div>
   );
 
+  if (!data && offlineFallback) {
+    const fb = offlineFallback;
+    const fbStatus = fb.status || 'pending';
+    return (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+        <div className="bg-white rounded-2xl w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between px-5 py-3 border-b">
+            <h2 className="text-slate-800 font-semibold text-base">Rezervasyon (çevrimdışı)</h2>
+            <button onClick={onClose} aria-label="Kapat" className="text-slate-400 hover:text-slate-600">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="px-5 py-3 bg-amber-50 border-b border-amber-200 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-amber-800">
+              Çevrimdışısınız. Yalnızca temel operasyonel bilgiler gösteriliyor; finansal
+              veriler (folyo, ödeme, fatura) ve işlemler internet bağlantısı gelince görünür.
+            </p>
+          </div>
+          <div className="px-5 py-4 space-y-3 text-sm">
+            <div className="flex justify-between gap-4">
+              <span className="text-slate-500">Misafir</span>
+              <span className="font-medium text-slate-800 text-right">{fb.guest_name || 'Misafir'}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-slate-500">Oda</span>
+              <span className="font-medium text-slate-800 text-right">{fb.room_number || '—'}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-slate-500">Giriş</span>
+              <span className="font-medium text-slate-800 text-right">{fb.check_in_date || fb.check_in || '—'}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-slate-500">Çıkış</span>
+              <span className="font-medium text-slate-800 text-right">{fb.check_out_date || fb.check_out || '—'}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-slate-500">Durum</span>
+              <span className="font-medium text-slate-800 text-right">{statusLabel ? statusLabel(fbStatus) : fbStatus}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!data) return null;
 
   const { booking, guest, room, company, folios, charges, payments, extra_charges, notes, history, room_moves, daily_rates, guests, summary, communication_logs, deposits } = data;
 
-  const balance = summary?.balance || 0;
-  const hasOpenBalance = balance > 0;
+  // rawBalance: bakiye guard'ına HAM geçilir (undefined/null kalmalı → util
+  // bilinmeyeni "açık" sayıp çevrimdışı kuyruğa ALMASIN). balance yalnız görüntü.
+  const rawBalance = summary?.balance;
+  const balance = Number(rawBalance) || 0;
+  const hasOpenBalance = balance > 0.01;
 
   // Birincil sekmeler — günlük kullanımda en sık ihtiyaç duyulanlar
   const primaryTabs = [
@@ -368,9 +436,24 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   onClick={async () => {
                     if (!await confirmDialog({ message: 'Çıkış yapılsın mı?', variant: 'danger' })) return;
                     try {
-                      const res = await axios.post(`/frontdesk/checkout/${bookingId}?auto_close_folios=true`);
-                      if (res.data.total_balance > 0.01) {
-                        toast.warning(`Açık bakiye ile çıkış yapıldı: ${res.data.total_balance.toFixed(2)}`);
+                      // Bakiye summary'den biliniyor → açık bakiye ASLA çevrimdışı
+                      // kuyruğa alınmaz (ödeme çevrimdışı olamaz). Sıfır bakiye +
+                      // ağ hatası → kuyruğa alınır; backend yine 402 ile guard eder.
+                      const result = await performCheckout(bookingId, {
+                        balance: rawBalance,
+                        onlineRequest: () => axios.post(`/frontdesk/checkout/${bookingId}?auto_close_folios=true`),
+                      });
+                      if (result.blocked) {
+                        toast.error('Açık bakiye var. Çıkış için lütfen önce ödeme alınız.');
+                        return;
+                      }
+                      if (result.offlineQueued) {
+                        toast.success('Çevrimdışı: çıkış kuyruğa alındı, internet gelince tamamlanacak');
+                        return;
+                      }
+                      const total = result.data?.total_balance;
+                      if (typeof total === 'number' && total > 0.01) {
+                        toast.warning(`Açık bakiye ile çıkış yapıldı: ${total.toFixed(2)}`);
                       } else {
                         toast.success('Çıkış yapıldı');
                       }

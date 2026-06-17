@@ -4,15 +4,19 @@
  */
 
 const DB_NAME = 'SyroceOffline';
-// v2: çevrimdışı check-in kuyruğu (checkinQueue) eklendi. SW ile ortak DB
-// olduğundan iki taraf da aynı versiyonu açmalı (frontend/public/service-worker.js).
-const DB_VERSION = 2;
+// v2: çevrimdışı check-in kuyruğu (checkinQueue) eklendi.
+// v3: çevrimdışı oda-durumu (roomStatusQueue) + çevrimdışı çıkış (checkoutQueue)
+//     kuyrukları eklendi. SW ile ortak DB olduğundan iki taraf da aynı versiyonu
+//     açmalı (frontend/public/service-worker.js).
+const DB_VERSION = 3;
 
 const STORES = {
   MEDIA_QUEUE: 'mediaQueue',
   TASK_QUEUE: 'taskQueue',
   NOTIFICATION_LOG: 'notificationLog',
-  CHECKIN_QUEUE: 'checkinQueue'
+  CHECKIN_QUEUE: 'checkinQueue',
+  ROOM_STATUS_QUEUE: 'roomStatusQueue',
+  CHECKOUT_QUEUE: 'checkoutQueue'
 };
 
 class OfflineDB {
@@ -33,8 +37,22 @@ class OfflineDB {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onerror = () => reject(request.error);
+      // Başka bir sekme/SW daha yeni bir sürüm açmaya çalışırken bu bağlantı
+      // upgrade'i bloklamasın: versionchange'de kendini kapat (sonraki çağrı
+      // ensureOpen ile taze açar). Bu, SW v3 upgrade'inin sayfanın v2
+      // bağlantısı yüzünden takılmasını önler.
+      request.onblocked = () => {
+        // Eski bir bağlantı hâlâ açıkken yeni sürüm beklemede — sonsuza dek
+        // bekleme; fail-soft reject (initPromise.catch sessizce yutar, ops
+        // çevrimiçi yola düşer).
+        reject(new Error('IndexedDB upgrade blocked'));
+      };
       request.onsuccess = () => {
         this.db = request.result;
+        this.db.onversionchange = () => {
+          try { this.db.close(); } catch { /* zaten kapalı */ }
+          this.db = null;
+        };
         resolve(this.db);
       };
 
@@ -60,12 +78,31 @@ class OfflineDB {
           const checkinStore = db.createObjectStore(STORES.CHECKIN_QUEUE, { keyPath: 'id' });
           checkinStore.createIndex('createdAt', 'createdAt', { unique: false });
         }
+
+        if (!db.objectStoreNames.contains(STORES.ROOM_STATUS_QUEUE)) {
+          const roomStatusStore = db.createObjectStore(STORES.ROOM_STATUS_QUEUE, { keyPath: 'id' });
+          roomStatusStore.createIndex('createdAt', 'createdAt', { unique: false });
+        }
+
+        if (!db.objectStoreNames.contains(STORES.CHECKOUT_QUEUE)) {
+          const checkoutStore = db.createObjectStore(STORES.CHECKOUT_QUEUE, { keyPath: 'id' });
+          checkoutStore.createIndex('createdAt', 'createdAt', { unique: false });
+        }
       };
     });
   }
 
+  // versionchange sonrası this.db null olabilir; her işlemden önce canlı bir
+  // bağlantı sağla (gerekirse yeniden aç). Mevcut çağrı kalıbı korunur.
+  async ensureOpen() {
+    if (this.db) return this.db;
+    this.initPromise = this.init();
+    this.initPromise.catch(() => {});
+    return this.initPromise;
+  }
+
   async withStore(storeName, mode, callback) {
-    await this.initPromise;
+    await this.ensureOpen();
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction([storeName], mode);
       const store = tx.objectStore(storeName);
@@ -92,7 +129,7 @@ class OfflineDB {
   }
 
   async get(storeName, id) {
-    await this.initPromise;
+    await this.ensureOpen();
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction([storeName], 'readonly');
       const store = tx.objectStore(storeName);
@@ -103,7 +140,7 @@ class OfflineDB {
   }
 
   async update(storeName, id, patch) {
-    await this.initPromise;
+    await this.ensureOpen();
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction([storeName], 'readwrite');
       const store = tx.objectStore(storeName);
@@ -123,7 +160,7 @@ class OfflineDB {
   }
 
   async count(storeName) {
-    await this.initPromise;
+    await this.ensureOpen();
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction([storeName], 'readonly');
       const store = tx.objectStore(storeName);
@@ -134,7 +171,7 @@ class OfflineDB {
   }
 
   async list(storeName, limit = 100) {
-    await this.initPromise;
+    await this.ensureOpen();
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction([storeName], 'readonly');
       const store = tx.objectStore(storeName);
@@ -210,6 +247,56 @@ export async function countQueuedCheckins() {
   return offlineDB.count(STORES.CHECKIN_QUEUE);
 }
 
+// Room-status queue helpers (çevrimdışı kat hizmetleri oda durumu)
+export async function enqueueRoomStatus(entry) {
+  return offlineDB.add(STORES.ROOM_STATUS_QUEUE, entry);
+}
+
+export async function listQueuedRoomStatus(limit = 200) {
+  return offlineDB.list(STORES.ROOM_STATUS_QUEUE, limit);
+}
+
+export async function getQueuedRoomStatus(id) {
+  return offlineDB.get(STORES.ROOM_STATUS_QUEUE, id);
+}
+
+export async function updateQueuedRoomStatus(id, patch) {
+  return offlineDB.update(STORES.ROOM_STATUS_QUEUE, id, patch);
+}
+
+export async function removeQueuedRoomStatus(id) {
+  return offlineDB.remove(STORES.ROOM_STATUS_QUEUE, id);
+}
+
+export async function countQueuedRoomStatus() {
+  return offlineDB.count(STORES.ROOM_STATUS_QUEUE);
+}
+
+// Checkout queue helpers (çevrimdışı çıkış — yalnızca sıfır/kapalı bakiye)
+export async function enqueueCheckout(entry) {
+  return offlineDB.add(STORES.CHECKOUT_QUEUE, entry);
+}
+
+export async function listQueuedCheckouts(limit = 200) {
+  return offlineDB.list(STORES.CHECKOUT_QUEUE, limit);
+}
+
+export async function getQueuedCheckout(id) {
+  return offlineDB.get(STORES.CHECKOUT_QUEUE, id);
+}
+
+export async function updateQueuedCheckout(id, patch) {
+  return offlineDB.update(STORES.CHECKOUT_QUEUE, id, patch);
+}
+
+export async function removeQueuedCheckout(id) {
+  return offlineDB.remove(STORES.CHECKOUT_QUEUE, id);
+}
+
+export async function countQueuedCheckouts() {
+  return offlineDB.count(STORES.CHECKOUT_QUEUE);
+}
+
 // Notification log
 export async function logNotification(event) {
   return offlineDB.add(STORES.NOTIFICATION_LOG, event);
@@ -236,6 +323,18 @@ export default {
   updateQueuedCheckin,
   removeQueuedCheckin,
   countQueuedCheckins,
+  enqueueRoomStatus,
+  listQueuedRoomStatus,
+  getQueuedRoomStatus,
+  updateQueuedRoomStatus,
+  removeQueuedRoomStatus,
+  countQueuedRoomStatus,
+  enqueueCheckout,
+  listQueuedCheckouts,
+  getQueuedCheckout,
+  updateQueuedCheckout,
+  removeQueuedCheckout,
+  countQueuedCheckouts,
   logNotification,
   listNotifications,
   clearNotification
