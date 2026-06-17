@@ -573,7 +573,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
     <>
       <div className="p-4 md:p-6 space-y-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold mb-1" style={{ fontFamily: 'Space Grotesk' }}>
+          <h1 className="text-2xl md:text-3xl font-bold mb-1 dark:text-slate-100" style={{ fontFamily: 'Space Grotesk' }}>
             {t('dashboard.welcome')}, {user.name}
           </h1>
           <p className="text-sm md:text-base text-gray-600 dark:text-slate-300">{tenant?.property_name || 'Hotel Management System'}</p>
