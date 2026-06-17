@@ -19,7 +19,9 @@ import hmac
 import ipaddress
 import logging
 import os
+import re
 import secrets
+import unicodedata
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -284,15 +286,55 @@ def _public_url_base(request: Request) -> str:
     return f"{proto}://{host}".rstrip("/")
 
 
-def _guest_url_with_salt(request: Request, tenant_id: str, room_id: str, salt: str | None) -> str:
+# Otel adindan URL-guvenli slug uretimi (YALNIZCA dekoratif — QR token
+# tenant_id|room_id|salt uzerinde dogrulanir; slug dogrulamaya GIRMEZ).
+# Turkce karakterler ASCII'ye indirgenir; slug bossa slug'siz URL'ye dusulur.
+_TR_SLUG_MAP = str.maketrans({
+    "s": "s", "S": "s", "c": "c", "C": "c", "g": "g", "G": "g",
+    "i": "i", "I": "i", "o": "o", "O": "o", "u": "u", "U": "u",
+    "\u015f": "s", "\u015e": "s", "\u00e7": "c", "\u00c7": "c",
+    "\u011f": "g", "\u011e": "g", "\u0131": "i", "\u0130": "i",
+    "\u00f6": "o", "\u00d6": "o", "\u00fc": "u", "\u00dc": "u",
+})
+
+
+def _slugify_hotel(name: str | None) -> str:
+    if not name:
+        return ""
+    s = name.translate(_TR_SLUG_MAP)
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+    s = re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower()
+    return s[:60]
+
+
+async def _hotel_slug(tenant_id: str) -> str:
+    """Tenant'in otel adindan dekoratif slug (QR URL'sinde marka gorunurlugu)."""
+    try:
+        tenant = await raw_db["tenants"].find_one(
+            {"id": tenant_id}, {"_id": 0, "name": 1, "display_name": 1}
+        ) or {}
+    except Exception:
+        return ""
+    return _slugify_hotel(tenant.get("name") or tenant.get("display_name"))
+
+
+def _guest_url_with_salt(
+    request: Request, tenant_id: str, room_id: str, salt: str | None,
+    slug: str | None = None,
+) -> str:
     base = _public_url_base(request)
     token = _token_for(tenant_id, room_id, salt)
+    # Slug yalnizca dekoratif segment; dogrulama tenant_id/room_id ile yapilir.
+    # Bossa geriye donuk uyumlu (slug'siz) URL → eski QR'lar bozulmaz.
+    if slug:
+        return f"{base}/g/{slug}/room/{tenant_id}/{room_id}?t={token}"
     return f"{base}/g/room/{tenant_id}/{room_id}?t={token}"
 
 
 async def _guest_url(request: Request, tenant_id: str, room_id: str) -> str:
     salt = await _get_qr_salt(tenant_id)
-    return _guest_url_with_salt(request, tenant_id, room_id, salt)
+    slug = await _hotel_slug(tenant_id)
+    return _guest_url_with_salt(request, tenant_id, room_id, salt, slug)
 
 
 async def _find_active_booking(tenant_id: str, room_id: str) -> dict | None:
@@ -831,7 +873,8 @@ async def room_qr_code(
         raise HTTPException(status_code=404, detail="Oda bulunamadı")
 
     salt = await _get_qr_salt(tenant_id)
-    url = _guest_url_with_salt(request, tenant_id, room_id, salt)
+    slug = await _hotel_slug(tenant_id)
+    url = _guest_url_with_salt(request, tenant_id, room_id, salt, slug)
     png = generate_qr_code(url)
     return {
         "room_id": room_id,
@@ -857,12 +900,13 @@ async def all_room_qr_codes(
         {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "floor": 1},
     ).sort("room_number", 1).to_list(2000)
     salt = await _get_qr_salt(tenant_id)
+    slug = await _hotel_slug(tenant_id)
     items = [{
         "room_id": room.get("id"),
         "room_number": room.get("room_number"),
         "room_type": room.get("room_type"),
         "floor": room.get("floor"),
-        "url": _guest_url_with_salt(request, tenant_id, room.get("id"), salt),
+        "url": _guest_url_with_salt(request, tenant_id, room.get("id"), salt, slug),
     } for room in rooms]
     return {"items": items, "count": len(items)}
 

@@ -8,6 +8,7 @@ export function publicRoutes({ pa }) {
   return [
     { path: "/landing", type: "public", component: LandingPage },
     { path: "/g/room/:tenantId/:roomId", type: "public", component: RoomRequestPage },
+    { path: "/g/:hotelSlug/room/:tenantId/:roomId", type: "public", component: RoomRequestPage },
     { path: "/review/:token", type: "public", component: PublicReviewPage },
     { path: "/privacy-policy", type: "public", component: PrivacyPolicy },
     { path: "/gizlilik", type: "public", component: PrivacyPolicy },
