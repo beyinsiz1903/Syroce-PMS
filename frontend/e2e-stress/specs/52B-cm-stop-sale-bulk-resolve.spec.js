@@ -479,8 +479,35 @@ test.describe('F8L v2 § 52B — Stop-sale CB + Bulk Resolve', () => {
         // seeded ids persisted by global-setup at seed time (when they provably
         // matched PENDING_QUERY + stress_prefix). The live page-1 scan can miss them
         // (pagination / created_at DESC / shadowing) while the rows still exist.
+        // F8L v2 (Task #25) HERMETIC precondition: mint a FRESH pending_assignment
+        // booking ON DEMAND, microseconds before consuming it, via the additive
+        // stress-tenant-only seed endpoint. The global-setup seed runs ~50 min
+        // earlier; over that serial window the "still-pending" assumption is
+        // fragile. pilot_token is the super_admin principal (require_super_admin);
+        // the endpoint's gate stack writes to E2E_STRESS_TENANT_ID only and tags
+        // rows with this run's stress_prefix so the unified cleanup reclaims them.
+        // Best-effort: on any non-2xx we fall back to the persisted/live candidates
+        // and the existing hard-fail diagnostics still surface a real defect.
+        let freshPendingIds = [];
+        try {
+            const sp = await callTimed(request, 'post', '/api/admin/stress/seed-pending',
+                { target_tenant_id: stressTid, data_prefix: prefix, count: 1 },
+                stressTokens.pilot_token);
+            if (sp.ok && Array.isArray(sp.body?.pending_ids)) {
+                freshPendingIds = sp.body.pending_ids.filter(Boolean);
+            }
+            rec(testInfo, { module: MOD, step: 'br_real_seed_ondemand',
+                status: (sp.ok && freshPendingIds.length) ? 'PASS' : 'REVIEW',
+                endpoint: 'POST /api/admin/stress/seed-pending', http: sp.status,
+                note: `on-demand pending seed http=${sp.status} inserted=${sp.body?.inserted} queryable=${sp.body?.pending_queryable} fresh_ids=${freshPendingIds.length}` });
+        } catch (e) {
+            rec(testInfo, { module: MOD, step: 'br_real_seed_ondemand', status: 'REVIEW',
+                note: `on-demand pending seed threw: ${String(e).slice(0, 140)} — falling back to global-setup seeded ids` });
+        }
+        // Fresh on-demand ids FIRST (re-verify loop picks the first still-pending),
+        // then the live conflict-queue page-1 sample, then the global-setup ids.
         const seededPendingIds = Array.isArray(stressState?.seeded_pending_ids) ? stressState.seeded_pending_ids : [];
-        const candidateIds = [...new Set([existingPendingId, ...seededPendingIds].filter(Boolean))];
+        const candidateIds = [...new Set([...freshPendingIds, existingPendingId, ...seededPendingIds].filter(Boolean))];
         if (candidateIds.length === 0) {
             rec(testInfo, { module: MOD, step: 'br_real_partial', status: 'FAIL',
                 note: 'no_candidate_pending — neither live conflict-queue nor persisted seeded_pending_ids yielded a pending id (global-setup seed/persist regression)' });
@@ -523,12 +550,12 @@ test.describe('F8L v2 § 52B — Stop-sale CB + Bulk Resolve', () => {
             // deterministic, so this is a HARD FAIL with the consumed-state
             // evidence inlined (NOT a REVIEW / skip-as-pass).
             rec(testInfo, { module: MOD, step: 'br_real_partial', status: 'FAIL',
-                note: `pending_consumed — none of ${candidateIds.length} candidates still pending: ${JSON.stringify(candidateStates).slice(0, 300)}` });
+                note: `pending_consumed — none of ${candidateIds.length} candidates still pending (fresh_on_demand=${freshPendingIds.length}): ${JSON.stringify(candidateStates).slice(0, 300)}` });
             recFinding(testInfo, 'P1', MOD,
                 'Seeded pending consumed before bulk-resolve',
-                `global-setup proved pending rows existed at seed (queryable + CQ probe), but by test-G time none remain pending. `+
+                `A pending was seeded ON DEMAND microseconds earlier (fresh_on_demand=${freshPendingIds.length}) PLUS global-setup seed + live CQ, yet by test-G time none remain pending. `+
                 `Candidate current states (room_id/status): ${JSON.stringify(candidateStates).slice(0, 400)}. `+
-                `A spec or background path mutated a far-future pending_assignment booking (claimed a room / changed status / allocation_source). Investigate test isolation.`);
+                `If the FRESH on-demand id is among these and already non-pending/404, the defect is a stress write-path/tenant-context redirect or a synchronous consumer (NOT a 50-min suite-window mutation). Investigate seed-pending tenant alignment + any pending_assignment consumer.`);
             expect(resolvedPendingId, 'at least one seeded pending booking must still be pending at bulk-resolve time').toBeTruthy();
             return;
         }

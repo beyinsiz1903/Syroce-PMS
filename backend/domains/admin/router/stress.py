@@ -433,6 +433,20 @@ class StressSeedRequest(BaseModel):
     seed_pending_bookings: int = Field(default=0, ge=0, le=20)
 
 
+class StressSeedPendingRequest(BaseModel):
+    target_tenant_id: str
+    data_prefix: str | None = None
+    # F8L v2 (Task #25) — on-demand synthetic `pending_assignment` booking seed
+    # for spec 52B test G. The full seed runs once in global-setup (~50 min
+    # before test G consumes it); over that serial window the "seeded-then-still-
+    # pending" assumption is fragile. This endpoint lets 52B mint a FRESH pending
+    # microseconds before bulk-resolve, hermetic against any upstream mutation.
+    # Same gate stack + exact doc shape as `seed_pending_bookings`; rows carry
+    # `stress_seed=True` + `stress_prefix=<prefix>` so the unified cleanup sweep
+    # covers them with zero extra code. Capped small (the spec needs only 1).
+    count: int = Field(default=1, ge=1, le=20)
+
+
 class StressCleanupRequest(BaseModel):
     target_tenant_id: str
     data_prefix: str | None = None
@@ -441,6 +455,56 @@ class StressCleanupRequest(BaseModel):
     # for the tenant (across rounds), caller must explicitly pass
     # `confirm_full_wipe=True` AND omit `data_prefix`. Fail-closed.
     confirm_full_wipe: bool = False
+
+
+def _build_pending_booking_docs(
+    count: int, stress_tid: str, prefix: str, now: datetime, tag: str = "",
+) -> list[dict]:
+    """F8L v2 (Task #25) — synthetic `pending_assignment` booking docs.
+
+    SHARED by the full seed (`seed_pending_bookings`) and the on-demand
+    `/admin/stress/seed-pending` endpoint so the doc shape can NEVER drift
+    between the two producers. Shape mirrors cm_conflict_queue.PENDING_QUERY:
+    `room_id=None`, `allocation_source="pending_assignment"`, status in the
+    accepted set, plus a far-future stay window so `_claim_room_for_pending_
+    booking` cannot collide with the baseline 1..4 night RNLs on any stress
+    room. `id` is always a fresh uuid (the only field bulk-resolve keys on);
+    `tag` only distinguishes the human-readable guest_name/external_confirmation
+    so the on-demand rows never look identical to the full-seed rows in logs.
+    With the default `tag=""` the strings are byte-identical to the legacy
+    inline loop (no behaviour change for the full seed)."""
+    docs: list[dict] = []
+    if count <= 0:
+        return docs
+    future_in = (now + timedelta(days=180)).date().isoformat()
+    future_out = (now + timedelta(days=181)).date().isoformat()
+    for i in range(count):
+        docs.append({
+            "id": str(uuid.uuid4()),
+            "tenant_id": stress_tid,
+            "guest_id": str(uuid.uuid4()),
+            "guest_name": f"{prefix}PendingGuest{tag}_{i + 1:03d}",
+            "room_id": None,
+            "room_type": ROOM_TYPES[i % len(ROOM_TYPES)],
+            "check_in": future_in,
+            "check_out": future_out,
+            "nights": 1,
+            "adults": 2, "children": 0, "guests_count": 2,
+            "total_amount": 1000.0, "base_rate": 1000.0,
+            "paid_amount": 0.0,
+            "status": "confirmed",
+            "channel": "ota_stress_synth",
+            "source_channel": "ota_stress_synth",
+            "origin": "stress_pending_seed",
+            "allocation_source": "pending_assignment",
+            "hold_status": "none",
+            "currency": "TRY",
+            "external_confirmation": f"{prefix}EXT{tag}_{i + 1:04d}",
+            "special_requests": None,
+            "created_at": now,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+    return docs
 
 
 def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
@@ -2263,36 +2327,9 @@ async def stress_seed(
         # written by a successful resolve reference stress-tenant-only
         # room_ids that are rotated every run (fresh UUIDs after each
         # cleanup), so any residue is harmless.
-        pending_bookings_docs: list[dict] = []
-        if payload.seed_pending_bookings > 0:
-            future_in = (now + timedelta(days=180)).date().isoformat()
-            future_out = (now + timedelta(days=181)).date().isoformat()
-            for i in range(payload.seed_pending_bookings):
-                pending_bookings_docs.append({
-                    "id": str(uuid.uuid4()),
-                    "tenant_id": stress_tid,
-                    "guest_id": str(uuid.uuid4()),
-                    "guest_name": f"{prefix}PendingGuest_{i + 1:03d}",
-                    "room_id": None,
-                    "room_type": ROOM_TYPES[i % len(ROOM_TYPES)],
-                    "check_in": future_in,
-                    "check_out": future_out,
-                    "nights": 1,
-                    "adults": 2, "children": 0, "guests_count": 2,
-                    "total_amount": 1000.0, "base_rate": 1000.0,
-                    "paid_amount": 0.0,
-                    "status": "confirmed",
-                    "channel": "ota_stress_synth",
-                    "source_channel": "ota_stress_synth",
-                    "origin": "stress_pending_seed",
-                    "allocation_source": "pending_assignment",
-                    "hold_status": "none",
-                    "currency": "TRY",
-                    "external_confirmation": f"{prefix}EXT_{i + 1:04d}",
-                    "special_requests": None,
-                    "created_at": now,
-                    "stress_seed": True, "stress_prefix": prefix,
-                })
+        pending_bookings_docs = _build_pending_booking_docs(
+            payload.seed_pending_bookings, stress_tid, prefix, now,
+        )
         counts["pending_bookings"] = await _chunked_insert(
             db.bookings, pending_bookings_docs, INSERT_CHUNK_SIZE,
         )
@@ -2460,6 +2497,89 @@ async def stress_seed(
             "accessibility_modulo": 17,
             "stay_nights_cycle": "1..4",
         },
+        "gates": gates,
+        "external_calls_made": [],
+        "tenant_context_used": True,
+    }
+
+
+@router.post("/admin/stress/seed-pending", tags=["Stress E2E"])
+async def stress_seed_pending(
+    payload: StressSeedPendingRequest,
+    current_user: User = Depends(require_super_admin),
+):
+    """On-demand, fail-closed, stress-tenant-only synthetic `pending_assignment`
+    booking seed (F8L v2 — Task #25).
+
+    Additive sibling of `/admin/stress/seed`. The full seed runs once in
+    global-setup (~50 min before spec 52B test G consumes a pending), so the
+    "seeded-at-setup → still-pending-at-test-G" assumption is fragile across a
+    long serial suite. This endpoint lets 52B mint a FRESH pending microseconds
+    before bulk-resolve — hermetic against any upstream spec/background mutation.
+
+    Identical gate stack to the full seed: `require_super_admin` +
+    `_gates(target_tenant_id)` (target must == E2E_STRESS_TENANT_ID, pilot tenant
+    explicitly blocked, E2E_ALLOW_DESTRUCTIVE_STRESS + E2E_EXTERNAL_DRY_RUN
+    required). All writes execute inside `tenant_context(stress_tid)` and are
+    tagged `stress_seed=True` + `stress_prefix=<prefix>` so the unified cleanup
+    sweep reclaims them. NOT a fake-green helper: the spec still asserts the real
+    succeeded[]/failed[] partial-success contract against a real pending booking
+    + a real stress room; this only tightens the fixture's lifetime to test G."""
+    gates = _gates(payload.target_tenant_id)
+    # Fail-closed: this on-demand seed requires the invariant E2E dry-run posture.
+    # `_gates()` only REPORTS `external_dry_run` (shared contract with the main
+    # seed, which historically never enforced it), so enforce it EXPLICITLY here
+    # rather than weakening the shared gate. Belt-and-suspenders — this endpoint
+    # makes no external calls — but it guarantees the route can never execute
+    # outside the dry-run stress posture the docstring promises. CI sets
+    # `E2E_EXTERNAL_DRY_RUN=true` for the stress suite, so 52B's call is unaffected.
+    if not gates.get("external_dry_run"):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "E2E_EXTERNAL_DRY_RUN != 'true' (fail-closed). On-demand stress "
+                "pending seed requires the dry-run stress posture."
+            ),
+        )
+    stress_tid = _stress_tid()
+    prefix = payload.data_prefix or f"E2E_STRESS_{int(time.time())}_"
+    now = datetime.now(UTC)
+
+    # `tag="OD"` keeps the human-readable guest_name/external_confirmation
+    # distinct from the full-seed rows; `id` is a fresh uuid regardless, so the
+    # rows never collide with the global-setup pendings.
+    docs = _build_pending_booking_docs(payload.count, stress_tid, prefix, now, tag="OD")
+    seeded_ids = [d["id"] for d in docs]
+
+    inserted = 0
+    pending_ids: list[str] = []
+    with tenant_context(stress_tid):
+        from core.database import db
+        inserted = await _chunked_insert(db.bookings, docs, INSERT_CHUNK_SIZE)
+        # Read back the EXACT ids that match PENDING_QUERY + this call's ids.
+        # Under healthy writes this is a tautology, but it also serves as a
+        # write-path ground-truth: if a tenant_context write-redirect or shape
+        # drift silently broke the insert, `pending_queryable` < `inserted` and
+        # the spec falls back to its existing candidates + hard-fail diagnostics.
+        async for d in db.bookings.find(
+            {"tenant_id": stress_tid, "allocation_source": "pending_assignment",
+             "room_id": None, "status": {"$in": ["confirmed", "guaranteed", "pending"]},
+             "stress_prefix": prefix, "id": {"$in": seeded_ids}},
+            {"_id": 0, "id": 1},
+        ):
+            if d.get("id"):
+                pending_ids.append(d["id"])
+
+    return {
+        "success": True,
+        "target_tenant_id": stress_tid,
+        "data_prefix": prefix,
+        "requested": payload.count,
+        "inserted": inserted,
+        # Authoritative, id-only (no PII). Freshly inserted + re-verified against
+        # the exact PENDING_QUERY so spec 52B can resolve one deterministically.
+        "pending_ids": pending_ids,
+        "pending_queryable": len(pending_ids),
         "gates": gates,
         "external_calls_made": [],
         "tenant_context_used": True,
