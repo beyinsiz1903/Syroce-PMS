@@ -225,6 +225,47 @@ async def ensure_performance_indexes():
         # IndexOptionsConflict on every boot (caught, but noisy).
         ("folios", [("tenant_id", 1), ("id", 1)], "tenant_id_1_id_1", {}),
         ("folio_charges", [("tenant_id", 1), ("id", 1)], "tenant_id_1_id_1", {}),
+        # POS F&B sicak okuma yollari (2026-06-18): pos_orders ve
+        # pos_transactions koleksiyonlarinda simdiye kadar yalnizca
+        # idempotency/atomicity index'leri (ux_pos_orders_tenant_idemp,
+        # ux_folio_charges_pos_source) vardi; operasyonel OKUMA sorgulari hicbir
+        # tenant-prefix compound index kullanamiyor, tenant capinda COLLSCAN'e
+        # dusuyordu. POS en yuksek es-zamanlilik + yazma-yogun yuzey oldugundan
+        # gecmis buyudukce bu taramalar dogrudan latency'ye yansir. Her index
+        # gercek bir cagri yerine baglidir (spekulatif degil, fake-green degil):
+        #   - pos_orders (tenant_id, status, created_at): get_active_orders
+        #     status {$in:[pending,preparing,ready]} + sort created_at -> aktif
+        #     siparis panosu (polled). status'lu sorgu icin status-prefix sart.
+        #   - pos_orders (tenant_id, created_at): get_fnb_dashboard / fnb_reports
+        #     {tenant_id, created_at: range} .to_list(10000..20000) -> tarih
+        #     araligi raporlari (en pahali taramalar). status'suz sorgu oldugu
+        #     icin status-prefix'li index KULLANILAMAZ -> ayri index gerekir.
+        #   - pos_orders (tenant_id, id) / pos_transactions (tenant_id, id):
+        #     find_one({id, tenant_id}) tek-dokuman getirme (split-check,
+        #     complete, void, refund). folios/folio_charges ile ayni desen;
+        #     default ad "tenant_id_1_id_1" -> index_apply.py 2-tuple ile birebir
+        #     ayni ad (name drift yok). NON-unique: legacy/stress satirlarinda
+        #     olasi cift kayitta build patlamasin.
+        #   - pos_transactions (tenant_id, order_id): complete_order akisinda
+        #     find_one({order_id, tenant_id}) (pos_fnb_service_v2).
+        #   - pos_transactions (tenant_id, outlet_id, table_number) PARTIAL
+        #     {status:"open"}: open_tab her cagrida "ayni masada acik adisyon var
+        #     mi" guard'i {tenant_id, outlet_id, table_number, status:"open"}
+        #     tarar. Partial index yalnizca acik adisyonlari tutar -> kucuk
+        #     kalir; sorgudaki literal status:"open" partialFilter'i karsiladigi
+        #     icin planner index'i kullanir.
+        ("pos_orders", [("tenant_id", 1), ("status", 1), ("created_at", 1)],
+         "idx_pos_orders_status_created", {}),
+        ("pos_orders", [("tenant_id", 1), ("created_at", 1)],
+         "idx_pos_orders_tenant_created", {}),
+        ("pos_orders", [("tenant_id", 1), ("id", 1)], "tenant_id_1_id_1", {}),
+        ("pos_transactions", [("tenant_id", 1), ("id", 1)], "tenant_id_1_id_1", {}),
+        ("pos_transactions", [("tenant_id", 1), ("order_id", 1)],
+         "idx_pos_txn_tenant_order", {}),
+        ("pos_transactions",
+         [("tenant_id", 1), ("outlet_id", 1), ("table_number", 1)],
+         "idx_pos_txn_open_tab",
+         {"partialFilterExpression": {"status": "open"}}),
     ]
     for coll_name, keys, name, kwargs in indexes:
         try:

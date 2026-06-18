@@ -55,6 +55,23 @@ TO_APPLY = [
      "idx_recon_cases_status_global", {}),
     ("channel_reconciliation_cases", [("created_at", 1)],
      "idx_recon_cases_created_global", {}),
+    # POS F&B sicak okuma yollari (2026-06-18): pos_orders / pos_transactions
+    # read-path tenant compound index'leri. Adlar bootstrap/phases/
+    # perf_indexes.py ile BIREBIR ayni -> operator hemen uygularsa ve sonra boot
+    # calisirsa duplicate olusmaz. (tenant_id, id) girisleri 2-tuple: default ad
+    # "tenant_id_1_id_1" ile uyumlu. Gerekce + cagri yerleri perf_indexes.py'de.
+    ("pos_orders", [("tenant_id", 1), ("status", 1), ("created_at", 1)],
+     "idx_pos_orders_status_created", {}),
+    ("pos_orders", [("tenant_id", 1), ("created_at", 1)],
+     "idx_pos_orders_tenant_created", {}),
+    ("pos_orders", [("tenant_id", 1), ("id", 1)]),
+    ("pos_transactions", [("tenant_id", 1), ("id", 1)]),
+    ("pos_transactions", [("tenant_id", 1), ("order_id", 1)],
+     "idx_pos_txn_tenant_order", {}),
+    ("pos_transactions",
+     [("tenant_id", 1), ("outlet_id", 1), ("table_number", 1)],
+     "idx_pos_txn_open_tab",
+     {"partialFilterExpression": {"status": "open"}}),
 ]
 
 
