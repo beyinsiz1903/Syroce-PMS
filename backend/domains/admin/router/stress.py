@@ -32,6 +32,7 @@ References:
 import asyncio
 import logging
 import os
+import re
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -455,6 +456,21 @@ class StressCleanupRequest(BaseModel):
     # for the tenant (across rounds), caller must explicitly pass
     # `confirm_full_wipe=True` AND omit `data_prefix`. Fail-closed.
     confirm_full_wipe: bool = False
+
+
+class PosLoadCleanupRequest(BaseModel):
+    target_tenant_id: str
+    # POS F&B birincil yuk testi (load_tests/pos_fnb_burst.js) gercek v2 POS
+    # yazma dongusunu (POST /api/pos/v2/orders, /orders/close, /tabs/open)
+    # surer. Bu rowlar strict-Pydantic production POST'lariyla yazilir, bu
+    # yuzden stress_seed/stress_prefix etiketi TASIYAMAZ ve unified
+    # /admin/stress/cleanup sweep'i bunlari atlar. Yuk testi bunun yerine
+    # kosu prefix'ini (POS_LOAD_PREFIX) guest_name + table_number +
+    # idempotency_key alanlarina basar; bu endpoint tam o prefix'i tasiyan
+    # rowlari ^prefix anchor'lu eslesmeyle siler. data_prefix ZORUNLU ve
+    # bos olamaz -> fail-closed, asla sinirsiz silme yapmaz (full-wipe
+    # secenegi YOK; yuk cleanup'i daima prefix-scoped).
+    data_prefix: str
 
 
 def _build_pending_booking_docs(
@@ -3100,6 +3116,96 @@ async def stress_cleanup(
         "audit_logs_retained": True,
         "gates": gates,
         "full_wipe": payload.confirm_full_wipe and not payload.data_prefix,
+        "timing_ms": {"cleanup": cleanup_ms},
+        "idempotent": True,
+        "tenant_context_used": True,
+    }
+
+
+# Yuk testinin yazdigi (etiketsiz) gercek POS rowlarini tutan koleksiyonlar.
+# Unified /admin/stress/cleanup loop'u bunlari stress_seed filtresi ile tarar;
+# v2 production POST'lari bu etiketi yazmadigi icin yuk-kalintisi orada
+# yakalanmaz -> bu dedicated endpoint prefix-anchor'lu siler.
+POS_LOAD_COLLECTIONS = ("pos_orders", "pos_transactions", "kitchen_orders")
+
+
+@router.post("/admin/stress/pos-load-cleanup", tags=["Stress E2E"])
+async def stress_pos_load_cleanup(
+    payload: PosLoadCleanupRequest,
+    current_user: User = Depends(require_super_admin),
+):
+    """Idempotent, prefix-scoped cleanup for the POS F&B primary load test.
+
+    The k6 load test (load_tests/pos_fnb_burst.js) drives the REAL v2 POS write
+    lifecycle (create order -> close/payment -> open tab) against the stress
+    tenant. Those rows are written by strict-Pydantic production POSTs and
+    therefore cannot carry the stress_seed/stress_prefix tags that the unified
+    /admin/stress/cleanup loop filters on. The load test instead stamps its run
+    prefix (POS_LOAD_PREFIX) into guest_name, table_number AND idempotency_key
+    on every write, so this endpoint deletes exactly that run's residue with an
+    anchored `^prefix` match -- never an unbounded delete.
+
+    Field coverage:
+      - pos_orders / pos_transactions: prefix in idempotency_key OR guest_name
+        OR table_number (close_order txn carries it in idempotency_key only;
+        open_tab txn carries all three; create order carries all three).
+      - kitchen_orders: prefix in table_number only (no idempotency_key).
+
+    Same fail-closed gate stack as the sibling stress endpoints (super_admin,
+    target == E2E_STRESS_TENANT_ID, pilot tenant explicitly blocked,
+    E2E_ALLOW_DESTRUCTIVE_STRESS == 'true'), and all DB ops run inside
+    tenant_context(stress_tid). audit_logs are NEVER touched.
+    """
+    gates = _gates(payload.target_tenant_id)
+    stress_tid = _stress_tid()
+
+    prefix = (payload.data_prefix or "").strip()
+    # Fail-closed: bos prefix asla kabul edilmez (sinirsiz silmeyi onler).
+    if len(prefix) < 4:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "pos-load-cleanup requires a non-empty `data_prefix` of at "
+                "least 4 chars (the POS_LOAD_PREFIX used for the run). "
+                "Fail-closed: this endpoint never performs an unbounded delete."
+            ),
+        )
+
+    # Anchored prefix eslesme. re.escape -> prefix karakterleri regex meta
+    # gibi davranamaz (guvenli, dar eslesme).
+    anchored = {"$regex": f"^{re.escape(prefix)}"}
+    order_txn_flt = {
+        "tenant_id": stress_tid,
+        "$or": [
+            {"idempotency_key": anchored},
+            {"guest_name": anchored},
+            {"table_number": anchored},
+        ],
+    }
+    kitchen_flt = {"tenant_id": stress_tid, "table_number": anchored}
+
+    deleted_counts: dict[str, int] = {}
+    t_start = time.perf_counter()
+    with tenant_context(stress_tid):
+        from core.database import db
+        for col_name in ("pos_orders", "pos_transactions"):
+            res = await _delete_many_with_retry(
+                getattr(db, col_name), order_txn_flt, col_name=col_name,
+            )
+            deleted_counts[col_name] = res.deleted_count
+        res = await _delete_many_with_retry(
+            db.kitchen_orders, kitchen_flt, col_name="kitchen_orders",
+        )
+        deleted_counts["kitchen_orders"] = res.deleted_count
+    cleanup_ms = round((time.perf_counter() - t_start) * 1000, 1)
+
+    return {
+        "success": True,
+        "target_tenant_id": stress_tid,
+        "data_prefix": prefix,
+        "deleted_counts": deleted_counts,
+        "audit_logs_retained": True,
+        "gates": gates,
         "timing_ms": {"cleanup": cleanup_ms},
         "idempotent": True,
         "tenant_context_used": True,

@@ -68,6 +68,80 @@ k6 run -e BASE_URL=https://pms.example.com load_tests/night_audit_load.js
 for f in load_tests/*.js; do k6 run "$f"; done
 ```
 
+## POS F&B - Birincil Yuk Hedefi (PRIMARY)
+
+`load_tests/pos_fnb_burst.js` artik salt-okuma degil; **gercek v2 POS yazma
+dongusunu** (create order -> close/odeme -> open-tab cekismesi) + okuma
+karisimini surer. Yeni 6 POS index'ini yuk altinda dogrular:
+
+| Index | Koleksiyon | Surulen yol |
+|-------|-----------|-------------|
+| `idx_pos_orders_status_created` (tenant_id,status,created_at) | pos_orders | active-orders panosu |
+| `idx_pos_orders_tenant_created` (tenant_id,created_at) | pos_orders | dashboard / rapor range |
+| `tenant_id_1_id_1` (tenant_id,id) | pos_orders | close_order kaynak lookup |
+| `tenant_id_1_id_1` (tenant_id,id) | pos_transactions | islem lookup |
+| `idx_pos_txn_tenant_order` (tenant_id,order_id) | pos_transactions | close_order txn lookup |
+| `idx_pos_txn_open_tab` PARTIAL {status:open} (tenant_id,outlet_id,table_number) | pos_transactions | open_tab dup guard |
+
+### Doktrin (mutlak)
+- SADECE stress tenant'ina yazar. `demo@hotel.com` / pilot tenant reddedilir
+  (setup fail-closed; `pilot_drift=0`).
+- Tum yazmalar `POS_LOAD_PREFIX`'i `guest_name` + `table_number` +
+  `idempotency_key` alanlarina basar -> kosu sonrasi tek komutla temizlenir.
+- `post_to_folio=false` (folyo/Xchange yan-etkisi YOK). Sentetik PII.
+- **Bu testi AGENT calistirmaz**; operator deploy'a karsi dispatch eder.
+
+### Zorunlu env (fail-closed)
+`BASE_URL`, `E2E_STRESS_ADMIN_EMAIL`, `E2E_STRESS_ADMIN_PASSWORD`,
+`E2E_STRESS_TENANT_ID`, `POS_LOAD_PREFIX` (>=4 char). Opsiyonel:
+`POS_OUTLET_ID` (varsayilan `<prefix>OUTLET`).
+
+Backend tarafinda da: `E2E_ALLOW_DESTRUCTIVE_STRESS=true` ve (varsa)
+`PILOT_TENANT_ID` set (cleanup gate stack icin).
+
+### Esikler
+- `pos_read_latency_ms` p95 < 1500ms
+- `pos_create_latency_ms` p95 < 2500ms
+- `pos_close_latency_ms` p95 < 3000ms
+- `pos_tab_latency_ms` p95 < 3000ms
+- `pos_unexpected_errors` rate < 0.02  (ASIL kapi: 5xx + beklenmeyen 4xx)
+- `pos_tab_conflict_409` / `pos_throttle_429`: gozlem sayaclari (409=beklenen
+  contention, 429=throttle; ASIL hata oranina KARISTIRILMAZ).
+
+### Dispatch (operator, deploy'a karsi)
+```sh
+PREFIX="POSLOAD_$(date +%Y%m%d%H%M%S)_"
+k6 run \
+  -e BASE_URL=https://<deploy-domain> \
+  -e E2E_STRESS_ADMIN_EMAIL="$E2E_STRESS_ADMIN_EMAIL" \
+  -e E2E_STRESS_ADMIN_PASSWORD="$E2E_STRESS_ADMIN_PASSWORD" \
+  -e E2E_STRESS_TENANT_ID="$E2E_STRESS_TENANT_ID" \
+  -e POS_LOAD_PREFIX="$PREFIX" \
+  load_tests/pos_fnb_burst.js
+```
+
+### Cleanup (kosu sonrasi ZORUNLU) + idempotency
+Prefix-scoped, fail-closed dedicated endpoint. data_prefix = az once kullanilan
+`$PREFIX`.
+```sh
+# cleanup #1 -> silinen sayilar > 0 beklenir
+curl -sS -X POST https://<deploy-domain>/api/admin/stress/pos-load-cleanup \
+  -H "Authorization: Bearer $SUPER_ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "{\"target_tenant_id\":\"$E2E_STRESS_TENANT_ID\",\"data_prefix\":\"$PREFIX\"}"
+
+# cleanup #2 -> AYNI komut; idempotency teyidi: tum deleted_counts == 0 olmali
+```
+Gate stack: super_admin + `target_tenant_id == E2E_STRESS_TENANT_ID` +
+`PILOT_TENANT_ID` blok + `E2E_ALLOW_DESTRUCTIVE_STRESS=true`. `data_prefix`
+bos/<4 char ise 400. audit_logs ASLA silinmez.
+
+### IXSCAN teyidi (Atlas)
+Kosu sirasinda/sonrasinda Atlas Profiler veya `$queryStats` ile yukaridaki
+yollarin COLLSCAN degil **IXSCAN** kullandigini dogrula (ozellikle
+active-orders, dashboard range, open_tab dup guard). Profiler'i sadece teyit
+penceresinde ac, sonra kapat.
+
 ### Locust
 ```sh
 # Headless
