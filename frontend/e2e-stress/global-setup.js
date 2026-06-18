@@ -647,12 +647,25 @@ export default async function globalSetup() {
         },
         captured_at: Date.now(),
     }, null, 2));
+    // F8L v2 (Task #25) — persist the authoritative seeded pending-booking ids
+    // captured by the backend at seed time (they provably matched PENDING_QUERY +
+    // stress_prefix then). Spec 52B test G falls back to these when its live
+    // conflict-queue page-1 scan comes up empty (pagination / depletion /
+    // list-shape drift), then re-verifies each via full-detail before resolving —
+    // so the real partial-success contract runs deterministically without
+    // fake-greening. Prefer the explicit pending_ids list; fall back to the
+    // single pending_sample.id for backends predating the list field.
+    const _pv = seedBody.post_insert_verification || {};
+    const seededPendingIds = (Array.isArray(_pv.pending_ids) && _pv.pending_ids.length)
+        ? _pv.pending_ids
+        : (_pv.pending_sample?.id ? [_pv.pending_sample.id] : []);
     fs.writeFileSync(STATE_FILE, JSON.stringify({
         base_url: baseURL,
         stress_tid: STRESS_TID,
         pilot_tid: PILOT_TID,
         room_count: ROOM_COUNT,
         data_prefix: dataPrefix,
+        seeded_pending_ids: seededPendingIds,
         seed_response: seedBody,
         pilot_baseline: pilotBaseline,
         stress_baseline: stressBaseline,

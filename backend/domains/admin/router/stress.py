@@ -2377,6 +2377,25 @@ async def stress_seed(
                 {"_id": 0, "id": 1, "room_id": 1, "status": 1,
                  "allocation_source": 1, "tenant_id": 1},
             )
+            # F8L v2 (Task #25) — authoritative seeded-pending id list. The
+            # conflict-queue list endpoint is paginated + sorts created_at DESC,
+            # so spec 52B's page-1 `items[].id` scan can miss the seeded rows
+            # (depletion, shadowing by newer pending, or a list-shape drift).
+            # Return the EXACT ids that match PENDING_QUERY + this run's
+            # stress_prefix here — captured at the moment they provably exist —
+            # so global-setup can persist them and spec 52B can resolve a real
+            # pending deterministically (then re-verify each via full-detail).
+            # id only, no PII; capped well above seed_pending_bookings.
+            pending_ids: list[str] = []
+            async for d in db.bookings.find(
+                {"tenant_id": stress_tid, "allocation_source": "pending_assignment",
+                 "room_id": None, "status": {"$in": ["confirmed", "guaranteed", "pending"]},
+                 "stress_prefix": prefix},
+                {"_id": 0, "id": 1},
+            ).limit(10):
+                if d.get("id"):
+                    pending_ids.append(d["id"])
+            verification["pending_ids"] = pending_ids
         except Exception as e:
             verification["error"] = str(e)[:200]
     insert_ms = round((time.perf_counter() - t_insert_start) * 1000, 1)

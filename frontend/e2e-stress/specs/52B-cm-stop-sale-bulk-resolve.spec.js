@@ -80,6 +80,7 @@ test.describe('F8L v2 § 52B — Stop-sale CB + Bulk Resolve', () => {
     let stressRoomId = null;
     let existingPendingId = null;
     let pilotSampleBookingId = null;
+    let cqProbeDiag = null;
 
     test('Setup: prefix + pilot baseline + CB/CQ probe + room sample + pending probe', async ({ request, stressTokens, stressState }, testInfo) => {
         prefix = stressState.data_prefix;
@@ -106,10 +107,29 @@ test.describe('F8L v2 § 52B — Stop-sale CB + Bulk Resolve', () => {
                 `GET ${CQ_PATH} status=${cqProbe.status} body=${JSON.stringify(cqProbe.body).slice(0, 160)} — edit_booking RBAC veya router deploy. Bulk-resolve alt-grubu skipped; D-step bağımsız.`);
         } else {
             const items = cqProbe.body?.items || [];
-            // Stres tenant'ta yaşayan pending booking varsa happy-path için sample al.
-            // Cross-round seed olmadığı için bu boş gelir; yine de defansif tara.
+            // Task #25: global-setup seeds N synthetic pending_assignment bookings
+            // (room_id:null, status:confirmed) so a real partial-success can run.
+            // Capture the first item carrying an id as the live happy-path sample.
+            // (The old "cross-round seed yok → boş gelir" assumption predates the
+            // Task #25 seeding and is obsolete — test G no longer relies on it.)
             for (const it of items) {
                 if (it.id) { existingPendingId = it.id; break; }
+            }
+            // Self-diagnostic: the conflict-queue list is paginated + created_at
+            // DESC, so the seeded rows can be absent from page 1 (depletion,
+            // shadowing by newer pending, or a list-shape drift). Log the queue
+            // shape + whether the persisted seeded ids appear on this page so a
+            // root cause is decidable on the NEXT run instead of ~1.3h later
+            // inside test G. test G falls back to the persisted seeded ids +
+            // full-detail re-verify, so this never fake-greens.
+            const seededIds = Array.isArray(stressState?.seeded_pending_ids) ? stressState.seeded_pending_ids : [];
+            const itemsWithId = items.filter((it) => it.id).length;
+            const cqTotal = typeof cqProbe.body?.total === 'number' ? cqProbe.body.total : null;
+            const seededOnPage = seededIds.filter((sid) => items.some((it) => it.id === sid)).length;
+            cqProbeDiag = { total: cqTotal, items: items.length, items_with_id: itemsWithId, seeded_ids: seededIds.length, seeded_on_page: seededOnPage };
+            if (!existingPendingId) {
+                recFinding(testInfo, 'P2', MOD, 'Conflict-queue live pending scan empty',
+                    `GET ${CQ_PATH}?limit=50 → total=${cqTotal} items=${items.length} items_with_id=${itemsWithId} seeded_ids=${seededIds.length} seeded_on_page=${seededOnPage}. Live capture empty → test G falls back to persisted seeded_pending_ids + full-detail re-verify (no fake-green).`);
             }
         }
 
@@ -135,7 +155,7 @@ test.describe('F8L v2 § 52B — Stop-sale CB + Bulk Resolve', () => {
         } catch (_) { /* best-effort */ }
 
         rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
-            note: `prefix=${prefix} pilot_before=${pilotBefore?.count} cb_blocked=${cbBlocked} cq_blocked=${cqBlocked} stress_room=${!!stressRoomId} existing_pending=${!!existingPendingId} pilot_sample=${!!pilotSampleBookingId}` });
+            note: `prefix=${prefix} pilot_before=${pilotBefore?.count} cb_blocked=${cbBlocked} cq_blocked=${cqBlocked} stress_room=${!!stressRoomId} existing_pending=${!!existingPendingId} pilot_sample=${!!pilotSampleBookingId} cq_diag=${JSON.stringify(cqProbeDiag)}` });
     });
 
     // ──────────────────────────────────────────────────────────────────
@@ -441,7 +461,7 @@ test.describe('F8L v2 § 52B — Stop-sale CB + Bulk Resolve', () => {
         }
     });
 
-    test('G) Bulk-resolve — real partial-success (deterministic; seeded pending)', async ({ request, stressTokens }, testInfo) => {
+    test('G) Bulk-resolve — real partial-success (deterministic; seeded pending)', async ({ request, stressTokens, stressState }, testInfo) => {
         if (cqBlocked) {
             rec(testInfo, { module: MOD, step: 'br_real_partial', status: 'SKIP', note: `cq blocked: ${cqBlockedReason}` });
             test.skip(true, 'cq blocked');
@@ -454,14 +474,62 @@ test.describe('F8L v2 § 52B — Stop-sale CB + Bulk Resolve', () => {
         // seeded bookings carry stress_seed=True + stress_prefix=<prefix> and
         // a far-future stay window, so `_claim_room_for_pending_booking` cannot
         // collide with the baseline RNLs on any stress room.
-        if (!existingPendingId) {
+        // Resolve a REAL still-pending booking deterministically. Prefer the live
+        // conflict-queue sample (existingPendingId); fall back to the authoritative
+        // seeded ids persisted by global-setup at seed time (when they provably
+        // matched PENDING_QUERY + stress_prefix). The live page-1 scan can miss them
+        // (pagination / created_at DESC / shadowing) while the rows still exist.
+        const seededPendingIds = Array.isArray(stressState?.seeded_pending_ids) ? stressState.seeded_pending_ids : [];
+        const candidateIds = [...new Set([existingPendingId, ...seededPendingIds].filter(Boolean))];
+        if (candidateIds.length === 0) {
             rec(testInfo, { module: MOD, step: 'br_real_partial', status: 'FAIL',
-                note: 'no_existing_pending — seed_pending_bookings did not populate a pending booking (expected ≥1)' });
+                note: 'no_candidate_pending — neither live conflict-queue nor persisted seeded_pending_ids yielded a pending id (global-setup seed/persist regression)' });
             recFinding(testInfo, 'P1', MOD,
                 'Bulk-resolve real-succeeded seed missing',
-                `GET ${CQ_PATH} returned no pending_assignment booking despite global-setup.js passing seed_pending_bookings>0. Check backend stress seed factory (`+
-                `pending_bookings_docs branch) or PENDING_QUERY shape drift.`);
-            expect(existingPendingId, 'seed_pending_bookings must produce a pending_assignment booking').toBeTruthy();
+                `Neither GET ${CQ_PATH} nor stressState.seeded_pending_ids produced a candidate although global-setup hard-asserts seed_pending_bookings>0 + queryable>0. `+
+                `Check backend stress seed (pending_bookings_docs / post_insert_verification.pending_ids) and global-setup persistence.`);
+            expect(candidateIds.length, 'seed_pending_bookings must produce at least one candidate pending id').toBeGreaterThan(0);
+            return;
+        }
+        // Re-verify each candidate's CURRENT state via full-detail; pick the first
+        // that is still pending (room_id empty + status in the accepted set). On
+        // failure this also captures EXACTLY how each consumed candidate now looks.
+        let resolvedPendingId = null;
+        const candidateStates = [];
+        for (const cid of candidateIds) {
+            const det = await callTimed(request, 'get',
+                `/api/pms/reservations/${encodeURIComponent(cid)}/full-detail`,
+                undefined, stressTokens.stress_token);
+            const bk = det.ok ? (det.body?.booking || {}) : {};
+            // Mirror backend PENDING_QUERY EXACTLY: allocation_source=pending_assignment
+            // + room_id empty + status in the accepted set. Omitting allocation_source
+            // could falsely pick a row whose allocation drifted while room_id stayed
+            // empty, then bulk-resolve would reject it as not_pending — masking the
+            // real "consumed" signal. (cm_conflict_queue.PENDING_QUERY)
+            const stillPending = det.ok && !bk.room_id
+                && bk.allocation_source === 'pending_assignment'
+                && ['confirmed', 'guaranteed', 'pending'].includes(bk.status);
+            candidateStates.push({ id: cid, http: det.status,
+                room_id: det.ok ? (bk.room_id ?? null) : undefined,
+                status: det.ok ? (bk.status ?? null) : undefined,
+                allocation_source: det.ok ? (bk.allocation_source ?? null) : undefined,
+                pending: stillPending });
+            if (stillPending) { resolvedPendingId = cid; break; }
+        }
+        if (!resolvedPendingId) {
+            // Every seeded/live candidate exists but is NO LONGER pending (room
+            // assigned / status or allocation changed) — a genuine test-isolation
+            // or external-mutation defect. Task #25 made this precondition
+            // deterministic, so this is a HARD FAIL with the consumed-state
+            // evidence inlined (NOT a REVIEW / skip-as-pass).
+            rec(testInfo, { module: MOD, step: 'br_real_partial', status: 'FAIL',
+                note: `pending_consumed — none of ${candidateIds.length} candidates still pending: ${JSON.stringify(candidateStates).slice(0, 300)}` });
+            recFinding(testInfo, 'P1', MOD,
+                'Seeded pending consumed before bulk-resolve',
+                `global-setup proved pending rows existed at seed (queryable + CQ probe), but by test-G time none remain pending. `+
+                `Candidate current states (room_id/status): ${JSON.stringify(candidateStates).slice(0, 400)}. `+
+                `A spec or background path mutated a far-future pending_assignment booking (claimed a room / changed status / allocation_source). Investigate test isolation.`);
+            expect(resolvedPendingId, 'at least one seeded pending booking must still be pending at bulk-resolve time').toBeTruthy();
             return;
         }
         if (!stressRoomId) {
@@ -473,13 +541,13 @@ test.describe('F8L v2 § 52B — Stop-sale CB + Bulk Resolve', () => {
         // Deterministic partial-success: 1 valid pending + 1 bogus room_id.
         const bogusBooking = `${prefix || 'STRESS'}_BR_REAL_BOGUS_${Date.now()}`;
         const items = [
-            { booking_id: existingPendingId, room_id: stressRoomId },
+            { booking_id: resolvedPendingId, room_id: stressRoomId },
             { booking_id: bogusBooking, room_id: 'STRESS_NONEXISTENT_ROOM_999' },
         ];
         const r = await callTimed(request, 'post', BR_PATH, { items }, stressTokens.stress_token);
         const succeeded = r.body?.succeeded || [];
         const failed = r.body?.failed || [];
-        const realInSucceeded = succeeded.some((s) => s.booking_id === existingPendingId && s.room_id === stressRoomId);
+        const realInSucceeded = succeeded.some((s) => s.booking_id === resolvedPendingId && s.room_id === stressRoomId);
         const bogusInFailed = failed.some((f) => f.booking_id === bogusBooking && f.error === 'room_not_found');
         const totalOk = r.body?.total === 2;
         const succeededCountOk = succeeded.length === 1;
@@ -494,7 +562,7 @@ test.describe('F8L v2 § 52B — Stop-sale CB + Bulk Resolve', () => {
         if (!pass) {
             recFinding(testInfo, 'P1', MOD,
                 'Bulk-resolve real partial-success contract drift',
-                `Body=${JSON.stringify(r.body).slice(0, 320)}. Expected 1 succeeded (pending=${existingPendingId} → room=${stressRoomId}) + 1 failed (bogus_room=room_not_found), total=2.`);
+                `Body=${JSON.stringify(r.body).slice(0, 320)}. Expected 1 succeeded (pending=${resolvedPendingId} → room=${stressRoomId}) + 1 failed (bogus_room=room_not_found), total=2.`);
         }
 
         expect(r.status, 'bulk-resolve should return 200 for partial-success').toBe(200);
