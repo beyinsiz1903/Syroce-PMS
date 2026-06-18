@@ -142,6 +142,86 @@ yollarin COLLSCAN degil **IXSCAN** kullandigini dogrula (ozellikle
 active-orders, dashboard range, open_tab dup guard). Profiler'i sadece teyit
 penceresinde ac, sonra kapat.
 
+## Reporting / Dashboard + Night-Audit - Okuma Yuku (READ, saf-okuma)
+
+`load_tests/reporting_read_burst.js` sistemin **en agir okuma katmanini** birincil
+hedef alir: GM snapshot, rol-bazli dashboard, executive KPI ve ozellikle
+**Night-Audit finansal ozetleri** (6 paralel aggregate; `folio_charges` +
+`payments` uzerinde `$match`/`$group`). Hem DB index'lerini hem cache stratejisini
+(`redis_cache` / `advanced_cache` L1-L3 / night-audit in-process `_cache`) yuk
+altinda sinar.
+
+### Iki mod (DB Indexing + Caching sorularina birebir)
+- **`cached_read_mix`**: default parametreler -> ilk cagri sonrasi cache servisi.
+  Cache-hit verimini ve sicak-latency'yi olcer.
+- **`cold_aggregation`**: `nocache=true` + degisken tarih/periyot -> her cagri
+  heavy aggregate'i yeniden kosar. Ham DB + index performansini olcer.
+
+### Doktrin (mutlak)
+- **PMS is verisi SALT-OKUMA**: hicbir rezervasyon/folyo/oda/finans mutasyonu yok
+  -> **is-verisi cleanup'i GEREKMEZ**, `pilot_drift=0` insaen (token tenant'i
+  sorgulari otomatik scope'lar).
+- **Tam sifir degil, bilincli istisna**: basarili `POST /api/auth/login` STRESS
+  tenant'a bir `audit_logs` satiri yazar; okunan endpoint'ler cevabi cache'e
+  populate eder. Ikisi de **STRESS tenant'ta kalir, pilot'a dokunmaz**. Login
+  yan-etkisini de istemiyorsan `E2E_STRESS_ADMIN_TOKEN` ile login atla (cache
+  populasyonu dogasi geregi yine olur).
+- Yalniz stress tenant'a baglanir; `demo@hotel.com` / pilot reddedilir
+  (setup fail-closed + `/auth/me` tenant kilidi).
+- **Bu testi AGENT calistirmaz**; operator deploy'a karsi dispatch eder.
+
+### Zorunlu env (fail-closed)
+`BASE_URL`, `E2E_STRESS_ADMIN_EMAIL`, `E2E_STRESS_ADMIN_PASSWORD`,
+`E2E_STRESS_TENANT_ID`. (Prefix/cleanup YOK - salt-okuma.)
+
+### Opsiyonel env
+- `E2E_STRESS_ADMIN_TOKEN`: verilirse login POST'u (ve `audit_logs` yan-etkisi)
+  atlanir; email/password zorunlulugu kalkar (tenant kilidi `/auth/me` ile devam).
+- `ALLOW_CACHED_ONLY=true`: cold heavy-aggregate (night-audit finans) endpoint
+  erisilemezse kosuyu **fail-closed durdurmak yerine** bilincli cache-only surer.
+
+### Setup-probe + perm notu (no fake-green)
+Setup, aday endpoint'leri token ile bir kez yoklar; yalniz **200** donenleri yuke
+alir. Perm-gate (`view_reports` / `view_finance_reports` / `view_executive_reports`)
+nedeniyle 403 donenler sessizce haric tutulur ve **setup loguna yazilir** (sahte-
+kirmizi yok, RBAC kodda zayiflatilmaz). Setup logunda en agir finans/executive
+endpoint'leri `haric=...` altinda goruluyorsa: adanmis stress hesabina
+`view_reports` + `view_finance_reports` + `view_executive_reports` yetkilerini ver
+(test hesabi senin kontrolunde, en-az-yetkili). Setup ayrica `cold night-audit
+finans=N` satirini loglar: **asil DB/index yukunu yalniz night-audit finans
+aggregate'leri (`nocache=true` + degisken tarih) gercekten cold surer**
+(dashboard cold'lari `@cached` altinda birkac varyanttan sonra isinir). Bu yuzden
+`cold night-audit finans=0` ise kosu **fail-closed durur** (cache-only kosu
+sahte-yesil sayilmaz); bilincli cache-only/reporting-smoke icin
+`ALLOW_CACHED_ONLY=true` gec (o modda `read_cold_latency_ms` ornek uretmeyebilir).
+
+### Esikler
+- `read_cached_latency_ms` p95 < 800ms (cache-hit hizli olmali)
+- `read_cold_latency_ms` p95 < 3500ms (6 paralel aggregate; gevsek)
+- `read_unexpected_errors` rate < 0.02  (ASIL kapi: 5xx + beklenmeyen 4xx)
+- `read_throttle_429`: gozlem sayaci (429 ASIL hata oranina KARISTIRILMAZ)
+
+### Dispatch (operator, deploy'a karsi)
+```sh
+k6 run \
+  -e BASE_URL=https://<deploy-domain> \
+  -e E2E_STRESS_ADMIN_EMAIL="$E2E_STRESS_ADMIN_EMAIL" \
+  -e E2E_STRESS_ADMIN_PASSWORD="$E2E_STRESS_ADMIN_PASSWORD" \
+  -e E2E_STRESS_TENANT_ID="$E2E_STRESS_TENANT_ID" \
+  load_tests/reporting_read_burst.js
+# Opsiyonel: login yan-etkisiz (pre-minted token) + cache-only'ye izin:
+#   -e E2E_STRESS_ADMIN_TOKEN="$E2E_STRESS_ADMIN_TOKEN"   # login POST'unu atlar
+#   -e ALLOW_CACHED_ONLY=true                             # cold finans yoksa fail etme
+```
+
+### IXSCAN / cache teyidi (Atlas)
+Kosu penceresinde Atlas Profiler / `$queryStats` ile night-audit finansal
+aggregate'lerinin `(tenant_id, ...)` bileskelerini **IXSCAN** ile gectigini
+dogrula. `cached_read_mix` p95'i `cold_aggregation` p95'inden belirgin dusukse
+cache calisiyor demektir; ikisi esitse cache deploy'da devre disi olabilir
+(deploy VM'de Redis baglantisini kontrol et). Profiler'i sadece teyit
+penceresinde ac, sonra kapat.
+
 ### Locust
 ```sh
 # Headless
