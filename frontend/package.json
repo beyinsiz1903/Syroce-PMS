@@ -72,6 +72,7 @@
   },
   "scripts": {
     "guard:layout": "node ../tools/codemod-layout/guard.mjs",
+    "guard:theme": "node ../tools/theme-guard/guard.mjs",
     "start": "vite",
     "build": "vite build",
     "analyze": "ANALYZE=1 vite build",

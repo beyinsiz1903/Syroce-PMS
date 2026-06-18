@@ -10,6 +10,25 @@ env:
     NODE_VERSION: '22'
 
 jobs:
+    # ============ THEME REGRESSION GUARD (HARD GATE) ============
+    # Faz 4: blocks merges on (A) a new UNCOVERED dark-mode color gap (a JSX
+    # neutral/pastel utility that would flash bright in dark mode with no
+    # matching `.dark` compat rule) or (B) a new purple/orange (retired brand
+    # hue) utility in a component. Pure Node fs-scan — no install/build needed,
+    # so it runs fast and gates every push/PR.
+    theme-guard:
+        name: Theme Guard (dark-coverage + brand-drift)
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - uses: actions/checkout@v5
+            - name: Set up Node.js
+              uses: actions/setup-node@v5
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+            - name: Run theme guard (hard gate)
+              run: node tools/theme-guard/guard.mjs
+
     # ============ KNIP DEAD-CODE GUARD (SOFT GATE) ============
     knip:
         runs-on: ubuntu-latest
