@@ -194,6 +194,37 @@ services:
       - internal
       - web
 
+  # ── Offsite Yedekleme (mongodump -> S3) ──
+  # S3_BUCKET bos ise konteyner baslamaz (script fail-closed).
+  backup:
+    build:
+      context: ../infra/backup
+      dockerfile: Dockerfile
+    <<: *restart-policy
+    environment:
+      MONGO_URL: mongodb://mongo:27017/${DB_NAME}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_PREFIX: ${S3_PREFIX:-syroce}
+      BACKUP_TIME: ${BACKUP_TIME:-03:00}
+      BACKUP_RUN_ON_START: ${BACKUP_RUN_ON_START:-false}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-eu-central-1}
+      AWS_DEFAULT_REGION: ${AWS_REGION:-eu-central-1}
+      AWS_S3_EXTRA_ARGS: ${AWS_S3_EXTRA_ARGS:-}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    logging: *default-logging
+    networks:
+      - internal
+      - web
+
 volumes:
   mongo_data:
   mongo_config:
