@@ -2347,6 +2347,36 @@ async def stress_seed(
                 and isinstance(extras_sample.get("stress_prefix"), str)
                 and extras_sample["stress_prefix"].startswith(prefix)
             ) if extras_sample else False
+            # F8L v2 (Task #25) pending-booking ground-truth — mirrors the
+            # tur-14 rooms diagnostic above for spec-52B's "no pending_assignment
+            # booking" paradox: `_chunked_insert` returns N yet the conflict-queue
+            # list (GET /api/channel-manager/conflict-queue — bare PENDING_QUERY +
+            # current_user.tenant_id) reads 0, even though the same Setup test
+            # proves stress_token sees this tenant's seeded rooms. Surface the
+            # ACTUAL queryable state in stress_tid immediately post-insert so the
+            # next CI run tells us definitively which step drops the rows:
+            #   - actual_pending_queryable == seed_pending_bookings → docs are
+            #     present AND match PENDING_QUERY; the bug is downstream (read
+            #     path / stress_token tenant resolution), NOT the seed.
+            #   - actual_pending_total > 0 but queryable == 0 → stored but a
+            #     PENDING_QUERY field drifted (room_id/status/allocation_source);
+            #     pending_sample shows the offending stored value.
+            #   - actual_pending_total == 0 → insert returned N but wrote 0
+            #     rows to this tenant (tenant_context write redirect / deploy).
+            # Counts + a non-PII field sample only (id/room_id/status/
+            # allocation_source/tenant_id) — no guest data, no document dumps.
+            verification["actual_pending_total"] = await db.bookings.count_documents(
+                {"tenant_id": stress_tid, "allocation_source": "pending_assignment"},
+            )
+            verification["actual_pending_queryable"] = await db.bookings.count_documents(
+                {"tenant_id": stress_tid, "allocation_source": "pending_assignment",
+                 "room_id": None, "status": {"$in": ["confirmed", "guaranteed", "pending"]}},
+            )
+            verification["pending_sample"] = await db.bookings.find_one(
+                {"tenant_id": stress_tid, "allocation_source": "pending_assignment"},
+                {"_id": 0, "id": 1, "room_id": 1, "status": 1,
+                 "allocation_source": 1, "tenant_id": 1},
+            )
         except Exception as e:
             verification["error"] = str(e)[:200]
     insert_ms = round((time.perf_counter() - t_insert_start) * 1000, 1)

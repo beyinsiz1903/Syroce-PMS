@@ -410,7 +410,79 @@ export default async function globalSetup() {
             `predates the pending_assignment seed branch (stress.py pending_bookings_docs) — redeploy ` +
             `stress backend to HEAD. seeded_counts=${JSON.stringify(seedBody.seeded_counts)}`);
     }
-    console.log(`[stress-setup] ✅ Seed OK n=${ROOM_COUNT} prefix=${dataPrefix} timing_ms=${JSON.stringify(seedBody.timing_ms)}`);
+    // F8L v2 (Task #25) — ground-truth queryable guard. The insert-count guard
+    // above only proves `_chunked_insert` returned N; it does NOT prove those
+    // rows are queryable by the EXACT PENDING_QUERY the conflict-queue endpoint
+    // runs (allocation_source + room_id:null + status∈set, tenant-scoped). Spec
+    // 52B has kept failing "no pending_assignment booking" despite
+    // seeded_counts.pending_bookings==N, so assert the backend's own post-insert
+    // DB count here, turning a silent seed↔read skew into an immediate,
+    // self-diagnosing NO-GO with the offending stored sample inlined. Additive
+    // only — no existing assertion is loosened. Fail-soft when the field is
+    // absent (older backend predating the diagnostic) so this never regresses a
+    // deploy; the insert-count guard above still applies.
+    const pv = seedBody.post_insert_verification || {};
+    const queryablePending = pv.actual_pending_queryable;
+    if (typeof queryablePending === 'number' && queryablePending < SEED_PENDING_BOOKINGS) {
+        throw new Error(
+            `[stress-setup] NO-GO: seed reported pending_bookings=${seededPending} but only ` +
+            `actual_pending_queryable=${queryablePending} match PENDING_QUERY in the stress tenant ` +
+            `(actual_pending_total=${pv.actual_pending_total}). The conflict-queue endpoint reads via ` +
+            `this exact filter → it will return 0 → spec 52B "no pending_assignment booking". ` +
+            `Inspect the seeded shape (expect room_id:null + status∈[confirmed,guaranteed,pending]): ` +
+            `pending_sample=${JSON.stringify(pv.pending_sample)}`);
+    }
+    // F8L v2 (Task #25) — post-seed read-path probe via stress_token (architect
+    // debug). The queryable guard above proves the rows exist + match
+    // PENDING_QUERY *in the stress tenant*; this proves the SAME read path spec
+    // 52B uses — GET /api/channel-manager/conflict-queue with the stress_token,
+    // whose `total` is count_documents({...PENDING_QUERY, tenant_id:
+    // current_user.tenant_id}) — actually surfaces them. The "rooms visible"
+    // in-spec proof is weaker than it looks: /api/pms/rooms?limit=5 returns ANY
+    // tenant room without a prefix match, so it cannot conclusively prove
+    // stress_token's effective tenant == E2E_STRESS_TENANT_ID. This read-only
+    // GET isolates the failure boundary at setup instead of ~1.3h later inside
+    // 52B: backend reports queryable>=N but this reads 0 ⇒ the defect is
+    // stress_token tenant resolution / edit_booking RBAC / route, NOT the seed.
+    // Additive, read-only, no mutation, no PII logged. Non-2xx stays fail-soft
+    // (a warn) so it mirrors 52B's graceful bulk-resolve SKIP rather than
+    // NO-GO'ing the whole suite on an RBAC/route block; only the precise
+    // 2xx-but-empty skew (the actual current bug) hard-fails.
+    {
+        let stressTokenTid = 'undecodable';
+        try {
+            const seg = JSON.parse(Buffer.from(stressToken.split('.')[1], 'base64url').toString('utf8'));
+            stressTokenTid = seg?.tenant_id ?? seg?.tid ?? 'absent';
+        } catch (_) { /* diagnostic only — never gates */ }
+        const cqProbe = await api.get('/api/channel-manager/conflict-queue?limit=50', {
+            headers: { Authorization: `Bearer ${stressToken}` },
+            failOnStatusCode: false,
+            timeout: 60_000,
+        });
+        if (!cqProbe.ok()) {
+            const t = await cqProbe.text().catch(() => '');
+            console.warn(
+                `[stress-setup] ⚠️ conflict-queue probe via stress_token non-2xx (${cqProbe.status()}): ` +
+                `${t.slice(0, 160)} — edit_booking RBAC / router deploy; spec 52B will SKIP its bulk-resolve ` +
+                `subgroup gracefully. stress_token.tenant_id=${stressTokenTid} E2E_STRESS_TENANT_ID=${STRESS_TID}`);
+        } else {
+            const cqBody = await cqProbe.json().catch(() => ({}));
+            const cqTotal = typeof cqBody.total === 'number' ? cqBody.total
+                : (Array.isArray(cqBody.items) ? cqBody.items.length : 0);
+            if (cqTotal < SEED_PENDING_BOOKINGS) {
+                throw new Error(
+                    `[stress-setup] NO-GO: conflict-queue read via stress_token returned total=${cqTotal} ` +
+                    `(< ${SEED_PENDING_BOOKINGS}) although the backend reports actual_pending_queryable=` +
+                    `${queryablePending} in the stress tenant. Rows exist + match PENDING_QUERY but the ` +
+                    `stress_token read path does not surface them → spec 52B "no pending_assignment booking". ` +
+                    `Most likely stress_token.tenant_id (${stressTokenTid}) != E2E_STRESS_TENANT_ID ` +
+                    `(${STRESS_TID}); also check edit_booking RBAC / route. pending_sample=` +
+                    `${JSON.stringify(pv.pending_sample)}`);
+            }
+            console.log(`[stress-setup] ✅ CQ read-path probe OK total=${cqTotal} via stress_token (tenant=${stressTokenTid})`);
+        }
+    }
+    console.log(`[stress-setup] ✅ Seed OK n=${ROOM_COUNT} prefix=${dataPrefix} timing_ms=${JSON.stringify(seedBody.timing_ms)} pending_queryable=${queryablePending ?? 'n/a'}/${seededPending}`);
     console.log(`[stress-setup]    counts: ${JSON.stringify(seedBody.seeded_counts)}`);
     // Task #178 — aged-booking (check_in > 24h ago) + deposit-payment coverage
     // report. 24h-dependent specs (full-24h sim, night-audit aging, harvest-
