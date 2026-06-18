@@ -4,11 +4,29 @@ Provides financial reporting, revenue reconciliation, and payment integrity chec
 """
 import asyncio
 import logging
+import os
 
 from common.context import OperationContext
 from common.result import ServiceResult
 
 logger = logging.getLogger(__name__)
+
+
+def _env_int(name: str, default: int) -> int:
+    """Salt-additive, fail-safe env-int parser; gecersiz/eksik deger -> default."""
+    try:
+        val = int(os.environ.get(name, "") or default)
+    except (TypeError, ValueError):
+        return default
+    return val if val >= 1000 else default
+
+
+# Agir finans aggregate'leri icin server-side time-budget (maxTimeMS).
+# Cold-start / restart penceresinde event-loop doygunlugu + bos cache altinda
+# Mongo tarafi yavaslarsa sorgu sonsuza kadar asili kalmaz; budget asilinca
+# ExecutionTimeout exception -> ilgili metodun izolasyonu degraded'a duser
+# (500 yerine ayakta + durum belli). Operator FIN_AGG_MAX_TIME_MS ile ayarlar.
+_FIN_AGG_MAX_MS = _env_int("FIN_AGG_MAX_TIME_MS", 8000)
 
 # NOT: Konaklama vergisi oranı artık tek doğruluk kaynağı olarak
 # `routers.finance.konaklama_vergisi_core.get_accommodation_tax_rate`
@@ -115,7 +133,9 @@ class FinancialService:
         ]
 
         async def _agg(coll, pipeline):
-            return await coll.aggregate(pipeline).to_list(length=None)
+            return await coll.aggregate(
+                pipeline, maxTimeMS=_FIN_AGG_MAX_MS,
+            ).to_list(length=None)
 
         # Parallel fan-out — 6 bağımsız sorgu tek round-trip penceresinde
         (
@@ -133,7 +153,7 @@ class FinancialService:
             _agg(self._db.folios, open_balance_pipeline),
             self._db.night_audit_runs.find_one(
                 {"tenant_id": ctx.tenant_id, "business_date": business_date},
-                {"_id": 0},
+                {"_id": 0}, max_time_ms=_FIN_AGG_MAX_MS,
             ),
             return_exceptions=True,
         )
@@ -241,23 +261,30 @@ class FinancialService:
         Perf: charges + payments + high-balance folios paralel çekilir; seri
         await zinciri kaldırıldı. Bookings bulk-fetch yine tek round-trip ($in).
         """
-        # Parallel fan-out: charges + payments + high-balance folios
+        # Parallel fan-out: charges + payments + high-balance folios.
+        # Hata izolasyonu: return_exceptions=True + _ok default; cold-start /
+        # restart penceresinde tek alt-sorgu patlasa endpoint 500 yerine
+        # degraded:true ile ayakta kalir. maxTimeMS server-side time-budget.
         async def _to_list(cursor, n):
             return await cursor.to_list(n)
 
-        charges, payments, high_balance_folios = await asyncio.gather(
+        degraded_subqueries: list[str] = []
+
+        charges_r, payments_r, high_balance_r = await asyncio.gather(
             _to_list(self._db.folio_charges.find({
                 "tenant_id": ctx.tenant_id,
                 "date": business_date,
                 "voided": {"$ne": True},
             }, {"_id": 0, "id": 1, "booking_id": 1, "charge_category": 1,
-                "amount": 1, "tax_amount": 1, "total": 1, "description": 1}), 1000),
+                "amount": 1, "tax_amount": 1, "total": 1, "description": 1}
+            ).max_time_ms(_FIN_AGG_MAX_MS), 1000),
             _to_list(self._db.payments.find({
                 "tenant_id": ctx.tenant_id,
                 "status": {"$ne": "voided"},
                 "$or": [{"date": business_date}, {"payment_date": business_date}],
             }, {"_id": 0, "id": 1, "booking_id": 1, "amount": 1,
-                "payment_method": 1, "description": 1}), 1000),
+                "payment_method": 1, "description": 1}
+            ).max_time_ms(_FIN_AGG_MAX_MS), 1000),
             _to_list(self._db.folios.find({
                 "tenant_id": ctx.tenant_id,
                 "status": "open",
@@ -265,8 +292,24 @@ class FinancialService:
                     {"balance": {"$gt": 500}},
                     {"balance": {"$lt": -100}},
                 ],
-            }, {"_id": 0, "id": 1, "folio_number": 1, "balance": 1, "booking_id": 1}), 200),
+            }, {"_id": 0, "id": 1, "folio_number": 1, "balance": 1, "booking_id": 1}
+            ).max_time_ms(_FIN_AGG_MAX_MS), 200),
+            return_exceptions=True,
         )
+
+        def _ok(result, default, name):
+            if isinstance(result, BaseException):
+                logger.warning(
+                    "payment_reconciliation subquery '%s' failed: %s", name, result,
+                )
+                degraded_subqueries.append(name)
+                return default
+            return result
+
+        charges = _ok(charges_r, [], "charges")
+        payments = _ok(payments_r, [], "payments")
+        high_balance_folios = _ok(high_balance_r, [], "high_balance_folios")
+
         total_charges = sum(c.get("total", 0) for c in charges)
         total_payments_amount = sum(p.get("amount", 0) for p in payments)
 
@@ -295,14 +338,20 @@ class FinancialService:
         booking_ids = {c.get("booking_id") for c in charges if c.get("booking_id")}
         bookings_by_id: dict[str, dict] = {}
         if booking_ids:
-            bookings_cursor = self._db.bookings.find(
-                {"id": {"$in": list(booking_ids)}, "tenant_id": ctx.tenant_id},
-                {"_id": 0, "id": 1, "status": 1, "room_rate": 1, "rate": 1},
-            )
-            async for b in bookings_cursor:
-                bid = b.get("id")
-                if bid:
-                    bookings_by_id[bid] = b
+            try:
+                bookings_cursor = self._db.bookings.find(
+                    {"id": {"$in": list(booking_ids)}, "tenant_id": ctx.tenant_id},
+                    {"_id": 0, "id": 1, "status": 1, "room_rate": 1, "rate": 1},
+                ).max_time_ms(_FIN_AGG_MAX_MS)
+                async for b in bookings_cursor:
+                    bid = b.get("id")
+                    if bid:
+                        bookings_by_id[bid] = b
+            except Exception as exc:  # noqa: BLE001 — graceful degrade, asla 500
+                logger.warning(
+                    "payment_reconciliation bookings enrich failed: %s", exc,
+                )
+                degraded_subqueries.append("bookings_enrich")
 
         # Check for charges without matching bookings
         for bid in booking_ids:
@@ -359,6 +408,8 @@ class FinancialService:
             "discrepancy_count": len(discrepancies),
             "high_balance_folios": high_balance_folios,
             "high_balance_count": len(high_balance_folios),
+            "degraded": bool(degraded_subqueries),
+            "degraded_subqueries": degraded_subqueries,
         })
 
     async def get_financial_report(
@@ -387,8 +438,17 @@ class FinancialService:
         category_totals = {}
         grand_total_revenue = 0.0
         grand_total_tax = 0.0
+        degraded_subqueries: list[str] = []
 
-        async for doc in self._db.folio_charges.aggregate(revenue_pipeline):
+        try:
+            revenue_docs = await self._db.folio_charges.aggregate(
+                revenue_pipeline, maxTimeMS=_FIN_AGG_MAX_MS,
+            ).to_list(None)
+        except Exception as exc:  # noqa: BLE001 — graceful degrade, asla 500
+            logger.warning("financial_report subquery 'revenue' failed: %s", exc)
+            degraded_subqueries.append("revenue")
+            revenue_docs = []
+        for doc in revenue_docs:
             date = doc["_id"]["date"]
             cat = doc["_id"]["category"] or "other"
 
@@ -429,7 +489,15 @@ class FinancialService:
         ]
         payment_method_totals = {}
         grand_total_payments = 0.0
-        async for doc in self._db.payments.aggregate(payment_pipeline):
+        try:
+            payment_docs = await self._db.payments.aggregate(
+                payment_pipeline, maxTimeMS=_FIN_AGG_MAX_MS,
+            ).to_list(None)
+        except Exception as exc:  # noqa: BLE001 — graceful degrade, asla 500
+            logger.warning("financial_report subquery 'payments' failed: %s", exc)
+            degraded_subqueries.append("payments")
+            payment_docs = []
+        for doc in payment_docs:
             method = doc["_id"] or "other"
             payment_method_totals[method] = {
                 "amount": round(doc["total"], 2),
@@ -438,17 +506,22 @@ class FinancialService:
             grand_total_payments += doc["total"]
 
         # Audit runs in range
-        audit_runs = await self._db.night_audit_runs.find(
-            {
-                "tenant_id": ctx.tenant_id,
-                "business_date": {"$gte": start_date, "$lte": end_date},
-            },
-            {"_id": 0, "audit_id": 1, "business_date": 1, "status": 1,
-             "total_room_revenue": 1, "total_tax_amount": 1,
-             "rooms_processed": 1, "charges_posted": 1,
-             "no_shows_processed": 1, "exceptions_count": 1,
-             "duration_ms": 1},
-        ).sort("business_date", 1).to_list(100)
+        try:
+            audit_runs = await self._db.night_audit_runs.find(
+                {
+                    "tenant_id": ctx.tenant_id,
+                    "business_date": {"$gte": start_date, "$lte": end_date},
+                },
+                {"_id": 0, "audit_id": 1, "business_date": 1, "status": 1,
+                 "total_room_revenue": 1, "total_tax_amount": 1,
+                 "rooms_processed": 1, "charges_posted": 1,
+                 "no_shows_processed": 1, "exceptions_count": 1,
+                 "duration_ms": 1},
+            ).sort("business_date", 1).max_time_ms(_FIN_AGG_MAX_MS).to_list(100)
+        except Exception as exc:  # noqa: BLE001 — graceful degrade, asla 500
+            logger.warning("financial_report subquery 'audit_runs' failed: %s", exc)
+            degraded_subqueries.append("audit_runs")
+            audit_runs = []
 
         # Occupancy data for the range
         occupancy_pipeline = [
@@ -460,10 +533,24 @@ class FinancialService:
             }},
             {"$count": "total_bookings"},
         ]
-        occ_result = await self._db.bookings.aggregate(occupancy_pipeline).to_list(1)
+        try:
+            occ_result = await self._db.bookings.aggregate(
+                occupancy_pipeline, maxTimeMS=_FIN_AGG_MAX_MS,
+            ).to_list(1)
+        except Exception as exc:  # noqa: BLE001 — graceful degrade, asla 500
+            logger.warning("financial_report subquery 'occupancy' failed: %s", exc)
+            degraded_subqueries.append("occupancy")
+            occ_result = []
         total_bookings = occ_result[0]["total_bookings"] if occ_result else 0
 
-        total_rooms = await self._db.rooms.count_documents({"tenant_id": ctx.tenant_id})
+        try:
+            total_rooms = await self._db.rooms.count_documents(
+                {"tenant_id": ctx.tenant_id}, maxTimeMS=_FIN_AGG_MAX_MS,
+            )
+        except Exception as exc:  # noqa: BLE001 — graceful degrade, asla 500
+            logger.warning("financial_report subquery 'rooms' failed: %s", exc)
+            degraded_subqueries.append("rooms")
+            total_rooms = 0
 
         return ServiceResult.success({
             "start_date": start_date,
@@ -481,6 +568,8 @@ class FinancialService:
             "revenue_by_date": list(daily_revenue.values()),
             "payments_by_method": payment_method_totals,
             "audit_runs": audit_runs,
+            "degraded": bool(degraded_subqueries),
+            "degraded_subqueries": degraded_subqueries,
         })
 
     async def _enrich_with_guest_room(
@@ -583,7 +672,7 @@ class FinancialService:
                 {"tenant_id": tid, "status": "checked_in"},
                 {"_id": 0, "id": 1, "folio_id": 1, "guest_name": 1,
                  "room_no": 1, "guest_id": 1, "room_id": 1},
-            ).to_list(500)
+            ).max_time_ms(_FIN_AGG_MAX_MS).to_list(500)
             # booking.folio_id dokumana HIC yazilmiyor (tek yonlu bag) →
             # "folyosu yok" tespitini booking.folio_id yerine folios
             # koleksiyonundaki acik guest folyo varligi uzerinden yap.
@@ -596,28 +685,28 @@ class FinancialService:
                     {"tenant_id": tid, "booking_id": {"$in": bids},
                      "folio_type": "guest", "status": "open"},
                     {"_id": 0, "booking_id": 1},
-                ):
+                ).max_time_ms(_FIN_AGG_MAX_MS):
                     open_folio_bids.add(f["booking_id"])
             return bookings, open_folio_bids
 
         async def _check2_voided():
             q = {"tenant_id": tid, "date": business_date, "voided": True}
             return await asyncio.gather(
-                self._db.folio_charges.count_documents(q),
+                self._db.folio_charges.count_documents(q, maxTimeMS=_FIN_AGG_MAX_MS),
                 self._db.folio_charges.find(q, {
                     "_id": 0, "id": 1, "folio_id": 1, "booking_id": 1, "amount": 1,
                     "description": 1, "voided_reason": 1,
-                }).limit(ITEM_LIMIT).to_list(ITEM_LIMIT),
+                }).limit(ITEM_LIMIT).max_time_ms(_FIN_AGG_MAX_MS).to_list(ITEM_LIMIT),
             )
 
         async def _check3_negative():
             q = {"tenant_id": tid, "status": "open", "balance": {"$lt": -0.01}}
             return await asyncio.gather(
-                self._db.folios.count_documents(q),
+                self._db.folios.count_documents(q, maxTimeMS=_FIN_AGG_MAX_MS),
                 self._db.folios.find(q, {
                     "_id": 0, "id": 1, "booking_id": 1, "balance": 1, "guest_name": 1,
                     "room_no": 1, "guest_id": 1, "room_id": 1,
-                }).limit(ITEM_LIMIT).to_list(ITEM_LIMIT),
+                }).limit(ITEM_LIMIT).max_time_ms(_FIN_AGG_MAX_MS).to_list(ITEM_LIMIT),
             )
 
         async def _check4_rate():
@@ -652,28 +741,28 @@ class FinancialService:
                 },
             }
             return await asyncio.gather(
-                self._db.bookings.count_documents(q),
+                self._db.bookings.count_documents(q, maxTimeMS=_FIN_AGG_MAX_MS),
                 self._db.bookings.find(q, {
                     "_id": 0, "id": 1, "room_rate": 1, "rate": 1, "guest_name": 1,
                     "room_no": 1, "guest_id": 1, "room_id": 1,
-                }).limit(ITEM_LIMIT).to_list(ITEM_LIMIT),
+                }).limit(ITEM_LIMIT).max_time_ms(_FIN_AGG_MAX_MS).to_list(ITEM_LIMIT),
             )
 
         async def _check5_closed():
             closed_folios = await self._db.folios.find(
                 {"tenant_id": tid, "status": "closed"},
                 {"_id": 0, "id": 1},
-            ).to_list(500)
+            ).max_time_ms(_FIN_AGG_MAX_MS).to_list(500)
             closed_ids = [f["id"] for f in closed_folios]
             if not closed_ids:
                 return 0, []
             q = {"tenant_id": tid, "folio_id": {"$in": closed_ids},
                  "date": business_date, "voided": {"$ne": True}}
             return await asyncio.gather(
-                self._db.folio_charges.count_documents(q),
+                self._db.folio_charges.count_documents(q, maxTimeMS=_FIN_AGG_MAX_MS),
                 self._db.folio_charges.find(q, {
                     "_id": 0, "folio_id": 1, "booking_id": 1, "amount": 1, "description": 1,
-                }).limit(ITEM_LIMIT).to_list(ITEM_LIMIT),
+                }).limit(ITEM_LIMIT).max_time_ms(_FIN_AGG_MAX_MS).to_list(ITEM_LIMIT),
             )
 
         async def _check6_audit():
@@ -681,6 +770,7 @@ class FinancialService:
                 {"tenant_id": tid, "business_date": business_date,
                  "status": {"$in": ["completed", "completed_with_exceptions"]}},
                 {"_id": 0, "audit_id": 1, "charges_posted": 1},
+                max_time_ms=_FIN_AGG_MAX_MS,
             )
             if not audit_run:
                 return None
@@ -688,7 +778,7 @@ class FinancialService:
                 "tenant_id": tid,
                 "audit_id": audit_run["audit_id"],
                 "voided": {"$ne": True},
-            })
+            }, maxTimeMS=_FIN_AGG_MAX_MS)
             return audit_run, actual
 
         r1, r2, r3, r4, r5, r6 = await asyncio.gather(
