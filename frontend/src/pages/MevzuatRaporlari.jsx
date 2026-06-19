@@ -139,7 +139,7 @@ export default function MevzuatRaporlari({ user, tenant }) {
   };
 
   const goToMissingNationality = () => {
-    navigate("/app/reservations?missing_nationality=1");
+    navigate("/app/reservation-calendar?missing_nationality=1");
   };
 
   // ── Star checklist

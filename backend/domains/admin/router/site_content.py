@@ -27,7 +27,7 @@ from core.tenant_db import get_system_db
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(prefix="/api", tags=["Admin / Operations"])
 require_super_admin = require_super_admin_guard()
 
 SITE_CONTENT_ID = "global_landing"
