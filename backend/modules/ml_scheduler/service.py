@@ -162,11 +162,12 @@ class MLSchedulerService:
             elif model_type == ModelType.OPERATIONAL_AI:
                 from modules.data_intelligence.operational_ai import operational_ai
                 result = await operational_ai.get_dashboard(tenant_id)
-                confidence = 0.82
+                # sabit 0.82 kaldırıldı: gerçek confidence result'tan; yoksa 0.0 (fabrikasyon yok)
+                confidence = result.get("confidence_score", result.get("confidence", 0.0)) if isinstance(result, dict) else 0.0
             elif model_type == ModelType.GUEST_INTELLIGENCE:
                 from modules.data_intelligence.guest_intelligence import guest_intelligence
                 result = await guest_intelligence.get_dashboard(tenant_id, 30)
-                confidence = 0.78
+                confidence = result.get("confidence_score", result.get("confidence", 0.0)) if isinstance(result, dict) else 0.0
 
             end = datetime.now(UTC)
             duration_ms = int((end - start).total_seconds() * 1000)

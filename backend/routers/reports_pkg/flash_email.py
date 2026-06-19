@@ -617,9 +617,20 @@ async def get_weekly_management_summary(
     }):
         total_revenue += booking.get('total_amount', 0)
 
-    # Calculate average occupancy
-    await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    occupied_avg = 0
+    # B: gerçek haftalık ortalama doluluk (occupied_avg bug fix — eskiden daima 0 dönüyordu)
+    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+    occ_pcts = []
+    if total_rooms > 0:
+        for d in range(7):
+            day = (week_start + timedelta(days=d)).date().isoformat()
+            occupied = await db.bookings.count_documents({
+                'tenant_id': current_user.tenant_id,
+                'check_in': {'$lte': day},
+                'check_out': {'$gt': day},
+                'status': {'$in': ['confirmed', 'guaranteed', 'checked_in', 'checked_out']}
+            })
+            occ_pcts.append(occupied / total_rooms * 100)
+    occupied_avg = sum(occ_pcts) / len(occ_pcts) if occ_pcts else 0
 
     # Get maintenance tasks completed
     completed_tasks = await db.maintenance_tasks.count_documents({
@@ -628,17 +639,26 @@ async def get_weekly_management_summary(
         'completed_at': {'$gte': week_start.isoformat()}
     })
 
+    # B: gerçek misafir memnuniyeti (haftalık review rating ortalaması); review yoksa fail-closed (null)
+    sat_docs = await db.reviews.find({
+        'tenant_id': current_user.tenant_id,
+        'created_at': {'$gte': week_start.isoformat()}
+    }, {'_id': 0, 'rating': 1}).to_list(2000)
+    sat_ratings = [r.get('rating') for r in sat_docs if isinstance(r.get('rating'), (int, float))]
+    guest_satisfaction = round(sum(sat_ratings) / len(sat_ratings), 2) if sat_ratings else None
+
     return {
         'week_ending': today.date().isoformat(),
         'total_bookings': total_bookings,
         'total_revenue': round(total_revenue, 2),
         'avg_occupancy_pct': round(occupied_avg, 2),
         'completed_maintenance': completed_tasks,
-        'guest_satisfaction': 4.5,  # Mock
-        'top_performers': [
-            {'name': 'Ayşe Yılmaz', 'department': 'Front Desk', 'score': 98},
-            {'name': 'Mehmet Kaya', 'department': 'Housekeeping', 'score': 95}
-        ]
+        'guest_satisfaction': guest_satisfaction,
+        'guest_satisfaction_available': guest_satisfaction is not None,
+        'guest_satisfaction_reviews': len(sat_ratings),
+        # top_performers: gerçek haftalık personel-performans kaynağı yok -> fail-closed (sahte personel kaldırıldı)
+        'top_performers': [],
+        'top_performers_available': False
     }
 
 

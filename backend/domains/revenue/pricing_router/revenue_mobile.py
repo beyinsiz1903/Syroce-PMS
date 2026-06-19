@@ -593,6 +593,10 @@ async def get_revenue_forecast_mobile(
     # Get total rooms
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
 
+    # Gerçek ADR: rate_per_night taşıyan bookings'lerin ortalaması (fabrikasyon 100 fallback kaldırıldı)
+    _rated = [b.get('rate_per_night', 0) for b in bookings if b.get('rate_per_night', 0) > 0]
+    real_adr = (sum(_rated) / len(_rated)) if _rated else 0
+
     # Calculate daily forecast
     daily_forecast = {}
     current_date = start
@@ -608,27 +612,26 @@ async def get_revenue_forecast_mobile(
         rooms_occupied = len(bookings_on_date)
         occupancy_pct = round((rooms_occupied / total_rooms * 100), 2) if total_rooms > 0 else 0
 
-        # Estimate revenue based on average room rate
+        # Oda gelirini gerçek per-night rate'ten hesapla; eksikse gerçek ADR (yoksa 0, fabrikasyon yok)
         estimated_room_revenue = 0
+        rate_known = 0
         for booking in bookings_on_date:
-            # Try to get actual rate, otherwise use average
             rate = booking.get('rate_per_night', 0)
-            if rate == 0:
-                # Use average from historical data
-                rate = 100  # Fallback default
-            estimated_room_revenue += rate
+            if rate and rate > 0:
+                estimated_room_revenue += rate
+                rate_known += 1
+            else:
+                estimated_room_revenue += real_adr  # gerçek veriden türemiş ortalama (sabit 100 değil)
 
-        # Add estimated ancillary revenue (typically 20-30% of room revenue)
-        ancillary_multiplier = 1.25
-        total_estimated_revenue = estimated_room_revenue * ancillary_multiplier
-
+        # Ancillary fabrikasyonu (x1.25) kaldırıldı: total = gerçek oda geliri
         daily_forecast[date_str] = {
             'date': date_str,
             'day_of_week': current_date.strftime('%A'),
             'rooms_occupied': rooms_occupied,
             'occupancy_pct': occupancy_pct,
             'estimated_room_revenue': round(estimated_room_revenue, 2),
-            'estimated_total_revenue': round(total_estimated_revenue, 2)
+            'estimated_total_revenue': round(estimated_room_revenue, 2),
+            'rate_source': ('actual' if rooms_occupied and rate_known == rooms_occupied else ('partial_adr' if real_adr > 0 else 'unavailable'))
         }
 
         current_date += timedelta(days=1)

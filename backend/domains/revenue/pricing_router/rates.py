@@ -242,55 +242,14 @@ async def get_active_campaigns(
 
     today = datetime.now().date()
 
-    # Sample campaigns
-    campaigns = [
-        {
-            'id': str(uuid.uuid4()),
-            'name': 'Early Booking Discount',
-            'description': '20% discount for reservations 30+ days in advance',
-            'discount_type': 'percentage',
-            'discount_value': 20,
-            'start_date': (today - timedelta(days=10)).isoformat(),
-            'end_date': (today + timedelta(days=50)).isoformat(),
-            'status': 'active',
-            'bookings_count': 45,
-            'revenue_generated': 67500
-        },
-        {
-            'id': str(uuid.uuid4()),
-            'name': 'Weekend Special',
-            'description': 'Fixed rate for Friday-Sunday stays',
-            'discount_type': 'fixed',
-            'discount_value': 1500,
-            'start_date': today.isoformat(),
-            'end_date': (today + timedelta(days=90)).isoformat(),
-            'status': 'active',
-            'bookings_count': 23,
-            'revenue_generated': 34500
-        },
-        {
-            'id': str(uuid.uuid4()),
-            'name': 'Extended Stay',
-            'description': '25% discount for stays of 7 nights or more',
-            'discount_type': 'percentage',
-            'discount_value': 25,
-            'start_date': (today - timedelta(days=30)).isoformat(),
-            'end_date': (today + timedelta(days=60)).isoformat(),
-            'status': 'active',
-            'bookings_count': 12,
-            'revenue_generated': 28000
-        }
-    ]
-
-    # Filter by status
-    if status:
-        campaigns = [c for c in campaigns if c['status'] == status]
-
+    # Kampanya kaydı için gerçek koleksiyon/kaynak yok -> fail-closed (sabit kampanyalar kaldırıldı)
     return {
-        'campaigns': campaigns,
-        'count': len(campaigns),
-        'total_revenue': sum(c['revenue_generated'] for c in campaigns),
-        'total_bookings': sum(c['bookings_count'] for c in campaigns)
+        'campaigns': [],
+        'count': 0,
+        'data_available': False,
+        'message': 'Kampanya verisi yok (kampanya yönetimi kaynağı yapılandırılmamış).',
+        'total_revenue': 0,
+        'total_bookings': 0
     }
 
 
@@ -309,40 +268,13 @@ async def get_discount_codes(
     """
     await get_current_user(credentials)
 
-    codes = [
-        {
-            'id': str(uuid.uuid4()),
-            'code': 'WELCOME20',
-            'description': 'First booking discount',
-            'discount_type': 'percentage',
-            'discount_value': 20,
-            'usage_count': 156,
-            'usage_limit': 500,
-            'valid_from': (datetime.now() - timedelta(days=60)).isoformat()[:10],
-            'valid_until': (datetime.now() + timedelta(days=30)).isoformat()[:10],
-            'is_active': True
-        },
-        {
-            'id': str(uuid.uuid4()),
-            'code': 'SUMMER50',
-            'description': 'Summer campaign',
-            'discount_type': 'fixed',
-            'discount_value': 500,
-            'usage_count': 89,
-            'usage_limit': 200,
-            'valid_from': (datetime.now() - timedelta(days=30)).isoformat()[:10],
-            'valid_until': (datetime.now() + timedelta(days=60)).isoformat()[:10],
-            'is_active': True
-        }
-    ]
-
-    if active_only:
-        codes = [c for c in codes if c['is_active']]
-
+    # İndirim kodu için gerçek koleksiyon/kaynak yok -> fail-closed (sabit kodlar kaldırıldı)
     return {
-        'discount_codes': codes,
-        'count': len(codes),
-        'total_usage': sum(c['usage_count'] for c in codes)
+        'discount_codes': [],
+        'count': 0,
+        'data_available': False,
+        'message': 'İndirim kodu verisi yok (indirim kodu yönetimi kaynağı yapılandırılmamış).',
+        'total_usage': 0
     }
 
 
@@ -418,28 +350,12 @@ async def get_promotional_rates(
     """
     await get_current_user(credentials)
 
-    promo_rates = [
-        {
-            'room_type': 'Standard Room',
-            'regular_rate': 1200,
-            'promo_rate': 960,
-            'discount_pct': 20,
-            'valid_dates': f"{datetime.now().date().isoformat()} - {(datetime.now().date() + timedelta(days=30)).isoformat()}",
-            'conditions': 'Minimum 2 gece konaklama'
-        },
-        {
-            'room_type': 'Deluxe Room',
-            'regular_rate': 1800,
-            'promo_rate': 1620,
-            'discount_pct': 10,
-            'valid_dates': f"{datetime.now().date().isoformat()} - {(datetime.now().date() + timedelta(days=14)).isoformat()}",
-            'conditions': 'Weekday reservations'
-        }
-    ]
-
+    # Promosyon oranı için gerçek koleksiyon/kaynak yok -> fail-closed (sabit promosyonlar kaldırıldı)
     return {
-        'promotional_rates': promo_rates,
-        'count': len(promo_rates)
+        'promotional_rates': [],
+        'count': 0,
+        'data_available': False,
+        'message': 'Promosyon oranı verisi yok (promosyon yönetimi kaynağı yapılandırılmamış).'
     }
 
 

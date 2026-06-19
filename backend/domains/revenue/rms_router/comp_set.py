@@ -104,32 +104,25 @@ async def scrape_competitor_prices(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
-    """Scrape competitor prices for specific date"""
+    """Scrape competitor prices for specific date.
+
+    NOT: Gerçek rakip-fiyat scraping/veri entegrasyonu yapılandırılmadığı sürece
+    bu uç FABRİKASYON yapmaz ve comp_pricing'e sahte kayıt YAZMAZ (fail-closed).
+    Önceki hash-tabanlı mock fiyat üretimi kaldırılmıştır.
+    """
     date = request.date
-    # Get all active competitors
     competitors = await db.comp_set.find(
         {'tenant_id': current_user.tenant_id, 'status': 'active'},
         {'_id': 0}
     ).to_list(100)
 
-    scraped_prices = []
-    for comp in competitors:
-        price_data = {
-            'id': str(uuid.uuid4()),
-            'tenant_id': current_user.tenant_id,
-            'competitor_id': comp['id'],
-            'competitor_name': comp['name'],
-            'date': date,
-            'lowest_rate': 120.00 + (hash(comp['id']) % 50),  # Mock pricing
-            'standard_rate': 150.00 + (hash(comp['id']) % 80),
-            'scraped_at': datetime.now(UTC).isoformat()
-        }
-        await db.comp_pricing.insert_one(price_data.copy())
-        scraped_prices.append(price_data)
-
     return {
-        'message': f'Scraped prices for {len(scraped_prices)} competitors',
-        'prices': scraped_prices
+        'data_available': False,
+        'message': 'Rakip fiyat scraping entegrasyonu yapılandırılmamış; sahte fiyat üretilmez.',
+        'date': date,
+        'competitors_configured': len(competitors),
+        'scraped': 0,
+        'prices': []
     }
 
 

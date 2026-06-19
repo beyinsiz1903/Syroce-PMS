@@ -181,34 +181,17 @@ async def get_pickup_analysis(
             'type': 'actual'
         })
 
-    # Forecast data (next 7 days) - simple projection based on current pace
-    avg_occupancy = sum(h['occupancy'] for h in historical[-7:]) / 7 if len(historical) >= 7 else 50
-    avg_revenue = sum(h['revenue'] for h in historical[-7:]) / 7 if len(historical) >= 7 else 10000
-
-    forecast = []
-    for i in range(1, days_forward + 1):
-        date = today + timedelta(days=i)
-        date_str = date.isoformat()
-
-        # Simple forecast with slight variation
-        forecast_occupancy = avg_occupancy * (0.95 + (i % 3) * 0.05)
-        forecast_revenue = avg_revenue * (0.9 + (i % 4) * 0.1)
-
-        forecast.append({
-            'date': date_str,
-            'occupancy': round(forecast_occupancy, 1),
-            'bookings': int(forecast_occupancy * total_rooms / 100),
-            'revenue': round(forecast_revenue, 2),
-            'type': 'forecast'
-        })
-
+    # Forecast: gerçek tahmin modeli yok -> fabrikasyon (rastgele i%3 / i%4 varyasyon) kaldırıldı.
+    # Sadece gerçek geçmiş (historical) döner; ileriye dönük tahmin fail-closed.
     return {
         'historical': historical,
-        'forecast': forecast,
+        'forecast': [],
+        'forecast_available': False,
+        'forecast_message': 'İleriye dönük pickup tahmini için gerçek tahmin kaynağı yok.',
         'summary': {
-            'avg_occupancy_30d': round(sum(h['occupancy'] for h in historical) / len(historical), 1),
-            'avg_revenue_30d': round(sum(h['revenue'] for h in historical) / len(historical), 2),
-            'trend': 'up' if historical[-1]['occupancy'] > historical[-7]['occupancy'] else 'down'
+            'avg_occupancy_30d': round(sum(h['occupancy'] for h in historical) / len(historical), 1) if historical else 0,
+            'avg_revenue_30d': round(sum(h['revenue'] for h in historical) / len(historical), 2) if historical else 0,
+            'trend': ('up' if historical[-1]['occupancy'] > historical[-7]['occupancy'] else 'down') if len(historical) >= 7 else 'unknown'
         }
     }
 
@@ -244,15 +227,28 @@ async def get_pace_report(
     ]):
         by_day[r['_id']] = r['n']
 
+    # B: geçen yıl aynı takvim günleri (gerçek on-the-books) — uydurma (this_year +/- sabit) kaldırıldı
+    last_year_days = [(today + timedelta(days=i) - timedelta(days=365)).isoformat() for i in range(30)]
+    ly_by_day: dict = {}
+    async for r in db.bookings.aggregate([
+        {'$match': {
+            'tenant_id': current_user.tenant_id,
+            'check_in': {'$in': last_year_days},
+            'status': {'$in': ['confirmed', 'checked_in', 'guaranteed', 'checked_out']},
+        }},
+        {'$group': {'_id': '$check_in', 'n': {'$sum': 1}}},
+    ]):
+        ly_by_day[r['_id']] = r['n']
+
     pace_data = []
     for i in range(30):
         date_str = days_list[i]
         this_year = by_day.get(date_str, 0)
-        last_year = this_year - (5 if i % 3 == 0 else -3)
+        last_year = ly_by_day.get(last_year_days[i], 0)
         pace_data.append({
             'date': date_str,
             'this_year': this_year,
-            'last_year': max(0, last_year),
+            'last_year': last_year,
             'variance': this_year - last_year,
             'variance_pct': round(((this_year - last_year) / last_year * 100) if last_year > 0 else 0, 1)
         })

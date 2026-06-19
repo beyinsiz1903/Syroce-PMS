@@ -162,45 +162,13 @@ async def get_sales_customers(
             'customer_type': customer_type_list,
         })
 
-    # Sample data if empty
-    if count == 0:
-        customers = [
-            {
-                'guest_id': str(uuid.uuid4()),
-                'guest_name': 'Ahmet Yılmaz',
-                'email': 'ahmet.yilmaz@company.com',
-                'phone': '+90 532 123 4567',
-                'total_bookings': 12,
-                'total_revenue': 48000,
-                'last_stay': (datetime.now() - timedelta(days=15)).isoformat(),
-                'is_vip': False,
-                'is_corporate': True,
-                'customer_type': ['corporate', 'returning']
-            },
-            {
-                'guest_id': str(uuid.uuid4()),
-                'guest_name': 'Ayşe Demir',
-                'email': 'ayse.demir@email.com',
-                'phone': '+90 533 987 6543',
-                'total_bookings': 25,
-                'total_revenue': 125000,
-                'last_stay': (datetime.now() - timedelta(days=5)).isoformat(),
-                'is_vip': True,
-                'is_corporate': False,
-                'customer_type': ['vip', 'returning']
-            }
-        ]
-        # Boş sonuç -> örnek veri: sayımlar legacy ile birebir (count=2,
-        # vip_count=1, corporate_count=1) kalsın diye örnek listeden hesaplanır.
-        count = len(customers)
-        vip_count = len([c for c in customers if c['is_vip']])
-        corporate_count = len([c for c in customers if c['is_corporate']])
-
+    # Boş sonuçta SAHTE müşteri (Ahmet/Ayşe) üretilmez -> gerçek sonuç (boşsa boş)
     return {
         'customers': customers[:limit],
         'count': count,
         'vip_count': vip_count,
         'corporate_count': corporate_count,
+        'data_available': count > 0,
     }
 
 
@@ -222,52 +190,15 @@ async def get_ota_pricing(
 
     target_date = date if date else datetime.now().date().isoformat()
 
-    # Sample OTA pricing data
-    ota_prices = [
-        {
-            'date': target_date,
-            'room_type': 'Standard Room',
-            'our_rate': 1200,
-            'booking_com': 1250,
-            'expedia': 1280,
-            'agoda': 1230,
-            'hotels_com': 1260,
-            'lowest_competitor': 1230,
-            'price_position': 'lowest',  # lowest, competitive, highest
-            'parity_status': 'good'  # good, warning, violation
-        },
-        {
-            'date': target_date,
-            'room_type': 'Deluxe Room',
-            'our_rate': 1800,
-            'booking_com': 1750,
-            'expedia': 1820,
-            'agoda': 1780,
-            'hotels_com': 1800,
-            'lowest_competitor': 1750,
-            'price_position': 'competitive',
-            'parity_status': 'good'
-        },
-        {
-            'date': target_date,
-            'room_type': 'Suite',
-            'our_rate': 3000,
-            'booking_com': 2800,
-            'expedia': 2850,
-            'agoda': 2900,
-            'hotels_com': 2820,
-            'lowest_competitor': 2800,
-            'price_position': 'highest',
-            'parity_status': 'warning'
-        }
-    ]
-
+    # OTA fiyat takibi: gerçek OTA/kanal fiyat kaynağı yok -> fail-closed (fabrikasyon yok)
     return {
-        'ota_prices': ota_prices,
+        'ota_prices': [],
         'date': target_date,
-        'parity_violations': len([p for p in ota_prices if p['parity_status'] == 'violation']),
-        'avg_our_rate': sum(p['our_rate'] for p in ota_prices) / len(ota_prices),
-        'avg_market_rate': sum(p['lowest_competitor'] for p in ota_prices) / len(ota_prices)
+        'data_available': False,
+        'message': 'OTA fiyat takibi yapılandırılmamış (gerçek OTA/kanal fiyat kaynağı yok).',
+        'parity_violations': 0,
+        'avg_our_rate': 0,
+        'avg_market_rate': 0
     }
 
 

@@ -12,30 +12,67 @@ class ReputationManager:
         self.db = db
 
     async def aggregate_reviews(self, tenant_id: str) -> dict:
-        """Tüm platformlardan review'ları topla"""
-        # Gerçekte: TripAdvisor, Google, Booking.com API'leri
+        """Platform review ozeti — YALNIZCA gercek db.external_reviews kayitlari.
+        Sabit TripAdvisor/Google/Booking/Expedia uydurma verisi kaldirildi; kayit yoksa fail-closed."""
+        reviews = await self.db.external_reviews.find(
+            {'tenant_id': tenant_id},
+            {'_id': 0, 'platform': 1, 'rating': 1, 'review_date': 1, 'received_at': 1}
+        ).to_list(10000)
 
-        # Simulated data
-        platforms = {
-            'tripadvisor': {'rating': 4.5, 'total_reviews': 1250, 'recent_reviews': 45},
-            'google': {'rating': 4.3, 'total_reviews': 890, 'recent_reviews': 32},
-            'booking_com': {'rating': 8.9, 'total_reviews': 2100, 'recent_reviews': 78},
-            'expedia': {'rating': 4.4, 'total_reviews': 650, 'recent_reviews': 28}
-        }
+        if not reviews:
+            return {
+                'data_available': False,
+                'message': 'Dis platform (TripAdvisor/Google/Booking vb.) review verisi yok; entegrasyon yapilandirilmamis veya kayit bulunmuyor.',
+                'platforms': {},
+                'overall_rating': None,
+                'total_reviews': 0,
+                'last_updated': datetime.now(UTC).isoformat()
+            }
 
-        # Calculate overall
-        total_reviews = sum([p['total_reviews'] for p in platforms.values()])
-        weighted_rating = sum([
-            (p['rating'] if p['rating'] <= 5 else p['rating']/2) * p['total_reviews']
-            for p in platforms.values()
-        ]) / total_reviews
+        cutoff = (datetime.now(UTC) - timedelta(days=30)).isoformat()
+        acc: dict = {}
+        for r in reviews:
+            rt = r.get('rating')
+            if not isinstance(rt, (int, float)):
+                continue
+            p = r.get('platform') or 'unknown'
+            st = acc.setdefault(p, {'rating_sum': 0.0, 'total_reviews': 0, 'recent_reviews': 0})
+            st['rating_sum'] += rt
+            st['total_reviews'] += 1
+            rd = r.get('review_date') or r.get('received_at') or ''
+            if isinstance(rd, str) and rd >= cutoff:
+                st['recent_reviews'] += 1
 
-        return {
+        platforms = {}
+        total_reviews = 0
+        norm_weighted = 0.0
+        norm_weight = 0
+        for p, st in acc.items():
+            n = st['total_reviews']
+            if n == 0:
+                continue
+            avg = st['rating_sum'] / n
+            platforms[p] = {
+                'rating': round(avg, 2),
+                'total_reviews': n,
+                'recent_reviews': st['recent_reviews']
+            }
+            # genel skor icin 5-uzeri olcekleri 5'e normalize et (uydurma degil, olcek-birlestirme)
+            norm = avg if avg <= 5 else avg / 2
+            norm_weighted += norm * n
+            norm_weight += n
+            total_reviews += n
+
+        out = {
+            'data_available': total_reviews > 0,
             'platforms': platforms,
-            'overall_rating': round(weighted_rating, 2),
+            'overall_rating': round(norm_weighted / norm_weight, 2) if norm_weight else None,
             'total_reviews': total_reviews,
             'last_updated': datetime.now(UTC).isoformat()
         }
+        if total_reviews == 0:
+            out['message'] = 'Dis platform review kaydi var ancak gecerli sayisal puan bulunmuyor.'
+        return out
 
     async def analyze_sentiment(self, review_text: str) -> dict:
         """Review sentiment analizi"""
@@ -48,20 +85,25 @@ class ReputationManager:
         positive_count = sum([1 for word in positive_words if word in text_lower])
         negative_count = sum([1 for word in negative_words if word in text_lower])
 
+        # Skor/güven gerçek keyword sinyalinden türetilir (sabit 0.7/-0.6/0.75 kaldırıldı)
+        total_signal = positive_count + negative_count
         if positive_count > negative_count:
             sentiment = 'positive'
-            score = 0.7
+            score = round(positive_count / total_signal, 2) if total_signal else 0.0
         elif negative_count > positive_count:
             sentiment = 'negative'
-            score = -0.6
+            score = round(-negative_count / total_signal, 2) if total_signal else 0.0
         else:
             sentiment = 'neutral'
             score = 0.0
 
+        # güven: eşleşen toplam sinyal güçlendikçe artar, sinyal yoksa düşük
+        confidence = round(min(0.5 + 0.1 * total_signal, 0.95), 2) if total_signal else 0.0
+
         return {
             'sentiment': sentiment,
             'score': score,
-            'confidence': 0.75
+            'confidence': confidence
         }
 
     async def suggest_response(self, review_text: str, rating: float) -> str:

@@ -46,29 +46,15 @@ async def get_demand_forecast(
         {'_id': 0}
     ).sort('date', 1).to_list(365)
 
-    # If no stored forecasts, generate basic ones from bookings
-    if not forecasts and days:
-        total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-        if total_rooms == 0:
-            total_rooms = 50
-        for d in range(days):
-            cur_date = (datetime.now(UTC) + timedelta(days=d)).date()
-            booked = await db.bookings.count_documents({
-                'tenant_id': current_user.tenant_id,
-                'check_in_date': {'$lte': cur_date.isoformat()},
-                'check_out_date': {'$gt': cur_date.isoformat()},
-                'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
-            })
-            occ = round(booked / total_rooms * 100, 1) if total_rooms else 0
-            dow = cur_date.weekday()
-            base_demand = 50 + (15 if dow in [4, 5] else 0) + (occ * 0.3)
-            forecasts.append({
-                'date': cur_date.isoformat(),
-                'demand_index': round(min(base_demand, 100), 1),
-                'occupancy_pct': occ
-            })
-
-    return {'forecast': forecasts, 'forecasts': forecasts, 'count': len(forecasts)}
+    # Stored forecast yoksa FABRİKASYON yapma: base_demand (50 + ...) üretimi kaldırıldı.
+    # Gerçek tahmin POST /rms/demand-forecast ile geçmiş veriden üretilip saklanır.
+    return {
+        'forecast': forecasts,
+        'forecasts': forecasts,
+        'count': len(forecasts),
+        'data_available': len(forecasts) > 0,
+        'message': None if forecasts else 'Saklı talep tahmini yok; tahmin için POST /rms/demand-forecast ile üretim gerekir.'
+    }
 
 
 

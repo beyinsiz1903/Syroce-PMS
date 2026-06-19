@@ -816,12 +816,14 @@ async def analyze_review_sentiment_ai(
     positive_count = sum(1 for word in positive_words if word in review_lower)
     negative_count = sum(1 for word in negative_words if word in review_lower)
 
+    # Skor gerçek keyword sinyalinden türetilir (sabit 0.8/0.2/0.5 kaldırıldı)
+    total_signal = positive_count + negative_count
     if positive_count > negative_count:
         sentiment = 'positive'
-        sentiment_score = 0.8
+        sentiment_score = round(0.5 + 0.5 * (positive_count / total_signal), 2) if total_signal else 0.5
     elif negative_count > positive_count:
         sentiment = 'negative'
-        sentiment_score = 0.2
+        sentiment_score = round(0.5 - 0.5 * (negative_count / total_signal), 2) if total_signal else 0.5
     else:
         sentiment = 'neutral'
         sentiment_score = 0.5

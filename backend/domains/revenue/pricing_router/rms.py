@@ -476,31 +476,8 @@ async def get_compset_analysis(
     async for comp in db.competitors.find({'tenant_id': current_user.tenant_id}):
         competitors.append(comp)
 
-    # If no competitors, return sample data
-    if len(competitors) == 0:
-        competitors = [
-            {
-                'name': 'Competitor Hotel A',
-                'avg_rate': 120.0,
-                'occupancy_estimate': 75.0,
-                'rating': 4.2,
-                'features': ['Free WiFi', 'Breakfast', 'Pool', 'Spa', 'Gym']
-            },
-            {
-                'name': 'Competitor Hotel B',
-                'avg_rate': 110.0,
-                'occupancy_estimate': 82.0,
-                'rating': 4.5,
-                'features': ['Free WiFi', 'Breakfast', 'Pool', 'Restaurant', 'Parking']
-            },
-            {
-                'name': 'Competitor Hotel C',
-                'avg_rate': 135.0,
-                'occupancy_estimate': 68.0,
-                'rating': 4.0,
-                'features': ['Free WiFi', 'Breakfast', 'Spa', 'Gym', 'Business Center']
-            }
-        ]
+    # Gerçek rakip verisi yoksa SAHTE rakip (Competitor Hotel A/B/C) üretilmez (fail-closed);
+    # analiz gerçek (boşsa boş) döner.
 
     # Analyze features
     feature_count = {}
@@ -528,7 +505,9 @@ async def get_compset_analysis(
         },
         'competitors': competitors,
         'most_wanted_features': most_wanted_features[:10],  # Top 10
-        'feature_gap_analysis': 'To be implemented with property amenity comparison'
+        'feature_gap_analysis': 'To be implemented with property amenity comparison',
+        'data_available': len(competitors) > 0,
+        'message': None if len(competitors) > 0 else 'Rakip set (comp set) verisi yok; analiz için gerçek rakip kaydı gerekir.'
     }
 
 

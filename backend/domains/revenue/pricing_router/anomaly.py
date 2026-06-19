@@ -235,6 +235,15 @@ async def detect_anomalies(
         'created_at': {'$gte': today.isoformat()}
     })
 
+    # Önceki dönem (dün) gerçek bekleyen urgent maintenance sayısı (sabit 2 kaldırıldı)
+    prev_day = today - timedelta(days=1)
+    prev_urgent_maintenance = await db.maintenance_tasks.count_documents({
+        'tenant_id': current_user.tenant_id,
+        'priority': {'$in': ['high', 'urgent']},
+        'status': 'pending',
+        'created_at': {'$gte': prev_day.isoformat(), '$lt': today.isoformat()}
+    })
+
     if urgent_maintenance > 5:
         anomalies.append({
             'id': str(uuid.uuid4()),
@@ -244,8 +253,8 @@ async def detect_anomalies(
             'message': f'{urgent_maintenance} urgent maintenance request(s) pending',
             'metric': 'maintenance',
             'current_value': urgent_maintenance,
-            'previous_value': 2,
-            'variance': urgent_maintenance - 2,
+            'previous_value': prev_urgent_maintenance,
+            'variance': urgent_maintenance - prev_urgent_maintenance,
             'detected_at': datetime.now(UTC).isoformat()
         })
 
