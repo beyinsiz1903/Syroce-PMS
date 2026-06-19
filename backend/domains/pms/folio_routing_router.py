@@ -34,7 +34,13 @@ class RoutingInstruction(RoutingInstructionCreate):
     active: bool = True
 
 
+_INDEXES_INITIALIZED = False
+
+
 async def _ensure_indexes() -> None:
+    global _INDEXES_INITIALIZED
+    if _INDEXES_INITIALIZED:
+        return
     db = get_system_db()
     try:
         await db.folio_routing.create_index(
@@ -44,7 +50,9 @@ async def _ensure_indexes() -> None:
         await db.folio_routing.create_index(
             [("tenant_id", 1), ("dest_folio_id", 1)], name="folio_routing_dest"
         )
+        _INDEXES_INITIALIZED = True
     except Exception:
+        # Index oluşturulamazsa flag set edilmez → bir sonraki çağrıda yeniden denenir.
         pass
 
 

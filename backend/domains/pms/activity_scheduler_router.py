@@ -106,7 +106,13 @@ class ActivityBooking(ActivityBookingCreate):
     guest_name: str | None = None
 
 
+_INDEXES_INITIALIZED = False
+
+
 async def _ensure_indexes() -> None:
+    global _INDEXES_INITIALIZED
+    if _INDEXES_INITIALIZED:
+        return
     db = get_system_db()
     try:
         await db.activities.create_index([("tenant_id", 1), ("type", 1), ("active", 1)])
@@ -118,7 +124,9 @@ async def _ensure_indexes() -> None:
         await db.activity_bookings.create_index(
             [("tenant_id", 1), ("guest_id", 1), ("starts_at", -1)]
         )
+        _INDEXES_INITIALIZED = True
     except Exception:
+        # Index oluşturulamazsa flag set edilmez → bir sonraki çağrıda yeniden denenir.
         pass
 
 
