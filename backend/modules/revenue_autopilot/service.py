@@ -171,21 +171,35 @@ class RevenueAutopilotService:
         if mode == AutopilotMode.FULL_AUTO and confidence >= auto_threshold:
             # auto-apply
             result = await self._apply_price(tenant_id, room_type, target_date, current_price, recommended_price)
+            if result.get("success"):
+                item = new_approval_item(
+                    tenant_id, policy.get("property_id"), room_type, target_date,
+                    current_price, recommended_price, confidence, "Auto-applied (high confidence)",
+                    recommendation.get("source_job_id"),
+                )
+                item["status"] = ApprovalStatus.AUTO_APPLIED
+                item["applied_at"] = datetime.now(UTC).isoformat()
+                item["applied_by"] = "autopilot"
+                item["channel_push_status"] = "local_only"
+                await self.db.revenue_approval_queue.insert_one(item)
+
+                apply_doc = new_apply_result(tenant_id, item["id"], room_type, current_price, recommended_price,
+                                              result.get("channels", []), True)
+                await self.db.revenue_apply_results.insert_one(apply_doc)
+                return {"action": "auto_applied", "item_id": item["id"], "result": result}
+
+            # Apply did not actually change a rate plan (no matching plan or DB
+            # error). Marking it AUTO_APPLIED would be a fake success, so queue
+            # it for manual review instead (doctrine: fail-closed / no fake-green).
+            reason = "error" if result.get("error") else "no matching rate plan"
             item = new_approval_item(
                 tenant_id, policy.get("property_id"), room_type, target_date,
-                current_price, recommended_price, confidence, "Auto-applied (high confidence)",
+                current_price, recommended_price, confidence,
+                f"Auto-apply failed ({reason}); queued for manual review",
                 recommendation.get("source_job_id"),
             )
-            item["status"] = ApprovalStatus.AUTO_APPLIED
-            item["applied_at"] = datetime.now(UTC).isoformat()
-            item["applied_by"] = "autopilot"
-            item["channel_push_status"] = "pushed" if result.get("success") else "failed"
             await self.db.revenue_approval_queue.insert_one(item)
-
-            apply_doc = new_apply_result(tenant_id, item["id"], room_type, current_price, recommended_price,
-                                          result.get("channels", []), result.get("success", False))
-            await self.db.revenue_apply_results.insert_one(apply_doc)
-            return {"action": "auto_applied", "item_id": item["id"], "result": result}
+            return {"action": "queued", "reason": "auto_apply_failed", "item_id": item["id"], "result": result}
 
         elif confidence >= queue_threshold:
             item = new_approval_item(
@@ -202,25 +216,40 @@ class RevenueAutopilotService:
 
     async def _apply_price(self, tenant_id: str, room_type: str, target_date: str,
                            old_price: float, new_price: float) -> dict:
-        """Apply the price change to rate plans and push to channels (simulated)."""
+        """Update the PMS-side rate plan base_price for the room type.
+
+        Distribution to OTA channels is handled by the channel manager's own
+        rate-push flow (unified rate manager), not here, so we report the local
+        rate update only and never claim a direct channel push that did not
+        happen (doctrine: no fake-green).
+        """
         try:
-            await self.db.rate_plans.update_many(
+            res = await self.db.rate_plans.update_many(
                 {"tenant_id": tenant_id, "room_type": room_type},
                 {"$set": {"base_price": new_price, "updated_at": datetime.now(UTC).isoformat()}},
             )
-            channels = ["booking_com", "expedia", "hotel_website"]
-            # audit
-            await self.db.audit_logs.insert_one({
-                "id": str(uuid.uuid4()),
-                "tenant_id": tenant_id,
-                "user_id": "autopilot",
-                "action": "revenue_autopilot_apply",
-                "entity_type": "rate_plan",
-                "entity_id": room_type,
-                "changes": {"old_price": old_price, "new_price": new_price, "target_date": target_date},
-                "timestamp": datetime.now(UTC).isoformat(),
-            })
-            return {"success": True, "channels": channels}
+            # A price is only really "applied" when a rate plan for this room
+            # type actually exists and matched; matched_count==0 means nothing
+            # was changed, so we must NOT report success (doctrine: no fake-green).
+            applied = res.matched_count > 0
+            if applied:
+                # audit only an apply that actually matched a rate plan
+                await self.db.audit_logs.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "user_id": "autopilot",
+                    "action": "revenue_autopilot_apply",
+                    "entity_type": "rate_plan",
+                    "entity_id": room_type,
+                    "changes": {"old_price": old_price, "new_price": new_price, "target_date": target_date},
+                    "timestamp": datetime.now(UTC).isoformat(),
+                })
+            return {
+                "success": applied,
+                "channels": [],
+                "rate_plans_matched": res.matched_count,
+                "rate_plans_updated": res.modified_count,
+            }
         except Exception as e:
             logger.exception("Price apply error")
             return {"success": False, "error": str(e)[:200], "channels": []}
@@ -236,19 +265,30 @@ class RevenueAutopilotService:
             tenant_id, item["room_type"], item["target_date"],
             item["current_price"], item["recommended_price"],
         )
+        if not result.get("success"):
+            # Nothing was actually applied (no matching rate plan or DB error).
+            # Do not mark the item APPROVED or return success — that would be a
+            # fake-green. Leave it PENDING so it stays visible and actionable.
+            if result.get("error"):
+                raise HTTPException(status_code=500, detail="Fiyat uygulanamadı (iç hata)")
+            raise HTTPException(
+                status_code=409,
+                detail="Eşleşen oda tipi fiyat planı bulunamadı; fiyat uygulanmadı",
+            )
+
         await self.db.revenue_approval_queue.update_one(
             {"id": item_id},
             {"$set": {
                 "status": ApprovalStatus.APPROVED,
                 "applied_at": datetime.now(UTC).isoformat(),
                 "applied_by": user_id,
-                "channel_push_status": "pushed" if result.get("success") else "failed",
+                "channel_push_status": "local_only",
                 "updated_at": datetime.now(UTC).isoformat(),
             }},
         )
         apply_doc = new_apply_result(tenant_id, item_id, item["room_type"],
                                       item["current_price"], item["recommended_price"],
-                                      result.get("channels", []), result.get("success", False))
+                                      result.get("channels", []), True)
         await self.db.revenue_apply_results.insert_one(apply_doc)
         return {"success": True, "result": result}
 
@@ -275,10 +315,22 @@ class RevenueAutopilotService:
         if not item:
             raise HTTPException(status_code=404, detail="Item not found or not applied")
 
-        await self._apply_price(
+        # Rollback restores the previous price by applying it back to the rate
+        # plan; if that apply did not actually match a rate plan (or errored),
+        # the rollback did NOT happen, so we must not mark it ROLLED_BACK or
+        # report success (doctrine: no fake-green terminal state / fail-closed).
+        result = await self._apply_price(
             tenant_id, item["room_type"], item["target_date"],
             item["recommended_price"], item["current_price"],
         )
+        if not result.get("success"):
+            if result.get("error"):
+                raise HTTPException(status_code=500, detail="Fiyat geri alınamadı (iç hata)")
+            raise HTTPException(
+                status_code=409,
+                detail="Eşleşen oda tipi fiyat planı bulunamadı; geri alınamadı",
+            )
+
         await self.db.revenue_approval_queue.update_one(
             {"id": item_id},
             {"$set": {

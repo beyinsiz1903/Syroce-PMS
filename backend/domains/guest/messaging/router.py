@@ -199,13 +199,17 @@ async def send_whatsapp_confirmation(
 
     # Get guest (decrypt PII — phone is the WhatsApp send recipient).
     from security.encrypted_lookup import decrypt_guest_doc
-    guest = decrypt_guest_doc(await db.guests.find_one({'id': booking['guest_id']}, {'_id': 0}))
+    guest = decrypt_guest_doc(await db.guests.find_one(
+        {'id': booking['guest_id'], 'tenant_id': current_user.tenant_id}, {'_id': 0}
+    ))
 
     if not guest or not guest.get('phone'):
         raise HTTPException(status_code=400, detail="Misafir telefon numarası bulunamadı")
 
-    # Get room
-    room = await db.rooms.find_one({'id': booking['room_id']}, {'_id': 0})
+    # Get room (tenant-scoped: keep the tenant boundary on every downstream lookup)
+    room = await db.rooms.find_one(
+        {'id': booking['room_id'], 'tenant_id': current_user.tenant_id}, {'_id': 0}
+    )
 
     booking_details = {
         'booking_id': booking['id'],
@@ -216,7 +220,15 @@ async def send_whatsapp_confirmation(
         'total_amount': booking['total_amount']
     }
 
-    await whatsapp_service.send_booking_confirmation(guest['phone'], booking_details)
+    delivered = await whatsapp_service.send_booking_confirmation(guest['phone'], booking_details)
+    if not delivered:
+        # Fail closed: no real WhatsApp send happened, so we must not claim
+        # success. The FE handler maps any non-"telefon" detail to the honest
+        # "WhatsApp entegrasyonu gereklidir" message (doctrine: no fake-green).
+        raise HTTPException(
+            status_code=503,
+            detail="WhatsApp entegrasyonu yapılandırılmamış; onay mesajı gönderilemedi",
+        )
 
     return {
         'success': True,
@@ -232,21 +244,13 @@ async def send_whatsapp_message(
     _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """Send WhatsApp message to guest"""
-    msg_record = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'channel': 'whatsapp',
-        'to': request.to,
-        'message': request.message,
-        'booking_id': request.booking_id,
-        'status': 'sent',
-        'sent_at': datetime.now(UTC).isoformat(),
-        'sent_by': current_user.id
-    }
-
-    msg_copy = msg_record.copy()
-    await db.messages.insert_one(msg_copy)
-    return {'message': 'WhatsApp message sent successfully', 'message_id': msg_record['id']}
+    # Fail closed: no real WhatsApp Business API transport is wired up, so we
+    # must not persist a record as "sent" or report a successful delivery that
+    # never happened (doctrine: no fake-green / fail-closed).
+    raise HTTPException(
+        status_code=503,
+        detail="WhatsApp entegrasyonu yapılandırılmamış; mesaj gönderilemedi",
+    )
 
 
 

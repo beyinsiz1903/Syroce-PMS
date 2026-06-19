@@ -10,7 +10,19 @@ class WhatsAppService:
     """WhatsApp Business service"""
 
     def __init__(self):
-        self.mode = "mock"  # mock or production
+        # A real WhatsApp Business API transport is not implemented yet.
+        # Until it is, sends are reported honestly as "not delivered" so
+        # callers fail closed instead of claiming a fake success
+        # (doctrine: no fake-green / fail-closed).
+        self.configured = False
+
+    def _deliver(self, phone: str, message: str, label: str) -> bool:
+        # No real WhatsApp Business API transport is configured. Report
+        # honestly that the message was not delivered (fail-closed). Do NOT
+        # log the phone number or message body: they contain guest PII
+        # (name, stay dates, amount, booking id) — doctrine: no PII in logs.
+        logger.info("[whatsapp:%s] not delivered (integration not configured)", label)
+        return False
 
     async def send_booking_confirmation(self, phone: str, booking_details: dict) -> bool:
         """Send booking confirmation message"""
@@ -31,17 +43,7 @@ Your reservation number: *{booking_details['booking_id'][:8].upper()}*
 See you soon!
 """
 
-        if self.mode == "production":
-            pass
-        else:
-            logger.info("\n" + "="*60)
-            logger.info("📱 WHATSAPP MESSAGE (MOCK)")
-            logger.info("="*60)
-            logger.info(f"To: {phone}")
-            logger.info(f"Message:\n{message}")
-            logger.info("="*60 + "\n")
-
-        return True
+        return self._deliver(phone, message, "booking_confirmation")
 
     async def send_pre_arrival_message(self, phone: str, guest_name: str, checkin_date: str) -> bool:
         """Send pre-arrival message"""
@@ -60,12 +62,7 @@ Reply to claim an offer!
 Syroce Team 🌟
 """
 
-        if self.mode == "production":
-            pass
-        else:
-            logger.info(f"\n📱 WhatsApp Pre-Arrival to {phone}\n{message}\n")
-
-        return True
+        return self._deliver(phone, message, "pre_arrival")
 
     async def send_upsell_offer(self, phone: str, offer_details: dict) -> bool:
         """Send upsell offer"""
@@ -83,11 +80,6 @@ Syroce Team 🌟
 Reply 'YES' to accept.
 """
 
-        if self.mode == "production":
-            pass
-        else:
-            logger.info(f"\n📱 WhatsApp Upsell to {phone}\n{message}\n")
-
-        return True
+        return self._deliver(phone, message, "upsell")
 
 whatsapp_service = WhatsAppService()
