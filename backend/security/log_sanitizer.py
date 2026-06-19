@@ -152,4 +152,38 @@ class SanitizedLogFilter(logging.Filter):
                     sanitize_string(a) if isinstance(a, str) else a
                     for a in record.args
                 )
+        # Backstop: render the final message and sanitize it so that *non-str*
+        # args are also scrubbed. The per-field pass above only inspects str
+        # args; an object arg (e.g. an httpx.URL carrying a "?token=..." query
+        # param — the way httpx logs every outbound request at INFO) slips
+        # through and would leak the credential once the handler formats the
+        # record. If the rendered text contains nothing sensitive we leave the
+        # record untouched to preserve structured-logging behaviour.
+        try:
+            rendered = record.getMessage()
+        except Exception:
+            return True
+        sanitized = sanitize_string(rendered)
+        if sanitized != rendered:
+            record.msg = sanitized
+            record.args = ()
         return True
+
+
+def harden_logging() -> None:
+    """Attach the PII/secret sanitizer to every root handler and silence the
+    verbose third-party HTTP request logging that echoes full outbound URLs
+    (including ``?token=...`` query params) at INFO level.
+
+    Idempotent and safe to call from every process entry point — the FastAPI
+    server (uvicorn) AND Celery workers — so scheduled connector calls (e.g.
+    HotelRunner pulls) never leak credentials into worker logs either.
+    """
+    root = logging.getLogger()
+    for handler in root.handlers:
+        if not any(isinstance(f, SanitizedLogFilter) for f in handler.filters):
+            handler.addFilter(SanitizedLogFilter())
+    # httpx/httpcore log "HTTP Request: GET <full-url>" at INFO; our connectors
+    # already log method+path without credentials, so drop these to WARNING.
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)

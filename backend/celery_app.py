@@ -21,6 +21,33 @@ celery_app = Celery(
     backend=REDIS_URL
 )
 
+# ── Logging hardening (secret/PII sanitizer + quiet httpx request URLs) ──
+# Celery hijacks the root logger and installs its own handlers AFTER import, so
+# we (a) quiet httpx/httpcore immediately at import — this stops the
+# "HTTP Request: GET <url-with-?token=...>" INFO leak in worker logs right away
+# (scheduled connector calls such as HotelRunner pulls run in this process) —
+# and (b) re-attach the sanitizer via Celery's logging signals once its own
+# handlers exist.
+try:
+    from celery.signals import after_setup_logger, after_setup_task_logger
+
+    from security.log_sanitizer import harden_logging
+
+    harden_logging()
+
+    @after_setup_logger.connect
+    def _harden_after_setup_logger(logger=None, **kwargs):
+        harden_logging()
+
+    @after_setup_task_logger.connect
+    def _harden_after_setup_task_logger(logger=None, **kwargs):
+        harden_logging()
+except Exception as _celery_log_err:  # pragma: no cover - defensive
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        "Celery log hardening skipped: %s", _celery_log_err
+    )
+
 # Celery configuration
 celery_app.conf.update(
     # Task settings

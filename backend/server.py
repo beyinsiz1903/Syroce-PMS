@@ -36,11 +36,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Attach PII sanitization filter to root logger
+# Attach PII sanitization filter to root logger + silence verbose third-party
+# HTTP request logging (httpx/httpcore) that would otherwise echo outbound URLs
+# carrying "?token=..." query params. See security.log_sanitizer.harden_logging.
 try:
-    from security.log_sanitizer import SanitizedLogFilter
-    for handler in logging.root.handlers:
-        handler.addFilter(SanitizedLogFilter())
+    from security.log_sanitizer import harden_logging
+    harden_logging()
     logger.info("Log sanitization filter attached to all handlers")
 except Exception as _log_err:
     logger.warning("Log sanitization filter skipped: %s", _log_err)
