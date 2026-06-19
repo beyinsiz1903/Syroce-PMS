@@ -147,21 +147,22 @@ async def train_demand_forecast_model(
     }):
         bookings.append(booking)
 
-    # Feature engineering (simulated)
-    training_data = {
-        'samples': len(bookings),
-        'features': ['day_of_week', 'month', 'lead_time', 'event_impact', 'seasonality'],
-        'model_type': 'XGBoost',
-        'accuracy_score': 0.87,  # Simulated R² score
-        'mae': 5.2  # Mean Absolute Error (%)
-    }
-
+    # Fail-closed: real ML demand-forecast training runs in the dedicated ML
+    # service (ml_service / ml_trainers, dispatched to the 'ml' Celery queue),
+    # NOT inline here. We must never fabricate accuracy/MAE for a model we did
+    # not actually train. Report the real available training-sample count and
+    # direct the caller to the real pipeline.
     return {
-        'success': True,
-        'message': 'Demand forecast model trained successfully',
-        'training_data': training_data,
-        'model_version': 'ml-v1.0',
-        'note': 'In production: Integrate with scikit-learn/XGBoost for real ML training'
+        'success': False,
+        'model_trained': False,
+        'data_available': False,
+        'samples_available': len(bookings),
+        'historical_days': historical_days,
+        'message': (
+            'Talep tahmin modeli bu uctan egitilmiyor. Gercek ML egitimi adanmis '
+            'ML servisi (ml_service) uzerinden calisir; bu uctan sahte dogruluk/MAE '
+            'uretilmez.'
+        ),
     }
 
 
@@ -189,39 +190,20 @@ async def scrape_competitor_rates(
     # - Expedia Partner API
     # - Web scraping (Selenium/Playwright)
 
-    scraped_rates = []
-
-    for competitor in competitors:
-        for room_type in room_types:
-            # Simulated scraping
-            rate = 100 + (len(competitor) * 5)  # Simulated rate
-
-            competitor_rate = CompetitorRate(
-                tenant_id=current_user.tenant_id,
-                competitor_name=competitor,
-                date=date,
-                room_type=room_type,
-                rate=rate,
-                source='google_hotels'
-            )
-
-            rate_dict = competitor_rate.model_dump()
-            rate_dict['scraped_at'] = rate_dict['scraped_at'].isoformat()
-            await db.competitor_rates.insert_one(rate_dict)
-
-            scraped_rates.append({
-                'competitor': competitor,
-                'room_type': room_type,
-                'rate': rate,
-                'source': 'google_hotels'
-            })
-
+    # Fail-closed: no competitor-rate data source is configured (Google Hotels /
+    # Booking.com / Expedia connectivity APIs are not wired). We must NOT
+    # fabricate competitor rates or persist invented numbers (the previous
+    # implementation wrote `100 + len(name)*5` as if scraped). Return unavailable.
     return {
-        'success': True,
+        'success': False,
+        'data_available': False,
         'date': date,
-        'rates_scraped': len(scraped_rates),
-        'competitor_rates': scraped_rates,
-        'note': 'In production: Integrate with Google Hotels API, Booking.com API, or web scraping'
+        'rates_scraped': 0,
+        'competitor_rates': [],
+        'message': (
+            'Rakip fiyat veri kaynagi (Google Hotels / Booking.com / Expedia API) '
+            'yapilandirilmamis. Sahte rakip fiyati uretilmez.'
+        ),
     }
 
 
@@ -246,6 +228,23 @@ async def calculate_price_elasticity(
     end_dt = datetime.now(UTC)
     start_dt = end_dt - timedelta(days=analysis_days)
 
+    # Scope to the requested room_type. Bookings may store `room_type` directly
+    # OR only reference a room via `room_id` (room_type resolved by joining the
+    # rooms collection), so we match EITHER. Without this scope the elasticity
+    # coefficient would be computed across ALL room types yet returned labelled
+    # as the requested one (a misleading calculation).
+    room_ids: list[str] = []
+    async for _room in db.rooms.find(
+        {'tenant_id': current_user.tenant_id, 'room_type': room_type},
+        {'_id': 0, 'id': 1},
+    ):
+        if _room.get('id'):
+            room_ids.append(_room['id'])
+
+    room_match: list[dict] = [{'room_type': room_type}]
+    if room_ids:
+        room_match.append({'room_id': {'$in': room_ids}})
+
     # Collect price-demand pairs
     bookings = []
     async for booking in db.bookings.find({
@@ -253,33 +252,129 @@ async def calculate_price_elasticity(
         'created_at': {
             '$gte': start_dt.isoformat(),
             '$lte': end_dt.isoformat()
-        }
+        },
+        '$or': room_match,
     }):
         bookings.append(booking)
 
-    # Calculate elasticity (simulated)
-    # Real formula: Elasticity = (% Change in Demand) / (% Change in Price)
+    # Real price elasticity from observed booking data. We build a price ->
+    # demand(count) curve from real per-night prices and fit a constant-
+    # elasticity model ln(Q) = a + e*ln(P) by ordinary least squares; the slope
+    # `e` is the elasticity. This is an empirical estimate (cross-sectional, so
+    # other factors are not controlled) but it is derived entirely from real
+    # data. When there is not enough price variation we FAIL CLOSED rather than
+    # invent a coefficient.
+    import math
 
-    avg_price = sum(b.get('total_amount', 0) for b in bookings) / len(bookings) if bookings else 100
+    insufficient = {
+        'room_type': room_type,
+        'analysis_period_days': analysis_days,
+        'bookings_analyzed': len(bookings),
+        'data_available': False,
+        'message': (
+            'Fiyat esnekligi icin yeterli fiyat-talep verisi yok (farkli fiyat '
+            'seviyelerinde yeterli rezervasyon gerekir).'
+        ),
+    }
 
-    elasticity_analysis = {
+    prices: list[float] = []
+    for b in bookings:
+        amt = b.get('total_amount') or 0
+        if amt <= 0:
+            continue
+        try:
+            _ci = datetime.fromisoformat(str(b.get('check_in')).replace('Z', '+00:00'))
+            _co = datetime.fromisoformat(str(b.get('check_out')).replace('Z', '+00:00'))
+            _nights = max(1, (_co.date() - _ci.date()).days)
+        except Exception:
+            _nights = 1
+        prices.append(amt / _nights)
+
+    if len(prices) < 20:
+        return insufficient
+
+    lo, hi = min(prices), max(prices)
+    if hi <= lo:
+        return insufficient
+
+    n_buckets = 6
+    width = (hi - lo) / n_buckets
+    counts = [0] * n_buckets
+    sums = [0.0] * n_buckets
+    for p in prices:
+        idx = min(n_buckets - 1, int((p - lo) / width))
+        counts[idx] += 1
+        sums[idx] += p
+    pts = [(sums[i] / counts[i], counts[i]) for i in range(n_buckets) if counts[i] > 0]
+    if len(pts) < 3:
+        return insufficient
+
+    xs = [math.log(p) for p, _q in pts]
+    ys = [math.log(q) for _p, q in pts]
+    m = len(xs)
+    mean_x = sum(xs) / m
+    mean_y = sum(ys) / m
+    sxx = sum((x - mean_x) ** 2 for x in xs)
+    if sxx == 0:
+        return insufficient
+    slope = sum((xs[i] - mean_x) * (ys[i] - mean_y) for i in range(m)) / sxx
+    intercept = mean_y - slope * mean_x
+    ss_tot = sum((y - mean_y) ** 2 for y in ys)
+    ss_res = sum((ys[i] - (intercept + slope * xs[i])) ** 2 for i in range(m))
+    r2 = (1 - ss_res / ss_tot) if ss_tot > 0 else 0.0
+
+    avg_price = sum(prices) / len(prices)
+
+    # Optimal price within the OBSERVED band that maximises modelled revenue
+    # R(P) = exp(intercept) * P^(slope+1). We never extrapolate beyond observed.
+    best_p, best_rev = avg_price, -1.0
+    steps = 50
+    for k in range(steps + 1):
+        p = lo + (hi - lo) * k / steps
+        if p <= 0:
+            continue
+        rev = math.exp(intercept) * (p ** (slope + 1))
+        if rev > best_rev:
+            best_rev, best_p = rev, p
+    rev_at_avg = math.exp(intercept) * (avg_price ** (slope + 1)) if avg_price > 0 else 0
+    revenue_lift_pct = round(((best_rev - rev_at_avg) / rev_at_avg) * 100, 1) if rev_at_avg > 0 else 0.0
+
+    if slope < -1:
+        interpretation = 'Esnek talep: fiyat artisi toplam geliri dusurur (talep fiyata duyarli).'
+        sensitivity = 'High'
+        recommendations = [
+            'Esnek talep: agresif fiyat artislarindan kacinin, doluluk odakli fiyatlayin.',
+            'Hafta ici / hafta sonu ayrimi ile dinamik fiyatlama uygulayin.',
+        ]
+    elif slope < 0:
+        interpretation = 'Inelastik talep: olcap fiyat artislari toplam geliri artirabilir.'
+        sensitivity = 'Low'
+        recommendations = [
+            'Inelastik talep: yuksek talepli tarihlerde fiyati kademeli artirin.',
+            'Hafta ici / hafta sonu ayrimi ile dinamik fiyatlama uygulayin.',
+        ]
+    else:
+        interpretation = 'Pozitif egim: karistirici faktorler/veri gurultusu olabilir, dikkatli yorumlayin.'
+        sensitivity = 'Unknown'
+        recommendations = [
+            'Daha guvenilir esneklik icin daha genis fiyat-talep verisi toplayin.',
+        ]
+
+    return {
         'room_type': room_type,
         'analysis_period_days': analysis_days,
         'avg_historical_price': round(avg_price, 2),
         'bookings_analyzed': len(bookings),
-        'elasticity_coefficient': -1.2,  # Simulated (elastic demand)
-        'interpretation': 'Elastic demand - 10% price increase → 12% demand decrease',
-        'optimal_price_point': round(avg_price * 1.05, 2),
-        'expected_revenue_lift': '8.5%',
-        'price_sensitivity': 'High',
-        'recommendations': [
-            'Consider dynamic pricing based on occupancy',
-            'Implement weekend vs weekday pricing',
-            'Use promotional rates during low demand periods'
-        ]
+        'price_points_used': len(pts),
+        'data_available': True,
+        'elasticity_coefficient': round(slope, 2),
+        'fit_r2': round(r2, 2),
+        'interpretation': interpretation,
+        'optimal_price_point': round(best_p, 2),
+        'expected_revenue_lift': f"{revenue_lift_pct}%",
+        'price_sensitivity': sensitivity,
+        'recommendations': recommendations,
     }
-
-    return elasticity_analysis
 
 
 
@@ -322,26 +417,123 @@ async def auto_publish_rates_based_on_forecast(
     }).sort('date', 1):
         forecasts.append(forecast)
 
-    # If no forecasts, create simulated ones
+    # Fail-closed: never fabricate demand forecasts. If the tenant has no real
+    # forecast rows for this range, refuse rather than invent occupancy numbers
+    # that would drive real (channel-published) rate changes.
     if not forecasts:
-        current_date = datetime.fromisoformat(start_date)
-        end = datetime.fromisoformat(end_date)
-        while current_date <= end:
-            forecasted_occupancy = 0.65 + (0.2 * (current_date.weekday() >= 4))  # Weekend boost
-            forecasts.append({
-                'date': current_date.date().isoformat(),
-                'forecasted_occupancy': forecasted_occupancy,
-                'confidence': 0.85
-            })
-            current_date += timedelta(days=1)
+        return {
+            'success': False,
+            'data_available': False,
+            'dry_run': dry_run,
+            'start_date': start_date,
+            'end_date': end_date,
+            'strategy': strategy,
+            'rates_published': 0,
+            'rates_persisted': 0,
+            'outbox_events_emitted': 0,
+            'published_rates': [],
+            'avg_rate': 0,
+            'message': (
+                'Bu tarih araliginda gercek talep tahmini bulunmuyor. Sahte tahmin '
+                'uretilmez; once talep tahmini olusturun.'
+            ),
+        }
+
+    # Base nightly rate is derived from the tenant's real recent per-night prices
+    # (last 90 days, non-cancelled, paid), NOT a hardcoded constant. Fail closed
+    # if we cannot derive a real base rate.
+    base_start = (datetime.now(UTC) - timedelta(days=90)).isoformat()
+    night_prices: list[float] = []
+    async for _b in db.bookings.find({
+        'tenant_id': current_user.tenant_id,
+        'check_in': {'$gte': base_start},
+        'status': {'$nin': ['cancelled', 'no_show']},
+        'total_amount': {'$gt': 0},
+    }):
+        _amt = _b.get('total_amount') or 0
+        try:
+            _ci = datetime.fromisoformat(str(_b.get('check_in')).replace('Z', '+00:00'))
+            _co = datetime.fromisoformat(str(_b.get('check_out')).replace('Z', '+00:00'))
+            _nights = max(1, (_co.date() - _ci.date()).days)
+        except Exception:
+            _nights = 1
+        night_prices.append(_amt / _nights)
+
+    if not night_prices:
+        return {
+            'success': False,
+            'data_available': False,
+            'dry_run': dry_run,
+            'start_date': start_date,
+            'end_date': end_date,
+            'strategy': strategy,
+            'rates_published': 0,
+            'rates_persisted': 0,
+            'outbox_events_emitted': 0,
+            'published_rates': [],
+            'avg_rate': 0,
+            'message': (
+                'Gercek taban fiyat (son 90 gun) hesaplanamadi; yeterli rezervasyon '
+                'verisi yok. Fiyat yayinlanmadi.'
+            ),
+        }
+
+    # Fail-closed: every forecast row MUST carry a real numeric occupancy. We
+    # never default a missing/invalid occupancy to a synthetic value (the old
+    # code silently used 0.7), because fabricated demand would drive real
+    # published rates. `demand_forecasts` stores occupancy as a PERCENTAGE
+    # (0-100); we normalise to a fraction here (and tolerate legacy fraction
+    # rows) so the pricing multiplier math is correct. Any row with a missing or
+    # out-of-range occupancy aborts the whole publish rather than guessing.
+    normalized: list[tuple] = []
+    for _f in forecasts:
+        _raw_occ = _f.get('forecasted_occupancy')
+        if isinstance(_raw_occ, bool) or not isinstance(_raw_occ, (int, float)):
+            return {
+                'success': False,
+                'data_available': False,
+                'dry_run': dry_run,
+                'start_date': start_date,
+                'end_date': end_date,
+                'strategy': strategy,
+                'rates_published': 0,
+                'rates_persisted': 0,
+                'outbox_events_emitted': 0,
+                'published_rates': [],
+                'avg_rate': 0,
+                'message': (
+                    'Talep tahmini kayitlarinda gecerli sayisal doluluk degeri '
+                    'eksik. Sahte doluluk varsayilmaz; fiyat yayinlanmadi.'
+                ),
+            }
+        _occ = float(_raw_occ)
+        if _occ > 1:  # stored as percentage (0-100) -> fraction
+            _occ = _occ / 100.0
+        if not (0.0 <= _occ <= 1.0):
+            return {
+                'success': False,
+                'data_available': False,
+                'dry_run': dry_run,
+                'start_date': start_date,
+                'end_date': end_date,
+                'strategy': strategy,
+                'rates_published': 0,
+                'rates_persisted': 0,
+                'outbox_events_emitted': 0,
+                'published_rates': [],
+                'avg_rate': 0,
+                'message': (
+                    'Talep tahmini doluluk degeri gecerli aralik disinda. Fiyat '
+                    'yayinlanmadi.'
+                ),
+            }
+        normalized.append((_f.get('date'), _occ))
 
     # Calculate recommended rates
     published_rates = []
-    base_rate = 100
+    base_rate = round(sum(night_prices) / len(night_prices), 2)
 
-    for forecast in forecasts:
-        occupancy = forecast.get('forecasted_occupancy', 0.7)
-
+    for forecast_date, occupancy in normalized:
         if strategy == "revenue_optimization":
             # High demand = high price
             multiplier = 1 + (occupancy - 0.5)  # 50% occupancy = base rate
@@ -354,7 +546,7 @@ async def auto_publish_rates_based_on_forecast(
         recommended_rate = round(base_rate * multiplier, 2)
 
         published_rates.append({
-            'date': forecast.get('date'),
+            'date': forecast_date,
             'forecasted_occupancy': round(occupancy * 100, 1),
             'recommended_rate': recommended_rate,
             'published': (not dry_run),

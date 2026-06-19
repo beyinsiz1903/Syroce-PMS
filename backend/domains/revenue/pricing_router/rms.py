@@ -247,44 +247,35 @@ async def get_market_compression(
     """
     target_date = date or datetime.now().date().isoformat()
 
-    # In production, integrate with:
-    # - Local DMO (Destination Marketing Organization)
-    # - STR (Smith Travel Research)
-    # - Competitor data
-
-    # Simulated market compression analysis
-    # Check for events
+    # Fail-closed: a real market-compression score requires external market
+    # data (city occupancy via STR/DMO and competitor rates). None of these
+    # sources are configured, so we must NOT fabricate a compression score,
+    # city-occupancy estimate, or competitor-based pricing opportunity (the
+    # previous implementation hardcoded competitor=120 / our=100 / base=50).
+    # We DO surface the one real signal we have: confirmed city events.
     events = await db.city_events.find({
         'date': target_date
     }).to_list(length=10)
 
     has_major_event = any(e.get('impact') == 'high' for e in events)
 
-    # Calculate compression score (0-100)
-    base_score = 50
-    if has_major_event:
-        base_score += 30
-
-    # Check competitor pricing (simulated)
-    competitor_avg_rate = 120
-    our_avg_rate = 100
-
-    if our_avg_rate < competitor_avg_rate:
-        pricing_opportunity = ((competitor_avg_rate - our_avg_rate) / our_avg_rate) * 100
-    else:
-        pricing_opportunity = 0
-
-    compression_score = min(100, base_score)
-
     return {
         'date': target_date,
-        'compression_score': compression_score,
-        'compression_level': 'High' if compression_score > 70 else 'Medium' if compression_score > 40 else 'Low',
-        'city_occupancy_estimate': f"{compression_score}%",
+        'data_available': False,
+        'compression_score': None,
+        'compression_level': None,
+        'city_occupancy_estimate': None,
         'events': [{'name': e.get('name'), 'impact': e.get('impact')} for e in events] if events else [],
         'has_major_event': has_major_event,
-        'pricing_opportunity_pct': round(pricing_opportunity, 1),
-        'recommendation': 'Increase rates by 15-20%' if compression_score > 70 else 'Monitor market' if compression_score > 40 else 'Consider promotions'
+        'pricing_opportunity_pct': None,
+        'recommendation': (
+            'Onemli sehir etkinligi var; talebi yakindan izleyin.' if has_major_event else None
+        ),
+        'message': (
+            'Pazar sikismasi skoru icin dis veri kaynagi (STR/DMO sehir doluluk, '
+            'rakip fiyat) yapilandirilmamis. Sahte skor uretilmez; sadece '
+            'dogrulanmis sehir etkinlikleri gosterilir.'
+        ),
     }
 
 

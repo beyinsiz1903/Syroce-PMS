@@ -128,29 +128,16 @@ const FolioManagementPage = () => {
         }
       }
 
-      const booking = folios.find(f => f.id === bookingId);
-      if (booking) {
-        const nights = Math.max(1, Math.ceil(
-          (new Date(booking.check_out) - new Date(booking.check_in)) / (1000 * 60 * 60 * 24)
-        ));
-        const mockCharges = [];
-        for (let i = 0; i < nights; i++) {
-          mockCharges.push({
-            description: `Room Charge - Night ${i + 1}`,
-            charge_category: 'room',
-            quantity: 1,
-            unit_price: booking.total_amount / nights,
-            amount: booking.total_amount / nights,
-            tax_amount: (booking.total_amount / nights) * 0.18,
-            total: (booking.total_amount / nights) * 1.18,
-            posted_at: new Date(new Date(booking.check_in).getTime() + i * 24 * 60 * 60 * 1000).toISOString()
-          });
-        }
-        setCharges(mockCharges);
-        setPayments([]);
-      }
+      // Fail-closed: no fabricated room charges. If the folio detail could not
+      // be loaded, show an empty folio rather than inventing nightly charges.
+      setCharges([]);
+      setPayments([]);
     } catch (error) {
       console.error('Error fetching folio details:', error);
+      // Fail-closed: clear stale charges/payments so a failed load can never
+      // show the previously selected folio's data as if it belonged here.
+      setCharges([]);
+      setPayments([]);
     }
   };
 

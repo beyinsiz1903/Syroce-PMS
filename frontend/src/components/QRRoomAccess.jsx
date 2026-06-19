@@ -10,11 +10,14 @@ import { useTranslation } from 'react-i18next';
 const QRRoomAccess = () => {
   const { t } = useTranslation();
   const [activeSessions, setActiveSessions] = useState([]);
-  const [scanning, setScanning] = useState(false);
+  const [rooms, setRooms] = useState([]);
+  const [selectedRoomId, setSelectedRoomId] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadActiveSessions();
+    loadRooms();
     // Refresh every 30 seconds
     const interval = setInterval(loadActiveSessions, 30000);
     return () => clearInterval(interval);
@@ -31,19 +34,28 @@ const QRRoomAccess = () => {
     }
   };
 
-  const handleScanQR = () => {
-    setScanning(true);
-    
-    // Simulate QR scan (in production, use camera API)
-    setTimeout(() => {
-      const mockRoomData = {
-        room_id: 'room_' + Math.floor(Math.random() * 100),
-        room_number: String(Math.floor(Math.random() * 300) + 101)
-      };
-      
-      setScanning(false);
-      handleStartCleaning(mockRoomData);
-    }, 1500);
+  const loadRooms = async () => {
+    try {
+      const response = await axios.get('/housekeeping/rooms');
+      setRooms(response.data.rooms || []);
+    } catch (error) {
+      console.error('Failed to load rooms:', error);
+    }
+  };
+
+  const handleStartFromSelection = async () => {
+    const room = rooms.find((r) => r.id === selectedRoomId);
+    if (!room) {
+      toast.error('Lütfen bir oda seçin');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await handleStartCleaning({ room_id: room.id, room_number: room.room_number });
+      setSelectedRoomId('');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleStartCleaning = async (roomData) => {
@@ -104,26 +116,28 @@ const QRRoomAccess = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-center py-6">
-            {scanning ? (
-              <div className="animate-pulse">
-                <QrCode className="w-20 h-20 mx-auto text-blue-500 mb-4" />
-                <p className="text-sm text-gray-600">{t('cm.components_QRRoomAccess.qr_kod_taraniyor')}</p>
-              </div>
-            ) : (
-              <>
-                <QrCode className="w-20 h-20 mx-auto text-gray-400 mb-4" />
-                <p className="text-sm text-gray-600 mb-4">{t('cm.components_QRRoomAccess.oda_kapisindaki_qr_kodu_tarayin')}</p>
-                <Button
-                  className="bg-blue-600 hover:bg-blue-700"
-                  onClick={handleScanQR}
-                  disabled={scanning}
-                >
-                  <QrCode className="w-4 h-4 mr-2" />
-                  QR Tara
-                </Button>
-              </>
-            )}
+          <div className="py-4">
+            <p className="text-sm text-gray-600 mb-3">Temizliğe başlamak için oda seçin</p>
+            <select
+              className="w-full border rounded-md px-3 py-2 mb-4 text-sm"
+              value={selectedRoomId}
+              onChange={(e) => setSelectedRoomId(e.target.value)}
+            >
+              <option value="">Oda seçin…</option>
+              {rooms.map((room) => (
+                <option key={room.id} value={room.id}>
+                  Oda {room.room_number}{room.hk_status ? ` — ${room.hk_status}` : ''}
+                </option>
+              ))}
+            </select>
+            <Button
+              className="w-full bg-blue-600 hover:bg-blue-700"
+              onClick={handleStartFromSelection}
+              disabled={submitting || !selectedRoomId}
+            >
+              <PlayCircle className="w-4 h-4 mr-2" />
+              {submitting ? 'Başlatılıyor…' : 'Temizliğe Başla'}
+            </Button>
           </div>
         </CardContent>
       </Card>

@@ -362,29 +362,56 @@ async def get_historical_comparison(
     today = datetime.now(UTC).date()
     month_start = today.replace(day=1)
 
-    # This month data
-    this_month_bookings = await db.bookings.count_documents({
+    # This month-to-date window (current calendar month), excluding cancellations.
+    if month_start.month == 12:
+        next_month = month_start.replace(year=month_start.year + 1, month=1)
+    else:
+        next_month = month_start.replace(month=month_start.month + 1)
+    this_month_filter = {
         'tenant_id': current_user.tenant_id,
-        'check_in': {'$gte': month_start.isoformat()}
-    })
-
+        'check_in': {'$gte': month_start.isoformat(), '$lt': next_month.isoformat()},
+        'status': {'$nin': ['cancelled', 'no_show']},
+    }
+    this_month_bookings = await db.bookings.count_documents(this_month_filter)
     this_month_revenue = 0
-    async for booking in db.bookings.find({
-        'tenant_id': current_user.tenant_id,
-        'check_in': {'$gte': month_start.isoformat()}
-    }):
+    async for booking in db.bookings.find(this_month_filter):
         this_month_revenue += booking.get('total_amount', 0)
 
-    # Simulated last year data
-    last_year_bookings = int(this_month_bookings * 0.92)
-    last_year_revenue = this_month_revenue * 0.88
+    # Real last-year data: the SAME calendar-month window one year earlier.
+    last_year_month_start = month_start.replace(year=month_start.year - 1)
+    if last_year_month_start.month == 12:
+        ly_next_month = last_year_month_start.replace(year=last_year_month_start.year + 1, month=1)
+    else:
+        ly_next_month = last_year_month_start.replace(month=last_year_month_start.month + 1)
+    last_year_filter = {
+        'tenant_id': current_user.tenant_id,
+        'check_in': {'$gte': last_year_month_start.isoformat(), '$lt': ly_next_month.isoformat()},
+        'status': {'$nin': ['cancelled', 'no_show']},
+    }
+    last_year_bookings = await db.bookings.count_documents(last_year_filter)
+    last_year_revenue = 0
+    async for booking in db.bookings.find(last_year_filter):
+        last_year_revenue += booking.get('total_amount', 0)
+
+    this_year = {
+        'bookings': this_month_bookings,
+        'revenue': round(this_month_revenue, 2),
+        'adr': round(this_month_revenue / this_month_bookings, 2) if this_month_bookings > 0 else 0,
+    }
+
+    # Fail-closed honesty: with no real last-year data (e.g. a hotel in its first
+    # year) we do NOT fabricate a baseline or variance.
+    if last_year_bookings == 0 and last_year_revenue == 0:
+        return {
+            'this_year': this_year,
+            'last_year': None,
+            'variance': None,
+            'data_available': False,
+            'message': 'Gecen yil ayni donem icin veri bulunmuyor; karsilastirma yapilamiyor.',
+        }
 
     return {
-        'this_year': {
-            'bookings': this_month_bookings,
-            'revenue': round(this_month_revenue, 2),
-            'adr': round(this_month_revenue / this_month_bookings, 2) if this_month_bookings > 0 else 0
-        },
+        'this_year': this_year,
         'last_year': {
             'bookings': last_year_bookings,
             'revenue': round(last_year_revenue, 2),
@@ -395,7 +422,8 @@ async def get_historical_comparison(
             'bookings_pct': round((this_month_bookings - last_year_bookings) / last_year_bookings * 100, 1) if last_year_bookings > 0 else 0,
             'revenue': round(this_month_revenue - last_year_revenue, 2),
             'revenue_pct': round((this_month_revenue - last_year_revenue) / last_year_revenue * 100, 1) if last_year_revenue > 0 else 0
-        }
+        },
+        'data_available': True,
     }
 
 

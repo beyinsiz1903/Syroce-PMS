@@ -7,6 +7,7 @@ const API_URL = import.meta.env.VITE_BACKEND_URL || '';
 
 const AIRMSDashboard = () => {
   const [competitorRates, setCompetitorRates] = useState([]);
+  const [competitorMsg, setCompetitorMsg] = useState(null);
   const [demandForecast, setDemandForecast] = useState([]);
   const [elasticity, setElasticity] = useState(null);
   const [marketCompression, setMarketCompression] = useState(null);
@@ -23,15 +24,28 @@ const AIRMSDashboard = () => {
       const response = await axios.post(
         `/rms/ai-pricing/competitor-scrape`,
         {
-          date: new Date().toISOString().split('T')[0],
           competitors: ['Competitor A', 'Competitor B', 'Competitor C'],
           room_types: ['Standard', 'Deluxe']
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        {
+          params: { date: new Date().toISOString().split('T')[0] },
+          headers: { Authorization: `Bearer ${token}` }
+        }
       );
       setCompetitorRates(response.data.competitor_rates || []);
+      setCompetitorMsg(
+        response.data.data_available === false
+          ? (response.data.message || 'Rakip fiyat veri kaynağı yapılandırılmamış')
+          : null
+      );
     } catch (error) {
       console.error('Error scraping competitor rates:', error);
+      setCompetitorRates([]);
+      setCompetitorMsg(
+        error.response?.data?.detail ||
+        error.response?.data?.message ||
+        'Rakip fiyat veri kaynağı yapılandırılmamış'
+      );
     } finally {
       setLoading(false);
     }
@@ -43,12 +57,22 @@ const AIRMSDashboard = () => {
       const token = localStorage.getItem('token');
       const response = await axios.post(
         `/rms/ai-pricing/calculate-elasticity`,
-        { room_type: 'Standard', analysis_days: 90 },
-        { headers: { Authorization: `Bearer ${token}` } }
+        null,
+        {
+          params: { room_type: 'Standard', analysis_days: 90 },
+          headers: { Authorization: `Bearer ${token}` }
+        }
       );
       setElasticity(response.data);
     } catch (error) {
       console.error('Error calculating elasticity:', error);
+      setElasticity({
+        data_available: false,
+        message:
+          error.response?.data?.detail ||
+          error.response?.data?.message ||
+          'Fiyat esnekliği hesaplanamadı'
+      });
     } finally {
       setLoading(false);
     }
@@ -77,17 +101,30 @@ const AIRMSDashboard = () => {
       
       const response = await axios.post(
         `/rms/ai-pricing/auto-publish-rates`,
+        null,
         {
-          start_date: today.toISOString().split('T')[0],
-          end_date: endDate.toISOString().split('T')[0],
-          strategy: 'revenue_optimization'
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
+          params: {
+            start_date: today.toISOString().split('T')[0],
+            end_date: endDate.toISOString().split('T')[0],
+            strategy: 'revenue_optimization'
+          },
+          headers: { Authorization: `Bearer ${token}` }
+        }
       );
-      toast.success(`${response.data.rates_published} fiyat yayınlandı • Ort. fiyat: $${response.data.avg_rate}`);
+      if (response.data.data_available === false || response.data.success === false) {
+        toast.error(response.data.message || 'Fiyatlar yayınlanamadı: yeterli gerçek veri yok');
+      } else if (response.data.dry_run) {
+        toast.success(`${(response.data.published_rates || []).length} tarife hesaplandı (deneme/dry-run, yayınlanmadı)`);
+      } else {
+        toast.success(`${response.data.rates_published} fiyat yayınlandı • Ort. fiyat: $${response.data.avg_rate}`);
+      }
     } catch (error) {
       console.error('Error publishing rates:', error);
-      toast.error('Fiyatlar yayınlanamadı');
+      toast.error(
+        error.response?.data?.detail ||
+        error.response?.data?.message ||
+        'Fiyatlar yayınlanamadı'
+      );
     } finally {
       setLoading(false);
     }
@@ -107,7 +144,29 @@ const AIRMSDashboard = () => {
       </div>
 
       {/* Market Compression */}
-      {marketCompression && (
+      {marketCompression && marketCompression.data_available === false && (
+        <div className="mb-6">
+          <h2 className="text-xl font-semibold mb-4">Market Compression Analysis</h2>
+          <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded mb-4">
+            <p className="text-sm text-amber-900">
+              {marketCompression.message || 'Pazar verisi yapılandırılmamış'}
+            </p>
+          </div>
+          {marketCompression.events && marketCompression.events.length > 0 && (
+            <div className="bg-white border rounded-lg p-4">
+              <p className="font-semibold mb-2">Şehir Etkinlikleri</p>
+              <ul className="list-disc list-inside space-y-1">
+                {marketCompression.events.map((ev, idx) => (
+                  <li key={idx} className="text-sm">
+                    {ev.name}{ev.impact ? ` (${ev.impact})` : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+      {marketCompression && marketCompression.data_available !== false && (
         <div className="mb-6">
           <h2 className="text-xl font-semibold mb-4">Market Compression Analysis</h2>
           <div className="grid grid-cols-3 gap-4 mb-4">
@@ -195,8 +254,21 @@ const AIRMSDashboard = () => {
         </div>
       )}
 
+      {competitorMsg && (
+        <div className="mb-6 bg-amber-50 border-l-4 border-amber-500 p-4 rounded">
+          <p className="text-sm text-amber-900">{competitorMsg}</p>
+        </div>
+      )}
+
       {/* Price Elasticity */}
-      {elasticity && (
+      {elasticity && elasticity.data_available === false && (
+        <div className="mb-6 bg-amber-50 border-l-4 border-amber-500 p-4 rounded">
+          <p className="text-sm text-amber-900">
+            {elasticity.message || 'Fiyat esnekliği için yeterli veri yok'}
+          </p>
+        </div>
+      )}
+      {elasticity && elasticity.data_available !== false && (
         <div className="mb-6">
           <h2 className="text-xl font-semibold mb-4">Price Elasticity Analysis</h2>
           <div className="bg-white border rounded-lg p-6">
@@ -205,6 +277,11 @@ const AIRMSDashboard = () => {
                 <div className="text-sm text-gray-600 mb-1">Elasticity Coefficient</div>
                 <div className="text-3xl font-bold text-blue-600">{elasticity.elasticity_coefficient}</div>
                 <div className="text-sm text-gray-600 mt-1">{elasticity.interpretation}</div>
+                {typeof elasticity.fit_r2 === 'number' && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    Uyum (R²): {elasticity.fit_r2} • {elasticity.bookings_analyzed} rezervasyon
+                  </div>
+                )}
               </div>
               <div>
                 <div className="text-sm text-gray-600 mb-1">Optimal Price Point</div>
@@ -215,7 +292,7 @@ const AIRMSDashboard = () => {
             <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded">
               <p className="font-semibold mb-2">Recommendations:</p>
               <ul className="list-disc list-inside space-y-1">
-                {elasticity.recommendations.map((rec, idx) => (
+                {(elasticity.recommendations || []).map((rec, idx) => (
                   <li key={idx} className="text-sm">{rec}</li>
                 ))}
               </ul>

@@ -1,52 +1,65 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { QrCode, Camera, Wrench } from 'lucide-react';
+import { Wrench } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 
+const ISSUE_TYPES = [
+  { value: 'plumbing', label: 'Tesisat' },
+  { value: 'hvac', label: 'İklimlendirme (HVAC)' },
+  { value: 'electrical', label: 'Elektrik' },
+  { value: 'furniture', label: 'Mobilya' },
+  { value: 'housekeeping_damage', label: 'Kat Hizmetleri Hasarı' },
+  { value: 'other', label: 'Diğer' },
+];
+
+const PRIORITIES = [
+  { value: 'low', label: 'Düşük' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'high', label: 'Yüksek' },
+  { value: 'urgent', label: 'Acil' },
+];
+
 const QRMaintenanceScanner = () => {
   const { t } = useTranslation();
-  const [scanning, setScanning] = useState(false);
-  const [scannedAsset, setScannedAsset] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [roomNumber, setRoomNumber] = useState('');
+  const [assetId, setAssetId] = useState('');
+  const [issueType, setIssueType] = useState('other');
+  const [priority, setPriority] = useState('normal');
+  const [description, setDescription] = useState('');
 
-  const handleScan = () => {
-    setScanning(true);
-    
-    // Simulate QR scan (in production, use camera API)
-    setTimeout(() => {
-      const mockAsset = {
-        id: 'ASSET-' + Math.floor(Math.random() * 1000),
-        name: 'Klima Ünitesi',
-        location: 'Oda 205',
-        type: 'HVAC',
-        last_maintenance: '2025-01-10'
-      };
-      
-      setScannedAsset(mockAsset);
-      setScanning(false);
-      toast.success('QR Kod Okundu');
-    }, 1500);
+  const resetForm = () => {
+    setRoomNumber('');
+    setAssetId('');
+    setIssueType('other');
+    setPriority('normal');
+    setDescription('');
   };
 
-  const handleCreateTask = async () => {
-    if (!scannedAsset) return;
-
+  const handleCreateWorkOrder = async () => {
+    if (!roomNumber.trim() && !assetId.trim()) {
+      toast.error('Oda numarası veya varlık kodu girin');
+      return;
+    }
+    setSubmitting(true);
     try {
-      await axios.post('/maintenance/task', {
-        asset_id: scannedAsset.id,
-        asset_name: scannedAsset.name,
-        location: scannedAsset.location,
-        task_type: 'routine_check',
-        priority: 'normal',
-        description: `${scannedAsset.name} için bakım görevi (QR ile oluşturuldu)`
+      await axios.post('/maintenance/work-orders', {
+        room_number: roomNumber.trim() || null,
+        asset_id: assetId.trim() || null,
+        issue_type: issueType,
+        priority,
+        source: 'housekeeping',
+        description: description.trim() || null,
       });
-      
-      toast.success('Bakım görevi oluşturuldu');
-      setScannedAsset(null);
+      toast.success('Bakım iş emri oluşturuldu');
+      resetForm();
     } catch (error) {
-      toast.error('Görev oluşturulamadı');
+      toast.error('İş emri oluşturulamadı');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -54,71 +67,74 @@ const QRMaintenanceScanner = () => {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center text-lg">
-          <QrCode className="w-5 h-5 mr-2" />
+          <Wrench className="w-5 h-5 mr-2" />
           {t('cm.components_QRMaintenanceScanner.qr_ile_bakim_ac')}
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {!scannedAsset ? (
-          <div className="text-center py-8">
-            <div className="mb-4">
-              {scanning ? (
-                <div className="animate-pulse">
-                  <Camera className="w-16 h-16 mx-auto text-blue-500" />
-                  <p className="text-sm text-gray-600 mt-4">{t('cm.components_QRMaintenanceScanner.qr_kod_taraniyor')}</p>
-                </div>
-              ) : (
-                <>
-                  <QrCode className="w-16 h-16 mx-auto text-gray-400" />
-                  <p className="text-sm text-gray-600 mt-4">{t('cm.components_QRMaintenanceScanner.ekipman_qr_kodunu_tarayin')}</p>
-                </>
-              )}
-            </div>
-            <Button
-              className="bg-blue-600 hover:bg-blue-700"
-              onClick={handleScan}
-              disabled={scanning}
-            >
-              <Camera className="w-4 h-4 mr-2" />
-              QR Tara
-            </Button>
-          </div>
-        ) : (
+        <div className="space-y-3">
           <div>
-            <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4 mb-4">
-              <div className="flex items-start space-x-3">
-                <Wrench className="w-8 h-8 text-green-600" />
-                <div className="flex-1">
-                  <h3 className="font-bold text-gray-900">{scannedAsset.name}</h3>
-                  <p className="text-sm text-gray-600">
-                    {scannedAsset.location}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Tip: {scannedAsset.type}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {t('cm.components_QRMaintenanceScanner.son_bakim')} {scannedAsset.last_maintenance}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setScannedAsset(null)}
-              >
-                {t('cm.components_QRMaintenanceScanner.iptal')}
-              </Button>
-              <Button
-                className="bg-green-600 hover:bg-green-700"
-                onClick={handleCreateTask}
-              >
-                {t('cm.components_QRMaintenanceScanner.gorev_olustur')}
-              </Button>
-            </div>
+            <label className="block text-sm text-gray-600 mb-1">Oda Numarası</label>
+            <input
+              type="text"
+              className="w-full border rounded-md px-3 py-2 text-sm"
+              value={roomNumber}
+              onChange={(e) => setRoomNumber(e.target.value)}
+              placeholder="Örn. 205"
+            />
           </div>
-        )}
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Varlık / Ekipman Kodu (opsiyonel)</label>
+            <input
+              type="text"
+              className="w-full border rounded-md px-3 py-2 text-sm"
+              value={assetId}
+              onChange={(e) => setAssetId(e.target.value)}
+              placeholder="Örn. HVAC-205"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Arıza Türü</label>
+            <select
+              className="w-full border rounded-md px-3 py-2 text-sm"
+              value={issueType}
+              onChange={(e) => setIssueType(e.target.value)}
+            >
+              {ISSUE_TYPES.map((it) => (
+                <option key={it.value} value={it.value}>{it.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Öncelik</label>
+            <select
+              className="w-full border rounded-md px-3 py-2 text-sm"
+              value={priority}
+              onChange={(e) => setPriority(e.target.value)}
+            >
+              {PRIORITIES.map((p) => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Açıklama</label>
+            <textarea
+              className="w-full border rounded-md px-3 py-2 text-sm"
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Sorunu kısaca açıklayın"
+            />
+          </div>
+          <Button
+            className="w-full bg-green-600 hover:bg-green-700"
+            onClick={handleCreateWorkOrder}
+            disabled={submitting}
+          >
+            {submitting ? 'Oluşturuluyor…' : t('cm.components_QRMaintenanceScanner.gorev_olustur')}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
