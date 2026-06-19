@@ -651,6 +651,62 @@ async def update_booking(
     return await update_reservation_service.update(booking_id, booking_data, current_user, request)
 
 
+@router.get("/pms/bookings/{booking_id}")
+async def get_booking(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_module("pms")),
+):
+    """Fetch a single booking by id (tenant-scoped, fail-closed).
+
+    Returns the same enriched booking shape as the list endpoint
+    (``guest_name`` resolved from the guests collection, ``room_number``/
+    ``room_type`` resolved from the rooms collection) so it can feed the
+    booking-detail dialog directly. Used by deep-links that open a
+    reservation which may fall outside the loaded front-desk date window —
+    e.g. the front-desk ``?edit=<id>`` flow and the TUIK
+    missing-nationality report "Ac ve duzelt" action.
+    """
+    booking = await db.bookings.find_one(
+        {"id": booking_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0},
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    from core.guest_name_utils import display_guest_name, is_placeholder_guest_name
+    if booking.get("guest_id"):
+        guest = await db.guests.find_one(
+            {"id": booking["guest_id"], "tenant_id": current_user.tenant_id},
+            {"_id": 0, "name": 1, "first_name": 1, "last_name": 1},
+        )
+        nm = ""
+        if guest:
+            nm = guest.get("name") or (
+                f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip()
+            )
+        if nm and not is_placeholder_guest_name(nm):
+            booking["guest_name"] = nm
+        elif is_placeholder_guest_name(booking.get("guest_name")):
+            booking["guest_name"] = display_guest_name(
+                booking.get("guest_name"), booking.get("guest_id"))
+    elif is_placeholder_guest_name(booking.get("guest_name")):
+        booking["guest_name"] = display_guest_name(
+            booking.get("guest_name"), booking.get("guest_id"))
+
+    if booking.get("room_id") and not booking.get("room_number"):
+        room = await db.rooms.find_one(
+            {"id": booking["room_id"], "tenant_id": current_user.tenant_id},
+            {"_id": 0, "room_number": 1, "room_type": 1},
+        )
+        if room:
+            booking["room_number"] = room.get("room_number", "")
+            if not booking.get("room_type"):
+                booking["room_type"] = room.get("room_type")
+
+    return booking
+
+
 @router.post("/pms/room-move-history")
 async def create_room_move_history(
     move_data: dict,

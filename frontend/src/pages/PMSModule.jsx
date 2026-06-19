@@ -283,16 +283,36 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     if (!target && bookings && bookings.length > 0) {
       target = bookings.find((b) => b.id === editId) || null;
     }
-    if (!target) return;
-    setSelectedBookingDetail(target);
-    setOpenDialog('bookingDetail');
-    try { window.sessionStorage?.removeItem('pms_edit_booking'); } catch { /* ignore */ }
-    // Clean URL so back-nav / refresh does not re-open.
-    params.delete('edit');
-    const newSearch = params.toString();
-    const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '') + window.location.hash;
-    window.history.replaceState(null, '', newUrl);
-  }, [bookings]);
+    // Consume the param + stashed object so re-runs / refresh do not re-open.
+    const consumeEditParam = () => {
+      try { window.sessionStorage?.removeItem('pms_edit_booking'); } catch { /* ignore */ }
+      params.delete('edit');
+      const newSearch = params.toString();
+      const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '') + window.location.hash;
+      window.history.replaceState(null, '', newUrl);
+    };
+    if (target) {
+      setSelectedBookingDetail(target);
+      setOpenDialog('bookingDetail');
+      consumeEditParam();
+      return;
+    }
+    // Not stashed and outside the loaded date window. Wait for the initial load
+    // to settle, then fetch by id so deep-links to out-of-range reservations
+    // (e.g. TÜİK missing-nationality records with a past check-in) still open.
+    if (loading) return;
+    consumeEditParam();
+    axios.get(`/pms/bookings/${encodeURIComponent(editId)}`)
+      .then((res) => {
+        if (res?.data) {
+          setSelectedBookingDetail(res.data);
+          setOpenDialog('bookingDetail');
+        } else {
+          toast.error('Rezervasyon bulunamadı');
+        }
+      })
+      .catch(() => toast.error('Rezervasyon yüklenemedi'));
+  }, [bookings, loading]);
 
   useEffect(() => {
     if (!isLite || openDialog !== 'booking') return;

@@ -124,6 +124,7 @@ async def tuik_monthly(
     foreign_nights = 0
     unspecified_nights = 0
     missing_nationality_bookings: list[dict[str, Any]] = []
+    missing_nationality_total = 0
     adults_fallback_count = 0
     for bk in bookings:
         try:
@@ -154,6 +155,7 @@ async def tuik_monthly(
             domestic_nights += person_nights
         elif country == "Belirtilmemiş":
             unspecified_nights += person_nights
+            missing_nationality_total += 1
             if len(missing_nationality_bookings) < 50:
                 missing_nationality_bookings.append({
                     "id": bk.get("id") or bk.get("booking_id"),
@@ -205,7 +207,7 @@ async def tuik_monthly(
                               for k, v in top],
         "nationality_other_total": other,
         "missing_nationality": {
-            "booking_count": len(missing_nationality_bookings),
+            "booking_count": missing_nationality_total,
             "samples": missing_nationality_bookings,
         },
         "data_quality": {
