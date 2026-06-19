@@ -16,7 +16,6 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from core.database import db
 from core.security import _is_super_admin, get_current_user, security
-from models.enums import ChannelType
 from modules.pms_core.role_permission_service import require_op
 from modules.pms_core.role_permission_service import require_role as _require_role
 
@@ -24,14 +23,6 @@ from modules.pms_core.role_permission_service import require_role as _require_ro
 # müsaitlik (available-rooms), oda atama (assign-room) erişebiliyordu. Front office personeline kısıtla.
 _FD_READ = Depends(_require_role("super_admin", "admin", "supervisor", "front_desk"))
 _FD_WRITE = Depends(_require_role("super_admin", "admin", "front_desk"))
-
-try:
-    from routers.pms_availability import check_room_availability
-except Exception:  # pragma: no cover
-    async def check_room_availability(*args, **kwargs):
-        return {"available": False, "rooms": []}
-
-
 
 # --------------------------------------------------------------------------
 # GM Dashboard - Pickup Analysis & Anomaly Detection
@@ -49,8 +40,6 @@ except Exception:  # pragma: no cover
 
 
 
-
-from integrations.booking_adapter import BookingAdapter
 
 _SYSTEM_HEALTH_CACHE: dict = {"ts": 0.0, "payload": None}
 _SYSTEM_HEALTH_TTL = 5.0  # seconds
@@ -221,53 +210,39 @@ async def push_channel_availability(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     _perm=Depends(require_op("manage_channel_connectors")),  # v92 DW
 ):
-    """Simulate pushing availability to Booking.com and other OTAs.
+    """Musaitlik dagitim durumu (legacy). Bu uc UYDURMA push URETMEZ.
 
-    Uses the existing /pms/rooms/availability logic to get availability
-    and then normalizes it to a Booking-like payload via BookingAdapter.
+    Gercek musaitlik/ARI push'u pinned saglayici (Exely|HotelRunner) uzerinden
+    Unified Rate Manager (Toplu Fiyat/Envanter) ekraninda yapilir. Bu uc
+    yalnizca pinned-provider yapilandirma durumunu durustce raporlar (yalnizca
+    okuma; pilot_drift=0); sahte channel_sync_logs satiri YAZMAZ.
     """
     current_user = await get_current_user(credentials)
 
-    # Fetch availability from PMS
-    rooms = await check_room_availability(check_in, check_out, room_type, current_user)
+    # Pinned-provider tespiti OTORITERDIR; istemci girdisi ezemez (yalnizca okuma).
+    try:
+        from domains.channel_manager.unified_rate_manager_router import (
+            _detect_active_provider,
+        )
+        detection = await _detect_active_provider(current_user.tenant_id, prefer=None)
+    except Exception:
+        detection = {'provider': None, 'configuration_error': 'detection_failed'}
+    provider = detection.get('provider')
 
-    # Only handle booking.com for now via adapter (simulated)
-    connection = await db.channel_connections.find_one({
-        'tenant_id': current_user.tenant_id,
-        'channel_type': ChannelType.BOOKING_COM,
-    })
-
-    adapter_result = None
-    if connection:
-        adapter = BookingAdapter(connection)
-        adapter_result = await adapter.push_availability({
-            'rooms': rooms,
-            'check_in': check_in,
-            'check_out': check_out,
-        })
-
-    # Log sync
-    sync_log = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'timestamp': datetime.now(UTC).isoformat(),
-        'channel': ChannelType.BOOKING_COM,
-        'sync_type': 'availability',
-        'status': 'success',
-        'duration_ms': 0,
-        'records_synced': len(rooms),
-        'error_message': None,
-        'initiator_type': 'hotel_user',
-        'initiator_name': current_user.name,
-        'initiator_id': current_user.id,
-        'ip_address': None,
-    }
-    await db.channel_sync_logs.insert_one(sync_log)
+    if not provider:
+        return {
+            'message': 'Kanal saglayici yapilandirilmamis; musaitlik gercek kanala gonderilmedi.',
+            'data_available': False,
+            'pushed': False,
+            'provider': None,
+            'configuration_error': detection.get('configuration_error'),
+        }
 
     return {
-        'message': 'Availability push simulated successfully',
-        'rooms_count': len(rooms),
-        'booking_adapter': adapter_result,
+        'message': 'Musaitlik dagitimi bu ekrandan yapilmaz. Gercek push icin Toplu Fiyat/Envanter (Rate Manager) ekranini kullanin.',
+        'data_available': True,
+        'pushed': False,
+        'provider': provider,
     }
 # ── POST /channel-manager/update-rates ──
 @router.post("/channel-manager/update-rates")
@@ -277,74 +252,94 @@ async def update_channel_rates(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     _perm=Depends(require_op("manage_channel_connectors")),  # v89 DW
 ):
-    """Update rates across channels"""
+    """Fiyat degisikligini yerel olarak KAYDET ve pinned-provider durumunu raporla.
+
+    Bu legacy form FE'den yalnizca PMS oda tipi adi + kanal kutucuklari gonderir;
+    saglayici-native oda/plan kodlarini TASIMAZ. Bu nedenle gercek OTA dagitimi
+    Unified Rate Manager (Toplu Fiyat/Envanter) ekraninda, pinned saglayici
+    (Exely|HotelRunner) uzerinden yapilir. Bu uc UYDURMA 'success' URETMEZ:
+    fiyat niyetini rate_updates'e kaydeder, pinned saglayiciyi gercek tespit
+    eder (yalnizca okuma; pilot_drift=0) ve durumu durustce dondurur. Sahte
+    channel_sync_logs satiri YAZILMAZ (gercek bir kanal senkronu olmadi).
+    """
     current_user = await get_current_user(credentials)
 
     # Only admins and revenue managers can update rates (super_admin always allowed)
     if not _is_super_admin(current_user) and current_user.role not in ['admin', 'revenue_manager', 'gm']:
         raise HTTPException(status_code=403, detail="Access denied")
 
+    # Girdi dogrulama (fail-closed; uydurma basari yok).
+    room_type = rate_update.get('room_type')
+    date_from = rate_update.get('date_from')
+    date_to = rate_update.get('date_to')
+    new_rate = rate_update.get('new_rate')
+    valid_rate = isinstance(new_rate, (int, float)) and not isinstance(new_rate, bool)
+    if not room_type or not date_from or not date_to or not valid_rate:
+        return {
+            'message': 'Eksik/gecersiz alan: oda tipi, tarih araligi ve gecerli bir fiyat gereklidir.',
+            'data_available': False,
+            'queued': False,
+            'pushed': False,
+            'channels_updated': 0,
+        }
+
     # Determine initiator info
-    # v109 Bug DAK round-6 (T09 P2): naive XFF allowed audit-log IP spoofing
-    # (attacker could send X-Forwarded-For: <fake-ip> to mask their identity in
-    # the audit trail). Use the trusted-proxy aware client_ip() helper which
-    # extracts the rightmost (edge-appended) hop only.
+    # v109 Bug DAK round-6 (T09 P2): naive XFF allowed audit-log IP spoofing.
+    # Use the trusted-proxy aware client_ip() helper (rightmost edge hop only).
     from security.auth_throttle import client_ip as _client_ip
     ip_address = _client_ip(request)
-    initiator_type = 'hotel_user'
-    if getattr(current_user, 'is_staff', False):
-        initiator_type = 'pms_staff'
+    initiator_type = 'pms_staff' if getattr(current_user, 'is_staff', False) else 'hotel_user'
 
-    # Log the rate update (for detailed audit)
+    # Pinned-provider tespiti OTORITERDIR; istemci girdisi ezemez (yalnizca okuma).
+    try:
+        from domains.channel_manager.unified_rate_manager_router import (
+            _detect_active_provider,
+        )
+        detection = await _detect_active_provider(current_user.tenant_id, prefer=None)
+    except Exception:
+        detection = {'provider': None, 'configuration_error': 'detection_failed'}
+    provider = detection.get('provider')
+    configuration_error = detection.get('configuration_error')
+    ari_status = 'recorded_local' if provider else 'not_configured'
+
+    # Fiyat niyetini yerel audit olarak kaydet (gercek kayit; uydurma push YOK).
     rate_log = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
         'channels': rate_update.get('channels', []),
-        'room_type': rate_update.get('room_type'),
-        'new_rate': rate_update.get('new_rate'),
-        'date_from': rate_update.get('date_from'),
-        'date_to': rate_update.get('date_to'),
+        'room_type': room_type,
+        'new_rate': new_rate,
+        'date_from': date_from,
+        'date_to': date_to,
         'updated_by': current_user.name,
         'updated_by_id': current_user.id,
         'initiator_type': initiator_type,
         'ip_address': ip_address,
-        'created_at': datetime.now(UTC).isoformat()
+        'provider': provider,
+        'ari_status': ari_status,
+        'configuration_error': configuration_error,
+        'created_at': datetime.now(UTC).isoformat(),
     }
-
     await db.rate_updates.insert_one(rate_log)
 
-    # Also push a summary entry to channel_sync_logs for UI sync history
-    sync_log = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'timestamp': datetime.now(UTC).isoformat(),
-        'channel': ','.join(rate_update.get('channels', [])) or 'multiple',
-        'sync_type': 'rates',
-        'status': 'success',
-        'duration_ms': rate_update.get('duration_ms', 0),
-        'records_synced': rate_update.get('records_synced', 0),
-        'error_message': None,
-        'initiator_type': initiator_type,
-        'initiator_name': current_user.name,
-        'initiator_id': current_user.id,
-        'ip_address': ip_address
-    }
-    await db.channel_sync_logs.insert_one(sync_log)
-
-    # Call Booking.com adapter in simulated mode if booking_com is selected
-    channels = rate_update.get('channels', []) or []
-    if 'booking_com' in channels:
-        connection = await db.channel_connections.find_one({
-            'tenant_id': current_user.tenant_id,
-            'channel_type': ChannelType.BOOKING_COM,
-        })
-        if connection:
-            adapter = BookingAdapter(connection)
-            # Simulate push (no real HTTP call yet)
-            await adapter.push_rates(rate_update)
+    if not provider:
+        return {
+            'message': 'Kanal saglayici yapilandirilmamis; fiyat gercek kanala gonderilmedi. Degisiklik yerel olarak kaydedildi.',
+            'data_available': False,
+            'queued': False,
+            'pushed': False,
+            'provider': None,
+            'configuration_error': configuration_error,
+            'channels_updated': 0,
+            'log_id': rate_log['id'],
+        }
 
     return {
-        'message': 'Rates updated successfully',
-        'channels_updated': len(rate_update.get('channels', [])),
-        'log_id': rate_log['id']
+        'message': 'Fiyat degisikligi yerel olarak kaydedildi. Gercek OTA dagitimi icin Toplu Fiyat/Envanter (Rate Manager) ekranini kullanin.',
+        'data_available': True,
+        'queued': False,
+        'pushed': False,
+        'provider': provider,
+        'channels_updated': 0,
+        'log_id': rate_log['id'],
     }
