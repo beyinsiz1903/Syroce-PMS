@@ -11,7 +11,7 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from pydantic import Field as _PydField
 
@@ -402,14 +402,55 @@ async def demand_forecast(
 # ── GET /predictions/complaint-risk/{guest_id} ──
 @router.get("/predictions/complaint-risk/{guest_id}")
 async def predict_complaint_risk(guest_id: str, current_user: User = Depends(get_current_user)):
-    """Predict complaint risk for a guest"""
-    # Mock implementation - returns risk score
+    """Misafir şikayet riski — gerçek geri bildirim geçmişinden hesaplanır.
+
+    Sabit (0.35) skor kaldırıldı. Sinyal: misafirin geçmiş olumsuz departman
+    geri bildirimleri (rating < 3). Geçmiş yoksa risk düşük + data_available:false.
+    """
+    guest = await db.guests.find_one({'id': guest_id, 'tenant_id': current_user.tenant_id})
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+
+    total_reviews = 0
+    negative_reviews = 0
+    async for r in db.department_feedback.find({
+        'guest_id': guest_id,
+        'tenant_id': current_user.tenant_id,
+    }):
+        total_reviews += 1
+        if r.get('rating', 5) < 3:
+            negative_reviews += 1
+
+    factors = []
+    raw = 0.0
+    if negative_reviews > 0:
+        raw += min(0.6, negative_reviews * 0.2)
+        factors.append(f'{negative_reviews} olumsuz geri bildirim')
+    if total_reviews >= 3 and (negative_reviews / total_reviews) >= 0.5:
+        raw += 0.2
+        factors.append('Olumsuz geri bildirim oranı yüksek')
+
+    risk_score = round(min(1.0, max(0.0, raw)), 2)
+    if risk_score >= 0.70:
+        risk_level = 'high'
+    elif risk_score >= 0.40:
+        risk_level = 'medium'
+    else:
+        risk_level = 'low'
+
+    recommendation = (
+        'Proaktif hizmet kurtarma önerilir' if risk_level != 'low'
+        else 'Standart hizmet yeterli'
+    )
+
     return {
         'guest_id': guest_id,
-        'risk_score': 0.35,
-        'risk_level': 'medium',
-        'factors': ['Previous complaint', 'Long wait time'],
-        'recommendation': 'Proactive service recovery recommended'
+        'risk_score': risk_score,
+        'risk_level': risk_level,
+        'factors': factors,
+        'reviews_analyzed': total_reviews,
+        'recommendation': recommendation,
+        'data_available': total_reviews > 0,
     }
 # ── POST /ai/predict-no-shows ──
 @router.post("/ai/predict-no-shows")

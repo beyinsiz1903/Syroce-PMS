@@ -310,20 +310,81 @@ router = APIRouter(prefix="/api", tags=["AI / ML"])
 # ── GET /guest-dna/{guest_id} ──
 @router.get("/guest-dna/{guest_id}")
 async def get_guest_dna_profile(guest_id: str, current_user: User = Depends(get_current_user)):
-    """Get comprehensive guest DNA profile"""
-    # Mock implementation
+    """Misafir DNA profili — gerçek rezervasyon/folio/geri bildirim verisinden.
+
+    Sabit profil kaldırıldı. Rezervasyon geçmişi yoksa fail-closed
+    (data_available:false). Uydurma personality_type/behavior_score üretilmez;
+    yalnızca gerçek veriden türetilen alanlar döner.
+    """
+    from collections import Counter
+
+    guest = await db.guests.find_one({'id': guest_id, 'tenant_id': current_user.tenant_id})
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+
+    bookings = []
+    async for b in db.bookings.find(
+        {'guest_id': guest_id, 'tenant_id': current_user.tenant_id}
+    ).sort('check_in', -1):
+        bookings.append(b)
+
+    if not bookings:
+        return {
+            'guest_id': guest_id,
+            'data_available': False,
+            'message': 'Bu misafir için rezervasyon geçmişi yok. Profil hesaplanamadı.',
+        }
+
+    total_spent = sum(b.get('total_amount', 0) or 0 for b in bookings)
+    num_bookings = len(bookings)
+    avg_spend = total_spent / num_bookings if num_bookings else 0
+
+    room_types = [b.get('room_type') for b in bookings if b.get('room_type')]
+    preferred_room_type = Counter(room_types).most_common(1)[0][0] if room_types else None
+
+    upsells_accepted = await db.folio_charges.count_documents({
+        'guest_id': guest_id,
+        'tenant_id': current_user.tenant_id,
+        'charge_category': {'$in': ['spa', 'upgrade', 'minibar']},
+    })
+
+    last_checkin = next((b.get('check_in') for b in bookings if b.get('check_in')), None)
+    churn_risk = 'unknown'
+    days_since_last = None
+    if last_checkin:
+        try:
+            last_dt = datetime.fromisoformat(last_checkin)
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=UTC)
+            days_since_last = (datetime.now(UTC) - last_dt).days
+            if days_since_last > 365:
+                churn_risk = 'high'
+            elif days_since_last > 180:
+                churn_risk = 'medium'
+            else:
+                churn_risk = 'low'
+        except (ValueError, TypeError):
+            churn_risk = 'unknown'
+
+    if avg_spend >= 500:
+        spending_pattern = 'High Value'
+    elif avg_spend >= 200:
+        spending_pattern = 'Medium Value'
+    else:
+        spending_pattern = 'Low Value'
+
     return {
         'guest_id': guest_id,
-        'personality_type': 'Business Traveler',
-        'spending_pattern': 'High Value',
-        'preferences': {
-            'room_type': 'Executive',
-            'floor': 'High',
-            'amenities': ['Gym', 'Business Center']
-        },
-        'behavior_score': 8.5,
-        'lifetime_value': 15000.0,
-        'churn_risk': 'low'
+        'data_available': True,
+        'total_bookings': num_bookings,
+        'lifetime_value': round(total_spent, 2),
+        'avg_booking_value': round(avg_spend, 2),
+        'spending_pattern': spending_pattern,
+        'upsells_accepted': upsells_accepted,
+        'preferred_room_type': preferred_room_type,
+        'last_stay': last_checkin,
+        'days_since_last_stay': days_since_last,
+        'churn_risk': churn_risk,
     }
 # ── POST /ai/guest-persona/analyze/{guest_id} ──
 @router.post("/ai/guest-persona/analyze/{guest_id}")

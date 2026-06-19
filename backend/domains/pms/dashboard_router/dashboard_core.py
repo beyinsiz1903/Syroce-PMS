@@ -9,7 +9,6 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import asyncio
 import logging
-import random
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -403,28 +402,20 @@ async def get_gm_forecast_summary(
     }).sort('date', 1).to_list(30)
 
     if not forecasts or len(forecasts) < 7:
-        # Generate forecast if not exists
-        total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-        if total_rooms == 0:
-            total_rooms = 40
-
-        forecasts = []
-        for days_ahead in range(30):
-            forecast_date = today + timedelta(days=days_ahead)
-            # Simple ML-inspired forecast
-            base_occupancy = 65
-            weekend_boost = 15 if forecast_date.weekday() in [4, 5] else 0
-            seasonal_factor = 10 if forecast_date.month in [6, 7, 8, 12] else 0
-
-            occupancy = min(95, base_occupancy + weekend_boost + seasonal_factor + random.randint(-5, 5))
-            demand_score = round(occupancy / 100 * total_rooms)
-
-            forecasts.append({
-                'date': forecast_date.isoformat(),
-                'predicted_occupancy': occupancy,
-                'predicted_demand': demand_score,
-                'confidence': 0.85
-            })
+        # Fail-closed: yeterli gerçek talep tahmini (demand_forecasts) yok.
+        # Rastgele/uydurma tahmin üretilmez.
+        return {
+            'period': {
+                'start': today.isoformat(),
+                'end': thirty_days.isoformat(),
+                'days': 30,
+            },
+            'data_available': False,
+            'message': 'Yeterli gerçek talep tahmini verisi yok (en az 7 gün gerekli). Tahmin üretilemedi.',
+            'summary': {},
+            'daily_forecast': [],
+            'alerts': [],
+        }
 
     # Calculate summary metrics
     avg_occupancy = sum(f.get('predicted_occupancy', 0) for f in forecasts) / len(forecasts) if forecasts else 0
@@ -561,24 +552,22 @@ async def get_employee_performance(
                 'staff_name': user_name,
                 'department': 'front_desk',
                 'total_checkins': 0,
-                'durations': []
             }
 
         fd_performance[user_id]['total_checkins'] += 1
-        # Simulated duration (in real system, track actual time)
-        fd_performance[user_id]['durations'].append(5)  # Average 5 minutes per check-in
+        # NOT: Check-in süresi tek timestamp olarak loglandığı için gerçek süre
+        # (başlangıç/bitiş) ölçülemiyor; uydurma süre eklenmez (fail-closed).
 
     fd_staff_performance = []
     for user_id, data in fd_performance.items():
-        if data['durations']:
-            avg_duration = sum(data['durations']) / len(data['durations'])
-            fd_staff_performance.append({
-                'staff_name': data['staff_name'],
-                'department': 'front_desk',
-                'total_checkins': data['total_checkins'],
-                'avg_checkin_duration_minutes': round(avg_duration, 1),
-                'efficiency_rating': 'Excellent' if avg_duration < 5 else 'Good' if avg_duration < 8 else 'Needs Improvement'
-            })
+        fd_staff_performance.append({
+            'staff_name': data['staff_name'],
+            'department': 'front_desk',
+            'total_checkins': data['total_checkins'],
+            'avg_checkin_duration_minutes': None,
+            'duration_data_available': False,
+            'efficiency_rating': None,
+        })
 
     # Combined performance
     all_performance = hk_performance + fd_staff_performance

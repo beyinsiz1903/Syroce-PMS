@@ -12,7 +12,6 @@ Extracted from server.py for modularity.
 import logging
 
 logger = logging.getLogger(__name__)
-import random
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -297,18 +296,34 @@ async def get_revenue_comprehensive_suggestions(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v83 DS: revenue manager pricing önerileri
 ):
-    """Revenue Manager comprehensive suggestions: pricing, min stay, CTA"""
+    """Revenue Manager comprehensive suggestions: pricing, min stay, CTA.
+
+    forecasted_occupancy gerçek rezervasyonlardan hesaplanır (rastgele varyasyon
+    kaldırıldı). Tanımlı oda yoksa fail-closed döner.
+    """
     today = datetime.now(UTC).date()
+
+    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+    if total_rooms == 0:
+        return {
+            'suggestions': [],
+            'data_available': False,
+            'message': 'Tanımlı oda yok. Doluluk tahmini hesaplanamadı.',
+        }
 
     suggestions = []
     for days_ahead in range(14):
         target_date = today + timedelta(days=days_ahead)
+        d_iso = target_date.isoformat()
 
-        # Forecast occupancy
-        base = 65
-        weekend_boost = 15 if target_date.weekday() in [4, 5] else 0
-        variation = random.randint(-8, 12)
-        occupancy = min(98, base + weekend_boost + variation)
+        # Gerçek doluluk: o gece aktif (check_in <= d < check_out) rezervasyonlar
+        occupied = await db.bookings.count_documents({
+            'tenant_id': current_user.tenant_id,
+            'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+            'check_in': {'$lte': d_iso},
+            'check_out': {'$gt': d_iso},
+        })
+        occupancy = round((occupied / total_rooms) * 100) if total_rooms else 0
 
         # Generate strategy
         if occupancy < 50:
@@ -519,9 +534,8 @@ async def get_it_system_info(current_user: User = Depends(get_current_user),
             ]
         },
         'performance_metrics': {
-            'avg_response_time': '< 200ms',
-            'concurrent_users': '100+',
-            'uptime': '99.5%'
+            'data_available': False,
+            'note': 'Gerçek performans izlemesi (APM) yapılandırılmamış; ölçüm verisi yok.',
         }
     }
 # ── GET /department/guest-relations/vip-notes ──
@@ -566,9 +580,8 @@ async def get_vip_notes(current_user: User = Depends(get_current_user),
             'trustpilot': {'enabled': False, 'status': 'not_configured'}
         },
         'complaint_tracking': {
-            'enabled': True,
-            'open_complaints': 0,
-            'avg_resolution_time': '24 hours'
+            'data_available': False,
+            'note': 'Şikayet takibi için gerçek veri kaynağı yapılandırılmamış.',
         }
     }
 # ── GET /ai/activity-feed ──
@@ -618,8 +631,6 @@ async def get_ai_activity_feed(
             'title': '💰 Price Optimization Opportunity',
             'message': f'High occupancy detected ({occupancy:.1f}%). Recommend increasing rates by 15-20% for next 3 days.',
             'action': 'adjust_pricing',
-            'confidence': 0.89,
-            'potential_revenue': round(total_rooms * 50 * 0.15, 2),
             'created_at': today.isoformat(),
             'status': 'active'
         })
@@ -631,8 +642,6 @@ async def get_ai_activity_feed(
             'title': '📉 Low Occupancy Alert',
             'message': f'Occupancy at {occupancy:.1f}%. Recommend promotional rates (-10%) and special packages.',
             'action': 'create_promotion',
-            'confidence': 0.85,
-            'potential_bookings': round(total_rooms * 0.2),
             'created_at': today.isoformat(),
             'status': 'active'
         })
@@ -667,7 +676,6 @@ async def get_ai_activity_feed(
             'message': f'{overbooking_count} room conflicts found in next 7 days. Immediate action required.',
             'action': 'resolve_conflicts',
             'conflicts': overbooking_count,
-            'confidence': 1.0,
             'created_at': today.isoformat(),
             'status': 'active'
         })
@@ -712,7 +720,6 @@ async def get_ai_activity_feed(
             'action': 'review_vip_list',
             'vip_count': len(vip_arrivals),
             'vips': vip_arrivals[:3],
-            'confidence': 1.0,
             'created_at': today.isoformat(),
             'status': 'active'
         })
@@ -759,7 +766,6 @@ async def get_ai_activity_feed(
                 'variance': round(variance, 1),
                 'today_revenue': round(today_revenue, 2),
                 'avg_revenue': round(avg_daily_revenue, 2),
-                'confidence': 0.92,
                 'created_at': today.isoformat(),
                 'status': 'active'
             })
@@ -774,7 +780,6 @@ async def get_ai_activity_feed(
             'message': f'{maintenance_due} rooms require scheduled maintenance. Prevent future issues with proactive maintenance.',
             'action': 'schedule_maintenance',
             'rooms_count': maintenance_due,
-            'confidence': 0.88,
             'created_at': today.isoformat(),
             'status': 'active'
         })
@@ -793,7 +798,6 @@ async def get_ai_activity_feed(
                 'trend': round(booking_trend, 1),
                 'this_week': week_bookings,
                 'last_week': prev_week_bookings,
-                'confidence': 0.83,
                 'created_at': today.isoformat(),
                 'status': 'active'
             })

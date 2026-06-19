@@ -8,7 +8,6 @@ Domain Router: Analytics
 
 Extracted from legacy_routes.py — GM Dashboard, pickup analysis, anomaly detection, revenue analytics.
 """
-import random
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -111,20 +110,15 @@ async def get_outlet_sales_breakdown(
     if not end_date:
         end_date = today.date().isoformat()
 
-    # Mock outlet data (in production, get from db.outlets)
-    outlet_sales = {
-        'Restaurant': {'sales': 0, 'orders': 0, 'avg_ticket': 0},
-        'Bar': {'sales': 0, 'orders': 0, 'avg_ticket': 0},
-        'Room Service': {'sales': 0, 'orders': 0, 'avg_ticket': 0},
-        'Poolside': {'sales': 0, 'orders': 0, 'avg_ticket': 0}
-    }
+    # Gerçek POS siparişlerinden outlet kırılımı; sabit/placeholder outlet üretilmez.
+    # Veri yoksa boş döner (fail-closed), uydurma kategori yok.
+    outlet_sales = {}
 
-    # Aggregate POS orders (mock logic)
     async for order in db.pos_orders.find({
         'tenant_id': current_user.tenant_id,
         'created_at': {'$gte': start_date, '$lte': end_date}
     }):
-        outlet = order.get('outlet_name', 'Restaurant')
+        outlet = order.get('outlet_name') or 'Bilinmeyen'
         if outlet not in outlet_sales:
             outlet_sales[outlet] = {'sales': 0, 'orders': 0, 'avg_ticket': 0}
 
@@ -144,7 +138,8 @@ async def get_outlet_sales_breakdown(
     return {
         'outlets': outlet_sales,
         'total_sales': round(total_sales, 2),
-        'period': {'start': start_date, 'end': end_date}
+        'period': {'start': start_date, 'end': end_date},
+        'data_available': len(outlet_sales) > 0,
     }
 # ── GET /pos/inventory-movements ──
 @router.get("/pos/inventory-movements")
@@ -172,26 +167,7 @@ async def get_inventory_movements(
         movement.pop('_id', None)
         movements.append(movement)
 
-    # Mock data if empty
-    if len(movements) == 0:
-        mock_items = ['Yumurta', 'Süt', 'Ekmek', 'Domates', 'Peynir']
-        mock_movements = []
-        for i, item in enumerate(mock_items):
-            mock_movements.append({
-                'id': str(uuid.uuid4()),
-                'tenant_id': current_user.tenant_id,
-                'item_id': f'item_{i}',
-                'item_name': item,
-                'movement_type': 'out' if i % 2 == 0 else 'in',
-                'quantity': random.randint(5, 50),
-                'unit': 'kg' if i < 3 else 'adet',
-                'reference': f'Order #{random.randint(1000, 9999)}',
-                'notes': 'Günlük kullanım' if i % 2 == 0 else 'Tedarikçi teslimatı',
-                'created_by': current_user.name,
-                'created_at': (datetime.now(UTC) - timedelta(hours=i*2)).isoformat()
-            })
-        movements = mock_movements
-
+    # Boşsa sahte hareket üretilmez; gerçek veri yoksa boş döner (fail-closed).
     return {
         'movements': movements,
         'count': len(movements)
@@ -222,15 +198,15 @@ async def create_inventory_movement(
 
     await db.inventory_movements.insert_one(movement)
 
-    # Update item stock
+    # Update item stock (tenant-scoped: cross-tenant stok yazımını engeller)
     if movement['movement_type'] == 'in':
         await db.inventory_items.update_one(
-            {'id': movement['item_id']},
+            {'id': movement['item_id'], 'tenant_id': current_user.tenant_id},
             {'$inc': {'stock': movement['quantity']}}
         )
     else:
         await db.inventory_items.update_one(
-            {'id': movement['item_id']},
+            {'id': movement['item_id'], 'tenant_id': current_user.tenant_id},
             {'$inc': {'stock': -movement['quantity']}}
         )
 

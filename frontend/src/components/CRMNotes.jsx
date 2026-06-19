@@ -26,23 +26,8 @@ const CRMNotes = ({ guestId }) => {
       setNotes(response.data.notes || []);
     } catch (error) {
       console.error('Failed to load notes:', error);
-      // Mock data for demo
-      setNotes([
-        {
-          id: '1',
-          content: 'Misafir yüksek kattaki odaları tercih ediyor',
-          created_by: 'Ayşe Yılmaz',
-          created_at: new Date().toISOString(),
-          category: 'preference'
-        },
-        {
-          id: '2',
-          content: 'Allergisi var, yastık seçimine dikkat',
-          created_by: 'Mehmet Kaya',
-          created_at: new Date(Date.now() - 86400000).toISOString(),
-          category: 'health'
-        }
-      ]);
+      setNotes([]);
+      toast.error('Notlar yüklenemedi');
     } finally {
       setLoading(false);
     }

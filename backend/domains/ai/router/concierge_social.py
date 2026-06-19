@@ -316,31 +316,34 @@ async def ai_whatsapp_concierge(
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("ai_whatsapp")),
 ):
-    """AI WhatsApp Concierge - Otomatik misafir hizmeti"""
+    """AI WhatsApp Concierge - otomatik misafir yanıtı.
+
+    Fail-closed: gerçek bir AI yanıt motoru (LLM) yapılandırılmadığı için
+    sabit/sahte yanıt üretilmez. Gelen mesaj kaydedilir, ai_response boş kalır.
+    """
     # Support both phone and guest_phone
-    phone = message_data.get('phone') or message_data.get('guest_phone', '+905551234567')
+    phone = message_data.get('phone') or message_data.get('guest_phone')
     message = message_data.get('message', '')
 
-    # Mock AI response
-    result = {
-        'response': 'Havuzumuz 08:00-20:00 saatleri arasinda aciktir. Iyi gunler!',
-        'action': 'pool_hours_info',
-        'confidence': 0.95
-    }
-
-    # Save conversation
+    # Gelen mesajı kaydet (yanıt üretilemedi)
     conversation = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
         'phone': phone,
         'user_message': message,
-        'ai_response': result['response'],
-        'action_taken': result.get('action'),
-        'created_at': datetime.now(UTC).isoformat()
+        'ai_response': None,
+        'action_taken': None,
+        'answered': False,
+        'created_at': datetime.now(UTC).isoformat(),
     }
     await db.ai_conversations.insert_one(conversation)
 
-    return result
+    return {
+        'response': None,
+        'action': None,
+        'data_available': False,
+        'message': 'AI yanıt motoru (LLM) yapılandırılmamış. Otomatik yanıt üretilemedi.',
+    }
 # ── GET /ai-concierge/conversations ──
 @router.get("/ai-concierge/conversations")
 async def get_ai_conversations(
@@ -365,7 +368,12 @@ async def get_social_mentions(hours: int = 24, current_user: User = Depends(get_
     from domains.ai.social_media_radar import get_social_radar
     radar = get_social_radar(db)
     mentions = await radar.scan_mentions(current_user.tenant_id, hours)
-    return {'mentions': mentions, 'total': len(mentions)}
+    return {
+        'mentions': mentions,
+        'total': len(mentions),
+        'data_available': False,
+        'message': 'Sosyal medya entegrasyonu yapılandırılmamış. Veri yok.',
+    }
 # ── GET /social-media/sentiment ──
 @router.get("/social-media/sentiment")
 async def get_sentiment_summary(days: int = 7, current_user: User = Depends(get_current_user)):
@@ -381,4 +389,9 @@ async def get_crisis_alerts(current_user: User = Depends(get_current_user)):
     from domains.ai.social_media_radar import get_social_radar
     radar = get_social_radar(db)
     alerts = await radar.detect_crisis(current_user.tenant_id)
-    return {'alerts': alerts, 'crisis_detected': len(alerts) > 0}
+    return {
+        'alerts': alerts,
+        'crisis_detected': len(alerts) > 0,
+        'data_available': False,
+        'message': 'Sosyal medya entegrasyonu yapılandırılmamış. Veri yok.',
+    }

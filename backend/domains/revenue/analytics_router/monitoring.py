@@ -8,9 +8,8 @@ Domain Router: Analytics
 
 Extracted from legacy_routes.py — GM Dashboard, pickup analysis, anomaly detection, revenue analytics.
 """
-import random
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -108,28 +107,13 @@ async def get_api_metrics(
     if not _is_super_admin(current_user) and current_user.role not in ['admin', 'it_manager', 'super_admin']:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # Mock API metrics (in production, collect from actual monitoring)
-    now = datetime.now(UTC)
-    metrics = []
-
-    for i in range(24):
-        timestamp = now - timedelta(hours=23-i)
-        metrics.append({
-            'timestamp': timestamp.isoformat(),
-            'avg_response_time': round(50 + (i % 5) * 10 + random.uniform(-10, 10), 2),
-            'requests_per_minute': 120 + random.randint(-20, 20),
-            'error_rate': round(random.uniform(0.5, 2.5), 2),
-            'success_rate': round(100 - random.uniform(0.5, 2.5), 2)
-        })
-
+    # Fail-closed: gerçek APM/metrics toplama (Prometheus vb.) yapılandırılmamış.
+    # Sahte/rastgele metrik üretilmez.
     return {
-        'metrics': metrics,
-        'summary': {
-            'avg_response_time': round(sum(m['avg_response_time'] for m in metrics) / len(metrics), 2),
-            'total_requests': sum(m['requests_per_minute'] for m in metrics) * 60,
-            'avg_error_rate': round(sum(m['error_rate'] for m in metrics) / len(metrics), 2),
-            'uptime_percentage': 99.8
-        }
+        'metrics': [],
+        'summary': {},
+        'data_available': False,
+        'message': 'API performans metrikleri için gerçek izleme (APM) yapılandırılmamış. Veri yok.',
     }
 # ── GET /monitoring/system-health ──
 @router.get("/monitoring/system-health")
@@ -187,32 +171,37 @@ async def get_system_health_detailed(
             'message': 'Unable to collect system metrics'
         }
 
-    # Check database connection
+    # Veritabanı bağlantısı — gerçek ping süresi ölçülür.
     try:
+        _t0 = time.perf_counter()
         await db.command('ping')
+        db_response_time = round((time.perf_counter() - _t0) * 1000, 1)
         db_status = 'operational'
-        db_response_time = 5  # Mock
     except Exception:
         db_status = 'error'
-        db_response_time = 0
+        db_response_time = None
 
-    # Service statuses
+    # Servis durumları: yalnızca veritabanı gerçek ölçülür. Diğer servisler için
+    # gerçek uptime/yanıt-süresi izlemesi yapılandırılmadığından uydurma değer
+    # döndürülmez (fail-closed).
     services = {
-        'pms': {'status': 'operational', 'response_time': 45, 'uptime': 99.9},
-        'pos': {'status': 'operational', 'response_time': 38, 'uptime': 99.7},
-        'channel_manager': {'status': 'operational', 'response_time': 120, 'uptime': 99.5},
-        'database': {'status': db_status, 'response_time': db_response_time, 'uptime': 99.95},
-        'api_gateway': {'status': 'operational', 'response_time': 15, 'uptime': 99.99}
+        'database': {'status': db_status, 'response_time_ms': db_response_time},
     }
 
-    # Calculate overall health score
-    operational_count = sum(1 for s in services.values() if s['status'] == 'operational')
-    health_score = (operational_count / len(services)) * 100
+    # Sağlık skoru: gerçek sistem (cpu/mem/disk) + db sinyallerinden hesaplanır.
+    signals = []
+    if isinstance(system_info, dict) and 'cpu' in system_info:
+        signals.append(system_info['cpu']['status'] == 'healthy')
+        signals.append(system_info['memory']['status'] == 'healthy')
+        signals.append(system_info['disk']['status'] == 'healthy')
+    signals.append(db_status == 'operational')
+    health_score = round((sum(1 for s in signals if s) / len(signals)) * 100, 1) if signals else 0
 
     payload = {
         'system': system_info,
         'services': services,
-        'health_score': round(health_score, 1),
+        'services_note': 'Servis-bazlı uptime/yanıt-süresi izlemesi yapılandırılmamış; yalnızca veritabanı gerçek ölçülür.',
+        'health_score': health_score,
         'timestamp': datetime.now(UTC).isoformat()
     }
     _SYSTEM_HEALTH_CACHE["ts"] = now
@@ -223,45 +212,42 @@ async def get_system_health_detailed(
 async def get_alert_thresholds(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    """Get configured alert thresholds"""
+    """Get configured alert thresholds.
+
+    warning/critical değerleri yapılandırmadır. 'current' değerleri yalnızca
+    gerçek ölçüm kaynağı olan metrikler için doldurulur (cpu/mem/disk = psutil);
+    APM gerektirenler (api_response_time/error_rate/database_connections) için
+    gerçek kaynak yok → current=null (fail-closed, sahte değer yok).
+    """
     await get_current_user(credentials)
 
+    import psutil
+    try:
+        cpu_cur = psutil.cpu_percent(interval=None)
+        mem_cur = psutil.virtual_memory().percent
+        disk_cur = psutil.disk_usage('/').percent
+    except Exception:
+        cpu_cur = mem_cur = disk_cur = None
+
     thresholds = {
-        'api_response_time': {
-            'warning': 200,  # ms
-            'critical': 500,
-            'current': 65
-        },
-        'error_rate': {
-            'warning': 2.0,  # percent
-            'critical': 5.0,
-            'current': 1.2
-        },
-        'cpu_usage': {
-            'warning': 80,  # percent
-            'critical': 95,
-            'current': 45
-        },
-        'memory_usage': {
-            'warning': 80,
-            'critical': 95,
-            'current': 62
-        },
-        'disk_usage': {
-            'warning': 85,
-            'critical': 95,
-            'current': 58
-        },
-        'database_connections': {
-            'warning': 80,
-            'critical': 95,
-            'current': 35
-        }
+        'api_response_time': {'warning': 200, 'critical': 500, 'current': None},
+        'error_rate': {'warning': 2.0, 'critical': 5.0, 'current': None},
+        'cpu_usage': {'warning': 80, 'critical': 95, 'current': cpu_cur},
+        'memory_usage': {'warning': 80, 'critical': 95, 'current': mem_cur},
+        'disk_usage': {'warning': 85, 'critical': 95, 'current': disk_cur},
+        'database_connections': {'warning': 80, 'critical': 95, 'current': None},
     }
+
+    triggered = 0
+    for key in ('cpu_usage', 'memory_usage', 'disk_usage'):
+        cur = thresholds[key]['current']
+        if cur is not None and cur >= thresholds[key]['warning']:
+            triggered += 1
 
     return {
         'thresholds': thresholds,
-        'alerts_triggered': 0
+        'alerts_triggered': triggered,
+        'note': 'API yanıt süresi, hata oranı ve DB bağlantı sayısı için gerçek ölçüm kaynağı yok (current=null).',
     }
 # ── POST /monitoring/set-threshold ──
 @router.post("/monitoring/set-threshold")

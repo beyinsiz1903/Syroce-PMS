@@ -105,11 +105,13 @@ async def get_ai_room_assignment(
         staff_data['staff_list']
     )
 
+    estimates = [a['estimated_minutes'] for a in assignments if a.get('estimated_minutes') is not None]
     return {
         'success': True,
         'assignments': assignments,
         'total_rooms': len(assignments),
-        'total_estimated_time': sum([a['estimated_minutes'] for a in assignments])
+        'total_estimated_time': sum(estimates),
+        'estimate_data_available': len(estimates) > 0,
     }
 
 
@@ -124,7 +126,7 @@ async def predict_cleaning_time_simple(
     from domains.pms.housekeeping_ai import get_housekeeping_ai
 
     ai = get_housekeeping_ai(db)
-    prediction = await ai.predict_cleaning_time(room_type, staff_id)
+    prediction = await ai.predict_cleaning_time(current_user.tenant_id, room_type, staff_id)
 
     return prediction
 
