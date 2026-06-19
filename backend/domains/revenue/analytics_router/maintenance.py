@@ -378,41 +378,22 @@ async def get_maintenance_calendar(
     if not month:
         month = datetime.now(UTC).strftime('%Y-%m')
 
-    # Get scheduled maintenance tasks
-    year, m = month.split('-')
-    next_month = int(m) + 1
-    if next_month > 12:
-        next_month = 1
-        str(int(year) + 1)
-
-    calendar_items = []
-
-    # Mock routine maintenance schedule
-    routine_tasks = [
-        {'task': 'HVAC Filtre Değişimi', 'frequency': 'monthly', 'day': 5, 'duration': '2h'},
-        {'task': 'Elektrik Panosu Kontrolü', 'frequency': 'monthly', 'day': 10, 'duration': '3h'},
-        {'task': 'Yangın Alarm Testi', 'frequency': 'monthly', 'day': 15, 'duration': '1h'},
-        {'task': 'Asansör Bakımı', 'frequency': 'monthly', 'day': 20, 'duration': '4h'},
-        {'task': 'Su Tesisatı Kontrolü', 'frequency': 'monthly', 'day': 25, 'duration': '3h'}
-    ]
-
-    for task in routine_tasks:
-        calendar_items.append({
-            'id': str(uuid.uuid4()),
+    # Gercek planli bakim kayitlari `maintenance_schedule` koleksiyonunda tutulur
+    # (POST /maintenance/schedule-routine ile yazilir). Uydurma sabit takvim
+    # uretmek yerine tenant'a ait gercek kayitlari ay bazinda sorgula.
+    calendar_items = await db.maintenance_schedule.find(
+        {
             'tenant_id': current_user.tenant_id,
-            'task_name': task['task'],
-            'task_type': 'routine',
-            'scheduled_date': f"{month}-{task['day']:02d}",
-            'frequency': task['frequency'],
-            'estimated_duration': task['duration'],
-            'status': 'scheduled',
-            'assigned_to': 'Maintenance Team'
-        })
+            'scheduled_date': {'$regex': f'^{month}'},
+        },
+        {'_id': 0},
+    ).sort('scheduled_date', 1).to_list(length=None)
 
     return {
         'calendar': calendar_items,
         'month': month,
-        'total_tasks': len(calendar_items)
+        'total_tasks': len(calendar_items),
+        'data_available': bool(calendar_items),
     }
 # ── POST /maintenance/schedule-routine ──
 @router.post("/maintenance/schedule-routine")

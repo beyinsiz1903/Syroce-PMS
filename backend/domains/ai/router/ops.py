@@ -367,7 +367,7 @@ async def analyze_predictive_maintenance(
         rooms.append(room)
 
     # Get maintenance history
-    for room in rooms[:5]:  # Analyze first 5 rooms for demo
+    for room in rooms:
         room_id = room.get('id')
         room_number = room.get('room_number')
 
@@ -390,19 +390,17 @@ async def analyze_predictive_maintenance(
                 room_id=room_id,
                 equipment_type='hvac',
                 severity='high',
-                prediction=f'AC unit in room {room_number} showing failure pattern',
+                prediction=f'AC unit in room {room_number} showing recurring issue pattern',
                 indicators=[
-                    f'{len(hvac_issues)} AC service calls in last 90 days',
-                    'Same error code reported 3 times',
-                    'Temperature fluctuation detected',
-                    'Compressor vibration increased by 15%'
+                    f'{len(hvac_issues)} AC/HVAC issue(s) recorded in maintenance history',
                 ],
                 recommended_action='Schedule preventive maintenance - compressor inspection',
-                estimated_failure_days=7
+                estimated_failure_days=0
             )
 
             alert_dict = alert.model_dump()
             alert_dict['created_at'] = alert_dict['created_at'].isoformat()
+            alert_dict['status'] = 'pending'
             await db.predictive_maintenance_alerts.insert_one(alert_dict)
             alerts.append(alert_dict)
 
@@ -426,16 +424,15 @@ async def analyze_predictive_maintenance(
                 severity='medium',
                 prediction=f'Potential leak risk in room {room_number}',
                 indicators=[
-                    'Water pressure fluctuation',
-                    'Previous leak repair 45 days ago',
-                    'Bathroom humidity elevated'
+                    f'{len(plumbing_issues)} leak/water issue(s) recorded in maintenance history',
                 ],
                 recommended_action='Inspect pipes and seals',
-                estimated_failure_days=14
+                estimated_failure_days=0
             )
 
             alert_dict = alert.model_dump()
             alert_dict['created_at'] = alert_dict['created_at'].isoformat()
+            alert_dict['status'] = 'pending'
             await db.predictive_maintenance_alerts.insert_one(alert_dict)
             alerts.append(alert_dict)
 
@@ -447,7 +444,9 @@ async def analyze_predictive_maintenance(
         'medium_priority': sum(1 for a in alerts if a.get('severity') == 'medium'),
         'alerts': alerts,
         'summary': f'{len(alerts)} potential failures predicted - proactive maintenance scheduled',
-        'cost_savings_estimate': f'${len(alerts) * 500} (prevented emergency repairs)'
+        # Gercek maliyet/tasarruf kaynagi entegre degil; uydurma rakam raporlanmaz.
+        'cost_savings_estimate': None,
+        'data_available': True,
     }
 # ── GET /ai/predictive-maintenance/dashboard ──
 @router.get("/ai/predictive-maintenance/dashboard")
@@ -460,7 +459,7 @@ async def get_predictive_maintenance_dashboard(
         'tenant_id': current_user.tenant_id,
         'status': 'pending'
     }).sort('severity', -1):
-        room = await db.rooms.find_one({'id': alert.get('room_id')})
+        room = await db.rooms.find_one({'id': alert.get('room_id'), 'tenant_id': current_user.tenant_id})
         alerts.append({
             'alert_id': alert.get('id'),
             'room_number': room.get('room_number') if room else 'Unknown',
@@ -500,7 +499,7 @@ async def ai_housekeeping_smart_scheduler(
         'check_out': {'$gte': date},
         'status': {'$in': ['confirmed', 'checked_in']}
     }):
-        occupied_rooms.append(booking.get('room_id'))
+        occupied_rooms.append({'room_id': booking.get('room_id')})
 
     # 2. Check-outs today (require deep cleaning)
     checkout_today = []
@@ -509,7 +508,7 @@ async def ai_housekeeping_smart_scheduler(
         'check_out': date,
         'status': 'checked_in'
     }):
-        checkout_today.append(booking.get('room_id'))
+        checkout_today.append({'room_id': booking.get('room_id')})
 
     # 3. Get available HK staff
     hk_staff = []
@@ -521,12 +520,35 @@ async def ai_housekeeping_smart_scheduler(
         hk_staff.append(user)
 
     if not hk_staff:
-        # Create simulated staff for demo
-        hk_staff = [
-            {'id': '1', 'name': 'Maria'},
-            {'id': '2', 'name': 'Elena'},
-            {'id': '3', 'name': 'Sofia'}
-        ]
+        # Gercek aktif kat hizmetleri personeli yok: uydurma personel uretip
+        # sahte gorev olusturmak yerine fail-closed don. Forecast alanlari
+        # gercek rezervasyon verisinden gelir, korunur.
+        total_rooms_to_clean = len(occupied_rooms) + len(checkout_today)
+        return {
+            'date': date,
+            'data_available': False,
+            'forecast': {
+                'occupied_rooms': len(occupied_rooms),
+                'checkout_rooms': len(checkout_today),
+                'total_rooms_to_clean': total_rooms_to_clean,
+            },
+            'staffing': {
+                'available_staff': 0,
+                'total_available_hours': 0,
+                'required_hours': 0,
+                'capacity_utilization': 0,
+                'status': 'Personel yok',
+            },
+            'ai_schedule': {
+                'tasks_per_staff': 0,
+                'workload_balanced': False,
+                'staff_assignments': [],
+            },
+            'recommendations': [
+                'Aktif kat hizmetleri personeli bulunamadi; otomatik plan olusturulamadi.',
+            ],
+            'message': 'Aktif kat hizmetleri personeli bulunamadigi icin otomatik plan olusturulamadi.',
+        }
 
     staff_count = len(hk_staff)
 
@@ -594,6 +616,7 @@ async def ai_housekeeping_smart_scheduler(
 
     return {
         'date': date,
+        'data_available': True,
         'forecast': {
             'occupied_rooms': len(occupied_rooms),
             'checkout_rooms': len(checkout_today),

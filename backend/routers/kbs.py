@@ -431,7 +431,7 @@ async def _build_payload_snapshot(
         "check_in": booking.get("check_in", ""),
         "check_out": booking.get("check_out", ""),
         "nationality": guest.get("nationality")
-            or booking.get("guest_nationality") or "TC",
+            or booking.get("guest_nationality") or "",
         "id_number": guest.get("id_number", ""),
         "passport_number": guest.get("passport_number", ""),
         "birth_date": guest.get("birth_date", ""),
