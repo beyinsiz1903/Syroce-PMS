@@ -28,7 +28,13 @@ export default async function globalTeardown() {
     const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
     const tokens = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf-8'));
 
-    const api = await request.newContext({ baseURL: state.base_url, ignoreHTTPSErrors: true, timeout: 60_000 });
+    // CI-observed: cleanup sweeps ~30 collections by prefix and takes ~54s on the
+    // deploy Atlas tier (cost is index-less per-collection scans, not delete I/O).
+    // The old 60s budget left no margin, so the idempotent cleanup#2 verify
+    // intermittently timed out and reddened CI even though all tests passed. Give
+    // both cleanup posts ample headroom — the idempotency invariant is still
+    // asserted below, it just no longer races a too-tight clock.
+    const api = await request.newContext({ baseURL: state.base_url, ignoreHTTPSErrors: true, timeout: 200_000 });
     const log = { started_at: new Date().toISOString(), data_prefix: state.data_prefix, steps: [] };
 
     // NOTE: /api/admin/stress/* require_super_admin → pilot bearer kullanılır.
@@ -37,7 +43,7 @@ export default async function globalTeardown() {
         headers: { Authorization: `Bearer ${tokens.pilot_token}` },
         data: { target_tenant_id: state.stress_tid, data_prefix: state.data_prefix },
         failOnStatusCode: false,
-        timeout: 60_000,
+        timeout: 180_000,
     });
     const c1body = c1.ok() ? await c1.json() : { error: await c1.text().catch(() => '') };
     log.steps.push({ name: 'cleanup#1', status: c1.status(), body: c1body });
@@ -53,10 +59,17 @@ export default async function globalTeardown() {
         headers: { Authorization: `Bearer ${tokens.pilot_token}` },
         data: { target_tenant_id: state.stress_tid, data_prefix: state.data_prefix },
         failOnStatusCode: false,
-        timeout: 60_000,
+        timeout: 180_000,
     });
     const c2body = c2.ok() ? await c2.json() : { error: await c2.text().catch(() => '') };
-    const idempotent = c2.ok() && Object.values(c2body.deleted_counts || {}).every((v) => v === 0);
+    // Idempotency must be POSITIVELY proven: a response that omits `deleted_counts`
+    // would make `every(...)` vacuously true (fake-green). Require a non-empty
+    // counts object AND every value === 0.
+    const c2counts = (c2body && typeof c2body.deleted_counts === 'object' && c2body.deleted_counts) || null;
+    const idempotent = c2.ok()
+        && c2counts !== null
+        && Object.keys(c2counts).length > 0
+        && Object.values(c2counts).every((v) => v === 0);
     log.steps.push({ name: 'cleanup#2_idempotent', status: c2.status(), idempotent, body: c2body });
     console.log(`[stress-teardown] ${idempotent ? '✅' : '❌ P1:'} cleanup#2 idempotent=${idempotent}`);
 
