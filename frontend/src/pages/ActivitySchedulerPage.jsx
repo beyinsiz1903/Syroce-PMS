@@ -71,9 +71,9 @@ export default function ActivitySchedulerPage() {
     setLoading(true);
     try {
       const [a, r, b] = await Promise.all([
-        api.get("/api/activities"),
-        api.get("/api/activities/resources"),
-        api.get("/api/activities/bookings", { params: { date } }),
+        api.get("/activities"),
+        api.get("/activities/resources"),
+        api.get("/activities/bookings", { params: { date } }),
       ]);
       setActivities(a.data || []);
       setResources(r.data || []);
@@ -87,7 +87,7 @@ export default function ActivitySchedulerPage() {
   const addActivity = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/api/activities", {
+      await api.post("/activities", {
         ...actForm,
         duration_min: Number(actForm.duration_min),
         price: Number(actForm.price),
@@ -102,7 +102,7 @@ export default function ActivitySchedulerPage() {
   const addResource = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/api/activities/resources", {
+      await api.post("/activities/resources", {
         ...resForm,
         capacity: Number(resForm.capacity),
         activity_types: resForm.activity_types.split(",").map((s) => s.trim()).filter(Boolean),
@@ -126,7 +126,7 @@ export default function ActivitySchedulerPage() {
     if (!cancelTarget) return;
     setCancelling(true);
     try {
-      await api.post(`/api/activities/bookings/${cancelTarget.id}/cancel`);
+      await api.post(`/activities/bookings/${cancelTarget.id}/cancel`);
       toast({ title: "Rezervasyon iptal edildi" });
       setCancelTarget(null);
       load();
@@ -141,7 +141,7 @@ export default function ActivitySchedulerPage() {
     }
     setSubmittingBk(true);
     try {
-      await api.post("/api/activities/bookings", bkForm);
+      await api.post("/activities/bookings", bkForm);
       toast({ title: "Rezervasyon oluşturuldu" });
       setBookingOpen(false);
       setBkForm({ activity_id: "", resource_id: "", guest_id: "", starts_at: "", note: "" });

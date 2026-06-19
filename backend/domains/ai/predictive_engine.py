@@ -82,7 +82,9 @@ class PredictiveEngine:
     async def predict_demand(self, tenant_id: str, days_ahead: int = 30) -> list[dict]:
         """Talep tahmini (kural bazlı, deterministik).
 
-        Doluluk = max(taban[hafta sonu] + sezon, gerçek on-the-books doluluk).
+        Doluluk = gerçek on-the-books doluluk × şeffaf pickup beklentisi
+        (ileri tarih için +%1.5/gün, +%60 tavan). Uydurma taban YOK; OTB=0 => 0.
+        Fiyat önerisi gerçek ortalama oda taban fiyatından türetilir (sabit 100 değil).
         Rastgelelik yoktur; aynı veri her zaman aynı sonucu verir.
         """
         import asyncio as _asyncio
@@ -91,6 +93,16 @@ class PredictiveEngine:
         target_dates = [today + timedelta(days=i) for i in range(days_ahead)]
 
         total_rooms = await self.db.rooms.count_documents({'tenant_id': tenant_id})
+
+        # Gerçek ortalama oda taban fiyatı (uydurma sabit 100 yerine). Veri yoksa None.
+        _price_agg = await self.db.rooms.aggregate([
+            {'$match': {'tenant_id': tenant_id, 'base_price': {'$gt': 0}}},
+            {'$group': {'_id': None, 'avg': {'$avg': '$base_price'}}},
+        ]).to_list(1)
+        avg_base_price = (
+            round(float(_price_agg[0]['avg']), 2)
+            if _price_agg and _price_agg[0].get('avg') else None
+        )
 
         # Gerçek on-the-books doluluk: her tarih için o tarihte konaklayan rezervasyonlar.
         async def _booked_on(d):
@@ -108,43 +120,43 @@ class PredictiveEngine:
         for i, target_date in enumerate(target_dates):
             day_of_week = target_date.weekday()
 
-            # Taban (hafta sonu) + sezon
-            base_occupancy = 75 if day_of_week >= 4 else 60
-            seasonal = 10 if target_date.month in [6, 7, 8, 12] else 0
-            baseline = min(95, base_occupancy + seasonal)
+            # Gerçek on-the-books doluluk (uydurma taban YOK).
+            otb = (booked_counts[i] / total_rooms * 100) if total_rooms > 0 else 0.0
 
-            # Gerçek on-the-books doluluk
-            otb = (booked_counts[i] / total_rooms * 100) if total_rooms > 0 else 0
+            # Şeffaf pickup beklentisi: ileri tarihte henüz gelmemiş rezervasyonlar için
+            # GERÇEK OTB üzerine artış (forecast_router ile tutarlı). OTB=0 => tahmin 0.
+            days_out = i
+            pickup_mult = 1.0 + min(max(days_out, 0) * 0.015, 0.6)
+            occupancy_forecast = min(100.0, otb * pickup_mult)
 
-            # Tahmin = taban ile gerçek on-the-books'un yükseği (deterministik)
-            occupancy_forecast = max(baseline, otb)
-            occupancy_forecast = max(20, min(95, occupancy_forecast))  # Clamp 20-95
-
-            # Demand level
+            # Demand level (gerçek OTB temelli tahminden)
             demand_level = 'very_high' if occupancy_forecast > 85 else 'high' if occupancy_forecast > 70 else 'medium' if occupancy_forecast > 50 else 'low'
 
-            # Price recommendation (kural bazlı)
-            base_price = 100
-            if demand_level == 'very_high':
-                recommended_price = base_price * 1.3
-                applied_rule = 'Cok yuksek talep -> +%30'
-            elif demand_level == 'high':
-                recommended_price = base_price * 1.15
-                applied_rule = 'Yuksek talep -> +%15'
-            elif demand_level == 'medium':
-                recommended_price = base_price
-                applied_rule = 'Orta talep -> degisiklik yok'
+            # Fiyat önerisi GERÇEK ortalama taban fiyattan türetilir; veri yoksa None.
+            if avg_base_price:
+                if demand_level == 'very_high':
+                    recommended_price = round(avg_base_price * 1.3, 2)
+                    applied_rule = 'Cok yuksek talep -> +%30'
+                elif demand_level == 'high':
+                    recommended_price = round(avg_base_price * 1.15, 2)
+                    applied_rule = 'Yuksek talep -> +%15'
+                elif demand_level == 'medium':
+                    recommended_price = round(avg_base_price, 2)
+                    applied_rule = 'Orta talep -> degisiklik yok'
+                else:
+                    recommended_price = round(avg_base_price * 0.85, 2)
+                    applied_rule = 'Dusuk talep -> -%15'
             else:
-                recommended_price = base_price * 0.85
-                applied_rule = 'Dusuk talep -> -%15'
+                recommended_price = None
+                applied_rule = 'Taban fiyat verisi yok -> oneri yapilamadi'
 
             predictions.append({
                 'date': target_date.isoformat(),
                 'day_of_week': ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'][day_of_week],
                 'occupancy_forecast': round(occupancy_forecast, 1),
                 'demand_level': demand_level,
-                'recommended_price': round(recommended_price, 2),
-                'pricing_method': 'rule_based_deterministic',
+                'recommended_price': recommended_price,
+                'pricing_method': 'rule_based_otb_pickup',
                 'applied_rule': applied_rule,
             })
 

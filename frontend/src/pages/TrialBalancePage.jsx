@@ -78,7 +78,7 @@ export default function TrialBalancePage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get("/api/trial-balance", { params: { date } });
+      const r = await api.get("/trial-balance", { params: { date } });
       setData(r.data);
     } catch (e) {
       toast({

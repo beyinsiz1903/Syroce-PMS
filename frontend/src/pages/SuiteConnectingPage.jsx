@@ -56,9 +56,9 @@ export default function SuiteConnectingPage() {
     setLoading(true);
     try {
       const [r1, r2, r3] = await Promise.all([
-        api.get("/api/rooms").catch(() => ({ data: [] })),
-        api.get("/api/suite-connecting/suites"),
-        api.get("/api/suite-connecting/connecting"),
+        api.get("/pms/rooms").catch(() => ({ data: [] })),
+        api.get("/suite-connecting/suites"),
+        api.get("/suite-connecting/connecting"),
       ]);
       const roomList = Array.isArray(r1.data) ? r1.data : (r1.data?.items || []);
       setRooms(roomList);
@@ -91,7 +91,7 @@ export default function SuiteConnectingPage() {
     }
     setSubmitting(true);
     try {
-      await api.post("/api/suite-connecting/suites", {
+      await api.post("/suite-connecting/suites", {
         ...suiteForm,
         description: suiteForm.description || null,
       });
@@ -106,7 +106,7 @@ export default function SuiteConnectingPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await api.post("/api/suite-connecting/connecting", {
+      await api.post("/suite-connecting/connecting", {
         ...pairForm,
         note: pairForm.note || null,
       });
@@ -120,7 +120,7 @@ export default function SuiteConnectingPage() {
   const confirmDeleteSuite = async () => {
     if (!deleteSuite) return;
     try {
-      await api.delete(`/api/suite-connecting/suites/${deleteSuite.id}`);
+      await api.delete(`/suite-connecting/suites/${deleteSuite.id}`);
       toast({ title: "Suite silindi" });
       setDeleteSuite(null);
       loadAll();
@@ -130,7 +130,7 @@ export default function SuiteConnectingPage() {
   const confirmDeletePair = async () => {
     if (!deletePair) return;
     try {
-      await api.delete(`/api/suite-connecting/connecting/${deletePair.id}`);
+      await api.delete(`/suite-connecting/connecting/${deletePair.id}`);
       toast({ title: "Bağlantı silindi" });
       setDeletePair(null);
       loadAll();

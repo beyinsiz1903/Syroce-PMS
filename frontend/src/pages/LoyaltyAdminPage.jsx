@@ -14,9 +14,9 @@ export default function LoyaltyAdminPage() {
   const reload = async () => {
     try {
       const [t, m, r] = await Promise.all([
-        api.get("/api/loyalty/tiers"),
-        api.get("/api/loyalty/members"),
-        api.get("/api/loyalty/rewards", { params: { active_only: false } }),
+        api.get("/loyalty/tiers"),
+        api.get("/loyalty/members"),
+        api.get("/loyalty/rewards", { params: { active_only: false } }),
       ]);
       setTiers(t.data || []);
       setMembers(m.data || []);
@@ -32,7 +32,7 @@ export default function LoyaltyAdminPage() {
   const [tierForm, setTierForm] = useState({ name: "", min_points: 0, earn_multiplier: 1, color: "#888", benefits: "" });
   const addTier = async (e) => {
     e.preventDefault();
-    await api.post("/api/loyalty/tiers", {
+    await api.post("/loyalty/tiers", {
       ...tierForm,
       min_points: Number(tierForm.min_points),
       earn_multiplier: Number(tierForm.earn_multiplier),
@@ -47,13 +47,13 @@ export default function LoyaltyAdminPage() {
   const [earnForm, setEarnForm] = useState({ guest_id: "", points: 100, source: "stay" });
   const enroll = async (e) => {
     e.preventDefault();
-    await api.post("/api/loyalty/members/enroll", { guest_id: enrollForm.guest_id });
+    await api.post("/loyalty/members/enroll", { guest_id: enrollForm.guest_id });
     setEnrollForm({ guest_id: "" });
     reload();
   };
   const earn = async (e) => {
     e.preventDefault();
-    const { data } = await api.post("/api/loyalty/earn", {
+    const { data } = await api.post("/loyalty/earn", {
       guest_id: earnForm.guest_id,
       points: Number(earnForm.points),
       source: earnForm.source,
@@ -66,7 +66,7 @@ export default function LoyaltyAdminPage() {
   const [rewardForm, setRewardForm] = useState({ name: "", points_cost: 1000, type: "discount", value: 0, stock: "" });
   const addReward = async (e) => {
     e.preventDefault();
-    await api.post("/api/loyalty/rewards", {
+    await api.post("/loyalty/rewards", {
       ...rewardForm,
       points_cost: Number(rewardForm.points_cost),
       value: Number(rewardForm.value),
@@ -79,7 +79,7 @@ export default function LoyaltyAdminPage() {
     const guest_id = await promptDialog({ message: "Misafir ID?" });
     if (!guest_id) return;
     try {
-      const { data } = await api.post("/api/loyalty/redeem", { guest_id, reward_id });
+      const { data } = await api.post("/loyalty/redeem", { guest_id, reward_id });
       await alertDialog({ message: `Ödül kullanıldı. Kalan bakiye: ${data.balance_after}` });
       reload();
     } catch (e) {

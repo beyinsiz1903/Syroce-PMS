@@ -18,7 +18,7 @@ export default function FolioRoutingPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get("/api/folio-routing");
+      const { data } = await api.get("/folio-routing");
       setRules(data || []);
       setErr("");
     } catch (e) {
@@ -32,7 +32,7 @@ export default function FolioRoutingPage() {
   const submit = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/api/folio-routing", {
+      await api.post("/folio-routing", {
         source_folio_id: form.source_folio_id.trim(),
         dest_folio_id: form.dest_folio_id.trim(),
         charge_codes: form.charge_codes
@@ -48,13 +48,13 @@ export default function FolioRoutingPage() {
 
   const remove = async (id) => {
     if (!await confirmDialog({ message: "Bu yönlendirme kuralı silinsin mi?", variant: 'danger' })) return;
-    await api.delete(`/api/folio-routing/${id}`);
+    await api.delete(`/folio-routing/${id}`);
     load();
   };
 
   const apply = async (folio_id) => {
     try {
-      const { data } = await api.post(`/api/folio-routing/apply/${folio_id}`);
+      const { data } = await api.post(`/folio-routing/apply/${folio_id}`);
       await alertDialog({ message: `Uygulandı: ${data.moved} ücret taşındı (${data.rules} kural)` });
     } catch (e) {
       await alertDialog({ message: e?.response?.data?.detail || "Uygulanamadı" });

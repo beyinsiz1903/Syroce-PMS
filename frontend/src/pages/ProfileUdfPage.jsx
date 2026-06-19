@@ -69,7 +69,7 @@ export default function ProfileUdfPage() {
   const loadDefs = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get("/api/profile-udf/definitions");
+      const r = await api.get("/profile-udf/definitions");
       setDefs(r.data || []);
     } catch (e) { handleErr("Tanımlar yüklenemedi", e); }
     finally { setLoading(false); }
@@ -81,7 +81,7 @@ export default function ProfileUdfPage() {
     e.preventDefault();
     setSubmittingDef(true);
     try {
-      await api.post("/api/profile-udf/definitions", {
+      await api.post("/profile-udf/definitions", {
         ...defForm,
         order: Number(defForm.order) || 100,
         options: defForm.options.split(",").map((s) => s.trim()).filter(Boolean),
@@ -101,7 +101,7 @@ export default function ProfileUdfPage() {
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await api.delete(`/api/profile-udf/definitions/${deleteTarget.id}`);
+      await api.delete(`/profile-udf/definitions/${deleteTarget.id}`);
       toast({ title: "Tanım silindi" });
       setDeleteTarget(null);
       loadDefs();
@@ -113,8 +113,8 @@ export default function ProfileUdfPage() {
     if (!searchQ.trim()) return;
     setSearching(true);
     try {
-      // Var olan guests endpoint'i kullan; basit q parametresi
-      const r = await api.get("/api/guests", { params: { search: searchQ, limit: 20 } });
+      // Misafir arama endpoint'i (ad/e-posta/telefon/kimlik); q parametresi
+      const r = await api.get("/pms/guests/search", { params: { q: searchQ, limit: 20 } });
       const list = Array.isArray(r.data) ? r.data : r.data?.items || r.data?.guests || [];
       setGuests(list.slice(0, 20));
     } catch (e) { handleErr("Misafir araması başarısız", e); setGuests([]); }
@@ -124,7 +124,7 @@ export default function ProfileUdfPage() {
   const loadGuestUdf = async (g) => {
     try {
       const id = g.id || g._id;
-      const r = await api.get(`/api/profile-udf/guests/${id}`);
+      const r = await api.get(`/profile-udf/guests/${id}`);
       setSelectedGuest({ id, name: r.data.guest_name });
       setValues(r.data.values || {});
     } catch (e) { handleErr("Misafir UDF yüklenemedi", e); }
@@ -134,7 +134,7 @@ export default function ProfileUdfPage() {
     if (!selectedGuest) return;
     setSavingValues(true);
     try {
-      await api.put(`/api/profile-udf/guests/${selectedGuest.id}`, { values });
+      await api.put(`/profile-udf/guests/${selectedGuest.id}`, { values });
       toast({ title: "UDF değerleri kaydedildi" });
     } catch (e) { handleErr("Kaydedilemedi", e); }
     finally { setSavingValues(false); }

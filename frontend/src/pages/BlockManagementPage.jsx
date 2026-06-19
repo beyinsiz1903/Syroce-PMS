@@ -76,8 +76,8 @@ export default function BlockManagementPage() {
     setLoading(true);
     try {
       const [s, a] = await Promise.all([
-        api.get("/api/block-mgmt/summary"),
-        api.get("/api/block-mgmt/cutoff-alerts", { params: { days_ahead: 14 } }),
+        api.get("/block-mgmt/summary"),
+        api.get("/block-mgmt/cutoff-alerts", { params: { days_ahead: 14 } }),
       ]);
       setBlocks(s.data?.blocks || []);
       setAlerts(a.data?.alerts || []);
@@ -100,7 +100,7 @@ export default function BlockManagementPage() {
     setPickupLoading(true);
     setPickup({ group_name: blk.group_name, _stub: true });
     try {
-      const { data } = await api.get(`/api/block-mgmt/${blk.id}/pickup`);
+      const { data } = await api.get(`/block-mgmt/${blk.id}/pickup`);
       setPickup(data);
     } catch (e) {
       toast({
@@ -142,7 +142,7 @@ export default function BlockManagementPage() {
     }
     setWashSubmitting(true);
     try {
-      const { data } = await api.post(`/api/block-mgmt/${washTarget.id}/wash`, {
+      const { data } = await api.post(`/block-mgmt/${washTarget.id}/wash`, {
         wash_count: n,
         note: washNote.trim() || null,
       });
@@ -185,7 +185,7 @@ export default function BlockManagementPage() {
     }
     setCreating(true);
     try {
-      await api.post("/api/block-mgmt/create", {
+      await api.post("/block-mgmt/create", {
         group_name: f.group_name.trim(),
         organization: f.organization.trim() || null,
         contact_name: f.contact_name.trim() || null,

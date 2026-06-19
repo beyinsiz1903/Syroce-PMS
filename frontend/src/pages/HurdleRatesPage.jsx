@@ -53,7 +53,7 @@ export default function HurdleRatesPage() {
   const loadList = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get("/api/hurdle-rates/");
+      const r = await api.get("/hurdle-rates/");
       setList(r.data || []);
     } catch (e) { handleErr("Liste yüklenemedi", e); }
     finally { setLoading(false); }
@@ -65,7 +65,7 @@ export default function HurdleRatesPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await api.post("/api/hurdle-rates/", {
+      await api.post("/hurdle-rates/", {
         ...form,
         min_rate: Number(form.min_rate) || 0,
         room_type: form.room_type || null,
@@ -85,7 +85,7 @@ export default function HurdleRatesPage() {
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await api.delete(`/api/hurdle-rates/${deleteTarget.id}`);
+      await api.delete(`/hurdle-rates/${deleteTarget.id}`);
       toast({ title: "Silindi" });
       setDeleteTarget(null);
       loadList();
@@ -98,7 +98,7 @@ export default function HurdleRatesPage() {
     setChecking(true);
     setCheckResult(null);
     try {
-      const r = await api.get("/api/hurdle-rates/check", {
+      const r = await api.get("/hurdle-rates/check", {
         params: {
           date: check.date,
           proposed_rate: Number(check.proposed_rate),

@@ -79,8 +79,8 @@ export default function FunctionSpacePage() {
     setLoading(true);
     try {
       const [r, b] = await Promise.all([
-        api.get("/api/function-space/rooms"),
-        api.get("/api/function-space/bookings", { params: { date } }),
+        api.get("/function-space/rooms"),
+        api.get("/function-space/bookings", { params: { date } }),
       ]);
       setRooms(r.data || []);
       setBookings(b.data || []);
@@ -93,7 +93,7 @@ export default function FunctionSpacePage() {
   const addRoom = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/api/function-space/rooms", {
+      await api.post("/function-space/rooms", {
         ...roomForm,
         capacity: Number(roomForm.capacity),
         area_m2: roomForm.area_m2 ? Number(roomForm.area_m2) : null,
@@ -122,7 +122,7 @@ export default function FunctionSpacePage() {
     }
     setSubmittingBk(true);
     try {
-      await api.post("/api/function-space/bookings", {
+      await api.post("/function-space/bookings", {
         ...bkForm,
         attendees: Number(bkForm.attendees) || 1,
         organizer: bkForm.organizer.trim() || null,
@@ -151,7 +151,7 @@ export default function FunctionSpacePage() {
     if (!cancelTarget) return;
     setCancelling(true);
     try {
-      await api.post(`/api/function-space/bookings/${cancelTarget.id}/cancel`);
+      await api.post(`/function-space/bookings/${cancelTarget.id}/cancel`);
       toast({ title: "Etkinlik iptal edildi" });
       setCancelTarget(null);
       load();

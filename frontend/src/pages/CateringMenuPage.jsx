@@ -72,7 +72,7 @@ export default function CateringMenuPage() {
     setLoading(true);
     try {
       const params = filterCat !== "all" ? { category: filterCat } : {};
-      const r = await api.get("/api/catering/menu-items", { params });
+      const r = await api.get("/catering/menu-items", { params });
       setItems(r.data || []);
     } catch (e) { handleErr("Menü yüklenemedi", e); }
     finally { setLoading(false); }
@@ -80,7 +80,7 @@ export default function CateringMenuPage() {
 
   const loadBookings = useCallback(async () => {
     try {
-      const r = await api.get("/api/function-space/bookings");
+      const r = await api.get("/function-space/bookings");
       setBookings(r.data || []);
     } catch (e) { handleErr("Booking listesi alınamadı", e); }
   }, [handleErr]);
@@ -92,7 +92,7 @@ export default function CateringMenuPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await api.post("/api/catering/menu-items", {
+      await api.post("/catering/menu-items", {
         ...form,
         price_per_person: Number(form.price_per_person) || 0,
         min_headcount: Number(form.min_headcount) || 1,
@@ -114,7 +114,7 @@ export default function CateringMenuPage() {
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await api.delete(`/api/catering/menu-items/${deleteTarget.id}`);
+      await api.delete(`/catering/menu-items/${deleteTarget.id}`);
       toast({ title: "Silindi" });
       setDeleteTarget(null);
       loadItems();
@@ -124,7 +124,7 @@ export default function CateringMenuPage() {
   const loadBookingMenus = async (bookingId) => {
     if (!bookingId) return;
     try {
-      const r = await api.get(`/api/catering/bookings/${bookingId}`);
+      const r = await api.get(`/catering/bookings/${bookingId}`);
       setBookingMenus(r.data);
       setEditLines((r.data.lines || []).map((l) => ({
         menu_item_id: l.menu_item_id,
@@ -153,7 +153,7 @@ export default function CateringMenuPage() {
           headcount: Number(l.headcount) || 1,
           note: l.note || null,
         }));
-      await api.put(`/api/catering/bookings/${selectedBookingId}`, { lines });
+      await api.put(`/catering/bookings/${selectedBookingId}`, { lines });
       toast({ title: "Menü atamaları kaydedildi" });
       loadBookingMenus(selectedBookingId);
     } catch (e) { handleErr("Kaydedilemedi", e); }

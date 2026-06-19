@@ -814,16 +814,22 @@ async def _build_menu_engineering(
             'menu_items': [],
             'thresholds': {'popularity_pct': 0, 'avg_cm_per_unit': 0},
             'totals': {'items': 0, 'units_sold': 0, 'revenue': 0.0, 'contribution_margin': 0.0},
+            'cost_estimation_used': False,
+            'cost_estimated_items': 0,
         }
 
-    # 3) Birim ekonomisi — fallback maliyet %35 food-cost varsayımı
+    # 3) Birim ekonomisi — gerçek katalog maliyeti varsa onu kullan; yoksa %35
+    # food-cost varsayımına düş ve item'i `cost_estimated=True` ile dürüstçe işaretle
+    # (sahte kesin maliyet sunma; rapor tahmini olduğunu açıkça bildirir).
     enriched = []
     total_qty = 0.0
     total_cm = 0.0
     for nm, row in agg.items():
         cat = catalog.get(nm, {})
         unit_price = cat.get('price') or (row['revenue'] / row['qty'] if row['qty'] else 0)
-        unit_cost = cat.get('cost') or unit_price * 0.35
+        _real_cost = cat.get('cost')
+        cost_estimated = not (isinstance(_real_cost, (int, float)) and not isinstance(_real_cost, bool) and _real_cost > 0)
+        unit_cost = (unit_price * 0.35) if cost_estimated else float(_real_cost)
         cost_total = unit_cost * row['qty']
         cm_total = row['revenue'] - cost_total
         cm_per_unit = cm_total / row['qty'] if row['qty'] else 0
@@ -839,6 +845,7 @@ async def _build_menu_engineering(
             '_margin_pct': margin_pct,
             '_unit_price': unit_price,
             '_unit_cost': unit_cost,
+            '_cost_estimated': cost_estimated,
         })
         total_qty += row['qty']
         total_cm += cm_total
@@ -873,6 +880,7 @@ async def _build_menu_engineering(
             'revenue': round(e['_revenue'], 2),
             'unit_price': round(e['_unit_price'], 2),
             'unit_cost': round(e['_unit_cost'], 2),
+            'cost_estimated': e['_cost_estimated'],
             'contribution_margin': round(e['_cm_total'], 2),
             'cm_per_unit': round(e['_cm_unit'], 2),
             'profit_margin': round(e['_margin_pct'], 1),
@@ -892,6 +900,8 @@ async def _build_menu_engineering(
         'puzzles': counts['Puzzles'],
         'dogs': counts['Dogs'],
         'menu_items': out_items,
+        'cost_estimation_used': any(e['_cost_estimated'] for e in enriched),
+        'cost_estimated_items': sum(1 for e in enriched if e['_cost_estimated']),
         'thresholds': {
             'popularity_pct': round(pop_threshold_pct, 2),
             'avg_cm_per_unit': round(cm_threshold, 2),

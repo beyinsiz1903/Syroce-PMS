@@ -32,7 +32,7 @@ export default function FolioWindowsPanel({ bookingId, currentFolioId }) {
     if (!bookingId) return;
     setLoading(true);
     try {
-      const { data } = await axios.get(`/api/folio-windows/booking/${bookingId}`, { headers });
+      const { data } = await axios.get(`/folio-windows/booking/${bookingId}`, { headers });
       setWindows(Array.isArray(data) ? data : []);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Window listesi alınamadı");
@@ -47,7 +47,7 @@ export default function FolioWindowsPanel({ bookingId, currentFolioId }) {
   const openWindow = async () => {
     setAdding(true);
     try {
-      await axios.post(`/api/folio-windows`, { booking_id: bookingId, payor_type: newPayor }, { headers });
+      await axios.post(`/folio-windows`, { booking_id: bookingId, payor_type: newPayor }, { headers });
       toast.success("Yeni window açıldı");
       setShowAdd(false);
       fetchWindows();
@@ -60,7 +60,7 @@ export default function FolioWindowsPanel({ bookingId, currentFolioId }) {
 
   const changePayor = async (folioId, payorType) => {
     try {
-      await axios.patch(`/api/folio-windows/${folioId}/payor`, { payor_type: payorType }, { headers });
+      await axios.patch(`/folio-windows/${folioId}/payor`, { payor_type: payorType }, { headers });
       toast.success("Payor güncellendi");
       fetchWindows();
     } catch (e) {

@@ -190,7 +190,7 @@ const DepartureList = () => {
     if (!(n > 0)) { toast.error('Tutar 0\'dan büyük olmalı'); return; }
     setPaySubmitting(true);
     try {
-      await axios.post(`/api/frontdesk/folio/${payTarget.id}/payment`, {
+      await axios.post(`/frontdesk/folio/${payTarget.id}/payment`, {
         amount: n,
         method: payMethod,
         payment_type: 'final',
@@ -232,7 +232,7 @@ const DepartureList = () => {
     if (charge < 0) { toast.error('Ücret negatif olamaz'); return; }
     setLateSubmitting(true);
     try {
-      await axios.post(`/api/pms/reservations/${lateTarget.id}/late-checkout`, {
+      await axios.post(`/pms/reservations/${lateTarget.id}/late-checkout`, {
         checkout_time: lateTime || null,
         extra_charge: charge,
       });
@@ -253,7 +253,7 @@ const DepartureList = () => {
     setDetailFolio(null);
     setDetailLoading(true);
     try {
-      const res = await axios.get(`/api/frontdesk/folio/${b.id}`).catch(() => null);
+      const res = await axios.get(`/frontdesk/folio/${b.id}`).catch(() => null);
       if (res?.data) setDetailFolio(res.data);
     } finally {
       setDetailLoading(false);

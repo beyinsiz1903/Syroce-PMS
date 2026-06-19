@@ -57,7 +57,7 @@ const RoutingInstructions = ({ booking, onSave }) => {
     const id = booking?.id;
     if (!id) return;
     let cancelled = false;
-    axios.get(`/api/frontdesk/booking/${id}/routing-rules`)
+    axios.get(`/frontdesk/booking/${id}/routing-rules`)
       .then(res => {
         if (cancelled) return;
         const fetched = res?.data?.rules || [];
@@ -97,7 +97,7 @@ const RoutingInstructions = ({ booking, onSave }) => {
       // Backend persist için label alanlarını çıkarıyoruz (her açılışta
       // enrichRule yeniden hesaplıyor; veride tekrar tutmak gereksiz).
       const payload = rules.map(({ category_label, target_label, ...rest }) => rest);
-      await axios.post(`/api/frontdesk/booking/${booking.id}/routing-rules`, { rules: payload });
+      await axios.post(`/frontdesk/booking/${booking.id}/routing-rules`, { rules: payload });
       toast.success('Yonlendirme kuralları kaydedildi');
       onSave?.(payload);
     } catch (err) {

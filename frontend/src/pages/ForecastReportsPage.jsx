@@ -53,7 +53,7 @@ export default function ForecastReportsPage() {
   const loadForecast = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get("/api/analytics/forecast", {
+      const { data } = await api.get("/analytics/forecast", {
         params: { days, segment: segment || undefined },
       });
       setForecast(data);
@@ -64,7 +64,7 @@ export default function ForecastReportsPage() {
   const loadPickup = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get("/api/analytics/pickup-report", {
+      const { data } = await api.get("/analytics/pickup-report", {
         params: { period_days: pickupDays },
       });
       setPickup(data);
@@ -75,7 +75,7 @@ export default function ForecastReportsPage() {
   const loadPace = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get("/api/analytics/pace", {
+      const { data } = await api.get("/analytics/pace", {
         params: { target_date: paceDate, compare_year: paceCompare || undefined },
       });
       setPace(data);
