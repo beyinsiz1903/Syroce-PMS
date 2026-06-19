@@ -687,72 +687,87 @@ async def check_rate_parity_detailed(
     - Identify negative disparity (OTA cheaper - BAD)
     - Alert on rate mismatches
     """
-    target_date = date or datetime.now().date().isoformat()
+    target_date = date or datetime.now(UTC).date().isoformat()
 
-    # Get rates from channel manager
-    channels = ['direct', 'booking_com', 'expedia', 'airbnb']
+    # Gercek kanal fiyatlarini cek; uydurma yok. Parite ODA TIPI bazinda hesaplanir
+    # (oda tipleri arasi yanlis karsilastirmayi onlemek icin).
+    rate_query = {'tenant_id': current_user.tenant_id, 'date': target_date}
+    if room_type:
+        rate_query['room_type'] = room_type
+    rate_rows = await db.channel_rates.find(rate_query, {'_id': 0}).to_list(2000)
+
+    # Oda tipi -> baz fiyat (direct fallback).
+    room_q = {'tenant_id': current_user.tenant_id}
+    if room_type:
+        room_q['room_type'] = room_type
+    rooms = await db.rooms.find(room_q, {'_id': 0, 'room_type': 1, 'base_price': 1}).to_list(2000)
+    base_price_by_type = {}
+    for r in rooms:
+        rt = r.get('room_type')
+        if rt and rt not in base_price_by_type and isinstance(r.get('base_price'), (int, float)):
+            base_price_by_type[rt] = r.get('base_price')
+
+    # channel_rates'i oda tipine gore grupla.
+    rates_by_type = {}
+    for rr in rate_rows:
+        if rr.get('rate') is None:
+            continue
+        ch = rr.get('channel')
+        if not ch:
+            continue
+        rates_by_type.setdefault(rr.get('room_type'), {}).setdefault(ch, rr.get('rate'))
+
     rate_comparison = []
-
-    for channel in channels:
-        # In production, fetch actual rates from channel APIs
-        # For MVP, simulate rate data
-        channel_rate = await db.channel_rates.find_one({
-            'tenant_id': current_user.tenant_id,
-            'channel': channel,
-            'date': target_date,
-            'room_type': room_type
-        })
-
-        if channel_rate:
-            rate = channel_rate.get('rate', 0)
-        else:
-            # Simulated rates
-            base_rate = 100
-            if channel == 'direct':
-                rate = base_rate
-            elif channel == 'booking_com':
-                rate = base_rate * 1.15  # Should be higher (commission included)
-            elif channel == 'expedia':
-                rate = base_rate * 1.18
-            else:
-                rate = base_rate * 1.12
-
-        rate_comparison.append({
-            'channel': channel,
-            'rate': round(rate, 2)
-        })
-
-    # Find direct rate
-    direct_rate = next((r['rate'] for r in rate_comparison if r['channel'] == 'direct'), 100)
-
-    # Check parity
     parity_issues = []
-    for channel_data in rate_comparison:
-        if channel_data['channel'] != 'direct':
-            diff = channel_data['rate'] - direct_rate
-            diff_pct = (diff / direct_rate * 100) if direct_rate > 0 else 0
-
-            if diff < 0:
-                # Negative disparity - OTA is cheaper (BAD!)
+    for rt, ch_rates in rates_by_type.items():
+        direct_rt = ch_rates.get('direct')
+        if direct_rt is None:
+            direct_rt = base_price_by_type.get(rt)
+        if direct_rt is not None:
+            rate_comparison.append({'room_type': rt, 'channel': 'direct', 'rate': round(direct_rt, 2)})
+        for ch, rval in ch_rates.items():
+            if ch == 'direct':
+                continue
+            rate_comparison.append({'room_type': rt, 'channel': ch, 'rate': round(rval, 2)})
+            if direct_rt is not None and direct_rt > 0 and rval < direct_rt:
+                diff = rval - direct_rt
+                diff_pct = diff / direct_rt * 100
+                # Negatif disparite - OTA daha ucuz (KOTU)
                 parity_issues.append({
-                    'channel': channel_data['channel'],
+                    'room_type': rt,
+                    'channel': ch,
                     'status': 'negative_disparity',
                     'severity': 'critical',
-                    'direct_rate': direct_rate,
-                    'channel_rate': channel_data['rate'],
+                    'direct_rate': round(direct_rt, 2),
+                    'channel_rate': round(rval, 2),
                     'difference': round(diff, 2),
                     'difference_pct': round(diff_pct, 1),
-                    'message': f'⚠️ {channel_data["channel"]} is cheaper by {abs(round(diff_pct, 1))}%'
+                    'message': f'{rt}: {ch} direct fiyattan %{abs(round(diff_pct, 1))} daha ucuz'
                 })
+
+    has_ota = any(any(c != 'direct' for c in chs) for chs in rates_by_type.values())
+    if not has_ota:
+        recommendation = 'Karsilastirilacak OTA fiyat kaydi yok; parite icin kanal fiyatlarini senkronize edin.'
+    elif parity_issues:
+        recommendation = 'OTA fiyatlarini pozitif disparite icin ayarlayin.'
+    else:
+        recommendation = 'Fiyat paritesi iyi.'
+
+    # Tek oda tipi sorgulandiysa direct_rate nettir; aksi halde tipler arasi belirsiz.
+    top_direct = None
+    if room_type:
+        top_direct = rates_by_type.get(room_type, {}).get('direct')
+        if top_direct is None:
+            top_direct = base_price_by_type.get(room_type)
 
     return {
         'date': target_date,
         'room_type': room_type or 'All',
-        'direct_rate': direct_rate,
+        'direct_rate': round(top_direct, 2) if top_direct is not None else None,
         'rate_comparison': rate_comparison,
         'parity_status': 'issues_found' if parity_issues else 'good',
         'issues': parity_issues,
-        'recommendation': 'Adjust OTA rates to maintain positive disparity' if parity_issues else 'Rate parity is good'
+        'recommendation': recommendation
     }
 
 
@@ -800,20 +815,6 @@ async def get_channel_sync_history(
             'ip_address': log.get('ip_address')
         })
 
-    # If no logs, create simulated logs
-    if not sync_logs:
-        channels = ['booking_com', 'expedia', 'airbnb']
-        for ch in channels:
-            sync_logs.append({
-                'timestamp': datetime.now(UTC).isoformat(),
-                'channel': ch,
-                'sync_type': 'rates',
-                'status': 'success',
-                'duration_ms': 1250,
-                'records_synced': 45,
-                'error_message': None
-            })
-
     # Calculate stats
     total_syncs = len(sync_logs)
     successful = sum(1 for log in sync_logs if log['status'] == 'success')
@@ -845,46 +846,52 @@ async def get_channel_status_v2(
     """
     Get OTA channel connection status
     """
-    await get_current_user(credentials)
+    current_user = await get_current_user(credentials)
 
-    channels = [
-        {
-            'channel': 'Booking.com',
-            'status': 'connected',
-            'last_sync': (datetime.now() - timedelta(minutes=5)).isoformat(),
-            'inventory_synced': True,
-            'rates_synced': True,
-            'bookings_today': 12,
-            'connection_health': 'good'
-        },
-        {
-            'channel': 'Expedia',
-            'status': 'connected',
-            'last_sync': (datetime.now() - timedelta(minutes=15)).isoformat(),
-            'inventory_synced': True,
-            'rates_synced': True,
-            'bookings_today': 8,
-            'connection_health': 'good'
-        },
-        {
-            'channel': 'Agoda',
-            'status': 'warning',
-            'last_sync': (datetime.now() - timedelta(hours=2)).isoformat(),
-            'inventory_synced': False,
-            'rates_synced': True,
-            'bookings_today': 5,
-            'connection_health': 'warning'
-        },
-        {
-            'channel': 'Hotels.com',
-            'status': 'connected',
-            'last_sync': (datetime.now() - timedelta(minutes=8)).isoformat(),
-            'inventory_synced': True,
-            'rates_synced': True,
-            'bookings_today': 6,
-            'connection_health': 'good'
-        }
-    ]
+    connections = await db.channel_connections.find(
+        {'tenant_id': current_user.tenant_id}, {'_id': 0}
+    ).to_list(100)
+
+    # Bugun olusturulan rezervasyonlari kanala gore say (gercek veri).
+    today = datetime.now(UTC).date()
+    start_of_day = datetime.combine(today, datetime.min.time())
+    end_of_day = datetime.combine(today, datetime.max.time())
+    today_bookings = await db.bookings.find({
+        'tenant_id': current_user.tenant_id,
+        'created_at': {'$gte': start_of_day.isoformat(), '$lte': end_of_day.isoformat()}
+    }, {'_id': 0, 'ota_channel': 1}).to_list(10000)
+    bookings_by_channel = {}
+    for b in today_bookings:
+        ch = b.get('ota_channel')
+        if ch:
+            bookings_by_channel[ch] = bookings_by_channel.get(ch, 0) + 1
+
+    # Saglik icin son 1 saatteki bekleyen istisnalar.
+    recent_exceptions = await db.exception_queue.find({
+        'tenant_id': current_user.tenant_id,
+        'status': 'pending',
+        'created_at': {'$gte': (datetime.now(UTC) - timedelta(hours=1)).isoformat()}
+    }, {'_id': 0}).to_list(100)
+
+    channels = []
+    for conn in connections:
+        ctype = conn.get('channel_type')
+        conn_exceptions = [e for e in recent_exceptions if e.get('channel_type') == ctype]
+        is_active = conn.get('status') == 'active'
+        synced = bool(conn.get('sync_rate_availability', False)) and is_active
+        if (not is_active) or len(conn_exceptions) > 3:
+            health = 'warning'
+        else:
+            health = 'good'
+        channels.append({
+            'channel': conn.get('channel_name') or ctype,
+            'status': 'connected' if is_active else 'disconnected',
+            'last_sync': conn.get('last_sync_at') or conn.get('last_sync'),
+            'inventory_synced': synced,
+            'rates_synced': synced,
+            'bookings_today': bookings_by_channel.get(ctype, 0),
+            'connection_health': health
+        })
 
     return {
         'channels': channels,
@@ -905,37 +912,53 @@ async def get_rate_parity(
     """
     Check rate parity across channels
     """
-    await get_current_user(credentials)
+    current_user = await get_current_user(credentials)
 
-    parity_data = [
-        {
-            'date': datetime.now().date().isoformat(),
-            'room_type': 'Standard Room',
-            'our_pms_rate': 1200,
-            'booking_com': 1200,
-            'expedia': 1200,
-            'agoda': 1250,
-            'hotels_com': 1200,
-            'parity_status': 'violation',
-            'violating_channel': 'Agoda'
-        },
-        {
-            'date': datetime.now().date().isoformat(),
-            'room_type': 'Deluxe Room',
-            'our_pms_rate': 1800,
-            'booking_com': 1800,
-            'expedia': 1800,
-            'agoda': 1800,
-            'hotels_com': 1800,
-            'parity_status': 'good',
-            'violating_channel': None
+    today = datetime.now(UTC).date().isoformat()
+    rooms = await db.rooms.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(2000)
+    rt_price = {}
+    for r in rooms:
+        rt = r.get('room_type')
+        if rt and rt not in rt_price and isinstance(r.get('base_price'), (int, float)):
+            rt_price[rt] = r.get('base_price')
+
+    rate_rows = await db.channel_rates.find({
+        'tenant_id': current_user.tenant_id,
+        'date': today
+    }, {'_id': 0}).to_list(2000)
+    rate_idx = {}
+    for rr in rate_rows:
+        if rr.get('rate') is not None:
+            rate_idx[(rr.get('room_type'), rr.get('channel'))] = rr.get('rate')
+
+    cols = [('booking_com', 'Booking.com'), ('expedia', 'Expedia'), ('agoda', 'Agoda')]
+    parity_data = []
+    for rt, pms_rate in rt_price.items():
+        row = {
+            'date': today,
+            'room_type': rt,
+            'our_pms_rate': round(pms_rate, 2),
         }
-    ]
+        violating = None
+        has_ota = False
+        for key, label in cols:
+            cr = rate_idx.get((rt, key))
+            if cr is not None:
+                has_ota = True
+                row[key] = round(cr, 2)
+                if pms_rate > 0 and cr < pms_rate:
+                    violating = label
+            else:
+                row[key] = None
+        row['parity_status'] = 'violation' if violating else 'good'
+        row['violating_channel'] = violating
+        if has_ota:
+            parity_data.append(row)
 
     return {
         'parity_data': parity_data,
         'violations': len([p for p in parity_data if p['parity_status'] == 'violation']),
-        'check_date': datetime.now().date().isoformat()
+        'check_date': today
     }
 
 
@@ -951,37 +974,51 @@ async def get_channel_inventory(
     """
     current_user = await get_current_user(credentials)
 
-    today = datetime.now().date()
-    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    if total_rooms == 0:
-        total_rooms = 100
+    today = datetime.now(UTC).date()
+    start_of_day = datetime.combine(today, datetime.min.time())
+    end_of_day = datetime.combine(today, datetime.max.time())
 
-    inventory = [
-        {
+    rooms = await db.rooms.find(
+        {'tenant_id': current_user.tenant_id}, {'_id': 0, 'id': 1, 'room_type': 1}
+    ).to_list(5000)
+    room_type_by_id = {r.get('id'): (r.get('room_type') or 'Unknown') for r in rooms}
+
+    totals = {}
+    for r in rooms:
+        rt = r.get('room_type') or 'Unknown'
+        totals[rt] = totals.get(rt, 0) + 1
+
+    # Bugun dolu odalar: aktif (iptal/checkout/no-show disi) ve tarih ortusen rezervasyonlar.
+    occ_bookings = await db.bookings.find({
+        'tenant_id': current_user.tenant_id,
+        'status': {'$nin': ['cancelled', 'checked_out', 'no_show']},
+        'check_in': {'$lte': end_of_day.isoformat()},
+        'check_out': {'$gt': start_of_day.isoformat()}
+    }, {'_id': 0, 'room_id': 1}).to_list(20000)
+    # Benzersiz dolu oda ID'leri (ayni odaya cakisan birden fazla rezervasyon
+    # musaitligi yanlis dusurmesin diye set kullaniyoruz).
+    occupied = {}
+    for b in occ_bookings:
+        rid = b.get('room_id')
+        rt = room_type_by_id.get(rid)
+        if rt and rid:
+            occupied.setdefault(rt, set()).add(rid)
+
+    inventory = []
+    for rt, total in totals.items():
+        avail = max(0, total - len(occupied.get(rt, set())))
+        inventory.append({
             'date': today.isoformat(),
-            'room_type': 'Standard Room',
-            'total_inventory': 50,
-            'available': 12,
-            'booking_com_allocation': 20,
-            'expedia_allocation': 15,
-            'agoda_allocation': 10,
-            'direct_allocation': 5
-        },
-        {
-            'date': today.isoformat(),
-            'room_type': 'Deluxe Room',
-            'total_inventory': 30,
-            'available': 8,
-            'booking_com_allocation': 12,
-            'expedia_allocation': 8,
-            'agoda_allocation': 6,
-            'direct_allocation': 4
-        }
-    ]
+            'room_type': rt,
+            'total_inventory': total,
+            'available': avail,
+            'allocations_available': False
+        })
 
     return {
         'inventory': inventory,
-        'total_available': sum(i['available'] for i in inventory)
+        'total_available': sum(i['available'] for i in inventory),
+        'allocations_available': False
     }
 
 
@@ -996,49 +1033,59 @@ async def get_channel_performance(
     """
     Get channel performance metrics
     """
-    await get_current_user(credentials)
+    current_user = await get_current_user(credentials)
 
-    performance = [
-        {
-            'channel': 'Booking.com',
-            'bookings': 145,
-            'revenue': 348000,
-            'avg_rate': 2400,
-            'cancellation_rate': 8.5,
-            'market_share': 35
-        },
-        {
-            'channel': 'Expedia',
-            'bookings': 98,
-            'revenue': 245000,
-            'avg_rate': 2500,
-            'cancellation_rate': 12.2,
-            'market_share': 25
-        },
-        {
-            'channel': 'Agoda',
-            'bookings': 67,
-            'revenue': 156000,
-            'avg_rate': 2328,
-            'cancellation_rate': 9.8,
-            'market_share': 15
-        },
-        {
-            'channel': 'Direct',
-            'bookings': 112,
-            'revenue': 312000,
-            'avg_rate': 2785,
-            'cancellation_rate': 5.3,
-            'market_share': 25
-        }
-    ]
+    end = datetime.now(UTC).date()
+    start = end - timedelta(days=days)
+    bookings = await db.bookings.find({
+        'tenant_id': current_user.tenant_id,
+        'check_in': {'$gte': start.isoformat(), '$lte': end.isoformat()},
+        'ota_channel': {'$ne': None}
+    }, {'_id': 0, 'ota_channel': 1, 'total_amount': 1, 'status': 1}).to_list(20000)
+
+    # Gelir = gerceklesen (iptal/no-show HARIC); cancellation_rate paydasi tum
+    # rezervasyonlar; avg_rate gerceklesen gelir / gerceklesen rezervasyon.
+    perf = {}
+    total_revenue = 0.0
+    total_bookings = 0
+    for b in bookings:
+        ch = b.get('ota_channel')
+        if not ch:
+            continue
+        status = b.get('status')
+        amount = b.get('total_amount') or 0
+        if ch not in perf:
+            perf[ch] = {'channel': ch, 'bookings': 0, 'realized_bookings': 0, 'revenue': 0.0, 'cancelled': 0}
+        perf[ch]['bookings'] += 1
+        total_bookings += 1
+        if status == 'cancelled':
+            perf[ch]['cancelled'] += 1
+        if status not in ('cancelled', 'no_show'):
+            perf[ch]['revenue'] += amount
+            perf[ch]['realized_bookings'] += 1
+            total_revenue += amount
+
+    performance = []
+    for ch, d in perf.items():
+        bk = d['bookings']
+        rev = d['revenue']
+        rbk = d['realized_bookings']
+        performance.append({
+            'channel': ch,
+            'bookings': bk,
+            'revenue': round(rev, 2),
+            'avg_rate': round(rev / rbk, 2) if rbk > 0 else 0,
+            'cancellation_rate': round(d['cancelled'] / bk * 100, 1) if bk > 0 else 0,
+            'market_share': round(rev / total_revenue * 100, 1) if total_revenue > 0 else 0
+        })
+    performance.sort(key=lambda x: x['revenue'], reverse=True)
 
     return {
         'performance': performance,
         'period_days': days,
-        'total_bookings': sum(p['bookings'] for p in performance),
-        'total_revenue': sum(p['revenue'] for p in performance),
-        'best_performer': max(performance, key=lambda x: x['revenue'])['channel']
+        'total_bookings': total_bookings,
+        'total_revenue': round(total_revenue, 2),
+        'best_performer': performance[0]['channel'] if performance else None
     }
 
 
@@ -1057,22 +1104,56 @@ async def push_rates_to_channels(
     """
     Push rates to selected OTA channels
     """
-    await get_current_user(credentials)
+    current_user = await get_current_user(credentials)
 
-    results = []
-    for channel in channels:
-        results.append({
-            'channel': channel,
-            'status': 'success',
-            'pushed_at': datetime.now(UTC).isoformat()
-        })
+    # Pinned saglayici tespiti otoriterdir (yalnizca okuma; pilot_drift=0).
+    try:
+        from domains.channel_manager.unified_rate_manager_router import (
+            _detect_active_provider,
+        )
+        detection = await _detect_active_provider(current_user.tenant_id, prefer=None)
+    except Exception:
+        detection = {'provider': None, 'configuration_error': 'detection_failed'}
+    provider = detection.get('provider')
+    configuration_error = detection.get('configuration_error')
+
+    # Fiyat niyetini yerel olarak kaydet; uydurma 'success' URETME.
+    rate_log = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'channels': channels,
+        'room_type': room_type,
+        'new_rate': rate,
+        'date_from': date,
+        'date_to': date,
+        'updated_by': getattr(current_user, 'name', None),
+        'updated_by_id': getattr(current_user, 'id', None),
+        'provider': provider,
+        'ari_status': 'recorded_local' if provider else 'not_configured',
+        'configuration_error': configuration_error,
+        'created_at': datetime.now(UTC).isoformat(),
+    }
+    await db.rate_updates.insert_one(rate_log)
+
+    if provider:
+        message = (
+            'Fiyat niyeti kaydedildi. Gercek OTA dagitimi pinned saglayici uzerinden '
+            'Toplu Fiyat/Envanter (Unified Rate Manager) ekranindan yapilir; bu uc '
+            'dogrudan kanala gondermez.'
+        )
+    else:
+        message = 'Kanal saglayici yapilandirilmamis; fiyat gercek kanala gonderilmedi. Degisiklik yerel olarak kaydedildi.'
 
     return {
-        'message': 'Rates pushed to channels',
+        'message': message,
         'room_type': room_type,
         'date': date,
         'rate': rate,
-        'results': results
+        'provider': provider,
+        'configuration_error': configuration_error,
+        'pushed': False,
+        'queued': False,
+        'results': [],
     }
 
 
