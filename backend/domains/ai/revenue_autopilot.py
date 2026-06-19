@@ -42,8 +42,10 @@ class RevenueAutopilot:
         optimal_prices = await self.calculate_optimal_prices(tenant_id, competitor_data, demand_update)
         report['actions'].append({
             'time': '06:30',
-            'action': 'Optimal prices calculated',
-            'price_changes': len(optimal_prices)
+            'action': 'Optimal prices calculated' if optimal_prices else 'Optimal price calculation skipped',
+            'price_changes': len(optimal_prices),
+            'data_available': bool(optimal_prices),
+            'message': None if optimal_prices else 'Gercek taban fiyat (oda base_price) yok; fiyat onerisi uretilmedi.'
         })
 
         # Step 4: Push to channels (06:45)
@@ -51,9 +53,9 @@ class RevenueAutopilot:
             push_result = await self.push_rates_to_channels(tenant_id, optimal_prices)
             report['actions'].append({
                 'time': '06:45',
-                'action': 'Rates pushed to channels',
+                'action': 'Rate push attempted',
                 'channels': push_result['channels'],
-                'status': 'completed'
+                'status': 'completed' if push_result.get('success') else 'not_implemented'
             })
         else:
             report['actions'].append({
@@ -99,8 +101,21 @@ class RevenueAutopilot:
         }
 
     async def calculate_optimal_prices(self, tenant_id: str, competitor_data: list, demand_data: dict) -> list[dict]:
-        """Optimal fiyatları kural bazlı (deterministik) hesapla."""
-        base_price = 100
+        """Optimal fiyatlari kural bazli (deterministik) hesapla.
+
+        Taban fiyat gercek oda verisinden (rooms.base_price ortalamasi) okunur.
+        Gercek taban fiyat yoksa uydurma 100 kullanmak yerine fail-closed bos
+        liste doner (oneri uretilmez).
+        """
+        rooms = await self.db.rooms.find(
+            {'tenant_id': tenant_id, 'base_price': {'$gt': 0}},
+            {'_id': 0, 'base_price': 1},
+        ).to_list(10000)
+        prices = [float(r['base_price']) for r in rooms if r.get('base_price')]
+        if not prices:
+            # Gercek taban fiyat yok -> fail-closed (oneri uretme)
+            return []
+        base_price = round(sum(prices) / len(prices), 2)
         demand_factor = 1.2 if demand_data['avg_occupancy'] > 75 else 1.0
 
         if competitor_data:
@@ -128,14 +143,18 @@ class RevenueAutopilot:
         }]
 
     async def push_rates_to_channels(self, tenant_id: str, optimal_prices: list[dict]) -> dict:
-        """Fiyatları tüm kanallara gönder"""
-        # Simulated (gerçekte: OTA API calls)
-        channels = ['booking_com', 'expedia', 'hotel_website', 'gds']
+        """Fiyatlari kanallara gonder.
 
+        Gercek OTA push entegrasyonu (booking.com/expedia/gds HTTP API) henuz
+        uygulanmadi. Sahte 'success' uretmek yerine fail-closed don; cagiran
+        akis bunu 'not_implemented' olarak raporlar.
+        """
         return {
-            'success': True,
-            'channels': channels,
-            'updated_count': len(optimal_prices)
+            'success': False,
+            'data_available': False,
+            'channels': [],
+            'updated_count': 0,
+            'message': 'Kanal fiyat push entegrasyonu henuz uygulanmadi; fiyat gonderilmedi.',
         }
 
 # Global instance

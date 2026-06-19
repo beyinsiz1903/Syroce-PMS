@@ -93,7 +93,21 @@ async def generate_demand_forecast(
     # Get total rooms
     total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
     if total_rooms == 0:
-        total_rooms = 100  # Default for demo
+        # Gercek oda envanteri yok: uydurma 100 oda ile sahte tahmin uretme; fail-closed.
+        return {
+            'message': 'Oda envanteri bulunamadigi icin talep tahmini olusturulamadi.',
+            'data_available': False,
+            'forecasts': [],
+            'summary': {
+                'total_days': 0,
+                'avg_forecasted_occupancy': 0,
+                'high_demand_days': 0,
+                'moderate_demand_days': 0,
+                'low_demand_days': 0,
+                'date_range': f"{request.start_date} to {request.end_date}",
+                'model_version': '2.0-advanced',
+            },
+        }
 
     forecasts = []
     for day in range(days):
@@ -263,6 +277,7 @@ async def generate_demand_forecast(
 
     return {
         'message': f'Generated {len(forecasts)} demand forecasts',
+        'data_available': True,
         'forecasts': forecasts,
         'summary': {
             'total_days': len(forecasts),

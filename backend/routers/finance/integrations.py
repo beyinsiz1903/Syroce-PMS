@@ -43,23 +43,23 @@ class LogoConnector:
         self.base_url = os.environ.get('LOGO_API_URL', 'https://logo.example/api')
 
     async def send_invoice(self, invoice):
-        await asyncio.sleep(0.1)
-        return {'external_id': f"LOGO-{invoice['id'][:8]}", 'status': 'synced', 'message': 'Invoice pushed to Logo'}
+        # Gercek Logo ERP HTTP entegrasyonu uygulanmadi; sahte 'synced' donmek
+        # yerine cagrildiginda hata ver (gelecekte yanlislikla fabrikasyon
+        # basari uretilmesini engeller).
+        raise NotImplementedError("Logo ERP send_invoice not implemented")
 
     async def send_payment(self, payment):
-        await asyncio.sleep(0.1)
-        return {'external_id': f"LOGO-PAY-{payment['id'][:8]}", 'status': 'synced', 'message': 'Payment pushed to Logo'}
+        raise NotImplementedError("Logo ERP send_payment not implemented")
 
 
 class NetsisConnector:
-    """Mock Netsis connector"""
+    """Netsis connector (entegrasyon henuz uygulanmadi)."""
     def __init__(self):
         import os
         self.base_url = os.environ.get('NETSIS_API_URL', 'https://netsis.example/api')
 
     async def send_invoice(self, invoice):
-        await asyncio.sleep(0.1)
-        return {'external_id': f"NETSIS-{invoice['id'][:8]}", 'status': 'synced', 'message': 'Invoice pushed to Netsis'}
+        raise NotImplementedError("Netsis ERP send_invoice not implemented")
 
 
 async def _gather_invoices(tenant_id: str, since=None):
@@ -91,35 +91,24 @@ async def _log_accounting_sync(tenant_id: str, payload: dict):
 async def sync_with_logo(sync_data: dict = None, current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v94 DW
 ):
-    """Sync finance data with Logo ERP"""
-    connector = LogoConnector()
-    since = sync_data.get('since') if sync_data else None
-    invoices = await _gather_invoices(current_user.tenant_id, since)
-    payments = await _gather_payments(current_user.tenant_id, since)
-
-    synced_invoices = []
-    for invoice in invoices:
-        result = await connector.send_invoice(invoice)
-        synced_invoices.append({**invoice, **result})
-
-    synced_payments = []
-    for payment in payments:
-        result = await connector.send_payment(payment)
-        synced_payments.append({**payment, **result})
-
+    """Sync finance data with Logo ERP."""
+    # Gercek Logo ERP HTTP entegrasyonu uygulanmadi (connector sahte "synced"
+    # donuyordu). Sahte basari raporlamak yerine fail-closed don; veri aktarilmaz.
     log_entry = await _log_accounting_sync(current_user.tenant_id, {
         'provider': 'logo',
-        'synced_invoices': len(synced_invoices),
-        'synced_payments': len(synced_payments),
+        'synced_invoices': 0,
+        'synced_payments': 0,
         'synced_at': datetime.now(UTC).isoformat(),
-        'status': 'success'
+        'status': 'not_implemented'
     })
 
     return {
-        'success': True,
-        'synced_invoices': len(synced_invoices),
-        'synced_payments': len(synced_payments),
-        'log_id': log_entry['id']
+        'success': False,
+        'data_available': False,
+        'synced_invoices': 0,
+        'synced_payments': 0,
+        'log_id': log_entry['id'],
+        'message': 'Logo ERP entegrasyonu henuz uygulanmadi; veri aktarilmadi.'
     }
 
 
@@ -128,27 +117,22 @@ async def sync_with_logo(sync_data: dict = None, current_user: User = Depends(ge
 async def sync_with_netsis(sync_data: dict = None, current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v94 DW
 ):
-    connector = NetsisConnector()
-    since = sync_data.get('since') if sync_data else None
-    invoices = await _gather_invoices(current_user.tenant_id, since)
-
-    synced = []
-    for invoice in invoices:
-        result = await connector.send_invoice(invoice)
-        synced.append({**invoice, **result})
-
+    # Gercek Netsis ERP HTTP entegrasyonu uygulanmadi (connector sahte "synced"
+    # donuyordu). Sahte basari raporlamak yerine fail-closed don; veri aktarilmaz.
     log_entry = await _log_accounting_sync(current_user.tenant_id, {
         'provider': 'netsis',
-        'synced_invoices': len(synced),
+        'synced_invoices': 0,
         'synced_payments': 0,
         'synced_at': datetime.now(UTC).isoformat(),
-        'status': 'success'
+        'status': 'not_implemented'
     })
 
     return {
-        'success': True,
-        'synced_invoices': len(synced),
-        'log_id': log_entry['id']
+        'success': False,
+        'data_available': False,
+        'synced_invoices': 0,
+        'log_id': log_entry['id'],
+        'message': 'Netsis ERP entegrasyonu henuz uygulanmadi; veri aktarilmadi.'
     }
 
 
@@ -171,14 +155,18 @@ async def budget_vs_actual(
     if not month:
         from datetime import date as _d
         month = _d.today().strftime('%Y-%m')
-    # Simulated budget data
-    budget = {'rooms': 150000, 'fnb': 50000, 'other': 20000, 'total': 220000}
-    actual = {'rooms': 165000, 'fnb': 48000, 'other': 22000, 'total': 235000}
-    variance = {k: actual[k] - budget[k] for k in budget}
-    variance_pct = {k: round((variance[k] / budget[k] * 100), 1) if budget[k] > 0 else 0 for k in budget}
+    # Kategori bazli (rooms/fnb/other) gercek butce kaynagi yok (db.budgets yalnizca
+    # revenue/expense toplami tutar). Uydurma sabit butce/gerceklesen uretmek yerine
+    # fail-closed don; FE anahtarlari (budget/actual/variance/variance_pct) korunur.
+    zero = {'rooms': 0, 'fnb': 0, 'other': 0, 'total': 0}
     return {
-        'month': month, 'budget': budget, 'actual': actual,
-        'variance': variance, 'variance_pct': variance_pct
+        'month': month,
+        'budget': dict(zero),
+        'actual': dict(zero),
+        'variance': dict(zero),
+        'variance_pct': dict(zero),
+        'data_available': False,
+        'message': 'Kategori bazli butce verisi tanimlanmamis.',
     }
 
 

@@ -839,8 +839,9 @@ async def analyze_review_sentiment_ai(
     if any(word in review_lower for word in ['spa', 'massage', 'wellness']):
         departments_mentioned.append('spa')
 
-    # Key topics (simulated)
-    topics = ['service', 'cleanliness'] if sentiment == 'positive' else ['maintenance', 'noise']
+    # Key topics: yalnizca metinde gercekten tespit edilen departman/konu
+    # sinyalleri (sabit polarite-bazli ciftler kaldirildi). Tespit yoksa bos.
+    topics = list(departments_mentioned)
 
     return {
         'review_text': review_text,

@@ -842,9 +842,9 @@ async def create_rate_override_mobile(
     """Create rate override for specific date"""
     current_user = await get_current_user(credentials)
 
-    # Get current rate (simplified - should fetch from rate table)
-    # For demo, using a default rate
-    original_rate = 1000.0  # This should come from rate management system
+    # Gercek "mevcut rate" kaynagi (rate tablosu) bu ucta yok; uydurma 1000.0
+    # baz alip sahte fark/yuzde uretmek yerine None birak (fail-closed).
+    original_rate = None
 
     override_id = str(uuid.uuid4())
     override = {
@@ -869,8 +869,8 @@ async def create_rate_override_mobile(
         'date': date,
         'original_rate': original_rate,
         'override_rate': override_rate,
-        'difference': override_rate - original_rate,
-        'percentage_change': ((override_rate - original_rate) / original_rate * 100) if original_rate > 0 else 0
+        'difference': (override_rate - original_rate) if original_rate is not None else None,
+        'percentage_change': ((override_rate - original_rate) / original_rate * 100) if original_rate else None,
     }
 # ── GET /revenue/mobile/rate-overrides ──
 @router.get("/revenue/mobile/rate-overrides")
@@ -894,13 +894,16 @@ async def get_rate_overrides_mobile(
 
     overrides = []
     async for override in db.rate_overrides.find(query).sort('date', 1):
+        _orig = override.get('original_rate')
+        _ovr = override.get('override_rate')
         overrides.append({
             'id': override.get('id'),
             'room_type': override.get('room_type'),
             'date': override.get('date').isoformat() if override.get('date') else None,
-            'original_rate': override.get('original_rate'),
-            'override_rate': override.get('override_rate'),
-            'difference': override.get('override_rate', 0) - override.get('original_rate', 0),
+            'original_rate': _orig,
+            'override_rate': _ovr,
+            # original_rate yoksa fark hesaplanamaz (None); POST ile tutarli, None-safe
+            'difference': (_ovr - _orig) if (_orig is not None and _ovr is not None) else None,
             'reason': override.get('reason'),
             'approved_by': override.get('approved_by'),
             'created_at': override.get('created_at').isoformat() if override.get('created_at') else None

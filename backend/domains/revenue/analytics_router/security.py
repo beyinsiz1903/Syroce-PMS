@@ -111,20 +111,10 @@ async def get_security_login_logs(
         log.pop('_id', None)
         logs.append(log)
 
-    # If no logs, create some mock data for demo
-    if len(logs) == 0:
-        mock_logs = [
-            {
-                'id': str(uuid.uuid4()),
-                'tenant_id': current_user.tenant_id,
-                'email': 'admin@hotel.com',
-                'success': True,
-                'ip_address': '192.168.1.100',
-                'user_agent': 'Mozilla/5.0',
-                'timestamp': (datetime.now(UTC) - timedelta(hours=i)).isoformat()
-            }
-            for i in range(10)
-        ]
-        logs = mock_logs
-
-    return {'logs': logs, 'total': len(logs)}
+    # Gercek giris kaydi yoksa sahte log uretme; fail-closed bos don.
+    return {
+        'logs': logs,
+        'total': len(logs),
+        'data_available': len(logs) > 0,
+        'message': None if logs else 'Giris kaydi bulunamadi.',
+    }

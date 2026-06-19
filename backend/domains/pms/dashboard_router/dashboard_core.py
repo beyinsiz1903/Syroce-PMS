@@ -1019,13 +1019,15 @@ async def get_budget_vs_actual(
         budget_q, charges_q, expenses_q, rooms_count_q, bookings_q
     )
 
-    # If no budget, create default
+    # Butce tanimlanmamissa uydurma varsayilan butce ile sahte variance uretme.
+    # Gerceklesen (actual) degerler gercektir; butce 0 birakilir, flag ile bildirilir.
+    budget_defined = bool(budget)
     if not budget:
         budget = {
-            'revenue_budget': 100000,
-            'expense_budget': 70000,
-            'occupancy_budget': 75,
-            'adr_budget': 150
+            'revenue_budget': 0,
+            'expense_budget': 0,
+            'occupancy_budget': 0,
+            'adr_budget': 0
         }
 
     actual_revenue = charges_agg[0]['total'] if charges_agg else 0
@@ -1056,11 +1058,13 @@ async def get_budget_vs_actual(
     # Calculate variances
     revenue_variance = round(((actual_revenue - budget['revenue_budget']) / budget['revenue_budget'] * 100), 2) if budget['revenue_budget'] > 0 else 0
     expense_variance = round(((actual_expense - budget['expense_budget']) / budget['expense_budget'] * 100), 2) if budget['expense_budget'] > 0 else 0
-    occupancy_variance = round(actual_occupancy - budget['occupancy_budget'], 2)
+    occupancy_variance = round(actual_occupancy - budget['occupancy_budget'], 2) if budget['occupancy_budget'] > 0 else 0
     adr_variance = round(((actual_adr - budget['adr_budget']) / budget['adr_budget'] * 100), 2) if budget['adr_budget'] > 0 else 0
 
     return {
         'month': month,
+        'data_available': budget_defined,
+        'message': None if budget_defined else 'Bu ay icin butce tanimlanmamis; yalnizca gerceklesen degerler gosteriliyor.',
         'categories': [
             {
                 'name': 'Revenue',
