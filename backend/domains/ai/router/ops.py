@@ -314,30 +314,34 @@ router = APIRouter(prefix="/api", tags=["AI / ML"])
 # ── GET /staffing-ai/optimal ──
 @router.get("/staffing-ai/optimal")
 async def get_optimal_staffing(target_date: str = None, current_user: User = Depends(get_current_user)):
-    """Get optimal staffing recommendations"""
-    # Mock implementation
+    """Get optimal staffing recommendations.
+
+    Gercek personel/vardiya optimizasyon kaynagi (personel sayisi, vardiya
+    planlama, is yuku tahmini) entegre degil. Uydurma oneri uretmek yerine
+    fail-closed (data_available=False) doner.
+    """
     return {
         'target_date': target_date or datetime.now().strftime("%Y-%m-%d"),
-        'departments': {
-            'front_desk': {'optimal': 4, 'current': 3, 'recommendation': 'hire_1'},
-            'housekeeping': {'optimal': 8, 'current': 8, 'recommendation': 'adequate'},
-            'fnb': {'optimal': 6, 'current': 5, 'recommendation': 'hire_1'}
-        },
-        'total_cost_savings': 2500.0,
-        'efficiency_gain': '15%'
+        'departments': {},
+        'total_cost_savings': 0,
+        'efficiency_gain': None,
+        'data_available': False,
+        'message': 'Personel optimizasyon verisi mevcut degil. Vardiya/personel modulu yapilandirilmamis.'
     }
 # ── GET /staffing-ai/schedule ──
 @router.get("/staffing-ai/schedule")
 async def generate_auto_schedule(target_date: str = None, current_user: User = Depends(get_current_user)):
-    """Generate AI-optimized staff schedule"""
-    # Mock implementation
+    """Generate AI-optimized staff schedule.
+
+    Gercek vardiya planlama kaynagi (personel listesi, musaitlik, is yuku)
+    entegre degil. Uydurma plan uretmek yerine fail-closed doner.
+    """
     return {
-        'schedule': [
-            {'staff': 'Ahmet', 'shift': '08:00-16:00', 'department': 'Front Desk'},
-            {'staff': 'Ayşe', 'shift': '16:00-00:00', 'department': 'Front Desk'}
-        ],
+        'schedule': [],
         'target_date': target_date or datetime.now().strftime("%Y-%m-%d"),
-        'optimization_score': 9.2
+        'optimization_score': None,
+        'data_available': False,
+        'message': 'Otomatik vardiya plani icin veri mevcut degil.'
     }
 # ── POST /ai/predictive-maintenance/analyze ──
 @router.post("/ai/predictive-maintenance/analyze")

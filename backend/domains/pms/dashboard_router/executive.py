@@ -229,15 +229,14 @@ async def get_executive_kpi_snapshot(
     _perm=Depends(require_op("view_executive_reports")),  # v71 Bug DH
 ):
     """
-    Get critical KPI snapshot - INSTANT RESPONSE VIA PRE-WARMED CACHE
-    """
+    Get critical KPI snapshot from real sources.
 
-    # Check pre-warmed cache first (instant!)
-    from cache_warmer import cache_warmer
-    if cache_warmer:
-        cached_data = cache_warmer.get_cached(f"kpi:{current_user.tenant_id}")
-        if cached_data:
-            return cached_data
+    Not: Eskiden cache_warmer'in `kpi:{tenant}` on-isitma anahtari erken
+    donduruluyordu; o yol UYDURMA degerler (sabit gelir/ADR/NPS/nakit) ve
+    bu endpoint'in `kpis`/`summary` yanit seklinden FARKLI bir sema
+    uretiyordu (cache hit'inde ya sahte veri ya FE cokmesi). Performans
+    icin gercek yaniti zaten `@cached` decorator'i (ttl=180) onbellekler.
+    """
 
     today = datetime.now(UTC).date()
     today_str = today.isoformat()
@@ -277,9 +276,9 @@ async def get_executive_kpi_snapshot(
         ]).to_list(1),
     )
 
-    if total_rooms == 0:
-        total_rooms = 50  # Default for empty DB
-
+    # Oda sayisi gercek envanterden gelir; bos DB icin uydurma varsayilan (50) YOK.
+    # total_rooms == 0 ise doluluk/RevPAR guvenli sekilde 0 doner (asagidaki guard).
+    rooms_available = total_rooms > 0
     occupancy_pct = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
     total_revenue = (revenue_doc[0]['total'] if revenue_doc else 0) or 0
 
@@ -298,16 +297,16 @@ async def get_executive_kpi_snapshot(
     adr = (total_revenue / bookings_count) if bookings_count > 0 else 0
     revpar = (total_revenue / total_rooms) if total_rooms > 0 else 0
 
-    # NPS — aggregate sonucundan
-    if nps_doc and nps_doc[0].get('cnt', 0) > 0:
-        avg_nps = nps_doc[0]['sum_rating'] / nps_doc[0]['cnt'] * 20
+    # NPS — gercek degerlendirme yoksa uydurma (75) YOK; veri yok = 0 + bayrak
+    nps_available = bool(nps_doc and nps_doc[0].get('cnt', 0) > 0)
+    if nps_available:
+        avg_nps = nps_doc[0]['sum_rating'] / nps_doc[0]['cnt'] * 20  # 5 yildiz -> 100
     else:
-        avg_nps = 75  # Convert 5-star to 100 scale
+        avg_nps = 0
 
-    # Cash position
+    # Cash position — banka hesabi yoksa uydurma tahmin (gelir*10) YOK; gercek bakiye
+    cash_available = bool(bank_accounts)
     cash_balance = sum(a.get('balance', 0) for a in bank_accounts)
-    if cash_balance == 0:
-        cash_balance = total_revenue * 10  # Rough estimate
 
     yesterday_revenue = (yesterday_revenue_doc[0]['total'] if yesterday_revenue_doc else 0) or 0
     revenue_trend = ((total_revenue - yesterday_revenue) / yesterday_revenue * 100) if yesterday_revenue > 0 else 0
@@ -324,15 +323,19 @@ async def get_executive_kpi_snapshot(
             },
             'adr': {
                 'value': round(adr, 2),
-                'trend': round(revenue_trend * 0.8, 1),
+                # ADR'nin gun-bazli trendi icin dunku booking-sayisi kaynagi yok;
+                # uydurma carpan (revenue_trend*0.8) YOK -> 0.0
+                'trend': 0.0,
                 'label': 'ADR',
                 'currency': '₺'
             },
             'occupancy': {
                 'value': round(occupancy_pct, 1),
-                'trend': 2.5,
+                # Sabit uydurma trend (2.5) YOK; dunku doluluk kaynagi yok -> 0.0
+                'trend': 0.0,
                 'label': 'Doluluk',
-                'unit': '%'
+                'unit': '%',
+                'data_available': rooms_available
             },
             'revenue': {
                 'value': round(total_revenue, 2),
@@ -342,21 +345,25 @@ async def get_executive_kpi_snapshot(
             },
             'nps': {
                 'value': round(avg_nps, 0),
-                'trend': 1.2,
+                # Sabit uydurma trend (1.2) YOK -> 0.0
+                'trend': 0.0,
                 'label': 'NPS Skoru',
-                'unit': '/100'
+                'unit': '/100',
+                'data_available': nps_available
             },
             'cash': {
                 'value': round(cash_balance, 2),
-                'trend': round(revenue_trend * 0.5, 1),
+                # Uydurma carpan (revenue_trend*0.5) YOK -> 0.0
+                'trend': 0.0,
                 'label': 'Nakit Pozisyon',
-                'currency': '₺'
+                'currency': '₺',
+                'data_available': cash_available
             }
         },
         'summary': {
             'total_rooms': total_rooms,
             'occupied_rooms': occupied_rooms,
-            'available_rooms': total_rooms - occupied_rooms,
+            'available_rooms': max(0, total_rooms - occupied_rooms),
             'bookings_today': bookings_count
         }
     }
@@ -535,20 +542,23 @@ async def get_executive_comp_set_summary(
     hotel_adr = (total_revenue / room_nights) if room_nights > 0 else 0
     hotel_revpar = (total_revenue / (total_rooms * 30)) if total_rooms > 0 else 0
 
-    if comp_stats:
+    comp_available = bool(comp_stats)
+    if comp_available:
         comp = comp_stats[0]
         comp_occ = comp.get('occupancy', 0)
         comp_adr = comp.get('adr', 0)
         comp_revpar = comp.get('revpar', 0)
     else:
-        # Fallback: simple heuristic based on hotel performance
-        comp_occ = max(0, min(100, hotel_occupancy * 0.95))
-        comp_adr = hotel_adr * 0.97 if hotel_adr else 0
-        comp_revpar = hotel_revpar * 0.96 if hotel_revpar else 0
+        # Rakip seti (comp-set) verisi yok. Otelin kendi performansindan
+        # uydurma rakip degeri (otel*0.95/0.97/0.96) URETME -> fail-closed 0.
+        comp_occ = 0
+        comp_adr = 0
+        comp_revpar = 0
 
     def safe_index(hotel_val: float, comp_val: float) -> float:
+        # Rakip verisi yoksa "100 (eşit)" gibi yaniltici index URETME -> 0.
         if comp_val <= 0:
-            return 100.0
+            return 0.0
         return round((hotel_val / comp_val) * 100, 1)
 
     occ_index = safe_index(hotel_occupancy, comp_occ)
@@ -571,7 +581,9 @@ async def get_executive_comp_set_summary(
             'occ_index': occ_index,
             'adr_index': adr_index,
             'revpar_index': revpar_index
-        }
+        },
+        'data_available': comp_available,
+        'message': None if comp_available else 'Rakip seti (comp-set) verisi mevcut degil.'
     }
 # ── GET /executive/budget-config ──
 @router.get("/executive/budget-config")

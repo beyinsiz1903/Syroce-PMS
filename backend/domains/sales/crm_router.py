@@ -397,60 +397,66 @@ async def get_corporate_contracts(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
-    Get corporate contracts list
+    Get corporate contracts list — gercek corporate_contracts kayitlarindan.
+    Uydurma sozlesme (Tech Solutions/Finance Corp) URETME.
     """
-    await get_current_user(credentials)
+    current_user = await get_current_user(credentials)
 
-    today = datetime.now().date()
+    today = datetime.now(UTC).date()
 
-    contracts = [
-        {
-            'id': str(uuid.uuid4()),
-            'company_name': 'Tech Solutions Ltd.',
-            'contract_type': 'volume_based',
-            'start_date': (today - timedelta(days=180)).isoformat(),
-            'end_date': (today + timedelta(days=185)).isoformat(),
-            'room_nights_committed': 500,
-            'room_nights_used': 342,
-            'contracted_rate': 1500,
-            'discount_percentage': 25,
-            'special_amenities': ['Free WiFi', 'Late Checkout', 'Meeting Room'],
-            'contact_person': 'Ahmet Yilmaz',
-            'contact_email': 'ahmet@techsolutions.com',
-            'status': 'active',
-            'days_until_expiry': 185
-        },
-        {
-            'id': str(uuid.uuid4()),
-            'company_name': 'Finance Corp',
-            'contract_type': 'fixed_rate',
-            'start_date': (today - timedelta(days=90)).isoformat(),
-            'end_date': (today + timedelta(days=45)).isoformat(),
-            'room_nights_committed': 200,
-            'room_nights_used': 156,
-            'contracted_rate': 1800,
-            'discount_percentage': 20,
-            'special_amenities': ['Breakfast', 'Airport Transfer'],
-            'contact_person': 'Zeynep Kara',
-            'contact_email': 'zeynep@financecorp.com',
-            'status': 'expiring_soon',
-            'days_until_expiry': 45
-        }
-    ]
+    def _to_date(v):
+        if v is None:
+            return None
+        try:
+            return v.date() if hasattr(v, 'date') else datetime.fromisoformat(str(v)).date()
+        except (ValueError, TypeError):
+            return None
 
-    # Filter by status
+    contracts = []
+    async for doc in db.corporate_contracts.find(
+        {'tenant_id': current_user.tenant_id}, {'_id': 0}
+    ).sort('start_date', -1):
+        start_d = _to_date(doc.get('start_date'))
+        end_d = _to_date(doc.get('end_date'))
+        days_until_expiry = (end_d - today).days if end_d is not None else None
+
+        contracts.append({
+            'id': doc.get('id'),
+            'company_name': doc.get('company_name'),
+            'contract_type': doc.get('contract_type'),
+            'start_date': start_d.isoformat() if start_d else None,
+            'end_date': end_d.isoformat() if end_d else None,
+            'room_nights_committed': doc.get('allotment', 0) or 0,
+            'room_nights_used': doc.get('total_room_nights', 0) or 0,
+            'contracted_rate': doc.get('negotiated_rate'),
+            'discount_percentage': doc.get('discount_percentage', 0) or 0,
+            'special_amenities': doc.get('special_amenities', []),
+            'contact_person': doc.get('contact_person'),
+            'contact_email': doc.get('contact_email'),
+            'status': doc.get('status'),
+            'days_until_expiry': days_until_expiry,
+        })
+
+    # Filter by status (days_until_expiry None = bitis tarihi bilinmiyor -> 'active' kabul)
     if status:
         if status == 'active':
-            contracts = [c for c in contracts if c['days_until_expiry'] > 60]
+            contracts = [c for c in contracts if c['days_until_expiry'] is None or c['days_until_expiry'] > 60]
         elif status == 'expiring':
-            contracts = [c for c in contracts if 0 < c['days_until_expiry'] <= 60]
+            contracts = [c for c in contracts if c['days_until_expiry'] is not None and 0 < c['days_until_expiry'] <= 60]
         elif status == 'expired':
-            contracts = [c for c in contracts if c['days_until_expiry'] <= 0]
+            contracts = [c for c in contracts if c['days_until_expiry'] is not None and c['days_until_expiry'] <= 0]
+
+    expiring_soon = len([
+        c for c in contracts
+        if c['days_until_expiry'] is not None and 0 < c['days_until_expiry'] <= 30
+    ])
 
     return {
         'contracts': contracts,
         'count': len(contracts),
-        'expiring_soon': len([c for c in contracts if 0 < c['days_until_expiry'] <= 30])
+        'expiring_soon': expiring_soon,
+        'data_available': len(contracts) > 0,
+        'message': None if contracts else 'Kurumsal sozlesme kaydi bulunamadi.',
     }
 
 
@@ -462,35 +468,65 @@ async def get_corporate_customers(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
-    Get corporate customer list
+    Get corporate customer list — gercek companies + bookings verisinden.
+    Uydurma musteri (Tech Solutions/Finance Corp) URETME.
     """
-    await get_current_user(credentials)
+    current_user = await get_current_user(credentials)
+    tenant_id = current_user.tenant_id
 
-    customers = [
-        {
-            'company_name': 'Tech Solutions Ltd.',
-            'total_bookings': 342,
-            'total_revenue': 513000,
-            'contract_status': 'active',
-            'last_booking': (datetime.now() - timedelta(days=5)).isoformat()[:10],
-            'contact_person': 'Ahmet Yılmaz',
-            'vip_status': True
-        },
-        {
-            'company_name': 'Finance Corp',
-            'total_bookings': 156,
-            'total_revenue': 280800,
-            'contract_status': 'expiring_soon',
-            'last_booking': (datetime.now() - timedelta(days=12)).isoformat()[:10],
-            'contact_person': 'Zeynep Kara',
-            'vip_status': True
+    companies = await db.companies.find(
+        {'tenant_id': tenant_id, 'status': CompanyStatus.ACTIVE},
+        {'_id': 0}
+    ).to_list(1000)
+
+    if not companies:
+        return {
+            'corporate_customers': [],
+            'count': 0,
+            'total_revenue': 0.0,
+            'data_available': False,
+            'message': 'Aktif kurumsal musteri kaydi bulunamadi.',
         }
-    ]
+
+    company_ids = [c['id'] for c in companies]
+    agg = await db.bookings.aggregate([
+        {'$match': {
+            'tenant_id': tenant_id,
+            'company_id': {'$in': company_ids},
+            'status': {'$in': ['confirmed', 'checked_in', 'checked_out']}
+        }},
+        {'$group': {
+            '_id': '$company_id',
+            'total_bookings': {'$sum': 1},
+            'total_revenue': {'$sum': '$total_amount'},
+            'last_booking': {'$max': '$check_in'},
+        }}
+    ]).to_list(1000)
+    by_company = {a['_id']: a for a in agg}
+
+    customers = []
+    grand_total = 0.0
+    for c in companies:
+        m = by_company.get(c['id'], {})
+        revenue = float(m.get('total_revenue', 0) or 0)
+        grand_total += revenue
+        last_b = m.get('last_booking')
+        customers.append({
+            'company_name': c.get('name'),
+            'total_bookings': int(m.get('total_bookings', 0) or 0),
+            'total_revenue': round(revenue, 2),
+            'contract_status': c.get('status'),
+            'last_booking': str(last_b)[:10] if last_b else None,
+            'contact_person': c.get('contact_person'),
+            'vip_status': bool(c.get('vip', False)),
+        })
 
     return {
         'corporate_customers': customers,
         'count': len(customers),
-        'total_revenue': sum(c['total_revenue'] for c in customers)
+        'total_revenue': round(grand_total, 2),
+        'data_available': True,
+        'message': None,
     }
 
 
@@ -525,7 +561,9 @@ async def get_corporate_contract_utilization(
                 'total_actual_nights': 0,
                 'total_revenue': 0.0,
                 'avg_utilization_pct': 0.0,
-            }
+            },
+            'data_available': False,
+            'message': 'Taahhutlu kurumsal sozlesme bulunamadi.',
         }
 
     company_ids = [c['id'] for c in companies]
@@ -607,8 +645,20 @@ async def get_corporate_contract_utilization(
             'status': 'under_utilized' if utilization < 70 and commit > 0 else 'healthy'
         })
 
-    if total_committed > 0:
-        round((total_actual / total_committed) * 100, 1)
+    avg_utilization = round((total_actual / total_committed) * 100, 1) if total_committed > 0 else 0.0
+
+    return {
+        'contracts': contracts,
+        'summary': {
+            'total_companies': len(companies),
+            'total_committed_nights': total_committed,
+            'total_actual_nights': total_actual,
+            'total_revenue': round(total_revenue, 2),
+            'avg_utilization_pct': avg_utilization,
+        },
+        'data_available': True,
+        'message': None,
+    }
 
 
 @router.get("/corporate/rates")
@@ -617,46 +667,22 @@ async def get_corporate_rates(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
-    Get corporate contract rates
+    Get corporate contract rates — gercek corporate_rate_plans kayitlarindan.
+    Uydurma oran (Tech Solutions/Finance Corp) URETME.
     """
-    await get_current_user(credentials)
+    current_user = await get_current_user(credentials)
 
-    rates = [
-        {
-            'company': 'Tech Solutions Ltd.',
-            'room_type': 'Standard',
-            'rack_rate': 2000,
-            'contract_rate': 1500,
-            'discount_pct': 25,
-            'min_nights': 1,
-            'blackout_dates': []
-        },
-        {
-            'company': 'Tech Solutions Ltd.',
-            'room_type': 'Deluxe',
-            'rack_rate': 2800,
-            'contract_rate': 2100,
-            'discount_pct': 25,
-            'min_nights': 1,
-            'blackout_dates': []
-        },
-        {
-            'company': 'Finance Corp',
-            'room_type': 'Standard',
-            'rack_rate': 2000,
-            'contract_rate': 1600,
-            'discount_pct': 20,
-            'min_nights': 2,
-            'blackout_dates': ['2025-12-24', '2025-12-31']
-        }
-    ]
-
+    query = {'tenant_id': current_user.tenant_id}
     if company:
-        rates = [r for r in rates if r['company'] == company]
+        query['company_name'] = company
+
+    rates = await db.corporate_rate_plans.find(query, {'_id': 0}).to_list(500)
 
     return {
         'contract_rates': rates,
-        'count': len(rates)
+        'count': len(rates),
+        'data_available': len(rates) > 0,
+        'message': None if rates else 'Kurumsal oran plani bulunamadi.',
     }
 
 
@@ -690,38 +716,44 @@ async def get_corporate_alerts(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
-    Get contract expiry and renewal alerts
+    Get contract expiry and renewal alerts — gercek corporate_contracts'tan turetilir.
+    Uydurma uyari (Finance Corp/Tech Solutions) URETME.
     """
-    await get_current_user(credentials)
+    current_user = await get_current_user(credentials)
+    today = datetime.now(UTC).date()
 
-    alerts = [
-        {
-            'id': str(uuid.uuid4()),
-            'alert_type': 'contract_expiring',
-            'severity': 'high',
-            'company': 'Finance Corp',
-            'message': 'Contract expires in 45 days',
-            'days_remaining': 45,
-            'action_required': 'Schedule renewal meeting',
-            'contact_person': 'Zeynep Kara',
-            'created_at': datetime.now().isoformat()
-        },
-        {
-            'id': str(uuid.uuid4()),
-            'alert_type': 'volume_milestone',
-            'severity': 'medium',
-            'company': 'Tech Solutions Ltd.',
-            'message': '68% of committed room nights have been used',
-            'days_remaining': 185,
-            'action_required': 'Track usage',
-            'contact_person': 'Ahmet Yilmaz',
-            'created_at': datetime.now().isoformat()
-        }
-    ]
+    alerts = []
+    async for doc in db.corporate_contracts.find(
+        {'tenant_id': current_user.tenant_id}, {'_id': 0}
+    ):
+        end_date = doc.get('end_date')
+        if end_date is None:
+            continue
+        try:
+            end_d = end_date.date() if hasattr(end_date, 'date') else datetime.fromisoformat(str(end_date)).date()
+        except (ValueError, TypeError):
+            continue
+        days_remaining = (end_d - today).days
+        if 0 < days_remaining <= 60:
+            alerts.append({
+                'id': str(uuid.uuid4()),
+                'alert_type': 'contract_expiring',
+                'severity': 'high' if days_remaining <= 30 else 'medium',
+                'company': doc.get('company_name'),
+                'message': f'Sozlesme {days_remaining} gun icinde sona eriyor',
+                'days_remaining': days_remaining,
+                'action_required': 'Yenileme gorusmesi planlayin',
+                'contact_person': doc.get('contact_person'),
+                'created_at': datetime.now(UTC).isoformat(),
+            })
+
+    alerts.sort(key=lambda a: a['days_remaining'])
 
     return {
         'alerts': alerts,
         'count': len(alerts),
-        'high_priority': len([a for a in alerts if a['severity'] == 'high'])
+        'high_priority': len([a for a in alerts if a['severity'] == 'high']),
+        'data_available': len(alerts) > 0,
+        'message': None if alerts else 'Sozlesme suresi yaklasan kayit bulunamadi.',
     }
 

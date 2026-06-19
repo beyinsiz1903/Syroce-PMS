@@ -113,41 +113,50 @@ const ChannelManagerDashboard = () => {
             <CardTitle className="text-base">{t('cm.components_ChannelManagerDashboard.fiyat_karsilastirma')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {Object.entries(rateComparison.channels).map(([key, data]) => (
-                <div key={key} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                  <span className="text-sm">{key}</span>
-                  <div className="flex items-center space-x-2">
-                    <span className="font-bold">₺{data.rate}</span>
-                    <Badge variant="outline" className="text-xs">
-                      #{data.rank}
-                    </Badge>
+            {rateComparison.data_available === false ? (
+              <p className="text-sm text-gray-500 py-4 text-center">
+                {rateComparison.message ||
+                  'Fiyat karşılaştırma verisi mevcut değil.'}
+              </p>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  {Object.entries(rateComparison.channels).map(([key, data]) => (
+                    <div key={key} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                      <span className="text-sm">{key}</span>
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold">₺{data.rate}</span>
+                        <Badge variant="outline" className="text-xs">
+                          #{data.rank}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">{t('cm.components_ChannelManagerDashboard.sizin_fiyatiniz')}</span>
+                    <span className="text-lg font-bold text-blue-600">
+                      ₺{rateComparison.your_rate}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-xs text-gray-600">{t('cm.components_ChannelManagerDashboard.oneri')}</span>
+                    <div className="flex items-center space-x-1">
+                      {rateComparison.recommendation === 'increase' ? (
+                        <TrendingUp className="w-4 h-4 text-green-500" />
+                      ) : (
+                        <TrendingDown className="w-4 h-4 text-red-500" />
+                      )}
+                      <span className="text-sm font-medium">
+                        ₺{rateComparison.suggested_rate}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
-            
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">{t('cm.components_ChannelManagerDashboard.sizin_fiyatiniz')}</span>
-                <span className="text-lg font-bold text-blue-600">
-                  ₺{rateComparison.your_rate}
-                </span>
-              </div>
-              <div className="flex items-center justify-between mt-2">
-                <span className="text-xs text-gray-600">{t('cm.components_ChannelManagerDashboard.oneri')}</span>
-                <div className="flex items-center space-x-1">
-                  {rateComparison.recommendation === 'increase' ? (
-                    <TrendingUp className="w-4 h-4 text-green-500" />
-                  ) : (
-                    <TrendingDown className="w-4 h-4 text-red-500" />
-                  )}
-                  <span className="text-sm font-medium">
-                    ₺{rateComparison.suggested_rate}
-                  </span>
-                </div>
-              </div>
-            </div>
+              </>
+            )}
           </CardContent>
         </Card>
       )}

@@ -1213,20 +1213,25 @@ async def create_backup(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
-    """Create database backup"""
+    """Create database backup.
+
+    Gercek veritabani yedeklemesi MongoDB Atlas tarafindan yonetilir
+    (provider-managed continuous backup). Bu endpoint sahte bir yedek
+    boyutu (size_mb) ya da sahte tamamlanma durumu URETMEZ; yalnizca
+    operatorun yedek talebini metadata olarak kaydeder (status='requested').
+    """
     backup_id = str(uuid.uuid4())
 
-    # In production, this would trigger actual backup process
-    # For now, we'll create a backup metadata record
     backup = {
         'id': backup_id,
         'tenant_id': current_user.tenant_id,
         'backup_type': request.backup_type,
-        'status': 'in_progress',
-        'size_mb': 0,
+        'status': 'requested',
+        'size_mb': None,
         'collections_included': request.include_collections or ['all'],
         'started_at': datetime.now(UTC).isoformat(),
-        'created_by': current_user.id
+        'created_by': current_user.id,
+        'note': 'Gercek yedekleme MongoDB Atlas tarafindan yonetilir (provider-managed continuous backup).'
     }
 
     backup_copy = backup.copy()
@@ -1239,26 +1244,15 @@ async def create_backup(
         action='create_backup',
         entity_type='backup',
         entity_id=backup_id,
-        details=f"Initiated {request.backup_type} backup",
+        details=f"Requested {request.backup_type} backup",
         db=db
     )
 
-    # Simulate backup completion
-    await db.backups.update_one(
-        {'id': backup_id},
-        {
-            '$set': {
-                'status': 'completed',
-                'size_mb': 145.7,  # Mock size
-                'completed_at': datetime.now(UTC).isoformat()
-            }
-        }
-    )
-
     return {
-        'message': 'Backup created successfully',
+        'message': 'Yedek talebi kaydedildi. Gercek veritabani yedegi MongoDB Atlas (provider-managed) tarafindan yonetilir.',
         'backup_id': backup_id,
-        'status': 'completed'
+        'status': 'requested',
+        'data_available': False
     }
 
 @router.get("/admin/backup/list")

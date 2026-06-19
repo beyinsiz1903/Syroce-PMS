@@ -27,7 +27,6 @@ class CacheWarmer:
             self.warm_bookings_cache(tenant_id),
             self.warm_guest_room_maps_cache(tenant_id),
             self.warm_dashboard_cache(tenant_id),
-            self.warm_kpi_cache(tenant_id),
             self.warm_housekeeping_endpoints(tenant_id),
             self.warm_frontdesk_endpoints(tenant_id),
             return_exceptions=True
@@ -366,34 +365,12 @@ class CacheWarmer:
         except Exception as e:
             logger.info(f"  ❌ Dashboard cache warming failed: {e}")
 
-    async def warm_kpi_cache(self, tenant_id: str):
-        """Pre-warm KPI cache"""
-        try:
-            # Pre-calculate KPIs
-            total_rooms = await self.db.rooms.count_documents({'tenant_id': tenant_id}) or 50
-            occupied_rooms = await self.db.rooms.count_documents({
-                'tenant_id': tenant_id, 'status': 'occupied'
-            })
-
-            kpi_data = {
-                'occupancy_pct': round((occupied_rooms / total_rooms * 100), 2),
-                'total_revenue': 15000,  # Estimated
-                'adr': 150,  # Estimated
-                'revpar': 112.5,  # Estimated
-                'nps_score': 85,  # Estimated
-                'cash_balance': 150000,  # Estimated
-                'total_rooms': total_rooms,
-                'occupied_rooms': occupied_rooms
-            }
-
-            cache_key = f"kpi:{tenant_id}"
-            self.cache[cache_key] = {
-                'data': kpi_data,
-                'expires_at': datetime.utcnow() + timedelta(seconds=20)  # Aggressive refresh
-            }
-            logger.info("  ✅ KPI cache warmed")
-        except Exception as e:
-            logger.info(f"  ❌ KPI cache warming failed: {e}")
+    # Not: warm_kpi_cache KALDIRILDI. Eskiden `kpi:{tenant}` anahtarini UYDURMA
+    # degerlerle (sabit gelir=15000/ADR=150/RevPAR=112.5/NPS=85/nakit=150000) ve
+    # /executive/kpi-snapshot'in gercek `kpis`/`summary` semasindan farkli bir
+    # sekille isitiyordu. Endpoint artik gercek kaynaktan hesaplar ve performans
+    # icin kendi `@cached` decorator'ini kullanir; orphan kalan bu sahte isitma
+    # kaldirildi (doktrin: no fake-green).
 
     def get_cached(self, cache_key: str):
         """Get data from warmed cache"""
@@ -424,13 +401,12 @@ class CacheWarmer:
                 if cycle % full_every == 0:
                     await self.warm_all_caches(tenant_id)
                 else:
-                    # Hafif refresh: dashboard + kpi + bookings + guest/room
-                    # maps. The latter three MUST be refreshed every cycle —
+                    # Hafif refresh: dashboard + bookings + guest/room maps.
+                    # The latter three MUST be refreshed every cycle —
                     # otherwise their 180s TTL outlives the warm copy and
                     # the bookings endpoint goes cold every other minute.
                     await asyncio.gather(
                         self.warm_dashboard_cache(tenant_id),
-                        self.warm_kpi_cache(tenant_id),
                         self.warm_bookings_cache(tenant_id),
                         self.warm_guest_room_maps_cache(tenant_id),
                         return_exceptions=True,

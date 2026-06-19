@@ -232,7 +232,7 @@ async def get_shift_metrics(
         'evening': {'sales': 0, 'orders': 0, 'hours': '18:00-23:00'}
     }
 
-    # Mock shift calculation
+    # Gercek POS siparislerini vardiya saatlerine gore topla (created_at saatine gore)
     async for order in db.pos_orders.find({
         'tenant_id': current_user.tenant_id,
         'order_date': date

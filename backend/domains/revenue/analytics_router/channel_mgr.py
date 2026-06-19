@@ -63,52 +63,59 @@ router = APIRouter(prefix="/api", tags=["analytics"])
 async def get_channel_manager_overview(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    """Get channel manager overview with all connected channels"""
-    await get_current_user(credentials)
+    """Channel manager overview — gercek bagli kanallar + bugunun rezervasyonlari.
 
-    # Mock channel data (in production, get from actual channel manager API)
-    channels = {
-        'booking_com': {
-            'name': 'Booking.com',
-            'status': 'connected',
-            'last_sync': (datetime.now(UTC) - timedelta(minutes=5)).isoformat(),
-            'active_listings': 24,
-            'bookings_today': 3,
-            'revenue_today': 1250.0,
-            'avg_rating': 8.7,
-            'commission_rate': 15.0
-        },
-        'expedia': {
-            'name': 'Expedia',
-            'status': 'connected',
-            'last_sync': (datetime.now(UTC) - timedelta(minutes=8)).isoformat(),
-            'active_listings': 24,
-            'bookings_today': 2,
-            'revenue_today': 890.0,
-            'avg_rating': 4.3,
-            'commission_rate': 18.0
-        },
-        'airbnb': {
-            'name': 'Airbnb',
-            'status': 'connected',
-            'last_sync': (datetime.now(UTC) - timedelta(minutes=12)).isoformat(),
-            'active_listings': 15,
-            'bookings_today': 1,
-            'revenue_today': 450.0,
-            'avg_rating': 4.8,
-            'commission_rate': 14.0
-        },
-        'direct': {
-            'name': 'Direct Website',
-            'status': 'active',
-            'last_sync': datetime.now(UTC).isoformat(),
-            'active_listings': 24,
-            'bookings_today': 4,
-            'revenue_today': 1800.0,
-            'avg_rating': 4.9,
-            'commission_rate': 0.0
+    Veri kaynaklari:
+    - channel_connections: tenant'in gercek kanal baglantilari (durum, son senkron)
+    - bookings: bugun check-in olan rezervasyonlar, kaynaga (source) gore toplanir
+    Bagli kanal yoksa fail-closed (data_available=False) doner; uydurma kanal uretmez.
+    """
+    current_user = await get_current_user(credentials)
+
+    connections = await db.channel_connections.find(
+        {'tenant_id': current_user.tenant_id}, {'_id': 0}
+    ).to_list(100)
+
+    if not connections:
+        return {
+            'channels': {},
+            'summary': {
+                'total_channels': 0,
+                'connected_channels': 0,
+                'total_bookings_today': 0,
+                'total_revenue_today': 0.0,
+            },
+            'data_available': False,
+            'message': 'Bagli kanal bulunmuyor. Kanal yoneticisi yapilandirilmamis.'
         }
-    }
+
+    today_str = datetime.now(UTC).date().isoformat()
+
+    # Bugunun rezervasyonlarini kaynaga gore topla (gercek veri)
+    bookings_by_source: dict = {}
+    async for b in db.bookings.find({
+        'tenant_id': current_user.tenant_id,
+        'check_in': {'$gte': today_str, '$lte': today_str},
+    }):
+        src = b.get('source') or 'direct'
+        key = str(src).lower().replace(' ', '_')
+        agg = bookings_by_source.setdefault(key, {'bookings': 0, 'revenue': 0.0})
+        agg['bookings'] += 1
+        agg['revenue'] += b.get('total_amount', 0) or 0
+
+    channels: dict = {}
+    for conn in connections:
+        name = conn.get('name') or conn.get('channel_type') or conn.get('provider') or 'unknown'
+        key = str(conn.get('channel_type') or conn.get('provider') or name).lower().replace(' ', '_')
+        today_agg = bookings_by_source.get(key, {'bookings': 0, 'revenue': 0.0})
+        channels[key] = {
+            'name': name,
+            'status': conn.get('status', 'unknown'),
+            'last_sync': conn.get('last_sync') or conn.get('last_sync_at') or conn.get('updated_at'),
+            'bookings_today': today_agg['bookings'],
+            'revenue_today': round(today_agg['revenue'], 2),
+            'commission_rate': conn.get('commission_rate'),
+        }
 
     total_bookings = sum(ch['bookings_today'] for ch in channels.values())
     total_revenue = sum(ch['revenue_today'] for ch in channels.values())
@@ -117,10 +124,11 @@ async def get_channel_manager_overview(
         'channels': channels,
         'summary': {
             'total_channels': len(channels),
-            'connected_channels': sum(1 for ch in channels.values() if ch['status'] == 'connected'),
+            'connected_channels': sum(1 for ch in channels.values() if ch['status'] in ('connected', 'active')),
             'total_bookings_today': total_bookings,
-            'total_revenue_today': round(total_revenue, 2)
-        }
+            'total_revenue_today': round(total_revenue, 2),
+        },
+        'data_available': True,
     }
 # ── GET /channel-manager/rate-comparison ──
 @router.get("/channel-manager/rate-comparison")
@@ -129,30 +137,27 @@ async def get_channel_rate_comparison(
     room_type: str | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    """Compare rates across all channels"""
+    """Compare rates across all channels.
+
+    Gercek kanal-bazli rate-shopping (rakip fiyat) kaynagi entegre degil.
+    Uydurma fiyat uretmek yerine fail-closed (data_available=False) doner.
+    """
     await get_current_user(credentials)
 
     if not date:
         date = datetime.now(UTC).date().isoformat()
 
-    # Mock rate comparison data
-    rate_comparison = {
+    return {
         'date': date,
         'room_type': room_type or 'Standard',
-        'channels': {
-            'booking_com': {'rate': 150.0, 'available': True, 'rank': 3},
-            'expedia': {'rate': 155.0, 'available': True, 'rank': 2},
-            'airbnb': {'rate': 145.0, 'available': True, 'rank': 1},
-            'direct': {'rate': 140.0, 'available': True, 'rank': 4},
-            'agoda': {'rate': 158.0, 'available': True, 'rank': 5}
-        },
-        'your_rate': 140.0,
-        'competitor_avg': 152.0,
-        'recommendation': 'increase',
-        'suggested_rate': 148.0
+        'channels': {},
+        'your_rate': None,
+        'competitor_avg': None,
+        'recommendation': None,
+        'suggested_rate': None,
+        'data_available': False,
+        'message': 'Kanal bazli fiyat karsilastirma (rate-shopping) verisi mevcut degil.'
     }
-
-    return rate_comparison
 # ── GET /channel-manager/revenue-by-channel ──
 @router.get("/channel-manager/revenue-by-channel")
 async def get_revenue_by_channel(

@@ -187,72 +187,23 @@ async def get_team_performance(
     _: None = Depends(require_module("gm_dashboards")),
     _perm=Depends(require_op("view_system_diagnostics")),  # v103 DX alias drift fix
 ):
-    """Get team performance metrics"""
+    """Get team performance metrics.
+
+    Personel performans skorlama icin gercek bir kaynak (performans
+    degerlendirme / personel verimlilik koleksiyonu) entegre degil.
+    Uydurma skor uretmek yerine fail-closed (data_available=False) doner.
+    """
     await get_current_user(credentials)
 
-    # Mock team performance data
-    team_data = {
-        'front_desk': {
-            'department': 'Front Desk',
-            'staff_count': 8,
-            'avg_performance_score': 92.5,
-            'tasks_completed': 245,
-            'guest_satisfaction': 4.6,
-            'top_performer': {'name': 'Ayşe Yılmaz', 'score': 98},
-            'metrics': {
-                'check_ins': 156,
-                'check_outs': 148,
-                'avg_time': '4.2 min'
-            }
-        },
-        'housekeeping': {
-            'department': 'Housekeeping',
-            'staff_count': 12,
-            'avg_performance_score': 88.3,
-            'tasks_completed': 612,
-            'guest_satisfaction': 4.4,
-            'top_performer': {'name': 'Fatma Demir', 'score': 95},
-            'metrics': {
-                'rooms_cleaned': 612,
-                'avg_time': '28 min',
-                'quality_score': 4.5
-            }
-        },
-        'maintenance': {
-            'department': 'Maintenance',
-            'staff_count': 6,
-            'avg_performance_score': 91.2,
-            'tasks_completed': 89,
-            'guest_satisfaction': 4.5,
-            'top_performer': {'name': 'Mehmet Koç', 'score': 96},
-            'metrics': {
-                'tasks_completed': 89,
-                'avg_response_time': '18 min',
-                'sla_compliance': 94
-            }
-        },
-        'fnb': {
-            'department': 'F&B',
-            'staff_count': 15,
-            'avg_performance_score': 87.8,
-            'tasks_completed': 1240,
-            'guest_satisfaction': 4.3,
-            'top_performer': {'name': 'Ali Şahin', 'score': 93},
-            'metrics': {
-                'orders_served': 1240,
-                'avg_time': '12 min',
-                'quality_score': 4.3
-            }
-        }
-    }
-
     if department:
-        return team_data.get(department, {})
+        return {}
 
     return {
-        'departments': team_data,
+        'departments': {},
         'period': period,
-        'overall_performance': round(sum(d['avg_performance_score'] for d in team_data.values()) / len(team_data), 1)
+        'overall_performance': 0,
+        'data_available': False,
+        'message': 'Personel performans verisi mevcut degil. Performans takibi yapilandirilmamis.'
     }
 # ── GET /gm/complaints ──
 @router.get("/gm/complaints")
@@ -277,47 +228,15 @@ async def get_complaints(
         complaint.pop('_id', None)
         complaints.append(complaint)
 
-    # If no complaints, create mock data
-    if len(complaints) == 0:
-        mock_complaints = [
-            {
-                'id': str(uuid.uuid4()),
-                'tenant_id': current_user.tenant_id,
-                'guest_name': 'Ahmet Yılmaz',
-                'room_number': '205',
-                'category': 'cleanliness',
-                'subject': 'Oda temizliği yetersiz',
-                'description': 'Banyoda havlu eksikliği var',
-                'priority': 'normal',
-                'status': 'open',
-                'created_at': (datetime.now(UTC) - timedelta(hours=2)).isoformat(),
-                'assigned_to': 'Housekeeping',
-                'resolution': None
-            },
-            {
-                'id': str(uuid.uuid4()),
-                'tenant_id': current_user.tenant_id,
-                'guest_name': 'Zeynep Kaya',
-                'room_number': '312',
-                'category': 'noise',
-                'subject': 'Gürültü şikayeti',
-                'description': 'Yan odadan yüksek ses geliyor',
-                'priority': 'high',
-                'status': 'in_progress',
-                'created_at': (datetime.now(UTC) - timedelta(hours=5)).isoformat(),
-                'assigned_to': 'Front Desk',
-                'resolution': None
-            }
-        ]
-        complaints = mock_complaints
-
+    # Gercek sikayet kayitlarini doner; kayit yoksa bos liste (uydurma yok).
     return {
         'complaints': complaints,
         'count': len(complaints),
+        'data_available': len(complaints) > 0,
         'by_status': {
-            'open': sum(1 for c in complaints if c['status'] == 'open'),
-            'in_progress': sum(1 for c in complaints if c['status'] == 'in_progress'),
-            'resolved': sum(1 for c in complaints if c['status'] == 'resolved')
+            'open': sum(1 for c in complaints if c.get('status') == 'open'),
+            'in_progress': sum(1 for c in complaints if c.get('status') == 'in_progress'),
+            'resolved': sum(1 for c in complaints if c.get('status') == 'resolved')
         }
     }
 # ── POST /gm/complaint ──

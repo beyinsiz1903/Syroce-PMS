@@ -314,15 +314,22 @@ const ExecutiveDashboard = ({ user }) => {
                             </span>
                           </div>
                           <div className="text-3xl font-bold mb-1">
-                            {kpiSnapshot.kpis.nps.value}
-                            {kpiSnapshot.kpis.nps.unit}
+                            {kpiSnapshot.kpis.nps.data_available === false
+                              ? '—'
+                              : `${kpiSnapshot.kpis.nps.value}${kpiSnapshot.kpis.nps.unit}`}
                           </div>
                           <div className="flex items-center gap-1 text-sm">
-                            {getTrendIcon(kpiSnapshot.kpis.nps.trend)}
-                            <span>
-                              {kpiSnapshot.kpis.nps.trend > 0 ? '+' : ''}
-                              {kpiSnapshot.kpis.nps.trend.toFixed(1)}%
-                            </span>
+                            {kpiSnapshot.kpis.nps.data_available === false ? (
+                              <span className="opacity-80">Veri yok</span>
+                            ) : (
+                              <>
+                                {getTrendIcon(kpiSnapshot.kpis.nps.trend)}
+                                <span>
+                                  {kpiSnapshot.kpis.nps.trend > 0 ? '+' : ''}
+                                  {kpiSnapshot.kpis.nps.trend.toFixed(1)}%
+                                </span>
+                              </>
+                            )}
                           </div>
                         </CardContent>
                       </Card>
@@ -336,15 +343,22 @@ const ExecutiveDashboard = ({ user }) => {
                             </span>
                           </div>
                           <div className="text-2xl font-bold mb-1">
-                            {kpiSnapshot.kpis.cash.currency}
-                            {(kpiSnapshot.kpis.cash.value / 1000).toFixed(0)}K
+                            {kpiSnapshot.kpis.cash.data_available === false
+                              ? '—'
+                              : `${kpiSnapshot.kpis.cash.currency}${(kpiSnapshot.kpis.cash.value / 1000).toFixed(0)}K`}
                           </div>
                           <div className="flex items-center gap-1 text-sm">
-                            {getTrendIcon(kpiSnapshot.kpis.cash.trend)}
-                            <span>
-                              {kpiSnapshot.kpis.cash.trend > 0 ? '+' : ''}
-                              {kpiSnapshot.kpis.cash.trend.toFixed(1)}%
-                            </span>
+                            {kpiSnapshot.kpis.cash.data_available === false ? (
+                              <span className="opacity-80">Veri yok</span>
+                            ) : (
+                              <>
+                                {getTrendIcon(kpiSnapshot.kpis.cash.trend)}
+                                <span>
+                                  {kpiSnapshot.kpis.cash.trend > 0 ? '+' : ''}
+                                  {kpiSnapshot.kpis.cash.trend.toFixed(1)}%
+                                </span>
+                              </>
+                            )}
                           </div>
                         </CardContent>
                       </Card>
@@ -453,18 +467,26 @@ const ExecutiveDashboard = ({ user }) => {
                             </div>
                             <div className="flex justify-between text-gray-300">
                               <span className="text-[11px]">Comp-set</span>
-                              <span>{compSetSummary.comp_set.occupancy}%</span>
+                              <span>
+                                {compSetSummary.data_available === false
+                                  ? '—'
+                                  : `${compSetSummary.comp_set.occupancy}%`}
+                              </span>
                             </div>
                             <div className="flex justify-between text-[11px] mt-1">
                               <span>Index</span>
                               <span
                                 className={
-                                  compSetSummary.indexes.occ_index >= 100
-                                    ? 'text-emerald-400'
-                                    : 'text-red-300'
+                                  compSetSummary.data_available === false
+                                    ? 'text-gray-400'
+                                    : compSetSummary.indexes.occ_index >= 100
+                                      ? 'text-emerald-400'
+                                      : 'text-red-300'
                                 }
                               >
-                                {compSetSummary.indexes.occ_index}
+                                {compSetSummary.data_available === false
+                                  ? '—'
+                                  : compSetSummary.indexes.occ_index}
                               </span>
                             </div>
                           </div>
@@ -481,18 +503,26 @@ const ExecutiveDashboard = ({ user }) => {
                             </div>
                             <div className="flex justify-between text-gray-300">
                               <span className="text-[11px]">Comp-set</span>
-                              <span>₺{compSetSummary.comp_set.adr.toFixed(0)}</span>
+                              <span>
+                                {compSetSummary.data_available === false
+                                  ? '—'
+                                  : `₺${compSetSummary.comp_set.adr.toFixed(0)}`}
+                              </span>
                             </div>
                             <div className="flex justify-between text-[11px] mt-1">
                               <span>Index</span>
                               <span
                                 className={
-                                  compSetSummary.indexes.adr_index >= 100
-                                    ? 'text-emerald-400'
-                                    : 'text-red-300'
+                                  compSetSummary.data_available === false
+                                    ? 'text-gray-400'
+                                    : compSetSummary.indexes.adr_index >= 100
+                                      ? 'text-emerald-400'
+                                      : 'text-red-300'
                                 }
                               >
-                                {compSetSummary.indexes.adr_index}
+                                {compSetSummary.data_available === false
+                                  ? '—'
+                                  : compSetSummary.indexes.adr_index}
                               </span>
                             </div>
                           </div>
@@ -509,28 +539,38 @@ const ExecutiveDashboard = ({ user }) => {
                             </div>
                             <div className="flex justify-between text-gray-300">
                               <span className="text-[11px]">Comp-set</span>
-                              <span>₺{compSetSummary.comp_set.revpar.toFixed(0)}</span>
+                              <span>
+                                {compSetSummary.data_available === false
+                                  ? '—'
+                                  : `₺${compSetSummary.comp_set.revpar.toFixed(0)}`}
+                              </span>
                             </div>
                             <div className="flex justify-between text-[11px] mt-1">
                               <span>Index</span>
                               <span
                                 className={
-                                  compSetSummary.indexes.revpar_index >= 100
-                                    ? 'text-emerald-400'
-                                    : 'text-red-300'
+                                  compSetSummary.data_available === false
+                                    ? 'text-gray-400'
+                                    : compSetSummary.indexes.revpar_index >= 100
+                                      ? 'text-emerald-400'
+                                      : 'text-red-300'
                                 }
                               >
-                                {compSetSummary.indexes.revpar_index}
+                                {compSetSummary.data_available === false
+                                  ? '—'
+                                  : compSetSummary.indexes.revpar_index}
                               </span>
                             </div>
                           </div>
                         </div>
                       </div>
 
-                      <p className="text-[11px] text-gray-300 mt-2">
-                        Comp-set verisi ilk etapta manuel / heuristik tahminler ile hesaplanmaktadır.
-                        İleride gerçek pazar verisi entegrasyonu yapılabilir.
-                      </p>
+                      {compSetSummary.data_available === false && (
+                        <p className="text-[11px] text-amber-300 mt-2">
+                          {compSetSummary.message ||
+                            'Rakip seti (comp-set) verisi mevcut değil.'}
+                        </p>
+                      )}
                     </CardContent>
                   </Card>
                 )}
