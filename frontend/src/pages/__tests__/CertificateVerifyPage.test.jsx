@@ -3,7 +3,16 @@ import {
   render, screen, cleanup, waitFor,
 } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import trLocale from '@/locales/tr.json';
 import CertificateVerifyPage from '@/pages/CertificateVerifyPage';
+
+// The page is now i18n-driven; resolve t() against the real TR bundle so the
+// assertions below keep checking the Turkish strings a verifier would see.
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key) => key.split('.').reduce((obj, part) => (obj == null ? undefined : obj[part]), trLocale) ?? key,
+  }),
+}));
 
 // The page builds its client via axios.create(); capture the returned instance's
 // get() so each test can drive the public /academy/verify response.

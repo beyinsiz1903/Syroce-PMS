@@ -8591,5 +8591,22 @@
     "widgetNoAlertYet": "Tespit edildi — uyarı dağıtımı henüz başarılı değil.",
     "widgetTopTenants": "En çok etkilenen: {{tenants}}",
     "widgetInspect": "İnceleyiciyi aç"
+  },
+  "certVerify": {
+    "title": "Sertifika Doğrulama",
+    "subtitle": "Syroce Academy sertifikasının gerçekliğini doğrulama kodu ile teyit edin.",
+    "codeLabel": "Doğrulama Kodu",
+    "formatHint": "Kod biçimi: SYR-ACAD- ardından 10 karakter.",
+    "verifyButton": "Doğrula",
+    "rateLimit": "Çok fazla deneme yapıldı. Lütfen birazdan tekrar deneyin.",
+    "genericError": "Doğrulama sırasında bir hata oluştu. Lütfen tekrar deneyin.",
+    "validTitle": "Geçerli sertifika",
+    "recipient": "Sertifika sahibi",
+    "course": "Eğitim",
+    "department": "Departman",
+    "issuedAt": "Veriliş tarihi",
+    "verificationCode": "Doğrulama kodu",
+    "notFoundTitle": "Sertifika bulunamadı",
+    "notFoundDesc": "Bu doğrulama koduna ait geçerli bir sertifika bulunamadı. Lütfen kodu kontrol edip tekrar deneyin."
   }
 }

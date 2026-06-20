@@ -8526,5 +8526,22 @@
     "widgetNoAlertYet": "Detected — alert dispatch has not yet succeeded.",
     "widgetTopTenants": "Most affected: {{tenants}}",
     "widgetInspect": "Open inspector"
+  },
+  "certVerify": {
+    "title": "Certificate Verification",
+    "subtitle": "Confirm the authenticity of a Syroce Academy certificate with its verification code.",
+    "codeLabel": "Verification Code",
+    "formatHint": "Code format: SYR-ACAD- followed by 10 characters.",
+    "verifyButton": "Verify",
+    "rateLimit": "Too many attempts. Please try again shortly.",
+    "genericError": "An error occurred during verification. Please try again.",
+    "validTitle": "Valid certificate",
+    "recipient": "Certificate holder",
+    "course": "Course",
+    "department": "Department",
+    "issuedAt": "Issue date",
+    "verificationCode": "Verification code",
+    "notFoundTitle": "Certificate not found",
+    "notFoundDesc": "No valid certificate was found for this verification code. Please check the code and try again."
   }
 }
