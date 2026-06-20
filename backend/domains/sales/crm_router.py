@@ -25,9 +25,11 @@ router = APIRouter(prefix="/api", tags=["Sales / CRM"])
 
 from domains.sales.schemas import (  # noqa: E402
     CreateLeadRequest,
+    MarketingContactLeadRequest,
     PmsLiteLeadCreateRequest,
     PmsLiteLeadMetadata,
     PmsLiteLeadStatus,
+    SupplierLeadRequest,
     UpdateLeadStageRequest,
 )
 
@@ -345,6 +347,136 @@ async def create_public_pms_lite_lead(request: PmsLiteLeadCreateRequest, user_ag
     await db.leads.insert_one(doc)
 
     return {"ok": True, "lead_id": lead_uuid, "deduped": False}
+
+
+async def _persist_public_lead(
+    *,
+    source: str,
+    contact: dict,
+    hotel: dict,
+    note: str | None,
+    dedup_query: dict,
+    metadata: PmsLiteLeadMetadata | None,
+    user_agent: str | None,
+    x_forwarded_for: str | None,
+) -> dict:
+    """Shared writer for public marketing leads (no auth).
+
+    Mirrors create_public_pms_lite_lead: nested contact/hotel doc, normalized
+    search fields, 5-minute idempotency. Each public source lands in the same
+    super-admin marketing inbox. Never logs request PII.
+    """
+    now = datetime.now(UTC)
+    five_minutes_ago = now - timedelta(minutes=5)
+
+    existing = await db.leads.find_one(
+        {**dedup_query, "source": source, "created_at": {"$gte": five_minutes_ago.isoformat()}}
+    )
+    if existing:
+        return {
+            "ok": True,
+            "lead_id": existing.get("lead_id") or existing.get("id"),
+            "deduped": True,
+        }
+
+    meta = metadata or PmsLiteLeadMetadata()
+    if user_agent and not meta.user_agent:
+        meta.user_agent = user_agent
+    if x_forwarded_for and not meta.ip:
+        meta.ip = x_forwarded_for.split(",")[0].strip()
+
+    lead_uuid = str(uuid.uuid4())
+    doc = {
+        "id": lead_uuid,
+        "lead_id": lead_uuid,
+        "created_at": now.isoformat(),
+        "source": source,
+        "status": PmsLiteLeadStatus.NEW.value,
+        "note": note,
+        "contact": contact,
+        "hotel": hotel,
+        "metadata": meta.model_dump(),
+    }
+
+    from security.search_normalize import apply_collection_normalized_fields
+    apply_collection_normalized_fields(doc, collection="leads")
+    await db.leads.insert_one(doc)
+
+    return {"ok": True, "lead_id": lead_uuid, "deduped": False}
+
+
+@router.post("/leads/contact")
+async def create_public_marketing_lead(
+    request: MarketingContactLeadRequest,
+    user_agent: str | None = Header(None),
+    x_forwarded_for: str | None = Header(None),
+):
+    """Public endpoint for the marketing-site contact form (no auth).
+
+    Persists into the same super-admin marketing inbox as PMS Lite leads,
+    tagged source="marketing_contact". Idempotent for same phone + company
+    within 5 minutes.
+    """
+    note_parts = []
+    if request.business_type:
+        note_parts.append(f"İşletme türü: {request.business_type}")
+    if request.message:
+        note_parts.append(request.message)
+    note = "\n\n".join(note_parts) or None
+
+    contact = {
+        "full_name": request.full_name,
+        "phone": request.phone,
+        "email": str(request.email),
+    }
+    hotel = {"property_name": request.company, "location": None, "rooms_count": None}
+
+    return await _persist_public_lead(
+        source="marketing_contact",
+        contact=contact,
+        hotel=hotel,
+        note=note,
+        dedup_query={"contact.phone": request.phone, "hotel.property_name": request.company},
+        metadata=request.metadata,
+        user_agent=user_agent,
+        x_forwarded_for=x_forwarded_for,
+    )
+
+
+@router.post("/leads/supplier")
+async def create_public_supplier_lead(
+    request: SupplierLeadRequest,
+    user_agent: str | None = Header(None),
+    x_forwarded_for: str | None = Header(None),
+):
+    """Public endpoint for the supplier application form (no auth).
+
+    Persists into the same super-admin marketing inbox, tagged
+    source="supplier_application". Idempotent for same email + company within
+    5 minutes.
+    """
+    note_parts = ["Tedarikçi başvurusu."]
+    if request.tax_no:
+        note_parts.append(f"Vergi No: {request.tax_no}")
+    note = " ".join(note_parts)
+
+    contact = {
+        "full_name": request.company,
+        "phone": request.phone,
+        "email": str(request.email),
+    }
+    hotel = {"property_name": request.company, "location": None, "rooms_count": None}
+
+    return await _persist_public_lead(
+        source="supplier_application",
+        contact=contact,
+        hotel=hotel,
+        note=note,
+        dedup_query={"contact.email": str(request.email), "hotel.property_name": request.company},
+        metadata=request.metadata,
+        user_agent=user_agent,
+        x_forwarded_for=x_forwarded_for,
+    )
 
 
 @router.get("/sales/follow-ups")

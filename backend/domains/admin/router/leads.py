@@ -369,6 +369,13 @@ except ImportError:
 
 router = APIRouter(prefix="/api", tags=["Admin / Operations"])
 
+# Public lead sources surfaced in the super-admin marketing inbox. All three
+# admin lead endpoints (list / export / patch) share this allowlist so leads
+# from the PMS-Lite landing page, the marketing contact form and the supplier
+# application form land in one inbox. $in on the leading `source` field stays
+# index-serviceable on the (source, <field>_lower) indexes.
+PUBLIC_LEAD_SOURCES = ["pms_lite_landing", "marketing_contact", "supplier_application"]
+
 
 # ── GET /admin/leads ──
 @router.get("/admin/leads")
@@ -380,11 +387,11 @@ async def admin_list_pms_lite_leads(
     offset: int = 0,
     current_user: User = Depends(get_current_user),
 ):
-    """List PMS Lite marketing leads for super admin."""
+    """List public marketing leads for super admin."""
     if not _is_super_admin(current_user) and current_user.role != UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Only super_admin can access leads")
 
-    query: dict[str, Any] = {"source": "pms_lite_landing"}
+    query: dict[str, Any] = {"source": {"$in": PUBLIC_LEAD_SOURCES}}
     if status:
         query["status"] = status.value
 
@@ -464,6 +471,7 @@ async def admin_list_pms_lite_leads(
                 "rooms_count": lead.get("hotel", {}).get("rooms_count"),
                 "last_contact_at": lead.get("last_contact_at"),
                 "status_changed_at": lead.get("status_changed_at"),
+                "source": lead.get("source"),
                 "needs_follow_up": _needs_follow_up(lead),
             }
         )
@@ -490,7 +498,7 @@ async def admin_export_pms_lite_leads_csv(
     import csv
     from io import StringIO
 
-    query: dict[str, Any] = {"source": "pms_lite_landing"}
+    query: dict[str, Any] = {"source": {"$in": PUBLIC_LEAD_SOURCES}}
     if status:
         query["status"] = status.value
 
@@ -567,6 +575,7 @@ async def admin_export_pms_lite_leads_csv(
         "note",
         "last_contact_at",
         "status_changed_at",
+        "source",
     ]
     safe_writerow(writer, headers)
 
@@ -586,6 +595,7 @@ async def admin_export_pms_lite_leads_csv(
             lead.get("note") or "",
             lead.get("last_contact_at") or "",
             lead.get("status_changed_at") or "",
+            lead.get("source") or "",
         ]
         safe_writerow(writer, row)
 
@@ -621,7 +631,7 @@ async def admin_update_pms_lite_lead(
         return {"ok": True}
 
     result = await db.leads.update_one(
-        {"lead_id": lead_id, "source": "pms_lite_landing"}, {"$set": update}
+        {"lead_id": lead_id, "source": {"$in": PUBLIC_LEAD_SOURCES}}, {"$set": update}
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Lead not found")

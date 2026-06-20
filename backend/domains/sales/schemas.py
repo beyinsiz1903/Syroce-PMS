@@ -4,7 +4,7 @@ Request/response models extracted from sales routers.
 """
 from enum import Enum
 
-from pydantic import BaseModel, EmailStr, conint
+from pydantic import BaseModel, EmailStr, Field, conint, field_validator
 
 
 class LeadStage(str, Enum):
@@ -69,3 +69,49 @@ class PmsLiteLeadCreateRequest(BaseModel):
 class PmsLiteLeadAdminUpdateRequest(BaseModel):
     status: PmsLiteLeadStatus | None = None
     note: str | None = None
+
+
+class MarketingContactLeadRequest(BaseModel):
+    """Public marketing-site contact form (no auth)."""
+    full_name: str = Field(min_length=1, max_length=200)
+    company: str = Field(min_length=1, max_length=200)
+    phone: str = Field(min_length=1, max_length=40)
+    email: EmailStr
+    business_type: str | None = Field(default=None, max_length=120)
+    message: str | None = Field(default=None, max_length=5000)
+    metadata: PmsLiteLeadMetadata | None = None
+
+    @field_validator("full_name", "company", "phone", mode="before")
+    @classmethod
+    def _strip_required(cls, v):
+        return v.strip() if isinstance(v, str) else v
+
+    @field_validator("business_type", "message", mode="before")
+    @classmethod
+    def _strip_optional(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+            return v or None
+        return v
+
+
+class SupplierLeadRequest(BaseModel):
+    """Public supplier application form (no auth)."""
+    company: str = Field(min_length=1, max_length=200)
+    tax_no: str | None = Field(default=None, max_length=40)
+    phone: str | None = Field(default=None, max_length=40)
+    email: EmailStr
+    metadata: PmsLiteLeadMetadata | None = None
+
+    @field_validator("company", mode="before")
+    @classmethod
+    def _strip_company(cls, v):
+        return v.strip() if isinstance(v, str) else v
+
+    @field_validator("tax_no", "phone", mode="before")
+    @classmethod
+    def _strip_optional(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+            return v or None
+        return v

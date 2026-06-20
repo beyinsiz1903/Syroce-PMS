@@ -1,31 +1,46 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Truck, Mail, Lock, ArrowRight, ShieldCheck, Handshake, Send } from 'lucide-react';
-import { mergeLandingContent } from '@/config/landingContentDefaults';
-
-const CONTACT_EMAIL = mergeLandingContent(null).contact.email;
 
 const SupplierAuthPage = () => {
   const navigate = useNavigate();
   const [mode, setMode] = useState('login');
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const [form, setForm] = useState({ email: '', password: '', company: '', taxNo: '', phone: '' });
 
   const onChange = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const onSubmit = (e) => {
+  const onSubmit = async (e) => {
     e.preventDefault();
-    if (mode === 'register') {
-      const subject = `Tedarikçi başvurusu — ${form.company || form.email}`;
-      const body = [
-        `Firma: ${form.company || ''}`,
-        `Vergi No: ${form.taxNo || ''}`,
-        `Telefon: ${form.phone || ''}`,
-        `E-posta: ${form.email || ''}`,
-      ].join('\n');
-      window.location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    // Login modu demo (portal yakinda devreye alinacak); yalniz basvuru modu
+    // gercek lead yazar -> POST /api/leads/supplier (axios baseURL '/api').
+    if (mode !== 'register') {
+      setSubmitted(true);
+      return;
     }
-    setSubmitted(true);
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      await axios.post('/leads/supplier', {
+        company: form.company.trim(),
+        tax_no: form.taxNo.trim() || undefined,
+        phone: form.phone.trim() || undefined,
+        email: form.email.trim(),
+      });
+      setSubmitted(true);
+    } catch (err) {
+      const status = err?.response?.status;
+      setSubmitError(
+        status === 422
+          ? 'Lütfen firma adı ve geçerli bir e-posta girin.'
+          : 'Başvuru gönderilemedi. Lütfen daha sonra tekrar deneyin.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -115,7 +130,7 @@ const SupplierAuthPage = () => {
               ].map((t) => (
                 <button
                   key={t.k}
-                  onClick={() => { setMode(t.k); setSubmitted(false); }}
+                  onClick={() => { setMode(t.k); setSubmitted(false); setSubmitError(''); }}
                   className={
                     'rounded-lg px-3 py-2 text-sm font-medium transition ' +
                     (mode === t.k
@@ -131,12 +146,12 @@ const SupplierAuthPage = () => {
             {submitted ? (
               <div className="mt-6 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-5 text-sm text-emerald-100">
                 <div className="font-semibold text-emerald-200">
-                  {mode === 'login' ? 'Demo modu' : 'Başvuru e-postanız hazırlandı'}
+                  {mode === 'login' ? 'Demo modu' : 'Başvurunuz alındı'}
                 </div>
                 <p className="mt-1.5 text-emerald-100/90">
                   {mode === 'login'
                     ? 'Tedarikçi portalı yakında devreye alınıyor. Erken erişim için başvuru sekmesinden talep oluşturabilirsiniz.'
-                    : 'E-posta uygulamanızdan mesajı göndererek başvurunuzu tamamlayın. Ekibimiz başvurunuzu inceleyip sizinle iletişime geçecek.'}
+                    : 'Başvurunuzu aldık. Ekibimiz başvurunuzu inceleyip en kısa sürede sizinle iletişime geçecek.'}
                 </p>
                 <button
                   onClick={() => setSubmitted(false)}
@@ -149,7 +164,7 @@ const SupplierAuthPage = () => {
               <form onSubmit={onSubmit} className="mt-6 grid gap-4">
                 {mode === 'register' && (
                   <>
-                    <Field label="Firma Adı" placeholder="Örn. Akdeniz Gıda Ltd. Şti." value={form.company} onChange={onChange('company')} />
+                    <Field label="Firma Adı" placeholder="Örn. Akdeniz Gıda Ltd. Şti." value={form.company} onChange={onChange('company')} required />
                     <div className="grid gap-4 sm:grid-cols-2">
                       <Field label="Vergi No" placeholder="1234567890" value={form.taxNo} onChange={onChange('taxNo')} />
                       <Field label="Telefon" placeholder="+90 5xx xxx xx xx" value={form.phone} onChange={onChange('phone')} />
@@ -161,11 +176,18 @@ const SupplierAuthPage = () => {
                   <Field label="Parola" type="password" icon={Lock} placeholder="••••••••" value={form.password} onChange={onChange('password')} required />
                 )}
 
+                {submitError && (
+                  <div className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+                    {submitError}
+                  </div>
+                )}
+
                 <button
                   type="submit"
-                  className="group mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-teal-300 px-6 py-3 text-sm font-semibold text-[#05070f] shadow-[0_12px_40px_-10px_rgba(34,211,238,0.7)] transition hover:translate-y-[-1px]"
+                  disabled={submitting}
+                  className="group mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-teal-300 px-6 py-3 text-sm font-semibold text-[#05070f] shadow-[0_12px_40px_-10px_rgba(34,211,238,0.7)] transition hover:translate-y-[-1px] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {mode === 'login' ? 'Giriş Yap' : 'Başvuruyu Gönder'}
+                  {mode === 'login' ? 'Giriş Yap' : submitting ? 'Gönderiliyor...' : 'Başvuruyu Gönder'}
                   <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
                 </button>
 

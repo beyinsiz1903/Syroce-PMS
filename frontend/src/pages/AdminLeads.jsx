@@ -28,6 +28,12 @@ const STATUS_META = {
   lost:       { label: "Kaybedildi", intent: "neutral" },
 };
 
+const SOURCE_META = {
+  pms_lite_landing:     "PMS Lite",
+  marketing_contact:    "İletişim",
+  supplier_application: "Tedarikçi",
+};
+
 const fmtDate = (iso) => {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -307,7 +313,14 @@ const AdminLeads = () => {
                     return (
                       <tr key={lead.lead_id} className="border-b last:border-0 hover:bg-slate-50/60">
                         <td className="px-3 py-2 align-top whitespace-nowrap text-slate-600">{fmtDate(lead.created_at)}</td>
-                        <td className="px-3 py-2 align-top font-medium text-slate-800">{lead.property_name || "—"}</td>
+                        <td className="px-3 py-2 align-top font-medium text-slate-800">
+                          {lead.property_name || "—"}
+                          {lead.source && SOURCE_META[lead.source] && (
+                            <span className="mt-0.5 block text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                              {SOURCE_META[lead.source]}
+                            </span>
+                          )}
+                        </td>
                         <td className="px-3 py-2 align-top text-slate-600">{lead.location || "—"}</td>
                         <td className="px-3 py-2 align-top text-slate-600">{lead.rooms_count ?? "—"}</td>
                         <td className="px-3 py-2 align-top text-slate-800">{lead.full_name || "—"}</td>

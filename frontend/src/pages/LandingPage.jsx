@@ -8,15 +8,106 @@ import {
   Zap, Globe, Lock, RefreshCw, Star, Quote, ArrowUpRight,
 } from 'lucide-react';
 
+import axios from 'axios';
 import { mergeLandingContent } from '@/config/landingContentDefaults';
 
 const HERO_IMG = '/landing/hero-hotel.png';
 
-const DEFAULT_CONTACT_EMAIL = mergeLandingContent(null).contact.email;
-// Alici e-posta site-content'ten (super_admin editable) gelir; bozuk/enjeksiyonlu
-// girdi mailto'yu kirmasin diye dogrula, gecersizse guvenli default'a dus.
-const safeMailtoRecipient = (email) =>
-  /^[^\s@?&]+@[^\s@?&]+\.[^\s@?&]+$/.test(email || '') ? email : DEFAULT_CONTACT_EMAIL;
+// Public iletisim formu -> POST /api/leads/contact (axios baseURL '/api').
+// Lead, super_admin AdminLeads gelen kutusuna dusurulur (kaynak: marketing_contact).
+function LandingContactForm() {
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    const formEl = e.currentTarget;
+    const fd = new FormData(formEl);
+    const payload = {
+      full_name: String(fd.get('fullName') || '').trim(),
+      company: String(fd.get('company') || '').trim(),
+      phone: String(fd.get('phone') || '').trim(),
+      email: String(fd.get('email') || '').trim(),
+      business_type: String(fd.get('businessType') || '').trim() || undefined,
+      message: String(fd.get('message') || '').trim() || undefined,
+    };
+    setSubmitting(true);
+    setResult(null);
+    try {
+      await axios.post('/leads/contact', payload);
+      setResult({ ok: true, msg: 'Mesajınız alındı. Ekibimiz en kısa sürede sizinle iletişime geçecek.' });
+      formEl.reset();
+    } catch (err) {
+      const status = err?.response?.status;
+      setResult({
+        ok: false,
+        msg:
+          status === 422
+            ? 'Lütfen ad soyad, işletme, telefon ve geçerli bir e-posta girin.'
+            : 'Mesaj gönderilemedi. Lütfen daha sonra tekrar deneyin.',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form className="grid grid-cols-1 gap-4 sm:grid-cols-2" onSubmit={onSubmit}>
+      {[
+        { name: 'fullName',     label: 'Ad Soyad',      type: 'text',  required: true,  half: true },
+        { name: 'company',      label: 'İşletme Adı',   type: 'text',  required: true,  half: true },
+        { name: 'phone',        label: 'Telefon',       type: 'tel',   required: true,  half: true },
+        { name: 'email',        label: 'E-posta',       type: 'email', required: true,  half: true },
+        { name: 'businessType', label: 'İşletme Türü',  type: 'text',  required: false, half: false },
+      ].map((f) => (
+        <label key={f.name} className={'block ' + (f.half ? '' : 'sm:col-span-2')}>
+          <span className="mb-1.5 block text-xs font-medium text-slate-400">{f.label}{f.required && <span className="text-cyan-300"> *</span>}</span>
+          <input
+            name={f.name}
+            type={f.type}
+            required={f.required}
+            className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-cyan-400/40 focus:bg-white/[0.06] focus:ring-2 focus:ring-cyan-400/20"
+            placeholder={f.label}
+          />
+        </label>
+      ))}
+      <label className="block sm:col-span-2">
+        <span className="mb-1.5 block text-xs font-medium text-slate-400">Mesajınız</span>
+        <textarea
+          name="message"
+          rows={4}
+          className="w-full resize-none rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-cyan-400/40 focus:bg-white/[0.06] focus:ring-2 focus:ring-cyan-400/20"
+          placeholder="Bize kısaca beklentinizi yazın"
+        />
+      </label>
+
+      {result && (
+        <div
+          className={
+            'sm:col-span-2 rounded-xl px-4 py-3 text-sm ' +
+            (result.ok
+              ? 'border border-emerald-400/30 bg-emerald-400/10 text-emerald-100'
+              : 'border border-rose-400/30 bg-rose-400/10 text-rose-100')
+          }
+        >
+          {result.msg}
+        </div>
+      )}
+
+      <div className="sm:col-span-2 flex items-center justify-between gap-4">
+        <p className="text-xs text-slate-500">Bilgileriniz yalnızca size dönüş yapmak için kullanılır.</p>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-teal-300 px-6 py-3 text-sm font-semibold text-[#05070f] shadow-[0_10px_30px_-10px_rgba(34,211,238,0.7)] transition hover:translate-y-[-1px] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {submitting ? 'Gönderiliyor...' : 'Mesaj Gönder'}
+          <Send className="h-4 w-4" />
+        </button>
+      </div>
+    </form>
+  );
+}
 
 const navLinks = [
   { label: 'Ana Sayfa',        href: '#top' },
@@ -1193,65 +1284,7 @@ const LandingPage = () => {
 
             <div className="lg:col-span-7">
               <GlassCard className="p-6 sm:p-8">
-                <form
-                  className="grid grid-cols-1 gap-4 sm:grid-cols-2"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const formEl = e.currentTarget;
-                    const fd = new FormData(formEl);
-                    const subject = `Syroce iletişim talebi — ${fd.get('company') || fd.get('fullName') || ''}`;
-                    const body = [
-                      `Ad Soyad: ${fd.get('fullName') || ''}`,
-                      `İşletme: ${fd.get('company') || ''}`,
-                      `Telefon: ${fd.get('phone') || ''}`,
-                      `E-posta: ${fd.get('email') || ''}`,
-                      `İşletme Türü: ${fd.get('businessType') || ''}`,
-                      '',
-                      `${fd.get('message') || ''}`,
-                    ].join('\n');
-                    window.location.href = `mailto:${safeMailtoRecipient(content.contact.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-                    formEl.reset();
-                  }}
-                >
-                  {[
-                    { name: 'fullName',     label: 'Ad Soyad',      type: 'text',  required: true,  half: true },
-                    { name: 'company',      label: 'İşletme Adı',   type: 'text',  required: true,  half: true },
-                    { name: 'phone',        label: 'Telefon',       type: 'tel',   required: true,  half: true },
-                    { name: 'email',        label: 'E-posta',       type: 'email', required: true,  half: true },
-                    { name: 'businessType', label: 'İşletme Türü',  type: 'text',  required: false, half: false },
-                  ].map((f) => (
-                    <label key={f.name} className={'block ' + (f.half ? '' : 'sm:col-span-2')}>
-                      <span className="mb-1.5 block text-xs font-medium text-slate-400">{f.label}{f.required && <span className="text-cyan-300"> *</span>}</span>
-                      <input
-                        name={f.name}
-                        type={f.type}
-                        required={f.required}
-                        className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-cyan-400/40 focus:bg-white/[0.06] focus:ring-2 focus:ring-cyan-400/20"
-                        placeholder={f.label}
-                      />
-                    </label>
-                  ))}
-                  <label className="block sm:col-span-2">
-                    <span className="mb-1.5 block text-xs font-medium text-slate-400">Mesajınız</span>
-                    <textarea
-                      name="message"
-                      rows={4}
-                      className="w-full resize-none rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-cyan-400/40 focus:bg-white/[0.06] focus:ring-2 focus:ring-cyan-400/20"
-                      placeholder="Bize kısaca beklentinizi yazın"
-                    />
-                  </label>
-
-                  <div className="sm:col-span-2 flex items-center justify-between gap-4">
-                    <p className="text-xs text-slate-500">Bilgileriniz yalnızca size dönüş yapmak için kullanılır.</p>
-                    <button
-                      type="submit"
-                      className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-teal-300 px-6 py-3 text-sm font-semibold text-[#05070f] shadow-[0_10px_30px_-10px_rgba(34,211,238,0.7)] transition hover:translate-y-[-1px]"
-                    >
-                      Mesaj Gönder
-                      <Send className="h-4 w-4" />
-                    </button>
-                  </div>
-                </form>
+                <LandingContactForm />
               </GlassCard>
             </div>
           </div>
