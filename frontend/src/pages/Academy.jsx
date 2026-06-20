@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import {
   GraduationCap, BookOpen, Award, CheckCircle2, ArrowLeft,
-  FileText, Loader2, Download, ClipboardList,
+  FileText, Loader2, Download, ClipboardList, Settings2,
 } from "lucide-react";
 
 import { PageHeader } from "@/components/ui/page-header";
@@ -15,6 +15,11 @@ import { Card } from "@/components/ui/card";
 
 const MANAGER_ROLES = new Set([
   "admin", "super_admin", "supervisor", "gm", "manager", "owner",
+]);
+
+// Author roles MUST mirror backend ACADEMY_AUTHOR_ROLES (excludes supervisor).
+const AUTHOR_ROLES = new Set([
+  "admin", "super_admin", "gm", "manager", "owner",
 ]);
 
 const STATUS_META = {
@@ -107,6 +112,7 @@ export default function Academy({ user }) {
   const [result, setResult] = useState(null);
 
   const isManager = MANAGER_ROLES.has(user?.role);
+  const isAuthor = AUTHOR_ROLES.has(user?.role);
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -239,10 +245,19 @@ export default function Academy({ user }) {
           <PageHeader
             title="Syroce Academy"
             subtitle="Departmaniniza ozel egitimleri tamamlayin, sinava girin ve sertifika kazanin."
-            actions={isManager ? (
-              <Button variant="outline" onClick={() => navigate("/app/academy-report")}>
-                <ClipboardList className="w-4 h-4 mr-2" /> Yonetici Raporu
-              </Button>
+            actions={(isManager || isAuthor) ? (
+              <div className="flex items-center gap-2">
+                {isAuthor && (
+                  <Button variant="outline" onClick={() => navigate("/app/academy-manage")}>
+                    <Settings2 className="w-4 h-4 mr-2" /> Akademi Yonetimi
+                  </Button>
+                )}
+                {isManager && (
+                  <Button variant="outline" onClick={() => navigate("/app/academy-report")}>
+                    <ClipboardList className="w-4 h-4 mr-2" /> Yonetici Raporu
+                  </Button>
+                )}
+              </div>
             ) : null}
           />
 

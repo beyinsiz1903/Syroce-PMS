@@ -43,6 +43,25 @@ async def ensure_academy_indexes(db_handle) -> None:
         [("tenant_id", 1), ("user_id", 1), ("course_id", 1), ("created_at", -1)],
         name="idx_academy_attempts_tenant_user_course",
     )
+    # Tenant-custom courses (admin-authored). One row per (tenant, course id);
+    # the engine reads/writes by exactly this key, and the namespaced custom id
+    # makes the pair globally unique.
+    await db_handle.academy_courses.create_index(
+        [("tenant_id", 1), ("id", 1)],
+        unique=True,
+        name="uniq_academy_courses_tenant_id",
+    )
+    await db_handle.academy_courses.create_index(
+        [("tenant_id", 1), ("draft", 1)],
+        name="idx_academy_courses_tenant_draft",
+    )
+    # Per-tenant built-in course visibility override — one row per (tenant,
+    # system course); the engine upserts on exactly this key.
+    await db_handle.academy_course_overrides.create_index(
+        [("tenant_id", 1), ("system_course_id", 1)],
+        unique=True,
+        name="uniq_academy_overrides_tenant_course",
+    )
 
 
 async def phase_d_perf_and_marketplace(app):

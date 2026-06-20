@@ -140,6 +140,13 @@ class FakeCollection:
                                    upserted_id=newdoc.get("id"))
         return SimpleNamespace(matched_count=0, modified_count=0, upserted_id=None)
 
+    async def delete_one(self, query):
+        for i, d in enumerate(self.docs):
+            if _matches(d, query):
+                del self.docs[i]
+                return SimpleNamespace(deleted_count=1)
+        return SimpleNamespace(deleted_count=0)
+
 
 class FakeDB:
     def __init__(self, *, unique_certs: bool = False, yield_certs: bool = False):
@@ -150,6 +157,11 @@ class FakeDB:
             yield_on_io=yield_certs,
         )
         self.users = FakeCollection()
+        # Tenant-custom authoring collections (Academy admin CRUD).
+        self.academy_courses = FakeCollection(unique_keys=("tenant_id", "id"))
+        self.academy_course_overrides = FakeCollection(
+            unique_keys=("tenant_id", "system_course_id"),
+        )
 
 
 # ── Fixtures / helpers ────────────────────────────────────────────────
@@ -490,3 +502,306 @@ def test_score_exam_string_pass_threshold_is_coerced():
     result = academy.score_exam(course, answers)
     assert result["pass_threshold"] == 70
     assert result["passed"] is True
+
+
+# ── 7. Author CRUD — tenant-custom course authoring security ──────────
+#
+# These lock the new admin authoring surface (routers/academy.py):
+#   - the editor (admin) detail INCLUDES the answer key (author owns it),
+#   - but the student exam/detail path on a CUSTOM course still strips it,
+#   - tenant isolation on every author endpoint (cross-tenant -> 404),
+#   - non-author roles are denied (403),
+#   - published courses require >=1 lesson + >=1 question (422),
+#   - assignable roles are whitelisted and answer_index must be in range,
+#   - hiding a built-in drops it from the student list but the manager
+#     report still resolves its title for existing progress.
+
+
+def _course_payload(**over) -> dict:
+    base = {
+        "title": "On Buro Karsilama",
+        "department": "front_desk",
+        "department_label": "On Buro",
+        "summary": "Otelimize ozel karsilama standartlari.",
+        "roles": ["front_desk"],
+        "draft": False,
+        "pass_threshold": 50,
+        "estimated_minutes": 15,
+        "lessons": [
+            {"title": "Karsilama", "body_markdown": "# Merhaba\nGulumseyin."},
+        ],
+        "questions": [
+            {"prompt": "Misafir gelince?", "options": ["Gormezden gel", "Selamla"],
+             "answer_index": 1},
+            {"prompt": "Ton?", "options": ["Kaba", "Nazik"], "answer_index": 1},
+        ],
+    }
+    base.update(over)
+    return base
+
+
+def _create_course(client, payload=None) -> dict:
+    r = client.post("/api/academy/admin/courses", json=payload or _course_payload())
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_admin_create_returns_answers_but_student_exam_strips_them(monkeypatch):
+    fake_db = FakeDB()
+    author = _build_client(monkeypatch, fake_db, _user(role="admin"))
+    created = _create_course(author)
+    # Editor view DOES expose the answer key + inline bodies (author-owned).
+    assert created["source"] == "tenant"
+    assert created["id"].startswith("custom-")
+    assert created["questions"], "editor detail must include questions"
+    assert all("answer_index" in q for q in created["questions"])
+    assert all("body_markdown" in l for l in created["lessons"])
+    course_id = created["id"]
+
+    # A STUDENT (same tenant) hitting the public exam path gets NO answers.
+    student = _build_client(monkeypatch, fake_db, _user(role="front_desk"))
+    r = student.get(f"/api/academy/courses/{course_id}/exam")
+    assert r.status_code == 200, r.text
+    for q in r.json()["questions"]:
+        assert set(q.keys()) == {"id", "prompt", "options"}
+        assert "answer_index" not in q
+    assert "answer_index" not in r.text
+
+    # The student course detail likewise never carries answers.
+    rd = student.get(f"/api/academy/courses/{course_id}")
+    assert rd.status_code == 200, rd.text
+    assert "answer_index" not in rd.text
+
+
+def test_admin_list_omits_answers(monkeypatch):
+    fake_db = FakeDB()
+    author = _build_client(monkeypatch, fake_db, _user(role="gm"))
+    _create_course(author)
+    r = author.get("/api/academy/admin/courses")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["count"] == 1
+    # The list (card) view is summary-only — no questions/answers leak.
+    assert "answer_index" not in r.text
+    assert "questions" not in body["items"][0]
+
+
+def test_author_course_crud_is_tenant_scoped(monkeypatch):
+    fake_db = FakeDB()
+    t1_author = _build_client(monkeypatch, fake_db, _user(tenant="t1", role="admin"))
+    course_id = _create_course(t1_author)["id"]
+
+    # Attacker authenticated for a DIFFERENT tenant.
+    t2_author = _build_client(monkeypatch, fake_db, _user(tenant="t2", role="admin"))
+    assert t2_author.get(f"/api/academy/admin/courses/{course_id}").status_code == 404
+    assert t2_author.put(
+        f"/api/academy/admin/courses/{course_id}", json=_course_payload(title="Hijack"),
+    ).status_code == 404
+    assert t2_author.delete(f"/api/academy/admin/courses/{course_id}").status_code == 404
+    # A student in t2 cannot even see it via the public path.
+    t2_student = _build_client(monkeypatch, fake_db, _user(tenant="t2", role="front_desk"))
+    assert t2_student.get(f"/api/academy/courses/{course_id}").status_code == 404
+
+    # The owning tenant still has it intact (not mutated/deleted by the attacker).
+    owned = t1_author.get(f"/api/academy/admin/courses/{course_id}")
+    assert owned.status_code == 200, owned.text
+    assert owned.json()["title"] == "On Buro Karsilama"
+
+
+@pytest.mark.parametrize("role", ["front_desk", "housekeeping", "supervisor", "finance"])
+def test_non_author_roles_denied_on_crud(monkeypatch, role):
+    # supervisor IS a manager (report-allowed) but is NOT an author.
+    fake_db = FakeDB()
+    client = _build_client(monkeypatch, fake_db, _user(role=role))
+    assert client.get("/api/academy/admin/courses").status_code == 403
+    assert client.post(
+        "/api/academy/admin/courses", json=_course_payload(),
+    ).status_code == 403
+    assert client.get("/api/academy/admin/system-courses").status_code == 403
+    assert client.put(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/visibility",
+        json={"hidden": True},
+    ).status_code == 403
+
+
+@pytest.mark.parametrize("role", ["admin", "gm", "manager", "owner", "super_admin"])
+def test_author_roles_allowed_on_list(monkeypatch, role):
+    client = _build_client(monkeypatch, FakeDB(), _user(role=role))
+    assert client.get("/api/academy/admin/courses").status_code == 200
+
+
+def test_publish_requires_lessons_and_questions(monkeypatch):
+    client = _build_client(monkeypatch, FakeDB(), _user(role="admin"))
+    # draft False but no lessons/questions → validation 422.
+    r = client.post(
+        "/api/academy/admin/courses",
+        json=_course_payload(draft=False, lessons=[], questions=[]),
+    )
+    assert r.status_code == 422, r.text
+    # The same skeleton as a DRAFT is allowed (managers can save WIP).
+    r2 = client.post(
+        "/api/academy/admin/courses",
+        json=_course_payload(draft=True, lessons=[], questions=[]),
+    )
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["draft"] is True
+
+
+def test_invalid_assignable_role_rejected(monkeypatch):
+    client = _build_client(monkeypatch, FakeDB(), _user(role="admin"))
+    # 'guest' is NOT in ACADEMY_COURSE_ROLES → rejected.
+    r = client.post(
+        "/api/academy/admin/courses", json=_course_payload(roles=["guest"]),
+    )
+    assert r.status_code == 422, r.text
+
+
+def test_answer_index_out_of_range_rejected(monkeypatch):
+    client = _build_client(monkeypatch, FakeDB(), _user(role="admin"))
+    bad = _course_payload(questions=[
+        {"prompt": "X?", "options": ["a", "b"], "answer_index": 5},
+    ])
+    r = client.post("/api/academy/admin/courses", json=bad)
+    assert r.status_code == 422, r.text
+
+
+def test_too_few_options_rejected(monkeypatch):
+    client = _build_client(monkeypatch, FakeDB(), _user(role="admin"))
+    bad = _course_payload(questions=[
+        {"prompt": "X?", "options": ["only-one"], "answer_index": 0},
+    ])
+    r = client.post("/api/academy/admin/courses", json=bad)
+    assert r.status_code == 422, r.text
+
+
+def test_delete_removes_course_from_student_view(monkeypatch):
+    fake_db = FakeDB()
+    author = _build_client(monkeypatch, fake_db, _user(role="admin"))
+    course_id = _create_course(author)["id"]
+    student = _build_client(monkeypatch, fake_db, _user(role="front_desk"))
+    assert student.get(f"/api/academy/courses/{course_id}").status_code == 200
+
+    assert author.delete(f"/api/academy/admin/courses/{course_id}").status_code == 200
+    # Gone for students and editors alike.
+    assert student.get(f"/api/academy/courses/{course_id}").status_code == 404
+    assert author.get(f"/api/academy/admin/courses/{course_id}").status_code == 404
+    # A second delete is a clean 404 (idempotent — no crash).
+    assert author.delete(f"/api/academy/admin/courses/{course_id}").status_code == 404
+
+
+def test_draft_custom_course_hidden_from_students(monkeypatch):
+    fake_db = FakeDB()
+    author = _build_client(monkeypatch, fake_db, _user(role="admin"))
+    course_id = _create_course(author, _course_payload(
+        draft=True, lessons=[{"title": "L", "body_markdown": "b"}],
+        questions=[{"prompt": "Q", "options": ["a", "b"], "answer_index": 0}],
+    ))["id"]
+    student = _build_client(monkeypatch, fake_db, _user(role="front_desk"))
+    # Draft → not in the student list and the detail 404s.
+    listing = student.get("/api/academy/courses")
+    assert course_id not in [c["id"] for c in listing.json()["items"]]
+    assert student.get(f"/api/academy/courses/{course_id}").status_code == 404
+    # But the author still sees it in the editor.
+    assert author.get(f"/api/academy/admin/courses/{course_id}").status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_hidden_builtin_drops_from_list_but_report_resolves(monkeypatch):
+    fake_db = FakeDB()
+    monkeypatch.setattr(academy, "_db", lambda: fake_db)
+    # A learner already has progress on the soon-to-be-hidden built-in course.
+    fake_db.academy_progress.docs.append({
+        "tenant_id": "t1", "user_id": "u1", "course_id": COURSE_ID,
+        "passed": True, "best_score": 90, "attempts": 1,
+        "completed_lessons": ["karsilama"],
+    })
+    fake_db.users.docs.append({
+        "id": "u1", "tenant_id": "t1", "name": "U1", "role": "front_desk",
+    })
+    # Hide it for t1.
+    assert await academy.set_system_course_hidden("t1", COURSE_ID, True) is True
+
+    # Student list no longer contains the hidden built-in...
+    visible = await academy.list_courses_for("t1", "front_desk")
+    assert COURSE_ID not in [c["id"] for c in visible]
+    # ...but the manager report STILL resolves its title for the progress row.
+    report = await academy.get_tenant_report("t1")
+    titled = [r for r in report["rows"] if r["course_id"] == COURSE_ID]
+    assert len(titled) == 1
+    assert titled[0]["course_title"]  # resolved, non-empty
+
+    # Un-hiding restores it to the student list.
+    assert await academy.set_system_course_hidden("t1", COURSE_ID, False) is True
+    visible2 = await academy.list_courses_for("t1", "front_desk")
+    assert COURSE_ID in [c["id"] for c in visible2]
+
+
+def test_visibility_rejects_custom_and_unknown_ids(monkeypatch):
+    client = _build_client(monkeypatch, FakeDB(), _user(role="admin"))
+    # A custom-namespaced id is not a system course → 404.
+    assert client.put(
+        "/api/academy/admin/system-courses/custom-deadbeef/visibility",
+        json={"hidden": True},
+    ).status_code == 404
+    # An unknown system id → 404.
+    assert client.put(
+        "/api/academy/admin/system-courses/no-such-course/visibility",
+        json={"hidden": True},
+    ).status_code == 404
+
+
+def test_system_visibility_is_tenant_scoped(monkeypatch):
+    fake_db = FakeDB()
+    t1 = _build_client(monkeypatch, fake_db, _user(tenant="t1", role="admin"))
+    assert t1.put(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/visibility",
+        json={"hidden": True},
+    ).status_code == 200
+
+    # t1 sees it hidden; t2 is unaffected (independent override row).
+    s1 = t1.get("/api/academy/admin/system-courses").json()["items"]
+    assert any(c["id"] == COURSE_ID and c["hidden"] for c in s1)
+    t2 = _build_client(monkeypatch, fake_db, _user(tenant="t2", role="admin"))
+    s2 = t2.get("/api/academy/admin/system-courses").json()["items"]
+    assert any(c["id"] == COURSE_ID and not c["hidden"] for c in s2)
+
+
+def test_update_preserves_lesson_and_question_ids(monkeypatch):
+    """Editing a custom course must KEEP existing lesson/question ids so
+    in-flight learner progress (keyed by lesson id) survives the edit."""
+    fake_db = FakeDB()
+    author = _build_client(monkeypatch, fake_db, _user(role="admin"))
+    created = _create_course(author)
+    cid = created["id"]
+    lid = created["lessons"][0]["id"]
+    qid = created["questions"][0]["id"]
+
+    # Re-send the SAME ids with edited content (what the fixed FE now does).
+    updated = author.put(f"/api/academy/admin/courses/{cid}", json=_course_payload(
+        title="On Buro Karsilama (v2)",
+        lessons=[{"id": lid, "title": "Karsilama (guncel)", "body_markdown": "yeni"}],
+        questions=[{"id": qid, "prompt": "Yeni soru?", "options": ["Hayir", "Evet"],
+                    "answer_index": 1}],
+    ))
+    assert updated.status_code == 200, updated.text
+    body = updated.json()
+    assert body["lessons"][0]["id"] == lid
+    assert body["questions"][0]["id"] == qid
+    assert body["title"] == "On Buro Karsilama (v2)"
+    assert body["lessons"][0]["title"] == "Karsilama (guncel)"
+
+
+def test_update_mints_id_for_new_items_without_id(monkeypatch):
+    """A lesson/question added during an edit (no id) gets a server-minted id."""
+    fake_db = FakeDB()
+    author = _build_client(monkeypatch, fake_db, _user(role="admin"))
+    cid = _create_course(author)["id"]
+    updated = author.put(f"/api/academy/admin/courses/{cid}", json=_course_payload(
+        lessons=[{"title": "Yeni ders", "body_markdown": "x"}],
+        questions=[{"prompt": "Q?", "options": ["a", "b"], "answer_index": 0}],
+    ))
+    assert updated.status_code == 200, updated.text
+    body = updated.json()
+    assert body["lessons"][0]["id"], "new lesson must receive an id"
+    assert body["questions"][0]["id"], "new question must receive an id"
+    assert "-local-" not in body["lessons"][0]["id"]

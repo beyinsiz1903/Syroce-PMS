@@ -38,6 +38,26 @@ _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{0,80}$")
 _ALL_ACCESS_ROLES = {"admin", "super_admin"}
 # Roles allowed to read the management completion report.
 MANAGER_ROLES = {"admin", "super_admin", "supervisor", "gm", "manager", "owner"}
+# Roles allowed to AUTHOR (create/edit/delete) tenant-custom courses and to
+# toggle built-in course visibility. ``supervisor`` may READ the report but is
+# intentionally NOT an author.
+ACADEMY_AUTHOR_ROLES = {"admin", "super_admin", "gm", "manager", "owner"}
+# Whitelist of role audiences a course may target. Broader than ``UserRole``
+# because tenants use additional role strings (gm/manager/owner/night_audit/
+# revenue) that also appear in the system catalog. Guest/agency audiences are
+# intentionally excluded — Academy is staff training.
+ACADEMY_COURSE_ROLES = {
+    "super_admin", "admin", "supervisor", "front_desk", "housekeeping",
+    "sales", "finance", "procurement", "staff", "gm", "manager", "owner",
+    "night_audit", "revenue",
+}
+# Tenant-custom course ids are namespaced so they can NEVER collide with or
+# shadow a system catalog id (which must never start with this prefix).
+CUSTOM_ID_PREFIX = "custom-"
+
+
+def is_custom_course_id(course_id: Any) -> bool:
+    return isinstance(course_id, str) and course_id.startswith(CUSTOM_ID_PREFIX)
 
 
 def _norm_role(role: Any) -> str:
@@ -92,6 +112,7 @@ def public_course_summary(course: dict[str, Any]) -> dict[str, Any]:
     """Course card view — no lessons body, no questions/answers."""
     return {
         "id": course.get("id"),
+        "source": course.get("source") or "system",
         "title": course.get("title"),
         "department": course.get("department"),
         "department_label": course.get("department_label"),
@@ -105,14 +126,24 @@ def public_course_summary(course: dict[str, Any]) -> dict[str, Any]:
 
 
 def public_course_detail(course: dict[str, Any]) -> dict[str, Any]:
-    """Course detail with lesson metadata + bodies. NEVER includes answers."""
+    """Course detail with lesson metadata + bodies. NEVER includes answers.
+
+    System lessons load their body from a content `.md` file (path-guarded by
+    ``read_lesson_body``); tenant-custom lessons carry an inline body_markdown
+    and NEVER touch the filesystem.
+    """
+    is_custom = course.get("source") == "tenant" or is_custom_course_id(course.get("id"))
     lessons = []
     for lesson in course.get("lessons") or []:
-        slug = lesson.get("slug", "")
-        try:
-            body = read_lesson_body(slug)
-        except (ValueError, FileNotFoundError):
-            body = ""
+        if is_custom:
+            slug = ""
+            body = lesson.get("body_markdown") or ""
+        else:
+            slug = lesson.get("slug", "")
+            try:
+                body = read_lesson_body(slug)
+            except (ValueError, FileNotFoundError):
+                body = ""
         lessons.append({
             "id": lesson.get("id"),
             "title": lesson.get("title"),
@@ -177,6 +208,242 @@ def score_exam(course: dict[str, Any], answers: dict[str, int]) -> dict[str, Any
 def _db():
     from core.database import _raw_db
     return _raw_db
+
+
+# --------------------------------------------------------------------------- #
+# Tenant-custom courses + built-in visibility overrides (admin-authored).      #
+#                                                                              #
+# Custom courses live in the tenant-scoped `academy_courses` collection and    #
+# carry their FULL content including `answer_index` + inline lesson            #
+# `body_markdown`. They are merged with the system catalog at read time; the   #
+# public_* projections still strip answers, so the student answer-secrecy      #
+# guarantee is identical for system and custom courses. Built-in courses are   #
+# never mutated per tenant — a tenant may only hide/show them through          #
+# `academy_course_overrides` ({tenant_id, system_course_id, hidden}).          #
+# --------------------------------------------------------------------------- #
+
+def _with_source(course: dict[str, Any], source: str) -> dict[str, Any]:
+    c = dict(course)
+    c["source"] = source
+    return c
+
+
+async def _hidden_system_ids(tenant_id: str) -> set[str]:
+    rows = await _db().academy_course_overrides.find(
+        {"tenant_id": tenant_id, "hidden": True},
+        {"_id": 0, "system_course_id": 1},
+    ).to_list(1000)
+    return {r["system_course_id"] for r in rows}
+
+
+async def _custom_courses(tenant_id: str) -> list[dict[str, Any]]:
+    rows = await _db().academy_courses.find(
+        {"tenant_id": tenant_id}, {"_id": 0},
+    ).to_list(1000)
+    return [_with_source(r, "tenant") for r in rows]
+
+
+async def resolve_course(
+    tenant_id: str, course_id: str, *,
+    include_hidden: bool = False, include_draft: bool = False,
+) -> dict[str, Any] | None:
+    """Resolve a single course (system or tenant-custom) for ``tenant_id``.
+
+    Returns the RAW course dict (answers included — server-side use only) or
+    ``None``. A hidden system course (or a draft custom course) resolves to
+    ``None`` on the student path unless the matching include flag is set
+    (manager/report use). System course drafts are NOT filtered here — that
+    matches the prior student behavior.
+    """
+    if is_custom_course_id(course_id):
+        row = await _db().academy_courses.find_one(
+            {"tenant_id": tenant_id, "id": course_id}, {"_id": 0},
+        )
+        if not row:
+            return None
+        if row.get("draft") and not include_draft:
+            return None
+        return _with_source(row, "tenant")
+    course = get_course_raw(course_id)
+    if not course:
+        return None
+    if not include_hidden:
+        ov = await _db().academy_course_overrides.find_one(
+            {"tenant_id": tenant_id, "system_course_id": course_id}, {"_id": 0},
+        )
+        if ov and ov.get("hidden"):
+            return None
+    return _with_source(course, "system")
+
+
+async def list_courses_for(
+    tenant_id: str, role: str, *,
+    include_hidden: bool = False, include_draft: bool = False,
+) -> list[dict[str, Any]]:
+    """Merged, role-filtered course list (system + tenant-custom) as raw dicts.
+
+    System courses respect per-tenant hide overrides; custom drafts are excluded
+    from the student view. Role visibility is applied here so callers can
+    project the result directly.
+    """
+    hidden = set() if include_hidden else await _hidden_system_ids(tenant_id)
+    out: list[dict[str, Any]] = []
+    for c in _all_courses():
+        if c.get("id") in hidden:
+            continue
+        if not course_visible_to_role(c, role):
+            continue
+        out.append(_with_source(c, "system"))
+    for c in await _custom_courses(tenant_id):
+        if c.get("draft") and not include_draft:
+            continue
+        if not course_visible_to_role(c, role):
+            continue
+        out.append(c)
+    return out
+
+
+# --- Author (manager) CRUD over tenant-custom courses ---------------------- #
+
+def _normalize_course_content(data: dict[str, Any]) -> dict[str, Any]:
+    """Coerce a validated author payload into the stored content shape.
+
+    Lessons/questions keep any existing id (so in-flight learner progress, keyed
+    by lesson id, survives an edit) and otherwise get a fresh namespaced id.
+    Input is assumed already validated by the router's Pydantic models.
+    """
+    lessons = []
+    for l in data.get("lessons") or []:
+        lid = (str(l.get("id") or "").strip()) or ("l-" + uuid.uuid4().hex[:10])
+        lessons.append({
+            "id": lid,
+            "title": l.get("title") or "",
+            "body_markdown": l.get("body_markdown") or "",
+        })
+    questions = []
+    for q in data.get("questions") or []:
+        qid = (str(q.get("id") or "").strip()) or ("q-" + uuid.uuid4().hex[:10])
+        questions.append({
+            "id": qid,
+            "prompt": q.get("prompt") or "",
+            "options": [str(o) for o in (q.get("options") or [])],
+            "answer_index": int(q.get("answer_index", 0)),
+        })
+    return {
+        "title": data.get("title") or "",
+        "department": data.get("department") or None,
+        "department_label": data.get("department_label") or None,
+        "summary": data.get("summary") or "",
+        "roles": list(data.get("roles") or []),
+        "draft": bool(data.get("draft", True)),
+        "pass_threshold": int(data.get("pass_threshold", 70)),
+        "estimated_minutes": data.get("estimated_minutes"),
+        "lessons": lessons,
+        "questions": questions,
+    }
+
+
+async def list_author_courses(tenant_id: str) -> list[dict[str, Any]]:
+    """All tenant-custom courses (raw, answers included) for the admin view."""
+    rows = await _db().academy_courses.find(
+        {"tenant_id": tenant_id}, {"_id": 0},
+    ).sort("updated_at", -1).to_list(1000)
+    return [_with_source(r, "tenant") for r in rows]
+
+
+async def get_author_course(tenant_id: str, course_id: str) -> dict[str, Any] | None:
+    """A single tenant-custom course (raw, answers included) or ``None``."""
+    if not is_custom_course_id(course_id):
+        return None
+    row = await _db().academy_courses.find_one(
+        {"tenant_id": tenant_id, "id": course_id}, {"_id": 0},
+    )
+    return _with_source(row, "tenant") if row else None
+
+
+async def create_author_course(
+    tenant_id: str, author_id: str | None, data: dict[str, Any],
+) -> dict[str, Any]:
+    now = datetime.now(UTC)
+    content = _normalize_course_content(data)
+    doc = {
+        "id": CUSTOM_ID_PREFIX + uuid.uuid4().hex[:12],
+        "tenant_id": tenant_id,
+        "source": "tenant",
+        **content,
+        "created_by": author_id,
+        "updated_by": author_id,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await _db().academy_courses.insert_one(dict(doc))
+    doc.pop("_id", None)
+    return doc
+
+
+async def update_author_course(
+    tenant_id: str, author_id: str | None, course_id: str, data: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not is_custom_course_id(course_id):
+        return None
+    now = datetime.now(UTC)
+    content = _normalize_course_content(data)
+    res = await _db().academy_courses.update_one(
+        {"tenant_id": tenant_id, "id": course_id},
+        {"$set": {**content, "updated_by": author_id, "updated_at": now}},
+    )
+    if getattr(res, "matched_count", 0) == 0:
+        return None
+    return await get_author_course(tenant_id, course_id)
+
+
+async def delete_author_course(tenant_id: str, course_id: str) -> bool:
+    """HARD delete a tenant-custom course. Earned certificates denormalize the
+    course title so they remain valid; orphaned progress rows simply stop
+    resolving in the report (already skipped for unknown courses)."""
+    if not is_custom_course_id(course_id):
+        return False
+    res = await _db().academy_courses.delete_one(
+        {"tenant_id": tenant_id, "id": course_id},
+    )
+    return getattr(res, "deleted_count", 0) > 0
+
+
+# --- Built-in (system) course per-tenant visibility ------------------------ #
+
+async def set_system_course_hidden(
+    tenant_id: str, system_course_id: str, hidden: bool,
+) -> bool:
+    """Toggle per-tenant visibility of a BUILT-IN course. Returns ``False`` if
+    the id is not a known system course (custom ids are rejected here)."""
+    if is_custom_course_id(system_course_id) or get_course_raw(system_course_id) is None:
+        return False
+    now = datetime.now(UTC)
+    await _db().academy_course_overrides.update_one(
+        {"tenant_id": tenant_id, "system_course_id": system_course_id},
+        {
+            "$set": {"hidden": bool(hidden), "updated_at": now},
+            "$setOnInsert": {
+                "tenant_id": tenant_id,
+                "system_course_id": system_course_id,
+                "created_at": now,
+            },
+        },
+        upsert=True,
+    )
+    return True
+
+
+async def list_system_courses_for(tenant_id: str) -> list[dict[str, Any]]:
+    """Built-in course summaries + current hidden flag, for the admin
+    visibility panel. No answers."""
+    hidden = await _hidden_system_ids(tenant_id)
+    out = []
+    for c in _all_courses():
+        summary = public_course_summary(_with_source(c, "system"))
+        summary["hidden"] = c.get("id") in hidden
+        out.append(summary)
+    return out
 
 
 def _compute_status(progress: dict[str, Any] | None, lesson_count: int) -> str:
@@ -403,8 +670,13 @@ async def get_tenant_report(tenant_id: str) -> dict[str, Any]:
     only; curriculum metadata comes from the GLOBAL catalog.
     """
     db = _db()
-    courses = _all_courses()
-    course_by_id = {c["id"]: c for c in courses}
+    course_by_id: dict[str, dict[str, Any]] = {
+        c["id"]: _with_source(c, "system") for c in _all_courses()
+    }
+    # Tenant-custom courses provide metadata for their own progress rows; a
+    # hard-deleted custom course simply won't resolve (its rows are skipped).
+    for c in await _custom_courses(tenant_id):
+        course_by_id[c["id"]] = c
 
     progress_rows = await db.academy_progress.find(
         {"tenant_id": tenant_id}, {"_id": 0},

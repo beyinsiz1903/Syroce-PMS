@@ -92,6 +92,7 @@ export const KonaklamaVergisiModule = lazy(() => import("@/pages/KonaklamaVergis
 export const HelpCenter = lazy(() => import("@/pages/HelpCenter"));
 export const Academy = lazy(() => import("@/pages/Academy"));
 export const AcademyReport = lazy(() => import("@/pages/AcademyReport"));
+export const AcademyManage = lazy(() => import("@/pages/AcademyManage"));
 export const MevzuatRaporlari = lazy(() => import("@/pages/MevzuatRaporlari"));
 export const SimpleAdminPanel = lazy(() => import("@/pages/SimpleAdminPanel"));
 export const MigrationObservabilityPage = lazy(() => import("@/pages/MigrationObservabilityPage"));
