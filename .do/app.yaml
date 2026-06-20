@@ -1,0 +1,197 @@
+# ─────────────────────────────────────────────────────────────────────
+# Syroce PMS — DigitalOcean App Platform spec (Infrastructure as Code)
+#
+# KULLANIM (onerilen akis):
+#   DO panel > Apps > Create App > GitHub/GitLab repo'nuzu BAGLAYIN (boylece
+#   DO her bilesene kaynak/branch bilgisini otomatik enjekte eder) > sonra
+#   Settings > App Spec'e GIRIP bu icerigi yapistirin / "Edit". Eksik
+#   secret'lari panelden ENCRYPTED girin (asagidaki liste). Spec'i dosyadan
+#   import edecekseniz her bilesendeki `github:` blogunu acip doldurun.
+#
+# BILESENLER:
+#   backend   : FastAPI API (Docker, service)            -> $PORT (8080)
+#   worker    : Celery worker (Docker, background worker)
+#   beat      : Celery beat / scheduler (Docker, background worker)
+#   frontend  : React/Vite SPA (static site, catchall index.html)
+#   Redis     : DO Managed Caching (Valkey/Redis) AYRI eklenir -> REDIS_URL
+#   MongoDB   : DO'da yonetilen Mongo YOK -> MongoDB Atlas -> MONGO_URL
+#
+# TOPOLOJI: Tek alan adi + ingress yol-yonlendirme. `/api/*` -> backend
+#   (path PRESERVE edilir), geri kalan her sey -> frontend SPA. Boylece
+#   frontend ile backend AYNI ORIGIN'de olur => CORS gereksiz (yine de
+#   CORS_ORIGINS app alan adina set edilir, zarari yok).
+#
+# ── KRITIK NOTLAR ────────────────────────────────────────────────────
+# 1) Bu Docker imajlari (backend api-runtime + worker-runtime) BILEREK
+#    HAFIF: yerel ML yigini (xgboost/sklearn talep tahmini) ve PDF uretimi
+#    (WeasyPrint — BEO / rapor PDF) DAHIL DEGIL. API tabanli AI (OpenAI/
+#    Anthropic/Gemini, litellm uzerinden) CALISIR. Yerel ML egitimi/PDF
+#    export gerekiyorsa imaja reports.txt + ml.txt + native lib eklenmeli.
+# 2) App Platform'un sabit cikis IP'si yoktur (Dedicated Egress / VPC
+#    haric). Atlas Network Access'te ya 0.0.0.0/0 acin (guclu DB parolasi
+#    + TLS sart) ya da DO Dedicated Egress IP'lerini allowlist'leyin.
+# 3) Gercek SIR DEGERLERI bu dosyaya YAZILMAZ; hepsi panelde "Encrypted"
+#    girilir (asagidaki "PANELDE GIRILECEK SECRET'LAR" listesi).
+# 4) Frontend bir SPA: catchall_document=index.html (deep-link 404 fix).
+# ─────────────────────────────────────────────────────────────────────
+
+name: syroce-pms
+region: fra   # Frankfurt — Turkiye'ye en yakin DO bolgesi
+
+# ── Tek alan adinda yol-yonlendirme (CORS'u eler) ────────────────────
+ingress:
+  rules:
+    - match:
+        path:
+          prefix: /api
+      component:
+        name: backend
+        preserve_path_prefix: true   # /api onekini KORU (backend /api/... mount)
+    - match:
+        path:
+          prefix: /
+      component:
+        name: frontend
+
+# ── App seviyesi (TUM bilesenlere miras kalan) NON-SECRET config ──────
+envs:
+  - key: APP_ENV
+    value: production
+    scope: RUN_AND_BUILD_TIME
+  - key: ENVIRONMENT
+    value: production
+    scope: RUN_AND_BUILD_TIME
+  - key: LOG_LEVEL
+    value: info
+    scope: RUN_TIME
+  - key: DB_NAME
+    value: hotel_pms
+    scope: RUN_TIME
+  - key: STRICT_TENANT_MODE
+    value: "true"          # prod boot bunsuz REDDEDER (fail-closed)
+    scope: RUN_TIME
+  - key: SECRETS_PROVIDER
+    value: env
+    scope: RUN_TIME
+  - key: SECRET_ACCESS_AUDIT_ENABLED
+    value: "true"
+    scope: RUN_TIME
+  - key: EVENT_BUS_MODE
+    value: redis
+    scope: RUN_TIME
+  - key: REDIS_MODE
+    value: standalone
+    scope: RUN_TIME
+  - key: CM_KEY_VERSION
+    value: v1
+    scope: RUN_TIME
+  - key: MESSAGING_MODE
+    value: sandbox         # gercek SMS/WhatsApp icin "live" + saglayici key
+    scope: RUN_TIME
+  - key: BACKUP_ENABLED
+    value: "true"
+    scope: RUN_TIME
+  - key: SENTRY_ENVIRONMENT
+    value: production
+    scope: RUN_TIME
+  # --- Ortam'a ozel ADRESLER (gizli degil; gercek alan adiniz) ---
+  #   Tek alan adi modelinde hepsi APP'in alan adi olur, or:
+  #   https://syroce-pms-xxxxx.ondigitalocean.app veya kendi alan adiniz.
+  - key: PUBLIC_APP_URL
+    value: https://OTEL-ALAN-ADINIZ      # misafir/QR public taban URL
+    scope: RUN_TIME
+  - key: FRONTEND_URL
+    value: https://OTEL-ALAN-ADINIZ
+    scope: RUN_TIME
+
+  # ═══════════════════════════════════════════════════════════════════
+  # PANELDE "ENCRYPTED" GIRILECEK SECRET'LAR (bu dosyaya DEGER yazmayin)
+  # App seviyesinde ekleyin -> backend + worker + beat hepsi gorur.
+  # ─ ZORUNLU ─
+  #   MONGO_URL                 (Atlas baglanti dizesi — parola icerir!)
+  #   REDIS_URL                 (DO Managed Redis baglanti dizesi)
+  #   JWT_SECRET                (uzun rastgele)
+  #   ROOM_QR_SECRET            (uzun rastgele)
+  #   FOLIO_FETCH_SECRET        (uzun rastgele)
+  #   TWOFA_SECRET              (uzun rastgele)
+  #   OPERATOR_ADMIN_PASSWORD   (ilk admin parolasi — ilk kurulum)
+  # ─ E-POSTA (misafir bildirim/davet icin GEREKLI) ─
+  #   RESEND_API_KEY
+  # ─ ONERILIR ─
+  #   SENTRY_DSN
+  # ─ ENTEGRASYON (kullaniyorsaniz) ─
+  #   QUICKID_SERVICE_KEY, QUICKID_SETTINGS_ENC_KEY
+  #   CM_ENCRYPTION_KEY, CM_MASTER_KEY_CURRENT, CM_CREDENTIAL_KEY
+  #   HOTELRUNNER_WEBHOOK_SECRET
+  #   KBS_API_TOKEN
+  #   EFATURA_SUPPLIER_VKN
+  #   OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY
+  #   TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / WHATSAPP_PROVIDER_KEY
+  #   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY  (S3 offsite yedek)
+  #   ATLAS_API_PUBLIC_KEY / ATLAS_API_PRIVATE_KEY (Atlas yonetilen yedek)
+  #   VAPID_PRIVATE_KEY (web push)
+  #   AFSADAKAT_ADMIN_TOKEN
+  # ═══════════════════════════════════════════════════════════════════
+
+# ── HTTP servisi (web listener olan TEK bilesen) ─────────────────────
+services:
+  - name: backend                  # FastAPI API (Docker)
+    dockerfile_path: backend/Dockerfile   # repo kokune gore
+    source_dir: /backend                  # docker build context = backend/
+    # github:
+    #   repo: <ORG>/<REPO>
+    #   branch: main
+    #   deploy_on_push: true
+    http_port: 8080                # asagidaki PORT env ile birebir eslesir
+    instance_size_slug: apps-s-1vcpu-2gb   # hafif imaj; ihtiyaca gore tune
+    instance_count: 1
+    health_check:
+      http_path: /api/health/liveness
+      initial_delay_seconds: 20
+      period_seconds: 30
+      timeout_seconds: 5
+      failure_threshold: 3
+    envs:
+      - key: PORT
+        value: "8080"              # Dockerfile ${PORT}'a bind eder (deterministik)
+        scope: RUN_TIME
+      - key: WEB_CONCURRENCY
+        value: "2"                 # uvicorn worker sayisi (instance'a gore)
+        scope: RUN_TIME
+      - key: CORS_ORIGINS          # ayni-origin oldugu icin app alan adi
+        value: https://OTEL-ALAN-ADINIZ
+        scope: RUN_TIME
+      # MONGO_URL / REDIS_URL / JWT_SECRET ... -> app seviyesinde ENCRYPTED
+
+# ── Arka plan worker'lari (HTTP listener YOK) ────────────────────────
+workers:
+  - name: worker                   # Celery worker
+    dockerfile_path: worker/Dockerfile    # repo kokune gore
+    # source_dir bos => context = repo koku (worker/Dockerfile `COPY backend/...`)
+    instance_size_slug: apps-s-1vcpu-1gb
+    instance_count: 1
+    # github: { repo: <ORG>/<REPO>, branch: main, deploy_on_push: true }
+
+  - name: beat                     # Celery beat (scheduler, tek instance)
+    dockerfile_path: worker/Dockerfile
+    run_command: celery -A celery_app beat --loglevel=info
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    instance_count: 1              # beat HER ZAMAN tek instance
+    # github: { repo: <ORG>/<REPO>, branch: main, deploy_on_push: true }
+
+# ── Frontend (React/Vite SPA, static) ────────────────────────────────
+static_sites:
+  - name: frontend
+    source_dir: /frontend
+    build_command: yarn install --ignore-engines --production=false && yarn build
+    output_dir: build
+    catchall_document: index.html  # SPA deep-link fallback
+    # github: { repo: <ORG>/<REPO>, branch: main, deploy_on_push: true }
+    envs:
+      - key: VITE_BACKEND_URL      # ayni-origin: app alan adi (BUILD-TIME)
+        value: https://OTEL-ALAN-ADINIZ
+        scope: BUILD_TIME
+
+# NOT: REDIS — DO panel > Create > Managed Caching (Valkey/Redis) ile ayri
+#   olusturup bu App'e baglayin; uretilen baglanti dizesini app seviyesinde
+#   REDIS_URL secret'ina girin (backend + worker + beat hepsi gorur).
