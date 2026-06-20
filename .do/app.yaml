@@ -119,14 +119,16 @@ envs:
   - key: SENTRY_ENVIRONMENT
     value: production
     scope: RUN_TIME
-  # --- Ortam'a ozel ADRESLER (gizli degil; gercek alan adiniz) ---
-  #   Tek alan adi modelinde hepsi APP'in alan adi olur, or:
-  #   https://syroce-pms-xxxxx.ondigitalocean.app veya kendi alan adiniz.
+  # --- Ortam'a ozel ADRESLER (gizli degil) ---
+  #   ${APP_URL} = DO'nun bu App'e atadigi tam https URL (or:
+  #   https://syroce-pms-xxxxx.ondigitalocean.app). DO deploy aninda
+  #   OTOMATIK doldurur — elle alan adi girmeye gerek YOK. Kendi alan
+  #   adinizi App'e baglarsaniz ${APP_URL} otomatik onu yansitir.
   - key: PUBLIC_APP_URL
-    value: https://OTEL-ALAN-ADINIZ      # misafir/QR public taban URL
+    value: "${APP_URL}"                   # misafir/QR public taban URL
     scope: RUN_TIME
   - key: FRONTEND_URL
-    value: https://OTEL-ALAN-ADINIZ
+    value: "${APP_URL}"
     scope: RUN_TIME
 
   # ═══════════════════════════════════════════════════════════════════
@@ -184,8 +186,8 @@ services:
       - key: WEB_CONCURRENCY
         value: "2"                 # uvicorn worker sayisi (instance'a gore)
         scope: RUN_TIME
-      - key: CORS_ORIGINS          # ayni-origin oldugu icin app alan adi
-        value: https://OTEL-ALAN-ADINIZ
+      - key: CORS_ORIGINS          # ayni-origin: DO'nun otomatik App URL'i
+        value: "${APP_URL}"
         scope: RUN_TIME
       # MONGO_URL / REDIS_URL / JWT_SECRET ... -> app seviyesinde ENCRYPTED
 
@@ -224,10 +226,10 @@ static_sites:
       repo: beyinsiz1903/emergent-yeni-uygulama
       branch: main
       deploy_on_push: true
-    envs:
-      - key: VITE_BACKEND_URL      # ayni-origin: app alan adi (BUILD-TIME)
-        value: https://OTEL-ALAN-ADINIZ
-        scope: BUILD_TIME
+    # VITE_BACKEND_URL VERILMEZ: bos olunca frontend relative "/api" ve ayni-
+    # origin websocket kullanir (axiosConfig.js `|| "/api"`, websocket.jsx
+    # `|| ''`). Tek alan adi ingress ile API ayni origin'de oldugundan dogru
+    # davranis budur; alan adini build'e gomeye gerek yok.
 
 # NOT: REDIS — DO panel > Create > Managed Caching (Valkey/Redis) ile ayri
 #   olusturup bu App'e baglayin; uretilen baglanti dizesini app seviyesinde
