@@ -12,6 +12,12 @@ import { mergeLandingContent } from '@/config/landingContentDefaults';
 
 const HERO_IMG = '/landing/hero-hotel.png';
 
+const DEFAULT_CONTACT_EMAIL = mergeLandingContent(null).contact.email;
+// Alici e-posta site-content'ten (super_admin editable) gelir; bozuk/enjeksiyonlu
+// girdi mailto'yu kirmasin diye dogrula, gecersizse guvenli default'a dus.
+const safeMailtoRecipient = (email) =>
+  /^[^\s@?&]+@[^\s@?&]+\.[^\s@?&]+$/.test(email || '') ? email : DEFAULT_CONTACT_EMAIL;
+
 const navLinks = [
   { label: 'Ana Sayfa',        href: '#top' },
   { label: 'Çözümler',         href: '#cozumler' },
@@ -1191,8 +1197,20 @@ const LandingPage = () => {
                   className="grid grid-cols-1 gap-4 sm:grid-cols-2"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    alert('Mesajınız iletildi. Ekibimiz en kısa sürede dönüş yapacak.');
-                    e.currentTarget.reset();
+                    const formEl = e.currentTarget;
+                    const fd = new FormData(formEl);
+                    const subject = `Syroce iletişim talebi — ${fd.get('company') || fd.get('fullName') || ''}`;
+                    const body = [
+                      `Ad Soyad: ${fd.get('fullName') || ''}`,
+                      `İşletme: ${fd.get('company') || ''}`,
+                      `Telefon: ${fd.get('phone') || ''}`,
+                      `E-posta: ${fd.get('email') || ''}`,
+                      `İşletme Türü: ${fd.get('businessType') || ''}`,
+                      '',
+                      `${fd.get('message') || ''}`,
+                    ].join('\n');
+                    window.location.href = `mailto:${safeMailtoRecipient(content.contact.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                    formEl.reset();
                   }}
                 >
                   {[

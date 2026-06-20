@@ -337,34 +337,29 @@ async def get_ai_pricing_recommendation(
         )
         return recommendation
     except Exception:
-        # Fallback pricing recommendation
-        rooms = await db.rooms.find({"tenant_id": current_user.tenant_id}).to_list(None)
-        bookings = await db.bookings.find({
-            "tenant_id": current_user.tenant_id,
-            "status": {"$in": ["confirmed", "checked_in"]}
-        }).to_list(None)
-        total_rooms = len(rooms) or 1
-        occupied = len([b for b in bookings if b.get('status') == 'checked_in'])
-        occupancy_rate = occupied / total_rooms
-
-        base_price = 150
-        if occupancy_rate > 0.8:
-            suggested = base_price * 1.3
-        elif occupancy_rate > 0.5:
-            suggested = base_price * 1.1
-        else:
-            suggested = base_price * 0.9
-
+        # Fail-closed: beklenmeyen bir hatada uydurma taban fiyat (eski sabit 150)
+        # ile sahte oneri DONULMEZ. Durust "veri yok" yaniti verilir.
+        logger.exception("ai-recommendation hesaplanamadi")
         return {
-            "recommended_rate": round(suggested, 2),
-            "current_rate": base_price,
-            "suggested_price": round(suggested, 2),
-            "current_price": base_price,
-            "confidence": round(0.7 + occupancy_rate * 0.2, 2),
-            "reason": f"Doluluk oranı %{round(occupancy_rate*100)}, talebe göre fiyat önerisi",
             "room_type": room_type,
             "target_date": target_date,
-            "source": "heuristic"
+            "recommended_price": None,
+            "min_price": None,
+            "max_price": None,
+            "current_price": None,
+            "price_change_pct": None,
+            "pricing_method": "unavailable",
+            "applied_rules": ["Fiyat onerisi su anda uretilemiyor"],
+            "competitor_data": {
+                "available": False,
+                "competitors": {},
+                "average": None,
+                "min": None,
+                "max": None,
+            },
+            "demand_factors": None,
+            "data_available": False,
+            "source": "unavailable",
         }
 # ── GET /pricing/competitor-rates ──
 @router.get("/pricing/competitor-rates")

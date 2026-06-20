@@ -22,22 +22,81 @@ class PricingService:
         self._db = db
 
     async def update_room_rate(self, ctx: OperationContext, rate_data: dict) -> ServiceResult:
-        target_date = rate_data.get("target_date") or rate_data.get("date", datetime.now().strftime("%Y-%m-%d"))
+        """Fiyat degisikligini yerel olarak KAYDET ve pinned-provider durumunu durustce raporla.
+
+        Bu uc UYDURMA 'tum kanallara gonderildi' URETMEZ: fiyat niyetini rate_updates'e
+        kaydeder (gercek audit kaydi), pinned saglayiciyi yalnizca-okuma tespit eder
+        (pilot_drift=0) ve durumu durustce dondurur. Gercek OTA dagitimi Unified Rate
+        Manager (Toplu Fiyat/Envanter) ekranindan, pinned saglayici uzerinden yapilir.
+        """
+        # Girdi dogrulama (fail-closed; uydurma varsayilan oda tipi/fiyat YOK).
+        room_type = rate_data.get("room_type")
+        target_date = rate_data.get("target_date") or rate_data.get("date")
+        new_rate = rate_data.get("new_rate")
+        valid_rate = isinstance(new_rate, (int, float)) and not isinstance(new_rate, bool) and new_rate > 0
+        if not room_type or not target_date or not valid_rate:
+            return ServiceResult.success({
+                "success": False,
+                "message": "Eksik/gecersiz alan: oda tipi, tarih ve pozitif bir fiyat gereklidir.",
+                "data_available": False,
+                "queued": False,
+                "pushed": False,
+                "pushed_to": [],
+                "channels_updated": 0,
+            })
+
+        # Pinned-provider tespiti OTORITERDIR; istemci girdisi ezemez (yalnizca okuma).
+        try:
+            from domains.channel_manager.unified_rate_manager_router import (
+                _detect_active_provider,
+            )
+            detection = await _detect_active_provider(ctx.tenant_id, prefer=None)
+        except Exception:
+            detection = {"provider": None, "configuration_error": "detection_failed"}
+        provider = detection.get("provider")
+        configuration_error = detection.get("configuration_error")
+        ari_status = "recorded_local" if provider else "not_configured"
+
+        # Fiyat niyetini yerel audit olarak kaydet (gercek kayit; uydurma push YOK).
         rate_update = {
             "id": str(uuid.uuid4()),
             "tenant_id": ctx.tenant_id,
-            "room_type": rate_data.get("room_type", "Standard"),
+            "room_type": room_type,
             "target_date": target_date,
-            "new_rate": rate_data.get("new_rate", 100.0),
+            "new_rate": new_rate,
             "reason": rate_data.get("reason", "Manual update"),
             "updated_at": datetime.now(UTC).isoformat(),
-            "pushed_to_channels": ["booking_com", "expedia", "website", "direct"],
+            "provider": provider,
+            "ari_status": ari_status,
+            "configuration_error": configuration_error,
+            "pushed_to_channels": [],
         }
         await self._db.rate_updates.insert_one(rate_update)
+
+        if not provider:
+            return ServiceResult.success({
+                "success": True,
+                "message": f"{room_type} icin fiyat yerel olarak kaydedildi. Kanal saglayici yapilandirilmamis; gercek OTA dagitimi yapilmadi.",
+                "data_available": False,
+                "queued": False,
+                "pushed": False,
+                "pushed_to": [],
+                "provider": None,
+                "configuration_error": configuration_error,
+                "channels_updated": 0,
+                "log_id": rate_update["id"],
+            })
+
         return ServiceResult.success({
             "success": True,
-            "message": f'{rate_update["room_type"]} icin fiyat {rate_update["new_rate"]} olarak guncellendi',
-            "pushed_to": rate_update["pushed_to_channels"],
+            "message": f"{room_type} icin fiyat yerel olarak kaydedildi. Gercek OTA dagitimi icin Toplu Fiyat/Envanter (Rate Manager) ekranini kullanin.",
+            "data_available": True,
+            "queued": False,
+            "pushed": False,
+            "pushed_to": [],
+            "provider": provider,
+            "channels_updated": 0,
+            "log_id": rate_update["id"],
         })
 
     async def list_rate_plans(self, ctx: OperationContext, channel=None, company_id=None, stay_date=None) -> ServiceResult:

@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Truck, Mail, Lock, ArrowRight, ShieldCheck, Handshake, Send } from 'lucide-react';
+import { mergeLandingContent } from '@/config/landingContentDefaults';
+
+const CONTACT_EMAIL = mergeLandingContent(null).contact.email;
 
 const SupplierAuthPage = () => {
   const navigate = useNavigate();
@@ -12,6 +15,16 @@ const SupplierAuthPage = () => {
 
   const onSubmit = (e) => {
     e.preventDefault();
+    if (mode === 'register') {
+      const subject = `Tedarikçi başvurusu — ${form.company || form.email}`;
+      const body = [
+        `Firma: ${form.company || ''}`,
+        `Vergi No: ${form.taxNo || ''}`,
+        `Telefon: ${form.phone || ''}`,
+        `E-posta: ${form.email || ''}`,
+      ].join('\n');
+      window.location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    }
     setSubmitted(true);
   };
 
@@ -118,12 +131,12 @@ const SupplierAuthPage = () => {
             {submitted ? (
               <div className="mt-6 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-5 text-sm text-emerald-100">
                 <div className="font-semibold text-emerald-200">
-                  {mode === 'login' ? 'Demo modu' : 'Başvurunuz alındı'}
+                  {mode === 'login' ? 'Demo modu' : 'Başvuru e-postanız hazırlandı'}
                 </div>
                 <p className="mt-1.5 text-emerald-100/90">
                   {mode === 'login'
                     ? 'Tedarikçi portalı yakında devreye alınıyor. Erken erişim için başvuru sekmesinden talep oluşturabilirsiniz.'
-                    : 'Ekibimiz başvurunuzu en kısa sürede inceleyecek ve sizinle iletişime geçecek.'}
+                    : 'E-posta uygulamanızdan mesajı göndererek başvurunuzu tamamlayın. Ekibimiz başvurunuzu inceleyip sizinle iletişime geçecek.'}
                 </p>
                 <button
                   onClick={() => setSubmitted(false)}

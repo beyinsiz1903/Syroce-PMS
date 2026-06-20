@@ -12,11 +12,30 @@ class DynamicPricingEngine:
 
     def __init__(self, db):
         self.db = db
-        self.base_prices = {
-            'Standard': 100,
-            'Deluxe': 150,
-            'Suite': 250
-        }
+
+    async def _resolve_base_price(self, tenant_id: str, room_type: str | None = None) -> float | None:
+        """Taban fiyatı GERÇEK oda kayıtlarından türet (uydurma sabit yok).
+
+        Önce verilen oda tipinin yapılandırılmış base_price ortalaması; yoksa
+        çağıran mülk geneline düşebilir. Hiç gerçek fiyat yoksa None döner
+        (fail-closed) — asla sabit bir sayı uydurulmaz.
+        """
+        query: dict = {'tenant_id': tenant_id, 'base_price': {'$gt': 0}}
+        if room_type:
+            query['room_type'] = room_type
+        prices = []
+        rows = await self.db.rooms.find(query, {'_id': 0, 'base_price': 1}).to_list(5000)
+        for r in rows:
+            bp = r.get('base_price')
+            try:
+                bp = float(bp)
+            except (TypeError, ValueError):
+                continue
+            if bp > 0:
+                prices.append(bp)
+        if not prices:
+            return None
+        return round(sum(prices) / len(prices), 2)
 
     async def get_competitor_rates(self, tenant_id: str, date: str, room_type: str) -> dict:
         """Rakip otel fiyatlarını yalnızca gerçek competitor_rates koleksiyonundan getir.
@@ -114,13 +133,41 @@ class DynamicPricingEngine:
 
     async def recommend_price(self, tenant_id: str, room_type: str, target_date: str) -> dict:
         """Kural bazlı (deterministik) fiyat önerisi."""
-        base_price = self.base_prices.get(room_type, 100)
-
         # Rakip verisi (yalnızca gerçek kayıtlardan)
         comp_data = await self.get_competitor_rates(tenant_id, target_date, room_type)
 
         # Talep faktörleri
         demand = await self.calculate_demand_factors(tenant_id, target_date)
+
+        # Taban fiyat GERÇEK oda kayıtlarından — uydurma sabit yok.
+        base_price = await self._resolve_base_price(tenant_id, room_type)
+        base_note = None
+        if base_price is None:
+            # Oda tipi için fiyat yok -> mülk geneli gerçek ortalamaya düş.
+            base_price = await self._resolve_base_price(tenant_id, None)
+            if base_price is not None:
+                base_note = (
+                    f"Oda tipi '{room_type}' icin taban fiyat yok -> "
+                    f"mulk geneli ortalama ({base_price}) kullanildi"
+                )
+        if base_price is None:
+            # Hic gercek taban fiyat yok -> fail-closed (oneri uretilemez).
+            return {
+                'room_type': room_type,
+                'target_date': target_date,
+                'recommended_price': None,
+                'min_price': None,
+                'max_price': None,
+                'pricing_method': 'base_price_unavailable',
+                'applied_rules': [
+                    'Gercek oda taban fiyati yapilandirilmamis -> fiyat onerisi uretilemedi'
+                ],
+                'competitor_data': comp_data,
+                'demand_factors': demand,
+                'current_price': None,
+                'price_change_pct': None,
+                'data_available': False,
+            }
 
         # Önerilen fiyatı hesapla
         total_factor = (
@@ -133,6 +180,8 @@ class DynamicPricingEngine:
         recommended = base_price * total_factor
 
         applied_rules = self._describe_rules(demand)
+        if base_note:
+            applied_rules.insert(0, base_note)
 
         # Rakip ortalamasına göre ayarla (yalnızca gerçek rakip verisi varsa)
         competitor_avg = comp_data['average'] if comp_data.get('available') else None
@@ -157,7 +206,8 @@ class DynamicPricingEngine:
             'competitor_data': comp_data,
             'demand_factors': demand,
             'current_price': base_price,
-            'price_change_pct': round(((recommended - base_price) / base_price) * 100, 2)
+            'price_change_pct': round(((recommended - base_price) / base_price) * 100, 2),
+            'data_available': True,
         }
 
 # Global instance

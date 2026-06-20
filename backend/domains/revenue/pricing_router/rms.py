@@ -141,7 +141,11 @@ class RateOverrideRequest(BaseModel):
 async def update_room_rate(rate_data: dict, current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
-    """Oda fiyatini guncelle ve tum kanallara gonder"""
+    """Fiyat degisikligini yerel niyet/audit olarak kaydet ve pinned-provider durumunu durustce raporla.
+
+    Gercek OTA dagitimi yapmaz (uydurma 'tum kanallara gonderildi' URETMEZ); gercek
+    push Unified Rate Manager (Toplu Fiyat/Envanter) ekranindan yapilir.
+    """
     ctx = OperationContext.from_user(current_user)
     result = await pricing_service.update_room_rate(ctx, rate_data)
     return result.data

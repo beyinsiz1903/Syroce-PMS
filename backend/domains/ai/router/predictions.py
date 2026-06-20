@@ -603,34 +603,43 @@ async def get_occupancy_prediction(
             continue
 
     predictions = []
+    daily_occ = []
     for day_offset in range(days):
         pred_date = start_date + timedelta(days=day_offset)
         bookings_count = sum(1 for ci, co in parsed_bookings if ci <= pred_date < co)
-        occupancy_pct = (bookings_count / total_rooms * 100) if total_rooms > 0 else 0
+        occupancy_pct = round((bookings_count / total_rooms * 100) if total_rooms > 0 else 0, 1)
+        daily_occ.append(occupancy_pct)
 
-        # Simple prediction model (can be enhanced with ML)
-        # Add some variance based on day of week
-        day_of_week = pred_date.weekday()
-        if day_of_week in [4, 5]:  # Friday, Saturday
-            predicted_pct = min(occupancy_pct * 1.15, 100)
-        elif day_of_week in [0, 6]:  # Monday, Sunday
-            predicted_pct = occupancy_pct * 0.85
-        else:
-            predicted_pct = occupancy_pct
-
+        # Tahmin = gerçek on-the-books doluluk. Gelecek tarihler için onaylı
+        # rezervasyonlar dolulugun TABANIDIR; uydurma hafta-ici/sonu carpani
+        # (eski Cuma/Cmt x1.15, Pzt/Paz x0.85) KALDIRILDI — sahte varyans yok.
         predictions.append({
             'date': pred_date.strftime('%Y-%m-%d'),
             'day_of_week': pred_date.strftime('%A'),
             'current_bookings': bookings_count,
-            'current_occupancy_pct': round(occupancy_pct, 1),
-            'predicted_occupancy_pct': round(predicted_pct, 1),
+            'current_occupancy_pct': occupancy_pct,
+            'predicted_occupancy_pct': occupancy_pct,
             'confidence': 'high' if day_offset < 7 else 'medium' if day_offset < 14 else 'low'
         })
+
+    # FrontdeskTab'in okudugu ust-duzey alanlar — hepsi gercek OTB verisinden.
+    today_midnight = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    upcoming_bookings = sum(1 for ci, _co in parsed_bookings if ci >= today_midnight)
+    current_occupancy = daily_occ[0] if daily_occ else 0
+    tomorrow_prediction = daily_occ[1] if len(daily_occ) > 1 else current_occupancy
+    next_week_slice = daily_occ[1:8] if len(daily_occ) > 1 else daily_occ[:1]
+    next_week_prediction = round(sum(next_week_slice) / len(next_week_slice), 1) if next_week_slice else 0
 
     return {
         'predictions': predictions,
         'total_rooms': total_rooms,
-        'prediction_period_days': days
+        'prediction_period_days': days,
+        'current_occupancy': current_occupancy,
+        'upcoming_bookings': upcoming_bookings,
+        'prediction': {
+            'tomorrow_prediction': tomorrow_prediction,
+            'next_week_prediction': next_week_prediction,
+        },
     }
 # ── GET /ai/pms/guest-patterns ──
 @router.get("/ai/pms/guest-patterns")

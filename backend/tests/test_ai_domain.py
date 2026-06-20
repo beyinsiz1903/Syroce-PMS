@@ -2,55 +2,140 @@
 Tests for AI Domain — Dynamic Pricing, Predictive Engine, Reputation Manager
 Covers K5 critical gap: AI domain had zero test coverage.
 """
+import re
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import UTC, datetime, timedelta
+
+
+class FakeCursor:
+    def __init__(self, data):
+        self._data = data
+
+    async def to_list(self, limit=None):
+        return self._data[:limit] if limit else list(self._data)
+
+
+def _match_doc(doc, query):
+    """Mongo-benzeri sorgu eslestirme (test FakeDB icin).
+
+    Esitlik + $gt/$gte/$lt/$lte/$in/$nin/$ne/$regex destekler. Eksik alan bir
+    karsilastirma/regex operatorunu KARSILAMAZ (fail-closed) — boylece
+    tenant/room_type/tarih filtreleri gercekten sinanir (fake-green degil).
+    """
+    for k, v in query.items():
+        dv = doc.get(k)
+        if isinstance(v, dict):
+            for op, ov in v.items():
+                if op == '$gt':
+                    if dv is None or not (dv > ov):
+                        return False
+                elif op == '$gte':
+                    if dv is None or not (dv >= ov):
+                        return False
+                elif op == '$lt':
+                    if dv is None or not (dv < ov):
+                        return False
+                elif op == '$lte':
+                    if dv is None or not (dv <= ov):
+                        return False
+                elif op == '$in':
+                    if dv not in ov:
+                        return False
+                elif op == '$nin':
+                    if dv in ov:
+                        return False
+                elif op == '$ne':
+                    if dv == ov:
+                        return False
+                elif op == '$regex':
+                    if dv is None or re.search(ov, str(dv)) is None:
+                        return False
+                # bilinmeyen operator -> yok say (asiri kisitlama yapma)
+        else:
+            if dv != v:
+                return False
+    return True
 
 
 class FakeCollection:
     def __init__(self, data=None):
         self._data = data or []
 
-    async def count_documents(self, query):
-        return len([d for d in self._data if all(d.get(k) == v for k, v in query.items() if not isinstance(v, dict))])
+    async def count_documents(self, query=None):
+        return len([d for d in self._data if _match_doc(d, query or {})])
 
-    def find(self, query, projection=None):
-        self._last_query = query
-        return self
+    def find(self, query=None, projection=None):
+        return FakeCursor([d for d in self._data if _match_doc(d, query or {})])
 
-    async def to_list(self, limit):
-        return self._data[:limit]
+    def aggregate(self, pipeline):
+        # $match (esitlik + operatorler) ve $group ($avg) emulasyonu.
+        docs = list(self._data)
+        for stage in pipeline:
+            if '$match' in stage:
+                docs = [d for d in docs if _match_doc(d, stage['$match'])]
+            elif '$group' in stage:
+                g = stage['$group']
+                out = {'_id': g.get('_id')}
+                for key, expr in g.items():
+                    if key == '_id':
+                        continue
+                    if isinstance(expr, dict) and '$avg' in expr:
+                        field = str(expr['$avg']).lstrip('$')
+                        vals = [d.get(field) for d in docs if isinstance(d.get(field), (int, float))]
+                        out[key] = (sum(vals) / len(vals)) if vals else None
+                docs = [out] if docs else []
+        return FakeCursor(docs)
 
 
 class FakeDB:
-    def __init__(self, rooms=None, bookings=None, reviews=None, service_complaints=None, competitor_rates=None):
+    def __init__(self, rooms=None, bookings=None, reviews=None, service_complaints=None, competitor_rates=None, external_reviews=None):
         self.rooms = FakeCollection(rooms or [])
         self.bookings = FakeCollection(bookings or [])
         self.reviews = FakeCollection(reviews or [])
         self.service_complaints = FakeCollection(service_complaints or [])
         self.competitor_rates = FakeCollection(competitor_rates or [])
+        self.external_reviews = FakeCollection(external_reviews or [])
 
 
 class TestDynamicPricingEngine:
     def setup_method(self):
         from domains.ai.dynamic_pricing_engine import DynamicPricingEngine
         self.db = FakeDB(
-            rooms=[{"tenant_id": "t1"} for _ in range(100)],
-            bookings=[{"tenant_id": "t1", "status": "confirmed"} for _ in range(70)],
+            rooms=[{"tenant_id": "t1", "room_type": "Standard", "base_price": 100} for _ in range(100)],
+            # check_in/check_out span "2026-04-20" so strict filtering counts them (occupancy 70%).
+            bookings=[
+                {"tenant_id": "t1", "status": "confirmed",
+                 "check_in": "2026-01-01", "check_out": "2026-12-31"}
+                for _ in range(70)
+            ],
             competitor_rates=[
-                {"tenant_id": "t1", "competitor_name": "Comp A", "rate": 100},
-                {"tenant_id": "t1", "competitor_name": "Comp B", "rate": 110},
-                {"tenant_id": "t1", "competitor_name": "Comp C", "rate": 120},
+                {"tenant_id": "t1", "date": "2026-04-20", "room_type": "Standard", "competitor_name": "Comp A", "rate": 100},
+                {"tenant_id": "t1", "date": "2026-04-20", "room_type": "Standard", "competitor_name": "Comp B", "rate": 110},
+                {"tenant_id": "t1", "date": "2026-04-20", "room_type": "Standard", "competitor_name": "Comp C", "rate": 120},
             ],
         )
         self.engine = DynamicPricingEngine(self.db)
 
-    def test_base_prices_exist(self):
-        assert "Standard" in self.engine.base_prices
-        assert "Deluxe" in self.engine.base_prices
-        assert "Suite" in self.engine.base_prices
-        assert self.engine.base_prices["Standard"] < self.engine.base_prices["Deluxe"]
-        assert self.engine.base_prices["Deluxe"] < self.engine.base_prices["Suite"]
+    @pytest.mark.asyncio
+    async def test_base_price_derived_from_real_rooms(self):
+        # Taban fiyat artik GERCEK oda kayitlarindan turetilir (sabit dict yok).
+        assert not hasattr(self.engine, "base_prices")
+        base = await self.engine._resolve_base_price("t1", "Standard")
+        assert base == 100
+
+    @pytest.mark.asyncio
+    async def test_recommend_price_no_real_base_fails_closed(self):
+        from domains.ai.dynamic_pricing_engine import DynamicPricingEngine
+        # base_price'i olmayan odalar -> uydurma sabit YOK, fail-closed.
+        engine = DynamicPricingEngine(FakeDB(
+            rooms=[{"tenant_id": "t1", "room_type": "Standard"} for _ in range(10)],
+        ))
+        result = await engine.recommend_price("t1", "Standard", "2026-04-20")
+        assert result["recommended_price"] is None
+        assert result["current_price"] is None
+        assert result["pricing_method"] == "base_price_unavailable"
+        assert result["data_available"] is False
 
     @pytest.mark.asyncio
     async def test_get_competitor_rates_structure(self):
@@ -140,7 +225,7 @@ class TestDynamicPricingEngine:
     async def test_recommend_price_no_competitor_data(self):
         from domains.ai.dynamic_pricing_engine import DynamicPricingEngine
         engine = DynamicPricingEngine(FakeDB(
-            rooms=[{"tenant_id": "t1"} for _ in range(10)],
+            rooms=[{"tenant_id": "t1", "room_type": "Standard", "base_price": 100} for _ in range(10)],
             bookings=[{"tenant_id": "t1", "status": "confirmed"} for _ in range(5)],
         ))
         result = await engine.recommend_price("t1", "Standard", "2026-04-20")
@@ -148,21 +233,44 @@ class TestDynamicPricingEngine:
         assert result["recommended_price"] > 0
         assert any("Rakip verisi yok" in r for r in result["applied_rules"])
 
+    @pytest.mark.asyncio
+    async def test_resolve_base_price_tenant_room_type_and_fallback(self):
+        # Filtrelemenin GERCEKTEN sinanmasi: yanlis tenant/room_type sizmamali.
+        from domains.ai.dynamic_pricing_engine import DynamicPricingEngine
+        eng = DynamicPricingEngine(FakeDB(rooms=[
+            {"tenant_id": "t1", "room_type": "Standard", "base_price": 100},
+            {"tenant_id": "t1", "room_type": "Deluxe", "base_price": 200},
+            {"tenant_id": "t2", "room_type": "Standard", "base_price": 999},
+        ]))
+        # room_type'a ozel ortalama
+        assert await eng._resolve_base_price("t1", "Standard") == 100
+        assert await eng._resolve_base_price("t1", "Deluxe") == 200
+        # cross-tenant haric: t2'nin 999'u t1'e sizmaz
+        assert await eng._resolve_base_price("t1", "Standard") != 999
+        assert await eng._resolve_base_price("t2", "Standard") == 999
+        # t1'de olmayan oda tipi -> None (room_type ozel sorgu)
+        assert await eng._resolve_base_price("t1", "Suite") is None
+        # mulk geneli fallback (room_type yok) -> (100+200)/2 = 150
+        assert await eng._resolve_base_price("t1", None) == 150
+
 
 class TestPredictiveEngine:
     def setup_method(self):
         from domains.ai.predictive_engine import PredictiveEngine
         self.db = FakeDB(
+            rooms=[{"tenant_id": "t1", "room_type": "Standard", "base_price": 100} for _ in range(4)],
             bookings=[
                 {
                     "id": "b1", "tenant_id": "t1", "guest_id": "g1",
-                    "check_in": "2026-04-20T14:00:00", "status": "confirmed",
+                    "check_in": "2026-04-20T14:00:00", "check_out": "2027-01-01T11:00:00",
+                    "status": "confirmed",
                     "channel": "booking_com", "payment_method": None,
                     "total_amount": 50, "last_contact_date": None, "created_at": datetime.now(UTC).isoformat()
                 },
                 {
                     "id": "b2", "tenant_id": "t1", "guest_id": "g2",
-                    "check_in": "2026-04-20T14:00:00", "status": "confirmed",
+                    "check_in": "2026-04-20T14:00:00", "check_out": "2027-01-01T11:00:00",
+                    "status": "confirmed",
                     "channel": "direct", "payment_method": "credit_card",
                     "total_amount": 200, "last_contact_date": "2026-04-19", "created_at": datetime.now(UTC).isoformat()
                 },
@@ -221,12 +329,18 @@ class TestPredictiveEngine:
 class TestReputationManager:
     def setup_method(self):
         from domains.ai.reputation_manager import ReputationManager
+        _now = datetime.now(UTC).isoformat()
         self.db = FakeDB(
             reviews=[
                 {"tenant_id": "t1", "rating": 5, "created_at": datetime.now(UTC).isoformat()},
                 {"tenant_id": "t1", "rating": 4, "created_at": datetime.now(UTC).isoformat()},
                 {"tenant_id": "t1", "rating": 2, "created_at": (datetime.now(UTC) - timedelta(days=60)).isoformat()},
-            ]
+            ],
+            external_reviews=[
+                {"tenant_id": "t1", "platform": "google", "rating": 4.5, "review_date": _now},
+                {"tenant_id": "t1", "platform": "booking", "rating": 8.0, "review_date": _now},
+                {"tenant_id": "t1", "platform": "google", "rating": 5.0, "review_date": _now},
+            ],
         )
         self.manager = ReputationManager(self.db)
 

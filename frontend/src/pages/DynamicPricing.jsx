@@ -79,6 +79,23 @@ const DynamicPricing = () => {
 
       {recommendation && (
         <div className="space-y-4">
+          {(recommendation.data_available === false || recommendation.recommended_price == null) ? (
+            <Card className="border-2 border-amber-200 bg-amber-50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Target className="w-6 h-6 text-amber-600" />
+                  {t('rms.priceRecommendation')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-700">
+                  Bu oda tipi ve tarih icin gercek veriye dayali fiyat onerisi uretilemedi.
+                  Oda taban fiyatlari yapilandirildiginda oneri otomatik olusur. Ayrinti icin
+                  asagidaki "Uygulanan Kurallar" bolumune bakin.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
           <Card className="bg-gradient-to-r from-indigo-50 to-blue-50 border-2 border-indigo-200">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -122,23 +139,30 @@ const DynamicPricing = () => {
 
               <Button className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700" onClick={async () => {
                 try {
-                  // Push rate to all channels
-                  await axios.post('/rms/update-rate', {
+                  const resp = await axios.post('/rms/update-rate', {
                     room_type: roomType,
                     target_date: targetDate,
                     new_rate: recommendation.recommended_price
                   });
-                  toast.success(`Fiyat güncellendi! €${recommendation.recommended_price} tüm kanallara gönderildi.`);
+                  const data = resp?.data || {};
+                  if (data.success === false) {
+                    toast.error(data.message || 'Fiyat uygulanamadi. Lutfen alanlari kontrol edin.');
+                  } else if (data.pushed) {
+                    toast.success(`Fiyat güncellendi: €${recommendation.recommended_price} kanallara gönderildi.`);
+                  } else {
+                    toast.info(data.message || `Fiyat €${recommendation.recommended_price} yerel olarak kaydedildi. Gerçek OTA dağıtımı için Toplu Fiyat/Envanter ekranını kullanın.`);
+                  }
                   loadRecommendation();
                 } catch (error) {
-                  toast.success(`Fiyat uygulandı: €${recommendation.recommended_price} (Demo mode - gerçekte tüm OTA'lara gönderilir)`);
+                  toast.error('Fiyat uygulanamadi. Lutfen tekrar deneyin veya kanal yapilandirmasini kontrol edin.');
                 }
               }}>
                 <Zap className="w-4 h-4 mr-2" />
-                Fiyatı Uygula ve Tüm Kanallara Gönder
+                Fiyatı Kaydet
               </Button>
             </CardContent>
           </Card>
+          )}
 
           {/* Uygulanan Kurallar */}
           {recommendation.applied_rules && recommendation.applied_rules.length > 0 && (
