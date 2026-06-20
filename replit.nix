@@ -1,5 +1,6 @@
 {pkgs}: {
   deps = [
+    pkgs.doctl
     pkgs.caddy
     pkgs.freetype
     pkgs.fontconfig
