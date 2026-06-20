@@ -516,14 +516,29 @@ def _verification_base_url() -> str:
 def _certificate_html(cert: dict[str, Any], issued_str: str) -> str:
     code = cert.get("verification_code") or ""
     base = _verification_base_url()
-    verify_line = (
-        f"Dogrula: {_esc(base)}/sertifika-dogrula/{_esc(code)}"
-        if base else f"Dogrulama Kodu: {_esc(code)}"
+    qr_data_uri = ""
+    if base:
+        verify_url = f"{base}/sertifika-dogrula/{code}"
+        verify_line = f"Dogrula: {_esc(verify_url)}"
+        try:
+            from core.security import generate_qr_code
+            qr_data_uri = generate_qr_code(verify_url)
+        except Exception:
+            qr_data_uri = ""
+    else:
+        verify_line = f"Dogrulama Kodu: {_esc(code)}"
+    return _certificate_html_impl(cert, issued_str, verify_line, qr_data_uri)
+
+
+def _certificate_html_impl(
+    cert: dict[str, Any],
+    issued_str: str,
+    verify_line: str,
+    qr_data_uri: str = "",
+) -> str:
+    qr_block = (
+        f'<img class="qr" src="{qr_data_uri}" alt="QR" />' if qr_data_uri else ""
     )
-    return _certificate_html_impl(cert, issued_str, verify_line)
-
-
-def _certificate_html_impl(cert: dict[str, Any], issued_str: str, verify_line: str) -> str:
     return f"""<!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -540,6 +555,7 @@ def _certificate_html_impl(cert: dict[str, Any], issued_str: str, verify_line: s
   .meta {{ margin-top: 26px; font-size: 14px; color: #334155; }}
   .meta span {{ display: inline-block; margin: 0 14px; }}
   .code {{ margin-top: 22px; font-size: 12px; letter-spacing: 1px; color: #64748b; }}
+  .qr {{ margin-top: 18px; width: 30mm; height: 30mm; }}
 </style>
 </head>
 <body>
@@ -554,6 +570,7 @@ def _certificate_html_impl(cert: dict[str, Any], issued_str: str, verify_line: s
       <span>Puan: <strong>{_esc(cert.get('score'))}</strong></span>
       <span>Tarih: <strong>{_esc(issued_str)}</strong></span>
     </div>
+    {qr_block}
     <div class="code">{verify_line}</div>
   </div>
 </body>
