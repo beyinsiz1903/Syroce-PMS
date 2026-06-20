@@ -24,8 +24,13 @@ COPY requirements/ ./requirements/
 #   (celery/psutil added per Phase 6.0 AST scan: API-side task dispatch
 #   via bootstrap/worker_registry.py + health/monitoring router need them)
 # - Skips ml.txt (sklearn/xgboost/transformers — Phase 6.0 confirmed API
-#   does NOT import ml stack), reports.txt, dev.txt → meaningful image
-#   reduction (~38% by distribution count, ~137 vs 222 packages).
+#   does NOT import the ml stack; it only dispatches to the 'ml' celery
+#   queue) and dev.txt → meaningful image reduction.
+#   NOTE: reports.txt (WeasyPrint/openpyxl/lxml/Pillow) IS included — api.txt
+#   chains it because invoice/EOD/BEO/academy PDF + Excel endpoints live on
+#   the API surface. The runtime stage below installs the WeasyPrint NATIVE
+#   libs (pango/cairo/gdk-pixbuf/glib) so `from weasyprint import HTML` can
+#   dlopen them (server.py eager-preloads the renderer at startup).
 # - litellm override below stays IDENTICAL to the all.txt setup: forced
 #   `>=1.84.0 --no-deps`. The >=1.84.0 floor clears CVE-2026-49468 (auth
 #   bypass) and the earlier CVE-2026-35029/35030 (first fixed in 1.83.2);
@@ -44,8 +49,16 @@ RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuse
 
 WORKDIR /app
 
+# Runtime system deps:
+#  - curl: container HEALTHCHECK below
+#  - WeasyPrint native libs (pango/cairo/gdk-pixbuf/glib) + base fonts: needed
+#    so the already-installed `weasyprint` Python pkg (api.txt -> reports.txt)
+#    can dlopen its .so libs for PDF rendering (invoice/EOD/BEO/academy).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl && \
+    curl \
+    libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 libgdk-pixbuf-2.0-0 \
+    libcairo2 libglib2.0-0 \
+    shared-mime-info fonts-dejavu-core fonts-liberation && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /install /usr/local

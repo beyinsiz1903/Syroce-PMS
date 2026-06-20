@@ -22,11 +22,13 @@
 #   CORS_ORIGINS app alan adina set edilir, zarari yok).
 #
 # ── KRITIK NOTLAR ────────────────────────────────────────────────────
-# 1) Bu Docker imajlari (backend api-runtime + worker-runtime) BILEREK
-#    HAFIF: yerel ML yigini (xgboost/sklearn talep tahmini) ve PDF uretimi
-#    (WeasyPrint — BEO / rapor PDF) DAHIL DEGIL. API tabanli AI (OpenAI/
-#    Anthropic/Gemini, litellm uzerinden) CALISIR. Yerel ML egitimi/PDF
-#    export gerekiyorsa imaja reports.txt + ml.txt + native lib eklenmeli.
+# 1) GORUNTU ICERIGI: PDF uretimi (WeasyPrint) backend API VE worker
+#    imajlarinda ETKIN — reports.txt Python paketi + pango/cairo/gdk-pixbuf/
+#    glib native lib'leri kurulu. Yerel ML yigini (xgboost/sklearn/scipy)
+#    WORKER imajinda ETKIN ('ml' celery kuyrugu orada calisir; API ML import
+#    ETMEZ, sadece kuyruga dispatch eder + libgomp1 worker'da kurulu). API
+#    tabanli AI (litellm) da CALISIR. MALIYET: ML worker imaji buyuk
+#    (nvidia-nccl dahil yuz MB'lar) — worker instance'ini >=2GB tutun.
 # 2) App Platform'un sabit cikis IP'si yoktur (Dedicated Egress / VPC
 #    haric). Atlas Network Access'te ya 0.0.0.0/0 acin (guclu DB parolasi
 #    + TLS sart) ya da DO Dedicated Egress IP'lerini allowlist'leyin.
@@ -165,10 +167,10 @@ services:
 
 # ── Arka plan worker'lari (HTTP listener YOK) ────────────────────────
 workers:
-  - name: worker                   # Celery worker
+  - name: worker                   # Celery worker (ML + reports DAHIL)
     dockerfile_path: worker/Dockerfile    # repo kokune gore
     # source_dir bos => context = repo koku (worker/Dockerfile `COPY backend/...`)
-    instance_size_slug: apps-s-1vcpu-1gb
+    instance_size_slug: apps-s-1vcpu-2gb   # ML yigini (xgboost/scipy) icin >=2GB
     instance_count: 1
     # github: { repo: <ORG>/<REPO>, branch: main, deploy_on_push: true }
 

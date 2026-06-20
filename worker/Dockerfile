@@ -28,8 +28,17 @@ RUN groupadd -r celeryuser && useradd -r -g celeryuser -d /app -s /sbin/nologin 
 
 WORKDIR /app
 
+# Runtime system deps:
+#  - curl: kept for parity / debugging (health uses celery inspect below)
+#  - libgomp1 + libstdc++6: OpenMP + C++ runtime for xgboost/scikit-learn ('ml')
+#  - WeasyPrint native libs (pango/cairo/gdk-pixbuf/glib) + base fonts: needed
+#    for scheduled in-worker PDF rendering (report_scheduler/flash_email).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl && \
+    curl \
+    libgomp1 libstdc++6 \
+    libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 libgdk-pixbuf-2.0-0 \
+    libcairo2 libglib2.0-0 \
+    shared-mime-info fonts-dejavu-core fonts-liberation && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /install /usr/local
