@@ -29,6 +29,12 @@
 #    ETMEZ, sadece kuyruga dispatch eder + libgomp1 worker'da kurulu). API
 #    tabanli AI (litellm) da CALISIR. MALIYET: ML worker imaji buyuk
 #    (nvidia-nccl dahil yuz MB'lar) — worker instance'ini >=2GB tutun.
+#    Worker imaji ayrica integrations.txt tasir ('messaging'/'backup'/
+#    'analytics' kuyruklari): boto3 (S3 yedek + AWS KMS/SES), resend (e-posta),
+#    stripe/iyzipay, openai/litellm/google-* AI SDK'leri. litellm worker'da da
+#    --no-deps ile >=1.84.0'a override edilir (CVE-2026-49468). NOT: Twilio
+#    (SMS/WhatsApp) hicbir requirements dosyasinda pinli DEGIL ve canli
+#    transport'u yok (fail-closed 503); imaja eklenmedi.
 # 2) App Platform'un sabit cikis IP'si yoktur (Dedicated Egress / VPC
 #    haric). Atlas Network Access'te ya 0.0.0.0/0 acin (guclu DB parolasi
 #    + TLS sart) ya da DO Dedicated Egress IP'lerini allowlist'leyin.
