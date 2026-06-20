@@ -55,6 +55,15 @@ next-env.d.ts
 /node_modules
 node_modules/
 npm-debug.log*
+# Vestigial root Node stub (name="workspace") auto-created by the packager —
+# NOT a monorepo root (no `workspaces` key); the real Node apps live in
+# frontend/, mobile/, quick-id/. Tracking it made DO App Platform auto-detect
+# "Node.js build detected" and scaffold ONE buildpack Web Service, bypassing our
+# Docker (backend/worker/beat) + static (frontend) App Spec. Keep the repo ROOT
+# free of language manifests so DO cannot buildpack-detect. ANCHORED so the real
+# per-app package.json files stay tracked.
+/package.json
+/package-lock.json
 /out/
 *.pack
 *.pem
