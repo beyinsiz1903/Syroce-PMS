@@ -57,6 +57,12 @@ ingress:
         preserve_path_prefix: true   # /api onekini KORU (backend /api/... mount)
     - match:
         path:
+          prefix: /ws
+      component:
+        name: backend
+        preserve_path_prefix: true   # Socket.IO backend'de app.mount("/ws") -> onek KORUNUR
+    - match:
+        path:
           prefix: /
       component:
         name: frontend
@@ -146,10 +152,10 @@ services:
   - name: backend                  # FastAPI API (Docker)
     dockerfile_path: backend/Dockerfile   # repo kokune gore
     source_dir: /backend                  # docker build context = backend/
-    # github:
-    #   repo: <ORG>/<REPO>
-    #   branch: main
-    #   deploy_on_push: true
+    github:
+      repo: beyinsiz1903/emergent-yeni-uygulama
+      branch: main
+      deploy_on_push: true
     http_port: 8080                # asagidaki PORT env ile birebir eslesir
     instance_size_slug: apps-s-1vcpu-2gb   # hafif imaj; ihtiyaca gore tune
     instance_count: 1
@@ -178,14 +184,20 @@ workers:
     # source_dir bos => context = repo koku (worker/Dockerfile `COPY backend/...`)
     instance_size_slug: apps-s-1vcpu-2gb   # ML yigini (xgboost/scipy) icin >=2GB
     instance_count: 1
-    # github: { repo: <ORG>/<REPO>, branch: main, deploy_on_push: true }
+    github:
+      repo: beyinsiz1903/emergent-yeni-uygulama
+      branch: main
+      deploy_on_push: true
 
   - name: beat                     # Celery beat (scheduler, tek instance)
     dockerfile_path: worker/Dockerfile
     run_command: celery -A celery_app beat --loglevel=info
     instance_size_slug: apps-s-1vcpu-0.5gb
     instance_count: 1              # beat HER ZAMAN tek instance
-    # github: { repo: <ORG>/<REPO>, branch: main, deploy_on_push: true }
+    github:
+      repo: beyinsiz1903/emergent-yeni-uygulama
+      branch: main
+      deploy_on_push: true
 
 # ── Frontend (React/Vite SPA, static) ────────────────────────────────
 static_sites:
@@ -194,7 +206,10 @@ static_sites:
     build_command: yarn install --ignore-engines --production=false && yarn build
     output_dir: build
     catchall_document: index.html  # SPA deep-link fallback
-    # github: { repo: <ORG>/<REPO>, branch: main, deploy_on_push: true }
+    github:
+      repo: beyinsiz1903/emergent-yeni-uygulama
+      branch: main
+      deploy_on_push: true
     envs:
       - key: VITE_BACKEND_URL      # ayni-origin: app alan adi (BUILD-TIME)
         value: https://OTEL-ALAN-ADINIZ
