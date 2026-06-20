@@ -357,3 +357,136 @@ async def test_certificate_issuance_is_idempotent_on_repeat(monkeypatch):
     # Original score is preserved — a later pass does not overwrite it.
     assert second["score"] == 80
     assert len(fake_db.academy_certificates.docs) == 1
+
+
+# ── 6. score_exam edge cases: invalid / missing answers + boundaries ───
+#
+# ``score_exam`` is a pure server-side function that coerces each supplied
+# answer to ``int`` and silently treats anything it cannot use (None, missing
+# key, non-numeric string, type errors) as "unanswered" → counted wrong. These
+# defensive behaviours were previously untested, so a regression (e.g. a
+# missing answer accidentally scoring as correct) could ship silently. The
+# tests below build synthetic courses so the answer key and threshold are fully
+# controlled — the real 5-question course cannot land on an exact 70 boundary.
+
+
+def _synthetic_course(answer_key: dict[str, int], *, threshold: int = 70,
+                      course_id: str = "syn-course") -> dict:
+    """Build a minimal course dict for ``score_exam`` unit tests.
+
+    ``answer_key`` maps question_id -> the correct option index. Every question
+    is given four options so any 0..3 index is a valid (but possibly wrong)
+    selection.
+    """
+    return {
+        "id": course_id,
+        "title": "Synthetic",
+        "pass_threshold": threshold,
+        "questions": [
+            {"id": qid, "prompt": f"Soru {qid}",
+             "options": ["a", "b", "c", "d"], "answer_index": idx}
+            for qid, idx in answer_key.items()
+        ],
+    }
+
+
+def test_score_exam_missing_and_null_answers_count_wrong():
+    """A missing key or an explicit ``None`` answer is treated as unanswered."""
+    course = _synthetic_course({"q1": 0, "q2": 1, "q3": 2, "q4": 3})
+    # q1 correct, q2 omitted entirely, q3 explicitly None, q4 wrong index.
+    result = academy.score_exam(course, {"q1": 0, "q3": None, "q4": 0})
+    assert result["total"] == 4
+    assert result["correct"] == 1
+    assert result["score"] == 25
+    assert result["passed"] is False
+
+
+def test_score_exam_empty_answers_dict_scores_zero():
+    course = _synthetic_course({"q1": 0, "q2": 1})
+    result = academy.score_exam(course, {})
+    assert result["correct"] == 0
+    assert result["score"] == 0
+    assert result["passed"] is False
+
+
+def test_score_exam_numeric_string_answers_are_coerced():
+    """A numeric string ("1") is coerced via ``int()`` and can score correct."""
+    course = _synthetic_course({"q1": 1, "q2": 2})
+    result = academy.score_exam(course, {"q1": "1", "q2": "2"})
+    assert result["correct"] == 2
+    assert result["score"] == 100
+    assert result["passed"] is True
+
+
+def test_score_exam_non_numeric_string_counts_wrong():
+    """A non-numeric string raises ValueError internally → counted wrong."""
+    course = _synthetic_course({"q1": 1, "q2": 2})
+    result = academy.score_exam(course, {"q1": "abc", "q2": "1"})
+    assert result["correct"] == 0
+    assert result["score"] == 0
+    assert result["passed"] is False
+
+
+def test_score_exam_unhashable_type_answer_counts_wrong():
+    """A non-coercible type (list) raises TypeError internally → counted wrong."""
+    course = _synthetic_course({"q1": 1})
+    result = academy.score_exam(course, {"q1": [1]})
+    assert result["correct"] == 0
+    assert result["score"] == 0
+
+
+def test_score_exam_out_of_range_index_counts_wrong():
+    """Indices outside the option range never match a correct answer_index."""
+    course = _synthetic_course({"q1": 1, "q2": 2})
+    result = academy.score_exam(course, {"q1": 99, "q2": -1})
+    assert result["correct"] == 0
+    assert result["score"] == 0
+    assert result["passed"] is False
+
+
+def test_score_exam_no_questions_returns_zero_and_not_passed():
+    """A course with zero questions scores 0 and must NOT pass (total=0 guard)."""
+    course = _synthetic_course({})  # default threshold 70
+    result = academy.score_exam(course, {"q1": 0})
+    assert result["total"] == 0
+    assert result["correct"] == 0
+    assert result["score"] == 0
+    assert result["passed"] is False
+
+
+def test_score_exam_exact_threshold_passes():
+    """A score landing exactly on ``pass_threshold`` is a pass (>= comparison)."""
+    key = {f"q{i}": (i % 4) for i in range(10)}
+    course = _synthetic_course(key, threshold=70)
+    items = list(key.items())
+    answers = {qid: idx for qid, idx in items[:7]}              # 7 correct
+    answers.update({qid: (idx + 1) % 4 for qid, idx in items[7:]})  # 3 wrong
+    result = academy.score_exam(course, answers)
+    assert result["correct"] == 7
+    assert result["score"] == 70
+    assert result["pass_threshold"] == 70
+    assert result["passed"] is True
+
+
+def test_score_exam_just_below_threshold_fails():
+    """One mark below the threshold must fail, proving the boundary is tight."""
+    key = {f"q{i}": (i % 4) for i in range(10)}
+    course = _synthetic_course(key, threshold=70)
+    items = list(key.items())
+    answers = {qid: idx for qid, idx in items[:6]}              # 6 correct
+    answers.update({qid: (idx + 1) % 4 for qid, idx in items[6:]})  # 4 wrong
+    result = academy.score_exam(course, answers)
+    assert result["correct"] == 6
+    assert result["score"] == 60
+    assert result["passed"] is False
+
+
+def test_score_exam_string_pass_threshold_is_coerced():
+    """A catalog ``pass_threshold`` stored as a string still compares correctly."""
+    key = {f"q{i}": (i % 4) for i in range(10)}
+    course = _synthetic_course(key, threshold=70)
+    course["pass_threshold"] = "70"  # simulate a stringly-typed catalog value
+    answers = {qid: idx for qid, idx in key.items()}  # all correct → 100
+    result = academy.score_exam(course, answers)
+    assert result["pass_threshold"] == 70
+    assert result["passed"] is True
