@@ -70,8 +70,13 @@ const AckBadge = ({ status }) => (
 const BatchCard = ({ batch, onExpand }) => {
   const total = batch.total_reservations || 0;
   const isCompleted = batch.status === 'completed';
+  const clickable = typeof onExpand === 'function';
   return (
-    <Card data-testid={`batch-${batch.id?.slice(0,8)}`} className="bg-slate-800/40 border-slate-700/50 hover:border-slate-600 transition-colors cursor-pointer" onClick={() => onExpand(batch.id)}>
+    <Card
+      data-testid={`batch-${batch.id?.slice(0,8)}`}
+      className={`bg-slate-800/40 border-slate-700/50 transition-colors ${clickable ? 'hover:border-slate-600 cursor-pointer' : ''}`}
+      onClick={clickable ? () => onExpand(batch.id) : undefined}
+    >
       <CardContent className="p-3">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
@@ -563,7 +568,7 @@ const ReservationsTab = () => {
           <h3 className="text-xs font-medium text-slate-300">Import Batches ({batches.length})</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
             {batches.map(b => (
-              <BatchCard key={b.id} batch={b} onExpand={() => {}} />
+              <BatchCard key={b.id} batch={b} />
             ))}
             {batches.length === 0 && (
               <p className="text-xs text-slate-500 col-span-3 text-center py-8">No import batches yet</p>
