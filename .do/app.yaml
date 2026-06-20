@@ -1,46 +1,57 @@
 # ─────────────────────────────────────────────────────────────────────
 # Syroce PMS — DigitalOcean App Platform spec (Infrastructure as Code)
 #
-# KULLANIM (onerilen akis):
-#   DO panel > Apps > Create App > GitHub/GitLab repo'nuzu BAGLAYIN (boylece
-#   DO her bilesene kaynak/branch bilgisini otomatik enjekte eder) > sonra
-#   Settings > App Spec'e GIRIP bu icerigi yapistirin / "Edit". Eksik
-#   secret'lari panelden ENCRYPTED girin (asagidaki liste). Spec'i dosyadan
-#   import edecekseniz her bilesendeki `github:` blogunu acip doldurun.
+# ── NEDEN HAZIR IMAJ (pre-built image) ───────────────────────────────
+# App Platform'un BUILD makinesi SABIT 8GB bellekle sinirlidir ve build
+# 1 saatte timeout olur (instance_size_slug SADECE calisma anini buyutur,
+# build'i DEGIL). Bizim worker imajimiz agir ML yigini (xgboost/scipy/
+# sklearn + nvidia-nccl) tasidigi icin DO'da derlenirken bellek tukenip
+# "terminated / resource exhaustion" ile OLUYOR. Cozum (DO'nun resmi
+# onerisi): imajlari DO'da DERLEME; GitHub Actions'in (ci-cd.yml +
+# deploy.yml) ghcr.io'ya bastigi HAZIR imajlari CEK. backend/worker/beat
+# artik `image:` ile GHCR'dan cekiliyor; frontend hafif oldugu icin
+# static_site olarak DO'da build edilmeye devam eder (8GB'a rahat sigar).
+#
+# ── GHCR PRIVATE IMAJ ICIN KIMLIK BILGISI ────────────────────────────
+# GHCR paketleri PRIVATE. DO'nun cekebilmesi icin her `image:` blogunda
+# `registry_credentials: "<github_kullanici>:<PAT>"` gerekir; PAT classic
+# + SADECE `read:packages` yetkili (suresiz onerilir). Bu deger bu
+# dosyaya YAZILMAZ: DO panel > App Spec editorunde placeholder yerine
+# girilir, DO ilk kayitta SIFRELER. Sonraki guncellemelerde dosyadan
+# ham PAT ile RE-IMPORT ETMEYIN (sifreli degeri ezer); panelde duzenleyin.
+#
+# ── REDEPLOY ─────────────────────────────────────────────────────────
+# GHCR imajlarinda App Platform OTOMATIK redeploy DESTEKLEMEZ. Yeni kod:
+#   1) GitHub Actions "Deploy Pipeline (Manual)" calistir -> ghcr.io'ya
+#      yeni :latest basilir.
+#   2) DO panel > syroce-pms > Actions > "Force Rebuild/Redeploy" (ya da
+#      `doctl apps create-deployment <APP_ID>`) ile yeniden cek.
 #
 # BILESENLER:
-#   backend   : FastAPI API (Docker, service)            -> $PORT (8080)
-#   worker    : Celery worker (Docker, background worker)
-#   beat      : Celery beat / scheduler (Docker, background worker)
+#   backend   : FastAPI API (GHCR image, service)        -> $PORT (8080)
+#   worker    : Celery worker (GHCR image, ML + reports DAHIL)
+#   beat      : Celery beat / scheduler (GHCR worker image + beat komutu)
 #   frontend  : React/Vite SPA (static site, catchall index.html)
 #   Redis     : DO Managed Caching (Valkey/Redis) AYRI eklenir -> REDIS_URL
 #   MongoDB   : DO'da yonetilen Mongo YOK -> MongoDB Atlas -> MONGO_URL
 #
-# TOPOLOJI: Tek alan adi + ingress yol-yonlendirme. `/api/*` -> backend
-#   (path PRESERVE edilir), geri kalan her sey -> frontend SPA. Boylece
-#   frontend ile backend AYNI ORIGIN'de olur => CORS gereksiz (yine de
-#   CORS_ORIGINS app alan adina set edilir, zarari yok).
+# TOPOLOJI: Tek alan adi + ingress yol-yonlendirme. `/api/*` ve `/ws/*`
+#   -> backend (path PRESERVE), geri kalan her sey -> frontend SPA.
+#   Boylece frontend ile backend AYNI ORIGIN'de olur => CORS gereksiz.
 #
-# ── KRITIK NOTLAR ────────────────────────────────────────────────────
-# 1) GORUNTU ICERIGI: PDF uretimi (WeasyPrint) backend API VE worker
-#    imajlarinda ETKIN — reports.txt Python paketi + pango/cairo/gdk-pixbuf/
-#    glib native lib'leri kurulu. Yerel ML yigini (xgboost/sklearn/scipy)
-#    WORKER imajinda ETKIN ('ml' celery kuyrugu orada calisir; API ML import
-#    ETMEZ, sadece kuyruga dispatch eder + libgomp1 worker'da kurulu). API
-#    tabanli AI (litellm) da CALISIR. MALIYET: ML worker imaji buyuk
-#    (nvidia-nccl dahil yuz MB'lar) — worker instance'ini >=2GB tutun.
-#    Worker imaji ayrica integrations.txt tasir ('messaging'/'backup'/
-#    'analytics' kuyruklari): boto3 (S3 yedek + AWS KMS/SES), resend (e-posta),
-#    stripe/iyzipay, openai/litellm/google-* AI SDK'leri. litellm worker'da da
-#    --no-deps ile >=1.84.0'a override edilir (CVE-2026-49468). NOT: Twilio
-#    (SMS/WhatsApp) hicbir requirements dosyasinda pinli DEGIL ve canli
-#    transport'u yok (fail-closed 503); imaja eklenmedi.
-# 2) App Platform'un sabit cikis IP'si yoktur (Dedicated Egress / VPC
-#    haric). Atlas Network Access'te ya 0.0.0.0/0 acin (guclu DB parolasi
-#    + TLS sart) ya da DO Dedicated Egress IP'lerini allowlist'leyin.
+# ── DIGER KRITIK NOTLAR ──────────────────────────────────────────────
+# 1) IMAJ ICERIGI: PDF (WeasyPrint) backend + worker imajlarinda ETKIN.
+#    ML yigini SADECE worker imajinda ('ml' kuyrugu); API ML import ETMEZ,
+#    sadece kuyruga dispatch eder. litellm worker'da da --no-deps >=1.84.0
+#    (CVE-2026-49468). Twilio (SMS/WhatsApp) pinli DEGIL, transport yok
+#    (fail-closed 503), imaja eklenmedi.
+# 2) App Platform'un sabit cikis IP'si yoktur. Atlas Network Access'te
+#    0.0.0.0/0 acin (guclu DB parolasi + TLS sart) ya da DO Dedicated
+#    Egress IP'lerini allowlist'leyin.
 # 3) Gercek SIR DEGERLERI bu dosyaya YAZILMAZ; hepsi panelde "Encrypted"
-#    girilir (asagidaki "PANELDE GIRILECEK SECRET'LAR" listesi).
-# 4) Frontend bir SPA: catchall_document=index.html (deep-link 404 fix).
+#    girilir (asagidaki liste + registry_credentials).
+# 4) Frontend SPA: catchall_document=index.html (deep-link 404 fix).
+# 5) Imajlar yalniz linux/amd64. CI buildx varsayilani amd64 -> uyumlu.
 # ─────────────────────────────────────────────────────────────────────
 
 name: syroce-pms
@@ -147,17 +158,18 @@ envs:
   #   AFSADAKAT_ADMIN_TOKEN
   # ═══════════════════════════════════════════════════════════════════
 
-# ── HTTP servisi (web listener olan TEK bilesen) ─────────────────────
+# ── HTTP servisi (web listener olan TEK bilesen) — GHCR hazir imaj ────
 services:
-  - name: backend                  # FastAPI API (Docker)
-    dockerfile_path: backend/Dockerfile   # repo kokune gore
-    source_dir: /backend                  # docker build context = backend/
-    github:
-      repo: beyinsiz1903/emergent-yeni-uygulama
-      branch: main
-      deploy_on_push: true
-    http_port: 8080                # asagidaki PORT env ile birebir eslesir
-    instance_size_slug: apps-s-1vcpu-2gb   # hafif imaj; ihtiyaca gore tune
+  - name: backend                  # FastAPI API (ghcr.io/beyinsiz1903/syroce-backend)
+    image:
+      registry_type: GHCR
+      registry: beyinsiz1903              # GitHub kullanici/org (image sahibi)
+      repository: syroce-backend          # ci-cd.yml: ${owner}/syroce-backend
+      tag: latest                         # immutable istersen tag yerine digest
+      # PANELDE doldur: "<github_kullanici>:<read:packages_PAT>" (DO sifreler)
+      registry_credentials: GHCR_KULLANICI_ADI:GHCR_READ_PACKAGES_PAT
+    http_port: 8080                # imaj ${PORT}'a bind eder (asagida PORT=8080)
+    instance_size_slug: apps-s-1vcpu-2gb
     instance_count: 1
     health_check:
       http_path: /api/health/liveness
@@ -167,7 +179,7 @@ services:
       failure_threshold: 3
     envs:
       - key: PORT
-        value: "8080"              # Dockerfile ${PORT}'a bind eder (deterministik)
+        value: "8080"              # imaj CMD'si ${PORT}'a bind eder (deterministik)
         scope: RUN_TIME
       - key: WEB_CONCURRENCY
         value: "2"                 # uvicorn worker sayisi (instance'a gore)
@@ -177,29 +189,31 @@ services:
         scope: RUN_TIME
       # MONGO_URL / REDIS_URL / JWT_SECRET ... -> app seviyesinde ENCRYPTED
 
-# ── Arka plan worker'lari (HTTP listener YOK) ────────────────────────
+# ── Arka plan worker'lari (HTTP listener YOK) — GHCR hazir imaj ───────
 workers:
-  - name: worker                   # Celery worker (ML + reports DAHIL)
-    dockerfile_path: worker/Dockerfile    # repo kokune gore
-    # source_dir bos => context = repo koku (worker/Dockerfile `COPY backend/...`)
+  - name: worker                   # Celery worker (ghcr.io/beyinsiz1903/syroce-worker)
+    image:
+      registry_type: GHCR
+      registry: beyinsiz1903
+      repository: syroce-worker           # ci-cd.yml: ${owner}/syroce-worker
+      tag: latest
+      registry_credentials: GHCR_KULLANICI_ADI:GHCR_READ_PACKAGES_PAT
     instance_size_slug: apps-s-1vcpu-2gb   # ML yigini (xgboost/scipy) icin >=2GB
     instance_count: 1
-    github:
-      repo: beyinsiz1903/emergent-yeni-uygulama
-      branch: main
-      deploy_on_push: true
+    # run_command YOK => imaj CMD'si (celery -A celery_app worker ... -Q default,ml,...)
 
   - name: beat                     # Celery beat (scheduler, tek instance)
-    dockerfile_path: worker/Dockerfile
-    run_command: celery -A celery_app beat --loglevel=info
+    image:
+      registry_type: GHCR
+      registry: beyinsiz1903
+      repository: syroce-worker           # beat de AYNI worker imajini kullanir
+      tag: latest
+      registry_credentials: GHCR_KULLANICI_ADI:GHCR_READ_PACKAGES_PAT
+    run_command: celery -A celery_app beat --loglevel=info   # CMD'yi beat'e override
     instance_size_slug: apps-s-1vcpu-0.5gb
     instance_count: 1              # beat HER ZAMAN tek instance
-    github:
-      repo: beyinsiz1903/emergent-yeni-uygulama
-      branch: main
-      deploy_on_push: true
 
-# ── Frontend (React/Vite SPA, static) ────────────────────────────────
+# ── Frontend (React/Vite SPA, static — DO'da build edilir, hafif) ─────
 static_sites:
   - name: frontend
     source_dir: /frontend
