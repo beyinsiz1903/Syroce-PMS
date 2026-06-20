@@ -158,6 +158,11 @@ class FakeDB:
             unique_keys=("tenant_id", "user_id", "course_id") if unique_certs else None,
             yield_on_io=yield_certs,
         )
+        # Tenant-custom curriculum + admin visibility overrides (data-driven
+        # catalog). Empty by default — the security tests exercise the built-in
+        # system courses only.
+        self.academy_courses = FakeCollection()
+        self.academy_course_overrides = FakeCollection()
         self.users = FakeCollection()
         # Tenant-custom authoring collections (Academy admin CRUD).
         self.academy_courses = FakeCollection(unique_keys=("tenant_id", "id"))
