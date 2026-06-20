@@ -566,6 +566,7 @@
   "guestPortal": {
     "title": "Guest Portal",
     "subtitle": "Online services and communication",
+    "backToPortal": "Back to Portal",
     "onlineCheckin": "Online Check-in",
     "onlineCheckout": "Online Check-out",
     "checkinDesc": "Check in before your arrival",

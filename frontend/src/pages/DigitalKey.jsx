@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { QrCode, Key, Clock, RefreshCw, Download } from 'lucide-react';
+import { QrCode, Key, Clock, RefreshCw, Download, ArrowLeft } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useTranslation } from 'react-i18next';
 
 const DigitalKey = ({ bookingId }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [keyData, setKeyData] = useState(null);
   const [qrCodeUrl, setQrCodeUrl] = useState('');
   const [loading, setLoading] = useState(true);
@@ -101,18 +103,28 @@ const DigitalKey = ({ bookingId }) => {
 
   if (!keyData) {
     return (
-      <Card>
-        <CardContent className="text-center py-12">
-          <Key className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-          <p className="text-gray-600">Digital key not available</p>
-          <p className="text-sm text-gray-500 mt-2">Please complete check-in first</p>
-        </CardContent>
-      </Card>
+      <div className="max-w-md mx-auto space-y-4">
+        <Button variant="outline" onClick={() => navigate('/guest-portal')}>
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          {t('guestPortal.backToPortal') || 'Portala Dön'}
+        </Button>
+        <Card>
+          <CardContent className="text-center py-12">
+            <Key className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+            <p className="text-gray-600">Digital key not available</p>
+            <p className="text-sm text-gray-500 mt-2">Please complete check-in first</p>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
   return (
     <div className="max-w-md mx-auto space-y-6">
+      <Button variant="outline" onClick={() => navigate('/guest-portal')}>
+        <ArrowLeft className="w-4 h-4 mr-2" />
+        {t('guestPortal.backToPortal') || 'Portala Dön'}
+      </Button>
       <Card>
         <CardHeader>
           <CardTitle className="text-center flex items-center justify-center gap-2">

@@ -614,6 +614,7 @@
   "guestPortal": {
     "title": "Misafir Portalı",
     "subtitle": "Online hizmetler ve iletişim",
+    "backToPortal": "Portala Dön",
     "onlineCheckin": "Online Giriş",
     "onlineCheckout": "Online Çıkış",
     "checkinDesc": "Varışınızdan önce giriş yapın",
