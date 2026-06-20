@@ -8,8 +8,6 @@ Domain Router: Analytics
 
 Extracted from legacy_routes.py — GM Dashboard, pickup analysis, anomaly detection, revenue analytics.
 """
-import uuid
-from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials

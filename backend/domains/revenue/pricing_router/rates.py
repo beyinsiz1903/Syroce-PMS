@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from datetime import date as DateType
 from typing import Any
 
@@ -239,8 +239,6 @@ async def get_active_campaigns(
     Get active promotional campaigns
     """
     await get_current_user(credentials)
-
-    today = datetime.now().date()
 
     # Kampanya kaydı için gerçek koleksiyon/kaynak yok -> fail-closed (sabit kampanyalar kaldırıldı)
     return {

@@ -1,5 +1,4 @@
 """Auto-split from finance.py — section: integrations."""
-import asyncio
 import uuid
 from datetime import UTC, datetime
 
