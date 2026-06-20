@@ -1,7 +1,7 @@
 import {
   LandingPage, RoomRequestPage, PublicReviewPage, PrivacyPolicy,
   PmsLiteLanding, AgencyPortalDashboard, B2BApiDocs, SimpleAdminPanel,
-  ResetPasswordPage, PreCheckinPage,
+  ResetPasswordPage, PreCheckinPage, CertificateVerifyPage,
 } from "./lazyPages";
 
 export function publicRoutes({ pa }) {
@@ -20,5 +20,7 @@ export function publicRoutes({ pa }) {
     { path: "/system-status", type: "public", component: SimpleAdminPanel },
     { path: "/auth/reset-password", type: "public", component: ResetPasswordPage },
     { path: "/precheckin/:token", type: "public", component: PreCheckinPage },
+    { path: "/sertifika-dogrula", type: "public", component: CertificateVerifyPage },
+    { path: "/sertifika-dogrula/:code", type: "public", component: CertificateVerifyPage },
   ];
 }

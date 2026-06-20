@@ -45,6 +45,7 @@ export const InventoryTransferHistory = lazy(() => import("@/pages/InventoryTran
 export const TemplateManager = lazy(() => import("@/pages/TemplateManager"));
 export const SelfCheckin = lazy(() => import("@/pages/SelfCheckin"));
 export const PreCheckinPage = lazy(() => import("@/pages/PreCheckinPage"));
+export const CertificateVerifyPage = lazy(() => import("@/pages/CertificateVerifyPage"));
 export const DigitalKey = lazy(() => import("@/pages/DigitalKey"));
 export const UpsellStore = lazy(() => import("@/pages/UpsellStore"));
 export const StaffMobileApp = lazy(() => import("@/pages/StaffMobileApp"));

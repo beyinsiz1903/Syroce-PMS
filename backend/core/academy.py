@@ -333,6 +333,57 @@ def _make_verification_code() -> str:
     return "SYR-ACAD-" + uuid.uuid4().hex[:10].upper()
 
 
+# Verification codes are globally-unique, opaque capability tokens
+# (`SYR-ACAD-` + 10 uppercase hex chars). They are printed on the PDF and act
+# as the bearer secret for the public verification surface.
+VERIFICATION_CODE_RE = re.compile(r"^SYR-ACAD-[0-9A-F]{10}$")
+
+
+def _mask_name(name: Any) -> str | None:
+    """'John Doe' -> 'J*** D***' (recipient privacy on the public surface)."""
+    if not name:
+        return None
+    parts = [p for p in str(name).strip().split() if p]
+    if not parts:
+        return None
+    return " ".join(p[0] + "***" for p in parts)
+
+
+async def get_certificate_by_code(code: str) -> dict[str, Any] | None:
+    """Cross-tenant lookup of a certificate by its globally-unique verification
+    code. The code itself is the bearer capability — no tenant context exists on
+    the public verification path, so this reads the raw db with an explicit,
+    exact-match filter (no enumeration: the code is opaque + format-validated).
+    """
+    if not code or not VERIFICATION_CODE_RE.match(code):
+        return None
+    return await _db().academy_certificates.find_one(
+        {"verification_code": code}, {"_id": 0},
+    )
+
+
+def public_certificate_view(cert: dict[str, Any]) -> dict[str, Any]:
+    """Minimal, PII-minimized public verification view of a certificate.
+
+    Returns only what a third party (audit, HR) needs to confirm authenticity:
+    course, department, issue date, validity, and a MASKED recipient name. No
+    user_id, tenant_id, score, e-mail, or other identifiers are exposed.
+    """
+    issued = cert.get("issued_at")
+    if isinstance(issued, datetime):
+        issued_str = issued.date().isoformat()
+    else:
+        issued_str = str(issued or "")[:10]
+    return {
+        "valid": True,
+        "verification_code": cert.get("verification_code"),
+        "course_title": cert.get("course_title"),
+        "department_label": cert.get("department_label"),
+        "issued_at": issued_str,
+        "recipient_name": _mask_name(cert.get("user_name")),
+    }
+
+
 async def get_certificates(tenant_id: str, user_id: str) -> list[dict[str, Any]]:
     return await _db().academy_certificates.find(
         {"tenant_id": tenant_id, "user_id": user_id}, {"_id": 0},
@@ -451,7 +502,28 @@ def _esc(value: Any) -> str:
     )
 
 
+def _verification_base_url() -> str:
+    """Public frontend base for the certificate verification surface."""
+    import os
+    candidates = [
+        os.environ.get("FRONTEND_URL"),
+        os.environ.get("PUBLIC_APP_URL"),
+        os.environ.get("REPLIT_DEV_DOMAIN") and f"https://{os.environ['REPLIT_DEV_DOMAIN']}",
+    ]
+    return next((c for c in candidates if c), "").rstrip("/")
+
+
 def _certificate_html(cert: dict[str, Any], issued_str: str) -> str:
+    code = cert.get("verification_code") or ""
+    base = _verification_base_url()
+    verify_line = (
+        f"Dogrula: {_esc(base)}/sertifika-dogrula/{_esc(code)}"
+        if base else f"Dogrulama Kodu: {_esc(code)}"
+    )
+    return _certificate_html_impl(cert, issued_str, verify_line)
+
+
+def _certificate_html_impl(cert: dict[str, Any], issued_str: str, verify_line: str) -> str:
     return f"""<!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -482,7 +554,7 @@ def _certificate_html(cert: dict[str, Any], issued_str: str) -> str:
       <span>Puan: <strong>{_esc(cert.get('score'))}</strong></span>
       <span>Tarih: <strong>{_esc(issued_str)}</strong></span>
     </div>
-    <div class="code">Dogrulama Kodu: {_esc(cert.get('verification_code'))}</div>
+    <div class="code">{verify_line}</div>
   </div>
 </body>
 </html>"""

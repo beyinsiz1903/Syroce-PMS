@@ -262,6 +262,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.kbs", "router", ["KBS"], None, None),
     ("routers.help", "router", ["help"], None, None),
     ("routers.academy", "router", ["academy"], None, None),
+    ("routers.academy_public", "router", ["academy-public"], None, None),
     ("routers.regulatory", "router", ["regulatory"], None, None),
     ("routers.report_scheduler", "router", ["Report Scheduler"], None, None),
     # PMS Cashier, Laundry, Meeting Rooms
