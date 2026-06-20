@@ -35,7 +35,7 @@ jsonschema-specifications==2025.9.1
 librt==0.8.1
 MarkupSafe==3.0.3
 motor==3.3.1
-msgpack==1.1.2
+msgpack==1.2.1
 oauthlib==3.3.1
 orjson==3.11.7
 packaging==26.0
