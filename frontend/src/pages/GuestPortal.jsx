@@ -47,6 +47,7 @@ const GuestPortal = ({ user, onLogout }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  const PORTAL_BASE = '/guest-portal';
   const [activeBookings, setActiveBookings] = useState([]);
   const [pastBookings, setPastBookings] = useState([]);
   const [loyaltyPrograms, setLoyaltyPrograms] = useState([]);
@@ -173,7 +174,10 @@ const GuestPortal = ({ user, onLogout }) => {
     { name: 'Settings', path: '/settings', icon: Settings, id: 'settings' },
   ];
 
-  const currentPath = location.pathname === '/' ? 'home' : location.pathname.slice(1);
+  const portalSubPath = location.pathname.startsWith(PORTAL_BASE)
+    ? location.pathname.slice(PORTAL_BASE.length)
+    : location.pathname;
+  const currentPath = portalSubPath === '' || portalSubPath === '/' ? 'home' : portalSubPath.replace(/^\//, '');
 
   if (loading) {
     return <div className="loading-screen">{t("common.loading")}</div>;
@@ -189,7 +193,7 @@ const GuestPortal = ({ user, onLogout }) => {
               <h1
                 className="text-2xl font-bold cursor-pointer"
                 style={{ fontFamily: 'Space Grotesk', color: '#667eea' }}
-                onClick={() => navigate('/')}
+                onClick={() => navigate(PORTAL_BASE)}
                 data-testid="guest-logo"
               >
                 Syroce PMS
@@ -205,7 +209,7 @@ const GuestPortal = ({ user, onLogout }) => {
                   <Button
                     key={item.path}
                     variant={isActive ? 'default' : 'ghost'}
-                    onClick={() => navigate(item.path)}
+                    onClick={() => navigate(`${PORTAL_BASE}${item.path === '/' ? '' : item.path}`)}
                     className="flex items-center space-x-2"
                     data-testid={`guest-nav-${item.id}`}
                   >
@@ -323,7 +327,7 @@ const GuestPortal = ({ user, onLogout }) => {
                               <div className="flex flex-col items-end space-y-2">
                                 {booking.status === 'confirmed' && (
                                   <Button
-                                    onClick={() => navigate(`/checkin/${booking.id}`)}
+                                    onClick={() => navigate(`/guest/checkin/${booking.id}`)}
                                     className="bg-green-600 hover:bg-green-700"
                                   >
                                     \ud83c\udfcb Check-in Now
@@ -331,7 +335,7 @@ const GuestPortal = ({ user, onLogout }) => {
                                 )}
                                 {booking.status === 'checked_in' && (
                                   <Button
-                                    onClick={() => navigate(`/digital-key/${booking.id}`)}
+                                    onClick={() => navigate(`/guest/digital-key/${booking.id}`)}
                                   >
                                     <QrCode className="w-4 h-4 mr-2" />
                                     Digital Key
@@ -339,7 +343,7 @@ const GuestPortal = ({ user, onLogout }) => {
                                 )}
                                 <Button
                                   variant="outline"
-                                  onClick={() => navigate(`/upsell/${booking.id}`)}
+                                  onClick={() => navigate(`${PORTAL_BASE}/upsell/${booking.id}`)}
                                 >
                                   \u2728 Enhance Stay
                                 </Button>
@@ -361,7 +365,7 @@ const GuestPortal = ({ user, onLogout }) => {
                       ))}
                     </div>
                     {activeBookings.length > 3 && (
-                      <Button variant="outline" className="mt-4" onClick={() => navigate('/bookings')}>
+                      <Button variant="outline" className="mt-4" onClick={() => navigate(`${PORTAL_BASE}/bookings`)}>
                         View All Bookings
                       </Button>
                     )}
@@ -969,7 +973,7 @@ const GuestPortal = ({ user, onLogout }) => {
                 
                 <Button 
                   variant="outline"
-                  onClick={() => navigate('/')}
+                  onClick={() => navigate(PORTAL_BASE)}
                 >
                   Back to Home
                 </Button>
