@@ -15,6 +15,36 @@ BOOT_READY = False
 PERF_INDEXES_DONE = False
 
 
+async def ensure_academy_indexes(db_handle) -> None:
+    """Build the Syroce Academy indexes (Task #625) on ``db_handle``.
+
+    Extracted (Task #629) so the live/CI integration test can call the *same*
+    production code path and then assert ``unique=True`` via
+    ``index_information()``. Certificate race-safety relies on this DB-level
+    unique index — the engine's ``find_one`` guard is not atomic under a
+    concurrent double-submit; the losing insert hits the index, raises
+    ``DuplicateKeyError``, and the engine resolves to the winning row.
+    """
+    # One certificate per (tenant, user, course).
+    await db_handle.academy_certificates.create_index(
+        [("tenant_id", 1), ("user_id", 1), ("course_id", 1)],
+        unique=True,
+        name="uniq_academy_cert_tenant_user_course",
+    )
+    # Per-user progress is one row per (tenant, user, course); the engine
+    # upserts on exactly this key, so a unique index both speeds the hot read
+    # path and guards against duplicate progress rows.
+    await db_handle.academy_progress.create_index(
+        [("tenant_id", 1), ("user_id", 1), ("course_id", 1)],
+        unique=True,
+        name="uniq_academy_progress_tenant_user_course",
+    )
+    await db_handle.academy_attempts.create_index(
+        [("tenant_id", 1), ("user_id", 1), ("course_id", 1), ("created_at", -1)],
+        name="idx_academy_attempts_tenant_user_course",
+    )
+
+
 async def phase_d_perf_and_marketplace(app):
     # Agency booking indexes
     try:
@@ -114,28 +144,12 @@ async def phase_d_perf_and_marketplace(app):
             unique=True,
             name="uniq_tenant_dept_weekday_shifttype",
         )
-        # Task #625 (Syroce Academy): one certificate per (tenant, user, course).
-        # Engine uses find_one + insert_one which is not atomic under a
-        # concurrent double-submit; this unique index converts the race-losing
-        # insert into a DuplicateKeyError that the engine catches and resolves
-        # to the winning row, keeping certificate issuance idempotent.
-        await db.academy_certificates.create_index(
-            [("tenant_id", 1), ("user_id", 1), ("course_id", 1)],
-            unique=True,
-            name="uniq_academy_cert_tenant_user_course",
-        )
-        # Per-user progress is one row per (tenant, user, course); the engine
-        # upserts on exactly this key, so a unique index both speeds the hot
-        # read path and guards against duplicate progress rows.
-        await db.academy_progress.create_index(
-            [("tenant_id", 1), ("user_id", 1), ("course_id", 1)],
-            unique=True,
-            name="uniq_academy_progress_tenant_user_course",
-        )
-        await db.academy_attempts.create_index(
-            [("tenant_id", 1), ("user_id", 1), ("course_id", 1), ("created_at", -1)],
-            name="idx_academy_attempts_tenant_user_course",
-        )
+        # Task #625 (Syroce Academy): index'ler tek bir yardımcıda toplandı
+        # (Task #629) — canlı/CI Mongo'ya karşı koşan entegrasyon testi aynı
+        # üretim kod yolunu çağırıp unique=True'yu index_information() ile
+        # doğrulayabilsin diye. Sertifika race güvenliği bu DB-seviye unique
+        # index'e dayanır; app-katmanı find_one guard'ı değil.
+        await ensure_academy_indexes(db)
         # Task #263: leave_requests calendar + leave-check (start≤d≤end) hot
         # path; staff+status+date scan'ı önler.
         await db.leave_requests.create_index(

@@ -201,6 +201,7 @@ jobs:
             tests/test_production_blockers.py \
             tests/test_route_shadowing.py \
             tests/test_hr_shifts_overnight.py \
+            tests/integration/test_academy_cert_race_live.py \
             -v --tb=short -q --timeout=30 --junitxml=test-results.xml
         env:
           MONGO_URL: ${{ env.MONGO_URL }}
