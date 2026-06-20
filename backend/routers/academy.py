@@ -274,6 +274,35 @@ class VisibilityInput(BaseModel):
     hidden: bool
 
 
+class SystemCourseContentInput(BaseModel):
+    """Per-tenant CONTENT override for a BUILT-IN course.
+
+    Mirrors ``CourseInput`` minus ``draft`` — built-in overrides are always live,
+    so at least one lesson and one question are ALWAYS required (no draft state).
+    """
+    title: str = Field(min_length=1, max_length=200)
+    department: str | None = Field(default=None, max_length=80)
+    department_label: str | None = Field(default=None, max_length=120)
+    summary: str = Field(default="", max_length=2000)
+    roles: list[str] = Field(default_factory=list, max_length=20)
+    pass_threshold: int = Field(default=70, ge=1, le=100)
+    estimated_minutes: int | None = Field(default=None, ge=0, le=100_000)
+    lessons: list[LessonInput] = Field(min_length=1, max_length=100)
+    questions: list[QuestionInput] = Field(min_length=1, max_length=200)
+
+    @field_validator("roles")
+    @classmethod
+    def _clean_roles(cls, v: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for r in v:
+            rr = str(r).strip()
+            if rr not in academy.ACADEMY_COURSE_ROLES:
+                raise ValueError(f"Gecersiz rol: {rr}")
+            if rr not in cleaned:
+                cleaned.append(rr)
+        return cleaned
+
+
 def _require_author(current_user: User) -> str:
     tenant_id = _require_tenant(current_user)
     if _norm_role(current_user) not in academy.ACADEMY_AUTHOR_ROLES:
@@ -382,3 +411,44 @@ async def admin_set_system_visibility(
     ):
         raise HTTPException(status_code=404, detail="Kurs bulunamadi")
     return {"ok": True, "hidden": payload.hidden}
+
+
+@router.get("/admin/system-courses/{course_id}/content")
+async def admin_get_system_content(
+    course_id: str, current_user: User = Depends(get_current_user),
+) -> dict:
+    """Editor view of a built-in course (default merged with any per-tenant
+    override). Author-only — INCLUDES the answer key + inline lesson bodies."""
+    tenant_id = _require_author(current_user)
+    course = await academy.get_system_course_for_edit(tenant_id, course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Kurs bulunamadi")
+    return _admin_course_detail(course)
+
+
+@router.put("/admin/system-courses/{course_id}/content")
+async def admin_set_system_content(
+    course_id: str, payload: SystemCourseContentInput,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Store a per-tenant CONTENT override for a built-in course. The catalog
+    file is never touched; the course id (and thus learner progress) is kept."""
+    tenant_id = _require_author(current_user)
+    course = await academy.set_system_course_content(
+        tenant_id, current_user.id, course_id, payload.model_dump(),
+    )
+    if not course:
+        raise HTTPException(status_code=404, detail="Kurs bulunamadi")
+    return _admin_course_detail(course)
+
+
+@router.delete("/admin/system-courses/{course_id}/content")
+async def admin_reset_system_content(
+    course_id: str, current_user: User = Depends(get_current_user),
+) -> dict:
+    """Reset a built-in course to its catalog default (remove the content
+    override). Any per-tenant visibility (hidden) state is preserved."""
+    tenant_id = _require_author(current_user)
+    if not await academy.reset_system_course(tenant_id, course_id):
+        raise HTTPException(status_code=404, detail="Kurs bulunamadi")
+    return {"ok": True}

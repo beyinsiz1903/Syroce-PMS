@@ -59,6 +59,8 @@ def _apply_update(doc: dict, update: dict, *, include_set_on_insert: bool) -> No
         arr = doc.setdefault(key, [])
         if val not in arr:
             arr.append(val)
+    for key in update.get("$unset", {}):
+        doc.pop(key, None)
     if include_set_on_insert:
         for key, val in update.get("$setOnInsert", {}).items():
             doc.setdefault(key, val)
@@ -805,3 +807,269 @@ def test_update_mints_id_for_new_items_without_id(monkeypatch):
     assert body["lessons"][0]["id"], "new lesson must receive an id"
     assert body["questions"][0]["id"], "new question must receive an id"
     assert "-local-" not in body["lessons"][0]["id"]
+
+
+# ── Scope B: per-tenant CONTENT override of BUILT-IN courses ───────────
+
+
+def _system_content_payload(**over) -> dict:
+    base = {
+        "title": "On Buro (otele ozel)",
+        "department": "front_desk",
+        "department_label": "On Buro",
+        "summary": "Otelimize ozel surum.",
+        "roles": ["front_desk"],
+        "pass_threshold": 60,
+        "estimated_minutes": 20,
+        "lessons": [
+            {"title": "Ozel Karsilama", "body_markdown": "# Otelimiz\nGulumseyin."},
+        ],
+        "questions": [
+            {"prompt": "Otel kurali?", "options": ["Dogru", "Yanlis"],
+             "answer_index": 0},
+        ],
+    }
+    base.update(over)
+    return base
+
+
+@pytest.mark.parametrize("role", ["front_desk", "housekeeping", "supervisor", "finance"])
+def test_non_author_denied_on_system_content(monkeypatch, role):
+    """Editing/resetting built-in content is author-only (supervisor is a
+    report-manager but NOT an author)."""
+    client = _build_client(monkeypatch, FakeDB(), _user(role=role))
+    assert client.get(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/content",
+    ).status_code == 403
+    assert client.put(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/content",
+        json=_system_content_payload(),
+    ).status_code == 403
+    assert client.delete(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/content",
+    ).status_code == 403
+
+
+def test_system_content_rejects_custom_and_unknown_ids(monkeypatch):
+    client = _build_client(monkeypatch, FakeDB(), _user(role="admin"))
+    for bad in ("custom-deadbeef", "no-such-course"):
+        assert client.get(
+            f"/api/academy/admin/system-courses/{bad}/content",
+        ).status_code == 404
+        assert client.put(
+            f"/api/academy/admin/system-courses/{bad}/content",
+            json=_system_content_payload(),
+        ).status_code == 404
+        assert client.delete(
+            f"/api/academy/admin/system-courses/{bad}/content",
+        ).status_code == 404
+
+
+def test_system_content_editor_returns_default_then_override(monkeypatch):
+    """The editor surfaces the catalog default (with inline bodies + answers)
+    until an override exists, then returns the override."""
+    fake_db = FakeDB()
+    author = _build_client(monkeypatch, fake_db, _user(role="admin"))
+    default = academy.get_course_raw(COURSE_ID)
+
+    got = author.get(f"/api/academy/admin/system-courses/{COURSE_ID}/content")
+    assert got.status_code == 200, got.text
+    body = got.json()
+    assert body["title"] == default["title"]
+    assert body["customized"] is False
+    # Author surface includes the answer key + resolved lesson bodies.
+    assert body["questions"][0]["answer_index"] == CORRECT["q1"]
+    assert body["lessons"][0]["body_markdown"], "default body resolved from file"
+    # Internal markers never leak to the client.
+    assert "_inline_bodies" not in body
+
+    author.put(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/content",
+        json=_system_content_payload(),
+    )
+    got2 = author.get(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/content",
+    ).json()
+    assert got2["title"] == "On Buro (otele ozel)"
+    assert got2["customized"] is True
+
+
+def test_system_content_override_is_tenant_scoped(monkeypatch):
+    """A t1 content override never bleeds into t2."""
+    fake_db = FakeDB()
+    t1 = _build_client(monkeypatch, fake_db, _user(tenant="t1", role="admin"))
+    assert t1.put(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/content",
+        json=_system_content_payload(),
+    ).status_code == 200
+
+    t1_student = _build_client(monkeypatch, fake_db, _user(tenant="t1", role="front_desk"))
+    d1 = t1_student.get(f"/api/academy/courses/{COURSE_ID}").json()
+    assert d1["title"] == "On Buro (otele ozel)"
+    assert d1["customized"] is True
+
+    t2_student = _build_client(monkeypatch, fake_db, _user(tenant="t2", role="front_desk"))
+    d2 = t2_student.get(f"/api/academy/courses/{COURSE_ID}").json()
+    assert d2["title"] == academy.get_course_raw(COURSE_ID)["title"]
+    assert d2["customized"] is False
+
+
+def test_student_sees_override_content_but_exam_strips_answers(monkeypatch):
+    fake_db = FakeDB()
+    author = _build_client(monkeypatch, fake_db, _user(role="admin"))
+    author.put(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/content",
+        json=_system_content_payload(),
+    )
+    student = _build_client(monkeypatch, fake_db, _user(role="front_desk"))
+
+    detail = student.get(f"/api/academy/courses/{COURSE_ID}").json()
+    assert detail["title"] == "On Buro (otele ozel)"
+    assert detail["lessons"][0]["body_markdown"].startswith("# Otelimiz")
+
+    exam = student.get(f"/api/academy/courses/{COURSE_ID}/exam").json()
+    assert len(exam["questions"]) == 1
+    for q in exam["questions"]:
+        assert set(q.keys()) == {"id", "prompt", "options"}, q
+        assert "answer_index" not in q
+
+
+def test_submit_scores_via_override_answer_key(monkeypatch):
+    """Scoring uses the OVERRIDE answer key (index 0 here), not the default."""
+    fake_db = FakeDB()
+    author = _build_client(monkeypatch, fake_db, _user(role="admin"))
+    author.put(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/content",
+        json=_system_content_payload(),
+    )
+    student = _build_client(monkeypatch, fake_db, _user(role="front_desk"))
+    qid = student.get(f"/api/academy/courses/{COURSE_ID}/exam").json()["questions"][0]["id"]
+
+    good = student.post(
+        f"/api/academy/courses/{COURSE_ID}/exam/submit", json={"answers": {qid: 0}},
+    ).json()["result"]
+    assert good["score"] == 100 and good["passed"] is True
+    bad = student.post(
+        f"/api/academy/courses/{COURSE_ID}/exam/submit", json={"answers": {qid: 1}},
+    ).json()["result"]
+    assert bad["score"] == 0 and bad["passed"] is False
+
+
+def test_role_override_changes_student_visibility(monkeypatch):
+    """An override that retargets the roles flips course visibility."""
+    fake_db = FakeDB()
+    author = _build_client(monkeypatch, fake_db, _user(role="admin"))
+    author.put(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/content",
+        json=_system_content_payload(roles=["housekeeping"]),
+    )
+    fd = _build_client(monkeypatch, fake_db, _user(role="front_desk"))
+    assert COURSE_ID not in [c["id"] for c in fd.get("/api/academy/courses").json()["items"]]
+    assert fd.get(f"/api/academy/courses/{COURSE_ID}").status_code == 404
+
+    hk = _build_client(monkeypatch, fake_db, _user(role="housekeeping"))
+    assert COURSE_ID in [c["id"] for c in hk.get("/api/academy/courses").json()["items"]]
+
+
+def test_reset_removes_content_keeps_hidden_restores_default(monkeypatch):
+    fake_db = FakeDB()
+    author = _build_client(monkeypatch, fake_db, _user(role="admin"))
+    # Hide AND override content, in either order — they coexist in one doc.
+    assert author.put(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/visibility",
+        json={"hidden": True},
+    ).status_code == 200
+    assert author.put(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/content",
+        json=_system_content_payload(),
+    ).status_code == 200
+
+    s = author.get("/api/academy/admin/system-courses").json()["items"]
+    row = next(c for c in s if c["id"] == COURSE_ID)
+    assert row["hidden"] is True and row["customized"] is True
+
+    # Reset: content gone, hidden preserved.
+    assert author.delete(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/content",
+    ).status_code == 200
+    s2 = author.get("/api/academy/admin/system-courses").json()["items"]
+    row2 = next(c for c in s2 if c["id"] == COURSE_ID)
+    assert row2["hidden"] is True, "visibility must survive a content reset"
+    assert row2["customized"] is False
+
+    # Editor now shows the catalog default again.
+    editor = author.get(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/content",
+    ).json()
+    assert editor["title"] == academy.get_course_raw(COURSE_ID)["title"]
+    assert editor["questions"][0]["answer_index"] == CORRECT["q1"]
+    # A second reset is idempotent (no crash, still 200).
+    assert author.delete(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/content",
+    ).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_report_uses_override_title_and_lesson_count(monkeypatch):
+    fake_db = FakeDB()
+    monkeypatch.setattr(academy, "_db", lambda: fake_db)
+    fake_db.academy_progress.docs.append({
+        "tenant_id": "t1", "user_id": "u1", "course_id": COURSE_ID,
+        "passed": False, "best_score": 0, "attempts": 0, "completed_lessons": [],
+    })
+    fake_db.users.docs.append({
+        "id": "u1", "tenant_id": "t1", "name": "U1", "role": "front_desk",
+    })
+    await academy.set_system_course_content(
+        "t1", "author1", COURSE_ID, _system_content_payload(title="Rapor Basligi"),
+    )
+    report = await academy.get_tenant_report("t1")
+    row = next(r for r in report["rows"] if r["course_id"] == COURSE_ID)
+    assert row["course_title"] == "Rapor Basligi"
+    assert row["lesson_count"] == 1  # override has a single lesson
+    # A different tenant's report keeps the catalog default.
+    report2 = await academy.get_tenant_report("t2")
+    assert not [r for r in report2["rows"] if r["course_id"] == COURSE_ID]
+
+
+def test_system_content_preserves_and_mints_ids(monkeypatch):
+    """Resaving keeps existing lesson/question ids (progress survives); a new
+    item without an id gets a server-minted one."""
+    fake_db = FakeDB()
+    author = _build_client(monkeypatch, fake_db, _user(role="admin"))
+    base = author.get(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/content",
+    ).json()
+    lid = base["lessons"][0]["id"]
+    qid = base["questions"][0]["id"]
+    assert lid == "karsilama"  # real catalog id, must round-trip
+
+    saved = author.put(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/content",
+        json=_system_content_payload(
+            lessons=[
+                {"id": lid, "title": "Karsilama (guncel)", "body_markdown": "yeni"},
+                {"title": "Ek ders", "body_markdown": "ek"},
+            ],
+            questions=[
+                {"id": qid, "prompt": "Q?", "options": ["a", "b"], "answer_index": 1},
+            ],
+        ),
+    ).json()
+    assert saved["lessons"][0]["id"] == lid
+    assert saved["questions"][0]["id"] == qid
+    assert saved["lessons"][1]["id"], "new lesson must receive an id"
+
+
+def test_system_content_requires_lessons_and_questions(monkeypatch):
+    """No draft escape hatch — a built-in override always needs >=1 lesson and
+    >=1 question."""
+    client = _build_client(monkeypatch, FakeDB(), _user(role="admin"))
+    assert client.put(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/content",
+        json=_system_content_payload(lessons=[]),
+    ).status_code == 422
+    assert client.put(
+        f"/api/academy/admin/system-courses/{COURSE_ID}/content",
+        json=_system_content_payload(questions=[]),
+    ).status_code == 422

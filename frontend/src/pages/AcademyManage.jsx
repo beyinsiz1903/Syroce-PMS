@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import {
   GraduationCap, Plus, Pencil, Trash2, ArrowLeft, Loader2,
-  BookOpen, FileText, Eye, EyeOff, Save, X,
+  BookOpen, FileText, Eye, EyeOff, Save, X, RotateCcw,
 } from "lucide-react";
 
 import { PageHeader } from "@/components/ui/page-header";
@@ -75,8 +75,11 @@ export default function AcademyManage({ user }) {
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState(null); // null=create, else course id
+  const [editKind, setEditKind] = useState("custom"); // "custom" | "system"
   const [form, setForm] = useState(emptyCourse());
   const [saving, setSaving] = useState(false);
+
+  const isSystemEdit = editKind === "system";
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -98,6 +101,7 @@ export default function AcademyManage({ user }) {
 
   const openCreate = () => {
     setEditing(null);
+    setEditKind("custom");
     setForm(emptyCourse());
     setEditorOpen(true);
   };
@@ -130,9 +134,47 @@ export default function AcademyManage({ user }) {
         })),
       });
       setEditing(courseId);
+      setEditKind("custom");
       setEditorOpen(true);
     } catch (e) {
       toast.error("Kurs yuklenemedi");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openSystemEdit = async (courseId) => {
+    setLoading(true);
+    try {
+      const r = await axios.get(`/academy/admin/system-courses/${courseId}/content`);
+      const d = r.data || {};
+      setForm({
+        title: d.title || "",
+        department: d.department || "",
+        department_label: d.department_label || "",
+        summary: d.summary || "",
+        roles: Array.isArray(d.roles) ? d.roles : [],
+        draft: false,
+        pass_threshold: d.pass_threshold ?? 70,
+        estimated_minutes: d.estimated_minutes ?? "",
+        lessons: (d.lessons || []).map((l) => ({
+          id: l.id || localId("lesson"),
+          title: l.title || "",
+          body_markdown: l.body_markdown || "",
+        })),
+        questions: (d.questions || []).map((q) => ({
+          id: q.id || localId("question"),
+          prompt: q.prompt || "",
+          options: Array.isArray(q.options) && q.options.length >= 2
+            ? [...q.options] : ["", ""],
+          answer_index: typeof q.answer_index === "number" ? q.answer_index : 0,
+        })),
+      });
+      setEditing(courseId);
+      setEditKind("system");
+      setEditorOpen(true);
+    } catch (e) {
+      toast.error("Hazir egitim yuklenemedi");
     } finally {
       setLoading(false);
     }
@@ -201,9 +243,11 @@ export default function AcademyManage({ user }) {
     if (!form.roles.length) return "En az bir rol secin";
     const pt = Number(form.pass_threshold);
     if (!Number.isFinite(pt) || pt < 1 || pt > 100) return "Gecme notu 1-100 arasinda olmali";
-    if (!form.draft) {
-      if (!form.lessons.length) return "Yayinlamak icin en az 1 ders gerekli";
-      if (!form.questions.length) return "Yayinlamak icin en az 1 soru gerekli";
+    // Built-in content overrides always need >=1 lesson and >=1 question
+    // (no draft escape hatch); custom courses only when publishing.
+    if (isSystemEdit || !form.draft) {
+      if (!form.lessons.length) return "En az 1 ders gerekli";
+      if (!form.questions.length) return "En az 1 soru gerekli";
     }
     for (const l of form.lessons) {
       if (!l.title.trim()) return "Tum derslerin basligi olmali";
@@ -220,32 +264,38 @@ export default function AcademyManage({ user }) {
     return null;
   };
 
-  const buildPayload = () => ({
-    title: form.title.trim(),
-    department: form.department.trim() || null,
-    department_label: form.department_label.trim() || null,
-    summary: form.summary.trim(),
-    roles: form.roles,
-    draft: form.draft,
-    pass_threshold: Number(form.pass_threshold),
-    estimated_minutes:
-      form.estimated_minutes === "" || form.estimated_minutes === null
-        ? null : Number(form.estimated_minutes),
-    // Preserve real (server-issued) lesson/question ids on edit so in-flight
-    // learner progress (keyed by lesson id) survives; locally-added items send
-    // null so the engine mints a clean id.
-    lessons: form.lessons.map((l) => ({
-      id: l.id && !l.id.includes("-local-") ? l.id : null,
-      title: l.title.trim(),
-      body_markdown: l.body_markdown,
-    })),
-    questions: form.questions.map((q) => ({
-      id: q.id && !q.id.includes("-local-") ? q.id : null,
-      prompt: q.prompt.trim(),
-      options: q.options.map((o) => o.trim()),
-      answer_index: q.answer_index,
-    })),
-  });
+  const buildPayload = () => {
+    const payload = {
+      title: form.title.trim(),
+      department: form.department.trim() || null,
+      department_label: form.department_label.trim() || null,
+      summary: form.summary.trim(),
+      roles: form.roles,
+      draft: form.draft,
+      pass_threshold: Number(form.pass_threshold),
+      estimated_minutes:
+        form.estimated_minutes === "" || form.estimated_minutes === null
+          ? null : Number(form.estimated_minutes),
+      // Preserve real (server-issued) lesson/question ids on edit so in-flight
+      // learner progress (keyed by lesson id) survives; locally-added items send
+      // null so the engine mints a clean id.
+      lessons: form.lessons.map((l) => ({
+        id: l.id && !l.id.includes("-local-") ? l.id : null,
+        title: l.title.trim(),
+        body_markdown: l.body_markdown,
+      })),
+      questions: form.questions.map((q) => ({
+        id: q.id && !q.id.includes("-local-") ? q.id : null,
+        prompt: q.prompt.trim(),
+        options: q.options.map((o) => o.trim()),
+        answer_index: q.answer_index,
+      })),
+    };
+    // Built-in content has no draft concept — strip it so the stricter
+    // SystemCourseContentInput schema receives exactly what it expects.
+    if (isSystemEdit) delete payload.draft;
+    return payload;
+  };
 
   const save = async () => {
     const err = validate();
@@ -253,7 +303,10 @@ export default function AcademyManage({ user }) {
     setSaving(true);
     try {
       const payload = buildPayload();
-      if (editing) {
+      if (isSystemEdit) {
+        await axios.put(`/academy/admin/system-courses/${editing}/content`, payload);
+        toast.success("Hazir egitim guncellendi");
+      } else if (editing) {
         await axios.put(`/academy/admin/courses/${editing}`, payload);
         toast.success("Kurs guncellendi");
       } else {
@@ -301,6 +354,24 @@ export default function AcademyManage({ user }) {
       setSystemCourses((prev) =>
         prev.map((c) => (c.id === course.id ? { ...c, hidden: !nextHidden } : c)));
       toast.error("Gorunurluk degistirilemedi");
+    }
+  };
+
+  const resetSystemCourse = async (course) => {
+    const ok = await confirmDialog({
+      title: "Varsayilana sifirla",
+      description: `"${course.title}" egitiminin otelinize ozel icerigi silinip varsayilan (hazir) icerik geri yuklenecek. Gizleme ayari korunur. Bu islem geri alinamaz.`,
+      confirmText: "Sifirla",
+      cancelText: "Vazgec",
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await axios.delete(`/academy/admin/system-courses/${course.id}/content`);
+      toast.success("Hazir egitim varsayilana sifirlandi");
+      await loadAll();
+    } catch (e) {
+      toast.error("Sifirlama basarisiz");
     }
   };
 
@@ -385,8 +456,8 @@ export default function AcademyManage({ user }) {
 
       <h2 className="text-lg font-bold text-slate-900 mb-3 mt-8">Hazir Egitimler</h2>
       <p className="text-sm text-slate-500 mb-3">
-        Hazir egitimler tum oteller icin ortak sablonlardir; icerigini degistiremezsiniz
-        ancak otelinizde gizleyebilirsiniz.
+        Hazir egitimler tum oteller icin ortak sablonlardir. Icerigini otelinize ozel
+        olarak duzenleyebilir, dilediginizde varsayilana sifirlayabilir veya gizleyebilirsiniz.
       </p>
       <div className="space-y-2">
         {systemCourses.map((c) => (
@@ -395,22 +466,28 @@ export default function AcademyManage({ user }) {
               <div className="flex items-center gap-2 flex-wrap">
                 <FileText className="w-5 h-5 text-slate-600 flex-shrink-0" />
                 <h3 className="font-medium text-slate-900">{c.title}</h3>
+                {c.customized && <StatusBadge intent="info">Ozellestirildi</StatusBadge>}
                 {c.hidden && <StatusBadge intent="neutral">Gizli</StatusBadge>}
               </div>
               <div className="text-xs text-slate-400 mt-1">
                 {c.department_label || c.department || "Genel"} · {c.lesson_count} ders · {c.question_count} soru
               </div>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="flex-shrink-0"
-              onClick={() => toggleSystemVisibility(c)}
-            >
-              {c.hidden
-                ? <><Eye className="w-4 h-4 mr-1" /> Goster</>
-                : <><EyeOff className="w-4 h-4 mr-1" /> Gizle</>}
-            </Button>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Button size="sm" variant="outline" onClick={() => openSystemEdit(c.id)}>
+                <Pencil className="w-4 h-4 mr-1" /> Duzenle
+              </Button>
+              {c.customized && (
+                <Button size="sm" variant="outline" onClick={() => resetSystemCourse(c)}>
+                  <RotateCcw className="w-4 h-4 mr-1" /> Varsayilana Sifirla
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={() => toggleSystemVisibility(c)}>
+                {c.hidden
+                  ? <><Eye className="w-4 h-4 mr-1" /> Goster</>
+                  : <><EyeOff className="w-4 h-4 mr-1" /> Gizle</>}
+              </Button>
+            </div>
           </Card>
         ))}
       </div>
@@ -418,7 +495,11 @@ export default function AcademyManage({ user }) {
       <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editing ? "Kursu Duzenle" : "Yeni Kurs"}</DialogTitle>
+            <DialogTitle>
+              {isSystemEdit
+                ? "Hazir Egitimi Duzenle"
+                : (editing ? "Kursu Duzenle" : "Yeni Kurs")}
+            </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-5">
@@ -508,19 +589,21 @@ export default function AcademyManage({ user }) {
               </div>
             </div>
 
-            {/* Draft toggle */}
-            <div className="flex items-center justify-between rounded border border-slate-200 px-3 py-2">
-              <div>
-                <div className="text-sm font-medium text-slate-900">Taslak</div>
-                <div className="text-xs text-slate-400">
-                  Taslak egitimler ogrencilere gosterilmez. Yayinlamak icin en az 1 ders ve 1 soru gerekir.
+            {/* Draft toggle — built-in content has no draft concept */}
+            {!isSystemEdit && (
+              <div className="flex items-center justify-between rounded border border-slate-200 px-3 py-2">
+                <div>
+                  <div className="text-sm font-medium text-slate-900">Taslak</div>
+                  <div className="text-xs text-slate-400">
+                    Taslak egitimler ogrencilere gosterilmez. Yayinlamak icin en az 1 ders ve 1 soru gerekir.
+                  </div>
                 </div>
+                <Switch
+                  checked={form.draft}
+                  onCheckedChange={(v) => setForm((f) => ({ ...f, draft: v }))}
+                />
               </div>
-              <Switch
-                checked={form.draft}
-                onCheckedChange={(v) => setForm((f) => ({ ...f, draft: v }))}
-              />
-            </div>
+            )}
 
             {/* Lessons */}
             <div>

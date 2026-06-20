@@ -122,6 +122,9 @@ def public_course_summary(course: dict[str, Any]) -> dict[str, Any]:
         "estimated_minutes": course.get("estimated_minutes"),
         "lesson_count": len(course.get("lessons") or []),
         "question_count": len(course.get("questions") or []),
+        # True when a built-in (system) course carries a per-tenant content
+        # override; always False for catalog defaults and tenant-custom courses.
+        "customized": bool(course.get("customized", False)),
     }
 
 
@@ -132,7 +135,11 @@ def public_course_detail(course: dict[str, Any]) -> dict[str, Any]:
     ``read_lesson_body``); tenant-custom lessons carry an inline body_markdown
     and NEVER touch the filesystem.
     """
-    is_custom = course.get("source") == "tenant" or is_custom_course_id(course.get("id"))
+    is_custom = (
+        course.get("_inline_bodies")
+        or course.get("source") == "tenant"
+        or is_custom_course_id(course.get("id"))
+    )
     lessons = []
     for lesson in course.get("lessons") or []:
         if is_custom:
@@ -228,12 +235,59 @@ def _with_source(course: dict[str, Any], source: str) -> dict[str, Any]:
     return c
 
 
-async def _hidden_system_ids(tenant_id: str) -> set[str]:
-    rows = await _db().academy_course_overrides.find(
-        {"tenant_id": tenant_id, "hidden": True},
-        {"_id": 0, "system_course_id": 1},
+async def _all_overrides(tenant_id: str) -> list[dict[str, Any]]:
+    """All per-tenant built-in overrides (hidden flag and/or content)."""
+    return await _db().academy_course_overrides.find(
+        {"tenant_id": tenant_id}, {"_id": 0},
     ).to_list(1000)
-    return {r["system_course_id"] for r in rows}
+
+
+async def _override_for(
+    tenant_id: str, system_course_id: str,
+) -> dict[str, Any] | None:
+    return await _db().academy_course_overrides.find_one(
+        {"tenant_id": tenant_id, "system_course_id": system_course_id},
+        {"_id": 0},
+    )
+
+
+def _apply_system_override(
+    base: dict[str, Any], content: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Resolve a built-in course for a tenant, applying any per-tenant CONTENT
+    override.
+
+    With no override the catalog course (answers included, file-backed lesson
+    bodies) is returned unchanged. An override is a FULL content replacement:
+    the system ``id``/``source`` are ALWAYS server-set (never taken from the
+    stored content), and the course switches to INLINE lesson bodies via the
+    ``_inline_bodies`` marker. The catalog cache is never mutated — the replaced
+    lists/values come from the override document, not the shared cache.
+    """
+    if not content:
+        return _with_source(base, "system")
+    merged = _with_source(base, "system")
+    merged["title"] = content.get("title") or base.get("title")
+    merged["department"] = content.get("department")
+    merged["department_label"] = content.get("department_label")
+    merged["summary"] = content.get("summary") or ""
+    merged["roles"] = list(content.get("roles") or [])
+    merged["pass_threshold"] = int(
+        content.get("pass_threshold", base.get("pass_threshold", 70)),
+    )
+    merged["estimated_minutes"] = content.get("estimated_minutes")
+    merged["lessons"] = [dict(l) for l in content.get("lessons") or []]
+    merged["questions"] = [dict(q) for q in content.get("questions") or []]
+    merged["customized"] = True
+    merged["_inline_bodies"] = True
+    return merged
+
+
+def _safe_lesson_body(slug: str) -> str:
+    try:
+        return read_lesson_body(slug or "")
+    except (ValueError, FileNotFoundError):
+        return ""
 
 
 async def _custom_courses(tenant_id: str) -> list[dict[str, Any]]:
@@ -267,13 +321,10 @@ async def resolve_course(
     course = get_course_raw(course_id)
     if not course:
         return None
-    if not include_hidden:
-        ov = await _db().academy_course_overrides.find_one(
-            {"tenant_id": tenant_id, "system_course_id": course_id}, {"_id": 0},
-        )
-        if ov and ov.get("hidden"):
-            return None
-    return _with_source(course, "system")
+    ov = await _override_for(tenant_id, course_id)
+    if ov and ov.get("hidden") and not include_hidden:
+        return None
+    return _apply_system_override(course, (ov or {}).get("content"))
 
 
 async def list_courses_for(
@@ -286,14 +337,18 @@ async def list_courses_for(
     from the student view. Role visibility is applied here so callers can
     project the result directly.
     """
-    hidden = set() if include_hidden else await _hidden_system_ids(tenant_id)
+    overrides = {r["system_course_id"]: r for r in await _all_overrides(tenant_id)}
     out: list[dict[str, Any]] = []
     for c in _all_courses():
-        if c.get("id") in hidden:
+        ov = overrides.get(c.get("id"))
+        if ov and ov.get("hidden") and not include_hidden:
             continue
-        if not course_visible_to_role(c, role):
+        # Apply the content override BEFORE the role check: an override can
+        # change a course's role visibility.
+        merged = _apply_system_override(c, ov.get("content") if ov else None)
+        if not course_visible_to_role(merged, role):
             continue
-        out.append(_with_source(c, "system"))
+        out.append(merged)
     for c in await _custom_courses(tenant_id):
         if c.get("draft") and not include_draft:
             continue
@@ -437,13 +492,109 @@ async def set_system_course_hidden(
 async def list_system_courses_for(tenant_id: str) -> list[dict[str, Any]]:
     """Built-in course summaries + current hidden flag, for the admin
     visibility panel. No answers."""
-    hidden = await _hidden_system_ids(tenant_id)
+    overrides = {r["system_course_id"]: r for r in await _all_overrides(tenant_id)}
     out = []
     for c in _all_courses():
-        summary = public_course_summary(_with_source(c, "system"))
-        summary["hidden"] = c.get("id") in hidden
+        ov = overrides.get(c.get("id"), {})
+        merged = _apply_system_override(c, ov.get("content"))
+        summary = public_course_summary(merged)
+        summary["hidden"] = bool(ov.get("hidden"))
         out.append(summary)
     return out
+
+
+async def get_system_course_for_edit(
+    tenant_id: str, system_course_id: str,
+) -> dict[str, Any] | None:
+    """Full editable view of a BUILT-IN course for an author (answers included).
+
+    Returns the per-tenant content override if one exists; otherwise the default
+    catalog content with each lesson body resolved from its file into an inline
+    ``body_markdown`` so the editor can edit it. Lesson/question ids are kept so
+    a saved edit round-trips them (in-flight learner progress survives). Returns
+    ``None`` for custom or unknown ids. AUTHOR-ONLY surface — never project to a
+    student-facing route (the answer key is present).
+    """
+    if is_custom_course_id(system_course_id):
+        return None
+    base = get_course_raw(system_course_id)
+    if not base:
+        return None
+    ov = await _override_for(tenant_id, system_course_id)
+    content = (ov or {}).get("content")
+    if content:
+        return _apply_system_override(base, content)
+    course = _with_source(base, "system")
+    course["lessons"] = [
+        {
+            "id": l.get("id"),
+            "title": l.get("title"),
+            "body_markdown": _safe_lesson_body(l.get("slug", "")),
+        }
+        for l in base.get("lessons") or []
+    ]
+    course["questions"] = [dict(q) for q in base.get("questions") or []]
+    course["customized"] = False
+    course["_inline_bodies"] = True
+    return course
+
+
+async def set_system_course_content(
+    tenant_id: str, author_id: str | None,
+    system_course_id: str, data: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Store a per-tenant CONTENT override for a built-in course (lessons + exam).
+
+    The catalog file is NEVER touched. The visibility (``hidden``) flag in the
+    same override document is preserved. Returns the resolved editable course, or
+    ``None`` if the id is not a known built-in course.
+    """
+    if is_custom_course_id(system_course_id) or get_course_raw(system_course_id) is None:
+        return None
+    now = datetime.now(UTC)
+    content = _normalize_course_content(data)
+    content.pop("draft", None)  # built-in overrides are always live.
+    await _db().academy_course_overrides.update_one(
+        {"tenant_id": tenant_id, "system_course_id": system_course_id},
+        {
+            "$set": {
+                "content": content,
+                "content_updated_by": author_id,
+                "content_updated_at": now,
+                "updated_at": now,
+            },
+            "$setOnInsert": {
+                "tenant_id": tenant_id,
+                "system_course_id": system_course_id,
+                "created_at": now,
+            },
+        },
+        upsert=True,
+    )
+    return await get_system_course_for_edit(tenant_id, system_course_id)
+
+
+async def reset_system_course(tenant_id: str, system_course_id: str) -> bool:
+    """Remove a per-tenant CONTENT override, reverting to the catalog default.
+
+    Any visibility (``hidden``) state on the same document is kept. Idempotent:
+    resetting an un-customized (or never-overridden) course is a no-op that still
+    returns ``True``; only an unknown/custom id returns ``False``.
+    """
+    if is_custom_course_id(system_course_id) or get_course_raw(system_course_id) is None:
+        return False
+    await _db().academy_course_overrides.update_one(
+        {"tenant_id": tenant_id, "system_course_id": system_course_id},
+        {
+            "$unset": {
+                "content": "",
+                "content_updated_by": "",
+                "content_updated_at": "",
+            },
+            "$set": {"updated_at": datetime.now(UTC)},
+        },
+    )
+    return True
 
 
 def _compute_status(progress: dict[str, Any] | None, lesson_count: int) -> str:
@@ -670,8 +821,10 @@ async def get_tenant_report(tenant_id: str) -> dict[str, Any]:
     only; curriculum metadata comes from the GLOBAL catalog.
     """
     db = _db()
+    overrides = {r["system_course_id"]: r for r in await _all_overrides(tenant_id)}
     course_by_id: dict[str, dict[str, Any]] = {
-        c["id"]: _with_source(c, "system") for c in _all_courses()
+        c["id"]: _apply_system_override(c, overrides.get(c["id"], {}).get("content"))
+        for c in _all_courses()
     }
     # Tenant-custom courses provide metadata for their own progress rows; a
     # hard-deleted custom course simply won't resolve (its rows are skipped).
