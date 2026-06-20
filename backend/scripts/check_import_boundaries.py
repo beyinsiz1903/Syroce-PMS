@@ -46,6 +46,16 @@ KNOWN_EXCEPTIONS = frozenset({
     ("workers/konaklama_vergisi_scheduler.py", 34),
     ("workers/konaklama_vergisi_scheduler.py", 55),
     ("workers/report_scheduler_worker.py", 33),
+    # revenue domain'i, de-fake (uydurma kanal push'unu kaldirma) calismasinda
+    # gercek pinned-provider durumunu okumak icin channel_manager'in YETKILI
+    # saglayici-tespit yardimcisi `_detect_active_provider`'i cagiriyor (yalnizca
+    # okuma; pilot_drift=0; istemci girdisi ezemez). Lazy + fail-closed import.
+    # Follow-up: `_detect_active_provider` (+ `_tenant_configured_provider`)
+    # `shared_kernel/` altina tasinip her iki domain oradan import etmeli; o zaman
+    # bu istisnalar kaldirilabilir.
+    ("domains/revenue/pricing/pricing_service.py", 50),
+    ("domains/revenue/analytics_router/channel_mgr.py", 224),
+    ("domains/revenue/analytics_router/channel_mgr.py", 295),
 })
 
 DOMAIN_SELF_IMPORT = re.compile(r"from domains\.(\w+)")
