@@ -425,6 +425,15 @@ export const NAV_ITEMS = [
     group: "starter",
     navGroup: "management",
   },
+  {
+    key: "academy",
+    label: "Akademi",
+    path: "/app/academy",
+    tier: "addon",
+    group: "core",
+    navGroup: "management",
+    moduleKey: "academy",
+  },
 
   // ──── CHANNELS GROUP — Normal kullanici (otel personeli) ─────────
   {

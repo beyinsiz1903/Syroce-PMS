@@ -43,6 +43,8 @@ ROUTE_MODULE_MAP: dict[str, str] = {
     # Super-admin enables per-tenant from Admin > Modül Yönetimi.
     "/api/spa": "spa",
     "/api/mice": "mice",
+    # Syroce Academy — add-on training module, default OFF for all tiers.
+    "/api/academy/": "academy",
     # Alternate MICE entry-point in sales router (Meeting & Events).
     # Without this mapping, MICE-equivalent functionality is reachable
     # via /api/events/* even when the `mice` add-on is disabled.

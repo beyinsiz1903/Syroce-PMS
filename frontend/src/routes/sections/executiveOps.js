@@ -1,5 +1,5 @@
 import {
-  KonaklamaVergisiModule, HelpCenter, MevzuatRaporlari, ExecutiveDashboard,
+  KonaklamaVergisiModule, HelpCenter, Academy, AcademyReport, MevzuatRaporlari, ExecutiveDashboard,
   AuditTimelinePage, UrgentMessageReportPage, RecalledMessagesReportPage,
   IdPhotoViewReportPage, IdPhotoAdminPage, UrgentPermissionAdminPage,
   PilotReadinessPage, IncidentDashboardPage, GoLiveDashboardPage,
@@ -12,6 +12,8 @@ export function executiveOpsRoutes({ p, pm }) {
     // ── Executive & GM ─────────────────────────────────
     { path: "/app/konaklama-vergisi", ...pm(KonaklamaVergisiModule, "invoices"), wrapLayout: true, layoutModule: "konaklama-vergisi" },
     { path: "/app/help", ...p(HelpCenter), wrapLayout: true, layoutModule: "help" },
+    { path: "/app/academy", ...pm(Academy, "academy"), wrapLayout: true, layoutModule: "academy" },
+    { path: "/app/academy-report", ...pm(AcademyReport, "academy"), wrapLayout: true, layoutModule: "academy" },
     { path: "/app/mevzuat-raporlari", ...pm(MevzuatRaporlari, "basic_reporting"), wrapLayout: true, layoutModule: "mevzuat-raporlari" },
     { path: "/executive", ...pm(ExecutiveDashboard, "gm_dashboards") },
     { path: "/gm/enhanced", type: "redirect", to: "/executive" },

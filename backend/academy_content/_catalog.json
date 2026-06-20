@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "note": "GLOBAL varsayilan mufredat (sistem sahipli). Bu dosya pilot/tenant verisine yazilmaz. Sorularin dogru cevaplari (answer_index) yalnizca sunucuda tutulur ve istemciye ASLA gonderilmez.",
+  "courses": [
+    {
+      "id": "reception-temelleri",
+      "title": "Resepsiyon Temelleri",
+      "department": "front_desk",
+      "department_label": "Resepsiyon",
+      "roles": ["front_desk", "supervisor"],
+      "summary": "Misafir karsilama, check-in/check-out akisi ve folio temellerini kapsayan giris egitimi.",
+      "draft": true,
+      "pass_threshold": 70,
+      "estimated_minutes": 25,
+      "lessons": [
+        { "id": "karsilama", "title": "Misafir Karsilama Standartlari", "slug": "reception-karsilama" },
+        { "id": "check-in", "title": "Check-in Akisi", "slug": "reception-check-in" },
+        { "id": "check-out", "title": "Check-out ve Folio", "slug": "reception-check-out" }
+      ],
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "KBS bildirimi icin check-in sirasinda hangi bilgi zorunludur?",
+          "options": ["Misafirin e-posta adresi", "T.C. Kimlik No / Pasaport No", "Arac plakasi", "Sadik musteri kart numarasi"],
+          "answer_index": 1
+        },
+        {
+          "id": "q2",
+          "prompt": "Oda hazir degilse hangi ekran uyari gosterir?",
+          "options": ["Muhasebe ekrani", "Housekeeping ekrani", "Kanal yoneticisi", "Raporlar ekrani"],
+          "answer_index": 1
+        },
+        {
+          "id": "q3",
+          "prompt": "Check-out sonrasi sistem oda durumunu hangi degere ceker?",
+          "options": ["Temiz / Hazir", "Bakim", "Temizleme bekliyor", "Satisa kapali"],
+          "answer_index": 2
+        },
+        {
+          "id": "q4",
+          "prompt": "Online check-in yapan misafir icin resepsiyonda ne yapilir?",
+          "options": ["Tum kayit bastan alinir", "Yalnizca kimlik dogrulamasi ve oda anahtari verilir", "Hicbir islem gerekmez", "Odeme reddedilir"],
+          "answer_index": 1
+        },
+        {
+          "id": "q5",
+          "prompt": "Konaklama vergisi nasil hesaplanir?",
+          "options": ["Misafir tarafindan manuel girilir", "Hic hesaplanmaz", "Yapilandirmaya bagli olarak otomatik hesaplanir", "Sadece nakit odemede eklenir"],
+          "answer_index": 2
+        }
+      ]
+    },
+    {
+      "id": "housekeeping-temelleri",
+      "title": "Kat Hizmetleri Temelleri",
+      "department": "housekeeping",
+      "department_label": "Kat Hizmetleri",
+      "roles": ["housekeeping", "supervisor"],
+      "summary": "Oda durumlari, gorev atama, kontrol listesi ve mini bar sureclerini kapsayan giris egitimi.",
+      "draft": true,
+      "pass_threshold": 70,
+      "estimated_minutes": 20,
+      "lessons": [
+        { "id": "oda-durumlari", "title": "Oda Durumlari", "slug": "housekeeping-oda-durumlari" },
+        { "id": "gorev-akisi", "title": "Gorev Atama ve Kontrol Listesi", "slug": "housekeeping-gorev-akisi" }
+      ],
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "Misafir cikmis, temizlik bekleyen odanin durumu nedir?",
+          "options": ["Temiz / Hazir", "Kirli", "Temizlikte", "Bakim"],
+          "answer_index": 1
+        },
+        {
+          "id": "q2",
+          "prompt": "Temizlik bitti, supervisor onayi gereken oda hangi durumdadir?",
+          "options": ["Denetim Bekliyor", "OOO", "Temiz / Hazir", "Kirli"],
+          "answer_index": 0
+        },
+        {
+          "id": "q3",
+          "prompt": "Mini bar sayiminda eksik urunler ne yapilir?",
+          "options": ["Bir sonraki gune ertelenir", "Otomatik olarak misafir folio'suna adisyon eklenir", "Ucretsiz sayilir", "Sadece supervisora bildirilir"],
+          "answer_index": 1
+        },
+        {
+          "id": "q4",
+          "prompt": "Temizlik sirasinda bulunan esyalar nereye kaydedilir?",
+          "options": ["Folio modulu", "Kayip Esya modulu", "Bakim is emirleri", "Kanal yoneticisi"],
+          "answer_index": 1
+        },
+        {
+          "id": "q5",
+          "prompt": "Asagidakilerden hangisi housekeeping performans metriklerinden biridir?",
+          "options": ["Ortalama temizlik suresi", "OTA komisyon orani", "Doluluk tahmini", "Kur farki"],
+          "answer_index": 0
+        }
+      ]
+    }
+  ]
+}

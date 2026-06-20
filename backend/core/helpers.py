@@ -224,7 +224,7 @@ MODULE_DEFAULTS: dict[str, bool] = {
     "ai_predictive": True, "ai_reputation": True, "ai_revenue_autopilot": True,
     "ai_social_radar": True,
     # Add-on modules — sold separately, default OFF.
-    "spa": False, "mice": False,
+    "spa": False, "mice": False, "academy": False,
 }
 
 

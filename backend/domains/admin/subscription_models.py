@@ -87,6 +87,9 @@ class FeatureFlag(str, Enum):
     POS_BASIC = "pos_basic"
     MAINTENANCE = "maintenance"
 
+    # Add-on module — Syroce Academy (eğitim & sertifika)
+    ACADEMY = "academy"
+
 
 class SubscriptionPlan(BaseModel):
     """Subscription plan definition"""
@@ -175,6 +178,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         # ADD-ON MODULES
         "spa": False,
         "mice": False,
+        "academy": False,
     },
     "basic": {
         # CORE - Açık
@@ -238,6 +242,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         # ADD-ON MODULES (sold separately, super-admin enables per-tenant)
         "spa": False,
         "mice": False,
+        "academy": False,
     },
     "professional": {
         # CORE - Açık
@@ -301,6 +306,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         # ADD-ON MODULES (sold separately, super-admin enables per-tenant)
         "spa": False,
         "mice": False,
+        "academy": False,
     },
     "enterprise": {
         # CORE - Açık
@@ -364,6 +370,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         # ADD-ON MODULES (sold separately, super-admin enables per-tenant)
         "spa": False,
         "mice": False,
+        "academy": False,
     },
 }
 

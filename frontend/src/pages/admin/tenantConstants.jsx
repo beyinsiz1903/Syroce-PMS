@@ -273,6 +273,7 @@ export const MODULE_GROUPS = [
     items: [
       { key: 'spa', label: 'Spa & Wellness', hint: 'Hizmet kataloğu, terapist & oda yönetimi, randevu defteri, folio entegrasyonu', tier: 'addon', addon: true },
       { key: 'mice', label: 'MICE & Banquet', hint: 'Toplantı/balo salonları, catering menüleri, kurumsal CRM, etkinlik yönetimi', tier: 'addon', addon: true },
+      { key: 'academy', label: 'Syroce Academy', hint: 'Departmana özel personel eğitimi, ders sonu sınav ve otomatik PDF sertifika', tier: 'addon', addon: true },
     ],
   },
 ];
