@@ -2,19 +2,21 @@
 # Syroce PMS — DigitalOcean App Platform spec (Infrastructure as Code)
 #
 # ── NEDEN HAZIR IMAJ (pre-built image) ───────────────────────────────
-# App Platform'un BUILD makinesi SABIT 8GB bellekle sinirlidir ve build
-# 1 saatte timeout olur (instance_size_slug SADECE calisma anini buyutur,
-# build'i DEGIL). Bizim worker imajimiz agir ML yigini (xgboost/scipy/
-# sklearn + nvidia-nccl) tasidigi icin DO'da derlenirken bellek tukenip
-# "terminated / resource exhaustion" ile OLUYOR. Cozum (DO'nun resmi
-# onerisi): imajlari DO'da DERLEME; GitHub Actions'in (ci-cd.yml +
-# deploy.yml) ghcr.io'ya bastigi HAZIR imajlari CEK. backend/worker/beat
-# artik `image:` ile GHCR'dan cekiliyor; frontend hafif oldugu icin
-# static_site olarak DO'da build edilmeye devam eder (8GB'a rahat sigar).
+# App Platform'un BUILD makinesi sinirli bellekle calisir ve build 1
+# saatte timeout olur (instance_size_slug SADECE calisma anini buyutur,
+# build'i DEGIL). Worker imajimiz agir ML yigini (xgboost/scipy/sklearn +
+# nvidia-nccl) tasir; frontend ise React 19 + Vite build'i sirasinda yine
+# bellek tuketir — IKISI de DO'da derlenirken "terminated / resource
+# exhaustion" ile OLUR (ilk denemelerde frontend static_site build'i bu
+# yuzden patladi). Cozum (DO'nun resmi onerisi): DO'da HIC BUILD YAPMA;
+# GitHub Actions'in (ci-cd.yml + deploy.yml) ghcr.io'ya bastigi HAZIR
+# imajlari CEK. DORT bilesen de (backend/worker/beat/frontend) `image:`
+# ile GHCR'dan cekilir; DO yalniz pull yapar, DERLEME YOK.
 #
 # ── GHCR PRIVATE IMAJ ICIN KIMLIK BILGISI ────────────────────────────
 # GHCR paketleri PRIVATE. DO'nun cekebilmesi icin her `image:` blogunda
-# `registry_credentials: "<github_kullanici>:<PAT>"` gerekir; PAT classic
+# (ARTIK 4 BLOK: backend/worker/beat/frontend) `registry_credentials:
+# "<github_kullanici>:<PAT>"` gerekir; PAT classic
 # + SADECE `read:packages` yetkili (suresiz onerilir). Bu deger bu
 # dosyaya YAZILMAZ: DO panel > App Spec editorunde placeholder yerine
 # girilir, DO ilk kayitta SIFRELER. Sonraki guncellemelerde dosyadan
@@ -31,7 +33,7 @@
 #   backend   : FastAPI API (GHCR image, service)        -> $PORT (8080)
 #   worker    : Celery worker (GHCR image, ML + reports DAHIL)
 #   beat      : Celery beat / scheduler (GHCR worker image + beat komutu)
-#   frontend  : React/Vite SPA (static site, catchall index.html)
+#   frontend  : React/Vite SPA (GHCR nginx imaji, service -> port 3000)
 #   Redis     : DO Managed Caching (Valkey/Redis) AYRI eklenir -> REDIS_URL
 #   MongoDB   : DO'da yonetilen Mongo YOK -> MongoDB Atlas -> MONGO_URL
 #
@@ -50,7 +52,8 @@
 #    Egress IP'lerini allowlist'leyin.
 # 3) Gercek SIR DEGERLERI bu dosyaya YAZILMAZ; hepsi panelde "Encrypted"
 #    girilir (asagidaki liste + registry_credentials).
-# 4) Frontend SPA: catchall_document=index.html (deep-link 404 fix).
+# 4) Frontend SPA deep-link fallback: nginx.conf `try_files .. /index.html`
+#    (imaj icinde); DO catchall_document'a gerek YOK.
 # 5) Imajlar yalniz linux/amd64. CI buildx varsayilani amd64 -> uyumlu.
 # ─────────────────────────────────────────────────────────────────────
 
@@ -191,6 +194,25 @@ services:
         scope: RUN_TIME
       # MONGO_URL / REDIS_URL / JWT_SECRET ... -> app seviyesinde ENCRYPTED
 
+  # ── Frontend SPA (React/Vite + nginx) — GHCR hazir imaj, DO'da BUILD YOK ─
+  - name: frontend                 # nginx (ghcr.io/beyinsiz1903/syroce-frontend)
+    image:
+      registry_type: GHCR
+      registry: beyinsiz1903
+      repository: syroce-frontend         # ci-cd.yml/deploy.yml: ${owner}/syroce-frontend
+      tag: latest
+      # PANELDE doldur: "<github_kullanici>:<read:packages_PAT>" (DO sifreler)
+      registry_credentials: GHCR_KULLANICI_ADI:GHCR_READ_PACKAGES_PAT
+    http_port: 3000                # nginx.conf `listen 3000` + Dockerfile EXPOSE 3000
+    instance_size_slug: apps-s-1vcpu-0.5gb   # statik nginx -> cok hafif
+    instance_count: 1
+    health_check:
+      http_path: /                 # nginx index.html -> 200
+      initial_delay_seconds: 10
+      period_seconds: 30
+      timeout_seconds: 5
+      failure_threshold: 3
+
 # ── Arka plan worker'lari (HTTP listener YOK) — GHCR hazir imaj ───────
 workers:
   - name: worker                   # Celery worker (ghcr.io/beyinsiz1903/syroce-worker)
@@ -215,21 +237,19 @@ workers:
     instance_size_slug: apps-s-1vcpu-0.5gb
     instance_count: 1              # beat HER ZAMAN tek instance
 
-# ── Frontend (React/Vite SPA, static — DO'da build edilir, hafif) ─────
-static_sites:
-  - name: frontend
-    source_dir: /frontend
-    build_command: yarn install --ignore-engines --production=false && yarn build
-    output_dir: build
-    catchall_document: index.html  # SPA deep-link fallback
-    github:
-      repo: beyinsiz1903/emergent-yeni-uygulama
-      branch: main
-      deploy_on_push: true
-    # VITE_BACKEND_URL VERILMEZ: bos olunca frontend relative "/api" ve ayni-
-    # origin websocket kullanir (axiosConfig.js `|| "/api"`, websocket.jsx
-    # `|| ''`). Tek alan adi ingress ile API ayni origin'de oldugundan dogru
-    # davranis budur; alan adini build'e gomeye gerek yok.
+# ── Frontend: ARTIK static_site DEGIL — GHCR nginx imaji (yukarida) ───
+# React 19 + Vite build'i de DO build makinesinde bellek tuketip OOM
+# oluyordu. Cozum: frontend de GHCR'dan HAZIR nginx imaji olarak cekilir
+# (yukaridaki `services` altinda `frontend`, port 3000). DO'da frontend
+# build'i YOK.
+#
+# ONEMLI — VITE_BACKEND_URL: frontend imaji CI'da (ci-cd.yml/deploy.yml)
+# `--build-arg VITE_BACKEND_URL=${secrets.VITE_BACKEND_URL}` ile build
+# edilir. Tek-origin ingress icin bu GitHub secret'i BOS/TANIMSIZ olmali;
+# o zaman frontend relative "/api" + ayni-origin websocket kullanir
+# (axiosConfig.js `|| "/api"`, websocket.jsx). Secret DOLUYSA yanlis API
+# tabani imaja gomulur. Degistirince "Deploy Pipeline (Manual)" ile imaji
+# YENIDEN bas, sonra DO'da redeploy et.
 
 # NOT: REDIS — DO panel > Create > Managed Caching (Valkey/Redis) ile ayri
 #   olusturup bu App'e baglayin; uretilen baglanti dizesini app seviyesinde
