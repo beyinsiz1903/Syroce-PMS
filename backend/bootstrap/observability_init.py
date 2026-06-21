@@ -9,10 +9,18 @@ import os
 def init_observability() -> None:
     """Initialize all observability integrations."""
 
-    # Structured logging
-    log_level = os.environ.get("LOG_LEVEL", "INFO")
+    # Structured logging. LOG_LEVEL may arrive lower-case (e.g. "info") from a
+    # deploy platform; getattr(logging, "info") returns the logging.info
+    # FUNCTION (truthy, so the 3-arg getattr default is skipped) and
+    # basicConfig then raises "Level not an integer or a valid string",
+    # crashing every uvicorn worker at import. Normalize to upper-case and fall
+    # back to INFO unless the name resolves to a real int level constant.
+    log_level_name = os.environ.get("LOG_LEVEL", "INFO").strip().upper()
+    log_level = getattr(logging, log_level_name, logging.INFO)
+    if not isinstance(log_level, int):
+        log_level = logging.INFO
     logging.basicConfig(
-        level=getattr(logging, log_level, logging.INFO),
+        level=log_level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%Y-%m-%dT%H:%M:%S",
     )
