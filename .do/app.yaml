@@ -98,6 +98,9 @@ envs:
   - key: STRICT_TENANT_MODE
     value: "true"          # prod boot bunsuz REDDEDER (fail-closed)
     scope: RUN_TIME
+  - key: STRICT_JWT_SECRET
+    value: "1"             # JWT_SECRET'i prod'da ZORUNLU kilar (yoksa boot REDDEDER)
+    scope: RUN_TIME
   - key: SECRETS_PROVIDER
     value: env
     scope: RUN_TIME
@@ -141,6 +144,9 @@ envs:
   #   MONGO_URL                 (Atlas baglanti dizesi — parola icerir!)
   #   REDIS_URL                 (DO Managed Redis baglanti dizesi)
   #   JWT_SECRET                (uzun rastgele)
+  #   CM_MASTER_KEY_CURRENT     (alan-sifreleme ana anahtari, 32+ char — yoksa bazi router'lar yuklenmez)
+  #   VAPID_PUBLIC_KEY          (Web Push P-256 public, base64url — yoksa startup gate KAPALI kalir)
+  #   VAPID_PRIVATE_KEY         (Web Push P-256 private, base64url)
   #   ROOM_QR_SECRET            (uzun rastgele)
   #   FOLIO_FETCH_SECRET        (uzun rastgele)
   #   TWOFA_SECRET              (uzun rastgele)
@@ -151,7 +157,7 @@ envs:
   #   SENTRY_DSN
   # ─ ENTEGRASYON (kullaniyorsaniz) ─
   #   QUICKID_SERVICE_KEY, QUICKID_SETTINGS_ENC_KEY
-  #   CM_ENCRYPTION_KEY, CM_MASTER_KEY_CURRENT, CM_CREDENTIAL_KEY
+  #   CM_ENCRYPTION_KEY, CM_CREDENTIAL_KEY   (CM_MASTER_KEY_CURRENT artik ZORUNLU listesinde)
   #   HOTELRUNNER_WEBHOOK_SECRET
   #   KBS_API_TOKEN
   #   EFATURA_SUPPLIER_VKN
