@@ -36,6 +36,7 @@ ALLOWED_ROOT_FILES = frozenset({
     "ml_trainers.py",
     "optimization_endpoints.py",
     "redis_cache.py",
+    "redis_ssl.py",
     "server.py",
     "startup.py",
     "websocket_server.py",
