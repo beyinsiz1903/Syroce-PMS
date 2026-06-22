@@ -9,6 +9,8 @@ from celery import Celery
 from celery.schedules import crontab
 from dotenv import load_dotenv
 
+from redis_ssl import celery_ssl_conf, normalize_redis_url_for_redis_py
+
 load_dotenv()
 
 # Redis as message broker
@@ -20,6 +22,20 @@ celery_app = Celery(
     broker=REDIS_URL,
     backend=REDIS_URL
 )
+
+# ── Managed Redis TLS (rediss://) ───────────────────────────────────
+# DigitalOcean Managed Caching / Valkey enforces TLS. kombu only opens an SSL
+# broker connection when broker_use_ssl is set, and celery's redis result backend
+# hard-refuses a rediss:// URL unless redis_backend_use_ssl carries ssl_cert_reqs
+# ("A rediss:// URL must have parameter ssl_cert_reqs"). Configure both. Then
+# normalize REDIS_URL in this worker process so the redis-py clients pulled in by
+# task modules (cache, event bus) also connect over TLS without failing cert
+# verification against the managed CA. No-op for plain redis:// (Replit/local).
+_redis_ssl = celery_ssl_conf(REDIS_URL)
+if _redis_ssl:
+    celery_app.conf.broker_use_ssl = _redis_ssl
+    celery_app.conf.redis_backend_use_ssl = _redis_ssl
+    os.environ['REDIS_URL'] = normalize_redis_url_for_redis_py(REDIS_URL)
 
 # ── Logging hardening (secret/PII sanitizer + quiet httpx request URLs) ──
 # Celery hijacks the root logger and installs its own handlers AFTER import, so

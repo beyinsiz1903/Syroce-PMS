@@ -20,6 +20,22 @@ from dotenv import load_dotenv
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
+# ── Redis TLS normalization (managed rediss:// for redis-py clients) ──
+# Managed Redis (DigitalOcean Managed Caching / Valkey) enforces TLS, so the
+# operator-supplied REDIS_URL uses the rediss:// scheme. redis-py's SSLConnection
+# defaults to CERT_REQUIRED and would fail verification against the managed CA
+# (not in the system trust store), silently dropping every redis-py client
+# (cache, auth throttle, event bus) to its in-memory fallback — splitting the
+# event bus from the Celery workers. Normalize the URL once, before any router or
+# module constructs a redis client (cache = CacheManager() and
+# redis_cluster = RedisClusterManager() build their pools at import time). No-op
+# for plain redis:// (Replit/local dev).
+from redis_ssl import normalize_redis_url_for_redis_py  # noqa: E402
+
+_redis_url = os.environ.get("REDIS_URL")
+if _redis_url:
+    os.environ["REDIS_URL"] = normalize_redis_url_for_redis_py(_redis_url)
+
 # ── App factory ─────────────────────────────────────────────────────
 from app import create_app, register_shutdown, register_startup, register_startup_first  # noqa: E402
 
