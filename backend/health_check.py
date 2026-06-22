@@ -3,6 +3,7 @@ Comprehensive Health Check System
 Kubernetes/Docker ready health endpoints
 """
 import logging
+import os
 from datetime import UTC, datetime
 from typing import Any
 
@@ -338,14 +339,39 @@ async def deep_health_check(request: Request):
         overall_ok = False
 
     # ── Redis ──
+    # Resolve the ACTUAL configured client (managed Redis on DO via REDIS_URL,
+    # or the in-memory fallback) from app.state — NOT a hardcoded localhost
+    # socket, which has no Redis in container/managed deployments and produced
+    # a false 503.
+    # In production/staging Redis is mandatory (cache + event bus + auth
+    # invalidation), so a fallback to the in-memory backend is a REAL outage and
+    # MUST gate the readiness probe (overall fail -> 503) instead of hiding it.
+    # In dev/local the in-memory fallback is acceptable and stays non-gating
+    # (status "degraded", overall stays 200).
+    redis_required = os.environ.get("APP_ENV", "development").lower() in ("production", "staging")
     try:
-        r = redis.Redis(host="localhost", port=6379, socket_timeout=2)
-        r.ping()
-        info = r.info("memory")
-        result["redis"] = {
-            "status": "ok",
-            "used_memory": info.get("used_memory_human", "?"),
-        }
+        r, backend = _get_redis(request)
+        if r is None:
+            result["redis"] = {"status": "fail", "error": "no cache client wired"}
+            overall_ok = False
+        else:
+            r.ping()
+            used_memory = "?"
+            try:
+                used_memory = r.info().get("used_memory_human", "?")
+            except Exception:
+                pass
+            if backend == "redis":
+                result["redis"] = {"status": "ok", "backend": backend, "used_memory": used_memory}
+            else:
+                # in-memory fallback: real outage in prod/staging, tolerated in dev
+                result["redis"] = {
+                    "status": "fail" if redis_required else "degraded",
+                    "backend": backend,
+                    "used_memory": used_memory,
+                }
+                if redis_required:
+                    overall_ok = False
     except Exception as e:
         result["redis"] = {"status": "fail", "error": str(e)}
         overall_ok = False
