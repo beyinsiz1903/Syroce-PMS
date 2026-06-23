@@ -210,8 +210,9 @@ XREADGROUP GROUP agency-consumers <consumer_name> COUNT 100 \
   `commission_rate`/`commission_amount` bilgilendirme amaclidir.
 - **Allotment (kontenjan) — opt-in, HARD:** sozlesmede (room_type, donem) icin
   `rooms_allocated` tanimliysa kontenjan ASILAMAZ; dolu ise `409`. Tanimsizsa kontenjan
-  sinirsizdir. Kontenjan ODA bazinda tuketilir (rezervasyon basina 1 oda), gece sayisi
-  bazinda DEGIL.
+  sinirsizdir. Kontenjan klasik OTA mantigiyla ODA-GECE bazinda tuketilir
+  (`rooms_allocated`/`rooms_used` bir oda-gece kotasidir): bir rezervasyon `oda * gece`
+  birim duser, ornegin 3 gecelik tek-oda rezervasyon kontenjandan 3 birim tuketir.
 - **Kredi — opt-in, HARD:** acentede `credit_limit` tanimliysa `current_debt + tutar
   <= credit_limit` saglanmazsa `402`. Tanimsizsa kredi sinirsizdir. Sayaclar yaris
   guvenli (Mongo atomik) artirilir; rezervasyon olusturulamazsa saga ile geri alinir.

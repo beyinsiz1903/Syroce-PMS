@@ -11,8 +11,8 @@ or push an agency past its credit limit.
 Atomicity model (no in-process / Redis lock — those are not crash-safe):
   - ALLOTMENT: a single ``find_one_and_update`` on the contract doc increments the
     matching ``allotments[]`` element's ``rooms_used`` ONLY when the query-level
-    ``$expr`` guard proves ``rooms_used + rooms <= rooms_allocated`` against the
-    document's live state (re-evaluated under Mongo's per-document write lock).
+    ``$expr`` guard proves ``rooms_used + room_nights <= rooms_allocated`` against
+    the document's live state (re-evaluated under Mongo's per-document write lock).
     Guard fail => no match => returns None => reject. No oversell window.
   - CREDIT: a single ``find_one_and_update`` on the agency doc increments
     ``current_debt`` ONLY when ``current_debt + amount <= credit_limit``. Same
@@ -23,14 +23,16 @@ booking; if anything afterwards fails (incl. ``create_booking_atomic`` conflict)
 the caller calls the matching ``release_*`` to roll the counters back. Releases are
 clamped (``>=`` filter) so a counter can never be driven negative.
 
-Allotment is consumed in ROOM units (one B2B reservation = one room => rooms=1),
-consistent with ``rooms_allocated``/``rooms_used`` being a room-count quota and
-with the existing contracted-allotment usage being a per-booking count. It is NOT
-multiplied by nights.
+Allotment is consumed in ROOM-NIGHT units (classic OTA / channel-manager model):
+one B2B reservation consumes ``rooms * nights`` from the matching block, so
+``rooms_allocated``/``rooms_used`` are a room-NIGHTS quota for the (room_type,
+period). A single-room 3-night booking consumes 3. ``nights`` is derived from the
+stay dates inside ``reserve_allotment`` (upstream validates check_out > check_in).
 """
 from __future__ import annotations
 
 import logging
+from datetime import date
 
 from pymongo import ReturnDocument
 
@@ -70,6 +72,17 @@ def _match_allotment(allotments: list[dict], room_type: str, check_in: str, chec
     return None
 
 
+def _nights(check_in: str, check_out: str) -> int:
+    """Number of nights for a ``YYYY-MM-DD`` stay (classic OTA room-night unit).
+
+    ``check_out`` is the departure date, so ``nights = (check_out - check_in).days``.
+    Upstream booking validation already guarantees ``check_out > check_in`` before
+    this guard runs; a malformed date here would (correctly) fail the booking via
+    the caller's saga ``except`` rather than silently bypass the cap.
+    """
+    return (date.fromisoformat(check_out) - date.fromisoformat(check_in)).days
+
+
 async def reserve_allotment(snapshot, room_type: str, check_in: str, check_out: str, rooms: int = 1):
     """Atomically claim ``rooms`` from the matching contract allotment block.
 
@@ -86,6 +99,13 @@ async def reserve_allotment(snapshot, room_type: str, check_in: str, check_out: 
         return None
     if rooms <= 0:
         return None
+    # Classic OTA room-night consumption: a stay claims (rooms * nights) from the
+    # block — rooms_allocated/rooms_used are a room-NIGHTS quota. nights is derived
+    # from the stay dates; upstream booking validation guarantees check_out > check_in.
+    nights = _nights(check_in, check_out)
+    units = rooms * nights
+    if units <= 0:
+        return None
 
     ps = entry.get("period_start")
     pe = entry.get("period_end")
@@ -96,7 +116,8 @@ async def reserve_allotment(snapshot, room_type: str, check_in: str, check_out: 
             "tenant_id": snapshot.tenant_id,
             "status": "approved",
             # Capacity guard re-evaluated under the doc write lock: at least one
-            # element matching (room_type, period) must still have room for `rooms`.
+            # element matching (room_type, period) must still have room for `units`
+            # (room-nights).
             "$expr": {
                 "$gt": [
                     {"$size": {"$filter": {
@@ -107,7 +128,7 @@ async def reserve_allotment(snapshot, room_type: str, check_in: str, check_out: 
                             {"$eq": ["$$a.period_start", ps]},
                             {"$eq": ["$$a.period_end", pe]},
                             {"$lte": [
-                                {"$add": [{"$ifNull": ["$$a.rooms_used", 0]}, rooms]},
+                                {"$add": [{"$ifNull": ["$$a.rooms_used", 0]}, units]},
                                 {"$ifNull": ["$$a.rooms_allocated", 0]},
                             ]},
                         ]},
@@ -116,7 +137,7 @@ async def reserve_allotment(snapshot, room_type: str, check_in: str, check_out: 
                 ]
             },
         },
-        {"$inc": {"allotments.$[elem].rooms_used": rooms}},
+        {"$inc": {"allotments.$[elem].rooms_used": units}},
         array_filters=[{
             "elem.room_type": room_type,
             "elem.period_start": ps,
@@ -139,6 +160,8 @@ async def reserve_allotment(snapshot, room_type: str, check_in: str, check_out: 
         "period_start": ps,
         "period_end": pe,
         "rooms": rooms,
+        "nights": nights,
+        "units": units,
     }
 
 
@@ -146,17 +169,19 @@ async def release_allotment(handle: dict | None) -> None:
     """Compensate a prior ``reserve_allotment`` (clamped so it can't go negative)."""
     if not handle:
         return
-    rooms = handle.get("rooms", 1)
+    # Release the same room-NIGHT units that were reserved (back-compat fallback to
+    # the legacy room-count handle shape if an in-flight pre-upgrade handle exists).
+    units = handle.get("units", handle.get("rooms", 1))
     sysdb = get_system_db()
     try:
         await sysdb.agency_contracts.update_one(
             {"id": handle["contract_id"], "tenant_id": handle["tenant_id"]},
-            {"$inc": {"allotments.$[elem].rooms_used": -rooms}},
+            {"$inc": {"allotments.$[elem].rooms_used": -units}},
             array_filters=[{
                 "elem.room_type": handle["room_type"],
                 "elem.period_start": handle["period_start"],
                 "elem.period_end": handle["period_end"],
-                "elem.rooms_used": {"$gte": rooms},
+                "elem.rooms_used": {"$gte": units},
             }],
         )
     except Exception:  # noqa: BLE001 — compensation must never mask the original error
