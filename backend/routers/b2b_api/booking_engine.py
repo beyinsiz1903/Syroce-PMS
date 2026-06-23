@@ -92,12 +92,22 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from pymongo.errors import DuplicateKeyError
 
 from core.atomic_booking import BookingConflictError, create_booking_atomic
 from core.database import db
 from core.security import _is_super_admin
 from models.schemas import User
+from services.b2b_booking_guards import (
+    GuardRejection,
+    release_allotment,
+    release_credit,
+    reserve_allotment,
+    reserve_credit,
+)
+from services.b2b_partner_contract import build_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -696,16 +706,24 @@ async def b2b_get_rates(
         "rates": rates,
     }
 # ── POST /reservations ──
-@router.post("/reservations")
-async def b2b_create_reservation(
+async def _b2b_create_reservation_impl(
     data: B2BReservationCreate,
     background_tasks: BackgroundTasks,
-    agency: dict = Depends(get_b2b_agency),
-):
-    """Rezervasyon olustur — otomatik PMS'e duser."""
-    tenant_id = agency["tenant_id"]
-    agency_id = agency["agency_id"]
+    tenant_id: str,
+    agency_id: str,
+    agency: dict,
+    idempotency_key: str | None = None,
+) -> dict:
+    """Core B2B reservation creation. Returns the success response dict.
 
+    Wrapped by the route below so optional Idempotency-Key handling stays additive
+    and the legacy (no-header) path is byte-identical to the original behaviour.
+
+    When ``idempotency_key`` is supplied the created booking is stamped with it
+    (``b2b_idempotency_key``) so a post-crash retry that took over an abandoned
+    sentinel can find the existing booking and replay it instead of creating a
+    second one. Additive field, B2B path only (None => legacy, no stamp).
+    """
     try:
         ci = datetime.fromisoformat(data.check_in + "T14:00:00+00:00")
         co = datetime.fromisoformat(data.check_out + "T11:00:00+00:00")
@@ -713,6 +731,18 @@ async def b2b_create_reservation(
         raise HTTPException(status_code=400, detail="Gecersiz tarih formati. YYYY-MM-DD kullanin.")
     if co <= ci:
         raise HTTPException(status_code=400, detail="check_out, check_in'den sonra olmali")
+
+    # Partner contract layer (T002): one consolidated read of the agency's
+    # effective terms. Contract value wins; no-contract agencies fall back to
+    # the legacy commission. Credit/allotment are surfaced read-only here and
+    # HARD-enforced in T003.
+    snapshot = await build_snapshot(tenant_id, agency_id, agency_doc=agency)
+    # Opt-in contract room-type restriction (empty allowed_room_types => no limit).
+    if not snapshot.is_room_type_allowed(data.room_type):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Oda tipi '{data.room_type}' sozlesme kapsaminda degil",
+        )
 
     rooms = await db.rooms.find(
         {"tenant_id": tenant_id, "room_type": data.room_type}, {"_id": 0}
@@ -737,25 +767,8 @@ async def b2b_create_reservation(
     if not available_room:
         raise HTTPException(status_code=409, detail="Secilen tarihler icin musait oda bulunamadi")
 
-    commission_rate = agency.get("commission_rate", 0)
+    commission_rate = snapshot.commission_pct
     agency_name = agency.get("agency_name", "")
-
-    # Create guest
-    guest_id = _uuid()
-    from security.guest_write import encrypt_guest_insert
-    await db.guests.insert_one(encrypt_guest_insert({
-        "id": guest_id,
-        "tenant_id": tenant_id,
-        "name": data.guest_name.strip(),
-        "email": data.guest_email.strip() or f"b2b-{guest_id[:8]}@placeholder.local",
-        "phone": data.guest_phone.strip(),
-        "id_number": "",
-        "vip_status": False,
-        "loyalty_points": 0,
-        "total_stays": 0,
-        "total_spend": 0.0,
-        "created_at": _now_iso(),
-    }))
 
     booking_id = _uuid()
     confirmation_code = f"B2B-{booking_id[:8].upper()}"
@@ -763,44 +776,119 @@ async def b2b_create_reservation(
     total = data.total_amount if data.total_amount > 0 else available_room.get("base_price", 0) * max(nights, 1)
     commission_amount = round(total * commission_rate / 100, 2)
 
-    booking_doc = {
-        "id": booking_id,
-        "tenant_id": tenant_id,
-        "guest_id": guest_id,
-        "room_id": available_room["id"],
-        "room_number": available_room.get("room_number", ""),
-        "room_type": available_room.get("room_type", ""),
-        "check_in": data.check_in + "T14:00:00",
-        "check_out": data.check_out + "T11:00:00",
-        "adults": data.adults,
-        "children": data.children,
-        "guests_count": data.adults + data.children,
-        "status": "confirmed",
-        "payment_status": "pending",
-        "total_amount": total,
-        "balance": total,
-        "channel": "b2b_api",
-        "source_channel": "b2b_api",
-        "agency_id": agency_id,
-        "agency_name": agency_name,
-        "agency_commission_rate": commission_rate,
-        "agency_commission_amount": commission_amount,
-        "confirmation_code": confirmation_code,
-        "special_requests": data.special_requests,
-        "guest_name": data.guest_name.strip(),
-        "guest_email": data.guest_email.strip(),
-        "guest_phone": data.guest_phone.strip(),
-        "origin": "syroce_b2b",
-        "created_at": _now_iso(),
-        "updated_at": _now_iso(),
-    }
-    # v106 architect follow-up (race-safety): direct insert_one bypassed
-    # the room_night_locks atomic guard → double-booking risk on B2B API
-    # bookings. Now routed through create_booking_atomic.
+    # T003: HARD, race-safe allotment + credit reservation BEFORE any persistence.
+    # Opt-in (returns None when uncapped). Saga-compensated (released) if the
+    # booking cannot be completed. GuardRejection => deterministic business reject
+    # (cached failed_final by the idempotency layer; a retry replays it, no double
+    # reserve). Reserve allotment first, then credit; release in reverse on failure.
+    allot_handle = None
+    credit_handle = None
     try:
+        allot_handle = await reserve_allotment(
+            snapshot,
+            available_room.get("room_type", data.room_type),
+            data.check_in,
+            data.check_out,
+        )
+        credit_handle = await reserve_credit(snapshot, total)
+
+        # Create guest
+        guest_id = _uuid()
+        from security.guest_write import encrypt_guest_insert
+        await db.guests.insert_one(encrypt_guest_insert({
+            "id": guest_id,
+            "tenant_id": tenant_id,
+            "name": data.guest_name.strip(),
+            "email": data.guest_email.strip() or f"b2b-{guest_id[:8]}@placeholder.local",
+            "phone": data.guest_phone.strip(),
+            "id_number": "",
+            "vip_status": False,
+            "loyalty_points": 0,
+            "total_stays": 0,
+            "total_spend": 0.0,
+            "created_at": _now_iso(),
+        }))
+
+        booking_doc = {
+            "id": booking_id,
+            "tenant_id": tenant_id,
+            "guest_id": guest_id,
+            "room_id": available_room["id"],
+            "room_number": available_room.get("room_number", ""),
+            "room_type": available_room.get("room_type", ""),
+            "check_in": data.check_in + "T14:00:00",
+            "check_out": data.check_out + "T11:00:00",
+            "adults": data.adults,
+            "children": data.children,
+            "guests_count": data.adults + data.children,
+            "status": "confirmed",
+            "payment_status": "pending",
+            "total_amount": total,
+            "balance": total,
+            "channel": "b2b_api",
+            "source_channel": "b2b_api",
+            "agency_id": agency_id,
+            "agency_name": agency_name,
+            "agency_commission_rate": commission_rate,
+            "agency_commission_amount": commission_amount,
+            "confirmation_code": confirmation_code,
+            "special_requests": data.special_requests,
+            "guest_name": data.guest_name.strip(),
+            "guest_email": data.guest_email.strip(),
+            "guest_phone": data.guest_phone.strip(),
+            "origin": "syroce_b2b",
+            "created_at": _now_iso(),
+            "updated_at": _now_iso(),
+        }
+        if idempotency_key:
+            # Idempotency RECOVER backstop: stamp the key onto the booking so a
+            # post-crash retry (which took over an abandoned sentinel) can find
+            # THIS booking and replay it instead of creating a duplicate. Additive
+            # field, persisted atomically with the booking; B2B path only.
+            booking_doc["b2b_idempotency_key"] = idempotency_key
+        # v106 architect follow-up (race-safety): direct insert_one bypassed
+        # the room_night_locks atomic guard → double-booking risk on B2B API
+        # bookings. Now routed through create_booking_atomic.
         booking_doc = await create_booking_atomic(booking_doc)
+    except GuardRejection as gr:
+        await release_credit(credit_handle)
+        await release_allotment(allot_handle)
+        raise HTTPException(status_code=gr.status_code, detail=gr.detail)
     except BookingConflictError as conflict_err:
+        await release_credit(credit_handle)
+        await release_allotment(allot_handle)
         raise HTTPException(status_code=409, detail=str(conflict_err))
+    except DuplicateKeyError:
+        # Durable idempotency backstop tripped: a concurrent retry under the SAME
+        # Idempotency-Key already created this booking while we were mid-flight
+        # (slow-owner takeover race — the original owner exceeded the processing
+        # lock, this retry took over, found no booking yet, and we collided on
+        # insert). Release the counters WE reserved (the winning request holds its
+        # own), then replay the existing booking instead of surfacing an error or
+        # creating a duplicate. The only unique index this path can violate is
+        # uniq_b2b_booking_idem_key (partial on a string key), so this branch is
+        # unreachable for the keyless legacy path.
+        await release_credit(credit_handle)
+        await release_allotment(allot_handle)
+        existing = (
+            await db.bookings.find_one(
+                {
+                    "tenant_id": tenant_id,
+                    "agency_id": agency_id,
+                    "b2b_idempotency_key": idempotency_key,
+                },
+                {"_id": 0},
+            )
+            if idempotency_key
+            else None
+        )
+        if existing is not None:
+            return _b2b_reservation_response_from_booking(existing)
+        raise
+    except Exception:
+        await release_credit(credit_handle)
+        await release_allotment(allot_handle)
+        raise
 
     # Fire webhook: reservation.created
     res_data = {
@@ -833,6 +921,134 @@ async def b2b_create_reservation(
         },
         "message": f"Rezervasyon olusturuldu: {confirmation_code}",
     }
+
+
+def _b2b_reservation_response_from_booking(b: dict) -> dict:
+    """Rebuild the create-reservation success response from a persisted booking.
+
+    Used ONLY by the idempotency RECOVER path: a prior attempt created the booking
+    but its process crashed before finalizing the sentinel. We replay the same
+    logical result from the stored booking instead of creating a second one
+    (no double-create). check_in/check_out are stored with T-times, so we trim
+    back to the YYYY-MM-DD shape the create response uses.
+    """
+    cc = b.get("confirmation_code", "")
+    return {
+        "ok": True,
+        "reservation": {
+            "id": b.get("id"),
+            "confirmation_code": cc,
+            "status": b.get("status", "confirmed"),
+            "room_type": b.get("room_type", ""),
+            "room_number": b.get("room_number", ""),
+            "check_in": (b.get("check_in") or "")[:10],
+            "check_out": (b.get("check_out") or "")[:10],
+            "guest_name": b.get("guest_name", ""),
+            "total_amount": b.get("total_amount"),
+            "commission_rate": b.get("agency_commission_rate"),
+            "commission_amount": b.get("agency_commission_amount"),
+            "created_at": b.get("created_at"),
+        },
+        "message": f"Rezervasyon olusturuldu: {cc}",
+    }
+
+
+@router.post("/reservations")
+async def b2b_create_reservation(
+    data: B2BReservationCreate,
+    background_tasks: BackgroundTasks,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    agency: dict = Depends(get_b2b_agency),
+):
+    """Rezervasyon olustur — otomatik PMS'e duser.
+
+    Idempotency: istemci `Idempotency-Key` (UUID) basligi gonderirse, ayni istegin
+    tekrari (ornegin timeout sonrasi yeniden deneme) ikinci bir rezervasyon
+    olusturmaz; orijinal yanit aynen dondurulur. Baslik gonderilmezse eski davranis
+    aynen korunur (geriye uyumlu).
+    """
+    tenant_id = agency["tenant_id"]
+    agency_id = agency["agency_id"]
+
+    # Geriye uyumlu yol: Idempotency-Key yoksa eski davranis.
+    if not idempotency_key:
+        return await _b2b_create_reservation_impl(
+            data, background_tasks, tenant_id, agency_id, agency,
+        )
+
+    from services.b2b_booking_idempotency import (
+        begin as _idem_begin,
+        finalize_failure as _idem_fail,
+        finalize_success as _idem_ok,
+    )
+
+    idem = await _idem_begin(tenant_id, agency_id, idempotency_key, data.model_dump())
+    action = idem["action"]
+    if action == "replay":
+        # Orijinal sonucu (basari ya da is-kurali hatasi) aynen don.
+        return JSONResponse(status_code=idem["status_code"], content=idem["body"])
+    if action == "conflict":
+        raise HTTPException(
+            status_code=409,
+            detail="Idempotency-Key daha once farkli bir istek govdesiyle kullanildi",
+        )
+    if action == "in_flight":
+        raise HTTPException(
+            status_code=429,
+            detail="Ayni Idempotency-Key su an isleniyor, lutfen tekrar deneyin",
+            headers={"Retry-After": "2"},
+        )
+
+    if action == "recover":
+        # Onceki bir deneme bu anahtarla bir rezervasyon olusturmus, ancak sentinel'i
+        # "succeeded" olarak isaretleyemeden (proses cokmesi / Mongo hatasi) dusmus
+        # olabilir. Cift-create'i onlemek icin once ayni anahtarla damgalanmis bir
+        # booking var mi diye bak; varsa orijinal sonucu yeniden uret ve don.
+        existing = await db.bookings.find_one(
+            {
+                "tenant_id": tenant_id,
+                "agency_id": agency_id,
+                "b2b_idempotency_key": idempotency_key,
+            },
+            {"_id": 0},
+        )
+        if existing is not None:
+            response = _b2b_reservation_response_from_booking(existing)
+            await _idem_ok(
+                tenant_id, agency_id, idempotency_key, 200, response,
+                booking_id=existing.get("id"),
+            )
+            return response
+        # Damgalanmis booking yok -> onceki deneme create'ten ONCE coktu;
+        # normal create yoluna devam et (asagidaki proceed mantigi).
+
+    # action in ("proceed", "recover-without-existing-booking"): bu istek anahtarin sahibi.
+    try:
+        response = await _b2b_create_reservation_impl(
+            data, background_tasks, tenant_id, agency_id, agency,
+            idempotency_key=idempotency_key,
+        )
+    except HTTPException as he:
+        # Is-kurali 4xx -> kalici (ayni anahtarla yeniden deneme ayni hatayi alir).
+        # Beklenmeyen 5xx -> tekrar denenebilir (sentinel silinir).
+        await _idem_fail(
+            tenant_id, agency_id, idempotency_key,
+            he.status_code, {"ok": False, "detail": he.detail},
+            terminal=(400 <= he.status_code < 500),
+        )
+        raise
+    except Exception:
+        await _idem_fail(
+            tenant_id, agency_id, idempotency_key,
+            500, {"ok": False, "detail": "Sunucu hatasi"}, terminal=False,
+        )
+        raise
+
+    await _idem_ok(
+        tenant_id, agency_id, idempotency_key, 200, response,
+        booking_id=response.get("reservation", {}).get("id"),
+    )
+    return response
 # ── GET /reservations ──
 @router.get("/reservations")
 async def b2b_list_reservations(

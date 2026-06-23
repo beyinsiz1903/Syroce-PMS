@@ -92,8 +92,13 @@ async def authenticate_b2b_agency(x_api_key: str | None, required_scope: str | N
     if not key_doc:
         raise HTTPException(status_code=401, detail="Gecersiz veya devre disi API key")
 
+    # Tenant-scoped agency lookup: agency ids are only unique WITHIN a tenant, so
+    # a tenant-blind {id, status:active} match lets a key for tenant A authenticate
+    # against a colliding active agency record under tenant B (cross-tenant auth /
+    # commission leak). Bind the agency record to the key's own tenant.
     agency = await sysdb.agencies.find_one(
-        {"id": key_doc["agency_id"], "status": "active"}, {"_id": 0}
+        {"id": key_doc["agency_id"], "tenant_id": key_doc["tenant_id"], "status": "active"},
+        {"_id": 0},
     )
     if not agency:
         raise HTTPException(status_code=403, detail="Acente hesabi aktif degil")

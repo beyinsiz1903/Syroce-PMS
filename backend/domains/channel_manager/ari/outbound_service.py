@@ -94,6 +94,15 @@ async def _on_buffer_flush(coalescing_key: str, events: list[ARIChangeEvent]):
     for event in events:
         await repo.insert_ari_event(event.model_dump())
 
+    # T004: best-effort per-agency Redis Streams fanout (Channel B), parallel to
+    # the coalesce/provider pipeline. MUST NOT break ARI — fully swallowed here
+    # AND inside the service (Redis-down => Mongo outbox replayed later).
+    try:
+        from services.b2b_streams import publish_ari_to_agency_streams
+        await publish_ari_to_agency_streams(events)
+    except Exception:  # noqa: BLE001
+        logger.exception("[ARI] B2B stream fanout failed (non-fatal)")
+
     # Coalesce into change sets
     change_sets = coalesce_events(coalescing_key, events, providers)
 
