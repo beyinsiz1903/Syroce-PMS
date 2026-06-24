@@ -26,6 +26,7 @@ from datetime import UTC, datetime, timedelta
 from pymongo.errors import DuplicateKeyError
 
 from core.tenant_db import get_system_db
+from shared_kernel.idempotency import seal_response_body, unseal_response_body
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +168,7 @@ async def begin(tenant_id: str, agency_id: str, key: str, payload: dict) -> dict
             return {
                 "action": "replay",
                 "status_code": existing.get("status_code") or 200,
-                "body": existing.get("response_body") or {},
+                "body": unseal_response_body(existing),
             }
         # status == "processing": maybe stale (owner crashed) -> take over.
         now = _now()
@@ -200,7 +201,8 @@ async def finalize_success(tenant_id, agency_id, key, status_code, body, booking
             {"$set": {
                 "status": "succeeded",
                 "status_code": status_code,
-                "response_body": body,
+                # PII-at-rest: encrypted envelope only, never plaintext.
+                **seal_response_body(body),
                 "booking_id": booking_id,
                 "updated_at": now,
                 "expires_at": now + timedelta(seconds=IDEMPOTENCY_TTL_SECONDS),
@@ -220,7 +222,8 @@ async def finalize_failure(tenant_id, agency_id, key, status_code, body, termina
                 {"$set": {
                     "status": "failed_final",
                     "status_code": status_code,
-                    "response_body": body,
+                    # PII-at-rest: encrypted envelope only, never plaintext.
+                    **seal_response_body(body),
                     "updated_at": now,
                     "expires_at": now + timedelta(seconds=IDEMPOTENCY_TTL_SECONDS),
                 }},

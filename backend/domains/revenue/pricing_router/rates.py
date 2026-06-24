@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from datetime import date as DateType
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -22,6 +22,7 @@ from core.security import (
 from models.enums import CancellationPolicyType, ChannelType, MarketSegment, RateType
 from models.schemas import Package, RatePlan, User
 from modules.pms_core.role_permission_service import require_op  # v92 DW
+from shared_kernel.idempotency import begin_idempotency, get_idempotency_key
 
 logger = logging.getLogger(__name__)
 
@@ -179,9 +180,23 @@ async def list_rate_plans(
 @router.post("/rates/rate-plans", response_model=RatePlan)
 async def create_rate_plan(
     payload: RatePlanCreate,
+    http_request: Request,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v95 DW
 ):
+    # Zero-Bloat: header-gated Idempotency-Key. Without the header this is a
+    # NO-OP and behaviour is byte-identical to before (pilot_drift=0).
+    idem_key = get_idempotency_key(http_request)
+    guard, replay = await begin_idempotency(
+        db,
+        http_request,
+        tenant_id=current_user.tenant_id,
+        scope="rates.rate_plans",
+        payload=payload.model_dump(),
+    )
+    if replay is not None:
+        return replay
+
     data = payload.model_dump()
     data["tenant_id"] = current_user.tenant_id
     # Map base_price to base_rate for the RatePlan model and keep base_price for compatibility
@@ -192,9 +207,24 @@ async def create_rate_plan(
         data["valid_from"] = data["valid_from"].isoformat()
     if data.get("valid_to"):
         data["valid_to"] = data["valid_to"].isoformat()
+    if idem_key:
+        # Crash-retry backstop: a deterministic id makes a re-attempt AFTER the
+        # idempotency sentinel expired converge on the SAME record instead of
+        # inserting a duplicate (there is no unique business index here).
+        data["id"] = str(uuid.uuid5(
+            uuid.NAMESPACE_OID,
+            f"{current_user.tenant_id}:rates.rate_plans:{idem_key}",
+        ))
+        existing = await db.rate_plans.find_one(
+            {"tenant_id": current_user.tenant_id, "id": data["id"]}, {"_id": 0}
+        )
+        if existing is not None:
+            rate_plan = RatePlan(**existing)
+            await guard.complete(rate_plan.model_dump())
+            return rate_plan
     rate_plan = RatePlan(**data)
-    doc = rate_plan.model_dump()
-    await db.rate_plans.insert_one(doc)
+    await db.rate_plans.insert_one(rate_plan.model_dump())
+    await guard.complete(rate_plan.model_dump())
     return rate_plan
 
 
@@ -217,13 +247,42 @@ async def list_packages(credentials: HTTPAuthorizationCredentials = Depends(secu
 @router.post("/rates/packages", response_model=Package)
 async def create_package(
     payload: PackageCreate,
+    http_request: Request,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v95 DW
 ):
+    # Zero-Bloat: header-gated Idempotency-Key. Without the header this is a
+    # NO-OP and behaviour is byte-identical to before (pilot_drift=0).
+    idem_key = get_idempotency_key(http_request)
+    guard, replay = await begin_idempotency(
+        db,
+        http_request,
+        tenant_id=current_user.tenant_id,
+        scope="rates.packages",
+        payload=payload.model_dump(),
+    )
+    if replay is not None:
+        return replay
+
     data = payload.model_dump()
     data["tenant_id"] = current_user.tenant_id
+    if idem_key:
+        # Crash-retry backstop: deterministic id converges a post-sentinel-expiry
+        # retry on the same record (no unique business index here).
+        data["id"] = str(uuid.uuid5(
+            uuid.NAMESPACE_OID,
+            f"{current_user.tenant_id}:rates.packages:{idem_key}",
+        ))
+        existing = await db.packages.find_one(
+            {"tenant_id": current_user.tenant_id, "id": data["id"]}, {"_id": 0}
+        )
+        if existing is not None:
+            package = Package(**existing)
+            await guard.complete(package.model_dump())
+            return package
     package = Package(**data)
     await db.packages.insert_one(package.model_dump())
+    await guard.complete(package.model_dump())
     return package
 
 

@@ -1,11 +1,15 @@
 
 import hashlib
 import json
+import logging
 import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException, Request, status
+from fastapi.encoders import jsonable_encoder
+
+logger = logging.getLogger(__name__)
 
 IDEMPOTENCY_HEADER = "Idempotency-Key"
 
@@ -56,6 +60,96 @@ def ensure_idempotent_request(request: Request, required: bool = True) -> str | 
 
 def _lock_id(tenant_id: str, scope: str, key: str) -> str:
     return hashlib.sha256(f"{tenant_id}:{scope}:{key}".encode()).hexdigest()
+
+
+# ── Response-body PII-at-rest sealing ────────────────────────────────────────
+#
+# The replay cache persists a completed request's response body so a retry with
+# the same Idempotency-Key gets the identical answer. Those bodies can carry
+# guest PII (booking dicts: name/e-mail/phone) and financial detail, so we never
+# store them as plaintext. `seal_response_body` encrypts the WHOLE body as one
+# opaque envelope (whole-blob, NOT field redaction, so replay is byte-faithful);
+# `unseal_response_body` reverses it and dual-reads any legacy plaintext rows
+# written before at-rest sealing existed (those age out via the 24h TTL).
+#
+# These two helpers are the single source of truth and are reused by every
+# writer/reader of an idempotency response body (this module's central
+# complete/claim, the per-domain repositories under modules/*, and the B2B
+# idempotency store) so the guarantee holds everywhere, not just here.
+RESPONSE_BODY_ENC_FIELD = "response_body_enc"
+RESPONSE_BODY_PLAINTEXT_FIELD = "response_body"
+_CRYPTO_ENVELOPE_PREFIXES = ("SYR1:", "aes256gcm:")
+
+
+def _get_crypto_service():
+    try:
+        from core.crypto.service import get_crypto_service
+
+        return get_crypto_service()
+    except Exception:  # pragma: no cover - crypto subsystem import/init failure
+        return None
+
+
+def seal_response_body(response_body: Any) -> dict[str, Any]:
+    """Return the persisted ``$set`` fragment for a response body, PII-encrypted.
+
+    Serialises the body with ``jsonable_encoder`` first (so datetimes/enums/
+    Decimals match the wire shape FastAPI produces on the fresh path, keeping
+    replay faithful), then encrypts the JSON as a single envelope. On success
+    returns ``{RESPONSE_BODY_ENC_FIELD: <envelope>}``.
+
+    Fail-closed: if crypto is unavailable, raises, or hands back a NON-envelope
+    value (the ``CRYPTO_BYPASS_ALLOWED`` break-glass mode returns *plaintext*
+    without raising), we return ``{}`` so plaintext PII is NEVER written. The
+    cost is a degraded replay (an empty body / 409 on a later retry), never a
+    leak. Never raises — some callers run this AFTER the durable write (outside
+    their try/except), so a raise here would 500 an operation that succeeded.
+    """
+    try:
+        crypto = _get_crypto_service()
+        if crypto is None:
+            logger.warning("idempotency: crypto unavailable; response body not cached")
+            return {}
+        blob = json.dumps(
+            jsonable_encoder(response_body),
+            sort_keys=True,
+            default=str,
+            ensure_ascii=False,
+        )
+        cipher = crypto.encrypt(blob)
+    except Exception:
+        logger.warning("idempotency: response body seal failed; not cached")
+        return {}
+    if not isinstance(cipher, str) or not cipher.startswith(_CRYPTO_ENVELOPE_PREFIXES):
+        # Break-glass bypass / misconfig returned plaintext -> refuse to persist.
+        logger.warning("idempotency: crypto returned non-envelope; body not cached")
+        return {}
+    return {RESPONSE_BODY_ENC_FIELD: cipher}
+
+
+def unseal_response_body(doc: dict[str, Any] | None) -> dict[str, Any]:
+    """Recover a replay response body from a stored idempotency row.
+
+    Dual-read: prefers the encrypted envelope; falls back to any legacy
+    plaintext ``response_body`` (rows written before sealing existed); returns
+    ``{}`` when neither is usable (incl. a row completed while crypto was down).
+    Never raises.
+    """
+    if not doc:
+        return {}
+    enc = doc.get(RESPONSE_BODY_ENC_FIELD)
+    if isinstance(enc, str) and enc:
+        try:
+            crypto = _get_crypto_service()
+            if crypto is None:
+                logger.warning("idempotency: crypto unavailable; cannot unseal replay body")
+                return {}
+            return json.loads(crypto.decrypt(enc))
+        except Exception:
+            logger.warning("idempotency: response body unseal failed")
+            return {}
+    legacy = doc.get(RESPONSE_BODY_PLAINTEXT_FIELD)
+    return legacy if isinstance(legacy, dict) else {}
 
 
 async def claim_idempotency(
@@ -115,7 +209,7 @@ async def claim_idempotency(
             if existing_hash is not None and existing_hash != request_hash:
                 return {"status": "mismatch"}
         if existing and existing.get("status") == "completed":
-            return {"status": "replay", "response": existing.get("response_body") or {}}
+            return {"status": "replay", "response": unseal_response_body(existing)}
         return {"status": "in_flight"}
 
 
@@ -126,16 +220,20 @@ async def complete_idempotency(
     response_body: dict[str, Any],
 ) -> None:
     now = datetime.now(UTC)
+    set_fields = {
+        "status": "completed",
+        "completed_at": now.isoformat(),
+        # Push expiry out to the replay-retention window so the cached
+        # response survives client retries but still gets swept eventually.
+        "expires_at": now + timedelta(seconds=IDEMPOTENCY_RETENTION_SECONDS),
+    }
+    # PII-at-rest: store the body only as an encrypted envelope. On crypto
+    # failure `seal_response_body` returns {} (no plaintext written) and the
+    # replay degrades to an empty body rather than leaking.
+    set_fields.update(seal_response_body(response_body))
     await db_handle.idempotency_keys.update_one(
         {"_id": lock_id},
-        {"$set": {
-            "status": "completed",
-            "response_body": response_body,
-            "completed_at": now.isoformat(),
-            # Push expiry out to the replay-retention window so the cached
-            # response survives client retries but still gets swept eventually.
-            "expires_at": now + timedelta(seconds=IDEMPOTENCY_RETENTION_SECONDS),
-        }},
+        {"$set": set_fields},
     )
 
 

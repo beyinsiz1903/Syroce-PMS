@@ -64,6 +64,7 @@ class FolioRepository:
 
         from shared_kernel.idempotency import (
             IDEMPOTENCY_PROCESSING_GRACE_SECONDS,
+            unseal_response_body,
         )
         lock_id = hashlib.sha256(f"{tenant_id}:{scope}:{idempotency_key}".encode()).hexdigest()
         now = datetime.now(UTC)
@@ -85,6 +86,10 @@ class FolioRepository:
             return {"status": "acquired", "document": lock_doc, "lock_id": lock_id}
         except DuplicateKeyError:
             existing = await db.idempotency_keys.find_one({"_id": lock_id}, {"_id": 0})
+            if existing is not None:
+                # Surface a decrypted body so the service's existing
+                # `existing["response_body"]` replay path stays unchanged.
+                existing["response_body"] = unseal_response_body(existing)
             return {"status": "existing", "document": existing or {}, "lock_id": lock_id}
 
     async def complete_idempotency_lock(
@@ -95,7 +100,10 @@ class FolioRepository:
     ) -> None:
         from datetime import timedelta as _td
 
-        from shared_kernel.idempotency import IDEMPOTENCY_RETENTION_SECONDS
+        from shared_kernel.idempotency import (
+            IDEMPOTENCY_RETENTION_SECONDS,
+            seal_response_body,
+        )
         now = datetime.now(UTC)
         await db.idempotency_keys.update_one(
             {"_id": lock_id},
@@ -103,7 +111,8 @@ class FolioRepository:
                 "$set": {
                     "status": "completed",
                     "folio_id": folio_id,
-                    "response_body": response_body,
+                    # PII-at-rest: encrypted envelope only, never plaintext.
+                    **seal_response_body(response_body),
                     "completed_at": now.isoformat(),
                     # Task #81 — extend TTL to retention window on completion.
                     "expires_at": now + _td(seconds=IDEMPOTENCY_RETENTION_SECONDS),
