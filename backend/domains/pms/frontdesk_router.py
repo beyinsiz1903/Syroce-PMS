@@ -10,7 +10,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from common.context import OperationContext
@@ -604,38 +604,51 @@ async def scan_passport(
 
 @router.post("/frontdesk/walk-in-booking")
 async def create_walk_in_booking(
-    request: WalkInBookingRequest,
+    req: WalkInBookingRequest,
+    http_request: Request,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """
     Quick walk-in booking - create guest, booking, and check-in with one click
     """
+    from shared_kernel.idempotency import begin_idempotency
+    # Idempotency-Key request-replay (additive: no-op without the header).
+    guard, replay = await begin_idempotency(
+        db, http_request, tenant_id=current_user.tenant_id,
+        scope="frontdesk.walk_in_booking", payload=req.model_dump(),
+    )
+    if replay is not None:
+        return replay
     try:
         # 1. Check room availability
         room = await db.rooms.find_one({
-            'id': request.room_id,
+            'id': req.room_id,
             'tenant_id': current_user.tenant_id
         })
 
         if not room:
+            # Pre-write validation failure -> release so the key can be retried.
+            await guard.release()
             raise HTTPException(status_code=404, detail="Room not found")
 
         if room.get('status') not in ['available', 'inspected']:
+            # Pre-write validation failure -> release so the key can be retried.
+            await guard.release()
             raise HTTPException(
                 status_code=400,
                 detail=f"Room {room.get('room_number')} is not available (status: {room.get('status')})"
             )
 
         # 2. Create or find guest
-        guest_email = request.guest_email or f"walkin_{uuid.uuid4().hex[:8]}@hotel.local"
+        guest_email = req.guest_email or f"walkin_{uuid.uuid4().hex[:8]}@hotel.local"
 
         # Try to find existing guest by phone or email (dual-read: encrypted
         # _hash_ token OR legacy plaintext for unmigrated rows).
         from security.encrypted_lookup import guest_pii_or_conditions
         existing_guest = await db.guests.find_one({
             'tenant_id': current_user.tenant_id,
-            '$or': guest_pii_or_conditions('phone', request.guest_phone)
+            '$or': guest_pii_or_conditions('phone', req.guest_phone)
                    + guest_pii_or_conditions('email', guest_email),
         })
 
@@ -645,11 +658,11 @@ async def create_walk_in_booking(
             # Create new guest
             new_guest = Guest(
                 tenant_id=current_user.tenant_id,
-                name=request.guest_name,
+                name=req.guest_name,
                 email=guest_email,
-                phone=request.guest_phone,
-                id_number=request.guest_id_number or f"WALKIN-{uuid.uuid4().hex[:8]}",
-                nationality=request.nationality
+                phone=req.guest_phone,
+                id_number=req.guest_id_number or f"WALKIN-{uuid.uuid4().hex[:8]}",
+                nationality=req.nationality
             )
 
             guest_dict = new_guest.model_dump()
@@ -661,32 +674,35 @@ async def create_walk_in_booking(
 
         # 3. Calculate dates and amount
         check_in = datetime.now(UTC).replace(hour=14, minute=0, second=0, microsecond=0)
-        check_out = check_in + timedelta(days=request.nights)
+        check_out = check_in + timedelta(days=req.nights)
 
-        rate = request.rate_per_night or room.get('base_price', 100.0)
-        total_amount = rate * request.nights
+        rate = req.rate_per_night or room.get('base_price', 100.0)
+        total_amount = rate * req.nights
 
         # 4. Create booking
         new_booking = Booking(
             tenant_id=current_user.tenant_id,
             guest_id=guest_id,
-            room_id=request.room_id,
+            room_id=req.room_id,
             check_in=check_in.date().isoformat(),
             check_out=check_out.date().isoformat(),
-            adults=request.adults,
-            children=request.children,
+            adults=req.adults,
+            children=req.children,
             children_ages=[],
-            guests_count=request.adults + request.children,
+            guests_count=req.adults + req.children,
             total_amount=total_amount,
             status=BookingStatus.CONFIRMED,
             channel=ChannelType.DIRECT,
-            special_requests=request.special_requests
+            special_requests=req.special_requests
         )
 
         booking_dict = new_booking.model_dump()
         booking_dict['created_at'] = booking_dict['created_at'].isoformat()
         from core.atomic_booking import BookingConflictError, create_booking_atomic
         try:
+            # Past this point a booking may be durably created; do NOT release the
+            # idempotency slot on later failures (the room-night unique lock is the
+            # duplicate backstop, and the slot's TTL frees a genuinely stuck key).
             await create_booking_atomic(booking_dict)
         except BookingConflictError as e:
             raise HTTPException(status_code=409, detail=str(e))
@@ -708,7 +724,7 @@ async def create_walk_in_booking(
         kbs_notified = False
         kbs_reference = None
         try:
-            real_id = (request.guest_id_number or '').strip()
+            real_id = (req.guest_id_number or '').strip()
             if real_id and not real_id.upper().startswith('WALKIN-'):
                 kbs_reference = str(uuid.uuid4())[:8].upper()
                 kbs_doc = {
@@ -721,10 +737,10 @@ async def create_walk_in_booking(
                     "sent_by": current_user.email,
                     "source": "walk_in_auto",
                     "guest_data": {
-                        "name": request.guest_name,
+                        "name": req.guest_name,
                         "id_number": real_id,
-                        "nationality": request.nationality,
-                        "phone": request.guest_phone,
+                        "nationality": req.nationality,
+                        "phone": req.guest_phone,
                     },
                 }
                 await db.kbs_notifications.insert_one(kbs_doc)
@@ -744,7 +760,7 @@ async def create_walk_in_booking(
                 new_booking.id,
             )
 
-        return {
+        result = {
             'success': True,
             'message': "Walk-in booking created and checked in successfully",
             'booking_id': new_booking.id,
@@ -757,6 +773,8 @@ async def create_walk_in_booking(
             'kbs_notified': kbs_notified,
             'kbs_reference': kbs_reference,
         }
+        await guard.complete(result)
+        return result
 
     except HTTPException:
         raise

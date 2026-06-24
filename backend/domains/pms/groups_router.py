@@ -6,9 +6,10 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from core.database import db
+from shared_kernel.idempotency import begin_idempotency, get_idempotency_key
 from core.security import (
     get_current_user,
 )
@@ -455,10 +456,18 @@ async def get_group_reservations(current_user: User = Depends(get_current_user))
 @router.post("/group-reservations")
 async def create_group_reservation(
     request: CreateGroupReservationRequest,
+    http_request: Request,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Create new group reservation"""
+    # Idempotency-Key request-replay (additive: no-op without the header).
+    guard, replay = await begin_idempotency(
+        db, http_request, tenant_id=current_user.tenant_id,
+        scope="groups.group_reservations", payload=request.model_dump(),
+    )
+    if replay is not None:
+        return replay
     group = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -478,8 +487,14 @@ async def create_group_reservation(
         'created_by': current_user.id
     }
 
-    group_copy = group.copy()
-    await db.group_reservations.insert_one(group_copy)
+    try:
+        group_copy = group.copy()
+        await db.group_reservations.insert_one(group_copy)
+    except Exception:
+        # Single insert failed -> nothing persisted -> safe to release.
+        await guard.release()
+        raise
+    await guard.complete(group)
     return group
 
 
@@ -515,23 +530,48 @@ async def get_group_reservation(
 async def assign_group_rooms(
     group_id: str,
     request: AssignGroupRoomsRequest,
+    http_request: Request,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Assign rooms to group reservation"""
+    # Idempotency-Key request-replay (additive: no-op without the header).
+    guard, replay = await begin_idempotency(
+        db, http_request, tenant_id=current_user.tenant_id,
+        scope=f"groups.assign_rooms:{group_id}", payload=request.model_dump(),
+    )
+    if replay is not None:
+        return replay
+
     room_assignments = request.room_assignments
     group = await db.group_reservations.find_one(
         {'id': group_id, 'tenant_id': current_user.tenant_id}
     )
 
     if not group:
+        # Pre-write validation failure -> release so the key can be retried.
+        await guard.release()
         raise HTTPException(status_code=404, detail="Group reservation not found")
+
+    # Under a key, child booking ids are deterministic so a crash-and-retry
+    # re-creates the SAME bookings (skipped if already present) instead of
+    # duplicating them. Some assignments carry no room_id, so the room-night
+    # unique lock alone cannot backstop those.
+    idem_key = get_idempotency_key(http_request)
 
     created_bookings = []
 
-    for assignment in room_assignments:
+    from core.atomic_booking import BookingConflictError, create_booking_atomic
+    for index, assignment in enumerate(room_assignments):
+        if idem_key:
+            booking_id = str(uuid.uuid5(
+                uuid.NAMESPACE_OID,
+                f"{current_user.tenant_id}:groups.assign_rooms:{group_id}:{idem_key}:{index}",
+            ))
+        else:
+            booking_id = str(uuid.uuid4())
         booking = {
-            'id': str(uuid.uuid4()),
+            'id': booking_id,
             'tenant_id': current_user.tenant_id,
             'group_id': group_id,
             'guest_name': assignment.get('guest_name', group['group_name']),
@@ -548,14 +588,23 @@ async def assign_group_rooms(
             'created_at': datetime.now(UTC).isoformat()
         }
 
-        from core.atomic_booking import BookingConflictError, create_booking_atomic
-        try:
-            await create_booking_atomic(booking)
-        except BookingConflictError as e:
-            raise HTTPException(status_code=409, detail=str(e))
+        # On a keyed retry, skip a child booking that already landed.
+        already = None
+        if idem_key:
+            already = await db.bookings.find_one(
+                {'id': booking_id, 'tenant_id': current_user.tenant_id}, {'_id': 0, 'id': 1}
+            )
+        if already is None:
+            try:
+                await create_booking_atomic(booking)
+            except BookingConflictError as e:
+                # Release only while nothing durable has been written yet.
+                if not created_bookings:
+                    await guard.release()
+                raise HTTPException(status_code=409, detail=str(e))
         created_bookings.append(booking)
 
-    # Update group reservation
+    # Update group reservation (recompute-based -> idempotent on a re-run)
     await db.group_reservations.update_one(
         {'id': group_id},
         {
@@ -566,10 +615,12 @@ async def assign_group_rooms(
         }
     )
 
-    return {
+    result = {
         'message': f'Assigned {len(created_bookings)} rooms to group',
         'bookings': created_bookings
     }
+    await guard.complete(result)
+    return result
 
 
 
@@ -588,10 +639,18 @@ async def get_block_reservations(current_user: User = Depends(get_current_user))
 @router.post("/block-reservations")
 async def create_block_reservation(
     request: CreateBlockReservationRequest,
+    http_request: Request,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Create room block reservation"""
+    # Idempotency-Key request-replay (additive: no-op without the header).
+    guard, replay = await begin_idempotency(
+        db, http_request, tenant_id=current_user.tenant_id,
+        scope="groups.block_reservations", payload=request.model_dump(),
+    )
+    if replay is not None:
+        return replay
     block = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -609,8 +668,14 @@ async def create_block_reservation(
         'created_by': current_user.id
     }
 
-    block_copy = block.copy()
-    await db.block_reservations.insert_one(block_copy)
+    try:
+        block_copy = block.copy()
+        await db.block_reservations.insert_one(block_copy)
+    except Exception:
+        # Single insert failed -> nothing persisted -> safe to release.
+        await guard.release()
+        raise
+    await guard.complete(block)
     return block
 
 
@@ -619,10 +684,19 @@ async def create_block_reservation(
 async def use_block_room(
     block_id: str,
     request: UseBlockRoomRequest,
+    http_request: Request,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Use a room from block reservation"""
+    # Idempotency-Key request-replay (additive: no-op without the header).
+    guard, replay = await begin_idempotency(
+        db, http_request, tenant_id=current_user.tenant_id,
+        scope=f"groups.use_room:{block_id}", payload=request.model_dump(),
+    )
+    if replay is not None:
+        return replay
+
     guest_name = request.guest_name
     guest_email = request.guest_email
     block = await db.block_reservations.find_one(
@@ -630,14 +704,24 @@ async def use_block_room(
     )
 
     if not block:
+        # Pre-write validation failure -> release so the key can be retried.
+        await guard.release()
         raise HTTPException(status_code=404, detail="Block reservation not found")
 
-    if block['rooms_available'] <= 0:
-        raise HTTPException(status_code=400, detail="No rooms available in block")
+    # Under a key, the child booking id is deterministic (this endpoint carries
+    # no room_id, so the room-night unique lock cannot backstop a duplicate).
+    idem_key = get_idempotency_key(http_request)
+    if idem_key:
+        booking_id = str(uuid.uuid5(
+            uuid.NAMESPACE_OID,
+            f"{current_user.tenant_id}:groups.use_room:{block_id}:{idem_key}",
+        ))
+    else:
+        booking_id = str(uuid.uuid4())
 
     # Create booking from block
     booking = {
-        'id': str(uuid.uuid4()),
+        'id': booking_id,
         'tenant_id': current_user.tenant_id,
         'block_id': block_id,
         'guest_name': guest_name,
@@ -650,21 +734,42 @@ async def use_block_room(
         'created_at': datetime.now(UTC).isoformat()
     }
 
-    from core.atomic_booking import BookingConflictError, create_booking_atomic
-    try:
-        await create_booking_atomic(booking.copy())
-    except BookingConflictError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+    # On a keyed retry, skip the booking + counter if it already landed so the
+    # block counter is never double-decremented. The availability check lives
+    # INSIDE this branch so a retry of an already-created booking (whose first
+    # attempt may have decremented the last room before crashing) replays
+    # success instead of falsely rejecting with "no rooms available".
+    already = None
+    if idem_key:
+        already = await db.bookings.find_one(
+            {'id': booking_id, 'tenant_id': current_user.tenant_id}, {'_id': 0, 'id': 1}
+        )
+    if already is None:
+        if block['rooms_available'] <= 0:
+            # Pre-write validation failure (genuinely new attempt, nothing
+            # durable yet) -> release so the key can be retried.
+            await guard.release()
+            raise HTTPException(status_code=400, detail="No rooms available in block")
 
-    # Update block availability
-    await db.block_reservations.update_one(
-        {'id': block_id},
-        {
-            '$inc': {'rooms_used': 1, 'rooms_available': -1}
-        }
-    )
+        from core.atomic_booking import BookingConflictError, create_booking_atomic
+        try:
+            await create_booking_atomic(booking.copy())
+        except BookingConflictError as e:
+            # Nothing durable yet (atomic insert failed) -> safe to release.
+            await guard.release()
+            raise HTTPException(status_code=409, detail=str(e))
 
-    return {'message': 'Room used from block successfully', 'booking': booking}
+        # Update block availability (only on the newly-created path)
+        await db.block_reservations.update_one(
+            {'id': block_id},
+            {
+                '$inc': {'rooms_used': 1, 'rooms_available': -1}
+            }
+        )
+
+    result = {'message': 'Room used from block successfully', 'booking': booking}
+    await guard.complete(result)
+    return result
 
 
 

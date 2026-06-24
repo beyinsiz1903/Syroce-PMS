@@ -4,15 +4,17 @@ Routes for enhanced front desk operations:
 room_move, late_checkout, no_show, walk_in, post_charge, void_charge.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from common.context import OperationContext
 from common.response import from_service_result
+from core.database import db
 from core.security import get_current_user
 from domains.pms.frontdesk_service_v2 import frontdesk_service_v2
 from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 from modules.pms_core.role_permission_service import require_op  # v97 DW
+from shared_kernel.idempotency import begin_idempotency
 
 router = APIRouter(prefix="/api/frontdesk/v2", tags=["Front Desk v2"])
 
@@ -140,17 +142,29 @@ async def process_no_show(req: NoShowRequest, user=Depends(get_current_user),
     return from_service_result(result)
 
 @router.post("/walk-in")
-async def walk_in(req: WalkInRequest, user=Depends(get_current_user),
+async def walk_in(req: WalkInRequest, http_request: Request, user=Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     ctx = OperationContext.from_user(user)
+    # Idempotency-Key request-replay (additive: no-op without the header).
+    guard, replay = await begin_idempotency(
+        db, http_request, tenant_id=user.tenant_id,
+        scope="frontdesk.v2.walk_in", payload=req.model_dump(),
+    )
+    if replay is not None:
+        return replay
     result = await frontdesk_service_v2.walk_in(
         ctx, req.guest_name, req.room_id, req.nights, req.rate_amount,
         req.payment_method, req.guest_email, req.guest_phone, req.id_number
     )
     if not result.ok:
+        # Logical failure with no durable booking -> release so the same key
+        # can be retried.
+        await guard.release()
         raise HTTPException(status_code=400, detail=from_service_result(result))
-    return from_service_result(result)
+    response = from_service_result(result)
+    await guard.complete(response)
+    return response
 
 @router.post("/post-charge")
 async def post_charge(req: PostChargeRequest, user=Depends(get_current_user),

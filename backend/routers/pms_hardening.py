@@ -229,9 +229,17 @@ async def api_room_upgrade(req: RoomUpgradeRequest, current_user: User = Depends
     return result
 
 @router.post("/walk-in", tags=["front-desk"])
-async def api_walk_in(req: WalkInRequest, current_user: User = Depends(get_current_user)):
+async def api_walk_in(req: WalkInRequest, http_request: Request, current_user: User = Depends(get_current_user)):
     """Create a walk-in reservation with immediate check-in."""
+    from shared_kernel.idempotency import begin_idempotency
     perm_svc.enforce_permission(current_user.role, "walk_in")
+    # Idempotency-Key request-replay (additive: no-op without the header).
+    guard, replay = await begin_idempotency(
+        db, http_request, tenant_id=current_user.tenant_id,
+        scope="pms_core.walk_in", payload=req.model_dump(),
+    )
+    if replay is not None:
+        return replay
     guest_data = {
         "name": req.guest_name,
         "phone": req.guest_phone,
@@ -241,7 +249,11 @@ async def api_walk_in(req: WalkInRequest, current_user: User = Depends(get_curre
     }
     result = await front_desk.walk_in(current_user.tenant_id, guest_data, req.room_id, req.nights, req.rate, current_user.id, current_user.name)
     if not result["success"]:
+        # Logical failure with no durable booking -> release so the same key
+        # can be retried.
+        await guard.release()
         raise HTTPException(status_code=400, detail=result)
+    await guard.complete(result)
     return result
 
 @router.post("/cancel", tags=["reservation"])

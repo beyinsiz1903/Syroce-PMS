@@ -11,7 +11,7 @@ Endpoints for managing booking holds with automatic TTL-based expiry.
 """
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from core.security import get_current_user
@@ -40,11 +40,20 @@ class HoldReleaseRequest(BaseModel):
 
 
 @router.post("")
-async def create_hold(req: HoldCreateRequest, current_user=Depends(get_current_user),
+async def create_hold(req: HoldCreateRequest, http_request: Request, current_user=Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Create a temporary hold on room nights with automatic TTL expiry."""
     from core.booking_hold_service import create_booking_hold
+    from core.database import db
+    from shared_kernel.idempotency import begin_idempotency
+    # Idempotency-Key request-replay (additive: no-op without the header).
+    guard, replay = await begin_idempotency(
+        db, http_request, tenant_id=current_user.tenant_id,
+        scope=f"booking_holds.create:{req.booking_id}", payload=req.model_dump(),
+    )
+    if replay is not None:
+        return replay
     result = await create_booking_hold(
         tenant_id=current_user.tenant_id,
         booking_id=req.booking_id,
@@ -54,20 +63,35 @@ async def create_hold(req: HoldCreateRequest, current_user=Depends(get_current_u
         ttl_minutes=req.ttl_minutes,
     )
     if not result.get("success"):
+        # No durable hold -> release so the same key can be retried.
+        await guard.release()
         raise HTTPException(status_code=409, detail=result.get("error", "Hold failed"))
+    await guard.complete(result)
     return result
 
 
 @router.post("/confirm")
-async def confirm_hold(req: HoldConfirmRequest, current_user=Depends(get_current_user),
+async def confirm_hold(req: HoldConfirmRequest, http_request: Request, current_user=Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Convert a hold to a confirmed booking lock (remove TTL)."""
     from core.booking_hold_service import confirm_hold as do_confirm
+    from core.database import db
+    from shared_kernel.idempotency import begin_idempotency
+    # Idempotency-Key request-replay (additive: no-op without the header).
+    # confirm is naturally idempotent (removes TTL); the guard adds replay-cache
+    # of the exact response and double-submit serialization.
+    guard, replay = await begin_idempotency(
+        db, http_request, tenant_id=current_user.tenant_id,
+        scope=f"booking_holds.confirm:{req.booking_id}", payload=req.model_dump(),
+    )
+    if replay is not None:
+        return replay
     result = await do_confirm(
         tenant_id=current_user.tenant_id,
         booking_id=req.booking_id,
     )
+    await guard.complete(result)
     return result
 
 

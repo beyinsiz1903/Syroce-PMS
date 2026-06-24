@@ -1,5 +1,6 @@
 
 import hashlib
+import json
 import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -63,6 +64,7 @@ async def claim_idempotency(
     tenant_id: str,
     scope: str,
     idempotency_key: str,
+    request_hash: str | None = None,
 ) -> dict[str, Any]:
     """Atomically claim an idempotency slot.
 
@@ -71,6 +73,11 @@ async def claim_idempotency(
       - {"status": "replay", "response": {...}} if the same key already
         completed (caller should return the cached response verbatim)
       - {"status": "in_flight"} if another request is still processing the key
+      - {"status": "mismatch"} if the SAME key was already claimed with a
+        DIFFERENT ``request_hash`` (caller should reject with 409). Only ever
+        returned when the caller supplies ``request_hash``; legacy callers that
+        omit it (e.g. folio mutations) never see this branch, so their
+        behaviour is byte-identical to before this parameter existed.
 
     Uses MongoDB unique-on-_id semantics on `idempotency_keys` to serialize
     concurrent claims without a transaction. Callers MUST follow up with
@@ -92,11 +99,21 @@ async def claim_idempotency(
         # slot expires after the short grace window so retries aren't blocked.
         "expires_at": now + timedelta(seconds=IDEMPOTENCY_PROCESSING_GRACE_SECONDS),
     }
+    if request_hash is not None:
+        doc["request_hash"] = request_hash
     try:
         await db_handle.idempotency_keys.insert_one(doc)
         return {"status": "acquired", "lock_id": lock_id}
     except DuplicateKeyError:
         existing = await db_handle.idempotency_keys.find_one({"_id": lock_id}, {"_id": 0})
+        # Payload-mismatch guard: only when THIS caller supplied a hash AND the
+        # stored slot carries a (different) hash. Never trips for legacy callers
+        # that pass no hash, and never trips against a legacy slot with no stored
+        # hash — keeping older scopes backward compatible.
+        if existing and request_hash is not None:
+            existing_hash = existing.get("request_hash")
+            if existing_hash is not None and existing_hash != request_hash:
+                return {"status": "mismatch"}
         if existing and existing.get("status") == "completed":
             return {"status": "replay", "response": existing.get("response_body") or {}}
         return {"status": "in_flight"}
@@ -130,6 +147,116 @@ async def release_idempotency(db_handle, *, lock_id: str, error: str | None = No
     again with the same key"; keeping a 'failed' marker would block retries.
     """
     await db_handle.idempotency_keys.delete_one({"_id": lock_id})
+
+
+# ── High-level request-replay guard (header-gated, additive) ─────────────────
+#
+# claim/complete/release above are the low-level primitives (used inline by the
+# folio mutation endpoints). `begin_idempotency` packages them into the canonical
+# request-replay flow so reservation-creation endpoints can adopt it uniformly:
+#
+#   guard, replay = await begin_idempotency(db, request, tenant_id=..., scope=...,
+#                                           payload=body.model_dump())
+#   if replay is not None:
+#       return replay
+#   try:
+#       result = ...                      # do the work
+#       await guard.complete(result)
+#       return result
+#   except HTTPException:
+#       await guard.release()             # ONLY safe before the first durable write
+#       raise
+#
+# The whole thing is a NO-OP when the request carries no Idempotency-Key header:
+# `guard.active` is False, `complete`/`release` do nothing, and `replay` is None,
+# so the caller falls through to its existing, byte-identical behaviour.
+
+def build_request_hash(payload: Any) -> str:
+    """Stable SHA-256 of a request payload for the payload-mismatch guard.
+
+    Canonicalises via sorted-key JSON (``default=str`` so dates/Decimals/enums
+    serialise) so semantically-equal bodies hash equal and a reused key with a
+    different body is detected. Returns the empty-dict hash for ``None``.
+    """
+    canonical = json.dumps(payload if payload is not None else {},
+                           sort_keys=True, default=str, ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+class _IdempotencyGuard:
+    """Handle returned by `begin_idempotency`.
+
+    When inactive (no header) `lock_id` is None and complete/release are no-ops.
+    """
+
+    __slots__ = ("_db", "lock_id", "_closed")
+
+    def __init__(self, db_handle, lock_id: str | None):
+        self._db = db_handle
+        self.lock_id = lock_id
+        self._closed = False
+
+    @property
+    def active(self) -> bool:
+        return self.lock_id is not None
+
+    async def complete(self, response_body: Any) -> None:
+        # Only cache dict responses (BSON-storable, replayable verbatim).
+        if self.lock_id and not self._closed and isinstance(response_body, dict):
+            await complete_idempotency(self._db, lock_id=self.lock_id, response_body=response_body)
+            self._closed = True
+
+    async def release(self, error: str | None = None) -> None:
+        if self.lock_id and not self._closed:
+            await release_idempotency(self._db, lock_id=self.lock_id, error=error)
+            self._closed = True
+
+
+async def begin_idempotency(
+    db_handle,
+    request: Request,
+    *,
+    tenant_id: str,
+    scope: str,
+    payload: Any = None,
+) -> tuple[_IdempotencyGuard, dict[str, Any] | None]:
+    """Begin a header-gated request-replay flow.
+
+    Returns ``(guard, replay)``:
+      - No Idempotency-Key header  -> (inactive guard, None): caller proceeds normally.
+      - Key seen, first time       -> (active guard, None): caller does the work then
+                                       calls ``guard.complete(result)``.
+      - Key seen, already completed-> (inactive guard, cached_response): caller returns it.
+
+    Raises 409 when another request with the same key is still in flight, or when
+    the same key was already used with a different ``payload`` (mismatch).
+    """
+    key = get_idempotency_key(request)
+    if not key:
+        return _IdempotencyGuard(db_handle, None), None
+
+    request_hash = build_request_hash(payload) if payload is not None else None
+    claim = await claim_idempotency(
+        db_handle,
+        tenant_id=tenant_id,
+        scope=scope,
+        idempotency_key=key,
+        request_hash=request_hash,
+    )
+    claim_status = claim.get("status")
+    if claim_status == "replay":
+        return _IdempotencyGuard(db_handle, None), claim.get("response") or {}
+    if claim_status == "in_flight":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ayni Idempotency-Key ile baska bir istek isleniyor",
+        )
+    if claim_status == "mismatch":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Idempotency key already used with a different payload",
+        )
+    return _IdempotencyGuard(db_handle, claim["lock_id"]), None
 
 
 # ── Short-window auto-dedup (server-side anti-double-submit) ──────────────────

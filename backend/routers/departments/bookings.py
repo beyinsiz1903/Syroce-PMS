@@ -17,12 +17,13 @@ logger = logging.getLogger(__name__)
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer
 
 from core.atomic_booking import BookingConflictError, assign_room_atomic
 from core.database import db
 from core.security import get_current_user
+from shared_kernel.idempotency import begin_idempotency, get_idempotency_key
 from models.schemas import User
 from modules.pms_core.role_permission_service import RolePermissionService
 
@@ -294,22 +295,41 @@ async def get_available_rooms_for_booking(
     }
 # ── POST /bookings/walk-in-quick ──
 @router.post("/bookings/walk-in-quick")
-async def create_walk_in_booking(data: dict, current_user: User = Depends(get_current_user)):
+async def create_walk_in_booking(data: dict, http_request: Request, current_user: User = Depends(get_current_user)):
     """Quick walk-in booking creation"""
     _enforce(current_user.role, "walk_in")  # Bug CU
-    booking_id = str(uuid.uuid4())
-    guest_id = str(uuid.uuid4())
 
-    # Create guest
+    # Idempotency-Key request-replay (additive: no-op without the header).
+    guard, replay = await begin_idempotency(
+        db, http_request, tenant_id=current_user.tenant_id,
+        scope="departments.walk_in_quick", payload=data,
+    )
+    if replay is not None:
+        return replay
+
+    booking_id = str(uuid.uuid4())
+    # Deterministic guest id under an Idempotency-Key so a crash-and-retry reuses
+    # the same guest instead of orphaning a new one (mirrors pms quick-booking).
+    idem_key = get_idempotency_key(http_request)
+    if idem_key:
+        guest_id = str(uuid.uuid5(uuid.NAMESPACE_OID, f"{current_user.tenant_id}:walkin-quick:{idem_key}"))
+    else:
+        guest_id = str(uuid.uuid4())
+
+    # Create guest (find-or-insert so a deterministic retry doesn't duplicate it)
     from security.guest_write import encrypt_guest_insert
-    await db.guests.insert_one(encrypt_guest_insert({
-        'id': guest_id,
-        'tenant_id': current_user.tenant_id,
-        'name': data['guest_name'],
-        'phone': data['guest_phone'],
-        'email': data.get('guest_email'),
-        'created_at': datetime.now(UTC).isoformat()
-    }))
+    existing_guest = await db.guests.find_one(
+        {'id': guest_id, 'tenant_id': current_user.tenant_id}, {'_id': 0, 'id': 1}
+    )
+    if existing_guest is None:
+        await db.guests.insert_one(encrypt_guest_insert({
+            'id': guest_id,
+            'tenant_id': current_user.tenant_id,
+            'name': data['guest_name'],
+            'phone': data['guest_phone'],
+            'email': data.get('guest_email'),
+            'created_at': datetime.now(UTC).isoformat()
+        }))
 
     # Find available room
     available_room = await db.rooms.find_one({
@@ -319,6 +339,9 @@ async def create_walk_in_booking(data: dict, current_user: User = Depends(get_cu
     })
 
     if not available_room:
+        # No durable booking yet (guest is deterministic/reused) -> release so
+        # the same key can be retried once a room frees up.
+        await guard.release()
         raise HTTPException(status_code=400, detail='No rooms available')
 
     # Create booking (atomic overbooking check)
@@ -337,6 +360,8 @@ async def create_walk_in_booking(data: dict, current_user: User = Depends(get_cu
             'created_at': datetime.now(UTC).isoformat()
         })
     except BookingConflictError as e:
+        # Atomic insert failed -> no booking persisted -> safe to release.
+        await guard.release()
         # Structured 409 detail so frontend conflict dialog can render
         # (mirrors create_reservation_service / multi-room handler).
         raise HTTPException(status_code=409, detail={
@@ -350,4 +375,6 @@ async def create_walk_in_booking(data: dict, current_user: User = Depends(get_cu
             },
         })
 
-    return {'booking_id': booking_id, 'room_number': available_room['room_number']}
+    result = {'booking_id': booking_id, 'room_number': available_room['room_number']}
+    await guard.complete(result)
+    return result
