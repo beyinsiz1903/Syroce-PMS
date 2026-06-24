@@ -565,6 +565,17 @@ async def create_tenant(
         tenant_dict['channel_manager_provider'] = payload.channel_manager_provider
     await sys_db.tenants.insert_one(tenant_dict)
 
+    # B2B connect code: yeni otel icin otele ozel baglanti kodu uret (Secenek B
+    # oto-saglama). Best-effort — kod uretimi otel kurulumunu engellemez.
+    connect_code_raw = None
+    try:
+        from routers.b2b_api._provisioning import ensure_connect_code_for_tenant
+        _cc = await ensure_connect_code_for_tenant(sys_db, new_tenant.id)
+        if _cc:
+            connect_code_raw = _cc.get("connect_code")
+    except Exception as _cc_err:
+        logger.warning(f"B2B connect code uretilemedi tenant={new_tenant.id}: {_cc_err}")
+
     # Create admin user for this tenant
     hashed_password = hash_password(payload.password)
 
@@ -589,6 +600,8 @@ async def create_tenant(
         "message": "Hotel created successfully",
         "tenant_id": new_tenant.id,
         "user_id": new_user.id,
+        "hotel_id": new_hotel_id,
+        "b2b_connect_code": connect_code_raw,
         "subscription_start": start_date.isoformat(),
         "subscription_end": end_date.isoformat() if end_date else "Unlimited",
         "subscription_days": payload.subscription_days or "Unlimited"

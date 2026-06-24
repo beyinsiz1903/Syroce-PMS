@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from .api_keys import router as _api_keys_r
 from .booking_engine import router as _booking_engine_r
+from .connect_requests import router as _connect_requests_r
 from .folio import router as _folio_r
 from .groups import router as _groups_r
 from .guest_journey import router as _guest_journey_r
@@ -20,6 +21,7 @@ from .webhooks import router as _webhooks_r
 
 router = APIRouter()
 router.include_router(_api_keys_r)
+router.include_router(_connect_requests_r)
 router.include_router(_booking_engine_r)
 router.include_router(_webhooks_r)
 router.include_router(_guests_r)

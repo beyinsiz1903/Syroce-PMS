@@ -88,7 +88,6 @@ Webhooks — API Key Auth:
 """
 import hashlib
 import logging
-import secrets
 import uuid
 from datetime import UTC, datetime
 
@@ -101,6 +100,7 @@ from core.tenant_db import set_tenant_context
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v101 DW
 
+from ._provisioning import mint_agency_api_key  # shared key issuance (Seçenek B)
 from ._scope import normalize_scopes  # Task #174 — per-subrouter scope
 
 logger = logging.getLogger(__name__)
@@ -557,26 +557,11 @@ async def create_api_key(
     if existing:
         raise HTTPException(status_code=409, detail="Bu acente icin zaten aktif bir API key var. Yenilemek icin regenerate endpoint'ini kullanin.")
 
-    # Generate key: syroce_b2b_{random}
-    raw_key = f"syroce_b2b_{secrets.token_urlsafe(32)}"
-    key_hash = _hash_api_key(raw_key)
-
-    key_doc = {
-        "id": _uuid(),
-        "tenant_id": tenant_id,
-        "agency_id": agency_id,
-        "agency_name": agency.get("name", ""),
-        "key_hash": key_hash,
-        "key_prefix": raw_key[:16] + "...",
-        "scopes": normalized_scopes,
-        "is_active": True,
-        "usage_count": 0,
-        "created_at": _now_iso(),
-        "created_by": current_user.id,
-        "last_used_at": None,
-    }
-    await db.agency_api_keys.insert_one(key_doc)
-    key_doc.pop("_id", None)
+    # Generate + persist via the shared mint helper (single source of truth
+    # also used by the B2B connect-request approval flow).
+    raw_key, key_doc = await mint_agency_api_key(
+        db, tenant_id, agency, normalized_scopes, current_user.id
+    )
 
     return {
         "api_key": raw_key,
@@ -662,26 +647,10 @@ async def regenerate_api_key(
         {"$set": {"is_active": False, "revoked_at": _now_iso(), "revoked_by": current_user.id}},
     )
 
-    # Generate new key
-    raw_key = f"syroce_b2b_{secrets.token_urlsafe(32)}"
-    key_hash = _hash_api_key(raw_key)
-
-    key_doc = {
-        "id": _uuid(),
-        "tenant_id": tenant_id,
-        "agency_id": agency_id,
-        "agency_name": agency.get("name", ""),
-        "key_hash": key_hash,
-        "key_prefix": raw_key[:16] + "...",
-        "scopes": preserved_scopes,
-        "is_active": True,
-        "usage_count": 0,
-        "created_at": _now_iso(),
-        "created_by": current_user.id,
-        "last_used_at": None,
-    }
-    await db.agency_api_keys.insert_one(key_doc)
-    key_doc.pop("_id", None)
+    # Generate new key via the shared mint helper (preserves prior scopes).
+    raw_key, key_doc = await mint_agency_api_key(
+        db, tenant_id, agency, preserved_scopes, current_user.id
+    )
 
     return {
         "api_key": raw_key,

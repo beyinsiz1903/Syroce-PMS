@@ -266,6 +266,36 @@ async def ensure_performance_indexes():
          [("tenant_id", 1), ("outlet_id", 1), ("table_number", 1)],
          "idx_pos_txn_open_tab",
          {"partialFilterExpression": {"status": "open"}}),
+        # B2B agency auto-provisioning (Seçenek B / connect-request approval).
+        #   - b2b_connect_codes.code_hmac UNIQUE: fast tenant resolution from a
+        #     hashed connect code (lookup must be O(1), not a scan).
+        #   - b2b_connection_requests partial-unique (tenant, agency_name_lower)
+        #     {status:pending}: at most one open pending request per agency name.
+        #   - expires_at TTL: 30-day request record retention sweep.
+        ("b2b_connect_codes", [("code_hmac", 1)],
+         "ux_b2b_connect_code_hmac", {"unique": True}),
+        ("b2b_connect_codes", [("tenant_id", 1), ("is_active", 1)],
+         "idx_b2b_connect_code_tenant", {}),
+        ("b2b_connection_requests",
+         [("tenant_id", 1), ("status", 1), ("created_at", -1)],
+         "idx_b2b_conn_req_tenant_status", {}),
+        ("b2b_connection_requests", [("tenant_id", 1), ("agency_name_lower", 1)],
+         "ux_b2b_conn_req_pending",
+         {"unique": True, "partialFilterExpression": {"status": "pending"}}),
+        ("b2b_connection_requests",
+         [("tenant_id", 1), ("agency_platform_request_id", 1)],
+         "idx_b2b_conn_req_idem",
+         {"partialFilterExpression": {"agency_platform_request_id": {"$exists": True}}}),
+        ("b2b_connection_requests", [("expires_at", 1)],
+         "idx_b2b_conn_req_ttl", {"expireAfterSeconds": 0}),
+        # At most one ACTIVE API key per (tenant, agency): a DB-level backstop so
+        # two concurrent approvals for the same brand-new agency can never both
+        # mint an active key. The approve handler catches the DuplicateKeyError and
+        # connects without minting a second key. Best-effort build (legacy dup
+        # actives won't crash boot); the in-handler claim is the primary guard.
+        ("agency_api_keys", [("tenant_id", 1), ("agency_id", 1)],
+         "ux_b2b_agency_api_key_active",
+         {"unique": True, "partialFilterExpression": {"is_active": True}}),
     ]
     for coll_name, keys, name, kwargs in indexes:
         try:
