@@ -41,3 +41,9 @@ id = "Oao2p96ZkLte1f-QRmZTB"
 uri = "file://docs/drill_reports/20260514_stress_f8a_frontoffice_folio_hk.md"
 type = "text"
 title = "F8A Stress Drill Report — Front Office + Folio + Housekeeping (2026-05-14)"
+
+[[outputs]]
+id = "rTFaKYAEkkreI1EdyG2aY"
+uri = "file://docs/B2B_AGENCY_APP_PROMPT.md"
+type = "text"
+title = "Acente Uygulaması Görev Promptu (Senaryo B) — eksiksiz, kırpılamaz"
