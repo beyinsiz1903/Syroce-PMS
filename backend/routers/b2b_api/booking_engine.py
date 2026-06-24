@@ -978,7 +978,11 @@ async def b2b_create_reservation(
 
     from services.b2b_booking_idempotency import (
         begin as _idem_begin,
+    )
+    from services.b2b_booking_idempotency import (
         finalize_failure as _idem_fail,
+    )
+    from services.b2b_booking_idempotency import (
         finalize_success as _idem_ok,
     )
 
