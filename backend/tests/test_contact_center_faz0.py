@@ -29,9 +29,10 @@ from domains.admin.subscription_models import (
 from domains.contact_center.provider import (
     CommunicationProvider,
     MockProvider,
+    WhatsAppCloudProvider,
     get_communication_provider,
 )
-from domains.contact_center.router import _CONVERSATION_PROJECTION
+from domains.contact_center.read_models import CONVERSATION_DTO_KEYS
 from models.enums import (
     CallStatus,
     ContactCenterChannel,
@@ -97,11 +98,21 @@ def test_pii_is_only_present_in_encrypted_or_reference_form():
     assert "recording_url" not in call
 
 
-def test_list_projection_excludes_all_pii_and_ciphertext():
-    for hidden in ("caller_id_enc", "caller_id_hash", "caller_display_name_enc"):
-        assert _CONVERSATION_PROJECTION.get(hidden) == 0, hidden
-    # _id Mongo iç alanı da dışarı verilmez.
-    assert _CONVERSATION_PROJECTION.get("_id") == 0
+def test_list_dto_allowlist_excludes_all_pii_and_ciphertext():
+    # Faz 1: liste ucu artık projection yerine allowlist DTO kullanır
+    # (read_models.conversation_to_dto). Allowlist hiçbir şifreli/blind-index/
+    # Mongo iç alanını dışarı vermemeli — garanti aynı, mekanizma değişti.
+    for k in CONVERSATION_DTO_KEYS:
+        assert not k.endswith("_enc"), k
+        assert "_hash" not in k, k
+        assert k != "_id", k
+    for forbidden in (
+        "caller_id_enc",
+        "caller_id_hash",
+        "caller_display_name_enc",
+        "_id",
+    ):
+        assert forbidden not in CONVERSATION_DTO_KEYS, forbidden
 
 
 # ── 2. Mock sağlayıcı fail-closed ────────────────────────────────────
@@ -117,10 +128,13 @@ def test_mock_provider_send_is_fail_closed():
     assert res["status"] == "not_configured"
 
 
-def test_unknown_provider_falls_back_to_mock_not_error():
-    # Yapılandırılmamış/bilinmeyen sağlayıcı sessizce mock'a düşer (fail-closed),
-    # asla gerçek transport gibi davranmaz.
-    assert isinstance(get_communication_provider("whatsapp"), MockProvider)
+def test_known_whatsapp_resolves_real_provider_unknown_falls_back_to_mock():
+    # Faz 1: "whatsapp" artık gerçek (fail-closed) WhatsAppCloudProvider'a çözülür.
+    assert isinstance(get_communication_provider("whatsapp"), WhatsAppCloudProvider)
+    assert isinstance(
+        get_communication_provider("whatsapp_cloud"), WhatsAppCloudProvider
+    )
+    # Bilinmeyen anahtar HÂLÂ sessizce gerçek transport gibi davranmaz — mock'a düşer.
     assert isinstance(get_communication_provider("does-not-exist"), MockProvider)
 
 

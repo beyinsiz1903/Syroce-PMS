@@ -30,6 +30,10 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
+from domains.contact_center.whatsapp_ingest import (
+    ingest_whatsapp_inbound,
+    sync_whatsapp_status,
+)
 from modules.messaging.models import ConsentStatus
 
 logger = logging.getLogger(__name__)
@@ -174,22 +178,31 @@ async def receive_webhook(request: Request) -> dict[str, Any]:
 
             now_iso = datetime.now(UTC).isoformat()
 
+            # Meta contacts[]: wa_id -> profile.name (görünen ad; Contact Center
+            # köprüsünde şifrelenir, burada persist EDİLMEZ).
+            contacts_map: dict[str, str] = {}
+            for c in value.get("contacts", []) or []:
+                wa_id = c.get("wa_id", "")
+                name = (c.get("profile") or {}).get("name", "")
+                if wa_id and name:
+                    contacts_map[wa_id] = name
+
             # 1) Inbound text/media messages — idempotent upsert by (tenant_id, wa_message_id)
             for msg in value.get("messages", []) or []:
                 wa_msg_id = msg.get("id", "")
                 if not wa_msg_id:
                     logger.warning("WhatsApp inbound: missing message id; skipping")
                     continue
+                # PII sertleştirme: açık-metin gönderen/gövde/ham yük artık
+                # wa_inbound_messages'a YAZILMAZ (bu alanların tüketicisi yok).
+                # Şifreli kopyalar Contact Center köprüsünde tutulur.
                 doc = {
                     "tenant_id": tenant_id,
                     "provider_type": "whatsapp",
                     "direction": "inbound",
                     "wa_message_id": wa_msg_id,
-                    "from": msg.get("from", ""),
                     "timestamp": msg.get("timestamp", ""),
                     "type": msg.get("type", ""),
-                    "text": (msg.get("text") or {}).get("body", ""),
-                    "raw": msg,
                     "phone_number_id": phone_number_id,
                 }
                 try:
@@ -231,6 +244,20 @@ async def receive_webhook(request: Request) -> dict[str, Any]:
                 except Exception:
                     logger.exception("WhatsApp consent upsert failed")
 
+                # Contact Center köprüsü: gelen mesajı şifreli omnichannel
+                # modele yansıt. ingest zaten kendi içinde fail-safe; webhook'un
+                # 200-fast sözleşmesini korumak için ayrıca sarmalıyoruz.
+                try:
+                    await ingest_whatsapp_inbound(
+                        db,
+                        tenant_id=tenant_id,
+                        phone_number_id=phone_number_id,
+                        wa_message=msg,
+                        contact_name=contacts_map.get(msg.get("from", "")),
+                    )
+                except Exception:
+                    logger.exception("contact-center ingest bridge failed (suppressed)")
+
             # 2) Status callbacks (sent → delivered → read → failed)
             for st in value.get("statuses", []) or []:
                 wa_msg_id = st.get("id", "")
@@ -261,5 +288,18 @@ async def receive_webhook(request: Request) -> dict[str, Any]:
                     processed += 1
                 except Exception:
                     logger.exception("WhatsApp status update failed")
+
+                # Contact Center köprüsü: teslimat durumunu giden CC mesajına
+                # yansıt (yalnızca outbound; fail-safe, PII'siz).
+                try:
+                    await sync_whatsapp_status(
+                        db,
+                        tenant_id=tenant_id,
+                        provider_message_id=wa_msg_id,
+                        meta_status=status,
+                        error_message=update_doc.get("error_message"),
+                    )
+                except Exception:
+                    logger.exception("contact-center status sync failed (suppressed)")
 
     return {"received": True, "processed": processed}

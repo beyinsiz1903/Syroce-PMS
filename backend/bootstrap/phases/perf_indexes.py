@@ -152,6 +152,38 @@ async def ensure_performance_indexes():
         ("messaging_provider_configs",
          [("provider_type", 1), ("credentials_encrypted.phone_number_id", 1)],
          "idx_msg_provider_phone_lookup", {}),
+        # Task #645 — Contact Center Faz 1 (omnichannel WhatsApp MVP).
+        #   - contact_center_messages (tenant_id, channel, provider_message_id):
+        #     Meta retry inbound + status callback aynı provider_message_id'yi
+        #     tekrar iletir; ingest upsert'i bu key'le idempotent. PARTIAL on
+        #     provider_message_id string → henüz id atanmamış (None) giden
+        #     taslaklar collision'a girmez (fake-green'i önler). Race-free
+        #     garanti için unique.
+        ("contact_center_messages",
+         [("tenant_id", 1), ("channel", 1), ("provider_message_id", 1)],
+         "ux_cc_messages_provider_msg_id",
+         {"unique": True,
+          "partialFilterExpression": {"provider_message_id": {"$type": "string"}}}),
+        #   - contact_center_conversations (tenant_id, channel, caller_id_hash):
+        #     ingest'in arayan başına AÇIK konuşmayı bul-veya-oluştur
+        #     find_one_and_update'i bu shape ile sorgular (blind-index hash).
+        #     PARTIAL-UNIQUE {status: "open"}: bir arayanın aynı kanalda yalnızca
+        #     BİR açık konuşması olabilir → eşzamanlı ilk-mesaj / Meta-retry
+        #     yarışında upsert ÇİFT açık konuşma üretemez (kaybeden taraf
+        #     DuplicateKeyError alır, ingest mevcut konuşmayı okur). Kapalı
+        #     konuşmalar partial filtre dışında kalır → arayan tarih boyunca
+        #     birden çok KAPALI konuşmaya sahip olabilir. Sorgu status:"open"
+        #     içerdiğinden planlayıcı bu partial index'i kullanır.
+        ("contact_center_conversations",
+         [("tenant_id", 1), ("channel", 1), ("caller_id_hash", 1)],
+         "ux_cc_conv_open_caller",
+         {"unique": True,
+          "partialFilterExpression": {"status": "open"}}),
+        #   - contact_center_conversations (tenant_id, last_message_at desc):
+        #     liste ucu son mesaja göre azalan sıralar.
+        ("contact_center_conversations",
+         [("tenant_id", 1), ("last_message_at", -1)],
+         "idx_cc_conv_tenant_lastmsg", {}),
         # Task #184 — record-payment idempotency: bir misafir tekrar tıkladığında
         # ya da frontend/network retry yaptığında aynı (tenant_id, booking_id,
         # reference) anahtarıyla iki kez yazılan ödeme satırı misafiri çift
