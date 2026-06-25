@@ -197,8 +197,11 @@ class AnalyticsExportService:
             {"tenant_id": tenant_id, "created_at": {"$gte": date_from}},
             {"_id": 0}
         ).sort("created_at", -1).to_list(500)
+        # Recipient is sealed at rest (recipient_enc); decrypt at this read
+        # boundary, dual-read fallback to legacy plaintext for un-migrated rows.
+        from modules.messaging.recipient_crypto import reveal_recipient
         headers = ["Date", "Channel", "Recipient", "Status", "Use Case", "Error"]
-        rows = [[l.get("created_at", ""), l.get("channel", ""), l.get("recipient", ""),
+        rows = [[l.get("created_at", ""), l.get("channel", ""), reveal_recipient(l),
                  l.get("status", ""), l.get("use_case", ""), l.get("error_message", "")] for l in logs]
         return {"headers": headers, "rows": rows}
 

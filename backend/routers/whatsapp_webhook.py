@@ -35,6 +35,7 @@ from domains.contact_center.whatsapp_ingest import (
     sync_whatsapp_status,
 )
 from modules.messaging.models import ConsentStatus
+from modules.messaging.recipient_crypto import seal_recipient
 
 logger = logging.getLogger(__name__)
 
@@ -220,29 +221,54 @@ async def receive_webhook(request: Request) -> dict[str, Any]:
                 except Exception:
                     logger.exception("WhatsApp inbound upsert failed")
 
-                # Auto opt-in: kullanıcı yazdıysa pencere açıldı + onay verilmiş sayılır
-                try:
-                    await db.messaging_consents.update_one(
-                        {
-                            "tenant_id": tenant_id,
-                            "recipient": msg.get("from", ""),
-                            "channel": "whatsapp",
-                        },
-                        {
-                            "$set": {
+                # Auto opt-in: kullanıcı yazdıysa pencere açıldı + onay verilmiş sayılır.
+                # PII-at-rest: gönderen telefonu plaintext yazılmaz; recipient_enc
+                # (şifreli) + recipient_hash (HMAC blind-index) saklanır, doküman
+                # tekilliği recipient_hash üzerinden kurulur.
+                sender = msg.get("from", "")
+                if sender:
+                    try:
+                        sealed = seal_recipient(sender)
+                        s_hash = sealed.get("recipient_hash", "")
+                        # Match by blind-index OR legacy plaintext recipient and
+                        # migrate in place ($unset plaintext) so an inbound never
+                        # creates a SECOND consent row for a recipient that still
+                        # has a pre-backfill legacy row.
+                        res = await db.messaging_consents.update_one(
+                            {
                                 "tenant_id": tenant_id,
-                                "recipient": msg.get("from", ""),
                                 "channel": "whatsapp",
+                                "$or": [
+                                    {"recipient_hash": s_hash},
+                                    {"recipient": sender},
+                                ],
+                            },
+                            {
+                                "$set": {
+                                    "tenant_id": tenant_id,
+                                    "recipient_enc": sealed.get("recipient_enc"),
+                                    "recipient_hash": s_hash,
+                                    "channel": "whatsapp",
+                                    "status": ConsentStatus.OPT_IN.value,
+                                    "source": "wa_inbound",
+                                    "updated_at": now_iso,
+                                },
+                                "$unset": {"recipient": ""},
+                            },
+                        )
+                        if res.matched_count == 0:
+                            await db.messaging_consents.insert_one({
+                                "tenant_id": tenant_id,
+                                "channel": "whatsapp",
+                                "recipient_hash": s_hash,
+                                "recipient_enc": sealed.get("recipient_enc"),
                                 "status": ConsentStatus.OPT_IN.value,
                                 "source": "wa_inbound",
+                                "created_at": now_iso,
                                 "updated_at": now_iso,
-                            },
-                            "$setOnInsert": {"created_at": now_iso},
-                        },
-                        upsert=True,
-                    )
-                except Exception:
-                    logger.exception("WhatsApp consent upsert failed")
+                            })
+                    except Exception:
+                        logger.exception("WhatsApp consent upsert failed")
 
                 # Contact Center köprüsü: gelen mesajı şifreli omnichannel
                 # modele yansıt. ingest zaten kendi içinde fail-safe; webhook'un

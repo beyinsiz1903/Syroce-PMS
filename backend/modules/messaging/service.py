@@ -12,6 +12,7 @@ from .models import (
     new_delivery_log,
 )
 from .providers import CHANNEL_PROVIDER_MAP, FALLBACK_CHAIN, PROVIDER_MAP, ProviderMode
+from .recipient_crypto import reveal_recipient, seal_delivery_log
 
 logger = logging.getLogger(__name__)
 
@@ -93,13 +94,34 @@ class MessagingService:
         )
 
     async def _check_consent(self, tenant_id: str, recipient: str, channel: str) -> bool:
-        doc = await self.db.messaging_consents.find_one(
-            {"tenant_id": tenant_id, "recipient": recipient, "channel": channel},
-            {"_id": 0},
-        )
-        if not doc:
-            return True
-        if doc.get("status") == ConsentStatus.OPT_OUT.value:
+        # PII-at-rest: consent recipients are sealed (recipient_enc +
+        # recipient_hash blind-index). Match by the HMAC blind-index for an
+        # exact-equality opt-out lookup, with a dual-read fallback to a legacy
+        # plaintext `recipient` so an opt-out written before the backfill is
+        # NEVER missed (fail-closed for opt-out enforcement).
+        from .recipient_crypto import recipient_hash as _rhash
+
+        q: dict = {"tenant_id": tenant_id, "channel": channel}
+        r_hash = _rhash(recipient)
+        or_terms: list[dict] = []
+        if r_hash:
+            or_terms.append({"recipient_hash": r_hash})
+        if recipient:
+            or_terms.append({"recipient": recipient})
+        if or_terms:
+            q["$or"] = or_terms
+        # Fail-closed + deterministic: during/after migration a legacy
+        # plaintext-keyed row and a new hash-keyed row can BOTH exist for the
+        # same logical recipient/channel. find_one would pick one arbitrarily
+        # (document order) and could miss an OPT_OUT. Scan ALL matching rows and
+        # treat OPT_OUT as authoritative — if ANY matching consent is OPT_OUT,
+        # block the send. OPT_OUT always wins, regardless of row count/order.
+        rejected = False
+        async for doc in self.db.messaging_consents.find(q, {"_id": 0, "status": 1}):
+            if doc.get("status") == ConsentStatus.OPT_OUT.value:
+                rejected = True
+                break
+        if rejected:
             self._consent_rejections += 1
             return False
         return True
@@ -195,7 +217,7 @@ class MessagingService:
         if not config:
             log_doc["status"] = DeliveryStatus.FAILED.value
             log_doc["error_message"] = f"No active provider config for {provider_type}"
-            await self.db.messaging_delivery_logs.insert_one(log_doc)
+            await self.db.messaging_delivery_logs.insert_one(seal_delivery_log(log_doc))
             return await self._try_fallback(
                 tenant_id, channel, recipient, body, subject, log_doc, booking_id, guest_id, property_id, use_case
             )
@@ -205,7 +227,7 @@ class MessagingService:
         if not await self._check_rate_limit(tenant_id, provider_type, rl):
             log_doc["status"] = DeliveryStatus.FAILED.value
             log_doc["error_message"] = "Rate limit exceeded"
-            await self.db.messaging_delivery_logs.insert_one(log_doc)
+            await self.db.messaging_delivery_logs.insert_one(seal_delivery_log(log_doc))
             return {"success": False, "error": "Rate limit exceeded", "delivery_id": log_doc["id"]}
 
         # send
@@ -213,14 +235,14 @@ class MessagingService:
         if not provider:
             log_doc["status"] = DeliveryStatus.FAILED.value
             log_doc["error_message"] = "Provider not implemented"
-            await self.db.messaging_delivery_logs.insert_one(log_doc)
+            await self.db.messaging_delivery_logs.insert_one(seal_delivery_log(log_doc))
             return {"success": False, "error": "Provider not implemented", "delivery_id": log_doc["id"]}
 
         credentials = await self._load_credentials(tenant_id, config)
         mode = self._resolve_mode(config)
 
         log_doc["status"] = DeliveryStatus.SENDING.value
-        await self.db.messaging_delivery_logs.insert_one(log_doc)
+        await self.db.messaging_delivery_logs.insert_one(seal_delivery_log(log_doc))
 
         result = await provider.send(recipient, body, subject, credentials, mode)
 
@@ -289,7 +311,7 @@ class MessagingService:
                 fb_log["status"] = DeliveryStatus.SENT.value
                 fb_log["provider_message_id"] = result.get("provider_message_id")
                 fb_log["delivered_at"] = datetime.now(UTC).isoformat()
-                await self.db.messaging_delivery_logs.insert_one(fb_log)
+                await self.db.messaging_delivery_logs.insert_one(seal_delivery_log(fb_log))
                 return {"success": True, "delivery_id": fb_log["id"], "fallback_channel": fb_channel,
                         "provider_message_id": result.get("provider_message_id")}
         return {"success": False, "error": original_log.get("error_message", "All channels failed"),
@@ -315,7 +337,9 @@ class MessagingService:
         creds = await self._load_credentials(tenant_id, config)
         mode = self._resolve_mode(config)
 
-        result = await provider.send(doc["recipient"], doc["body"], doc.get("subject"), creds, mode)
+        # Recipient is sealed at rest (recipient_enc); decrypt at the read
+        # boundary to send. Dual-read falls back to legacy plaintext.
+        result = await provider.send(reveal_recipient(doc), doc["body"], doc.get("subject"), creds, mode)
         new_count = doc.get("retry_count", 0) + 1
 
         if result.get("success"):

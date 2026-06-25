@@ -19,6 +19,14 @@ from modules.pms_core.role_permission_service import (  # v90 DW
 )
 from security.field_encryption import get_field_encryption_service
 
+from modules.messaging.recipient_crypto import (
+    recipient_hash as _recipient_hash,
+    reveal_delivery_log,
+    reveal_recipient,
+    seal_delivery_log,
+    seal_recipient,
+)
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/messaging-center", tags=["messaging-center"])
 
@@ -515,7 +523,7 @@ async def send_whatsapp_template(
         log["error_message"] = result.get("error")
         log["template_name"] = req.template_name
         log["template_language"] = req.language_code
-        await db.messaging_delivery_logs.insert_one(log)
+        await db.messaging_delivery_logs.insert_one(seal_delivery_log(log))
     except Exception:
         logger.exception("template send delivery log insert failed")
 
@@ -552,6 +560,11 @@ async def get_delivery_logs(
     if channel:
         q["channel"] = channel
     logs = await db.messaging_delivery_logs.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    # Recipient is sealed at rest (recipient_enc + recipient_hash); decrypt at
+    # this read boundary and strip the at-rest fields. This endpoint already
+    # requires view_guest_list, so the raw recipient is returned (unchanged
+    # behavior), matching the prior plaintext shape.
+    logs = [reveal_delivery_log(log) for log in logs]
     return {"logs": logs, "total": len(logs)}
 
 
@@ -747,7 +760,7 @@ async def seed_demo_data(current_user: User = Depends(get_current_user),
     if existing_logs == 0:
         logs = _get_demo_delivery_logs(tenant_id)
         if logs:
-            await db.messaging_delivery_logs.insert_many(logs)
+            await db.messaging_delivery_logs.insert_many([seal_delivery_log(l) for l in logs])
             logs_seeded = len(logs)
 
     # ── Seed automation rules ──
@@ -927,22 +940,42 @@ class ConsentReq(BaseModel):
 @router.post("/consent")
 async def update_consent(req: ConsentReq, current_user: User = Depends(get_current_user)):
     db = _get_db()
-    await db.messaging_consents.update_one(
-        {"tenant_id": current_user.tenant_id, "recipient": req.recipient, "channel": req.channel},
+    # PII-at-rest: store the recipient sealed (recipient_enc) and key the consent
+    # document on the recipient_hash blind-index instead of plaintext.
+    sealed = seal_recipient(req.recipient)
+    r_hash = sealed.get("recipient_hash") or _recipient_hash(req.recipient)
+    now_iso = datetime.now(UTC).isoformat()
+    # Match an existing row by EITHER the new blind-index OR a legacy plaintext
+    # recipient, and migrate it in place ($unset plaintext). This prevents a
+    # SECOND row being created for a recipient that still has a pre-backfill
+    # legacy row (which would make consent enforcement nondeterministic).
+    res = await db.messaging_consents.update_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "channel": req.channel,
+            "$or": [{"recipient_hash": r_hash}, {"recipient": req.recipient}],
+        },
         {"$set": {
             "status": req.status,
-            "updated_at": datetime.now(UTC).isoformat(),
+            "updated_at": now_iso,
             "updated_by": current_user.id,
+            "recipient_enc": sealed.get("recipient_enc"),
+            "recipient_hash": r_hash,
         },
-         "$setOnInsert": {
-             "id": str(uuid.uuid4()),
-             "tenant_id": current_user.tenant_id,
-             "recipient": req.recipient,
-             "channel": req.channel,
-             "created_at": datetime.now(UTC).isoformat(),
-         }},
-        upsert=True,
+         "$unset": {"recipient": ""}},
     )
+    if res.matched_count == 0:
+        await db.messaging_consents.insert_one({
+            "id": str(uuid.uuid4()),
+            "tenant_id": current_user.tenant_id,
+            "channel": req.channel,
+            "recipient_hash": r_hash,
+            "recipient_enc": sealed.get("recipient_enc"),
+            "status": req.status,
+            "created_at": now_iso,
+            "updated_at": now_iso,
+            "updated_by": current_user.id,
+        })
     return {"success": True}
 
 
@@ -1123,7 +1156,7 @@ async def get_messaging_activity(
             title = f"{channel_label} {status.title()}"
             priority = "normal"
 
-        recipient = log.get("recipient", "")
+        recipient = reveal_recipient(log)
         if not _can_view_pii:
             recipient = _mask_recipient(recipient)
         activities.append({

@@ -184,6 +184,18 @@ async def ensure_performance_indexes():
         ("contact_center_conversations",
          [("tenant_id", 1), ("last_message_at", -1)],
          "idx_cc_conv_tenant_lastmsg", {}),
+        # Task #647 — Legacy messaging recipient PII at-rest sealing.
+        #   - messaging_consents (tenant_id, recipient_hash, channel):
+        #     consent opt-out enforcement now looks the recipient up by its HMAC
+        #     blind-index (recipient_hash) instead of plaintext. This is the
+        #     exact-equality lookup shape in _check_consent + the upsert key in
+        #     the /consent endpoint and WhatsApp auto-opt-in, so the index keeps
+        #     it from collection-scanning. NOT unique: the gateway's
+        #     guest_id-keyed consent shape (no recipient_hash) shares this
+        #     collection and would collide on a null-key unique index.
+        ("messaging_consents",
+         [("tenant_id", 1), ("recipient_hash", 1), ("channel", 1)],
+         "idx_msg_consent_recipient_hash", {}),
         # Task #184 — record-payment idempotency: bir misafir tekrar tıkladığında
         # ya da frontend/network retry yaptığında aynı (tenant_id, booking_id,
         # reference) anahtarıyla iki kez yazılan ödeme satırı misafiri çift
