@@ -16,6 +16,7 @@ Gönderim başarısızsa fake-green YOK — onur açıklamasıyla 502 döner.
 """
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -23,10 +24,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from core.database import db
-from core.security import get_current_user
+from core.security import _is_super_admin, get_current_user
 from models.enums import MessageDirection, MessageStatus
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_module, require_op
+from modules.pms_core.role_permission_service import (
+    RolePermissionService,
+    require_module,
+    require_op,
+)
 from security.field_encryption import get_field_encryption_service
 
 from domains.contact_center.provider import get_communication_provider
@@ -35,10 +40,29 @@ from domains.contact_center.read_models import (
     message_to_dto,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api", tags=["contact-center-domain"])
 
 _CHANNEL_WHATSAPP = "whatsapp"
 _SESSION_WINDOW = timedelta(hours=24)
+
+
+def _can_reveal_phone(user: User) -> bool:
+    """Tam telefon numarasını açma yetkisi (PII minimizasyonu).
+
+    Numara varsayılan maskelidir; tam haliyle açılması yalnızca operatör seviyesi
+    ``MANAGE_CONTACT_CENTER`` iznine bağlıdır — salt-görüntüleme
+    (``VIEW_CONTACT_CENTER``) tek başına YETMEZ. Böylece ileride salt-okuyan bir
+    rol eklenirse misafir telefonu otomatik korunur. Super admin tam yetkilidir.
+    """
+    if _is_super_admin(user):
+        return True
+    return RolePermissionService().check_permission(
+        getattr(user.role, "value", str(user.role)),
+        "manage_contact_center",
+        granted_permissions=getattr(user, "granted_permissions", None),
+    )
 
 
 class SendWhatsAppMessage(BaseModel):
@@ -127,12 +151,16 @@ async def list_conversations(
 async def get_conversation(
     conversation_id: str,
     msg_limit: int = 100,
+    reveal_phone: bool = False,
     current_user: User = Depends(get_current_user),
     _mod=Depends(require_module("contact_center")),
 ):
     """Tek konuşma + mesajları (okuma sınırında decrypt, allowlist DTO).
 
-    Saf okuma: yan-etki yazımı yapmaz. Mesaj gövdesi yalnızca burada çözülür.
+    Mesaj gövdesi yalnızca burada çözülür. ``reveal_phone=true`` tam numarayı açar
+    AMA yalnızca ``MANAGE_CONTACT_CENTER`` izni olan operatör için (PII minimizasyonu;
+    toplu liste ucunda numara ASLA açılmaz). DB'ye yan-etki yazımı yapılmaz; PII
+    açma talebi/sonucu yalnızca PII'siz (yalnız user/konuşma id'si) iz bırakır.
     """
     conv = await db.contact_center_conversations.find_one(
         {"id": conversation_id, "tenant_id": current_user.tenant_id}
@@ -150,8 +178,18 @@ async def get_conversation(
     )
     msg_docs = await msg_cursor.to_list(length=safe_msg_limit)
     svc = get_field_encryption_service()
+
+    reveal = bool(reveal_phone) and _can_reveal_phone(current_user)
+    if reveal_phone:
+        # KVKK izlenebilirliği: PII açma talebi + sonucu (numara DEĞİL) loglanır.
+        logger.info(
+            "contact-center reveal_phone: user=%s conv=%s sonuç=%s",
+            current_user.id,
+            conversation_id,
+            "acildi" if reveal else "reddedildi",
+        )
     return {
-        "conversation": conversation_to_dto(conv, svc),
+        "conversation": conversation_to_dto(conv, svc, reveal_phone=reveal),
         "messages": [message_to_dto(m, svc) for m in msg_docs],
     }
 
@@ -182,7 +220,19 @@ async def send_conversation_message(
         )
 
     svc = get_field_encryption_service()
-    recipient = svc.decrypt_value(conv.get("caller_id_enc") or "") if conv.get("caller_id_enc") else ""
+    try:
+        recipient = (
+            svc.decrypt_value(conv.get("caller_id_enc") or "")
+            if conv.get("caller_id_enc")
+            else ""
+        )
+    except Exception:
+        # Decrypt hatası: alıcı çözülemedi → fail-closed 409 (500 sızdırma YOK),
+        # PII'siz log. Henüz gönderim denenmediği için FAILED kaydı yazılmaz.
+        logger.warning(
+            "contact-center: alıcı numarası decrypt edilemedi conv=%s", conversation_id
+        )
+        recipient = ""
     if not recipient:
         raise HTTPException(status_code=409, detail="Alıcı numarası çözülemedi")
 
@@ -198,16 +248,28 @@ async def send_conversation_message(
             )
 
     provider = get_communication_provider("whatsapp")
-    result = await provider.send_whatsapp(
-        db=db,
-        tenant_id=tenant_id,
-        recipient=recipient,
-        body=payload.body,
-        in_session=in_session,
-        template_name=payload.template_name,
-        language_code=payload.language_code,
-        template_components=payload.template_components,
-    )
+    try:
+        result = await provider.send_whatsapp(
+            db=db,
+            tenant_id=tenant_id,
+            recipient=recipient,
+            body=payload.body,
+            in_session=in_session,
+            template_name=payload.template_name,
+            language_code=payload.language_code,
+            template_components=payload.template_components,
+        )
+    except Exception as exc:
+        # Beklenmeyen transport/sağlayıcı istisnası da FAILED olarak KALICILAŞTIRILIR
+        # (aşağıdaki ortak yol) ki ajan arayüzünde "iletilemedi" gerçeği görünsün —
+        # fake-green YOK. PII'siz log: yalnızca istisna SINIF ADI yazılır; traceback /
+        # exception metni (alıcı telefonu, URL ?token=..., yanıt gövdesi sızabilir)
+        # ASLA loglanmaz. Persist edilen error ve HTTP detail de generic kalır.
+        logger.error(
+            "contact-center: WhatsApp gönderiminde beklenmeyen hata (%s)",
+            type(exc).__name__,
+        )
+        result = {"success": False, "error": "Gönderim sırasında beklenmeyen hata"}
 
     now = datetime.now(UTC)
     success = bool(result.get("success"))

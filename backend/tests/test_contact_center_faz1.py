@@ -19,7 +19,10 @@ Kapsanan garantiler:
 from __future__ import annotations
 
 import asyncio
+import logging
+from datetime import UTC, datetime
 
+from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 
 from domains.contact_center.provider import (
@@ -39,7 +42,9 @@ from domains.contact_center.whatsapp_ingest import (
     build_inbound_message_doc,
     ingest_whatsapp_inbound,
     map_status,
+    sync_whatsapp_status,
 )
+from models.enums import UserRole
 from security.field_encryption import get_field_encryption_service
 
 _PHONE = "+905551112233"
@@ -407,3 +412,281 @@ def test_ingest_existing_message_after_close_does_not_create_orphan_conversation
     )
     assert db.contact_center_conversations.find_one_and_update_called is False
     assert db.contact_center_messages.update_one_called is False
+
+
+# ── 9. Webhook → contact_center köprü sözleşmesi (entegrasyon) ────────
+#
+# Saf birim testlerinin ötesinde: webhook'un teslimat-durum geri çağrısının
+# tükettiği sync_whatsapp_status() davranışını GERÇEK filtre semantiğiyle
+# kilitler — yalnızca (tenant + outbound + provider_message_id) eşleşen giden
+# mesaj mutasyona uğrar; gelen aynı id ve başka kiracı ASLA dokunulmaz.
+
+
+class _FilterColl:
+    """update_one'ı gerçek Mongo tek-belge semantiğiyle uygular.
+
+    İlk TAM-eşleşen belgeye ``$set`` uygular (yön + tenant + provider id filtresini
+    gerçekten değerlendirir; sahte "çağrı kaydı" değil).
+    """
+
+    def __init__(self, docs: list[dict]):
+        self.docs = docs
+
+    @staticmethod
+    def _match(doc: dict, flt: dict) -> bool:
+        return all(doc.get(k) == v for k, v in flt.items())
+
+    async def update_one(self, flt, update, upsert=False):
+        for d in self.docs:
+            if self._match(d, flt):
+                d.update(update.get("$set", {}))
+                return _UpdRes(None)
+        return _UpdRes(None)
+
+
+class _StatusDB:
+    def __init__(self, docs: list[dict]):
+        self.contact_center_messages = _FilterColl(docs)
+
+
+def test_status_sync_updates_only_matching_outbound_message():
+    out_doc = {
+        "id": "m-out", "tenant_id": "t1", "channel": "whatsapp",
+        "provider_message_id": "wamid.OUT", "direction": "outbound", "status": "sent",
+    }
+    # Aynı provider id'li GELEN mesaj — yön muhafızı nedeniyle dokunulmamalı.
+    in_doc = {
+        "id": "m-in", "tenant_id": "t1", "channel": "whatsapp",
+        "provider_message_id": "wamid.OUT", "direction": "inbound", "status": "received",
+    }
+    # Başka kiracının giden mesajı — tenant izolasyonu nedeniyle dokunulmamalı.
+    other_tenant = {
+        "id": "m-x", "tenant_id": "t2", "channel": "whatsapp",
+        "provider_message_id": "wamid.OUT", "direction": "outbound", "status": "sent",
+    }
+    db = _StatusDB([in_doc, other_tenant, out_doc])
+
+    # Meta yaşam döngüsü: delivered → read → failed.
+    asyncio.run(sync_whatsapp_status(
+        db, tenant_id="t1", provider_message_id="wamid.OUT", meta_status="delivered"
+    ))
+    assert out_doc["status"] == "delivered"
+    assert "delivered_at" in out_doc
+
+    asyncio.run(sync_whatsapp_status(
+        db, tenant_id="t1", provider_message_id="wamid.OUT", meta_status="read"
+    ))
+    assert out_doc["status"] == "read"
+    assert "read_at" in out_doc
+
+    asyncio.run(sync_whatsapp_status(
+        db, tenant_id="t1", provider_message_id="wamid.OUT",
+        meta_status="failed", error_message="undeliverable",
+    ))
+    assert out_doc["status"] == "failed"
+    assert out_doc["error"] == "undeliverable"
+
+    # İzolasyon: gelen aynı id + başka kiracı orijinal halinde kaldı.
+    assert in_doc["status"] == "received"
+    assert other_tenant["status"] == "sent"
+
+
+def test_status_sync_ignores_unknown_meta_status():
+    out_doc = {
+        "id": "m", "tenant_id": "t1", "channel": "whatsapp",
+        "provider_message_id": "wamid.Z", "direction": "outbound", "status": "sent",
+    }
+    db = _StatusDB([out_doc])
+    asyncio.run(sync_whatsapp_status(
+        db, tenant_id="t1", provider_message_id="wamid.Z", meta_status="bogus"
+    ))
+    # Tanınmayan durum → no-op (mevcut durum korunur; sahte ilerleme yok).
+    assert out_doc["status"] == "sent"
+
+
+# ── 10. reveal_phone izin kapısı (operatör seviyesi MANAGE gerekli) ──
+
+
+class _StubUser:
+    def __init__(self, *, tenant_id, uid, role, granted_permissions=None):
+        self.tenant_id = tenant_id
+        self.id = uid
+        self.role = role
+        self.granted_permissions = granted_permissions
+
+
+def test_reveal_phone_gate_requires_manage_permission():
+    from domains.contact_center.router import _can_reveal_phone
+
+    # MANAGE_CONTACT_CENTER taşıyan operatör rolleri → tam numarayı açabilir.
+    agent = _StubUser(tenant_id="t1", uid="a", role=UserRole.CALL_CENTER_AGENT)
+    front = _StubUser(tenant_id="t1", uid="f", role=UserRole.FRONT_DESK)
+    assert _can_reveal_phone(agent) is True
+    assert _can_reveal_phone(front) is True
+
+    # MANAGE olmayan rol → açamaz (PII varsayılan maskeli kalır).
+    hk = _StubUser(tenant_id="t1", uid="h", role=UserRole.HOUSEKEEPING)
+    assert _can_reveal_phone(hk) is False
+
+    # Salt-görüntüleme izni TEK BAŞINA yetmez (MANAGE şart).
+    viewer = _StubUser(
+        tenant_id="t1", uid="v", role=UserRole.STAFF,
+        granted_permissions=["view_contact_center"],
+    )
+    assert _can_reveal_phone(viewer) is False
+
+    # Super admin → tam yetki.
+    sa = _StubUser(tenant_id="t1", uid="s", role=UserRole.SUPER_ADMIN)
+    assert _can_reveal_phone(sa) is True
+
+
+# ── 11. Send route: sağlayıcı istisnasında FAILED kalıcılaşır (502) ──
+
+
+class _SendFakeMsgColl:
+    def __init__(self, inbound_doc):
+        self._inbound = inbound_doc
+        self.inserted: dict | None = None
+
+    async def find_one(self, *a, **k):
+        # _is_within_session_window okuması: güncel gelen mesaj → pencere AÇIK.
+        return self._inbound
+
+    async def insert_one(self, doc):
+        self.inserted = doc
+        return _UpdRes(None)
+
+
+class _SendFakeConvColl:
+    def __init__(self, conv):
+        self._conv = conv
+        self.update_called = False
+
+    async def find_one(self, *a, **k):
+        return self._conv
+
+    async def update_one(self, *a, **k):
+        self.update_called = True
+        return _UpdRes(None)
+
+
+class _SendFakeDB:
+    def __init__(self, conv, inbound_doc):
+        self.contact_center_conversations = _SendFakeConvColl(conv)
+        self.contact_center_messages = _SendFakeMsgColl(inbound_doc)
+
+
+# Sağlayıcı istisnası, mesajında PII (alıcı telefonu) + secret (token) taşır;
+# bunların log/HTTP detail/persist edilen error'a SIZMADIĞINI kanıtlamak için.
+_LEAK_TOKEN = "EAAG-SECRET-TOKEN-XYZ"
+_LEAK_MSG = f"transport failed url=https://graph/?access_token={_LEAK_TOKEN} to={_PHONE}"
+
+
+class _RaisingProvider:
+    async def send_whatsapp(self, **k):
+        raise RuntimeError(_LEAK_MSG)
+
+
+def test_send_route_persists_failed_on_provider_exception(monkeypatch, caplog):
+    from domains.contact_center import router as cc_router
+    from domains.contact_center.router import (
+        SendWhatsAppMessage,
+        send_conversation_message,
+    )
+
+    svc = _svc()
+    conv = {
+        "id": "c1", "tenant_id": "t1", "channel": "whatsapp",
+        "caller_id_enc": svc.encrypt_value(_PHONE),
+    }
+    inbound = {
+        "id": "m0", "tenant_id": "t1", "conversation_id": "c1",
+        "direction": "inbound", "created_at": datetime.now(UTC),
+    }
+    fake_db = _SendFakeDB(conv, inbound)
+    monkeypatch.setattr(cc_router, "db", fake_db)
+    monkeypatch.setattr(
+        cc_router, "get_communication_provider", lambda *a, **k: _RaisingProvider()
+    )
+
+    user = _StubUser(tenant_id="t1", uid="agent1", role=UserRole.CALL_CENTER_AGENT)
+    payload = SendWhatsAppMessage(body="merhaba")
+
+    raised: HTTPException | None = None
+    with caplog.at_level(logging.DEBUG, logger="domains.contact_center.router"):
+        try:
+            asyncio.run(
+                send_conversation_message("c1", payload, current_user=user)
+            )
+        except HTTPException as e:
+            raised = e
+
+    # Sağlayıcı patladı → 502 (sahte başarı YOK).
+    assert raised is not None
+    assert raised.status_code == 502
+    # ...ama kayıt FAILED olarak KALICILAŞTIRILDI (ajan "iletilemedi" görür).
+    inserted = fake_db.contact_center_messages.inserted
+    assert inserted is not None
+    assert inserted["status"] == "failed"
+    assert inserted["direction"] == "outbound"
+    # Başarı yan-etkisi (konuşma aktivite güncellemesi) ÇALIŞMADI.
+    assert fake_db.contact_center_conversations.update_called is False
+
+    # PII/secret sızıntısı YOK: istisna metni (token + alıcı telefonu) ne log'a,
+    # ne HTTP detail'e, ne de persist edilen error'a girer (generic kalır).
+    surfaces = [caplog.text, str(raised.detail), str(inserted.get("error"))]
+    for s in surfaces:
+        assert _LEAK_TOKEN not in s, s
+        assert _PHONE not in s, s
+        assert _LEAK_MSG not in s, s
+    # Yine de hata gerçekten loglandı (yalnız istisna sınıf adıyla).
+    assert "RuntimeError" in caplog.text
+
+
+class _DecryptRaisingSvc:
+    """decrypt_value PII içeren bir mesajla patlar; encrypt çağrılmamalı."""
+
+    def decrypt_value(self, *a, **k):
+        raise RuntimeError(f"decrypt boom {_PHONE}")
+
+
+def test_send_route_decrypt_failure_returns_409_no_failed_record(monkeypatch, caplog):
+    from domains.contact_center import router as cc_router
+    from domains.contact_center.router import (
+        SendWhatsAppMessage,
+        send_conversation_message,
+    )
+
+    conv = {
+        "id": "c1", "tenant_id": "t1", "channel": "whatsapp",
+        "caller_id_enc": "bozuk-zarf",
+    }
+    inbound = {
+        "id": "m0", "tenant_id": "t1", "conversation_id": "c1",
+        "direction": "inbound", "created_at": datetime.now(UTC),
+    }
+    fake_db = _SendFakeDB(conv, inbound)
+    monkeypatch.setattr(cc_router, "db", fake_db)
+    monkeypatch.setattr(
+        cc_router, "get_field_encryption_service", lambda: _DecryptRaisingSvc()
+    )
+
+    user = _StubUser(tenant_id="t1", uid="agent1", role=UserRole.CALL_CENTER_AGENT)
+    payload = SendWhatsAppMessage(body="merhaba")
+
+    raised: HTTPException | None = None
+    with caplog.at_level(logging.DEBUG, logger="domains.contact_center.router"):
+        try:
+            asyncio.run(
+                send_conversation_message("c1", payload, current_user=user)
+            )
+        except HTTPException as e:
+            raised = e
+
+    # Decrypt patladı → 409 (500 sızdırma YOK), gönderim denenmedi.
+    assert raised is not None
+    assert raised.status_code == 409
+    # Gönderim denenmediği için FAILED kaydı YAZILMAZ.
+    assert fake_db.contact_center_messages.inserted is None
+    # Decrypt istisnasındaki alıcı telefonu log'a SIZMAZ (yalnız conv id).
+    assert _PHONE not in caplog.text
