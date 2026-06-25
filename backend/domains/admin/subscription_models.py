@@ -90,6 +90,9 @@ class FeatureFlag(str, Enum):
     # Add-on module — Syroce Academy (eğitim & sertifika)
     ACADEMY = "academy"
 
+    # Add-on module — Syroce Contact Center (omnichannel iletişim)
+    CONTACT_CENTER = "contact_center"
+
 
 class SubscriptionPlan(BaseModel):
     """Subscription plan definition"""
@@ -179,6 +182,8 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "spa": False,
         "mice": False,
         "academy": False,
+        # Syroce Contact Center — eklenti modül, tüm planlarda varsayılan KAPALI.
+        "contact_center": False,
     },
     "basic": {
         # CORE - Açık
@@ -243,6 +248,8 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "spa": False,
         "mice": False,
         "academy": False,
+        # Syroce Contact Center — eklenti modül, tüm planlarda varsayılan KAPALI.
+        "contact_center": False,
     },
     "professional": {
         # CORE - Açık
@@ -307,6 +314,8 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "spa": False,
         "mice": False,
         "academy": False,
+        # Syroce Contact Center — eklenti modül, tüm planlarda varsayılan KAPALI.
+        "contact_center": False,
     },
     "enterprise": {
         # CORE - Açık
@@ -371,6 +380,8 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "spa": False,
         "mice": False,
         "academy": False,
+        # Syroce Contact Center — eklenti modül, tüm planlarda varsayılan KAPALI.
+        "contact_center": False,
     },
 }
 

@@ -274,6 +274,7 @@ export const MODULE_GROUPS = [
       { key: 'spa', label: 'Spa & Wellness', hint: 'Hizmet kataloğu, terapist & oda yönetimi, randevu defteri, folio entegrasyonu', tier: 'addon', addon: true },
       { key: 'mice', label: 'MICE & Banquet', hint: 'Toplantı/balo salonları, catering menüleri, kurumsal CRM, etkinlik yönetimi', tier: 'addon', addon: true },
       { key: 'academy', label: 'Syroce Academy', hint: 'Departmana özel personel eğitimi, ders sonu sınav ve otomatik PDF sertifika', tier: 'addon', addon: true },
+      { key: 'contact_center', label: 'Syroce Contact Center', hint: 'Omnichannel iletişim — WhatsApp, çağrı, web, sosyal; tek gelen kutusu', tier: 'addon', addon: true },
     ],
   },
 ];

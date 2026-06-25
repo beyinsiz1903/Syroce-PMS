@@ -102,6 +102,9 @@ OPERATION_PERMISSIONS = {
     "send_urgent_message": [Permission.SEND_URGENT_MESSAGE],
     # Manager-only audit-derived reports (Task #26 acil mesaj raporu vs.).
     "view_audit_log": [Permission.VIEW_AUDIT_LOG],
+    # Contact Center (omnichannel)
+    "view_contact_center": [Permission.VIEW_CONTACT_CENTER],
+    "manage_contact_center": [Permission.MANAGE_CONTACT_CENTER],
 }
 
 # v89: module → roles mapping for require_module() helper
@@ -110,6 +113,10 @@ MODULE_ROLES = {
     "maintenance": {UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.SUPER_ADMIN},
     "frontdesk": {UserRole.FRONT_DESK, UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.SUPER_ADMIN},
     "pos": {UserRole.FRONT_DESK, UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.SUPER_ADMIN},
+    "contact_center": {
+        UserRole.CALL_CENTER_AGENT, UserRole.FRONT_DESK, UserRole.SUPERVISOR,
+        UserRole.ADMIN, UserRole.SUPER_ADMIN,
+    },
 }
 
 # Roles that can override any operation

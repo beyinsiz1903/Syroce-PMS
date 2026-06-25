@@ -20,6 +20,7 @@ class UserRole(str, Enum):
     GUEST = "guest"  # Guest portal
     AGENCY_ADMIN = "agency_admin"  # Agency admin - can manage agency
     AGENCY_AGENT = "agency_agent"  # Agency staff - can create requests
+    CALL_CENTER_AGENT = "call_center_agent"  # Çağrı merkezi temsilcisi (Contact Center)
 
 class Permission(str, Enum):
     # Booking permissions
@@ -77,6 +78,11 @@ class Permission(str, Enum):
     # mevcut akışları bozmaz.
     VIEW_HR = "view_hr"
     MANAGE_HR = "manage_hr"
+
+    # Contact Center (omnichannel) permissions
+    # VIEW: konuşma/mesaj listesini görüntüleme; MANAGE: atama/yanıt/durum değişimi.
+    VIEW_CONTACT_CENTER = "view_contact_center"
+    MANAGE_CONTACT_CENTER = "manage_contact_center"
 
 class RoomStatus(str, Enum):
     AVAILABLE = "available"
@@ -397,6 +403,47 @@ class LostFoundStatus(str, Enum):
 
 
 
+# ── Contact Center (omnichannel) enums ──
+
+class ContactCenterChannel(str, Enum):
+    WHATSAPP = "whatsapp"
+    VOICE = "voice"
+    WEB = "web"
+    SOCIAL = "social"
+    EMAIL = "email"
+    SMS = "sms"
+
+
+class ConversationStatus(str, Enum):
+    OPEN = "open"
+    PENDING = "pending"
+    ASSIGNED = "assigned"
+    RESOLVED = "resolved"
+    CLOSED = "closed"
+
+
+class MessageDirection(str, Enum):
+    INBOUND = "inbound"
+    OUTBOUND = "outbound"
+
+
+class MessageStatus(str, Enum):
+    RECEIVED = "received"
+    QUEUED = "queued"
+    SENT = "sent"
+    DELIVERED = "delivered"
+    READ = "read"
+    FAILED = "failed"
+
+
+class CallStatus(str, Enum):
+    RINGING = "ringing"
+    ANSWERED = "answered"
+    MISSED = "missed"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 # Role-Permission Mapping
 ROLE_PERMISSIONS = {
     UserRole.ADMIN: [p.value for p in Permission],  # All permissions
@@ -412,6 +459,8 @@ ROLE_PERMISSIONS = {
         Permission.VIEW_AUDIT_LOG,
         # v2 HR: supervisor düzeyi HR okuma + master data yönetimi yapabilir.
         Permission.VIEW_HR, Permission.MANAGE_HR,
+        # Contact Center: supervisor konuşmaları görür ve yönetir.
+        Permission.VIEW_CONTACT_CENTER, Permission.MANAGE_CONTACT_CENTER,
     ],
     UserRole.FRONT_DESK: [
         Permission.VIEW_BOOKINGS, Permission.CREATE_BOOKING, Permission.EDIT_BOOKING,
@@ -419,7 +468,10 @@ ROLE_PERMISSIONS = {
         Permission.VIEW_FOLIO, Permission.POST_CHARGE, Permission.POST_PAYMENT,
         Permission.VIEW_COMPANIES,
         Permission.VIEW_HK_BOARD,
-        Permission.VIEW_REPORTS
+        Permission.VIEW_REPORTS,
+        # Contact Center: resepsiyon (receptionist) küçük otellerde
+        # konuşmaları görür ve yönetir.
+        Permission.VIEW_CONTACT_CENTER, Permission.MANAGE_CONTACT_CENTER,
     ],
     UserRole.HOUSEKEEPING: [
         Permission.VIEW_BOOKINGS,
@@ -447,7 +499,12 @@ ROLE_PERMISSIONS = {
     UserRole.STAFF: [
         Permission.VIEW_BOOKINGS,
         Permission.VIEW_HK_BOARD
-    ]
+    ],
+    UserRole.CALL_CENTER_AGENT: [
+        # Çağrı merkezi temsilcisi: konuşmaları görür/yönetir + rezervasyon arar.
+        Permission.VIEW_BOOKINGS,
+        Permission.VIEW_CONTACT_CENTER, Permission.MANAGE_CONTACT_CENTER,
+    ],
 }
 
 

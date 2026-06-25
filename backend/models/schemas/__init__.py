@@ -4,6 +4,7 @@ from models.schemas.audit import *  # noqa: F401, F403
 from models.schemas.bookings import *  # noqa: F401, F403
 from models.schemas.channels import *  # noqa: F401, F403
 from models.schemas.companies import *  # noqa: F401, F403
+from models.schemas.contact_center import *  # noqa: F401, F403
 from models.schemas.fnb import *  # noqa: F401, F403
 from models.schemas.folio import *  # noqa: F401, F403
 from models.schemas.frontoffice import *  # noqa: F401, F403
