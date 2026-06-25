@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import {
   GraduationCap, BookOpen, Award, CheckCircle2, ArrowLeft,
   FileText, Loader2, Download, ClipboardList, Settings2,
+  Lock, Building2, RefreshCw,
 } from "lucide-react";
 
 import { PageHeader } from "@/components/ui/page-header";
@@ -110,6 +111,9 @@ export default function Academy({ user }) {
   const [answers, setAnswers] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
+  // Yukleme reddini turune gore ayirir: modul kapali / otel baglami yok /
+  // gecici hata. Bu sayede kirmizi alarm yerine duruma uygun mesaj gosterilir.
+  const [loadError, setLoadError] = useState(null);
 
   const isManager = MANAGER_ROLES.has(user?.role);
   const isAuthor = AUTHOR_ROLES.has(user?.role);
@@ -123,8 +127,25 @@ export default function Academy({ user }) {
       ]);
       setCourses(c.data?.items || []);
       setCertificates(certs.data?.items || []);
+      setLoadError(null);
     } catch (e) {
-      toast.error("Akademi icerigi yuklenemedi");
+      const status = e?.response?.status;
+      const code = e?.response?.data?.error_code;
+      const detail = e?.response?.data?.detail || "";
+      let type;
+      if (status === 403 && code === "ENTITLEMENT_DENIED") {
+        // Academy ek modulu bu otelde etkin degil.
+        type = "module_disabled";
+      } else if (status === 403 && /otel hesab/i.test(detail)) {
+        // Otel baglami olmayan ( or. super-admin) oturum.
+        type = "no_tenant";
+      } else {
+        // Ag/sunucu kaynakli gecici hata.
+        type = "transient";
+      }
+      setCourses([]);
+      setCertificates([]);
+      setLoadError(type);
     } finally {
       setLoading(false);
     }
@@ -238,6 +259,47 @@ export default function Academy({ user }) {
     );
   }
 
+  const renderLoadErrorState = () => {
+    if (loadError === "module_disabled") {
+      return (
+        <Card className="p-10 text-center">
+          <Lock className="w-10 h-10 text-slate-400 mx-auto mb-4" />
+          <h3 className="font-semibold text-slate-900 mb-1">Syroce Academy bu otelde etkin degil</h3>
+          <p className="text-sm text-slate-500 max-w-md mx-auto">
+            Syroce Academy ek bir moduldur ve bu otel icin henuz etkinlestirilmemis.
+            Etkinlestirmek icin yoneticinizle veya Syroce ekibiyle iletisime gecin.
+          </p>
+        </Card>
+      );
+    }
+    if (loadError === "no_tenant") {
+      return (
+        <Card className="p-10 text-center">
+          <Building2 className="w-10 h-10 text-slate-400 mx-auto mb-4" />
+          <h3 className="font-semibold text-slate-900 mb-1">Otel hesabi gerekli</h3>
+          <p className="text-sm text-slate-500 max-w-md mx-auto">
+            Academy icerigi otele baglidir. Egitimleri goruntulemek icin bir otel
+            hesabi baglami ile giris yapin.
+          </p>
+        </Card>
+      );
+    }
+    // transient
+    return (
+      <Card className="p-10 text-center">
+        <RefreshCw className="w-10 h-10 text-slate-400 mx-auto mb-4" />
+        <h3 className="font-semibold text-slate-900 mb-1">Academy icerigi su anda yuklenemedi</h3>
+        <p className="text-sm text-slate-500 max-w-md mx-auto mb-5">
+          Gecici bir sorun olustu. Lutfen tekrar deneyin.
+        </p>
+        <Button variant="outline" onClick={loadList} disabled={loading}>
+          {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+          Tekrar Dene
+        </Button>
+      </Card>
+    );
+  };
+
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto">
       {view === "list" && (
@@ -261,6 +323,8 @@ export default function Academy({ user }) {
             ) : null}
           />
 
+          {loadError ? renderLoadErrorState() : (
+          <>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
             <KpiCard icon={BookOpen} label="Atanan Egitim" value={totalCourses} intent="info" />
             <KpiCard icon={CheckCircle2} label="Tamamlanan" value={passedCourses} intent="success" />
@@ -321,6 +385,8 @@ export default function Academy({ user }) {
                 ))}
               </div>
             </div>
+          )}
+          </>
           )}
         </>
       )}
