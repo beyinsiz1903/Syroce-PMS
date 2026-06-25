@@ -93,7 +93,7 @@ envs:
     value: INFO          # MUTLAKA buyuk harf: kucuk "info" worker'lari import'ta cokertir
     scope: RUN_TIME
   - key: DB_NAME
-    value: hotel_pms
+    value: syroce-pms
     scope: RUN_TIME
   - key: STRICT_TENANT_MODE
     value: "true"          # prod boot bunsuz REDDEDER (fail-closed)
