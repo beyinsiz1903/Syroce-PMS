@@ -568,14 +568,22 @@ def test_public_router_outside_entitlement_runs_handler(voice_app, monkeypatch):
 # voice/token``, ``/calls``, ``/voice/numbers`` CRUD) operatör/ajan uçlarıdır ve
 # ASLA kimliksiz erişime açık olmamalıdır. Bir uçtan ``Depends(get_current_user)``
 # yanlışlıkla düşerse veya yanlış router'a (public_router) taşınırsa, çağrı kaydı /
-# numara eşlemesi / Twilio AccessToken kimliksiz sızabilirdi. Aşağıdaki testler
-# GERÇEK manifest mount'u üzerinden (voice_app) auth sınırını sabitler:
-#   - kimliksiz istek → auth reddi (401/403; route MATCH oldu → 404/405 değil,
-#     handler ÇALIŞMADI → 2xx değil),
-#   - geçersiz bearer token → 401 (get_current_user JWT zinciri gerçekten koşar;
-#     auth dependency no-op'a indirgenmemiş).
+# numara eşlemesi / Twilio AccessToken kimliksiz sızabilirdi. Aşağıdaki testler iki
+# tamamlayıcı mount üzerinden auth sınırını sabitler:
+#   - voice_app (her iki router mount): kimliksiz istek → auth reddi (401/403; route
+#     MATCH oldu → 404/405 değil, handler ÇALIŞMADI → 2xx değil) ve geçersiz bearer
+#     token → 401 (get_current_user JWT zinciri gerçekten koşar; no-op'a indirgenmemiş).
+#   - voice_auth_app (yalnız auth'lu router): kimliksiz istek → 401/403 ve ``numbers``
+#     uçlarında yanlış method → 405 (mount/method/prefix + auth-gate regresyonu).
 # Her iki durumda da DB/handler'a ulaşılmaz → fail-closed.
+#
+# ``HTTPBearer`` Authorization başlığı yokken otomatik 403 üretir; bu yüzden
+# kimliksiz istek hiç bir DB/entitlement koduna ulaşmadan auth gate'te durur →
+# saf, deterministik test (canlı backend/Mongo/Twilio gerektirmez).
 
+_AUTH_MODULE = "domains.contact_center.voice_router"
+
+# (method, path) — manifest'ten mount edilen auth'lu softphone uçları.
 _AUTH_ENDPOINTS = [
     ("post", "/api/contact-center/voice/token"),
     ("get", "/api/contact-center/calls"),
@@ -608,3 +616,59 @@ def test_authenticated_voice_endpoint_rejects_invalid_token(voice_app, method, p
     )
     assert resp.status_code == 401, f"{method.upper()} {path} geçersiz token'ı reddetmiyor"
     assert resp.status_code not in (200, 201, 204), "geçersiz token handler'a ulaşmamalı"
+
+
+def _auth_manifest_entry():
+    for e in router_registry._EXTRACTED_ROUTERS:
+        if e[0] == _AUTH_MODULE and e[1] == "router":
+            return e
+    return None
+
+
+@pytest.fixture
+def voice_auth_app(monkeypatch):
+    """Manifest'ten YALNIZCA auth'lu ``router``ı mount eden minimal ASGI app.
+
+    Gerçek manifest girişini ve ``include_router`` kwargs'ını kullanır → mount/
+    method/prefix + auth-gate regresyonunu yakalar; tüm app'i boot etmez."""
+    monkeypatch.setattr(voice_router, "db", _FakeDB())
+    app = FastAPI()
+    entry = _auth_manifest_entry()
+    assert entry, "auth'lu voice 'router' girişi manifest'ten düşmüş"
+    mod_path, attr, tags, prefix_override, _deps = entry
+    router = router_registry._safe_import(mod_path, attr)
+    assert router is not None, f"{mod_path}.{attr} import edilemedi"
+    kwargs = {"tags": tags}
+    if prefix_override:
+        kwargs["prefix"] = prefix_override
+    app.include_router(router, **kwargs)
+    return TestClient(app, raise_server_exceptions=True)
+
+
+@pytest.mark.parametrize("method,path", _AUTH_ENDPOINTS)
+def test_auth_voice_endpoint_requires_credentials(voice_auth_app, method, path):
+    # Kimliksiz istek: 401/403 (auth gate devrede) — 404=mount yok / 405=method
+    # yanlış DEĞİL. Uç yanlışlıkla herkese açılırsa bu test KIRILIR.
+    resp = getattr(voice_auth_app, method)(path)
+    assert resp.status_code != 404, f"{method.upper()} {path} mount edilmemiş"
+    assert resp.status_code != 405, f"{method.upper()} {path} yanlış method'a bağlı"
+    assert resp.status_code in (401, 403), (
+        f"{method.upper()} {path} kimliksiz erişime açık (status={resp.status_code})"
+    )
+
+
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        # Koleksiyon ucu yalnızca GET/POST tanımlar → PUT/DELETE 405.
+        ("put", "/api/contact-center/voice/numbers"),
+        ("delete", "/api/contact-center/voice/numbers"),
+        # Tekil kayıt ucu yalnızca PUT/DELETE tanımlar → GET/POST 405.
+        ("get", "/api/contact-center/voice/numbers/n1"),
+        ("post", "/api/contact-center/voice/numbers/n1"),
+    ],
+)
+def test_voice_numbers_rejects_wrong_method(voice_auth_app, method, path):
+    # Method routing auth'tan ÖNCE çalışır → yanlış method kimliksizken bile 405.
+    resp = getattr(voice_auth_app, method)(path)
+    assert resp.status_code == 405, f"{method.upper()} {path} 405 vermedi"
