@@ -7,6 +7,7 @@ import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { User, History, Settings, Tag, Star, AlertTriangle, Calendar } from 'lucide-react';
+import CallButton from '@/components/contact-center/CallButton';
 
 const GuestProfileComplete = ({ guestId }) => {
   const [profile, setProfile] = useState(null);
@@ -131,7 +132,10 @@ const GuestProfileComplete = ({ guestId }) => {
               <h2 className="text-2xl font-bold">{profile.guest?.name}</h2>
               <div className="flex items-center gap-4 text-sm text-gray-600">
                 <span>{profile.guest?.email}</span>
-                <span>{profile.guest?.phone}</span>
+                <span className="flex items-center gap-2">
+                  {profile.guest?.phone}
+                  <CallButton number={profile.guest?.phone} />
+                </span>
                 <span>Nationality: {profile.guest?.nationality || 'N/A'}</span>
               </div>
               <div className="flex items-center gap-2 mt-2">

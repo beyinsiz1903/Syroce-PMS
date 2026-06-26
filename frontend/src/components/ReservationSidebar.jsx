@@ -7,6 +7,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
+import CallButton from '@/components/contact-center/CallButton';
 
 const ReservationSidebar = ({ 
   booking, 
@@ -98,9 +99,12 @@ const ReservationSidebar = ({
               )}
 
               {booking.guest_phone && (
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <span className="text-gray-600">Phone:</span>
-                  <span className="font-semibold">{booking.guest_phone}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="font-semibold">{booking.guest_phone}</span>
+                    <CallButton number={booking.guest_phone} />
+                  </span>
                 </div>
               )}
               <div className="flex justify-between">

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { promptDialog } from '@/lib/dialogs';
+import CallButton from '@/components/contact-center/CallButton';
 
 const Guest360Dialog = ({
   open,
@@ -165,7 +166,10 @@ const Guest360Dialog = ({
             </div>
             <div>
               <div className="text-sm text-gray-600">Phone</div>
-              <div className="font-semibold">{guest360Data.guest?.phone}</div>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold">{guest360Data.guest?.phone}</span>
+                <CallButton number={guest360Data.guest?.phone} />
+              </div>
             </div>
             <div>
               <div className="text-sm text-gray-600">Country</div>

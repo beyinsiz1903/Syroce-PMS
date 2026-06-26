@@ -15,6 +15,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 
+import { SOFTPHONE_DIAL_EVENT } from "@/lib/softphone";
+
 const TWILIO_VOICE_SDK_URL =
   "https://sdk.twilio.com/js/voice/releases/2.12.3/twilio.min.js";
 
@@ -167,13 +169,15 @@ export default function Softphone({ user }) {
     }
   }, [teardown]);
 
-  const startCall = useCallback(async () => {
+  const startCall = useCallback(async (override) => {
     const device = deviceRef.current;
     if (!device) {
       setDetail("Önce softphone'u aktifleştirin.");
       return;
     }
-    const target = (dialNumber || "").trim();
+    // onClick event objesi de ilk argüman olarak gelebilir → yalnız string
+    // override'ı dikkate al, aksi halde input state'ini kullan.
+    const target = (typeof override === "string" ? override : dialNumber || "").trim();
     if (!target) {
       setDetail("Aranacak numarayı girin.");
       return;
@@ -203,6 +207,28 @@ export default function Softphone({ user }) {
       setDetail("Giden çağrı başlatılamadı.");
     }
   }, [dialNumber]);
+
+  // Tek-tıkla arama: misafir/rezervasyon ekranlarındaki "Ara" düğmeleri global
+  // ``syroce:softphone-dial`` event'i yayar. Numarayı doldur, paneli aç; hazırsa
+  // hemen ara, değilse kullanıcıyı aktivasyona yönlendir.
+  useEffect(() => {
+    if (!isStaff) return undefined;
+    const onDial = (e) => {
+      const number = (e?.detail?.number || "").trim();
+      if (!number) return;
+      setDialNumber(number);
+      setOpen(true);
+      if (status === "ready") {
+        startCall(number);
+      } else if (status === "on_call" || status === "incoming") {
+        setDetail("Görüşme sürüyor; numara hazır, görüşme bitince arayabilirsiniz.");
+      } else {
+        setDetail("Numara hazır. Aramak için önce softphone'u aktifleştirin.");
+      }
+    };
+    window.addEventListener("syroce:softphone-dial", onDial);
+    return () => window.removeEventListener("syroce:softphone-dial", onDial);
+  }, [isStaff, status, startCall]);
 
   const acceptCall = useCallback(() => {
     try {
