@@ -185,7 +185,13 @@ jobs:
 
             - name: Install Playwright browsers
               id: install_browsers
-              run: cd frontend && yarn e2e:install
+              run: |
+                  # GitHub runner'inda Playwright ile alakasiz Microsoft apt kaynaklari
+                  # (packages.microsoft.com) 403 donup `apt-get update`'i dusuruyor; bu yuzden
+                  # `--with-deps` patliyor. Bu kaynaklari kaldir ki gercek Playwright deps kurulsun.
+                  sudo find /etc/apt/sources.list.d -type f \( -name '*.list' -o -name '*.sources' \) \
+                      -exec grep -lE 'packages\.microsoft\.com' {} + 2>/dev/null | xargs -r sudo rm -f || true
+                  cd frontend && yarn e2e:install
 
             - name: Run full stress suite (one-shot)
               id: run_stress
