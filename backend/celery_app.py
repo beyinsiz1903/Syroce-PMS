@@ -249,6 +249,17 @@ celery_app.conf.update(
             'schedule': crontab(hour=4, minute=30),
         },
 
+        # Revenue Autopilot dispatcher (Rota 1-A) — daily 02:00 UTC. Enumerates
+        # active tenants and, with an atomic per-UTC-day claim, enqueues the
+        # per-tenant deterministic optimization cycle on the dedicated `pricing`
+        # queue (isolated from the agency-webhook Outbox/other workers). In
+        # full_auto mode the cycle emits per-room_type/date RATE_UPDATED outbox
+        # events (idempotent); supervised/advisory keep pending_approval.
+        'revenue-autopilot-dispatch': {
+            'task': 'celery_tasks.revenue_autopilot_dispatch_task',
+            'schedule': crontab(hour=2, minute=0),
+        },
+
         # Stress dead-PENDING outbox residue sweep (Plan A — Task #620) —
         # dedicated nightly beat (03:50 UTC, non-colliding slot) that sweeps the
         # stress tenant's no-consumer guest.checked_in/out.v1 PENDING backlog so

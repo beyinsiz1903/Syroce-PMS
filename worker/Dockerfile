@@ -58,4 +58,4 @@ USER celeryuser
 HEALTHCHECK --interval=60s --timeout=10s --start-period=15s --retries=3 \
     CMD celery -A celery_app inspect ping --timeout 5 || exit 1
 
-CMD ["celery", "-A", "celery_app", "worker", "--loglevel=info", "--concurrency=4", "-Q", "default,ml,analytics,messaging,pipeline,backup"]
+CMD ["celery", "-A", "celery_app", "worker", "--loglevel=info", "--concurrency=4", "-Q", "default,ml,analytics,messaging,pipeline,backup,pricing"]

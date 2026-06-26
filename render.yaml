@@ -92,6 +92,9 @@ services:
     runtime: docker
     dockerfilePath: ./worker/Dockerfile
     dockerContext: .
+    # Adanmis `pricing` kuyrugu da tuketilsin (Rota 1-A Revenue Autopilot fiyat
+    # hesaplama gorevleri); diger kuyruklar yavaslasa bile izole calisir.
+    dockerCommand: celery -A celery_app worker --loglevel=info --concurrency=4 -Q default,ml,analytics,messaging,pipeline,backup,pricing
     plan: standard
     autoDeploy: true
     envVars:

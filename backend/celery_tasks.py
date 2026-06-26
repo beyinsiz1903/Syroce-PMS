@@ -429,6 +429,155 @@ async def _night_audit_for_tenant_async(tenant_id: str) -> dict[str, Any]:
         client.close()
 
 
+# ============= REVENUE AUTOPILOT (Rota 1-A: otonom fiyat kablolama) =============
+# Deterministik, kural bazli Revenue Autopilot motorunu Celery Beat ile her gece
+# otonom calistirir. Dispatcher (beat) aktif kiracilari gezer, her biri icin
+# atomik per-kiraci/per-gun claim ile per-tenant gorevini KUYRUGA ATAR; per-tenant
+# gorev adanmis `pricing` kuyrugunda calisir (acente webhook'u atan Outbox/diger
+# worker'lardan izole). full_auto modunda motor her oda tipi/tarih icin RATE_UPDATED
+# olayini outbox'a yazar; mevcut acente fan-out zinciri bunu anonim olarak iletir.
+
+
+@celery_app.task(name='celery_tasks.revenue_autopilot_dispatch_task')
+def revenue_autopilot_dispatch_task():
+    """Beat dispatcher (daily): enqueue per-tenant autopilot cycles once/day.
+
+    Enumerates active tenants and, with an atomic per-UTC-day claim
+    (``revenue_autopilot_runs``), enqueues ``revenue_autopilot_for_tenant`` on the
+    dedicated ``pricing`` queue. The conditional CAS claim closes the
+    read-then-write race, so a tenant is dispatched at most once per day even if
+    multiple beat processes run (autoscale) or a tick is duplicated.
+    """
+    return asyncio.run(_revenue_autopilot_dispatch_async())
+
+
+async def _revenue_autopilot_dispatch_async() -> dict[str, Any]:
+    client, raw_db = _fresh_mongo()
+    queued: list[str] = []
+    scanned = 0
+    try:
+        # Per-day claim'in atomikligi tenant_id unique index'e dayanir: state
+        # dokumaninin tekilligini garanti eder (yoksa eszamanli ilk-kez upsert iki
+        # dokuman uretip cift-dispatch'e yol acabilir).
+        try:
+            await raw_db.revenue_autopilot_runs.create_index(
+                "tenant_id", unique=True,
+                name="revenue_autopilot_runs_tenant_uq", background=True,
+            )
+        except Exception as e:  # noqa: BLE001 — index bir optimizasyon, zorunlu degil
+            logger.debug("[revenue_autopilot] index ensure skipped: %s", e)
+
+        now_utc = _now_utc()
+        now_iso = now_utc.isoformat()
+        # Beat gunde bir (02:00 UTC) tetiklenir; UTC-gun baslangici claim boundary.
+        day_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+        boundary = day_start.isoformat()
+
+        tenant_ids = await raw_db.users.distinct("tenant_id", {"active": True})
+        for tenant_id in tenant_ids:
+            if not tenant_id:
+                continue
+            scanned += 1
+
+            # 1) State dokumaninin var oldugundan emin ol (kosulsuz, idempotent).
+            try:
+                await raw_db.revenue_autopilot_runs.update_one(
+                    {"tenant_id": tenant_id},
+                    {"$setOnInsert": {"tenant_id": tenant_id, "last_auto_run": None}},
+                    upsert=True,
+                )
+            except Exception as e:  # noqa: BLE001 — eszamanli dup insert; doc artik var
+                logger.debug("[revenue_autopilot] state ensure race: %s", e)
+
+            # 2) Kosullu CAS: yalnizca bu UTC gun icin henuz kosulmadiysa modified=1.
+            claim = await raw_db.revenue_autopilot_runs.update_one(
+                {
+                    "tenant_id": tenant_id,
+                    "$or": [
+                        {"last_auto_run": None},
+                        {"last_auto_run": {"$lt": boundary}},
+                    ],
+                },
+                {"$set": {"last_auto_run": now_iso, "last_auto_run_status": "dispatched"}},
+            )
+            if claim.modified_count == 0:
+                # Zaten bugun icin claim'li (race kaybi / re-tick).
+                continue
+
+            revenue_autopilot_for_tenant.apply_async(args=[tenant_id], queue="pricing")
+            queued.append(tenant_id)
+            logger.info("Revenue autopilot dispatch: queued tenant=%s", tenant_id)
+
+        return {"success": True, "scanned": scanned, "queued": queued}
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Revenue autopilot dispatch error: %s", exc)
+        return {"success": False, "error": str(exc), "scanned": scanned, "queued": queued}
+    finally:
+        client.close()
+
+
+@celery_app.task(
+    name='celery_tasks.revenue_autopilot_for_tenant',
+    bind=True,
+    max_retries=2,
+    default_retry_delay=300,
+)
+def revenue_autopilot_for_tenant(self, tenant_id: str):
+    """Run the deterministic Revenue Autopilot cycle for a single tenant.
+
+    Runs on the dedicated ``pricing`` queue. The cycle's mode comes from
+    ``tenant_settings.revenue_autopilot_mode`` (default ``supervised``), so
+    autonomous RATE_UPDATED emission only happens when the operator explicitly
+    opted into ``full_auto`` (fail-closed). The outbox idempotency key
+    (tenant:event:entity:payload_hash, entity scoped per room_type/date) makes a
+    Celery retry after a transient error safe — it cannot double-emit.
+    """
+    try:
+        return asyncio.run(_revenue_autopilot_for_tenant_async(tenant_id))
+    except Exception as exc:  # noqa: BLE001 — infra-level; outbox dedup makes retry safe
+        logger.exception(
+            "Revenue autopilot task crashed for tenant=%s: %s", tenant_id, exc
+        )
+        raise self.retry(exc=exc)
+
+
+async def _revenue_autopilot_for_tenant_async(tenant_id: str) -> dict[str, Any]:
+    from domains.ai.revenue_autopilot import RevenueAutopilot
+
+    client, raw_db = _fresh_mongo()
+    try:
+        settings = await raw_db.tenant_settings.find_one(
+            {"tenant_id": tenant_id}, {"_id": 0, "revenue_autopilot_mode": 1}
+        ) or {}
+        mode = settings.get("revenue_autopilot_mode") or "supervised"
+        if mode not in ("full_auto", "supervised", "advisory"):
+            mode = "supervised"
+
+        autopilot = RevenueAutopilot(raw_db)
+        autopilot.mode = mode
+        report = await autopilot.daily_optimization_cycle(tenant_id)
+
+        completed_iso = _now_utc().isoformat()
+        await raw_db.revenue_autopilot_runs.update_one(
+            {"tenant_id": tenant_id},
+            {"$set": {
+                "last_auto_run_status": "completed",
+                "last_auto_run_completed_at": completed_iso,
+                "last_mode": mode,
+            }},
+        )
+        # PII yok: rapor yalnizca oda tipi/fiyat/kural metni icerir. Yine de
+        # ozet logla (tam payload degil).
+        actions = report.get("actions", []) if isinstance(report, dict) else []
+        logger.info(
+            "Revenue autopilot tenant=%s mode=%s actions=%d",
+            tenant_id, mode, len(actions),
+        )
+        return {"success": True, "tenant_id": tenant_id, "mode": mode, "report": report}
+    finally:
+        client.close()
+
+
 # ============= FOLIO CLOSE EVENT (e-Fatura readiness) =============
 # Reference-based folio.closed.v1: when a folio is closed, publish a PII-free SXI
 # event (identifiers + light monetary context + a signed, time-limited fetch URL)

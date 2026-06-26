@@ -22,7 +22,7 @@ spec:
       containers:
         - name: worker
           image: ${REGISTRY}/syroce-worker:${IMAGE_TAG}
-          command: ["celery", "-A", "celery_app", "worker", "--loglevel=info", "-Q", "default,ml,analytics,messaging,pipeline,backup"]
+          command: ["celery", "-A", "celery_app", "worker", "--loglevel=info", "-Q", "default,ml,analytics,messaging,pipeline,backup,pricing"]
           envFrom:
             - secretRef:
                 name: syroce-secrets
