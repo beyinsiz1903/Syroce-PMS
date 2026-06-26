@@ -586,6 +586,7 @@ _AUTH_MODULE = "domains.contact_center.voice_router"
 # (method, path) — manifest'ten mount edilen auth'lu softphone uçları.
 _AUTH_ENDPOINTS = [
     ("post", "/api/contact-center/voice/token"),
+    ("get", "/api/contact-center/voice/readiness"),
     ("get", "/api/contact-center/calls"),
     ("get", "/api/contact-center/voice/numbers"),
     ("post", "/api/contact-center/voice/numbers"),
@@ -709,6 +710,7 @@ from core.security import create_token  # noqa: E402
 # gereken auth'lu uçlar (token / çağrı listesi / numara eşleme CRUD).
 _SOFTPHONE_AUTH_PATHS = [
     "/api/contact-center/voice/token",
+    "/api/contact-center/voice/readiness",
     "/api/contact-center/calls",
     "/api/contact-center/voice/numbers",
     "/api/contact-center/voice/numbers/n1",
@@ -832,3 +834,73 @@ def test_public_voice_webhook_not_blocked_by_entitlement(ent_client, path):
     client = ent_client(module_on=False)
     resp = client.post(path)
     assert resp.status_code == 200, f"{path} entitlement tarafından engellenmemeli"
+
+
+# ── Readiness teşhis ucu (YALNIZCA super_admin; secret SIZMAZ) ─────────
+#
+# Operatörün "sistem uyandı mı / neyi eksik" sorusunu sır sızdırmadan tek bakışta
+# görmesi için salt-okunur bool teşhis ucu. Aşağıdaki testler iki şeyi sabitler:
+#   (1) super_admin OLMAYAN kimlik (geçerli token bile) → 403 (uç merkezi
+#       operatöre kapalı; kiracı ajanı env hazırlığını göremez).
+#   (2) super_admin → 200, yanıt YALNIZCA bool içerir ve enjekte edilen sahte
+#       secret değerlerinin hiçbiri (tam/parça) gövdeye SIZMAZ.
+# get_current_user dependency_override ile sabitlenir → canlı backend/JWT gerekmez.
+from core.security import get_current_user as _get_current_user  # noqa: E402
+
+_READINESS_PATH = "/api/contact-center/voice/readiness"
+
+
+def _readiness_app(user):
+    """Auth'lu ``router``ı mount edip ``get_current_user``ı sabitleyen minimal app."""
+    monkeypatch_db = _FakeDB()
+    voice_router.db = monkeypatch_db  # readiness DB'ye dokunmaz; güvenli
+    app = FastAPI()
+    app.include_router(voice_router.router)
+    app.dependency_overrides[_get_current_user] = lambda: user
+    return TestClient(app, raise_server_exceptions=True)
+
+
+def test_readiness_forbidden_for_non_super_admin():
+    user = SimpleNamespace(id="u1", tenant_id="t1", role=None, roles=[])
+    resp = _readiness_app(user).get(_READINESS_PATH)
+    assert resp.status_code == 403, "readiness super_admin olmayan kimliğe açık"
+
+
+def test_readiness_super_admin_returns_only_booleans_no_secret_leak(monkeypatch):
+    # Sahte secret değerleri enjekte et → yanıtta ASLA (tam veya parça) görünmemeli.
+    fakes = {
+        "TWILIO_ACCOUNT_SID": "AC_FAKE_SID_must_not_leak",
+        "TWILIO_API_KEY_SID": "SK_FAKE_KEY_SID_must_not_leak",
+        "TWILIO_API_KEY_SECRET": "FAKE_KEY_SECRET_must_not_leak",
+        "TWILIO_TWIML_APP_SID": "AP_FAKE_TWIML_must_not_leak",
+        "TWILIO_AUTH_TOKEN": "FAKE_AUTH_TOKEN_must_not_leak",
+        "PUBLIC_APP_URL": "https://app.example.test",
+        "CC_RECORDING_S3_BUCKET": "fake-bucket-must-not-leak",
+        "CC_RECORDING_S3_ACCESS_KEY_ID": "FAKE_AKID_must_not_leak",
+        "CC_RECORDING_S3_SECRET_ACCESS_KEY": "FAKE_SAK_must_not_leak",
+    }
+    for k, v in fakes.items():
+        monkeypatch.setenv(k, v)
+    user = SimpleNamespace(id="sa1", tenant_id="t1", role=None, roles=["super_admin"])
+    resp = _readiness_app(user).get(_READINESS_PATH)
+    assert resp.status_code == 200
+    # Hiçbir secret/config değeri gövdeye sızmamalı (yalnızca bool dönülür).
+    for v in fakes.values():
+        assert v not in resp.text, "readiness yanıtına tam değer sızdı"
+    # Kısmi/maske sızıntısı da olmamalı (değerin ayırt edici parçaları).
+    for fragment in ("AC_FAKE", "SK_FAKE", "FAKE_KEY", "FAKE_AUTH", "FAKE_AKID",
+                     "FAKE_SAK", "example.test", "fake-bucket"):
+        assert fragment not in resp.text, f"readiness yanıtına parça sızdı: {fragment}"
+    body = resp.json()
+    # Yalnızca bool + iç içe bool sözlükleri.
+    assert isinstance(body["ready"], bool)
+    assert isinstance(body["public_app_url_set"], bool)
+    for section in ("twilio", "recording_storage"):
+        assert isinstance(body[section], dict)
+        for val in body[section].values():
+            assert isinstance(val, bool)
+    # Enjekte edilen config ile tutarlı (env-türevli bool'lar doğru yansır).
+    assert body["twilio"]["has_credentials"] is True
+    assert body["twilio"]["can_validate_signatures"] is True
+    assert body["public_app_url_set"] is True
+    assert body["recording_storage"]["is_configured"] is True

@@ -27,6 +27,10 @@ from pymongo.errors import DuplicateKeyError
 from core.database import db
 from core.security import _is_super_admin, get_current_user
 from domains.contact_center.read_models import call_to_dto
+from domains.contact_center.voice_config import (
+    get_recording_storage_config,
+    get_twilio_voice_config,
+)
 from domains.contact_center.voice_ingest import (
     record_inbound_call,
     record_outbound_call,
@@ -152,6 +156,58 @@ async def issue_voice_token(
         "token": result["token"],
         "identity": result["identity"],
         "ttl": result["ttl"],
+    }
+
+
+@router.get("/contact-center/voice/readiness")
+async def voice_readiness(current_user: User = Depends(get_current_user)):
+    """Salt-okunur sesli-softphone hazırlık teşhisi (YALNIZCA super_admin).
+
+    Operatör DO/Replit secret'larını girdikten sonra "sistem uyandı mı, neyi
+    eksik" sorusunu tek bakışta görür. YALNIZCA varlık (bool) bilgisi döner;
+    secret değeri, kısmî değeri, uzunluğu veya maskeli hâli ASLA dönmez/loglanmaz.
+    Üretim env'i geneldir (kiracıya değil) → super_admin kapısı; bir kiracının
+    modülü kapalı olsa bile merkezi operatör canlı hazırlığı kontrol edebilir.
+
+    ``ready`` çekirdek sesli akış içindir (Twilio kimlik + imza + SDK +
+    PUBLIC_APP_URL). Kayıt deposu ayrı raporlanır (``recording_storage.ready``);
+    eksikliği aramayı engellemez, yalnızca kayıt boru hattını fail-closed yapar.
+    """
+    if not _is_super_admin(current_user):
+        raise HTTPException(status_code=403, detail="forbidden")
+    tw = get_twilio_voice_config()
+    storage = get_recording_storage_config()
+    public_app_url_set = bool(os.getenv("PUBLIC_APP_URL", "").strip())
+    try:
+        import twilio  # noqa: F401
+
+        twilio_sdk_installed = True
+    except ImportError:
+        twilio_sdk_installed = False
+    try:
+        import boto3  # noqa: F401
+
+        s3_sdk_installed = True
+    except ImportError:
+        s3_sdk_installed = False
+    twilio_ready = (
+        tw.has_credentials and tw.can_validate_signatures and twilio_sdk_installed
+    )
+    recording_ready = storage.is_configured and s3_sdk_installed
+    return {
+        "ready": bool(twilio_ready and public_app_url_set),
+        "public_app_url_set": public_app_url_set,
+        "twilio": {
+            "has_credentials": tw.has_credentials,
+            "can_validate_signatures": tw.can_validate_signatures,
+            "sdk_installed": twilio_sdk_installed,
+            "ready": twilio_ready,
+        },
+        "recording_storage": {
+            "is_configured": storage.is_configured,
+            "sdk_installed": s3_sdk_installed,
+            "ready": recording_ready,
+        },
     }
 
 
