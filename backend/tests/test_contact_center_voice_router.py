@@ -462,3 +462,100 @@ def test_signed_url_preserves_tenant_id_query(fake_db, monkeypatch):
     assert resp.status_code == 204
     # İmzalanan URL: dış taban + yol + KORUNMUŞ sorgu dizesi.
     assert captured["url"] == "https://pms.example.com/api/voice/status?tenant_id=t1"
+
+
+# ── ASGI mount/method smoke testi (router_registry üzerinden) ──────────
+#
+# Yukarıdaki testler handler'ları DOĞRUDAN çağırır → iş mantığını ve güvenlik
+# dallarını kapsar ama route MOUNT'unu, HTTP method'unu (POST) ve prefix
+# bağlantısını doğrulamaz. Bir uç yanlışlıkla manifest'ten düşerse veya yanlış
+# method'a bağlanırsa bu sessizce kaçabilir. Aşağıdaki ASGI smoke testi GERÇEK
+# ``router_registry`` manifest'inden voice router'larını mount eder (tüm app'i ≈189
+# router + DB ile boot etmeden) ve TestClient ile şunları sabitler:
+#   - ``/api/voice/{inbound,outbound,status,recording}`` POST'a bağlı (404/405 değil),
+#   - aynı uçlar GET'i 405 ile reddeder (yanlış-method regresyonu),
+#   - ``public_router`` (``/api/voice/...``) entitlement DIŞINDADIR: kimliksiz istek
+#     auth/entitlement 403'üne değil imza gate'ine (handler) ulaşır.
+
+from fastapi import FastAPI  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+from bootstrap import router_registry  # noqa: E402
+
+_VOICE_MODULE = "domains.contact_center.voice_router"
+_PUBLIC_PATHS = [
+    "/api/voice/inbound",
+    "/api/voice/outbound",
+    "/api/voice/status",
+    "/api/voice/recording",
+]
+
+
+def _voice_manifest_entries():
+    return [e for e in router_registry._EXTRACTED_ROUTERS if e[0] == _VOICE_MODULE]
+
+
+@pytest.fixture
+def voice_app(monkeypatch):
+    """``router_registry`` manifest'inden YALNIZCA voice router'larını mount eden minimal
+    ASGI app. Gerçek manifest girişlerini ve ``include_router`` kwargs'ını kullanır →
+    mount/method/prefix regresyonunu yakalar; tüm app'i boot etmez."""
+    monkeypatch.setattr(voice_router, "db", _FakeDB())
+    app = FastAPI()
+    entries = _voice_manifest_entries()
+    assert entries, "voice router girişleri manifest'ten düşmüş"
+    for mod_path, attr, tags, prefix_override, _deps in entries:
+        router = router_registry._safe_import(mod_path, attr)
+        assert router is not None, f"{mod_path}.{attr} import edilemedi"
+        kwargs = {"tags": tags}
+        if prefix_override:
+            kwargs["prefix"] = prefix_override
+        app.include_router(router, **kwargs)
+    return TestClient(app, raise_server_exceptions=True)
+
+
+def test_manifest_registers_both_voice_routers():
+    # Hem auth'lu ``router`` hem public webhook ``public_router`` manifest'te olmalı.
+    attrs = {e[1] for e in _voice_manifest_entries()}
+    assert {"router", "public_router"} <= attrs
+
+
+@pytest.mark.parametrize("path", _PUBLIC_PATHS)
+def test_public_voice_endpoint_mounted_as_post(voice_app, path):
+    # POST erişilebilir: imza yok → fail-closed 403 (404=mount yok / 405=method yanlış DEĞİL).
+    resp = voice_app.post(path)
+    assert resp.status_code != 404, f"{path} mount edilmemiş"
+    assert resp.status_code != 405, f"{path} POST'a bağlı değil"
+    assert resp.status_code == 403
+
+
+@pytest.mark.parametrize("path", _PUBLIC_PATHS)
+def test_public_voice_endpoint_rejects_get(voice_app, path):
+    # Yalnızca POST: GET 405 döner (yanlış-method'a bağlanma regresyonunu yakalar).
+    resp = voice_app.get(path)
+    assert resp.status_code == 405
+
+
+def test_public_router_unauth_reaches_signature_gate_not_auth(voice_app):
+    """Kimliksiz istek imza gate'ine ulaşır: 403 ama TwiML XML gövdesi (handler'ın
+    fail-closed yanıtı) — entitlement/auth'tan gelen JSON 401/403 DEĞİL."""
+    resp = voice_app.post(
+        "/api/voice/inbound",
+        data={"From": _TARGET, "To": _CALLER_ID, "CallSid": _SID},
+    )
+    assert resp.status_code == 403
+    assert resp.headers["content-type"].startswith("application/xml")
+
+
+def test_public_router_outside_entitlement_runs_handler(voice_app, monkeypatch):
+    """İmza geçerli kılınınca handler ÇALIŞIR (entitlement 403 ile engellenmez):
+    bilinmeyen numara → kibar fallback 200 XML. Entitlement olsaydı 401/403 olurdu."""
+    monkeypatch.setattr(
+        TwilioVoiceProvider, "validate_signature", lambda self, **kw: True
+    )
+    resp = voice_app.post(
+        "/api/voice/inbound",
+        data={"From": _TARGET, "To": "+900000000000", "CallSid": _SID},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/xml")
