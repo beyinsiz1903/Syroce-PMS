@@ -136,14 +136,19 @@ async def fetch_twilio_recording(recording_url: str) -> bytes | None:
     if not recording_url or not tw.account_sid or not tw.auth_token:
         return None
     try:
-        import httpx
+        from integrations.xchange.safety import safe_request_async
     except ImportError:
-        logger.warning("[CC-VOICE] httpx kurulu değil — kayıt indirilemiyor")
+        logger.warning("[CC-VOICE] güvenli HTTP istemcisi yok — kayıt indirilemiyor")
         return None
     media_url = recording_url if recording_url.endswith(".mp3") else f"{recording_url}.mp3"
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(media_url, auth=(tw.account_sid, tw.auth_token))
+        # Twilio kayıt URL'i imzalı webhook payload'ından gelir (dış girdi türevli) →
+        # SSRF/DNS-rebind korumalı safe_request_async kullanılır (raw httpx YOK).
+        # Kimlik: operatör Twilio Account SID/Auth Token (Basic Auth). EgressDenied
+        # dâhil tüm hatalar yutulur → fail-closed None (URL/sır ASLA loglanmaz).
+        resp = await safe_request_async(
+            "GET", media_url, timeout=30.0, auth=(tw.account_sid, tw.auth_token)
+        )
         if resp.status_code != 200:
             logger.warning(
                 "[CC-VOICE] kayıt indirme başarısız status=%s", resp.status_code
