@@ -209,6 +209,30 @@ async def _persist_and_process(
             result.status = "duplicate"
             return result
 
+        # ── Atomic claim (#649) ──────────────────────────────────────────
+        # Two concurrent identical redeliveries both pass the read-guard above
+        # (read-then-insert race). The dedup ledger's atomic insert lets exactly
+        # one win; the rest become no-op duplicates with the same SKIP result.
+        claimed = await repo.claim_provider_event(
+            tenant_id, "hotelrunner", identity["provider_event_id"],
+        )
+        if not claimed:
+            logger.info(
+                f"[CM-DEDUP-CLAIM] skip insert: provider_event_id="
+                f"{identity['provider_event_id']} concurrently claimed"
+            )
+            try:
+                from domains.channel_manager.monitoring.dedup_counter import record_skip
+                await record_skip(tenant_id, "hotelrunner")
+            except Exception as e:
+                logger.warning(f"[CM-DEDUP-CLAIM] counter record failed (non-blocking): {e}")
+            from domains.channel_manager.ingest.pipeline import IngestDecision, PipelineResult
+            result = PipelineResult("")
+            result.decision = IngestDecision.SKIP
+            result.reason = "Concurrent duplicate (provider_event_id claimed by parallel delivery)"
+            result.status = "duplicate"
+            return result
+
     # Store raw payload
     raw_payload_id = await _store_raw_payload(
         tenant_id=tenant_id,

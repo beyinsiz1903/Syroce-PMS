@@ -5,14 +5,17 @@ Channel Manager — Unified Repository for 9-Collection Data Model
 Single repository that handles all CRUD for the optimized model.
 All queries enforce tenant isolation. All responses exclude _id.
 """
+import hashlib
 import logging
+import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from core.database import db
 
 from .data_model import (
+    COLL_CHANNEL_EVENT_DEDUP,
     COLL_PROVIDER_CONNECTIONS,
     COLL_RATE_PLAN_MAPPINGS,
     COLL_RAW_CHANNEL_EVENTS,
@@ -22,6 +25,30 @@ from .data_model import (
 )
 
 logger = logging.getLogger("channel_manager.unified_repository")
+
+# #649: dedup ledger only needs to cover the concurrent-redelivery window;
+# once the row lands in raw_channel_events the cheap read-guard catches the rest.
+def _dedup_ttl_seconds() -> int:
+    """Parse CM_EVENT_DEDUP_TTL_SECONDS with a safe fallback.
+
+    A bad env value must never crash module import (boot). Non-int or
+    non-positive values fall back to the 3600s default with a warning.
+    """
+    raw = os.getenv("CM_EVENT_DEDUP_TTL_SECONDS", "3600")
+    try:
+        val = int(raw)
+        if val <= 0:
+            raise ValueError("must be positive")
+        return val
+    except (TypeError, ValueError):
+        logger.warning(
+            "[CM-DEDUP-CLAIM] invalid CM_EVENT_DEDUP_TTL_SECONDS=%r; "
+            "falling back to 3600s", raw,
+        )
+        return 3600
+
+
+CM_EVENT_DEDUP_TTL_SECONDS = _dedup_ttl_seconds()
 
 _NO_ID = {"_id": 0}
 
@@ -296,6 +323,59 @@ async def check_provider_event_recorded(
     )
 
 
+async def claim_provider_event(
+    tenant_id: str, provider: str, provider_event_id: str,
+) -> bool:
+    """Atomically claim a provider event for processing — race-free webhook dedup.
+
+    OTA channels deliver at-least-once; two concurrent identical redeliveries can
+    both pass a read-then-insert guard and double-insert. This closes that window
+    with a dedicated dedup ledger (`channel_event_dedup`) keyed by
+    sha256(tenant:provider:provider_event_id). A single atomic ``insert_one`` lets
+    exactly ONE concurrent caller win:
+
+      - ``True``  → this caller claimed it; proceed to persist/process.
+      - ``False`` → a concurrent/duplicate delivery already claimed it; the caller
+        must treat it as a no-op duplicate (same SKIP semantics as the read-guard).
+
+    The ledger is kept SEPARATE from `raw_channel_events` (which may carry legacy
+    duplicates) so its unique ``_id`` constraint always builds cleanly. Entries
+    expire via a TTL index (``CM_EVENT_DEDUP_TTL_SECONDS``, default 3600s) because
+    the ledger only needs to cover the concurrent-redelivery window — once the row
+    lands in `raw_channel_events`, the cheap `check_provider_event_recorded`
+    read-guard catches every later redelivery.
+
+    Fail-open: an empty ``provider_event_id`` (already skipped upstream) or any
+    non-duplicate store error returns ``True`` — a dedup-store hiccup must never
+    drop a legitimate event (the pipeline still dedups via provider_event_id /
+    payload_hash / lineage version).
+    """
+    if not provider_event_id:
+        return True
+    from pymongo.errors import DuplicateKeyError  # type: ignore
+    key = hashlib.sha256(
+        f"{tenant_id}:{provider}:{provider_event_id}".encode(),
+    ).hexdigest()
+    now = datetime.now(UTC)
+    try:
+        await db[COLL_CHANNEL_EVENT_DEDUP].insert_one({
+            "_id": key,
+            "tenant_id": tenant_id,
+            "provider": provider,
+            "provider_event_id": provider_event_id,
+            "claimed_at": now,
+            "expires_at": now + timedelta(seconds=CM_EVENT_DEDUP_TTL_SECONDS),
+        })
+        return True
+    except DuplicateKeyError:
+        return False
+    except Exception as e:
+        logger.warning(
+            f"[CM-DEDUP-CLAIM] fail-open (store error, non-blocking): {e}",
+        )
+        return True
+
+
 async def check_payload_hash_exists(
     tenant_id: str, provider: str, external_reservation_id: str, payload_hash: str,
 ) -> bool:
@@ -550,6 +630,12 @@ async def ensure_indexes() -> None:
     )
     await db[COLL_RAW_CHANNEL_EVENTS].create_index(
         [("tenant_id", 1), ("property_id", 1), ("received_at", -1)],
+    )
+
+    # Channel event dedup ledger (#649): atomic webhook idempotency claim.
+    # _id is the sha256 natural key (unique by default); TTL bounds ledger size.
+    await db[COLL_CHANNEL_EVENT_DEDUP].create_index(
+        "expires_at", expireAfterSeconds=0,
     )
 
     # Reservation lineage

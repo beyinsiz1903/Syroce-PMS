@@ -340,6 +340,15 @@ async def ensure_performance_indexes():
         ("agency_api_keys", [("tenant_id", 1), ("agency_id", 1)],
          "ux_b2b_agency_api_key_active",
          {"unique": True, "partialFilterExpression": {"is_active": True}}),
+        # Exely reservations (#649): partial-unique on (tenant, external_id) so two
+        # concurrent first-deliveries of the same reservation can't both insert.
+        # With a unique index, MongoDB auto-retries the upsert's duplicate-key once
+        # → update, making concurrent first-delivery race-free. The partial filter
+        # keeps legacy rows without a string external_id out of the constraint
+        # (best-effort build; no fake-green).
+        ("exely_reservations", [("tenant_id", 1), ("external_id", 1)],
+         "ux_exely_reservations_tenant_extid",
+         {"unique": True, "partialFilterExpression": {"external_id": {"$type": "string"}}}),
     ]
     for coll_name, keys, name, kwargs in indexes:
         try:

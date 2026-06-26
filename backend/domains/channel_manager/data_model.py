@@ -300,6 +300,7 @@ class RatePlanMapping(BaseModel):
 # ══════════════════════════════════════════════════════════════════════
 
 COLL_RAW_CHANNEL_EVENTS = "raw_channel_events"
+COLL_CHANNEL_EVENT_DEDUP = "channel_event_dedup"
 
 class RawEventSource(str, Enum):
     WEBHOOK = "webhook"
