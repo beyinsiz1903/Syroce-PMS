@@ -13,19 +13,20 @@ from pydantic import BaseModel
 
 from core.security import get_current_user
 from models.schemas import User
-from modules.pms_core.role_permission_service import (  # v90 DW
-    RolePermissionService,
-    require_op,
-)
-from security.field_encryption import get_field_encryption_service
-
 from modules.messaging.recipient_crypto import (
     recipient_hash as _recipient_hash,
+)
+from modules.messaging.recipient_crypto import (
     reveal_delivery_log,
     reveal_recipient,
     seal_delivery_log,
     seal_recipient,
 )
+from modules.pms_core.role_permission_service import (  # v90 DW
+    RolePermissionService,
+    require_op,
+)
+from security.field_encryption import get_field_encryption_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/messaging-center", tags=["messaging-center"])

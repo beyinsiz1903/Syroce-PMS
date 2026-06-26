@@ -16,10 +16,9 @@ import secrets
 import uuid
 from typing import Any
 
-from core.crypto.engine import AESGCMEngine, AADContext
+from core.crypto.engine import AADContext, AESGCMEngine
 from core.crypto.errors import CryptoError, DecryptionError, TamperDetectedError
 from core.crypto.keys import load_keyring
-
 from domains.contact_center.voice_config import (
     get_recording_storage_config,
     get_twilio_voice_config,

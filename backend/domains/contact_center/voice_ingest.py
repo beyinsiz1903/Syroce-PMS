@@ -18,8 +18,8 @@ from uuid import uuid4
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from models.enums import CallStatus, ContactCenterChannel, MessageDirection
 from domains.contact_center.whatsapp_ingest import build_caller_crypto
+from models.enums import CallStatus, ContactCenterChannel, MessageDirection
 
 logger = logging.getLogger(__name__)
 

@@ -201,6 +201,11 @@ code {
     background-color: hsl(var(--secondary));
 }
 
+/* --- disabled: notr yuzeyler -> secondary (base variant ile ayni token) --- */
+.dark .disabled\:bg-gray-200:disabled {
+    background-color: hsl(var(--secondary));
+}
+
 /* --- data-[state=active] notr sekme yuzeyleri (Radix Tabs) -> card/muted ---
    Aktif sekmenin notr bg'si base bg-white/gray-50 ile AYNI tokena eslenir;
    yoksa aktif sekme koyu modda parlak beyaz/acik gri kalirdi (renkli sekmeler
@@ -242,6 +247,11 @@ code {
 .dark .text-zinc-600,
 .dark .text-zinc-500,
 .dark .text-zinc-400 {
+    color: hsl(var(--muted-foreground));
+}
+
+/* --- disabled: soluk metin -> muted-foreground (base variant ile ayni token) --- */
+.dark .disabled\:text-gray-500:disabled {
     color: hsl(var(--muted-foreground));
 }
 

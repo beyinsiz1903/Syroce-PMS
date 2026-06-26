@@ -25,6 +25,11 @@ from pydantic import BaseModel
 
 from core.database import db
 from core.security import _is_super_admin, get_current_user
+from domains.contact_center.provider import get_communication_provider
+from domains.contact_center.read_models import (
+    conversation_to_dto,
+    message_to_dto,
+)
 from models.enums import MessageDirection, MessageStatus
 from models.schemas import User
 from modules.pms_core.role_permission_service import (
@@ -33,12 +38,6 @@ from modules.pms_core.role_permission_service import (
     require_op,
 )
 from security.field_encryption import get_field_encryption_service
-
-from domains.contact_center.provider import get_communication_provider
-from domains.contact_center.read_models import (
-    conversation_to_dto,
-    message_to_dto,
-)
 
 logger = logging.getLogger(__name__)
 

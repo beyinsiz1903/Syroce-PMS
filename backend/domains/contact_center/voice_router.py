@@ -26,18 +26,16 @@ from pymongo.errors import DuplicateKeyError
 
 from core.database import db
 from core.security import _is_super_admin, get_current_user
-from models.schemas import User
-from modules.pms_core.role_permission_service import require_module, require_op
-from security.field_encryption import get_field_encryption_service
-
 from domains.contact_center.read_models import call_to_dto
-from domains.contact_center.voice_config import get_twilio_voice_config
 from domains.contact_center.voice_ingest import (
     record_inbound_call,
     record_outbound_call,
     update_call_status,
 )
 from domains.contact_center.voice_provider import TwilioVoiceProvider
+from models.schemas import User
+from modules.pms_core.role_permission_service import require_module, require_op
+from security.field_encryption import get_field_encryption_service
 
 logger = logging.getLogger(__name__)
 
@@ -105,9 +103,10 @@ async def _notify_incoming_call(tenant_id: str, call_id: str) -> None:
     Telefon/numara/sır ASLA yayınlanmaz — istemci yetkili REST ucundan çeker.
     """
     try:
+        from datetime import UTC, datetime
+
         from core.ws_rooms import tenant_broadcast_room
         from websocket_server import sio  # type: ignore
-        from datetime import UTC, datetime
 
         await sio.emit(
             "contact_center:incoming_call",
