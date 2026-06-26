@@ -22,7 +22,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
@@ -178,6 +178,26 @@ class ContractPropose(BaseModel):
     currency: str = Field(default="TRY", pattern="^[A-Z]{3}$")
     allowed_room_types: list[str] = []
     special_terms: str = ""
+    # Agency v1 (ADR Karar 6) — PMS -> acente imzali webhook hedefi. Opsiyonel
+    # ve additive (zero-downtime: mevcut sozlesmeler bu alan olmadan calismaya
+    # devam eder). Verildiginde yalnizca https zorunlu; gercek SSRF/DNS-rebind
+    # korumasi dispatch aninda (safe_request_async, Adim 3) uygulanir — burada
+    # format kapisi, orada guvenlik kapisi.
+    webhook_url: str | None = None
+
+    @field_validator("webhook_url")
+    @classmethod
+    def _validate_webhook_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if not v.startswith("https://"):
+            raise ValueError("webhook_url https:// ile baslamali")
+        if len(v) > 2048:
+            raise ValueError("webhook_url cok uzun")
+        return v
 
 
 def _validate_dates(valid_from: str, valid_to: str) -> None:
@@ -253,6 +273,8 @@ async def contract_propose(
         "currency": data.currency,
         "allowed_room_types": data.allowed_room_types,
         "special_terms": data.special_terms,
+        # Agency v1 (ADR Karar 6) — PMS -> acente webhook hedefi (opsiyonel).
+        "webhook_url": data.webhook_url,
         "proposed_at": _now_iso(),
         "proposed_by_email": agency.get("contact_email", ""),
         "decided_at": None,
@@ -671,6 +693,9 @@ async def migrate_existing_agencies(
                     "currency": "TRY",
                     "allowed_room_types": ls.get("allowed_room_types", []),
                     "special_terms": "Otomatik geçiş — eski marketplace açık ilişkisinden",
+                    # Agency v1 (ADR Karar 6) — webhook hedefi migrasyonda yok;
+                    # acente sonradan sozlesme teklifi/guncellemesiyle ayarlar.
+                    "webhook_url": None,
                     "proposed_at": _now_iso(),
                     "proposed_by_email": "migration@syroce.com",
                     "decided_at": _now_iso(),

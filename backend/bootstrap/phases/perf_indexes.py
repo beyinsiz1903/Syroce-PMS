@@ -372,6 +372,35 @@ async def ensure_performance_indexes():
         ("exely_reservations", [("tenant_id", 1), ("external_id", 1)],
          "ux_exely_reservations_tenant_extid",
          {"unique": True, "partialFilterExpression": {"external_id": {"$type": "string"}}}),
+        # Agency v1 (ADR docs/adr/2026-06-agency-pms-integration.md) — Adim 1 DB
+        # temeli. idempotency_cache = Karar 4 SOGUK katmani: cozulen rezervasyon
+        # yanitlari (POST create / PATCH modify / DELETE cancel) Mongo'ya offload
+        # edilir ve 48h sonunda TTL ile otomatik silinir (sicak Redis katmani
+        # ayri, 15-30dk; bu DB foundation degil). Iki index:
+        #   - ux_idempotency_cache_scope: ADR'de DONMUS scope
+        #     (tenant_id, agency_id, method, path, idempotency_key). Yalniz key
+        #     ile scope YETERSIZ — ayni anahtar farkli uclarda (POST create vs
+        #     PATCH modify) yanlis 409/422 uretebilir; method+path baglama bunu
+        #     engeller, cross-tenant gorunmez. PARTIAL on idempotency_key string:
+        #     henuz key atanmamis (None) satirlar collision'a girmez (fake-green
+        #     onlenir). UNIQUE → ayni scope iki kez yazilamaz (replay/dedup
+        #     race-free, DuplicateKeyError ile cozulur).
+        #   - ttl_idempotency_cache: expires_at (BSON Date) yazici tarafindan
+        #     now+48h set edilir; expireAfterSeconds=0 → suresi gecince Mongo
+        #     siler. 48h, acente retry penceresinden (Karar 6 webhook backoff
+        #     ~24h) marjli buyuk. PII govdesi soguk katmanda sifreli/referans
+        #     tutulur (yazici sorumlulugu, Adim 3); index sadece scope+TTL.
+        # background=True ortak donguden gelir → boot'ta indeks basimi worker'i
+        # kilitlemez (502/503 yok), zero-downtime.
+        ("idempotency_cache",
+         [("tenant_id", 1), ("agency_id", 1), ("method", 1), ("path", 1),
+          ("idempotency_key", 1)],
+         "ux_idempotency_cache_scope",
+         {"unique": True,
+          "partialFilterExpression": {"idempotency_key": {"$type": "string"}}}),
+        ("idempotency_cache", [("expires_at", 1)],
+         "ttl_idempotency_cache",
+         {"expireAfterSeconds": 0}),
     ]
     for coll_name, keys, name, kwargs in indexes:
         try:
