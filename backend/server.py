@@ -373,6 +373,13 @@ async def _tenant_violation_handler(request: Request, exc: _TenantViolationError
 
 @app.exception_handler(RequestValidationError)
 async def _validation_handler(request: Request, exc: RequestValidationError):
+    # Agency v1 (ADR Karar 1, donmus hata modeli): acente uclarinda 422 govdesi de
+    # ADR ortak zarfini doner (error_code UST seviyede + schema_version), FastAPI'nin
+    # varsayilan {"detail":[...]} formati DEGIL. Alan-bazli detay (PII iceren input)
+    # bu uclarda disari verilmez. Diger tum yollar asagidaki PII-scrub davranisini korur.
+    from routers.agency_v1.errors import agency_validation_response, is_agency_path
+    if is_agency_path(request):
+        return agency_validation_response()
     # Strip echoed `input` (which contains raw request body, often with PII like
     # credit cards, passwords, tokens). Replace with a redacted summary so debugging
     # is still possible without leaking sensitive data.
