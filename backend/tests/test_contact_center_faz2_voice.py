@@ -37,6 +37,7 @@ from domains.contact_center.voice_ingest import (
     attach_recording_ref,
     map_twilio_status,
     record_inbound_call,
+    record_outbound_call,
     update_call_status,
 )
 from domains.contact_center.voice_provider import TwilioVoiceProvider
@@ -410,3 +411,91 @@ def test_pipeline_fail_closed_without_config(monkeypatch):
         "fetch_not_configured_or_unavailable",
         "storage_not_configured",
     }
+
+
+# ── 8. Giden çağrı (click-to-dial) ─────────────────────────────────────
+
+
+def test_sanitize_dial_number_accepts_e164_and_rejects_injection():
+    s = TwilioVoiceProvider.sanitize_dial_number
+    assert s("+90 555 111 22 33") == "+905551112233"
+    assert s("05551112233") == "05551112233"
+    # TwiML/enjeksiyon karakterleri atılır ya da reddedilir.
+    assert s('+1"/><Hangup/>5551234567') == "+15551234567"
+    assert s("abc") is None
+    assert s("123") is None  # 7 haneden az
+    assert s("") is None
+    assert s(None) is None
+    assert s("9" * 16) is None  # 15 haneden fazla
+
+
+def test_outbound_twiml_dials_number_with_caller_id_and_recording():
+    xml = TwilioVoiceProvider().build_outbound_twiml(
+        to_number="+905551112233",
+        caller_id="+902121234567",
+        recording_status_callback="https://x/api/voice/recording?tenant_id=t1",
+        dial_status_callback="https://x/api/voice/status?tenant_id=t1",
+    )
+    assert "<Dial" in xml and "<Number>+905551112233</Number>" in xml
+    assert 'callerId="+902121234567"' in xml
+    assert 'record="record-from-answer-dual"' in xml
+    assert "recordingStatusCallback=" in xml and "action=" in xml
+
+
+def test_outbound_twiml_fail_closed_without_caller_id_or_number():
+    p = TwilioVoiceProvider()
+    # caller ID yoksa giden çağrı başlatılmaz → güvenli fallback.
+    xml = p.build_outbound_twiml(to_number="+905551112233", caller_id=None)
+    assert "<Dial" not in xml and "<Say" in xml and "<Hangup/>" in xml
+    # geçersiz hedef numara → fallback (çevirme yok).
+    xml2 = p.build_outbound_twiml(to_number="abc", caller_id="+902121234567")
+    assert "<Dial" not in xml2 and "<Say" in xml2
+
+
+def test_outbound_twiml_escapes_caller_id_injection():
+    xml = TwilioVoiceProvider().build_outbound_twiml(
+        to_number="+905551112233",
+        caller_id='+90"/><Hangup/>',
+    )
+    # Ham enjeksiyon kapanış etiketi olarak GÖRÜNMEZ (attribute kaçışlandı).
+    assert '"/><Hangup/>' not in xml or "&" in xml
+
+
+def test_record_outbound_is_idempotent_and_seals_pii():
+    db = _FakeDB()
+    cid1 = asyncio.run(
+        record_outbound_call(
+            db, tenant_id="t1", provider_call_sid=_SID, to_phone=_PHONE
+        )
+    )
+    cid2 = asyncio.run(
+        record_outbound_call(
+            db, tenant_id="t1", provider_call_sid=_SID, to_phone=_PHONE
+        )
+    )
+    assert cid1 == cid2  # retry çift satır üretmez
+    assert len(db.contact_center_calls.docs) == 1
+    doc = db.contact_center_calls.docs[0]
+    # PII düz saklanmaz: hash+enc var, açık-metin numara YOK.
+    assert doc["caller_id_hash"] and doc["caller_id_enc"]
+    assert _PHONE not in str(doc)
+    for k in _FORBIDDEN_DOC_KEYS:
+        assert k not in doc
+    assert doc["status"] == CallStatus.RINGING.value
+    assert doc["direction"] == "outbound"
+
+
+def test_outbound_call_dto_masks_target_and_hides_recording_ref():
+    svc = _svc()
+    db = _FakeDB()
+    asyncio.run(
+        record_outbound_call(
+            db, tenant_id="t1", provider_call_sid=_SID, to_phone=_PHONE
+        )
+    )
+    doc = db.contact_center_calls.docs[0]
+    dto = call_to_dto(doc, svc)
+    assert dto["direction"] == "outbound"
+    assert dto["caller_phone"] is None  # varsayılan maskeli
+    assert dto["caller_phone_masked"] and "2233" in dto["caller_phone_masked"]
+    assert set(dto.keys()).issubset(CALL_DTO_KEYS)

@@ -55,26 +55,28 @@ def map_twilio_status(twilio_status: str | None) -> CallStatus | None:
     return _TWILIO_STATUS_MAP.get(twilio_status.strip().lower())
 
 
-async def record_inbound_call(
+async def _record_call(
     db,
     *,
     tenant_id: str,
     provider_call_sid: str,
-    from_phone: str,
+    phone: str,
+    direction: str,
     agent_id: str | None = None,
     conversation_id: str | None = None,
 ) -> str | None:
-    """Gelen çağrıyı idempotent biçimde kaydeder; çağrı kayıt ``id``'sini döner.
+    """Gelen/giden çağrıyı idempotent biçimde kaydeder; çağrı ``id``'sini döner.
 
-    ``(tenant_id, provider_call_sid)`` üzerinde upsert: Twilio'nun aynı inbound
-    webhook'u retry etmesi çift satır üretmez. Telefon yalnızca hash+enc tutulur.
+    ``(tenant_id, provider_call_sid)`` üzerinde upsert: Twilio aynı webhook'u retry
+    etse de tek satır oluşur. Telefon (gelen=arayan, giden=hedef) yalnızca hash+enc
+    tutulur — düz metin ASLA saklanmaz.
     """
     if not tenant_id or not provider_call_sid:
-        logger.warning("[CC-VOICE] inbound: tenant/call-sid eksik; atlanıyor")
+        logger.warning("[CC-VOICE] kayıt: tenant/call-sid eksik; atlanıyor")
         return None
     try:
         svc = _svc()
-        caller_id_hash, caller_id_enc = build_caller_crypto(svc, from_phone or "")
+        caller_id_hash, caller_id_enc = build_caller_crypto(svc, phone or "")
         now = datetime.now(UTC)
         set_on_insert = {
             "id": str(uuid4()),
@@ -82,7 +84,7 @@ async def record_inbound_call(
             "provider_call_sid": provider_call_sid,
             "conversation_id": conversation_id,
             "channel": _CHANNEL,
-            "direction": MessageDirection.INBOUND.value,
+            "direction": direction,
             "status": CallStatus.RINGING.value,
             "caller_id_hash": caller_id_hash,
             "caller_id_enc": caller_id_enc,
@@ -107,8 +109,54 @@ async def record_inbound_call(
             )
         return (doc or {}).get("id") or set_on_insert["id"]
     except Exception:
-        logger.exception("[CC-VOICE] inbound kayıt başarısız (bastırıldı, PII'siz)")
+        logger.exception("[CC-VOICE] çağrı kaydı başarısız (bastırıldı, PII'siz)")
         return None
+
+
+async def record_inbound_call(
+    db,
+    *,
+    tenant_id: str,
+    provider_call_sid: str,
+    from_phone: str,
+    agent_id: str | None = None,
+    conversation_id: str | None = None,
+) -> str | None:
+    """Gelen çağrıyı idempotent biçimde kaydeder (arayan numarası hash+enc)."""
+    return await _record_call(
+        db,
+        tenant_id=tenant_id,
+        provider_call_sid=provider_call_sid,
+        phone=from_phone,
+        direction=MessageDirection.INBOUND.value,
+        agent_id=agent_id,
+        conversation_id=conversation_id,
+    )
+
+
+async def record_outbound_call(
+    db,
+    *,
+    tenant_id: str,
+    provider_call_sid: str,
+    to_phone: str,
+    agent_id: str | None = None,
+    conversation_id: str | None = None,
+) -> str | None:
+    """Giden (click-to-dial) çağrıyı idempotent kaydeder (hedef numarası hash+enc).
+
+    Gelen çağrıyla aynı koleksiyon/anahtar/şifreleme boru hattını kullanır; tek fark
+    ``direction=outbound`` ve telefonun aranan (hedef) numara olmasıdır.
+    """
+    return await _record_call(
+        db,
+        tenant_id=tenant_id,
+        provider_call_sid=provider_call_sid,
+        phone=to_phone,
+        direction=MessageDirection.OUTBOUND.value,
+        agent_id=agent_id,
+        conversation_id=conversation_id,
+    )
 
 
 async def update_call_status(

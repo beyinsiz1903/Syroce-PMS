@@ -34,6 +34,7 @@ from domains.contact_center.read_models import call_to_dto
 from domains.contact_center.voice_config import get_twilio_voice_config
 from domains.contact_center.voice_ingest import (
     record_inbound_call,
+    record_outbound_call,
     update_call_status,
 )
 from domains.contact_center.voice_provider import TwilioVoiceProvider
@@ -49,13 +50,53 @@ _XML = "application/xml"
 def _public_url(request: Request) -> str:
     """Twilio imzasının doğrulanacağı dış URL'i kurar (proxy-güvenli).
 
-    Twilio, yapılandırdığı tam webhook URL'ine imza atar; Replit/ters-proxy ardında
-    ``request.url`` iç şemayı taşıyabilir, bu yüzden varsa ``PUBLIC_APP_URL`` esas alınır.
+    Twilio, yapılandırdığı tam webhook URL'ine (sorgu dizesi dâhil) imza atar;
+    Replit/ters-proxy ardında ``request.url`` iç şemayı taşıyabilir, bu yüzden varsa
+    ``PUBLIC_APP_URL`` esas alınır. Sorgu dizesi (örn. giden çağrı callback'lerindeki
+    imzalı ``tenant_id``) imza doğrulaması için KORUNMALI.
     """
     base = os.getenv("PUBLIC_APP_URL", "").strip().rstrip("/")
+    query = request.url.query
+    suffix = f"?{query}" if query else ""
     if base:
-        return f"{base}{request.url.path}"
+        return f"{base}{request.url.path}{suffix}"
     return str(request.url)
+
+
+def _callback_urls(tenant_id: str | None = None) -> tuple[str | None, str | None]:
+    """Kayıt + durum callback URL'lerini kurar (``PUBLIC_APP_URL`` yoksa None).
+
+    Giden çağrıda ``To``/``From`` kiracıya eşlenemez (numara değil client kimliği);
+    bu yüzden ``tenant_id`` imzalı bir sorgu parametresi olarak eklenir. Twilio tüm
+    URL'i (sorgu dâhil) imzalar → ``tenant_id`` istemci tarafından sahtelenemez.
+    """
+    base = os.getenv("PUBLIC_APP_URL", "").strip().rstrip("/")
+    if not base:
+        return None, None
+    suffix = ""
+    if tenant_id:
+        from urllib.parse import urlencode
+
+        suffix = f"?{urlencode({'tenant_id': tenant_id})}"
+    return (
+        f"{base}/api/voice/recording{suffix}",
+        f"{base}/api/voice/status{suffix}",
+    )
+
+
+async def _resolve_tenant_id(request: Request, to_number: str) -> str | None:
+    """Callback'lerde kiracıyı çözer: imzalı ``tenant_id`` sorgusu → numara eşlemesi.
+
+    Giden çağrı callback'leri ``?tenant_id=`` taşır (imza ile korunur). Gelen çağrı
+    callback'lerinde sorgu yoktur → ``To`` numarasından sunucu-tarafı eşleme yapılır.
+    """
+    qp = request.query_params.get("tenant_id")
+    if qp:
+        return qp
+    cfg = await _resolve_tenant_for_number(to_number)
+    if cfg and cfg.get("tenant_id"):
+        return cfg["tenant_id"]
+    return None
 
 
 async def _notify_incoming_call(tenant_id: str, call_id: str) -> None:
@@ -369,6 +410,37 @@ async def _resolve_tenant_for_number(to_number: str) -> dict | None:
     )
 
 
+async def _resolve_number_for_tenant(tenant_id: str) -> dict | None:
+    """Kiracının giden çağrı caller ID (Twilio numarası) eşlemesini döner.
+
+    Giden çağrıda caller ID istemciden ALINMAZ — kiracının operatörce seedlenmiş
+    ``contact_center_voice_numbers`` satırından (``to_number``) türetilir. Yoksa None
+    (fail-closed: numara olmadan giden çağrı başlatılmaz).
+    """
+    if not tenant_id:
+        return None
+    return await db.contact_center_voice_numbers.find_one(
+        {"tenant_id": tenant_id}, {"_id": 0}
+    )
+
+
+def _parse_client_identity(value: str) -> str | None:
+    """Twilio ``From``/``Caller`` (``client:<tenant_id>:<user_id>``) → tenant_id.
+
+    Kimlik access token'da SUNUCU tarafından basıldığı ve Twilio isteği imzaladığı
+    için buradan türetilen ``tenant_id`` GÜVENİLİRDİR (istemci sahteleyemez). Beklenen
+    biçim dışındaysa None (fail-closed).
+    """
+    if not value:
+        return None
+    raw = value.strip()
+    if raw.startswith("client:"):
+        raw = raw[len("client:"):]
+    parts = raw.split(":", 1)
+    tenant_id = parts[0].strip() if parts else ""
+    return tenant_id or None
+
+
 @public_router.post("/inbound")
 async def voice_inbound(request: Request):
     """Gelen çağrı: imza doğrula → kiracı eşle → çağrı kaydı → TwiML.
@@ -413,11 +485,75 @@ async def voice_inbound(request: Request):
     if call_id:
         await _notify_incoming_call(tenant_id, call_id)
 
-    base = os.getenv("PUBLIC_APP_URL", "").strip().rstrip("/")
-    rec_cb = f"{base}/api/voice/recording" if base else None
-    status_cb = f"{base}/api/voice/status" if base else None
+    rec_cb, status_cb = _callback_urls(tenant_id)
     twiml = provider.build_inbound_twiml(
         agent_identity=agent_identity,
+        recording_status_callback=rec_cb,
+        dial_status_callback=status_cb,
+    )
+    return Response(content=twiml, media_type=_XML)
+
+
+@public_router.post("/outbound")
+async def voice_outbound(request: Request):
+    """Giden çağrı (click-to-dial): TwiML App voiceUrl.
+
+    Ajan softphone'dan ``Device.connect({ params: { To } })`` çağırınca Twilio buraya
+    POST eder. Akış: imza doğrula → ``From``/``Caller`` client kimliğinden kiracıyı
+    SUNUCU-tarafı türet (istemci tenant geçemez) → kiracının Twilio numarasını caller
+    ID olarak çöz → giden çağrıyı idempotent kaydet → hedefi arayan TwiML döndür.
+
+    Fail-closed: imza geçersizse 403; kimlik/numara/caller ID eksikse kibar sesli
+    fallback (giden çağrı başlatılmaz). PII (hedef numara) ASLA loglanmaz.
+    """
+    form = await request.form()
+    params = {k: str(v) for k, v in form.items()}
+    provider = TwilioVoiceProvider()
+    if not provider.validate_signature(
+        url=_public_url(request),
+        params=params,
+        signature=request.headers.get("X-Twilio-Signature", ""),
+    ):
+        return Response(
+            content=provider.say_fallback("Çağrı doğrulanamadı."),
+            media_type=_XML,
+            status_code=403,
+        )
+
+    call_sid = params.get("CallSid", "")
+    to_number = params.get("To", "")
+    # Kiracı YALNIZCA sunucu-basılı client kimliğinden gelir (istemci geçemez).
+    tenant_id = _parse_client_identity(
+        params.get("From", "") or params.get("Caller", "")
+    )
+    if not tenant_id:
+        return Response(
+            content=provider.say_fallback("Çağrı başlatılamadı."),
+            media_type=_XML,
+        )
+
+    number_cfg = await _resolve_number_for_tenant(tenant_id)
+    caller_id = (number_cfg or {}).get("to_number")
+    sanitized = provider.sanitize_dial_number(to_number)
+    if not caller_id or not sanitized:
+        return Response(
+            content=provider.say_fallback(
+                "Çağrı başlatılamadı. Lütfen numarayı kontrol edin."
+            ),
+            media_type=_XML,
+        )
+
+    await record_outbound_call(
+        db,
+        tenant_id=tenant_id,
+        provider_call_sid=call_sid,
+        to_phone=sanitized,
+    )
+
+    rec_cb, status_cb = _callback_urls(tenant_id)
+    twiml = provider.build_outbound_twiml(
+        to_number=sanitized,
+        caller_id=caller_id,
         recording_status_callback=rec_cb,
         dial_status_callback=status_cb,
     )
@@ -440,10 +576,9 @@ async def voice_status(request: Request):
     ):
         return Response(status_code=403)
 
-    to_number = params.get("To", "")
     call_sid = params.get("CallSid", "")
-    cfg = await _resolve_tenant_for_number(to_number)
-    if cfg and cfg.get("tenant_id") and call_sid:
+    tenant_id = await _resolve_tenant_id(request, params.get("To", ""))
+    if tenant_id and call_sid:
         duration = params.get("CallDuration") or params.get("DialCallDuration")
         try:
             duration_i = int(duration) if duration else None
@@ -451,7 +586,7 @@ async def voice_status(request: Request):
             duration_i = None
         await update_call_status(
             db,
-            tenant_id=cfg["tenant_id"],
+            tenant_id=tenant_id,
             provider_call_sid=call_sid,
             twilio_status=params.get("CallStatus") or params.get("DialCallStatus") or "",
             duration_seconds=duration_i,
@@ -477,11 +612,10 @@ async def voice_recording(request: Request):
     ):
         return Response(status_code=403)
 
-    cfg = await _resolve_tenant_for_number(params.get("To", ""))
+    tenant_id = await _resolve_tenant_id(request, params.get("To", ""))
     call_sid = params.get("CallSid", "")
     recording_url = params.get("RecordingUrl", "")
-    if cfg and cfg.get("tenant_id") and call_sid and recording_url:
-        tenant_id = cfg["tenant_id"]
+    if tenant_id and call_sid and recording_url:
         try:
             duration = int(params.get("RecordingDuration") or 0)
         except (TypeError, ValueError):

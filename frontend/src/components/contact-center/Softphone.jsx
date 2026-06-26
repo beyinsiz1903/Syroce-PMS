@@ -68,6 +68,7 @@ export default function Softphone({ user }) {
   const [status, setStatus] = useState("idle");
   const [detail, setDetail] = useState("");
   const [incomingFrom, setIncomingFrom] = useState("");
+  const [dialNumber, setDialNumber] = useState("");
   const deviceRef = useRef(null);
   const callRef = useRef(null);
 
@@ -165,6 +166,43 @@ export default function Softphone({ user }) {
       setDetail("Sesli arama bileşeni yüklenemedi.");
     }
   }, [teardown]);
+
+  const startCall = useCallback(async () => {
+    const device = deviceRef.current;
+    if (!device) {
+      setDetail("Önce softphone'u aktifleştirin.");
+      return;
+    }
+    const target = (dialNumber || "").trim();
+    if (!target) {
+      setDetail("Aranacak numarayı girin.");
+      return;
+    }
+    try {
+      // Twilio buradaki params'ı TwiML App voiceUrl'ine (/api/voice/outbound)
+      // POST eder; kiracı sunucu tarafında client kimliğinden türetilir.
+      const call = await device.connect({ params: { To: target } });
+      callRef.current = call;
+      setStatus("on_call");
+      setDetail("");
+      call.on("disconnect", () => {
+        callRef.current = null;
+        setStatus(deviceRef.current ? "ready" : "idle");
+      });
+      call.on("cancel", () => {
+        callRef.current = null;
+        setStatus(deviceRef.current ? "ready" : "idle");
+      });
+      call.on("error", () => {
+        callRef.current = null;
+        setStatus(deviceRef.current ? "ready" : "idle");
+        setDetail("Çağrı sırasında hata oluştu.");
+      });
+    } catch {
+      setStatus(deviceRef.current ? "ready" : "idle");
+      setDetail("Giden çağrı başlatılamadı.");
+    }
+  }, [dialNumber]);
 
   const acceptCall = useCallback(() => {
     try {
@@ -274,13 +312,37 @@ export default function Softphone({ user }) {
                 Görüşmeyi sonlandır
               </button>
             ) : status === "ready" ? (
-              <button
-                type="button"
-                onClick={deactivate}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Devre dışı bırak
-              </button>
+              <div className="space-y-2">
+                <label className="block text-xs font-medium text-gray-600">
+                  Aranacak numara
+                </label>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  value={dialNumber}
+                  onChange={(e) => setDialNumber(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") startCall();
+                  }}
+                  placeholder="+90 5XX XXX XX XX"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={startCall}
+                  disabled={!dialNumber.trim()}
+                  className="w-full rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
+                >
+                  Ara
+                </button>
+                <button
+                  type="button"
+                  onClick={deactivate}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Devre dışı bırak
+                </button>
+              </div>
             ) : status === "activating" ? (
               <button
                 type="button"

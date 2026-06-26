@@ -136,6 +136,70 @@ class TwilioVoiceProvider:
             "</Response>"
         )
 
+    # ── Giden çağrı (click-to-dial) TwiML ──────────────────────────────
+
+    @staticmethod
+    def sanitize_dial_number(raw: str | None) -> str | None:
+        """İstemciden gelen hedef numarayı E.164'e yakın güvenli biçime indirger.
+
+        Click-to-dial'de hedef numara istemci-kontrollüdür; TwiML enjeksiyonunu ve
+        geçersiz çevirmeyi önlemek için yalnızca ``+`` ön eki + 7-15 hane kabul edilir,
+        diğer tüm karakterler atılır. Geçersizse ``None`` (fail-closed).
+        """
+        if not raw:
+            return None
+        s = str(raw).strip()
+        plus = s.startswith("+")
+        digits = "".join(ch for ch in s if ch.isdigit())
+        if not (7 <= len(digits) <= 15):
+            return None
+        return ("+" if plus else "") + digits
+
+    def build_outbound_twiml(
+        self,
+        *,
+        to_number: str | None,
+        caller_id: str | None,
+        recording_status_callback: str | None = None,
+        dial_status_callback: str | None = None,
+        timeout_seconds: int = 30,
+    ) -> str:
+        """Giden çağrı (ajan → misafir) için TwiML üretir.
+
+        ``to_number`` istemciden gelir (sanitize edilir); ``caller_id`` ise kiracının
+        sunucu-tarafı eşlenmiş Twilio numarasıdır (istemci geçemez). İkisinden biri
+        eksik/geçersizse güvenli sesli fallback döner (fail-closed). Kayıt gelen çağrı
+        ile aynı çift-kanal boru hattını kullanır. XML elle ve güvenli kaçışla kurulur.
+        """
+        sanitized = self.sanitize_dial_number(to_number)
+        if not sanitized or not caller_id:
+            return self.say_fallback(
+                "Çağrı başlatılamadı. Lütfen numarayı kontrol edin."
+            )
+        dial_attrs = [
+            'record="record-from-answer-dual"',
+            f'timeout="{int(timeout_seconds)}"',
+            f"callerId={quoteattr(caller_id)}",
+        ]
+        if recording_status_callback:
+            dial_attrs.append(
+                f"recordingStatusCallback={quoteattr(recording_status_callback)}"
+            )
+            dial_attrs.append('recordingStatusCallbackEvent="completed"')
+        if dial_status_callback:
+            dial_attrs.append(f"action={quoteattr(dial_status_callback)}")
+            dial_attrs.append('method="POST"')
+        dial_attr_str = " ".join(dial_attrs)
+        number = escape(sanitized)
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            "<Response>"
+            f"<Dial {dial_attr_str}>"
+            f"<Number>{number}</Number>"
+            "</Dial>"
+            "</Response>"
+        )
+
     @staticmethod
     def say_fallback(message: str, *, language: str = "tr-TR") -> str:
         """PII içermeyen güvenli bir sesli-mesaj TwiML'i (fail-closed yanıt)."""
