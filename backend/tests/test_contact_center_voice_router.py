@@ -672,3 +672,163 @@ def test_voice_numbers_rejects_wrong_method(voice_auth_app, method, path):
     # Method routing auth'tan ÖNCE çalışır → yanlış method kimliksizken bile 405.
     resp = getattr(voice_auth_app, method)(path)
     assert resp.status_code == 405, f"{method.upper()} {path} 405 vermedi"
+
+
+# ── Per-tenant ENTITLEMENT (modül AÇIK/KAPALI) kapısı ──────────────────
+#
+# Yukarıdaki ``router`` üstündeki ``require_module("contact_center")`` bir ROL
+# allowlist'idir (kullanıcının rolü modülde mi). Bir otelde ``contact_center``
+# eklentisinin AÇIK/KAPALI olması ise AYRI bir katmandır: ``EntitlementMiddleware``
+# bunu ``ROUTE_MODULE_MAP`` üzerinden yol-bazlı uygular. Modül KAPALIyken auth'lu
+# softphone uçlarına kimlikli istek 403 ``ENTITLEMENT_DENIED`` almalı; aksi halde
+# kapalı bir eklentinin uçları sessizce erişilebilir kalırdı (regresyon).
+#
+# Public Twilio webhook'ları (``/api/voice/*``) bilinçli olarak bu haritanın
+# DIŞINDADIR (imza ile korunur) — kimliksiz Twilio çağrısı entitlement 403'üne
+# değil imza gate'ine ulaşmalı. Aşağıdaki testler iki şeyi sabitler:
+#   1) Üç softphone yol grubunun (token / calls / voice numbers CRUD) tümü
+#      "contact_center" modülüne map'lenir ve EXEMPT değildir.
+#   2) Modül KAPALI bir kiracı bağlamında bu uçlar 403 ENTITLEMENT_DENIED döner;
+#      AÇIKken middleware kapısını geçer; super_admin kapıyı bypass eder; public
+#      ``/api/voice/*`` haritanın dışında olduğu için middleware'ce engellenmez.
+#
+# Saf testtir: gerçek backend/Mongo/Twilio gerektirmez — entitlement DB erişimi
+# sahte koleksiyonla, marketplace fallback ve metering monkeypatch'le izole edilir;
+# JWT gerçek ``create_token`` ile basılır (aynı JWT_SECRET ile çözülür). Sahte-yeşil
+# ÜRETİLMEZ: 403/200 davranışı GERÇEK middleware kodundan gözlenir.
+
+from core import entitlement as _entitlement  # noqa: E402
+from core.entitlement import (  # noqa: E402
+    EXEMPT_PREFIXES,
+    EntitlementMiddleware,
+    _match_route_module,
+)
+from core.security import create_token  # noqa: E402
+
+# Üç softphone yol grubu — entitlement haritasının "contact_center"a bağlaması
+# gereken auth'lu uçlar (token / çağrı listesi / numara eşleme CRUD).
+_SOFTPHONE_AUTH_PATHS = [
+    "/api/contact-center/voice/token",
+    "/api/contact-center/calls",
+    "/api/contact-center/voice/numbers",
+    "/api/contact-center/voice/numbers/n1",
+]
+
+
+def test_softphone_auth_paths_map_to_contact_center_module():
+    # Üç yol grubunun tümü contact_center'a map'lenir ve EXEMPT değildir →
+    # middleware bunlar için modül kontrolü uygular.
+    for path in _SOFTPHONE_AUTH_PATHS:
+        assert _match_route_module(path) == "contact_center", path
+        assert not any(path.startswith(e) for e in EXEMPT_PREFIXES), path
+
+
+def test_public_voice_webhook_paths_are_outside_entitlement_map():
+    # Bilinçli istisna: /api/voice/* HİÇBİR modüle map'lenmez → imza-korumalı
+    # Twilio webhook'u kimliksiz çağrı alabilsin (entitlement 403'ü olmasın).
+    for path in _PUBLIC_PATHS:
+        assert _match_route_module(path) is None, path
+
+
+class _EntFakeColl:
+    """Tek-belge döndüren sahte koleksiyon (entitlement DB okumalarını izole eder)."""
+
+    def __init__(self, doc=None):
+        self._doc = doc
+
+    async def find_one(self, flt, proj=None):
+        return dict(self._doc) if self._doc else None
+
+
+class _EntFakeDB:
+    def __init__(self, tenant_doc, user_doc):
+        self.tenants = _EntFakeColl(tenant_doc)
+        self.users = _EntFakeColl(user_doc)
+
+
+async def _ok_downstream(scope, receive, send):
+    """Middleware'i GEÇEN her istek için 200 dönen downstream ASGI stub'ı.
+
+    Entitlement middleware route handler'dan ÖNCE çalışır; bu stub yalnızca
+    "kapı geçildi mi?" sorusunu izole eder (auth/RBAC ayrı katmandır)."""
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 200,
+            "headers": [(b"content-type", b"application/json")],
+        }
+    )
+    await send({"type": "http.response.body", "body": b'{"ok":true}'})
+
+
+@pytest.fixture
+def ent_client(monkeypatch):
+    """``module_on``/``super_admin`` parametreli EntitlementMiddleware TestClient'ı kurar."""
+
+    def _build(*, module_on, super_admin=False):
+        tenant_doc = {
+            "modules": {"contact_center": bool(module_on)},
+            "subscription_tier": "basic",
+        }
+        user_doc = {"role": "super_admin"} if super_admin else {"role": "front_desk"}
+        monkeypatch.setattr(_entitlement, "db", _EntFakeDB(tenant_doc, user_doc))
+
+        async def _noop_usage(*a, **k):
+            return None
+
+        monkeypatch.setattr(_entitlement, "record_usage", _noop_usage)
+
+        # Marketplace fallback: modül kapalıysa aktif abonelik de yok (fail-closed).
+        import core.subscriptions as _subs
+
+        async def _no_market(tenant_id, module_key):
+            return False
+
+        monkeypatch.setattr(_subs, "tenant_has_module", _no_market)
+        # Süper-admin lookup cache'i testler arası deterministik kalsın.
+        _entitlement._SUPER_ADMIN_CACHE.clear()
+        app = EntitlementMiddleware(_ok_downstream)
+        return TestClient(app, raise_server_exceptions=True)
+
+    return _build
+
+
+@pytest.mark.parametrize("path", _SOFTPHONE_AUTH_PATHS)
+def test_softphone_endpoint_blocked_when_module_disabled(ent_client, path):
+    # Modül KAPALI kiracı + geçerli JWT → 403 ENTITLEMENT_DENIED (uç sızmaz).
+    client = ent_client(module_on=False)
+    token = create_token("u1", "t1")
+    resp = client.post(path, headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 403, f"{path} modül kapalıyken engellenmedi"
+    body = resp.json()
+    assert body["error_code"] == "ENTITLEMENT_DENIED"
+    assert body["required_module"] == "contact_center"
+
+
+@pytest.mark.parametrize("path", _SOFTPHONE_AUTH_PATHS)
+def test_softphone_endpoint_passes_gate_when_module_enabled(ent_client, path):
+    # Modül AÇIK → middleware modül kapısını GEÇER (downstream stub 200).
+    # Gerçek app'te auth/RBAC bu noktadan sonra ayrıca uygulanır.
+    client = ent_client(module_on=True)
+    token = create_token("u1", "t1")
+    resp = client.post(path, headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200, f"{path} modül açıkken kapıyı geçmeli"
+
+
+def test_super_admin_bypasses_module_gate_even_when_disabled(ent_client):
+    # Merkezi operatör (super_admin) modül kapalı olsa da kapıyı bypass eder.
+    client = ent_client(module_on=False, super_admin=True)
+    token = create_token("sa1", "t1")
+    resp = client.post(
+        "/api/contact-center/calls", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.parametrize("path", _PUBLIC_PATHS)
+def test_public_voice_webhook_not_blocked_by_entitlement(ent_client, path):
+    # Modül KAPALI + kimliksiz: /api/voice/* haritada olmadığından middleware
+    # engellemez (downstream stub 200). Gerçek app'te imza gate'i devreye girer.
+    client = ent_client(module_on=False)
+    resp = client.post(path)
+    assert resp.status_code == 200, f"{path} entitlement tarafından engellenmemeli"
