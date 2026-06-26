@@ -250,6 +250,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.agency_content", "router", ["Agency Content"], None, None),
     # Syroce B2B API — Acente Otomasyon Sistemi Entegrasyonu
     ("routers.b2b_api", "router", ["B2B API - Syroce"], None, None),
+    # Agency <-> PMS v1 — S2S entegrasyon sozlesmesi (ADR 2026-06); fail-closed iskelet
+    ("routers.agency_v1", "router", ["Agency v1 - PMS Entegrasyon"], None, None),
     # B2B Analytics Dashboard — Acente & API Kullanım Analitikleri
     ("routers.b2b_analytics", "router", ["B2B Analytics"], None, None),
     # Marketplace v1 — Cross-tenant B2B köprüsü (Syroce Agent entegrasyonu)
