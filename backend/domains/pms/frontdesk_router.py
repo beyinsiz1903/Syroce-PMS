@@ -581,10 +581,23 @@ async def add_folio_charge(
         split_group_id = str(uuid.uuid4()) if is_split else None
         now_iso = datetime.now(UTC).isoformat()
 
-        # Tüm split satırları (insert + balance $inc) tek atomik birim. Replica
-        # set varsa transaction; biri patlarsa rollback → kısmi yazım/dengesiz
-        # bakiye imkansız. Standalone Mongo'da procurement/mice ile aynı
-        # fail-closed fallback (operatör açıkça opt-in etmediyse 503).
+        def _build_response(charges: list[dict]) -> dict:
+            if is_split:
+                return {
+                    "split_group_id": split_group_id,
+                    "total_amount": net_amount,
+                    "charges": charges,
+                }
+            return charges[0]
+
+        # Tüm split satırları (insert + balance $inc) VE idempotency completion
+        # tek atomik birim. Replica set varsa transaction; biri patlarsa rollback
+        # → kısmi yazım/dengesiz bakiye imkansız. Completion da transaction'a
+        # dahil: "yazımlar commit" ⟺ "key completed" — commit-sonrası-complete-
+        # fail penceresi (çifte charge) yapısal olarak kapanır. Standalone
+        # Mongo'da procurement/mice ile aynı fail-closed fallback (operatör
+        # açıkça opt-in etmediyse 503).
+        response: dict
         try:
             async with await db.client.start_session() as session:
                 async with session.start_transaction():
@@ -594,6 +607,14 @@ async def add_folio_charge(
                         default_folio, allocations, is_split, split_group_id,
                         now_iso, current_user.name, session=session,
                     )
+                    response = _build_response(created)
+                    if idem_lock_id:
+                        await complete_idempotency(
+                            db, lock_id=idem_lock_id,
+                            response_body=response, session=session,
+                        )
+            # Transaction commit edildi → yazımlar + completion birlikte durable.
+            idem_lock_id = None
         except HTTPException:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -610,34 +631,26 @@ async def add_folio_charge(
                     status_code=503,
                     detail="Masraf kaydı atomik garanti sağlayamıyor (Mongo replica set gerekli).",
                 )
-            # Dev opt-in: best-effort transaction'sız fallback.
+            # Dev opt-in: best-effort transaction'sız fallback. UYARI: bu yolda
+            # yazımlar ile completion atomik DEĞİL; nadir bir commit-sonrası-
+            # complete-fail penceresinde retry çifte charge üretebilir. Yalnızca
+            # operatör STANDALONE_FALLBACK'i açıkça açtığında (geliştirme) etkin;
+            # üretim replica set ile fail-closed olduğundan bu risk taşınmaz.
             created = await _post_charge_allocations(
                 current_user.tenant_id, booking_id, category.value,
                 payload.description, unit_price, quantity, net_amount,
                 default_folio, allocations, is_split, split_group_id,
                 now_iso, current_user.name, session=None,
             )
-
-        response = (
-            {
-                "split_group_id": split_group_id,
-                "total_amount": net_amount,
-                "charges": created,
-            }
-            if is_split
-            else created[0]
-        )
-        # Yazımlar durable olarak commit edildi. complete patlarsa RELEASE
-        # ETME — iş tamamlandı; release çifte charge'a yol açardı. Kilit TTL
-        # ile süpürülür; bu noktada artık güvenli retry için cache yok.
-        if idem_lock_id:
-            try:
-                await complete_idempotency(db, lock_id=idem_lock_id, response_body=response)
-            except Exception:  # noqa: BLE001
-                logger.exception(
-                    "folio_charge idempotency complete failed (writes already committed)"
-                )
-            idem_lock_id = None
+            response = _build_response(created)
+            if idem_lock_id:
+                try:
+                    await complete_idempotency(db, lock_id=idem_lock_id, response_body=response)
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "folio_charge idempotency complete failed (non-tx fallback)"
+                    )
+                idem_lock_id = None
         return response
     except HTTPException:
         if idem_lock_id:

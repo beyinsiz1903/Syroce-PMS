@@ -218,6 +218,7 @@ async def complete_idempotency(
     *,
     lock_id: str,
     response_body: dict[str, Any],
+    session=None,
 ) -> None:
     now = datetime.now(UTC)
     set_fields = {
@@ -231,9 +232,13 @@ async def complete_idempotency(
     # failure `seal_response_body` returns {} (no plaintext written) and the
     # replay degrades to an empty body rather than leaking.
     set_fields.update(seal_response_body(response_body))
+    # session verilirse completion, çağıranın transaction'ına dahil edilir;
+    # böylece "yazımlar commit" ⟺ "key completed" atomik olur (çifte-charge
+    # penceresi yapısal olarak kapanır). Verilmezse mevcut davranış (best-effort).
     await db_handle.idempotency_keys.update_one(
         {"_id": lock_id},
         {"$set": set_fields},
+        session=session,
     )
 
 
