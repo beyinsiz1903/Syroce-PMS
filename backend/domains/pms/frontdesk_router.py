@@ -24,6 +24,17 @@ from models.enums import BookingStatus, ChannelType, ChargeCategory, PaymentMeth
 from models.schemas import Booking, Guest, User
 from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
 from modules.pms_core.role_permission_service import require_op  # v94 DW
+from domains.pms.folio_routing_split import split_kurus
+from core.booking_atomicity import (
+    is_replica_set_unavailable,
+    standalone_fallback_allowed,
+)
+from shared_kernel.idempotency import (
+    claim_idempotency,
+    complete_idempotency,
+    get_idempotency_key,
+    release_idempotency,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -325,45 +336,194 @@ async def _resolve_routed_folio(
     return None
 
 
-async def _apply_routing_for_charge(
+def _is_payor_target(target: str | None) -> bool:
+    """company / travel_agent / group_master → master/payor folyosu sayılır.
+    Kuruş artığı önceliği bu hedeflere verilir (misafiri fazla yüklememek için).
+    """
+    return target in ("company", "travel_agent", "group_master")
+
+
+async def _resolve_routing_allocations(
     tenant_id: str,
     booking: dict,
     charge_category: str,
     default_folio: dict,
-) -> dict:
-    """Booking.routing_rules içinden charge_category'ye uyan ilk aktif
-    kuralı bulup hedef folyoyu döner. Kural yoksa default_folio döner.
+    net_amount: float,
+) -> list[dict]:
+    """Booking.routing_rules içinden charge_category'ye uyan ilk aktif kurala
+    göre charge'ın hangi folyo(lar)a ne kadar yazılacağını döner.
+
+    Dönen her allocation: {"folio": <folio dict>, "amount": float, "rule": dict|None}.
+
+    - Kural yok / eşleşme yok → tek allocation: default (misafir) folyo, tam tutar.
+    - split_type yok (tam yönlendirme) → tek allocation: hedef folyo (resolve
+      edilemezse default), tam tutar. (Mevcut davranış korunur.)
+    - split_type "percentage" | "equal" → birden çok allocation; kuruş-tam
+      dağıtım (split_kurus); arta kalan kuruş ilk payor (şirket/acente/grup
+      master) folyosuna, yoksa default misafir folyosuna yazılır. Aynı folyoya
+      düşen paylar tek satırda birleştirilir; sıfır tutarlı satır atlanır.
     """
+    amount = round(float(net_amount), 2)
     rules = booking.get("routing_rules") or []
-    if not rules:
-        return default_folio
+    matched = None
     for rule in rules:
         if rule.get("active") is False:
             continue
-        if not _rule_matches_category(rule.get("category"), charge_category):
+        if _rule_matches_category(rule.get("category"), charge_category):
+            matched = rule
+            break
+    if matched is None:
+        return [{"folio": default_folio, "amount": amount, "rule": None}]
+
+    split_type = matched.get("split_type")
+    splits = matched.get("splits")
+    splits = splits if isinstance(splits, list) else []
+
+    # Tam yönlendirme (split yok): mevcut davranış korunur.
+    if split_type not in ("percentage", "equal") or not splits:
+        target = matched.get("target")
+        if not target and splits:
+            target = splits[0].get("target")
+        routed = await _resolve_routed_folio(tenant_id, booking, target) if target else None
+        folio = routed or default_folio
+        return [{
+            "folio": folio,
+            "amount": amount,
+            "rule": {"category": matched.get("category"), "target": target, "split_type": None},
+        }]
+
+    # Split: her parçanın hedef folyosunu çöz; aynı folyoya düşenleri birleştir.
+    order: list[str] = []
+    merged: dict[str, dict] = {}
+    for s in splits:
+        target = s.get("target")
+        routed = await _resolve_routed_folio(tenant_id, booking, target) if target else None
+        folio = routed or default_folio
+        weight = float(s.get("percentage", 0) or 0) if split_type == "percentage" else 1.0
+        is_payor = bool(routed) and _is_payor_target(target)
+        fid = folio["id"]
+        if fid not in merged:
+            merged[fid] = {"folio": folio, "weight": 0.0, "is_payor": False, "targets": []}
+            order.append(fid)
+        merged[fid]["weight"] += weight
+        merged[fid]["is_payor"] = merged[fid]["is_payor"] or is_payor
+        merged[fid]["targets"].append(target)
+
+    entries = [merged[fid] for fid in order]
+    weights = [e["weight"] for e in entries]
+
+    # Arta kalan kuruş hedefi: ilk payor (şirket/acente/grup master) folyosu;
+    # yoksa default misafir folyosu; o da yoksa ilk satır.
+    remainder_index = next((i for i, e in enumerate(entries) if e["is_payor"]), None)
+    if remainder_index is None:
+        remainder_index = next(
+            (i for i, e in enumerate(entries) if e["folio"]["id"] == default_folio["id"]),
+            0,
+        )
+
+    if sum(int(round(w * 100)) for w in weights) <= 0:
+        # Dejenere (tüm ağırlıklar 0) → fail-safe: tam tutar default folyoya.
+        return [{
+            "folio": default_folio,
+            "amount": amount,
+            "rule": {
+                "category": matched.get("category"),
+                "split_type": split_type,
+                "degenerate": True,
+            },
+        }]
+
+    shares = split_kurus(int(round(amount * 100)), weights, remainder_index)
+    allocations: list[dict] = []
+    for e, sh in zip(entries, shares):
+        if sh == 0:
             continue
-        # Split (percentage/equal) henüz desteklenmiyor — tek folyoya
-        # tam yönlendirme yapılır. Split desteklenince burada birden çok
-        # folio_charges yazılması ve oranların ayrılması gerekir.
-        # MVP'de UI yalnızca tam yönlendirme kuralı üretiyor; defansif
-        # olarak split tanımlı kuralları sessizce atlamak yerine ilk
-        # split target'a yönlendiriyoruz (idempotent ve mevcut davranışı
-        # bozmaz).
-        target = rule.get("target")
-        if not target and isinstance(rule.get("splits"), list) and rule["splits"]:
-            target = rule["splits"][0].get("target")
-        if not target:
-            continue
-        routed = await _resolve_routed_folio(tenant_id, booking, target)
-        if routed:
-            return routed
-    return default_folio
+        allocations.append({
+            "folio": e["folio"],
+            "amount": round(sh / 100.0, 2),
+            "rule": {
+                "category": matched.get("category"),
+                "split_type": split_type,
+                "targets": e["targets"],
+                "weight": e["weight"],
+            },
+        })
+    if not allocations:
+        allocations.append({
+            "folio": entries[remainder_index]["folio"],
+            "amount": amount,
+            "rule": {"category": matched.get("category"), "split_type": split_type},
+        })
+    return allocations
+
+
+async def _post_charge_allocations(
+    tenant_id: str,
+    booking_id: str,
+    category_value: str,
+    description: str,
+    unit_price: float,
+    quantity: float,
+    net_amount: float,
+    default_folio: dict,
+    allocations: list[dict],
+    is_split: bool,
+    split_group_id: str | None,
+    now_iso: str,
+    posted_by: str | None,
+    *,
+    session=None,
+) -> list[dict]:
+    """Her allocation icin folio_charges insert + ilgili folio balance $inc.
+    session verilirse tum yazimlar tek transaction icinde (atomik). Cagiran
+    taraf transaction sarmalamasini ve fallback'i yonetir.
+    """
+    created: list[dict] = []
+    for alloc in allocations:
+        folio = alloc["folio"]
+        amt = round(float(alloc["amount"]), 2)
+        charge_doc = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "folio_id": folio["id"],
+            "booking_id": booking_id,
+            "charge_category": category_value,
+            "description": description,
+            "unit_price": amt if is_split else unit_price,
+            "quantity": 1.0 if is_split else quantity,
+            "amount": amt,
+            "tax_amount": 0.0,
+            "total": amt,
+            "posted_by": posted_by,
+            "posted_at": now_iso,
+            "date": now_iso,
+        }
+        # Routed flag — UI'da "şirkete yönlendirildi" rozeti için.
+        if folio["id"] != default_folio["id"]:
+            charge_doc["routed_from_folio_id"] = default_folio["id"]
+            charge_doc["routed_to_folio_id"] = folio["id"]
+        # Rule-match audit: hangi kural/kategori/split bu satırı üretti.
+        if alloc.get("rule"):
+            charge_doc["routing_rule"] = alloc["rule"]
+        # Split audit: kardeş satırları bağla + orijinal toplam.
+        if split_group_id:
+            charge_doc["split_group_id"] = split_group_id
+            charge_doc["split_total_amount"] = net_amount
+        await db.folio_charges.insert_one(dict(charge_doc), session=session)
+        await db.folios.update_one(
+            {"id": folio["id"], "tenant_id": tenant_id},
+            {"$inc": {"balance": amt}},
+            session=session,
+        )
+        created.append(charge_doc)
+    return created
 
 
 @router.post("/frontdesk/folio/{booking_id}/charge")
 async def add_folio_charge(
     booking_id: str,
     payload: FolioChargeRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_charge")),  # v97 DW
 ):
@@ -387,41 +547,106 @@ async def add_folio_charge(
     default_folio = await _ensure_open_folio(
         current_user.tenant_id, booking_id, booking.get("guest_id")
     )
-    # Routing rules: kategori uyuşan kural varsa hedef folyoya yönlendir.
-    # Hedef yoksa veya resolve edilemezse default (misafir) folyo kullanılır.
-    target_folio = await _apply_routing_for_charge(
-        current_user.tenant_id, booking, category.value, default_folio
-    )
     unit_price = float(payload.amount)
     quantity = float(payload.quantity)
-    net_amount = unit_price * quantity
-    now_iso = datetime.now(UTC).isoformat()
-    charge_doc = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": current_user.tenant_id,
-        "folio_id": target_folio["id"],
-        "booking_id": booking_id,
-        "charge_category": category.value,
-        "description": payload.description,
-        "unit_price": unit_price,
-        "quantity": quantity,
-        "amount": net_amount,
-        "tax_amount": 0.0,
-        "total": net_amount,
-        "posted_by": current_user.name,
-        "posted_at": now_iso,
-        "date": now_iso,
-    }
-    # Routed flag — UI'da "şirkete yönlendirildi" rozeti için.
-    if target_folio["id"] != default_folio["id"]:
-        charge_doc["routed_from_folio_id"] = default_folio["id"]
-        charge_doc["routed_to_folio_id"] = target_folio["id"]
-    await db.folio_charges.insert_one(dict(charge_doc))
-    await db.folios.update_one(
-        {"id": target_folio["id"], "tenant_id": current_user.tenant_id},
-        {"$inc": {"balance": net_amount}},
-    )
-    return charge_doc
+    net_amount = round(unit_price * quantity, 2)
+
+    # Idempotency-Key replay koruması (çift tıklama / ağ retry). Header yoksa
+    # davranış aynen korunur. Tüm split satırları tek mantıksal işlem altında.
+    idem_key = get_idempotency_key(request)
+    idem_lock_id = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db,
+            tenant_id=current_user.tenant_id,
+            scope=f"folio_charge:{booking_id}",
+            idempotency_key=idem_key,
+        )
+        if claim["status"] == "replay":
+            return claim["response"]
+        if claim["status"] == "in_flight":
+            raise HTTPException(
+                status_code=409,
+                detail="Aynı Idempotency-Key ile başka bir istek işleniyor",
+            )
+        idem_lock_id = claim["lock_id"]
+
+    try:
+        # Routing rules: kategori-bazlı yönlendirme + (varsa) oransal/eşit bölme.
+        # Hedef yoksa veya resolve edilemezse default (misafir) folyoya düşer.
+        allocations = await _resolve_routing_allocations(
+            current_user.tenant_id, booking, category.value, default_folio, net_amount
+        )
+        is_split = len(allocations) > 1
+        split_group_id = str(uuid.uuid4()) if is_split else None
+        now_iso = datetime.now(UTC).isoformat()
+
+        # Tüm split satırları (insert + balance $inc) tek atomik birim. Replica
+        # set varsa transaction; biri patlarsa rollback → kısmi yazım/dengesiz
+        # bakiye imkansız. Standalone Mongo'da procurement/mice ile aynı
+        # fail-closed fallback (operatör açıkça opt-in etmediyse 503).
+        try:
+            async with await db.client.start_session() as session:
+                async with session.start_transaction():
+                    created = await _post_charge_allocations(
+                        current_user.tenant_id, booking_id, category.value,
+                        payload.description, unit_price, quantity, net_amount,
+                        default_folio, allocations, is_split, split_group_id,
+                        now_iso, current_user.name, session=session,
+                    )
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            code = getattr(exc, "code", None)
+            if code == 112 or "WriteConflict" in str(exc):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Folyo eş zamanlı güncellendi; lütfen tekrar deneyin",
+                )
+            if not is_replica_set_unavailable(exc):
+                raise
+            if not standalone_fallback_allowed():
+                raise HTTPException(
+                    status_code=503,
+                    detail="Masraf kaydı atomik garanti sağlayamıyor (Mongo replica set gerekli).",
+                )
+            # Dev opt-in: best-effort transaction'sız fallback.
+            created = await _post_charge_allocations(
+                current_user.tenant_id, booking_id, category.value,
+                payload.description, unit_price, quantity, net_amount,
+                default_folio, allocations, is_split, split_group_id,
+                now_iso, current_user.name, session=None,
+            )
+
+        response = (
+            {
+                "split_group_id": split_group_id,
+                "total_amount": net_amount,
+                "charges": created,
+            }
+            if is_split
+            else created[0]
+        )
+        # Yazımlar durable olarak commit edildi. complete patlarsa RELEASE
+        # ETME — iş tamamlandı; release çifte charge'a yol açardı. Kilit TTL
+        # ile süpürülür; bu noktada artık güvenli retry için cache yok.
+        if idem_lock_id:
+            try:
+                await complete_idempotency(db, lock_id=idem_lock_id, response_body=response)
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "folio_charge idempotency complete failed (writes already committed)"
+                )
+            idem_lock_id = None
+        return response
+    except HTTPException:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id)
+        raise
+    except Exception as exc:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id, error=str(exc))
+        raise
 
 
 @router.post("/frontdesk/folio/{booking_id}/payment")
