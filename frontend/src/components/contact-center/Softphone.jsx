@@ -14,6 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
+import CallHistory from "./CallHistory";
 
 import { SOFTPHONE_DIAL_EVENT } from "@/lib/softphone";
 
@@ -67,6 +68,7 @@ const STATUS_LABEL = {
 
 export default function Softphone({ user }) {
   const [open, setOpen] = useState(false);
+  const [view, setView] = useState("dialer");
   const [status, setStatus] = useState("idle");
   const [detail, setDetail] = useState("");
   const [incomingFrom, setIncomingFrom] = useState("");
@@ -149,6 +151,7 @@ export default function Softphone({ user }) {
         callRef.current = call;
         setIncomingFrom(call?.parameters?.From || "");
         setStatus("incoming");
+        setView("dialer");
         setOpen(true);
         call.on("disconnect", () => {
           callRef.current = null;
@@ -302,6 +305,36 @@ export default function Softphone({ user }) {
             </button>
           </div>
 
+          <div className="flex border-b border-gray-100">
+            <button
+              type="button"
+              onClick={() => setView("dialer")}
+              className={`flex-1 px-4 py-2 text-xs font-medium ${
+                view === "dialer"
+                  ? "border-b-2 border-gray-900 text-gray-900"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Telefon
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("history")}
+              className={`flex-1 px-4 py-2 text-xs font-medium ${
+                view === "history"
+                  ? "border-b-2 border-gray-900 text-gray-900"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Geçmiş
+            </button>
+          </div>
+
+          {view === "history" ? (
+            <div className="px-4 py-4">
+              <CallHistory />
+            </div>
+          ) : (
           <div className="space-y-3 px-4 py-4">
             {detail ? (
               <p className="text-xs leading-relaxed text-gray-600">{detail}</p>
@@ -387,6 +420,7 @@ export default function Softphone({ user }) {
               </button>
             )}
           </div>
+          )}
         </div>
       ) : (
         <button
