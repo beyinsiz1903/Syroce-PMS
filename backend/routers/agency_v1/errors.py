@@ -11,6 +11,8 @@ Yalniz sekil/zarf uretir; DB/secret/IO icermez.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
@@ -36,6 +38,18 @@ def agency_validation_response() -> JSONResponse:
         status_code=422,
         content={"error_code": "validation_error", "schema_version": SCHEMA_VERSION},
     )
+
+
+def agency_error_response(status_code: int, error_code: str, **extra: Any) -> JSONResponse:
+    """ADR ortak hata zarfi: `error_code` + `schema_version` UST seviyede, istege
+    bagli ek SOZLESME alanlari (or. Karar 5 inventory_conflict icin
+    `conflict_date`/`room_type_id`/`available`). PII/secret iceren alan EKLENMEZ —
+    cagiran yalniz donmus sozlesme alanlarini gecirir. Tek dogruluk kaynagi: bu
+    modul (idempotency_in_progress 409 / idempotency_conflict 422 /
+    inventory_conflict 409 / not_configured 503 hepsi ayni zarfi kullanir)."""
+    content: dict[str, Any] = {"error_code": error_code, "schema_version": SCHEMA_VERSION}
+    content.update(extra)
+    return JSONResponse(status_code=status_code, content=content)
 
 
 def install_agency_validation_handler(app) -> None:

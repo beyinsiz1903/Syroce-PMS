@@ -401,6 +401,16 @@ async def ensure_performance_indexes():
         ("idempotency_cache", [("expires_at", 1)],
          "ttl_idempotency_cache",
          {"expireAfterSeconds": 0}),
+        # Agency v1 Adim 3 — HMAC replay-cache (Karar 2). `_id = "{key_id}:{nonce}"`
+        # zaten otomatik unique → ayni nonce ikinci insert DuplicateKeyError verir
+        # (replay race-free); ek unique index GEREKMEZ. Tek index: expires_at TTL.
+        # Yazici expires_at = now+600s set eder (>= etkin kabul penceresi 360s;
+        # DEGISMEZ kural: TTL >= pencere, yoksa nonce suresi dolup timestamp hala
+        # gecerliyken replay penceresi acilir). expireAfterSeconds=0 → suresi
+        # gecince Mongo siler (depo hijyeni; dogruluk _id benzersizliginden gelir).
+        ("agency_nonces", [("expires_at", 1)],
+         "ttl_agency_nonces",
+         {"expireAfterSeconds": 0}),
     ]
     for coll_name, keys, name, kwargs in indexes:
         try:
