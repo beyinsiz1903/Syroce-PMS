@@ -179,6 +179,7 @@ class PaymentResult:
     amount_minor: int | None = None
     currency: str | None = None
     provider_ref: str | None = None
+    provider_txn_ref: str | None = None  # PSP islem-kalemi id'si (refund icin)
     masked_card: str | None = None
     requires_action_url: str | None = None
     raw_provider_status: str | None = None

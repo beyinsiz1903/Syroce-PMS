@@ -99,6 +99,18 @@ async def ensure_performance_indexes():
         # docs/GOTCHAS.md.
         ("idempotency_keys", [("expires_at", 1)], "idx_idempotency_expires_at_ttl",
          {"expireAfterSeconds": 0}),
+        # Task #312 — payment_intents: tahsilat akisinin pending/reconcile kaydi.
+        # Webhook conversationId -> intent lookup'i SUNUCU-URETIMI conversation_token
+        # uzerinden yapilir (client-controlled idempotency_key DEGIL); cross-tenant
+        # yanlis eslemeyi onlemek icin token GLOBALLY UNIQUE. Indekssiz collection
+        # scan public webhook yuzeyinde DoS riski oldugundan ayrica indekslenir.
+        ("payment_intents", [("conversation_token", 1)],
+         "idx_payment_intents_conv_token", {"unique": True}),
+        # Idempotency lookup'lari tenant'a kapali (client key tenant'lar arasi cakisabilir).
+        ("payment_intents", [("tenant_id", 1), ("idempotency_key", 1)],
+         "idx_payment_intents_tenant_idem", {}),
+        ("payment_intents", [("tenant_id", 1), ("status", 1), ("created_at", -1)],
+         "idx_payment_intents_tenant_status", {}),
         ("audit_exceptions", [("tenant_id", 1), ("created_at", -1)], "idx_audit_exc_tenant_created", {}),
         ("agencies", [("tenant_id", 1), ("status", 1)], "idx_agencies_tenant_status", {}),
         ("night_audit_logs", [("tenant_id", 1), ("business_date", -1)], "idx_night_audit_logs_tenant_date", {}),
