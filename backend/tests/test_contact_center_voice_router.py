@@ -559,3 +559,52 @@ def test_public_router_outside_entitlement_runs_handler(voice_app, monkeypatch):
     )
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("application/xml")
+
+
+# ── Yetkili (auth'lu) uçlar herkese AÇIK DEĞİL ─────────────────────────
+#
+# ``public_router`` (``/api/voice/...``) bilinçli olarak kimliksizdir (Twilio
+# webhook'ları, imza ile korunur). Buna karşılık ``router`` (``/api/contact-center/
+# voice/token``, ``/calls``, ``/voice/numbers`` CRUD) operatör/ajan uçlarıdır ve
+# ASLA kimliksiz erişime açık olmamalıdır. Bir uçtan ``Depends(get_current_user)``
+# yanlışlıkla düşerse veya yanlış router'a (public_router) taşınırsa, çağrı kaydı /
+# numara eşlemesi / Twilio AccessToken kimliksiz sızabilirdi. Aşağıdaki testler
+# GERÇEK manifest mount'u üzerinden (voice_app) auth sınırını sabitler:
+#   - kimliksiz istek → auth reddi (401/403; route MATCH oldu → 404/405 değil,
+#     handler ÇALIŞMADI → 2xx değil),
+#   - geçersiz bearer token → 401 (get_current_user JWT zinciri gerçekten koşar;
+#     auth dependency no-op'a indirgenmemiş).
+# Her iki durumda da DB/handler'a ulaşılmaz → fail-closed.
+
+_AUTH_ENDPOINTS = [
+    ("post", "/api/contact-center/voice/token"),
+    ("get", "/api/contact-center/calls"),
+    ("get", "/api/contact-center/voice/numbers"),
+    ("post", "/api/contact-center/voice/numbers"),
+    ("put", "/api/contact-center/voice/numbers/n1"),
+    ("delete", "/api/contact-center/voice/numbers/n1"),
+]
+
+
+@pytest.mark.parametrize("method,path", _AUTH_ENDPOINTS)
+def test_authenticated_voice_endpoint_requires_credentials(voice_app, method, path):
+    # Kimlik bilgisi YOK → auth reddi (401/403; FastAPI/HTTPBearer sürümüne göre değişir).
+    # Route MATCH oldu (404/405 DEĞİL) → mount + method doğru; handler ÇALIŞMADI
+    # (2xx YOK) → uç herkese açık değil.
+    resp = getattr(voice_app, method)(path)
+    assert resp.status_code in (401, 403), (
+        f"{method.upper()} {path} kimliksiz erişime kapalı değil (kod={resp.status_code})"
+    )
+    assert resp.status_code not in (404, 405), f"{method.upper()} {path} mount/method regresyonu"
+    assert resp.status_code not in (200, 201, 204), "kimliksiz çağrı handler'a ulaşmamalı"
+
+
+@pytest.mark.parametrize("method,path", _AUTH_ENDPOINTS)
+def test_authenticated_voice_endpoint_rejects_invalid_token(voice_app, method, path):
+    # Geçersiz bearer token → 401: get_current_user JWT çözümü gerçekten koşar
+    # (auth dependency no-op'a indirgenmiş olsaydı 2xx olurdu). DB/handler'a ulaşılmaz.
+    resp = getattr(voice_app, method)(
+        path, headers={"Authorization": "Bearer not-a-real-jwt"}
+    )
+    assert resp.status_code == 401, f"{method.upper()} {path} geçersiz token'ı reddetmiyor"
+    assert resp.status_code not in (200, 201, 204), "geçersiz token handler'a ulaşmamalı"
