@@ -97,6 +97,13 @@ RETRY_BACKOFF = {
     3: 120,   # attempt 3 → +2min
     4: 600,   # attempt 4 → +10min
     5: 1800,  # attempt 5 → +30min
+    # Agency webhook tail (max_attempts=8, ADR Karar 6). OTA events cap at 5 and
+    # NEVER reach attempts 6-8, so keys 1-5 above stay untouched. This stretches
+    # the final 3 agency retries so a multi-hour partner outage isn't prematurely
+    # dead-lettered (total span ~24h before DLQ).
+    6: 14400,   # attempt 6 → +4h
+    7: 28800,   # attempt 7 → +8h
+    8: 43200,   # attempt 8 → +12h
 }
 
 # ── Retryable vs permanent errors ───────────────────────────────────

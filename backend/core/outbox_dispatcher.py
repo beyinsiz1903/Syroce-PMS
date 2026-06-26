@@ -63,6 +63,18 @@ async def dispatch_outbox_event(event: dict[str, Any]) -> tuple[bool, str]:
 
         return await handle_ic_pos_event(event)
 
+    # Agency v1 outbound webhooks (Adim 4, ADR Karar 6). These deliver a signed
+    # webhook to a partner agency ENTIRELY at the SXI edge and MUST be routed
+    # here BEFORE any channel-manager mapping so they never reach
+    # EventSyncService / OTA (external_calls stays []; agency<->tenant mapping
+    # stays out of the PMS core per Karar 7).
+    from core.agency_webhook import AGENCY_OUTBOX_EVENT_TYPES
+
+    if event_type in AGENCY_OUTBOX_EVENT_TYPES:
+        from core.agency_webhook import dispatch_agency_webhook
+
+        return await dispatch_agency_webhook(event)
+
     # Map outbox event_type to channel manager event name
     cm_event_name = EVENT_TYPE_TO_CM_EVENT.get(event_type)
     if not cm_event_name:
