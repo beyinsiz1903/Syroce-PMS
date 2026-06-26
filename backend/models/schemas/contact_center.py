@@ -81,6 +81,9 @@ class CallLog(BaseModel):
     channel: ContactCenterChannel = ContactCenterChannel.VOICE
     direction: MessageDirection
     status: CallStatus = CallStatus.RINGING
+    # Faz 2: Twilio CallSid — (tenant_id, provider_call_sid) idempotency anahtarı.
+    # Twilio status/recording callback'leri retry edildiğinde tek satır garanti eder.
+    provider_call_sid: str | None = None
     caller_id_hash: str | None = None
     caller_id_enc: str | None = None
     agent_id: str | None = None

@@ -184,6 +184,29 @@ async def ensure_performance_indexes():
         ("contact_center_conversations",
          [("tenant_id", 1), ("last_message_at", -1)],
          "idx_cc_conv_tenant_lastmsg", {}),
+        # Task #648 — Contact Center Faz 2 (sesli softphone, Twilio Voice).
+        #   - contact_center_calls (tenant_id, provider_call_sid): Twilio inbound +
+        #     status + recording callback'leri aynı CallSid'i retry eder; durum
+        #     makinesi (record_inbound_call / update_call_status / attach_recording)
+        #     bu key'le idempotent. PARTIAL on provider_call_sid string → SID henüz
+        #     atanmamış (None) satırlar collision'a girmez. Eşzamanlı ilk-inbound
+        #     yarışında upsert ÇİFT çağrı üretemez (kaybeden DuplicateKeyError alır,
+        #     mevcut çağrıyı okur). Race-free garanti için unique.
+        ("contact_center_calls",
+         [("tenant_id", 1), ("provider_call_sid", 1)],
+         "ux_cc_calls_provider_sid",
+         {"unique": True,
+          "partialFilterExpression": {"provider_call_sid": {"$type": "string"}}}),
+        #   - contact_center_calls (tenant_id, started_at desc): çağrı listesi ucu
+        #     başlangıca göre azalan sıralar.
+        ("contact_center_calls",
+         [("tenant_id", 1), ("started_at", -1)],
+         "idx_cc_calls_tenant_started", {}),
+        #   - contact_center_voice_numbers (to_number): public inbound webhook'ta
+        #     çağrılan numaradan kiracıyı sunucu-tarafı eşler (istemci tenant geçemez).
+        ("contact_center_voice_numbers",
+         [("to_number", 1)],
+         "ux_cc_voice_number", {"unique": True}),
         # Task #647 — Legacy messaging recipient PII at-rest sealing.
         #   - messaging_consents (tenant_id, recipient_hash, channel):
         #     consent opt-out enforcement now looks the recipient up by its HMAC

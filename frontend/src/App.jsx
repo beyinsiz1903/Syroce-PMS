@@ -24,6 +24,10 @@ import {
 import { registerRoutes } from "@/routes/preload";
 import { prefetchHeavyModules } from "@/lib/prefetch";
 
+// Sesli softphone (Contact Center Faz 2) — yalnızca personel için, lazy.
+// Twilio Voice SDK + mikrofon izni operatör "Aktifleştir"e basınca yüklenir.
+const Softphone = lazy(() => import("@/components/contact-center/Softphone"));
+
 // Misafir akışı için lazy yüklenen sayfa wrapper'ları
 const SelfCheckinPage = lazy(() => import("@/pages/SelfCheckin"));
 const DigitalKeyPage = lazy(() => import("@/pages/DigitalKey"));
@@ -377,6 +381,11 @@ function App() {
             </ErrorBoundary>
           </BrowserRouter>
           {isAuthenticated && user && <InternalChatWidget user={user} />}
+          {isAuthenticated && user && (
+            <Suspense fallback={null}>
+              <Softphone user={user} />
+            </Suspense>
+          )}
         </div>
       </QueryClientProvider>
       </CurrencyProvider>

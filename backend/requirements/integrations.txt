@@ -33,4 +33,9 @@ resend==2.29.0
 s3transfer==0.14.0
 s5cmd==0.2.0
 stripe==14.3.0
+# Task #648 — Contact Center Faz 2 sesli softphone (Twilio Voice WebRTC).
+# AccessToken üretimi, gelen TwiML ve webhook imza doğrulama için. Lazy import
+# (kurulu değilse voice katmanı fail-closed not_configured döner) — bu pin
+# yalnızca aktivasyon (Twilio secret'ları girilince) için gereklidir.
+twilio==9.4.1
 uritemplate==4.2.0

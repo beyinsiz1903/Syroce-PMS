@@ -265,6 +265,10 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.academy_public", "router", ["academy-public"], None, None),
     # Syroce Contact Center (omnichannel) — Faz 0 iskelet, entitlement+RBAC kapılı.
     ("domains.contact_center.router", "router", ["contact-center"], None, None),
+    # Faz 2 sesli softphone — auth'lu uçlar (token + çağrı listesi), RBAC kapılı.
+    ("domains.contact_center.voice_router", "router", ["contact-center-voice"], None, None),
+    # Faz 2 sesli softphone — public Twilio webhook'ları (imza doğrulamalı, auth yok).
+    ("domains.contact_center.voice_router", "public_router", ["contact-center-voice-webhook"], None, None),
     ("routers.regulatory", "router", ["regulatory"], None, None),
     ("routers.report_scheduler", "router", ["Report Scheduler"], None, None),
     # PMS Cashier, Laundry, Meeting Rooms

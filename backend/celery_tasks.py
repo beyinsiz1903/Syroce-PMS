@@ -2880,3 +2880,50 @@ async def _stress_outbox_residue_sweep_async() -> dict[str, Any]:
         return summary
     finally:
         client.close()
+
+
+# ============= CONTACT CENTER FAZ 2 — SESLİ KAYIT BORU HATTI =============
+@celery_app.task(name='celery_tasks.process_call_recording_task')
+def process_call_recording_task(tenant_id: str, provider_call_sid: str,
+                                recording_url: str, duration_seconds: int = 0):
+    """Twilio çağrı kaydını indir→şifrele→nesne deposuna yükle→recording_ref bağla.
+
+    Fail-closed: depo/Twilio yapılandırılmamışsa kayıt saklanmaz (durum kodu döner).
+    İmzalı URL/telefon/sır ASLA loglanmaz.
+    """
+    return asyncio.run(_process_call_recording_async(
+        tenant_id, provider_call_sid, recording_url, duration_seconds))
+
+
+async def _process_call_recording_async(tenant_id, provider_call_sid,
+                                        recording_url, duration_seconds):
+    from domains.contact_center.recording_pipeline import process_call_recording
+    db, client = get_db()
+    try:
+        return await process_call_recording(
+            db,
+            tenant_id=tenant_id,
+            provider_call_sid=provider_call_sid,
+            recording_url=recording_url,
+            duration_seconds=duration_seconds,
+        )
+    finally:
+        client.close()
+
+
+@celery_app.task(name='celery_tasks.purge_expired_call_recordings_task')
+def purge_expired_call_recordings_task():
+    """Retention: süresi dolan çağrı kayıtlarını depodan siler, referansı kaldırır.
+
+    Fail-closed: kayıt deposu yapılandırılmamışsa no-op.
+    """
+    return asyncio.run(_purge_expired_call_recordings_async())
+
+
+async def _purge_expired_call_recordings_async():
+    from domains.contact_center.recording_pipeline import purge_expired_recordings
+    db, client = get_db()
+    try:
+        return await purge_expired_recordings(db)
+    finally:
+        client.close()

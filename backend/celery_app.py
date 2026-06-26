@@ -134,6 +134,15 @@ celery_app.conf.update(
             'schedule': crontab(minute='*'),
         },
 
+        # Contact Center Faz 2 (Task #648) — çağrı kaydı retention sweep.
+        # Her gün 02:30'da süresi dolan (CC_RECORDING_RETENTION_DAYS) kayıtları
+        # ayrı nesne deposundan siler ve recording_ref'i kaldırır. Fail-closed:
+        # kayıt deposu yapılandırılmamışsa no-op.
+        'cc-purge-expired-recordings': {
+            'task': 'celery_tasks.purge_expired_call_recordings_task',
+            'schedule': crontab(hour=2, minute=30),
+        },
+
         # Data archival - runs weekly on Sunday at 3 AM
         'archive-old-data': {
             'task': 'celery_tasks.archive_old_data_task',

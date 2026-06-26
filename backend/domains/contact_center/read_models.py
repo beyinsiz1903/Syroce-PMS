@@ -64,6 +64,54 @@ MESSAGE_DTO_KEYS = frozenset(
 )
 
 
+CALL_DTO_KEYS = frozenset(
+    {
+        "id",
+        "conversation_id",
+        "channel",
+        "direction",
+        "status",
+        "agent_id",
+        "caller_phone_masked",
+        "caller_phone",
+        "duration_seconds",
+        "disposition",
+        "has_recording",
+        "started_at",
+        "answered_at",
+        "ended_at",
+    }
+)
+
+
+def call_to_dto(doc: dict, svc, *, reveal_phone: bool = False) -> dict:
+    """Sesli çağrı kaydını allowlist DTO'ya çevirir (okuma sınırında decrypt).
+
+    ``recording_ref`` (nesne-deposu anahtarı) ASLA dönmez — yalnızca ``has_recording``
+    boolean'ı açılır. Telefon varsayılan maskeli; tam numara yalnızca açıkça yetkili
+    (MANAGE) okumada. Ciphertext/_id/_hash bu kümede ASLA yer almaz.
+    """
+    doc = doc or {}
+    phone = _dec(svc, doc.get("caller_id_enc"))
+    return {
+        "id": doc.get("id"),
+        "conversation_id": doc.get("conversation_id"),
+        "channel": doc.get("channel"),
+        "direction": doc.get("direction"),
+        "status": doc.get("status"),
+        "agent_id": doc.get("agent_id"),
+        "caller_phone_masked": mask_phone(phone),
+        "caller_phone": phone if reveal_phone else None,
+        "duration_seconds": doc.get("duration_seconds", 0),
+        "disposition": doc.get("disposition"),
+        # recording_ref nesne-deposu anahtarıdır → ASLA sızdırılmaz; yalnızca varlık.
+        "has_recording": bool(doc.get("recording_ref")),
+        "started_at": doc.get("started_at"),
+        "answered_at": doc.get("answered_at"),
+        "ended_at": doc.get("ended_at"),
+    }
+
+
 def conversation_to_dto(doc: dict, svc, *, reveal_phone: bool = False) -> dict:
     """Konuşma belgesini allowlist DTO'ya çevirir (okuma sınırında decrypt)."""
     doc = doc or {}
