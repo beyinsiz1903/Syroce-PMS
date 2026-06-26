@@ -2,6 +2,7 @@
 Revenue Domain — Schemas
 Request/response models extracted from revenue/pricing routers.
 """
+import datetime as _datetime
 import uuid
 from datetime import UTC, date, datetime
 from typing import Any
@@ -12,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class RatePlanFilter(BaseModel):
     channel: str | None = None
     company_id: str | None = None
-    date: date | None = None
+    date: _datetime.date | None = None
 
 
 class RatePlanCreate(BaseModel):
