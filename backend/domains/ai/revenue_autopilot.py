@@ -19,11 +19,20 @@ class RevenueAutopilot:
         report = {
             'cycle_date': datetime.now(UTC).isoformat(),
             'mode': self.mode,
-            'actions': []
+            'actions': [],
+            # Operator-visible summary fields (read-only monitoring panel).
+            # Populated below; default to safe empty/zero values so a partially
+            # completed cycle never reports stale data.
+            'competitors_checked': 0,
+            'avg_occupancy': 0.0,
+            'demand_trend': None,
+            'optimal_prices': [],
+            'rate_events_emitted': 0,
         }
 
         # Step 1: Scrape competitor rates (06:00)
         competitor_data = await self.scrape_competitor_rates(tenant_id)
+        report['competitors_checked'] = len(competitor_data)
         report['actions'].append({
             'time': '06:00',
             'action': 'Competitor rates scraped',
@@ -32,6 +41,8 @@ class RevenueAutopilot:
 
         # Step 2: Update demand forecast (06:15)
         demand_update = await self.update_demand_forecast(tenant_id)
+        report['avg_occupancy'] = demand_update['avg_occupancy']
+        report['demand_trend'] = demand_update['trend']
         report['actions'].append({
             'time': '06:15',
             'action': 'Demand forecast updated',
@@ -40,6 +51,7 @@ class RevenueAutopilot:
 
         # Step 3: Calculate optimal prices (06:30)
         optimal_prices = await self.calculate_optimal_prices(tenant_id, competitor_data, demand_update)
+        report['optimal_prices'] = optimal_prices
         report['actions'].append({
             'time': '06:30',
             'action': 'Optimal prices calculated' if optimal_prices else 'Optimal price calculation skipped',
@@ -58,6 +70,7 @@ class RevenueAutopilot:
             rate_events_emitted = await self._emit_rate_updated_events(
                 tenant_id, optimal_prices
             )
+            report['rate_events_emitted'] = rate_events_emitted
             report['actions'].append({
                 'time': '06:30',
                 'action': (

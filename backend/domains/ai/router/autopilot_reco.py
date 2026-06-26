@@ -342,6 +342,73 @@ async def get_autopilot_status(current_user: User = Depends(get_current_user)):
         'active': True,
         'last_cycle': datetime.now(UTC).isoformat()
     }
+# ── GET /autopilot/last-run ──
+@router.get("/autopilot/last-run")
+async def get_autopilot_last_run(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # read-only monitoring
+):
+    """Son otonom Revenue Autopilot calismasinin salt-okunur durumu.
+
+    Celery dongusunun ``revenue_autopilot_runs`` koleksiyonuna yazdigi
+    ozeti (PII yok: yalnizca oda tipi/fiyat/kural metni + sayaclar) okur.
+    Tenant-scoped: yalnizca cagiran kullanicinin kendi tenant'inin calismasi
+    dondurulur. Ek olarak filo geneli dispatch ozeti (sadece toplam sayilar,
+    tenant kimligi yok) gosterilir; bu sayilar tenant sinirini asmaz.
+
+    Hicbir calisma kaydi yoksa ``has_run=False`` ile fail-safe (bos) doner.
+    """
+    run = await db.revenue_autopilot_runs.find_one(
+        {"tenant_id": current_user.tenant_id}, {"_id": 0}
+    )
+
+    if not run:
+        # Henuz hic otonom calisma olmadi (fail-safe bos durum).
+        return {
+            "has_run": False,
+            "tenant_id": current_user.tenant_id,
+            "last_auto_run": None,
+            "last_auto_run_completed_at": None,
+            "last_auto_run_status": None,
+            "mode": None,
+            "competitors_checked": 0,
+            "avg_occupancy": None,
+            "demand_trend": None,
+            "rate_events_emitted": 0,
+            "room_types_priced": 0,
+            "optimal_prices": [],
+            "dispatch": None,
+        }
+
+    dispatch_doc = await db.revenue_autopilot_dispatch_state.find_one(
+        {"_id": "singleton"}, {"_id": 0}
+    ) or {}
+    dispatch = None
+    if dispatch_doc:
+        dispatch = {
+            "last_dispatch_at": dispatch_doc.get("last_dispatch_at"),
+            "scanned_tenants": dispatch_doc.get("last_scanned", 0),
+            "queued_tenants": dispatch_doc.get("last_queued", 0),
+        }
+
+    return {
+        "has_run": True,
+        "tenant_id": current_user.tenant_id,
+        "last_auto_run": run.get("last_auto_run"),
+        "last_auto_run_completed_at": run.get("last_auto_run_completed_at"),
+        "last_auto_run_status": run.get("last_auto_run_status"),
+        "mode": run.get("last_mode"),
+        "competitors_checked": run.get("last_competitors_checked", 0),
+        "avg_occupancy": run.get("last_avg_occupancy"),
+        "demand_trend": run.get("last_demand_trend"),
+        "rate_events_emitted": run.get("last_rate_events_emitted", 0),
+        "room_types_priced": run.get(
+            "last_room_types_priced",
+            len(run.get("last_optimal_prices") or []),
+        ),
+        "optimal_prices": run.get("last_optimal_prices") or [],
+        "dispatch": dispatch,
+    }
 # ── POST /autopilot/run-cycle ──
 @router.post("/autopilot/run-cycle")
 async def run_autopilot_cycle(current_user: User = Depends(get_current_user),

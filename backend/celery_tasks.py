@@ -508,6 +508,23 @@ async def _revenue_autopilot_dispatch_async() -> dict[str, Any]:
             queued.append(tenant_id)
             logger.info("Revenue autopilot dispatch: queued tenant=%s", tenant_id)
 
+        # Persist a PII-free, fleet-level dispatch summary (aggregate counts only,
+        # no tenant identifiers) so the monitoring panel can show how many tenants
+        # were scanned/queued in the last nightly dispatch. Stored in a singleton
+        # document; aggregate numbers do not cross the tenant boundary.
+        try:
+            await raw_db.revenue_autopilot_dispatch_state.update_one(
+                {"_id": "singleton"},
+                {"$set": {
+                    "last_dispatch_at": now_iso,
+                    "last_scanned": scanned,
+                    "last_queued": len(queued),
+                }},
+                upsert=True,
+            )
+        except Exception as e:  # noqa: BLE001 — summary is best-effort, not critical
+            logger.debug("[revenue_autopilot] dispatch summary persist skipped: %s", e)
+
         return {"success": True, "scanned": scanned, "queued": queued}
     except Exception as exc:  # noqa: BLE001
         logger.exception("Revenue autopilot dispatch error: %s", exc)
@@ -558,12 +575,25 @@ async def _revenue_autopilot_for_tenant_async(tenant_id: str) -> dict[str, Any]:
         report = await autopilot.daily_optimization_cycle(tenant_id)
 
         completed_iso = _now_utc().isoformat()
+        # Persist a PII-free, operator-visible summary of the cycle so the
+        # read-only monitoring panel can show the last run without re-running it
+        # or scraping worker logs. The report holds only room_type/price/rule
+        # text (no guest data); we store the per-room-type optimal prices, the
+        # full_auto RATE_UPDATED emission count, and a few cycle stats.
+        report = report if isinstance(report, dict) else {}
+        optimal_prices = report.get("optimal_prices") or []
         await raw_db.revenue_autopilot_runs.update_one(
             {"tenant_id": tenant_id},
             {"$set": {
                 "last_auto_run_status": "completed",
                 "last_auto_run_completed_at": completed_iso,
                 "last_mode": mode,
+                "last_optimal_prices": optimal_prices,
+                "last_room_types_priced": len(optimal_prices),
+                "last_rate_events_emitted": int(report.get("rate_events_emitted") or 0),
+                "last_competitors_checked": int(report.get("competitors_checked") or 0),
+                "last_avg_occupancy": report.get("avg_occupancy"),
+                "last_demand_trend": report.get("demand_trend"),
             }},
         )
         # PII yok: rapor yalnizca oda tipi/fiyat/kural metni icerir. Yine de

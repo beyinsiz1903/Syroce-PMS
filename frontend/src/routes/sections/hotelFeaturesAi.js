@@ -3,7 +3,7 @@ import {
   SpaWellness, MultiProperty, StaffManagement, StaffProfile, ShiftPlannerPage,
   HRHub, FnBComplete, FnbBeoGenerator, KitchenDisplay,
   AIChatbot, DynamicPricing, AIWhatsAppConcierge, PredictiveAnalytics,
-  SocialMediaRadar, RevenueAutopilot,
+  SocialMediaRadar, RevenueAutopilot, RevenueAutopilotMonitor,
 } from "./lazyPages";
 
 export function hotelFeaturesAiRoutes({ p, pm }) {
@@ -33,5 +33,6 @@ export function hotelFeaturesAiRoutes({ p, pm }) {
     { path: "/predictive-analytics", ...pm(PredictiveAnalytics, "ai_predictive") },
     { path: "/social-media-radar", ...pm(SocialMediaRadar, "ai_social_radar") },
     { path: "/revenue-autopilot", ...pm(RevenueAutopilot, "ai_revenue_autopilot") },
+    { path: "/revenue-autopilot/monitor", ...pm(RevenueAutopilotMonitor, "ai_revenue_autopilot") },
   ];
 }

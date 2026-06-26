@@ -150,6 +150,7 @@ export const B2BAnalyticsDashboard = lazy(() => import("@/pages/B2BAnalyticsDash
 export const ReportScheduler = lazy(() => import("@/pages/ReportScheduler"));
 export const SocialMediaRadar = lazy(() => import("@/pages/SocialMediaRadar"));
 export const RevenueAutopilot = lazy(() => import("@/pages/RevenueAutopilot"));
+export const RevenueAutopilotMonitor = lazy(() => import("@/pages/RevenueAutopilotMonitor"));
 export const HRComplete = lazy(() => import("@/pages/HRComplete"));
 export const FnBComplete = lazy(() => import("@/pages/FnBComplete"));
 export const FnbBeoGenerator = lazy(() => import("@/pages/FnbBeoGenerator"));

@@ -4,7 +4,7 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Home, Zap, Settings, PlayCircle, CheckCircle, Clock } from 'lucide-react';
+import { Home, Zap, Settings, PlayCircle, CheckCircle, Clock, Activity } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 
@@ -58,10 +58,13 @@ const RevenueAutopilot = () => {
           <Button variant="outline" size="icon" onClick={() => navigate('/')} className="hover:bg-indigo-50">
             <Home className="w-5 h-5" />
           </Button>
-          <div>
+          <div className="flex-1">
             <h1 className="text-3xl font-bold flex items-center gap-2"><Zap className="w-7 h-7 text-amber-500" /> Revenue Autopilot</h1>
             <p className="text-gray-600">Tam otomatik revenue management - Sıfır müdahale</p>
           </div>
+          <Button variant="outline" onClick={() => navigate('/revenue-autopilot/monitor')}>
+            <Activity className="w-4 h-4 mr-2" /> İzleme Paneli
+          </Button>
         </div>
       </div>
 
