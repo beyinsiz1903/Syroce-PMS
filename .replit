@@ -1,0 +1,131 @@
+modules = ["python-3.12", "nodejs-20", "web", "bash", "postgresql-16"]
+[agent]
+expertMode = true
+
+[nix]
+channel = "stable-25_05"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Backend API"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Quick-ID API"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Mobile Web"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd frontend && npm run start"
+waitForPort = 5000
+
+[[workflows.workflow]]
+name = "Backend API"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash backend/start.sh"
+waitForPort = 8000
+
+[[workflows.workflow]]
+name = "Quick-ID API"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash quick-id/start.sh"
+waitForPort = 8099
+
+[[workflows.workflow]]
+name = "Mobile Web"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd mobile && EXPO_PUBLIC_API_URL=https://8000-${REPLIT_DEV_DOMAIN} EXPO_PUBLIC_QUICKID_URL=https://8099-${REPLIT_DEV_DOMAIN} CI=1 npx expo start --web --port 8080"
+waitForPort = 8080
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 5001
+externalPort = 3000
+
+[[ports]]
+localPort = 6380
+externalPort = 3001
+
+[[ports]]
+localPort = 8000
+externalPort = 8000
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 8081
+
+[[ports]]
+localPort = 8099
+externalPort = 8099
+
+[deployment]
+deploymentTarget = "autoscale"
+build = ["bash", "-c", "/home/runner/workspace/.pythonlibs/bin/python -m pip install --ignore-installed -r backend/requirements.txt && cd frontend && yarn install --ignore-engines --frozen-lockfile && yarn build"]
+publicDir = "frontend/build"
+run = ["bash", "backend/start.sh"]
+
+[userenv]
+
+[userenv.shared]
+JWT_SECRET = "5b689835f9f276e8c5acefd52f6109635e601ff7639ef8792999080472807a4182223955de14264742a881f2df5afc91"
+QUICKID_SERVICE_KEY = "EqAbae8f5Zi9tPTydfFO4PfPWGy7ihGRKTpNbdvvglivjzRvLkpuStzqWJ1Tj_va"
+QUICKID_URL = "http://localhost:8099"
+AFSADAKAT_ADMIN_TOKEN = "42b91b913f623686d32828696918781893e53a9bf9b49a754709248738889e4c"
+CM_KEY_VERSION = "v1"
+CORS_ORIGINS = "https://4ea80cc3-9968-43ee-8874-a90d4da6e55f-00-fh9lwt15azcz.sisko.replit.dev,http://localhost:5000,http://localhost:5173"
+CM_MASTER_KEY_CURRENT = "Xoi4yK/y2NX/sAASn/6I8/mHuLFRSU/56XeiWRm7tvo="
+JWT_EXPIRATION_MINUTES = "10080"
+
+[userenv.development]
+SENTRY_ENVIRONMENT = "replit-dev"
+
+[userenv.production]
+SENTRY_ENVIRONMENT = "pilot"
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 180000
