@@ -176,6 +176,16 @@ export const NAV_ITEMS = [
     group: "core",
     navGroup: "admin",
   },
+  {
+    // Task #282: numara -> otel/ajan eşleme yönetimi (operatör ekranı).
+    key: "voice_number_mapping",
+    label: "Ses Numaraları",
+    path: "/admin/voice-numbers",
+    tier: "basic",
+    group: "core",
+    navGroup: "admin",
+    requireSuperAdmin: true,
+  },
 
   // ──── OPERATIONS GROUP ─────────────────────────────
   {

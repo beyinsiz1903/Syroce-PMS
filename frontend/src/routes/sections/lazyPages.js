@@ -110,6 +110,7 @@ export const POSExtensions = lazy(() => import("@/pages/POSExtensions"));
 export const AdminTenants = lazy(() => import("@/pages/AdminTenants"));
 export const AdminVendors = lazy(() => import("@/pages/AdminVendors"));
 export const QuickIdSettings = lazy(() => import("@/pages/admin/QuickIdSettings"));
+export const VoiceNumberMapping = lazy(() => import("@/pages/admin/VoiceNumberMapping"));
 export const RoomQrCodes = lazy(() => import("@/pages/admin/RoomQrCodes"));
 export const RoomRequests = lazy(() => import("@/pages/RoomRequests"));
 export const RoomRequestPage = lazy(() => import("@/pages/guest/RoomRequestPage"));

@@ -5,7 +5,7 @@ import {
   AdminLeads, GovernancePanel, UserRoleManager, HousekeepingDashboard,
   POSDashboard, FeaturesShowcase, WebhookOutboxAdmin, EarlyWarningDashboard,
   ModuleDiscovery, IntegrationCredentials, IntegrationsOverview, CapXIntegration,
-  RnlAutoResolveRuns, RnlDuplicates, SiteContentEditor,
+  RnlAutoResolveRuns, RnlDuplicates, SiteContentEditor, VoiceNumberMapping,
 } from "./lazyPages";
 
 export function securityAdminRoutes({ p, pa }) {
@@ -24,6 +24,7 @@ export function securityAdminRoutes({ p, pa }) {
     { path: "/admin/tenants", ...pa(AdminTenants), wrapLayout: true, layoutModule: "admin-tenants" },
     { path: "/admin/vendors", ...pa(AdminVendors), wrapLayout: true, layoutModule: "admin_vendors" },
     { path: "/admin/quick-id", ...pa(QuickIdSettings), wrapLayout: true, layoutModule: "quick_id_settings" },
+    { path: "/admin/voice-numbers", ...pa(VoiceNumberMapping), wrapLayout: true, layoutModule: "voice-number-mapping" },
     { path: "/admin/room-qr-codes", ...pa(RoomQrCodes), wrapLayout: true, layoutModule: "room_qr_codes" },
     { path: "/app/room-requests", ...p(RoomRequests), wrapLayout: true, layoutModule: "room_qr_requests" },
     { path: "/admin/module-report", ...pa(ModuleReport), wrapLayout: true, layoutModule: "admin-module-report" },

@@ -16,11 +16,16 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+from datetime import UTC, datetime
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel
+from pymongo.errors import DuplicateKeyError
 
 from core.database import db
-from core.security import get_current_user
+from core.security import _is_super_admin, get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_module, require_op
 from security.field_encryption import get_field_encryption_service
@@ -142,6 +147,210 @@ async def list_calls(
         )
     items = [call_to_dto(d, svc, reveal_phone=reveal) for d in docs]
     return {"count": len(items), "items": items}
+
+
+# ── Numara → otel/ajan eşleme yönetimi (operatör admin ekranı) ─────────
+#
+# ``contact_center_voice_numbers`` gelen çağrının doğru kiracıya yönlenmesini
+# sağlayan eşlemedir: ``{to_number, tenant_id, agent_identity}``. Bu uçlar elle
+# DB seed yerine yetkili operatöre güvenli CRUD verir.
+#
+# Tenant izolasyonu (mutlak): tenant_id ASLA istemci gövdesinden körü körüne
+# alınmaz. super_admin merkezi operatördür → bir numarayı herhangi bir otele
+# atayabilir (gövdedeki ``tenant_id`` yalnızca super_admin için geçerli, ve
+# hedef otelin varlığı doğrulanır). Diğer roller her zaman kendi
+# ``current_user.tenant_id`` kapsamına sabitlenir. ``ux_cc_voice_number`` index'i
+# ``to_number`` üzerinde GLOBAL unique olduğundan bir numara tek otele aittir;
+# çakışma 409 (başka otel bilgisi sızdırılmadan) döner.
+
+_E164_RE = re.compile(r"^\+[1-9]\d{6,14}$")
+_VOICE_NUMBERS = "contact_center_voice_numbers"
+
+
+class VoiceNumberCreate(BaseModel):
+    to_number: str
+    agent_identity: str | None = None
+    label: str | None = None
+    tenant_id: str | None = None  # yalnızca super_admin için etkilidir
+
+
+class VoiceNumberUpdate(BaseModel):
+    to_number: str | None = None
+    agent_identity: str | None = None
+    label: str | None = None
+
+
+def _normalize_number(raw: str | None) -> str:
+    """Boşluk/tire temizler; E.164 doğrular. Geçersizse 422."""
+    n = (raw or "").strip().replace(" ", "").replace("-", "")
+    if not _E164_RE.match(n):
+        raise HTTPException(
+            status_code=422,
+            detail="Numara E.164 formatında olmalı (örn. +905321234567)",
+        )
+    return n
+
+
+def _validate_agent_identity(agent_identity: str | None, tenant_id: str) -> str | None:
+    """Ajan kimliği opsiyonel; varsa kiracı-kapsamlı olmalı (``<tenant_id>:...``).
+
+    Token kimliği formatı ``<tenant_id>:<user_id>`` ile birebir uyumlu — başka
+    kiracının ajanına çağrı yönlendirmeyi engeller.
+    """
+    if agent_identity is None:
+        return None
+    ai = agent_identity.strip()
+    if not ai:
+        return None
+    if not ai.startswith(f"{tenant_id}:"):
+        raise HTTPException(
+            status_code=422,
+            detail="Ajan kimliği ilgili otel kapsamında olmalı (<tenant_id>:<kullanıcı>)",
+        )
+    return ai
+
+
+async def _resolve_target_tenant(current_user: User, body_tenant_id: str | None) -> str:
+    """Hedef kiracıyı belirler. super_admin gövdeden seçebilir (varlık doğrulanır);
+    diğer roller her zaman kendi kiracısına sabitlenir."""
+    if _is_super_admin(current_user) and body_tenant_id:
+        exists = await db.tenants.find_one({"id": body_tenant_id}, {"_id": 0, "id": 1})
+        if not exists:
+            raise HTTPException(status_code=404, detail="Otel (tenant) bulunamadı")
+        return body_tenant_id
+    return current_user.tenant_id
+
+
+def _scope_filter(current_user: User, number_id: str) -> dict:
+    """Kayıt eşleme filtresi. super_admin tüm kiracılarda işlem yapabilir; diğer
+    roller yalnızca kendi kiracısının kaydına dokunabilir (IDOR engeli)."""
+    if _is_super_admin(current_user):
+        return {"id": number_id}
+    return {"id": number_id, "tenant_id": current_user.tenant_id}
+
+
+def _voice_number_dto(doc: dict) -> dict:
+    """Allowlist DTO — ``_id`` veya beklenmeyen alan sızdırmaz. to_number otelin
+    KENDİ hattıdır (misafir PII değil) → yetkili admine gösterilir."""
+    return {
+        "id": doc.get("id"),
+        "tenant_id": doc.get("tenant_id"),
+        "to_number": doc.get("to_number"),
+        "agent_identity": doc.get("agent_identity"),
+        "label": doc.get("label"),
+        "created_at": doc.get("created_at"),
+        "updated_at": doc.get("updated_at"),
+    }
+
+
+@router.get("/contact-center/voice/numbers")
+async def list_voice_numbers(
+    tenant_id: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+    _perm=Depends(require_op("manage_contact_center")),
+):
+    """Numara→otel/ajan eşlemelerini listeler (allowlist DTO).
+
+    super_admin tüm eşlemeleri görür (``?tenant_id`` ile süzebilir); diğer roller
+    yalnızca kendi otelinin eşlemelerini görür. Gerçek veriden okur; kayıt yoksa
+    boş liste (fake data YOK).
+    """
+    if _is_super_admin(current_user):
+        query = {"tenant_id": tenant_id} if tenant_id else {}
+    else:
+        query = {"tenant_id": current_user.tenant_id}
+    cursor = db[_VOICE_NUMBERS].find(query, {"_id": 0}).sort("to_number", 1).limit(500)
+    docs = await cursor.to_list(length=500)
+    items = [_voice_number_dto(d) for d in docs]
+    return {"count": len(items), "items": items}
+
+
+@router.post("/contact-center/voice/numbers", status_code=201)
+async def create_voice_number(
+    payload: VoiceNumberCreate,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+    _perm=Depends(require_op("manage_contact_center")),
+):
+    """Yeni numara→otel/ajan eşlemesi oluşturur.
+
+    Çakışma: ``to_number`` global unique → numara başka bir eşlemede varsa 409
+    (başka otel bilgisi sızdırılmaz). tenant_id istemciden körü körüne alınmaz.
+    """
+    target_tenant = await _resolve_target_tenant(current_user, payload.tenant_id)
+    to_number = _normalize_number(payload.to_number)
+    agent_identity = _validate_agent_identity(payload.agent_identity, target_tenant)
+    now = datetime.now(UTC)
+    doc = {
+        "id": str(uuid4()),
+        "tenant_id": target_tenant,
+        "to_number": to_number,
+        "agent_identity": agent_identity,
+        "label": (payload.label or "").strip() or None,
+        "created_at": now,
+        "updated_at": now,
+        "created_by": current_user.id,
+    }
+    try:
+        await db[_VOICE_NUMBERS].insert_one(doc)
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=409,
+            detail="Bu numara zaten bir eşlemede kullanılıyor",
+        )
+    return _voice_number_dto(doc)
+
+
+@router.put("/contact-center/voice/numbers/{number_id}")
+async def update_voice_number(
+    number_id: str,
+    payload: VoiceNumberUpdate,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+    _perm=Depends(require_op("manage_contact_center")),
+):
+    """Mevcut eşlemeyi günceller (kapsam-filtreli). Bulunamazsa 404; ``to_number``
+    çakışırsa 409."""
+    scope = _scope_filter(current_user, number_id)
+    existing = await db[_VOICE_NUMBERS].find_one(scope, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Eşleme bulunamadı")
+    target_tenant = existing["tenant_id"]
+    updates: dict = {"updated_at": datetime.now(UTC)}
+    if payload.to_number is not None:
+        updates["to_number"] = _normalize_number(payload.to_number)
+    if payload.agent_identity is not None:
+        updates["agent_identity"] = _validate_agent_identity(
+            payload.agent_identity, target_tenant
+        )
+    if payload.label is not None:
+        updates["label"] = payload.label.strip() or None
+    # Kapsam filtresi yazma ve okuma adımlarında da korunur (defense-in-depth;
+    # pre-check'e bağımlı kalmaz → cross-tenant yazma/okuma imkânsız).
+    try:
+        await db[_VOICE_NUMBERS].update_one(scope, {"$set": updates})
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=409,
+            detail="Bu numara zaten bir eşlemede kullanılıyor",
+        )
+    doc = await db[_VOICE_NUMBERS].find_one(scope, {"_id": 0})
+    return _voice_number_dto(doc or {})
+
+
+@router.delete("/contact-center/voice/numbers/{number_id}", status_code=204)
+async def delete_voice_number(
+    number_id: str,
+    current_user: User = Depends(get_current_user),
+    _mod=Depends(require_module("contact_center")),
+    _perm=Depends(require_op("manage_contact_center")),
+):
+    """Eşlemeyi siler (kapsam-filtreli). Bulunamazsa 404."""
+    result = await db[_VOICE_NUMBERS].delete_one(_scope_filter(current_user, number_id))
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Eşleme bulunamadı")
+    return Response(status_code=204)
 
 
 # ── Public Twilio webhook'ları (imza doğrulamalı, auth yok) ────────────
