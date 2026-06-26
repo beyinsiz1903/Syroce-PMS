@@ -4,18 +4,23 @@ Agency v1 — router iskeleti uctan uca testleri (ADR Karar 3).
 Saf testtir: calisan backend / canli Mongo / secret gerektirmez. Minimal bir
 FastAPI app'e yalniz agency_v1 router'i baglanir. Iki sinir dogrulanir:
 
-  1. FAIL-CLOSED: gecerli istek handler'a ulasir; hicbir alt sistem baglanmadigi
-     icin ADR ortak hata modeline gore 503 not_configured doner (error_code UST
-     seviyede). Sahte basari YOK; uc su an hicbir privileged is yapmaz.
+  1. FAIL-CLOSED: kimligi DOGRULANMIS gecerli istek handler'a ulasir; bu uclarin
+     alt sistemi (availability rate/restriction read-model; atomik modify diff
+     primitifi) henuz baglanmadigi icin ADR ortak hata modeline gore 503
+     not_configured doner (error_code UST seviyede). Sahte basari YOK. NOT: create
+     ve cancel ARTIK baglidir (503 DEGIL) -> onlarin uctan uca davranisi
+     tests/test_agency_v1_step3_router_wiring.py'de dogrulanir; burada KAPSAM DISI.
   2. KATI DTO/parametre dogrulamasi: gecersiz govde/parametre/eksik zorunlu
-     header -> 422 (handler'a ulasmadan once, FastAPI istek dogrulamasi). Bilinmeyen
-     alan sessizce yutulmaz. ADR (Karar 1) 422 govdesinin de ortak hata zarfini
-     (error_code UST seviyede + schema_version, PII detay YOK) dondurmesini dondu;
-     bunu uretmek icin minimal app'e production ile AYNI zarf kaynagi
-     (routers.agency_v1.errors) baglanir.
+     header -> 422. Bilinmeyen alan sessizce yutulmaz. ADR (Karar 1) 422 govdesinin
+     de ortak hata zarfini (error_code UST seviyede + schema_version, PII detay YOK)
+     dondurmesini dondu; bunu uretmek icin minimal app'e production ile AYNI zarf
+     kaynagi (routers.agency_v1.errors) baglanir.
 
-422, FastAPI istek dogrulamasi handler'dan once kostugu icin auth durumundan
-bagimsiz gozlenir. Sahte-yesil URETILMEZ.
+Router artik `verify_agency_signature` dependency'sini TUM uclarda zorunlu kilar;
+gercek imza dogrulamasi T3'te (test_agency_v1_step3_hmac_auth.py) ayri test edilir.
+Burada amac AUTH SONRASI davranisi (fail-closed 503 + DTO 422 zarfi) izole etmek
+oldugundan dependency, sabit bir kimlikle override edilir (auth zayiflatma DEGIL;
+auth'un kendisi baska yerde test edilir). Sahte-yesil URETILMEZ.
 """
 from __future__ import annotations
 
@@ -24,6 +29,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from routers.agency_v1 import router as agency_router
+from routers.agency_v1.auth import verify_agency_signature
 from routers.agency_v1.dtos import SCHEMA_VERSION
 from routers.agency_v1.errors import install_agency_validation_handler
 from tests.test_agency_v1_dtos import _valid_create_payload
@@ -37,6 +43,12 @@ def _make_client() -> TestClient:
     # Production'da server.py global RequestValidationError handler'i agency
     # yollarinda ADR zarfini dondurur; izole app'te ayni zarf kaynagini bagla.
     install_agency_validation_handler(app)
+    # Auth SONRASI davranisi izole et: imza dogrulamasi T3'te test edilir.
+    app.dependency_overrides[verify_agency_signature] = lambda: {
+        "key_id": "K",
+        "tenant_id": "T-1",
+        "agency_id": "A-1",
+    }
     return TestClient(app, raise_server_exceptions=True)
 
 
@@ -58,11 +70,12 @@ _VALID_MODIFY = {"schema_version": SCHEMA_VERSION, "special_requests": "geç gir
 @pytest.mark.parametrize(
     "method,path,body",
     [
+        # Yalniz HENUZ baglanmamis uclar: availability (rate/restriction read-model
+        # yok) + modify (atomik diff primitifi yok). create/cancel ARTIK bagli ->
+        # buradan cikarildi (test_agency_v1_step3_router_wiring.py kapsar).
         ("get", "/api/agency/v1/availability"
             "?room_type_id=RT-1&arrival_date=2026-07-01&departure_date=2026-07-03", None),
-        ("post", "/api/agency/v1/reservations", _valid_create_payload()),
         ("patch", "/api/agency/v1/reservations/AG-123", _VALID_MODIFY),
-        ("delete", "/api/agency/v1/reservations/AG-123", None),
     ],
 )
 def test_endpoints_fail_closed_not_configured(method, path, body):
