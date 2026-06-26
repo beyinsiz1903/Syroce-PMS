@@ -52,6 +52,25 @@ class InventoryConflict(Exception):
         )
 
 
+class DuplicateReservation(Exception):
+    """Ayni (tenant, agency, external_id) icin aktif booking zaten var (TOCTOU).
+
+    Domain-guard (read-then-insert) okumasi ile insert arasinda yarisan eszamanli
+    bir create, bookings uzerindeki `ux_agency_booking_external_active` kismi-unique
+    index'ine carptiginda DuplicateKeyError gelir. Bu DB-seviyesi kilit, dis aktorun
+    (acente) mukerrer Idempotency-Key gondermesine ragmen cifte booking/overbooking'i
+    fiziksel olarak engeller. Yarisi kaybeden insert'in tuttugu geceler outer
+    compensation ile geri salinir; router bunu kazanan booking'in IDEMPOTENT
+    yanitina cevirir (yeni claim YOK).
+
+    `external_id`: yalniz dogal anahtar (PII tasimaz; loglanabilir).
+    """
+
+    def __init__(self, *, external_id: str | None = None):
+        self.external_id = external_id
+        super().__init__(f"duplicate_reservation external_id={external_id}")
+
+
 async def claim_reservation_inventory(booking_doc: dict[str, Any]) -> dict[str, Any]:
     """Atomik cok-geceli envanter claim (Karar 5). Basari -> persist edilen
     booking dokumani. Catisma -> InventoryConflict (conflict_date = ilk catisan
@@ -215,7 +234,15 @@ async def claim_floating_inventory(booking_doc: dict[str, Any]) -> dict[str, Any
         except Exception:  # pragma: no cover - never block on search companions
             pass
 
-        await db.bookings.insert_one(doc)
+        try:
+            await db.bookings.insert_one(doc)
+        except DuplicateKeyError as dup:
+            # TOCTOU: eszamanli bir create ayni (tenant, agency, external_id) icin
+            # aktif booking'i zaten yazdi (ux_agency_booking_external_active kilidi).
+            # Bu denemenin tuttugu geceler outer compensation ile geri salinir.
+            raise DuplicateReservation(
+                external_id=str(booking_doc.get("external_id") or "")
+            ) from dup
         doc.pop("_id", None)
         logger.info(
             "agency floating booking persisted id=%s tenant=%s room_type=%s nights=%d",

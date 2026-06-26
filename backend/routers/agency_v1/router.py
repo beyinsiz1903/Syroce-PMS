@@ -48,6 +48,7 @@ from .dtos import (
 from .errors import agency_error_response
 from .idempotency_runtime import begin_agency_idempotency
 from .inventory import (
+    DuplicateReservation,
     InventoryConflict,
     claim_floating_inventory,
     release_reservation_inventory,
@@ -130,6 +131,11 @@ def _map_create_to_booking(
         "agency_id": agency_id,
         "source": "agency",
         "external_id": payload.agency_reservation_id,
+        # DB-seviyesi TOCTOU kilidi: ux_agency_booking_external_active sadece bu
+        # alan string iken (aktif=iptal-edilmemis) uniqueness uygular. Cancel'da
+        # $unset edilir -> iptal sonrasi ayni external_id ile yeniden olusturma
+        # serbest kalir (domain-guard'in status!=cancelled semantigi ile bire bir).
+        "agency_external_active": payload.agency_reservation_id,
         "confirmation_number": payload.confirmation_number or "",
         "room_type": payload.room_type_id,
         "rate_plan_id": payload.rate_plan_id,
@@ -247,6 +253,35 @@ async def create_reservation(
                 room_type_id=payload.room_type_id,
                 available=ic.available,
             )
+        except DuplicateReservation:
+            # TOCTOU: domain-guard okumasi ile insert arasinda yarisan eszamanli
+            # create kazandi (DB-seviyesi ux_agency_booking_external_active kilidi).
+            # Bu denemenin geceleri zaten geri salindi (claim compensation). Kazanan
+            # booking'i bul ve IDEMPOTENT dondur (yeni claim YOK; cifte fatura yok).
+            winner = await db.bookings.find_one(
+                {
+                    "tenant_id": tenant_id,
+                    "agency_id": agency_id,
+                    "source": "agency",
+                    "external_id": payload.agency_reservation_id,
+                    "status": {"$ne": "cancelled"},
+                },
+                {"_id": 0, "id": 1, "confirmation_number": 1},
+            )
+            if not winner:
+                # Kazanan ayni anda iptal edildi -> guvenli tarafta kal: slotu
+                # serbest birak, acente retry edebilir (uydurma yanit YOK).
+                await lock.release()
+                return agency_error_response(409, "idempotency_conflict")
+            response_body = {
+                "pms_reservation_id": winner["id"],
+                "confirmation_number": winner.get("confirmation_number")
+                or (payload.confirmation_number or ""),
+                "status": "confirmed",
+                "schema_version": SCHEMA_VERSION,
+            }
+            await _finalize_complete(lock, response_body, 201)
+            return JSONResponse(status_code=201, content=response_body)
 
         response_body = {
             "pms_reservation_id": booking_doc["id"],
@@ -343,7 +378,10 @@ async def cancel_reservation(
                         "status": "cancelled",
                         "cancel_source": "agency",
                         "cancelled_at": datetime.now(UTC).isoformat(),
-                    }
+                    },
+                    # TOCTOU kilidini serbest birak: aktif-uniqueness alanini kaldir
+                    # ki ayni external_id ile iptal sonrasi yeniden olusturma engellenmesin.
+                    "$unset": {"agency_external_active": ""},
                 },
             )
 

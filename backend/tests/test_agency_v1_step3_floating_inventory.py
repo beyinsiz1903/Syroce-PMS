@@ -252,3 +252,70 @@ async def test_floating_release_after_success(monkeypatch):
     n = await inv.release_reservation_inventory("T-1", "AGB-1", reason="cancelled")
     assert n == 3
     assert [d for d in db.room_night_locks.docs if d["booking_id"] == "AGB-1"] == []
+
+
+class _DupBookings(_Bookings):
+    """bookings.insert_one daima DuplicateKeyError verir (ux_agency_booking_external_active
+    TOCTOU kilidi: eszamanli create ayni external_id'yi zaten yazdi)."""
+
+    async def insert_one(self, doc):
+        raise DuplicateKeyError("ux_agency_booking_external_active")
+
+
+@pytest.mark.asyncio
+async def test_floating_duplicate_external_raises_and_compensates(monkeypatch):
+    # Tum geceler tutulur, sonra bookings insert DB-seviyesi unique kilide carpar.
+    db = _DB(_rooms("T-1", "STD", ["R-A", "R-B"]))
+    db.bookings = _DupBookings()
+    monkeypatch.setattr(inv, "db", db)
+
+    with pytest.raises(inv.DuplicateReservation) as ei:
+        await inv.claim_floating_inventory(_booking(external_id="AG-100"))
+    # Dogal anahtar tasinir (PII yok); govde persist EDILMEZ.
+    assert ei.value.external_id == "AG-100"
+    assert db.bookings.docs == []
+    # Compensation: bu denemenin tuttugu TUM geceler geri salindi (overbooking yok).
+    assert [d for d in db.room_night_locks.docs if d["booking_id"] == "AGB-1"] == []
+
+
+class _RecCollection:
+    def __init__(self, name, rec):
+        self._name = name
+        self._rec = rec
+
+    async def create_index(self, keys, **kwargs):
+        self._rec.append({"coll": self._name, "keys": keys, "kwargs": kwargs})
+
+
+class _RecDB:
+    def __init__(self, rec):
+        self._rec = rec
+
+    def __getitem__(self, name):
+        return _RecCollection(name, self._rec)
+
+
+@pytest.mark.asyncio
+async def test_perf_index_declares_agency_booking_toctou_unique(monkeypatch):
+    # Sahte-yesil URETILMEZ: index davranisi gercek bootstrap kodundan gozlenir.
+    import bootstrap.phases.perf_indexes as perf
+
+    rec: list[dict] = []
+    monkeypatch.setattr(perf, "_raw_db", _RecDB(rec))
+    await perf.ensure_performance_indexes()
+
+    hit = next(
+        (c for c in rec if c["kwargs"].get("name") == "ux_agency_booking_external_active"),
+        None,
+    )
+    assert hit is not None, "TOCTOU unique index bildirilmeli"
+    assert hit["coll"] == "bookings"
+    assert hit["keys"] == [
+        ("tenant_id", 1), ("agency_id", 1), ("agency_external_active", 1),
+    ], "scope: tenant+agency+aktif-external birebir"
+    assert hit["kwargs"].get("unique") is True
+    # partial-on-string: alan yoksa (acente-disi / iptal edilmis) kisitlamaya girmez.
+    assert hit["kwargs"].get("partialFilterExpression") == {
+        "agency_external_active": {"$type": "string"}
+    }
+    assert hit["kwargs"].get("background") is True

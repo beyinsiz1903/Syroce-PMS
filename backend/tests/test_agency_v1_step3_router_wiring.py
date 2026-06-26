@@ -126,7 +126,9 @@ class _Bookings:
     async def update_one(self, query, update):
         for d in self.docs:
             if all(d.get(k) == v for k, v in query.items()):
-                d.update(update["$set"])
+                d.update(update.get("$set", {}))
+                for f in update.get("$unset", {}):
+                    d.pop(f, None)
 
                 class _R:
                     matched_count = 1
@@ -378,3 +380,65 @@ def test_availability_and_modify_fail_closed(client):
     )
     assert md.status_code == 503
     assert md.json()["error_code"] == "not_configured"
+
+
+def test_create_toctou_duplicate_returns_idempotent_winner(client, monkeypatch):
+    # TOCTOU: domain-guard miss + insert kaybeder -> claim DuplicateReservation atar.
+    # Kazanan booking DB'de zaten var; router IDEMPOTENT donmeli (yeni claim YOK).
+    client._db.bookings.docs.append({
+        "id": "WIN-1",
+        "tenant_id": "T-1",
+        "agency_id": "A-1",
+        "source": "agency",
+        "external_id": "AG-100",
+        "agency_external_active": "AG-100",
+        "status": "confirmed",
+        "confirmation_number": "CN-WIN",
+    })
+
+    async def _raise_dup(booking_doc):
+        raise inv.DuplicateReservation(external_id=booking_doc.get("external_id"))
+
+    monkeypatch.setattr(rt, "claim_floating_inventory", _raise_dup)
+
+    r = client.post("/api/agency/v1/reservations", json=_create_body(), headers=_hdr("k-dup"))
+    assert r.status_code == 201, r.text
+    data = r.json()
+    assert data["pms_reservation_id"] == "WIN-1"  # kazanan
+    assert data["confirmation_number"] == "CN-WIN"
+    assert data["status"] == "confirmed"
+    # Yeni booking YAZILMADI (tek kazanan kalir).
+    assert len(client._db.bookings.docs) == 1
+
+
+def test_create_toctou_winner_gone_idempotency_conflict(client, monkeypatch):
+    # DuplicateReservation atildi ama kazanan ayni anda iptal edildi (aktif yok)
+    # -> uydurma yanit YOK; 409 idempotency_conflict, slot serbest.
+    async def _raise_dup(booking_doc):
+        raise inv.DuplicateReservation(external_id=booking_doc.get("external_id"))
+
+    monkeypatch.setattr(rt, "claim_floating_inventory", _raise_dup)
+
+    r = client.post("/api/agency/v1/reservations", json=_create_body(), headers=_hdr("k-dup2"))
+    assert r.status_code == 409
+    assert r.json()["error_code"] == "idempotency_conflict"
+    assert client._db.bookings.docs == []
+
+
+def test_cancel_unsets_active_key_allows_recreate(client):
+    # Create -> cancel (agency_external_active $unset) -> ayni external_id ile
+    # YENIDEN create serbest (TOCTOU kilidi iptal sonrasi engellemez).
+    r1 = client.post("/api/agency/v1/reservations", json=_create_body(), headers=_hdr("k-r1"))
+    assert r1.status_code == 201
+    booked = client._db.bookings.docs[0]
+    assert booked.get("agency_external_active") == "AG-100"
+
+    dc = client.delete("/api/agency/v1/reservations/AG-100", headers=_hdr("k-r2"))
+    assert dc.status_code == 200
+    cancelled = client._db.bookings.docs[0]
+    assert cancelled["status"] == "cancelled"
+    assert "agency_external_active" not in cancelled  # $unset edildi
+
+    r2 = client.post("/api/agency/v1/reservations", json=_create_body(), headers=_hdr("k-r3"))
+    assert r2.status_code == 201
+    assert r2.json()["pms_reservation_id"] != r1.json()["pms_reservation_id"]

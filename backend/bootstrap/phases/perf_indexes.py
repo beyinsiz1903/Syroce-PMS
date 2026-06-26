@@ -411,6 +411,25 @@ async def ensure_performance_indexes():
         ("agency_nonces", [("expires_at", 1)],
          "ttl_agency_nonces",
          {"expireAfterSeconds": 0}),
+        # Agency v1 Adim 3 — POST create TOCTOU zirhi (Karar 5 dayanikliligi).
+        # router.py create'teki domain-guard (read-then-insert: ayni (tenant,
+        # agency, external_id) icin aktif booking var mi) tek basina race-safe
+        # DEGILDIR: acente mukerrer Idempotency-Key ile ayni external_id'yi
+        # milisaniyeler icinde iki kez gonderirse iki istek de "yok" okuyup ikisi
+        # de yazabilir (cifte booking + overbooking). Bu kismi-unique index DB
+        # seviyesinde tek dogruluk kaynagidir: yarisi kaybeden insert
+        # DuplicateKeyError alir -> DuplicateReservation -> kazananin IDEMPOTENT
+        # yaniti. partialFilterExpression $ne desteklemez; bu yuzden "aktif=
+        # iptal-edilmemis" semantigi `agency_external_active` alani ile tasinir:
+        # create'te external_id'ye set edilir, cancel'da $unset edilir -> iptal
+        # sonrasi ayni external_id ile yeniden olusturma serbest (domain-guard
+        # status!=cancelled ile bire bir). $type:string -> alan yoksa (acente-disi
+        # booking veya iptal edilmis) kisitlamaya girmez (fake-green onlenir).
+        ("bookings",
+         [("tenant_id", 1), ("agency_id", 1), ("agency_external_active", 1)],
+         "ux_agency_booking_external_active",
+         {"unique": True,
+          "partialFilterExpression": {"agency_external_active": {"$type": "string"}}}),
     ]
     for coll_name, keys, name, kwargs in indexes:
         try:
