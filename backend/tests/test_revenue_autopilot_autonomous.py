@@ -7,11 +7,14 @@ Pins the three behaviours the task requires without a full Celery dispatch:
   2. In ``full_auto`` mode the cycle emits ONE idempotent ``RATE_UPDATED`` outbox
      event per room_type/date; a duplicate re-run (retry / re-tick) does not
      double-write. ``supervised`` mode emits nothing (pending_approval).
-  3. The beat dispatcher's atomic per-UTC-day claim enqueues each tenant at most
-     once per day even across duplicate ticks.
+  3. The beat dispatcher ticks every minute and, at each tenant's LOCAL
+     configured time (DST-aware), enqueues it via an atomic per-local-day claim
+     at most once per local day even across duplicate ticks. Outside that local
+     time window it enqueues nothing.
 """
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -247,10 +250,14 @@ async def test_supervised_mode_emits_no_events():
     assert any(a.get("status") == "pending_approval" for a in report["actions"])
 
 
-# ── 3. Dispatcher atomic per-day claim ─────────────────────────────────────
+# ── 3. Dispatcher local-time atomic per-local-day claim ────────────────────
+
+# 23:00 UTC == 02:00 Europe/Istanbul (UTC+3, the default tenant timezone), i.e.
+# the default local target hour the dispatcher fires at.
+_ISTANBUL_0200_UTC = datetime(2026, 6, 26, 23, 0, tzinfo=UTC)
 
 
-async def test_dispatcher_claims_each_tenant_once_per_day(monkeypatch):
+async def test_dispatcher_claims_each_tenant_once_per_local_day(monkeypatch):
     import celery_tasks
 
     db = _FakeDB()
@@ -268,17 +275,72 @@ async def test_dispatcher_claims_each_tenant_once_per_day(monkeypatch):
 
     monkeypatch.setattr(celery_tasks, "_fresh_mongo", lambda: (_Closeable(), db))
     monkeypatch.setattr(celery_tasks, "revenue_autopilot_for_tenant", _FakeTask())
+    # Tenants without tenant_settings fall back to the default Europe/Istanbul.
+    monkeypatch.setattr(celery_tasks, "_now_utc", lambda: _ISTANBUL_0200_UTC)
 
     res1 = await celery_tasks._revenue_autopilot_dispatch_async()
     assert res1["success"] is True
     assert sorted(res1["queued"]) == ["t1", "t2"]
     assert sorted(enqueued) == ["t1", "t2"]
 
-    # Second tick same day -> no re-dispatch (atomic per-day claim).
+    # Second tick same local day -> no re-dispatch (atomic per-local-day claim).
     enqueued.clear()
     res2 = await celery_tasks._revenue_autopilot_dispatch_async()
     assert res2["queued"] == []
     assert enqueued == []
+
+
+async def test_dispatcher_skips_tenants_outside_local_target_time(monkeypatch):
+    import celery_tasks
+
+    db = _FakeDB()
+    db.users.docs = [{"tenant_id": "t1", "active": True}]
+    enqueued: list[str] = []
+
+    class _FakeTask:
+        def apply_async(self, args=None, queue=None):
+            enqueued.append(args[0])
+
+    monkeypatch.setattr(celery_tasks, "_fresh_mongo", lambda: (_Closeable(), db))
+    monkeypatch.setattr(celery_tasks, "revenue_autopilot_for_tenant", _FakeTask())
+    # One hour earlier -> 01:00 Istanbul, before the 02:00 target -> no dispatch.
+    monkeypatch.setattr(
+        celery_tasks, "_now_utc",
+        lambda: _ISTANBUL_0200_UTC.replace(hour=22),
+    )
+
+    res = await celery_tasks._revenue_autopilot_dispatch_async()
+    assert res["success"] is True
+    assert res["queued"] == []
+    assert enqueued == []
+
+
+async def test_dispatcher_uses_tenant_local_timezone(monkeypatch):
+    import celery_tasks
+
+    db = _FakeDB()
+    db.users.docs = [
+        {"tenant_id": "ist", "active": True},
+        {"tenant_id": "nyc", "active": True},
+    ]
+    # nyc explicitly in America/New_York; at _ISTANBUL_0200_UTC it is NOT 02:00
+    # local there, so only the Istanbul-default tenant should fire.
+    db.tenant_settings.docs = [
+        {"tenant_id": "nyc", "timezone": "America/New_York"},
+    ]
+    enqueued: list[str] = []
+
+    class _FakeTask:
+        def apply_async(self, args=None, queue=None):
+            enqueued.append(args[0])
+
+    monkeypatch.setattr(celery_tasks, "_fresh_mongo", lambda: (_Closeable(), db))
+    monkeypatch.setattr(celery_tasks, "revenue_autopilot_for_tenant", _FakeTask())
+    monkeypatch.setattr(celery_tasks, "_now_utc", lambda: _ISTANBUL_0200_UTC)
+
+    res = await celery_tasks._revenue_autopilot_dispatch_async()
+    assert res["queued"] == ["ist"]
+    assert enqueued == ["ist"]
 
 
 class _Closeable:

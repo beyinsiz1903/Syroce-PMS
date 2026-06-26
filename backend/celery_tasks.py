@@ -440,18 +440,24 @@ async def _night_audit_for_tenant_async(tenant_id: str) -> dict[str, Any]:
 
 @celery_app.task(name='celery_tasks.revenue_autopilot_dispatch_task')
 def revenue_autopilot_dispatch_task():
-    """Beat dispatcher (daily): enqueue per-tenant autopilot cycles once/day.
+    """Beat dispatcher (every minute): enqueue per-tenant autopilot at local time.
 
-    Enumerates active tenants and, with an atomic per-UTC-day claim
-    (``revenue_autopilot_runs``), enqueues ``revenue_autopilot_for_tenant`` on the
-    dedicated ``pricing`` queue. The conditional CAS claim closes the
-    read-then-write race, so a tenant is dispatched at most once per day even if
-    multiple beat processes run (autoscale) or a tick is duplicated.
+    night_audit_dispatch / kbs_nightly_sweep_dispatch ile ayni kalip: her dakika
+    tick'ler, her aktif kiracinin YEREL saatini (tenant_settings.timezone, DST-
+    aware) cozer ve yerel saat hedef (varsayilan 02:00) oldugunda atomik per-
+    local-day claim (``revenue_autopilot_runs``) ile ``revenue_autopilot_for_tenant``
+    gorevini adanmis ``pricing`` kuyruguna atar. Kosullu CAS claim read-then-write
+    yarisini kapatir: birden cok beat sureci (autoscale) ya da tekrar eden tick'te
+    bile bir kiraci yerel gunde en fazla bir kez dispatch edilir. Eski sabit
+    02:00 UTC global cron'unun yerini alir; farkli zaman dilimindeki oteller
+    icin dongu otelin kendi gecesinde kosar.
     """
     return asyncio.run(_revenue_autopilot_dispatch_async())
 
 
 async def _revenue_autopilot_dispatch_async() -> dict[str, Any]:
+    from domains.pms.night_audit.scheduler import utc_to_local
+
     client, raw_db = _fresh_mongo()
     queued: list[str] = []
     scanned = 0
@@ -469,15 +475,38 @@ async def _revenue_autopilot_dispatch_async() -> dict[str, Any]:
 
         now_utc = _now_utc()
         now_iso = now_utc.isoformat()
-        # Beat gunde bir (02:00 UTC) tetiklenir; UTC-gun baslangici claim boundary.
-        day_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-        boundary = day_start.isoformat()
+        # Otonom dongunun kosacagi yerel saat (varsayilan 02:00). Eski global
+        # 02:00 UTC ile esdeger varsayilan; ortam degiskeniyle override edilebilir.
+        try:
+            target_hour = int(os.environ.get("REVENUE_AUTOPILOT_LOCAL_HOUR", "2"))
+        except (TypeError, ValueError):
+            target_hour = 2
+        try:
+            target_minute = int(os.environ.get("REVENUE_AUTOPILOT_LOCAL_MINUTE", "0"))
+        except (TypeError, ValueError):
+            target_minute = 0
 
         tenant_ids = await raw_db.users.distinct("tenant_id", {"active": True})
         for tenant_id in tenant_ids:
             if not tenant_id:
                 continue
             scanned += 1
+
+            # Kiracinin yerel saatini DST-aware coz; yoksa makul varsayilan.
+            tz_doc = await raw_db.tenant_settings.find_one(
+                {"tenant_id": tenant_id}, {"_id": 0, "timezone": 1}
+            ) or {}
+            tz_name = tz_doc.get("timezone") or "Europe/Istanbul"
+            local_now = utc_to_local(now_utc, tz_name)
+            if local_now.hour != target_hour or local_now.minute != target_minute:
+                continue
+
+            # Yerel gun baslangici UTC instant'i olarak claim boundary; last_auto_run
+            # bundan eskiyse (ya da yoksa) bugun henuz kosmadik -> claim'i kazaniriz.
+            local_day_start = local_now.replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            boundary = local_day_start.astimezone(UTC).isoformat()
 
             # 1) State dokumaninin var oldugundan emin ol (kosulsuz, idempotent).
             try:
@@ -489,7 +518,7 @@ async def _revenue_autopilot_dispatch_async() -> dict[str, Any]:
             except Exception as e:  # noqa: BLE001 — eszamanli dup insert; doc artik var
                 logger.debug("[revenue_autopilot] state ensure race: %s", e)
 
-            # 2) Kosullu CAS: yalnizca bu UTC gun icin henuz kosulmadiysa modified=1.
+            # 2) Kosullu CAS: yalnizca bu yerel gun icin henuz kosulmadiysa modified=1.
             claim = await raw_db.revenue_autopilot_runs.update_one(
                 {
                     "tenant_id": tenant_id,
