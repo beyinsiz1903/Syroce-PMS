@@ -10,12 +10,14 @@ Extracted from legacy_routes.py — Phase B Domain Separation
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from pydantic import Field as _PydField
 
 from core.database import db
+from core.helpers import create_audit_log
 from core.security import (
     get_current_user,
 )
@@ -307,14 +309,36 @@ except ImportError:
 router = APIRouter(prefix="/api", tags=["AI / ML"])
 
 
+class AutopilotModeUpdate(BaseModel):
+    """Per-tenant otonom fiyatlandirma modu degisikligi.
+
+    Mode yalnizca full_auto/supervised/advisory olabilir; gecersiz/eksik deger
+    Pydantic tarafindan 422 ile reddedilir. Boylece fail-closed semantik
+    korunur: tenant_settings.revenue_autopilot_mode bos/eksik kaldiginda Celery
+    dongusu 'supervised' davranisina (otonom RATE_UPDATED emisyonu yok) duser.
+    """
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["full_auto", "supervised", "advisory"]
+
+
 # ── GET /autopilot/status ──
 @router.get("/autopilot/status")
 async def get_autopilot_status(current_user: User = Depends(get_current_user)):
-    """Autopilot durumu"""
-    from domains.ai.revenue_autopilot import get_revenue_autopilot
-    autopilot = get_revenue_autopilot(db)
+    """Autopilot durumu.
+
+    Mod, Celery dongusunun okudugu tek dogruluk kaynagindan
+    (tenant_settings.revenue_autopilot_mode) okunur; bos/eksik/gecersiz deger
+    fail-closed 'supervised' olarak raporlanir.
+    """
+    settings = await db.tenant_settings.find_one(
+        {"tenant_id": current_user.tenant_id},
+        {"_id": 0, "revenue_autopilot_mode": 1},
+    ) or {}
+    mode = settings.get("revenue_autopilot_mode") or "supervised"
+    if mode not in ("full_auto", "supervised", "advisory"):
+        mode = "supervised"
     return {
-        'mode': autopilot.mode,
+        'mode': mode,
         'active': True,
         'last_cycle': datetime.now(UTC).isoformat()
     }
@@ -330,14 +354,47 @@ async def run_autopilot_cycle(current_user: User = Depends(get_current_user),
     return report
 # ── POST /autopilot/set-mode ──
 @router.post("/autopilot/set-mode")
-async def set_autopilot_mode(mode_data: dict, current_user: User = Depends(get_current_user),
+async def set_autopilot_mode(
+    payload: AutopilotModeUpdate,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v98 DW
 ):
-    """Autopilot modunu ayarla"""
-    from domains.ai.revenue_autopilot import get_revenue_autopilot
-    autopilot = get_revenue_autopilot(db)
-    autopilot.mode = mode_data.get('mode', 'advisory')  # full_auto, supervised, advisory
-    return {'success': True, 'new_mode': autopilot.mode}
+    """Per-tenant otonom fiyatlandirma modunu (full_auto/supervised/advisory) ayarla.
+
+    Deger Pydantic ile dogrulanir; gecersiz/eksik mod 422 ile reddedilir
+    (fail-closed). Mod, Celery revenue autopilot dongusunun okudugu tek
+    dogruluk kaynagina (tenant_settings.revenue_autopilot_mode) yazilir ve
+    audit_logs'a denetim kaydi birakilir. RBAC: yalnizca manage_rates yetkisi
+    olan kullanici degistirebilir.
+    """
+    tenant_id = current_user.tenant_id
+    new_mode = payload.mode
+
+    prev = await db.tenant_settings.find_one(
+        {"tenant_id": tenant_id}, {"_id": 0, "revenue_autopilot_mode": 1}
+    ) or {}
+    old_mode = prev.get("revenue_autopilot_mode") or "supervised"
+
+    await db.tenant_settings.update_one(
+        {"tenant_id": tenant_id},
+        {"$set": {
+            "revenue_autopilot_mode": new_mode,
+            "revenue_autopilot_mode_updated_at": datetime.now(UTC).isoformat(),
+            "revenue_autopilot_mode_updated_by": current_user.id,
+        }},
+        upsert=True,
+    )
+
+    await create_audit_log(
+        tenant_id=tenant_id,
+        user=current_user,
+        action="revenue_autopilot_mode_changed",
+        entity_type="tenant_settings",
+        entity_id=tenant_id,
+        changes={"from": old_mode, "to": new_mode},
+    )
+
+    return {'success': True, 'new_mode': new_mode, 'previous_mode': old_mode}
 # ── POST /ai/solve-overbooking ──
 @router.post("/ai/solve-overbooking")
 async def solve_overbooking(
