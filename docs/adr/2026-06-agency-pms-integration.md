@@ -63,7 +63,8 @@ Acente JSON, kanonikteki saglayici-ozel alanlari (`hr_number`, `message_uid`, `r
   X-Agency-Signature = hex(hmac_sha256(shared_secret, string_to_sign))
   ```
   `canonical_query`: query parametreleri ad'a gore siralanmis ve URL-encode edilmis hali (bos ise "").
-- **Replay korumasi iki katmanli**: (a) `timestamp` +/- 300s penceresi disinda -> 401; (b) `nonce` (jti) kisa-sureli **replay-cache**'te (TTL 300s, pencere ile esit) tutulur — ayni nonce tekrari -> 401. Tek basina timestamp replay'i kapatmaz.
+- **Tazelik + saat-kaymasi (clock-drift) penceresi (donmus)**: kabul penceresi = tazelik **+/- 300s** + saat-kaymasi toleransi **+/- 60s** = **etkin +/- 360s**. Gerekce: NTP sapmasi/cluster dugum farki meşru istegi rastgele 401'e dusurmemeli (or. acente saati 65s geri kalirsa). Pencere disi timestamp -> 401. Tum PMS dugumleri NTP zorunlu calistirir; bu pencere bir mazeret degil, guvenlik agi.
+- **Replay korumasi (TToU)**: `nonce` (jti) **replay-cache**'te tutulur; ayni nonce tekrari -> 401. **Degismez kural**: replay-cache TTL **>= etkin kabul penceresi (360s)** — aksi halde nonce suresi dolup timestamp hala gecerliyken replay penceresi acilir. Tek basina timestamp replay'i kapatmaz.
 - Imza/secret **dogrulama PMS sunucu tarafinda**; gecersiz/eksik imza, pencere disi timestamp, tekrar eden nonce -> fail-closed 401. Secret degerleri asla log/yanit/hata govdesinde gecmez.
 - PMS->acente webhook'lari ayni simetrik string-to-sign + nonce semasini tasir (`X-Syroce-Signature` / `X-Syroce-Nonce` / `X-Syroce-Timestamp`), acente tarafinda ayni sekilde dogrulanir.
 
@@ -116,6 +117,10 @@ Bu yanit baglayici teklif DEGILDIR (musaitlik anliktir; kesin sonuc rezervasyon 
 
 - **`Idempotency-Key` zorunlu** olan uclar: rezervasyon olustur (POST), degistir (PATCH), iptal (DELETE).
 - **TTL**: anahtar kaydi **48 saat** saklanir. Bu sure, acentenin maksimum retry penceresinden buyuk olmalidir (Karar 6 webhook backoff ~24h ile uyumlu, marjli).
+- **Iki-katmanli saklama (donmus) — RAM maliyeti kontrolu**: rezervasyon yanit govdeleri agir JSON'dur (misafir PII, folio, fiyat tablolari); tamamini 48h Redis RAM'inde tutmak belleği sisirir. Bu yuzden:
+  - **Sicak katman (Redis/Valkey)**: yalnizca in-flight kilitleri + sicak tekrarlar icin **15-30 dk** TTL. RAM temiz kalir.
+  - **Soguk katman (MongoDB `idempotency_cache`)**: cozulen yanit asenkron olarak Mongo'ya offload edilir, **TTL index** ile 48h sonunda otomatik silinir. Sicak katmanda yoksa Mongo'dan replay edilir.
+  - Scope ve davranis matrisi her iki katmanda ozdes; PII govdesi soguk katmanda sifrelenir veya referans tutulur (log'lanmaz).
 - **Davranis matrisi**:
   - Ayni key + ayni govde parmak-izi (`payload_fingerprint`, mevcut `reservation_import` deseni) -> orijinal yanit **tekrar uretilir** (cached), is yeniden CALISTIRILMAZ. Idempotent.
   - Ayni key + FARKLI govde -> **422 idempotency_conflict** (anahtar yeniden kullanilmis).
@@ -145,6 +150,7 @@ HTTP 409 Conflict
 ## Karar 6 — PMS -> Acente webhook / outbox + exponential backoff
 
 - PMS, envanter/fiyat/restriksiyon degisikliginde acenteye **imzali webhook** firlatir (mevcut SXI outbox + dispatcher uzerinden; yeni event tipleri additive).
+- **Hedef konfigurasyonu (donmus)**: ayri bir ayar tablosu YOK. Hedef, `agency_contracts` (Partner Sozlesmesi) kaydina eklenen tek bir **`webhook_url`** alanindan okunur. Sozlesme zaten `(tenant_id, agency_id)` muhurlu oldugu icin olay firlatilirken dogrudan bu kayda bakilir — per-acente global esneksizligi de per-tenant konfig coplugu de onlenir.
 - **Idempotency**: her outbound olay `event_id` + `idempotency_key=tenant:event:entity:payload_hash` tasir; acente tarafinda tekrarlar dedup edilir.
 - **Backoff stratejisi** (donmus): exponential + jitter.
   - Maks deneme: **8**.
@@ -157,6 +163,13 @@ HTTP 409 Conflict
   - **Alarm esigi/SLO**: DLQ'ya dusen ilk olayda warning, esik (or. 5 dk'da >N veya tek acenteye art arda basarisizlik) asilirsa escalation; hedef: DLQ olaylari 24h icinde cozulur.
   - **Runbook**: operator proseduru `docs/REPLIT_OPS_CHEATSHEET.md`'ye implementasyon turunda eklenir.
 - Webhook hedef URL'i SSRF/DNS-rebind korumali outbound (mevcut `integrations.xchange.safety.safe_request_async`) ile cagrilir; imzali URL/secret loglanmaz.
+
+---
+
+## Karar 7 — Sinir cozumleri: edge esleme + rate-limit
+
+- **`agency_id` <-> `tenant_id` / `room_type_id` esleme (donmus)**: PMS **cekirdegine gomulmez**. Esleme `b2b_api` router'inin hemen arkasindaki **Provider/Adaptor (SXI kenari)** katmaninda cozulur. PMS iceriye yalnizca kendi `tenant_id` + `room_type_id` dunyasiyla bakar; disaridan gelen acente kimliklerini kanonik formata cevirme yuku butunuyle entegrasyon sinirinda biter (Zero Bloat — cekirdek her yeni acente icin haritalama tablosu tasimaz).
+- **Rate-limit (donmus)**: IP-bazli rate-limit B2B'de YANLIS (NAT arkasindaki alt-acenteler ortak cikis IP'si paylasir; biri digerini bloklar). IP yalnizca mTLS/guvenlik kapisinda sinir kontrolu olarak kullanilir. Kova mantigi (Token Bucket, Redis) **strictly `key_id (acente) + tenant_id`** bileskesine baglanir — A acentesinin X oteline yuku, Y otelini veya B acentesini etkilemez. Sorgu (availability) ve yazma (create) **ayri kova/esik** tasir (yazma daha pahali).
 
 ---
 
@@ -183,8 +196,11 @@ HTTP 409 Conflict
 - GraphQL (yalnizca acente cok-degiskenli alan secimi gerektirirse degerlendirilir; varsayilan REST).
 - Implementasyon (router/sema/test) — bu ADR sonrasi ayri is.
 
-## Implementasyon turu icin acik sorular
+## Cozulen acik sorular
 
-1. `agency_id` <-> `tenant_id` esleme koleksiyonu mevcut `b2b_api` key modeline mi binecek yoksa ayri mi?
-2. Acente webhook hedefleri per-acente mi yoksa per-(acente,tenant) mi konfigure edilecek?
-3. Rate-limit esikleri (musaitlik sorgusu cok daha sik; olustur daha pahali) — ayri kova mi?
+Ilk taslaktaki 3 acik soru karara baglandi:
+1. `agency_id` <-> `tenant_id` esleme -> **Karar 7** (cekirdege gomulmez, SXI kenarinda cozulur).
+2. Webhook hedef konfigurasyonu -> **Karar 6** (`agency_contracts.webhook_url`, ayri ayar tablosu yok).
+3. Rate-limit kovalari -> **Karar 7** (`key_id + tenant_id` bileskesi, IP DEGIL; sorgu/yazma ayri kova).
+
+Implementasyon turuna devreden somut esikler (deger ayari, kontrat alani): rate-limit sayisal esikleri, `idempotency_cache` TTL index alan adlari, `agency_contracts.webhook_url` sema migration'i.
