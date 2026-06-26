@@ -75,6 +75,17 @@ async def dispatch_outbox_event(event: dict[str, Any]) -> tuple[bool, str]:
 
         return await dispatch_agency_webhook(event)
 
+    # Agency v1 fan-out (Karar 7). For internal inventory/rate/restriction/booking
+    # source events, fan out an ANONYMIZED (zero-PII) agency webhook event to every
+    # active partner agency of this tenant. This runs at the SXI edge, is idempotent
+    # (deduped per source+agency), NEVER raises, and is INDEPENDENT of this source
+    # event's own OTA dispatch outcome below. agency.*/IC events are already returned
+    # above, so fan-out never recurses. agency<->tenant mapping stays out of the PMS
+    # core (resolved in the b2b boundary helper).
+    from core.agency_fanout import fan_out_agency_events
+
+    await fan_out_agency_events(event)
+
     # Map outbox event_type to channel manager event name
     cm_event_name = EVENT_TYPE_TO_CM_EVENT.get(event_type)
     if not cm_event_name:

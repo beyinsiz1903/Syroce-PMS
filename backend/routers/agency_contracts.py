@@ -154,6 +154,35 @@ async def list_partner_tenant_ids(agency_id: str, on_date: str | None = None) ->
     return [doc["tenant_id"] async for doc in cursor]
 
 
+async def list_active_agencies_for_tenant(
+    tenant_id: str, on_date: str | None = None
+) -> list[str]:
+    """Bu otelle bugün aktif (approved + tarih içinde) sözleşmesi olan tüm agency_id
+    listesi. has_active_contract / list_partner_tenant_ids'in TERSİ (tenant -> agency).
+
+    Karar 7 fan-out (SXI kenarı): bir iç olay dispatch edilirken hangi acentelere
+    anonim webhook fırlatılacağını çözmek için kullanılır. agency_id<->tenant_id
+    eşlemesi PMS çekirdeğine gömülmez; bu sorgu b2b sınırında (bu router) kalır.
+    """
+    sysdb = get_system_db()
+    today = on_date or datetime.now(UTC).strftime("%Y-%m-%d")
+    cursor = sysdb.agency_contracts.find(
+        {
+            "tenant_id": tenant_id,
+            "status": "approved",
+            "valid_from": {"$lte": today},
+            "valid_to": {"$gte": today},
+        },
+        {"_id": 0, "agency_id": 1},
+    )
+    seen: list[str] = []
+    async for doc in cursor:
+        aid = doc.get("agency_id")
+        if aid and aid not in seen:
+            seen.append(aid)
+    return seen
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # AGENCY-SIDE (X-API-Key)
 # ═══════════════════════════════════════════════════════════════════════

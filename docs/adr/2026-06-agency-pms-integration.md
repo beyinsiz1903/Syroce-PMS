@@ -171,6 +171,32 @@ HTTP 409 Conflict
 - **`agency_id` <-> `tenant_id` / `room_type_id` esleme (donmus)**: PMS **cekirdegine gomulmez**. Esleme `b2b_api` router'inin hemen arkasindaki **Provider/Adaptor (SXI kenari)** katmaninda cozulur. PMS iceriye yalnizca kendi `tenant_id` + `room_type_id` dunyasiyla bakar; disaridan gelen acente kimliklerini kanonik formata cevirme yuku butunuyle entegrasyon sinirinda biter (Zero Bloat — cekirdek her yeni acente icin haritalama tablosu tasimaz).
 - **Rate-limit (donmus)**: IP-bazli rate-limit B2B'de YANLIS (NAT arkasindaki alt-acenteler ortak cikis IP'si paylasir; biri digerini bloklar). IP yalnizca mTLS/guvenlik kapisinda sinir kontrolu olarak kullanilir. Kova mantigi (Token Bucket, Redis) **strictly `key_id (acente) + tenant_id`** bileskesine baglanir — A acentesinin X oteline yuku, Y otelini veya B acentesini etkilemez. Sorgu (availability) ve yazma (create) **ayri kova/esik** tasir (yazma daha pahali).
 
+### Karar 7 — Fan-out kablolama (IMPLEMENTASYON: DONE)
+
+Operator "Hibrit Yurutme Emri": kapsam = Secenek B (rezervasyon kaynakli musaitlik
+degisimi DAHIL, overbooking onleme), guvenlik = Secenek A (SIFIR PII). Uygulama:
+
+- **Tetik noktasi (SXI kenari)**: `core/outbox_dispatcher.dispatch_outbox_event`
+  icinde agency erken-dalindan SONRA, CM mapping'den ONCE `fan_out_agency_events`
+  cagrilir -> agency.* event'leri re-fan-out olmaz (rekursiyon yok), fan-out kaynak
+  OTA dispatch sonucundan BAGIMSIZ ve ASLA raise etmez (kaynak teslimini bozmaz).
+- **Mapper**: `core/agency_fanout.py`. Kaynak (envanter blok/kaldirma, AI rate,
+  restriksiyon, booking created/cancelled/noshow) -> anonim
+  `agency.inventory.availability.updated.v1` (veya rate/restriction). Cimbizlanan:
+  `room_type_id` (rooms.room_type == agency room_type_id), `date_from/date_to`,
+  `change(+/-1)`. guest_id/cancellation_reason/marked_by ASLA tasinmaz.
+- **room_id -> room_type**: tenant-scoped salt-okunur lookup. Sparse payload
+  (import_bridge) icin booking dokumani SADECE room_id/check_in/check_out
+  projeksiyonuyla okunur (PII proje EDILMEZ). Cozulemezse fail-closed ATLA (room_id
+  acenteye sizmaz). `allow_sell=True` blok/kaldirma -> satilabilir envanter degismez
+  -> fan-out YOK.
+- **Aktif acente listesi**: `routers.agency_contracts.list_active_agencies_for_tenant`
+  (ters helper; agency<->tenant eslemesi cekirdege gomulmez, b2b sinirinda kalir).
+- **Idempotency**: `enqueue_outbox_event` artik opsiyonel `idempotency_key` alir.
+  Fan-out STABIL, payload'dan BAGIMSIZ key kullanir:
+  `agency_fanout:{tenant}:{agency}:{source_event_id}:{event_type}` -> worker retry /
+  partial-crash'te turetilmis payload drift etse bile (kaynak+agency) basina TEK kayit.
+
 ---
 
 ## Hata modeli (ortak)

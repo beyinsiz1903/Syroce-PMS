@@ -168,6 +168,7 @@ async def enqueue_outbox_event(
     property_id: str | None = None,
     correlation_id: str | None = None,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     """
     Enqueue an outbox event for guaranteed OTA delivery.
@@ -187,6 +188,9 @@ async def enqueue_outbox_event(
         property_id: Property ID (defaults to tenant_id)
         correlation_id: Request correlation ID for tracing
         max_attempts: Maximum delivery attempts (default 5)
+        idempotency_key: Optional explicit, payload-independent dedup key. When
+            given, it overrides the default (tenant, type, entity, payload) hash —
+            used by agency fan-out so retries dedupe even if the payload drifts.
 
     Returns:
         The inserted outbox event document (without _id).
@@ -194,7 +198,12 @@ async def enqueue_outbox_event(
     now = _utc_now()
     event_id = str(uuid.uuid4())
 
-    idempotency_key = _build_idempotency_key(tenant_id, event_type, entity_id, payload)
+    # Caller may supply an explicit, payload-independent dedup key (e.g. agency
+    # fan-out: stable across worker retries even if the derived payload drifts).
+    # Default: hash of (tenant, type, entity, payload).
+    idempotency_key = idempotency_key or _build_idempotency_key(
+        tenant_id, event_type, entity_id, payload
+    )
 
     doc = {
         "id": event_id,

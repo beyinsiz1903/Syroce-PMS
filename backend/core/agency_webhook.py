@@ -262,6 +262,7 @@ async def enqueue_agency_webhook_event(
     entity_id: str,
     payload: dict[str, Any],
     correlation_id: str | None = None,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     """Agency outbound webhook event'ini outbox'a atomik yazar (is islemiyle ayni
     transaction'da cagrilmali). provider="agency" (super_admin replay filtresi),
@@ -285,4 +286,5 @@ async def enqueue_agency_webhook_event(
         provider="agency",
         correlation_id=correlation_id,
         max_attempts=AGENCY_MAX_ATTEMPTS,
+        idempotency_key=idempotency_key,
     )
