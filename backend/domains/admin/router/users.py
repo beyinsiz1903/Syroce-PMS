@@ -753,6 +753,8 @@ async def provision_user(
     import uuid as _uuid
     from datetime import UTC, datetime, timedelta
 
+    from pymongo.errors import DuplicateKeyError
+
     from core.email import _frontend_base_url, send_email
     from core.security import hash_password
     from security.encrypted_lookup import build_user_email_query, encrypt_user_doc
@@ -842,12 +844,21 @@ async def provision_user(
     }
 
     # Atomik: ikisi de yazilir ya da hicbiri (fail-closed). Tek bir orphan
-    # giris hesabi birakmamak kritik.
+    # giris hesabi birakmamak kritik. E-posta tekilligi DB-zirhi (unique
+    # `uniq_users_hash_email`) yaris durumunda (eszamanli ayni-email istegi)
+    # ikinciyi DuplicateKeyError ile reddeder; transaction abort olur ->
+    # orphan kalmaz. Bunu 500 DEGIL, tertemiz 400'e ceviriyoruz.
     try:
         async with await db.client.start_session() as session:
             async with session.start_transaction():
                 await db.users.insert_one(user_doc, session=session)
                 await db.staff_members.insert_one(staff_doc, session=session)
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=400, detail="Bu e-posta ile bir kullanici zaten var."
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("provision_user atomic write failed tenant=%s: %s", tenant_id, e)
         raise HTTPException(status_code=500, detail="Kullanici olusturulamadi.")

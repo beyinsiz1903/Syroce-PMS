@@ -282,6 +282,19 @@ class DatabaseOptimizer:
 
         indexes = [
             ([("role", ASCENDING)], {}),
+            # E-posta tekilligi DB-zirhi (yaris durumu / orphan onleme).
+            # E-posta sifreli saklanir; tekillik DETERMINISTIK blind-index
+            # `_hash_email` (HMAC-SHA256, normalize edilmis) uzerinden saglanir
+            # — sifreli `email` alani uzerinden DEGIL. partialFilterExpression
+            # ile yalniz `_hash_email` (string) tasiyan dokumanlar kisitlanir;
+            # boylece legacy/sifresiz (alan yok) satirlar `null` uzerinde
+            # cakismaz. Global (login zaten global-by-email; app-katmani dup
+            # kontrolu de global) — bu yuzden tenant_id'siz.
+            ([("_hash_email", ASCENDING)], {
+                "name": "uniq_users_hash_email",
+                "unique": True,
+                "partialFilterExpression": {"_hash_email": {"$type": "string"}},
+            }),
         ]
 
         created = []
