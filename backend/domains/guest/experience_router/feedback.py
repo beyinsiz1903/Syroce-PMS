@@ -256,21 +256,34 @@ def _check_invite_expiry_or_raise(expires_raw) -> None:
 # ── Halka açık yüzey sertleştirme: tekil oy DB zırhı + abuse sınırları ──
 
 _SINGLE_VOTE_INDEX_READY = False
+_SINGLE_VOTE_INDEX_FAILED_AT = 0.0
+_SINGLE_VOTE_INDEX_FAIL_COOLDOWN_SEC = 30
 
 
 async def _ensure_single_vote_indexes() -> None:
-    """Defense-in-depth: DB-seviyesi tekil oy garantileri.
+    """Defense-in-depth: DB-seviyesi tekil oy garantileri (FAIL-CLOSED).
 
     - survey_responses: (tenant_id, survey_id, booking_id, vote_day) partial-unique
       → app-seviyesi gün-bazlı dedup'ın TOCTOU race'ini kapatır. booking_id/vote_day
         olmayan ad-hoc yanıtlar muaf (index'e girmez).
     - guest_reviews: invite_token partial-unique → davet başına tek yorum, atomik
       claim bypass edilse bile DB reddeder.
-    Mevcut dokümanlar bu alanlara sahip olmadığından partial filtre index build'ini
-    bozmaz (yalnız yeni, alanlı kayıtlar kapsanır)."""
-    global _SINGLE_VOTE_INDEX_READY
+
+    Bu index'ler tekil-oy invariant'ının DB-seviyesi garantisi olduğundan
+    kurulamazsa fail-OPEN (app kontrolüne düşmek) bir race penceresi açar =
+    doktrin ihlali. Bu yüzden kurulamazsa 503 + 30sn cooldown ile reddedilir
+    (long-stay/laundry kalıbı). Yazım yolları index hazır değilken kabul EDİLMEZ.
+    Mevcut dokümanlar bu alanlara sahip olmadığından partial filtre index
+    build'ini bozmaz (yalnız yeni, alanlı kayıtlar kapsanır)."""
+    import time as _time
+    global _SINGLE_VOTE_INDEX_READY, _SINGLE_VOTE_INDEX_FAILED_AT
     if _SINGLE_VOTE_INDEX_READY:
         return
+    now = _time.monotonic()
+    if _SINGLE_VOTE_INDEX_FAILED_AT and (
+        now - _SINGLE_VOTE_INDEX_FAILED_AT
+    ) < _SINGLE_VOTE_INDEX_FAIL_COOLDOWN_SEC:
+        raise HTTPException(503, "Tekil oy index'i hazır değil (cooldown), tekrar deneyin")
     try:
         await db.survey_responses.create_index(
             [("tenant_id", 1), ("survey_id", 1), ("booking_id", 1), ("vote_day", 1)],
@@ -287,14 +300,12 @@ async def _ensure_single_vote_indexes() -> None:
             partialFilterExpression={"invite_token": {"$exists": True}},
             name="uniq_guest_review_invite_token",
         )
+        _SINGLE_VOTE_INDEX_READY = True
+        _SINGLE_VOTE_INDEX_FAILED_AT = 0.0
     except Exception as exc:
-        # READY bayrağını SET ETME: bu index'ler tekil-oy invariant'ının
-        # DB-seviyesi garantisi; bir kez kurulamazsa sessizce yokmuş gibi
-        # devam etmek fake-green olur. Bayrak False kalır → bir sonraki
-        # istekte tekrar denenir (create_index idempotent: zaten varsa no-op).
-        logging.warning("[review-public] single-vote index ensure failed (will retry): %s", exc)
-        return
-    _SINGLE_VOTE_INDEX_READY = True
+        _SINGLE_VOTE_INDEX_FAILED_AT = now
+        logging.error("[review-public] single-vote index ensure failed (fail-closed 503): %s", exc)
+        raise HTTPException(503, "Tekil oy index'i hazır değil, tekrar deneyin") from exc
 
 
 # Halka açık uç abuse sınırları (Redis-backed sayaç → multi-instance dağıtık).

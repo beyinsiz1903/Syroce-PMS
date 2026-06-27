@@ -49,6 +49,15 @@ def _db(surveys_result, responses_dup):
     return SimpleNamespace(surveys=surveys, survey_responses=responses), surveys, responses
 
 
+@pytest.fixture(autouse=True)
+def _skip_index_ensure(monkeypatch):
+    """Bu dosya app-seviyesi gün-bazlı dedup guard'ını test eder; DB-seviyesi
+    tekil-oy index ensure (fail-closed 503) ayrı test edilir. Burada no-op'la."""
+    async def _noop():
+        return None
+    monkeypatch.setattr(feedback_mod, "_ensure_single_vote_indexes", _noop)
+
+
 @pytest.mark.asyncio
 async def test_duplicate_same_day_booking_rejected(monkeypatch):
     db, _, responses = _db({"id": "s1", "survey_name": "NPS"}, {"id": "existing"})

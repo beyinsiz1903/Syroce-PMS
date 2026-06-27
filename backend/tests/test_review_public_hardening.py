@@ -287,9 +287,9 @@ async def test_public_post_transient_error_rolls_back_to_pending(monkeypatch):
 # ---- token validation (badge: invalid -> 400) ----------------------------
 
 @pytest.mark.asyncio
-async def test_index_ensure_not_marked_ready_on_failure(monkeypatch):
-    """Index kurulumu başarısızsa READY bayrağı SET EDİLMEZ → bir sonraki
-    istekte tekrar denenir (invariant üzerinde fake-green YOK)."""
+async def test_index_ensure_fail_closed_503(monkeypatch):
+    """Index kurulamazsa FAIL-CLOSED: 503 fırlatılır, READY bayrağı SET EDİLMEZ
+    (invariant üzerinde fake-green/fail-open YOK)."""
     class _FailColl:
         async def create_index(self, *a, **k):
             raise RuntimeError("index build failed")
@@ -297,9 +297,45 @@ async def test_index_ensure_not_marked_ready_on_failure(monkeypatch):
     db = SimpleNamespace(survey_responses=_FailColl(), guest_reviews=_FailColl())
     monkeypatch.setattr(feedback_mod, "db", db)
     monkeypatch.setattr(feedback_mod, "_SINGLE_VOTE_INDEX_READY", False)
+    monkeypatch.setattr(feedback_mod, "_SINGLE_VOTE_INDEX_FAILED_AT", 0.0)
     # autouse fixture ensure'u no-op'lar; burada GERÇEK fonksiyonu test ediyoruz
-    await _REAL_ENSURE()
+    with pytest.raises(HTTPException) as exc:
+        await _REAL_ENSURE()
+    assert exc.value.status_code == 503
     assert feedback_mod._SINGLE_VOTE_INDEX_READY is False
+
+
+@pytest.mark.asyncio
+async def test_survey_write_rejected_when_index_unavailable(monkeypatch):
+    """Tekil oy index'i hazır değilken anket yazımı KABUL EDİLMEZ (503, insert yok)."""
+    async def _raise_503():
+        raise HTTPException(503, "index hazır değil")
+    monkeypatch.setattr(feedback_mod, "_ensure_single_vote_indexes", _raise_503)
+    responses = _SurveyResponsesColl(dup=None)
+    db = SimpleNamespace(surveys=_Surveys({"id": "s1", "survey_name": "NPS"}),
+                         survey_responses=responses)
+    monkeypatch.setattr(feedback_mod, "db", db)
+    with pytest.raises(HTTPException) as exc:
+        await feedback_mod.submit_survey_response(_survey_req("b1"), current_user=_user())
+    assert exc.value.status_code == 503
+    assert responses.inserts == []
+
+
+@pytest.mark.asyncio
+async def test_public_post_rejected_when_index_unavailable(monkeypatch):
+    """Tekil oy index'i hazır değilken halka açık yorum yazımı KABUL EDİLMEZ (503)."""
+    async def _raise_503():
+        raise HTTPException(503, "index hazır değil")
+    monkeypatch.setattr(feedback_mod, "_ensure_single_vote_indexes", _raise_503)
+    invites = _InviteColl(pre={"status": "pending", "expires_at": _future()},
+                          claim={"_id": "o", "tenant_id": "t", "guest_name": "G"})
+    reviews = _ReviewColl()
+    db = SimpleNamespace(review_invites=invites, guest_reviews=reviews)
+    monkeypatch.setattr(feedback_mod, "db", db)
+    with pytest.raises(HTTPException) as exc:
+        await feedback_mod.submit_review_public("a" * 32, {"rating": 5}, request=_request())
+    assert exc.value.status_code == 503
+    assert reviews.inserts == []
 
 
 @pytest.mark.asyncio
