@@ -637,6 +637,166 @@ async def _revenue_autopilot_for_tenant_async(tenant_id: str) -> dict[str, Any]:
         client.close()
 
 
+# ============= AUTONOMOUS COLLECTION (no-show + VCC check-in) =============
+# Beat dispatcher (every minute): her aktif kiracinin YEREL saatini (DST-aware)
+# cozer ve hedef yerel saatte (AUTOCOLLECT_LOCAL_HOUR, default 4) atomik per-local-
+# day claim (``autonomous_collection_runs``) ile per-tenant tahsilat gorevini atar.
+# Yerel 04:00 default'u night-audit'ten (no_show statulerini set eder) SONRA kosar;
+# erken kosulsa bile no_show o gun yoksa bir sonraki gun toplanir (cift-charge YOK).
+
+
+@celery_app.task(name='celery_tasks.autonomous_collection_dispatch_task')
+def autonomous_collection_dispatch_task():
+    """Beat dispatcher: yerel saatte per-tenant otonom tahsilat kuyruga atar."""
+    return asyncio.run(_autonomous_collection_dispatch_async())
+
+
+async def _autonomous_collection_dispatch_async() -> dict[str, Any]:
+    from domains.pms.night_audit.scheduler import utc_to_local
+
+    client, raw_db = _fresh_mongo()
+    queued: list[str] = []
+    scanned = 0
+    try:
+        # Per-day claim'in atomikligi tenant_id unique index'ine BAGLIDIR (kosullu
+        # CAS tek basina yarista iki state dokumani olusmasini engelleyemez). Bu
+        # yuzden index bir optimizasyon DEGIL, ZORUNLU invariant: ensure edilemezse
+        # FAIL-CLOSED davran (hicbir tenant dispatch ETME) — boylece coklu-beat
+        # yarisinda "ayni gun iki dispatch" -> cift-charge zinciri asla acilmaz.
+        try:
+            await raw_db.autonomous_collection_runs.create_index(
+                "tenant_id", unique=True,
+                name="autonomous_collection_runs_tenant_uq", background=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "[autocollect] runs unique index ensure FAILED; dispatch aborted "
+                "(fail-closed): %s", exc
+            )
+            return {"success": False, "error": "runs_index_unavailable",
+                    "scanned": 0, "queued": []}
+
+        now_utc = _now_utc()
+        now_iso = now_utc.isoformat()
+        try:
+            target_hour = int(os.environ.get("AUTOCOLLECT_LOCAL_HOUR", "4"))
+        except (TypeError, ValueError):
+            target_hour = 4
+        try:
+            target_minute = int(os.environ.get("AUTOCOLLECT_LOCAL_MINUTE", "0"))
+        except (TypeError, ValueError):
+            target_minute = 0
+
+        tenant_ids = await raw_db.users.distinct("tenant_id", {"active": True})
+        for tenant_id in tenant_ids:
+            if not tenant_id:
+                continue
+            scanned += 1
+
+            tz_doc = await raw_db.tenant_settings.find_one(
+                {"tenant_id": tenant_id}, {"_id": 0, "timezone": 1}
+            ) or {}
+            tz_name = tz_doc.get("timezone") or "Europe/Istanbul"
+            local_now = utc_to_local(now_utc, tz_name)
+            if local_now.hour != target_hour or local_now.minute != target_minute:
+                continue
+
+            local_day_start = local_now.replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            boundary = local_day_start.astimezone(UTC).isoformat()
+
+            # 1) State dokumaninin var oldugundan emin ol (kosulsuz, idempotent).
+            try:
+                await raw_db.autonomous_collection_runs.update_one(
+                    {"tenant_id": tenant_id},
+                    {"$setOnInsert": {"tenant_id": tenant_id, "last_auto_run": None}},
+                    upsert=True,
+                )
+            except Exception as e:  # noqa: BLE001 — eszamanli dup insert; doc artik var
+                logger.debug("[autocollect] state ensure race: %s", e)
+
+            # 2) Kosullu CAS: yalnizca bu yerel gun icin henuz kosulmadiysa modified=1.
+            claim = await raw_db.autonomous_collection_runs.update_one(
+                {
+                    "tenant_id": tenant_id,
+                    "$or": [
+                        {"last_auto_run": None},
+                        {"last_auto_run": {"$lt": boundary}},
+                    ],
+                },
+                {"$set": {"last_auto_run": now_iso, "last_auto_run_status": "dispatched"}},
+            )
+            if claim.modified_count == 0:
+                continue
+
+            autonomous_collection_for_tenant.delay(tenant_id)
+            queued.append(tenant_id)
+            logger.info("Autonomous collection dispatch: queued tenant=%s", tenant_id)
+
+        return {"success": True, "scanned": scanned, "queued": queued}
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Autonomous collection dispatch error: %s", exc)
+        return {"success": False, "error": str(exc), "scanned": scanned, "queued": queued}
+    finally:
+        client.close()
+
+
+@celery_app.task(
+    name='celery_tasks.autonomous_collection_for_tenant',
+    bind=True,
+    max_retries=2,
+    default_retry_delay=300,
+)
+def autonomous_collection_for_tenant(self, tenant_id: str):
+    """Bir kiraci icin otonom tahsilat dongusunu kosar.
+
+    Cekirdek (``core.autonomous_collection.run_autonomous_collection``) idempotent
+    ve fail-closed'dur: kalici booking marker + para-alinmis-olabilir intent guard'i
+    sayesinde bir Celery retry (transient DB hatasi sonrasi) ASLA cift-charge edemez.
+    """
+    try:
+        return asyncio.run(_autonomous_collection_for_tenant_async(tenant_id))
+    except Exception as exc:  # noqa: BLE001 — infra-level; engine guard'lari retry'i guvenli kilar
+        logger.exception(
+            "Autonomous collection task crashed for tenant=%s: %s", tenant_id, exc
+        )
+        raise self.retry(exc=exc)
+
+
+async def _autonomous_collection_for_tenant_async(tenant_id: str) -> dict[str, Any]:
+    from core.autonomous_collection import run_autonomous_collection
+
+    client, raw_db = _fresh_mongo()
+    try:
+        summary = await run_autonomous_collection(raw_db, tenant_id)
+        completed_iso = _now_utc().isoformat()
+        # PII-free, operator-gorunur ozet (tenant kimligi disinda misafir verisi yok).
+        try:
+            await raw_db.autonomous_collection_runs.update_one(
+                {"tenant_id": tenant_id},
+                {"$set": {
+                    "last_auto_run_status": "completed",
+                    "last_auto_run_completed_at": completed_iso,
+                    "last_scanned": summary.get("scanned", 0),
+                    "last_charged": summary.get("charged", 0),
+                    "last_failed": summary.get("failed", 0),
+                    "last_requires_action": summary.get("requires_action", 0),
+                    "last_not_configured": summary.get("not_configured", 0),
+                }},
+            )
+        except Exception as e:  # noqa: BLE001 — ozet best-effort
+            logger.debug("[autocollect] summary persist skipped: %s", e)
+        logger.info(
+            "Autonomous collection tenant=%s scanned=%d charged=%d failed=%d",
+            tenant_id, summary.get("scanned", 0), summary.get("charged", 0),
+            summary.get("failed", 0),
+        )
+        return {"success": True, "tenant_id": tenant_id, "summary": summary}
+    finally:
+        client.close()
+
+
 # ============= FOLIO CLOSE EVENT (e-Fatura readiness) =============
 # Reference-based folio.closed.v1: when a folio is closed, publish a PII-free SXI
 # event (identifiers + light monetary context + a signed, time-limited fetch URL)

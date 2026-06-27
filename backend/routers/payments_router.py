@@ -18,34 +18,25 @@ import hmac
 import json
 import logging
 import os
-import uuid
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from core.booking_atomicity import is_replica_set_unavailable, standalone_fallback_allowed
 from core.database import db
 from core.payments import (
     PaymentError,
-    PaymentOperation,
-    PaymentRequest,
-    PaymentStatus,
     get_provider_for_tenant,
     make_vault_card_ref,
 )
+from core.payments.collection import collect_booking_payment
 import core.payments.providers  # noqa: F401  (import-time provider kaydi)
 from core.security import get_current_user
 from models.enums import PaymentType
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
-from shared_kernel.idempotency import (
-    claim_idempotency,
-    complete_idempotency,
-    ensure_idempotent_request,
-    release_idempotency,
-)
+from shared_kernel.idempotency import ensure_idempotent_request
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +85,6 @@ async def collect_payment(
         raise HTTPException(status_code=400, detail="amount 0'dan buyuk olmali")
     idem_key = ensure_idempotent_request(request, required=True)
     amount_minor = _to_minor(body.amount)
-    amount_major = round(amount_minor / 100.0, 2)
 
     # Saglayici fail-closed (yoksa/yapilandirilmamissa 503 not_configured).
     try:
@@ -130,209 +120,41 @@ async def collect_payment(
             )
         vault_ref = make_vault_card_ref(card["id"])
 
-    # Idempotency claim (replay/in-flight).
-    claim = await claim_idempotency(
+    # Tahsilat cekirdegi tek dogruluk kaynagindan calisir (endpoint + otonom worker
+    # ayni durum makinesini paylasir). Servis HTTPException atmaz; yapisal outcome
+    # doner ve burada HTTP'ye eslenir (#312 davranisi birebir korunur).
+    outcome = await collect_booking_payment(
         db,
         tenant_id=tenant_id,
-        scope=f"payment_collect:{booking_id}",
-        idempotency_key=idem_key,
-    )
-    if claim["status"] == "replay":
-        return claim["response"]
-    if claim["status"] == "in_flight":
-        raise HTTPException(
-            status_code=409,
-            detail="Ayni Idempotency-Key ile baska bir istek isleniyor",
-        )
-    lock_id = claim["lock_id"]
-
-    now = datetime.now(UTC)
-    now_iso = now.isoformat()
-    intent_id = str(uuid.uuid4())
-    # conversation_token: SUNUCU-URETIMI, globally-unique korelasyon kimligi. PSP'ye
-    # conversationId olarak BU gonderilir; webhook tenant binding'i bunun uzerinden
-    # yapilir. Client-controlled idem_key tenant'lar arasi cakisabildiginden ASLA
-    # PSP korelasyonu/webhook lookup'i icin kullanilmaz.
-    conversation_token = uuid.uuid4().hex
-    await db.payment_intents.insert_one(
-        {
-            "id": intent_id,
-            "tenant_id": tenant_id,
-            "booking_id": booking_id,
-            "folio_id": folio["id"],
-            "idempotency_key": idem_key,
-            "conversation_token": conversation_token,
-            "provider": provider.name,
-            "operation": PaymentOperation.CHARGE.value,
-            "amount_minor": amount_minor,
-            "currency": body.currency.upper(),
-            "status": "pending",
-            "created_at": now_iso,
-            "updated_at": now_iso,
-        }
-    )
-
-    pay_req = PaymentRequest(
-        operation=PaymentOperation.CHARGE,
-        tenant_id=tenant_id,
-        currency=body.currency,
-        idempotency_key=conversation_token,
-        amount_minor=amount_minor,
-        vault_card_ref=vault_ref,
         booking_id=booking_id,
+        folio=folio,
+        amount_minor=amount_minor,
+        currency=body.currency,
+        vault_ref=vault_ref,
+        idempotency_key=idem_key,
+        scope=f"payment_collect:{booking_id}",
+        payment_type=body.payment_type.value,
+        processed_by=current_user.name,
         descriptor=body.descriptor,
         metadata=dict(body.metadata or {}),
+        provider=provider,
     )
 
-    # ── PSP cagrisi (transaction DISINDA) ─────────────────────────
-    try:
-        result = await provider.charge(pay_req)
-    except PaymentError as pe:
-        # 5xx -> durum belirsiz: intent 'unknown', kilit BIRAKILMAZ (reconcile).
-        # 4xx -> kesin hata: intent 'failed', kilit birakilir (retry serbest).
-        unknown = pe.http_status >= 500
-        await db.payment_intents.update_one(
-            {"id": intent_id, "tenant_id": tenant_id},
-            {"$set": {
-                "status": "unknown" if unknown else "failed",
-                "error_code": pe.error_code,
-                "updated_at": datetime.now(UTC).isoformat(),
-            }},
-        )
-        if not unknown:
-            await release_idempotency(db, lock_id=lock_id)
-        raise HTTPException(status_code=pe.http_status, detail=pe.error_code)
-    except Exception:
-        # Beklenmeyen: durum belirsiz kabul edilir (cift-charge riski) -> kilit tut.
-        await db.payment_intents.update_one(
-            {"id": intent_id, "tenant_id": tenant_id},
-            {"$set": {"status": "unknown", "updated_at": datetime.now(UTC).isoformat()}},
-        )
-        logger.exception("tahsilat sirasinda beklenmeyen hata (durum belirsiz)")
-        raise HTTPException(status_code=502, detail="tahsilat durumu belirsiz")
-
-    if result.status == PaymentStatus.REQUIRES_ACTION:
-        # 3DS yonlendirmesi gerekli: intent acik kalir, webhook/worker tamamlar.
-        await db.payment_intents.update_one(
-            {"id": intent_id, "tenant_id": tenant_id},
-            {"$set": {
-                "status": "requires_action",
-                "provider_ref": result.provider_ref,
-                "updated_at": datetime.now(UTC).isoformat(),
-            }},
-        )
-        await release_idempotency(db, lock_id=lock_id)
+    if outcome.status == "replay":
+        return outcome.response
+    if outcome.status == "in_flight":
+        raise HTTPException(status_code=409, detail=outcome.detail)
+    if outcome.status == "requires_action":
         return {
             "status": "requires_action",
-            "intent_id": intent_id,
-            "requires_action_url": result.requires_action_url,
+            "intent_id": outcome.intent_id,
+            "requires_action_url": outcome.requires_action_url,
         }
-
-    if not result.ok:
-        await db.payment_intents.update_one(
-            {"id": intent_id, "tenant_id": tenant_id},
-            {"$set": {
-                "status": "failed",
-                "error_code": result.error_code,
-                "updated_at": datetime.now(UTC).isoformat(),
-            }},
-        )
-        await release_idempotency(db, lock_id=lock_id)
-        raise HTTPException(
-            status_code=402,
-            detail=result.error_message or "tahsilat reddedildi",
-        )
-
-    # ── Basari: sonucu atomik yaz ─────────────────────────────────
-    payment_doc = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": tenant_id,
-        "folio_id": folio["id"],
-        "booking_id": booking_id,
-        "amount": amount_major,
-        "method": "card",
-        "payment_type": body.payment_type.value,
-        "status": "paid",
-        "voided": False,
-        "reference": result.provider_ref,
-        "provider": provider.name,
-        "provider_ref": result.provider_ref,
-        "provider_txn_ref": result.provider_txn_ref,
-        "masked_card": result.masked_card,
-        "idempotency_key": idem_key,
-        "processed_by": current_user.name,
-        "processed_at": now_iso,
-    }
-    response = {
-        "id": payment_doc["id"],
-        "status": "paid",
-        "amount": amount_major,
-        "provider": provider.name,
-        "provider_ref": result.provider_ref,
-        "masked_card": result.masked_card,
-        "intent_id": intent_id,
-    }
-
-    async def _record(session=None):
-        await db.payments.insert_one(dict(payment_doc), session=session)
-        await db.folios.update_one(
-            {"id": folio["id"], "tenant_id": tenant_id},
-            {"$inc": {"balance": -amount_major}},
-            session=session,
-        )
-        await db.bookings.update_one(
-            {"id": booking_id, "tenant_id": tenant_id},
-            {"$inc": {"paid_amount": amount_major}},
-            session=session,
-        )
-        await db.payment_intents.update_one(
-            {"id": intent_id, "tenant_id": tenant_id},
-            {"$set": {
-                "status": "completed",
-                "provider_ref": result.provider_ref,
-                "payment_id": payment_doc["id"],
-                "updated_at": datetime.now(UTC).isoformat(),
-            }},
-            session=session,
-        )
-
-    try:
-        async with await db.client.start_session() as session:
-            async with session.start_transaction():
-                await _record(session=session)
-                await complete_idempotency(
-                    db, lock_id=lock_id, response_body=response, session=session
-                )
-        lock_id = None
-    except Exception as exc:  # noqa: BLE001
-        # PSP zaten tahsil etti -> kaydi KAYBETMEK en kotu sonuc. Yalnizca
-        # replica-set yoksa VE operator env ile acikca izin verdiyse (dev standalone)
-        # tx'siz best-effort kaydet; aksi halde fail-closed: intent'i mutabakata
-        # isaretleyip basari yanitini yine de don (para alindi, kayit reconcile'a).
-        if is_replica_set_unavailable(exc) and standalone_fallback_allowed():
-            await _record(session=None)
-            try:
-                await complete_idempotency(
-                    db, lock_id=lock_id, response_body=response
-                )
-            except Exception:  # noqa: BLE001
-                logger.exception("idempotency complete failed (non-tx fallback)")
-            lock_id = None
-        else:
-            logger.exception(
-                "tahsilat kaydi atomik yazilamadi; intent reconcile'a birakildi"
-            )
-            await db.payment_intents.update_one(
-                {"id": intent_id, "tenant_id": tenant_id},
-                {"$set": {
-                    "status": "completed_unrecorded",
-                    "provider_ref": result.provider_ref,
-                    "updated_at": datetime.now(UTC).isoformat(),
-                }},
-            )
-            # Kilidi birakma: tekrar denenirse cift-charge yerine in-flight/replay.
-
-    return response
+    if outcome.status in ("failed", "unknown", "not_configured"):
+        raise HTTPException(status_code=outcome.http_status, detail=outcome.detail)
+    # paid + paid_unrecorded: PSP tahsil etti -> basari yaniti don (kayit yazilamadiysa
+    # intent reconcile'a kalir; para alindigi icin client'a basari bildirilir).
+    return outcome.response
 
 
 # ── Webhook (3DS/async sonuc mutabakati) ──────────────────────────

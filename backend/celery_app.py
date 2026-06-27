@@ -278,6 +278,15 @@ celery_app.conf.update(
             'task': 'celery_tasks.stress_outbox_residue_sweep_task',
             'schedule': crontab(hour=3, minute=50),
         },
+
+        # Autonomous collection dispatch (every minute): per-tenant no-show penalty
+        # + check-in-day VCC capture at each tenant's local AUTOCOLLECT_LOCAL_HOUR
+        # (default 04:00, after night audit sets no_show). Atomic per-local-day
+        # claim (autonomous_collection_runs) -> at most one dispatch per tenant/day.
+        'autonomous-collection-dispatch': {
+            'task': 'celery_tasks.autonomous_collection_dispatch_task',
+            'schedule': crontab(minute='*'),
+        },
     }
 )
 
