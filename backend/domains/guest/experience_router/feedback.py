@@ -8,13 +8,17 @@ Domain Router: Guest Experience
 
 Guest CRM, upsell AI, messaging, feedback/reviews, guest mobile app.
 """
+import ipaddress
 import logging
+import os
 import re
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pymongo.errors import DuplicateKeyError
 
+from cache_manager import cache as _cache
 from core.database import db
 from core.helpers import create_audit_log
 from core.security import get_current_user
@@ -248,6 +252,120 @@ def _check_invite_expiry_or_raise(expires_raw) -> None:
     if exp < datetime.now(UTC):
         raise HTTPException(status_code=410, detail="Bu davetin süresi dolmuş")
 
+
+# ── Halka açık yüzey sertleştirme: tekil oy DB zırhı + abuse sınırları ──
+
+_SINGLE_VOTE_INDEX_READY = False
+
+
+async def _ensure_single_vote_indexes() -> None:
+    """Defense-in-depth: DB-seviyesi tekil oy garantileri.
+
+    - survey_responses: (tenant_id, survey_id, booking_id, vote_day) partial-unique
+      → app-seviyesi gün-bazlı dedup'ın TOCTOU race'ini kapatır. booking_id/vote_day
+        olmayan ad-hoc yanıtlar muaf (index'e girmez).
+    - guest_reviews: invite_token partial-unique → davet başına tek yorum, atomik
+      claim bypass edilse bile DB reddeder.
+    Mevcut dokümanlar bu alanlara sahip olmadığından partial filtre index build'ini
+    bozmaz (yalnız yeni, alanlı kayıtlar kapsanır)."""
+    global _SINGLE_VOTE_INDEX_READY
+    if _SINGLE_VOTE_INDEX_READY:
+        return
+    try:
+        await db.survey_responses.create_index(
+            [("tenant_id", 1), ("survey_id", 1), ("booking_id", 1), ("vote_day", 1)],
+            unique=True,
+            partialFilterExpression={
+                "booking_id": {"$exists": True},
+                "vote_day": {"$exists": True},
+            },
+            name="uniq_survey_response_booking_day",
+        )
+        await db.guest_reviews.create_index(
+            "invite_token",
+            unique=True,
+            partialFilterExpression={"invite_token": {"$exists": True}},
+            name="uniq_guest_review_invite_token",
+        )
+    except Exception as exc:
+        # READY bayrağını SET ETME: bu index'ler tekil-oy invariant'ının
+        # DB-seviyesi garantisi; bir kez kurulamazsa sessizce yokmuş gibi
+        # devam etmek fake-green olur. Bayrak False kalır → bir sonraki
+        # istekte tekrar denenir (create_index idempotent: zaten varsa no-op).
+        logging.warning("[review-public] single-vote index ensure failed (will retry): %s", exc)
+        return
+    _SINGLE_VOTE_INDEX_READY = True
+
+
+# Halka açık uç abuse sınırları (Redis-backed sayaç → multi-instance dağıtık).
+_PUBLIC_RL_WINDOW_SEC = 600          # 10 dakikalık pencere
+_PUBLIC_RL_GET_MAX = 60              # IP başına 10 dk'da 60 davet görüntüleme
+_PUBLIC_RL_POST_MAX = 15            # IP+token başına 10 dk'da 15 gönderim denemesi
+_PUBLIC_MAX_BODY_BYTES = 16 * 1024  # 16 KB; yorum 2000 + ad 120 char fazlasıyla yeter
+
+_DEFAULT_TRUSTED_CIDRS = "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+
+
+def _trusted_proxy_networks() -> list:
+    raw = os.environ.get("TRUSTED_PROXIES", _DEFAULT_TRUSTED_CIDRS)
+    nets = []
+    for token in (raw or "").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            nets.append(ipaddress.ip_network(token, strict=False))
+        except ValueError:
+            logging.warning("[review-public] invalid TRUSTED_PROXIES entry: %r", token)
+    return nets
+
+
+def _public_client_ip(request: Request | None) -> str:
+    """Misafir IP'si. x-forwarded-for'a SADECE direct bağlantı güvenilir bir
+    proxy'den geliyorsa güvenir (header spoofing'i engellemek için)."""
+    if request is None:
+        return "unknown"
+    direct_ip = request.client.host if request.client else ""
+    nets = _trusted_proxy_networks()
+    if direct_ip and nets:
+        try:
+            ip = ipaddress.ip_address(direct_ip)
+            if any(ip in net for net in nets):
+                xff = request.headers.get("x-forwarded-for", "")
+                candidate = xff.split(",")[0].strip() if xff else ""
+                if candidate:
+                    return candidate
+        except ValueError:
+            pass
+    return direct_ip or "unknown"
+
+
+def _public_rate_limit_or_raise(key: str, limit: int) -> None:
+    """True yerine fail-open: cache erişilemezse (sayaç=0) talep işlenir.
+    Tekil oy DB invariant'ı yinelenen kayda zaten izin vermez; rate-limit
+    yalnız spam/DoS hacmini sınırlar."""
+    count = _cache.incr_with_ttl(f"review_pub:rl:{key}", _PUBLIC_RL_WINDOW_SEC)
+    if count == 0:
+        logging.warning("[review-public] rate-limit counter unavailable, allowing %s", key)
+        return
+    if count > limit:
+        raise HTTPException(status_code=429, detail="Çok fazla istek. Lütfen biraz sonra tekrar deneyin.")
+
+
+def _guard_public_body_size(request: Request | None) -> None:
+    """Content-Length header'ına göre aşırı büyük gövdeleri reddet (DoS guard)."""
+    if request is None:
+        return
+    raw_len = request.headers.get("content-length")
+    if not raw_len:
+        return
+    try:
+        length = int(raw_len)
+    except (TypeError, ValueError):
+        return
+    if length > _PUBLIC_MAX_BODY_BYTES:
+        raise HTTPException(status_code=413, detail="İstek gövdesi çok büyük")
+
 router = APIRouter(prefix="/api", tags=["guest-experience"])
 
 
@@ -454,11 +572,14 @@ async def submit_survey_response(
     if not survey:
         raise HTTPException(status_code=404, detail="Survey not found")
 
+    await _ensure_single_vote_indexes()
+
     # Wave 9 (ürün kararı): aynı rezervasyon için gün başına tek anket yanıtı.
     # Ballot-stuffing / yinelenen NPS kayıtlarını engeller. booking_id verilmemiş
     # ad-hoc yanıtlar muaf (eşleştirilemez). UTC gün aralığı index-dostu sorgu.
+    now = datetime.now(UTC)
+    vote_day = now.strftime("%Y-%m-%d") if getattr(request, "booking_id", None) else None
     if getattr(request, "booking_id", None):
-        now = datetime.now(UTC)
         day_start = now.strftime("%Y-%m-%dT00:00:00")
         day_end = (now + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00")
         dup = await db.survey_responses.find_one({
@@ -487,11 +608,24 @@ async def submit_survey_response(
         'guest_email': request.guest_email,
         'responses': request.responses,
         'overall_rating': round(avg_rating, 2) if avg_rating else None,
-        'submitted_at': datetime.now(UTC).isoformat()
+        'submitted_at': now.isoformat()
     }
+    # vote_day yalnız booking_id varken yazılır → partial-unique index'in
+    # (tenant_id, survey_id, booking_id, vote_day) kapsamına girer; ad-hoc
+    # yanıtlar (booking_id yok) index dışında kalır.
+    if vote_day is not None:
+        response['vote_day'] = vote_day
 
     response_copy = response.copy()
-    await db.survey_responses.insert_one(response_copy)
+    # DB-seviyesi race guard: find_one pre-check ile claim arasındaki TOCTOU
+    # penceresinde ikinci eşzamanlı yazım partial-unique index'e takılır → 409.
+    try:
+        await db.survey_responses.insert_one(response_copy)
+    except DuplicateKeyError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Bu rezervasyon için bugün zaten bir anket yanıtı gönderilmiş.",
+        ) from exc
 
     return {'message': 'Survey response submitted successfully', 'response_id': response['id']}
 # ── GET /feedback/surveys/{survey_id}/responses ──
@@ -780,9 +914,10 @@ async def send_review_invite(
     }
 # ── GET /feedback/public/invite/{token} ──
 @router.get("/feedback/public/invite/{token}")
-async def get_review_invite_public(token: str):
+async def get_review_invite_public(token: str, request: Request = None):
     """Public lookup of a review invite (no auth)."""
     _validate_review_invite_token(token)
+    _public_rate_limit_or_raise(f"get:{_public_client_ip(request)}", _PUBLIC_RL_GET_MAX)
 
     invite = await db.review_invites.find_one({"token": token}, {"_id": 0})
     if not invite:
@@ -803,13 +938,20 @@ async def get_review_invite_public(token: str):
     }
 # ── POST /feedback/public/invite/{token} ──
 @router.post("/feedback/public/invite/{token}")
-async def submit_review_public(token: str, payload: dict):
+async def submit_review_public(token: str, payload: dict, request: Request = None):
     """Public submission of a review using an invite token (no auth).
 
     Atomically claims the invite (status: pending -> submitting) before creating
-    the review to prevent concurrent double-submission.
+    the review to prevent concurrent double-submission. Defense-in-depth: a
+    partial-unique index on guest_reviews.invite_token rejects a duplicate review
+    for the same invite at the DB level even if the claim were bypassed.
     """
     _validate_review_invite_token(token)
+    _guard_public_body_size(request)
+    _public_rate_limit_or_raise(
+        f"post:{_public_client_ip(request)}:{token}", _PUBLIC_RL_POST_MAX
+    )
+    await _ensure_single_vote_indexes()
 
     raw_rating = (payload or {}).get("rating")
     try:
@@ -845,6 +987,7 @@ async def submit_review_public(token: str, payload: dict):
         "id": str(uuid.uuid4()),
         "tenant_id": invite["tenant_id"],
         "booking_id": invite.get("booking_id"),
+        "invite_token": token,
         "guest_name": final_name,
         "rating": rating,
         "comment": comment,
@@ -855,8 +998,17 @@ async def submit_review_public(token: str, payload: dict):
     }
     try:
         await db.guest_reviews.insert_one(review.copy())
+    except DuplicateKeyError as exc:
+        # DB zırhı: bu davet için zaten bir yorum var (atomik claim normalde
+        # buraya düşürmez; defense-in-depth). Claim'i pending'e GERİ ALMA —
+        # davet zaten kullanılmış demektir → 410. Daveti submitted'a uzlaştır.
+        await db.review_invites.update_one(
+            {"_id": invite["_id"], "status": "submitting"},
+            {"$set": {"status": "submitted", "submitted_at": datetime.now(UTC).isoformat()}},
+        )
+        raise HTTPException(status_code=410, detail="Bu davet daha önce kullanılmış") from exc
     except Exception:
-        # Roll back the claim so the guest can retry.
+        # Geçici hata: claim'i pending'e geri al ki misafir tekrar deneyebilsin.
         await db.review_invites.update_one(
             {"_id": invite["_id"], "status": "submitting"},
             {"$set": {"status": "pending"}, "$unset": {"claimed_at": ""}},
