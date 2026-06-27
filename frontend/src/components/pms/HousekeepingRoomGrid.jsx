@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import EmptyState from '@/components/EmptyState';
 import { performRoomStatusUpdate } from '@/utils/offlineRoomStatus';
+import { websocket } from '@/lib/websocket';
 
 const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
   const { t } = useTranslation();
@@ -34,6 +35,7 @@ const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
   const [search, setSearch] = useState('');
   const [selectedRooms, setSelectedRooms] = useState([]);
   const [bulkMenuOpen, setBulkMenuOpen] = useState(false);
+  const filterRef = useRef(filter);
 
   const loadRooms = useCallback(async () => {
     try {
@@ -50,6 +52,50 @@ const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
   }, [filter]);
 
   useEffect(() => { loadRooms(); }, [loadRooms]);
+
+  // filterRef: WS dinleyicisi yeniden abone olmadan guncel filtreyi okur.
+  useEffect(() => { filterRef.current = filter; }, [filter]);
+
+  // Canli oda-durumu: WS 'room_status_update' olayinda ilgili oda kartini
+  // aninda yamar (Enterprise GET 120s cache'li -> refetch bayat kalabilir).
+  // Filtre aktifken sunucu sorgusu otoritedir; yalniz 'all' gorunumde yamariz.
+  useEffect(() => {
+    let unsub = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        await websocket.connect();
+      } catch {
+        return; // WS yoksa grid manuel/refetch ile calismaya devam eder
+      }
+      if (cancelled) return;
+      unsub = websocket.on('room_status_update', (data) => {
+        if (!data?.room_id) return;
+        if (filterRef.current !== 'all') return;
+        setRooms((prev) => {
+          const idx = prev.findIndex((r) => r.id === data.room_id);
+          if (idx === -1) return prev;
+          if ((prev[idx].housekeeping_status || 'clean') === data.status) return prev;
+          const next = prev.slice();
+          next[idx] = { ...prev[idx], housekeeping_status: data.status };
+          return next;
+        });
+      });
+    })();
+    return () => { cancelled = true; if (unsub) unsub(); };
+  }, []);
+
+  // 'all' gorunumde summary kartlarini yamali oda listesinden turet (tam liste
+  // mevcut). Filtre aktifken sunucu summary'si (tam sayimlar) korunur.
+  useEffect(() => {
+    if (filter !== 'all') return;
+    const counts = {};
+    for (const r of rooms) {
+      const s = r.housekeeping_status || 'clean';
+      counts[s] = (counts[s] || 0) + 1;
+    }
+    setSummary(counts);
+  }, [rooms, filter]);
 
   const updateStatus = async (roomId, newStatus) => {
     try {

@@ -224,6 +224,14 @@ async def start_room_cleaning(
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Room not found")
+    try:
+        from websocket_server import broadcast_room_status_update
+        await broadcast_room_status_update(room_id, 'cleaning', tenant_id=current_user.tenant_id)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "[HK-WS] room status yayini basarisiz room=%s: %s", room_id, exc
+        )
     return {'message': 'Cleaning started'}
 
 @router.post("/housekeeping/rooms/{room_id}/complete")
@@ -244,6 +252,14 @@ async def complete_room_cleaning(
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Room not found")
+    try:
+        from websocket_server import broadcast_room_status_update
+        await broadcast_room_status_update(room_id, 'clean', tenant_id=current_user.tenant_id)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "[HK-WS] room status yayini basarisiz room=%s: %s", room_id, exc
+        )
     return {'message': 'Room cleaned successfully'}
 
 # 4. Group & Block Reservations

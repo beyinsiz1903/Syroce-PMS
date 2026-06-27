@@ -106,6 +106,12 @@ async def update_room_housekeeping_status(
     await db.housekeeping_log.insert_one(log_entry)
     log_entry.pop("_id", None)
 
+    try:
+        from websocket_server import broadcast_room_status_update
+        await broadcast_room_status_update(room_id, data.status, tenant_id=tid)
+    except Exception as exc:
+        logger.warning("[HK-WS] room status yayini basarisiz room=%s: %s", room_id, exc)
+
     return {"success": True, "room_id": room_id, "new_status": data.status}
 
 
@@ -129,6 +135,20 @@ async def bulk_update_room_status(
             "housekeeping_updated_by": current_user.name,
         }}
     )
+
+    if result.modified_count:
+        try:
+            from websocket_server import broadcast_room_status_update
+        except Exception as exc:
+            broadcast_room_status_update = None
+            logger.warning("[HK-WS] bulk room status yayini yuklenemedi: %s", exc)
+        if broadcast_room_status_update:
+            # Per-room try: tek odanin yayini patlasa da kalanlar yayinlanir.
+            for rid in room_ids:
+                try:
+                    await broadcast_room_status_update(rid, status, tenant_id=tid)
+                except Exception as exc:
+                    logger.warning("[HK-WS] bulk room status yayini basarisiz room=%s: %s", rid, exc)
 
     return {"success": True, "updated_count": result.modified_count}
 

@@ -321,8 +321,15 @@ async def start_housekeeping_task(
     if task.get('room_id'):
         await db.rooms.update_one(
             {'id': task['room_id'], 'tenant_id': current_user.tenant_id},
-            {'$set': {'room_status': 'cleaning'}}
+            {'$set': {'room_status': 'cleaning', 'housekeeping_status': 'cleaning'}}
         )
+        try:
+            from websocket_server import broadcast_room_status_update
+            await broadcast_room_status_update(
+                task['room_id'], 'cleaning', tenant_id=current_user.tenant_id
+            )
+        except Exception as exc:
+            logger.warning("[HK-WS] room status yayini basarisiz room=%s: %s", task['room_id'], exc)
 
     return {'message': 'Task started successfully'}
 
@@ -363,8 +370,15 @@ async def complete_housekeeping_task(
         new_status = 'inspected' if task.get('task_type') == 'inspection' else 'clean'
         await db.rooms.update_one(
             {'id': task['room_id'], 'tenant_id': current_user.tenant_id},
-            {'$set': {'room_status': new_status}}
+            {'$set': {'room_status': new_status, 'housekeeping_status': new_status}}
         )
+        try:
+            from websocket_server import broadcast_room_status_update
+            await broadcast_room_status_update(
+                task['room_id'], new_status, tenant_id=current_user.tenant_id
+            )
+        except Exception as exc:
+            logger.warning("[HK-WS] room status yayini basarisiz room=%s: %s", task['room_id'], exc)
 
     return {'message': 'Task completed successfully'}
 
