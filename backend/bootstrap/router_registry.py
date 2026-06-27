@@ -278,6 +278,10 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.pms.minibar_router", "router", ["PMS / Minibar"], None, None),
     # PMS Cashier, Laundry, Meeting Rooms
     ("domains.pms.cashier_router", "router", ["PMS / Cashier"], None, None),
+    # PMS Çamaşır — Sipariş → folio (teslimde idempotent charge + late-charge)
+    ("domains.pms.laundry_router", "router", ["PMS / Laundry"], None, None),
+    # PMS Transfer & Otopark — slot-lock (çift-rezervasyon) + idempotent folio charge
+    ("domains.pms.transfer_parking_router", "router", ["PMS / Transfer & Parking"], None, None),
     # Opera-parity: Folio Routing, Block Mgmt, Activity Scheduler, Loyalty, Forecast
     ("domains.pms.folio_routing_router", "router", ["PMS / Folio Routing"], None, None),
     ("domains.pms.folio_window_router", "router", ["PMS / Folio Windows"], None, None),

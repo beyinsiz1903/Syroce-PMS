@@ -555,13 +555,37 @@ async def change_booking_status(
         update["checked_in_at"] = datetime.now(UTC).isoformat()
     if body.status == "completed":
         update["completed_at"] = datetime.now(UTC).isoformat()
-        if bk.get("charge_to_room") and bk.get("reservation_id"):
-            await _post_to_folio(current_user.tenant_id, bk)
 
-    await db.golf_tee_bookings.update_one(
-        {"id": booking_id, "tenant_id": current_user.tenant_id},
+    # Atomic CAS claim FIRST: only the request that flips the status from the
+    # observed value runs the folio side effect, so a concurrent transition
+    # never leaves a charge attached to a non-completed record.
+    res = await db.golf_tee_bookings.update_one(
+        {"id": booking_id, "tenant_id": current_user.tenant_id,
+         "status": cur_status},
         {"$set": update},
     )
+    if res.modified_count == 0:
+        latest = await db.golf_tee_bookings.find_one(
+            {"id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+        return {"ok": True,
+                "status": latest.get("status") if latest else body.status,
+                "idempotent": True}
+    # We won the transition → run the folio side effect (idempotent via the
+    # dedup index). If it fails, revert the completion so it cannot stand
+    # without its charge (fail-closed).
+    if (body.status == "completed"
+            and bk.get("charge_to_room") and bk.get("reservation_id")):
+        try:
+            await _post_to_folio(current_user.tenant_id, bk)
+        except Exception:
+            await db.golf_tee_bookings.update_one(
+                {"id": booking_id, "tenant_id": current_user.tenant_id,
+                 "status": "completed"},
+                {"$set": {"status": cur_status,
+                          "updated_at": datetime.now(UTC).isoformat()},
+                 "$unset": {"completed_at": ""}},
+            )
+            raise
     return {"ok": True, "status": body.status}
 
 
@@ -580,7 +604,26 @@ async def delete_booking(booking_id: str,
 
 
 async def _post_to_folio(tenant_id: str, bk: dict) -> None:
+    """Write a folio posting (idempotent) and emit Xchange POSTING_CHARGE.
+
+    Dedup: a unique partial index on ``(tenant_id, dedup_key)`` makes the
+    posting insert idempotent per booking — a concurrent/retry "completed"
+    transition hits ``DuplicateKeyError`` → no double charge and no
+    duplicate Xchange event. Fail-closed: if the dedup index cannot be
+    ensured, the insert is aborted so completion fails rather than risk a
+    non-idempotent charge.
+    """
+    from pymongo.errors import DuplicateKeyError
+
+    from domains.pms.pos_extensions._idem import ensure_compound_unique
+
     db = get_system_db()
+    await ensure_compound_unique(
+        db.folio_postings,
+        [("tenant_id", 1), ("dedup_key", 1)],
+        partial_filter={"dedup_key": {"$type": "string"}},
+        name="uniq_folio_postings_dedup",
+    )  # may raise → fail-closed (no charge without dedup guarantee)
     posting = {
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
@@ -594,8 +637,14 @@ async def _post_to_folio(tenant_id: str, bk: dict) -> None:
         "posted_at": datetime.now(UTC).isoformat(),
         "source": "golf_module",
         "reference": bk.get("id"),
+        "dedup_key": f"golf_module:{bk.get('id')}",
     }
-    await db.folio_postings.insert_one(posting)
+    try:
+        await db.folio_postings.insert_one(posting)
+    except DuplicateKeyError:
+        # Already posted for this booking → idempotent no-op; do not
+        # re-publish the Xchange event.
+        return
     try:
         from integrations.xchange.bus import bus
         from integrations.xchange.schemas import MessageType

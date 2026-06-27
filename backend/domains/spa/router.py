@@ -519,13 +519,37 @@ async def change_status(appt_id: str, body: StatusUpdate,
               "updated_at": datetime.now(UTC).isoformat()}
     if body.status == "completed":
         update["completed_at"] = datetime.now(UTC).isoformat()
-        if appt.get("charge_to_room") and appt.get("reservation_id"):
-            await _post_to_folio(current_user.tenant_id, appt)
-    # IMPORTANT: include tenant_id in the write filter (cross-tenant safety).
-    await db.spa_appointments.update_one(
-        {"id": appt_id, "tenant_id": current_user.tenant_id},
+    # Atomic CAS claim FIRST: only the request that flips the status from the
+    # observed value runs the folio side effect, so a concurrent transition
+    # (e.g. another "completed", or a "cancelled") never leaves a charge
+    # attached to a non-completed record. tenant_id keeps cross-tenant safety.
+    res = await db.spa_appointments.update_one(
+        {"id": appt_id, "tenant_id": current_user.tenant_id,
+         "status": cur_status},
         {"$set": update},
     )
+    if res.modified_count == 0:
+        latest = await db.spa_appointments.find_one(
+            {"id": appt_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+        return {"ok": True,
+                "status": latest.get("status") if latest else body.status,
+                "idempotent": True}
+    # We won the transition → run the folio side effect (idempotent via the
+    # dedup index). If it fails, the completion must not stand: revert the
+    # transition we just claimed (fail-closed, no completed-without-charge).
+    if (body.status == "completed"
+            and appt.get("charge_to_room") and appt.get("reservation_id")):
+        try:
+            await _post_to_folio(current_user.tenant_id, appt)
+        except Exception:
+            await db.spa_appointments.update_one(
+                {"id": appt_id, "tenant_id": current_user.tenant_id,
+                 "status": "completed"},
+                {"$set": {"status": cur_status,
+                          "updated_at": datetime.now(UTC).isoformat()},
+                 "$unset": {"completed_at": ""}},
+            )
+            raise
     return {"ok": True, "status": body.status}
 
 
@@ -540,8 +564,26 @@ _SPA_TRANSITIONS: dict[str, set[str]] = {
 
 
 async def _post_to_folio(tenant_id: str, appt: dict) -> None:
-    """Write a folio posting and emit Xchange POSTING_CHARGE if available."""
+    """Write a folio posting (idempotent) and emit Xchange POSTING_CHARGE.
+
+    Dedup: a unique partial index on ``(tenant_id, dedup_key)`` makes the
+    posting insert idempotent per appointment. A second "completed" PATCH
+    (or a retry) hits ``DuplicateKeyError`` → no double charge and no
+    duplicate Xchange event. Fail-closed: if the dedup index cannot be
+    ensured, the insert is aborted so completion fails rather than risk a
+    non-idempotent charge.
+    """
+    from pymongo.errors import DuplicateKeyError
+
+    from domains.pms.pos_extensions._idem import ensure_compound_unique
+
     db = get_system_db()
+    await ensure_compound_unique(
+        db.folio_postings,
+        [("tenant_id", 1), ("dedup_key", 1)],
+        partial_filter={"dedup_key": {"$type": "string"}},
+        name="uniq_folio_postings_dedup",
+    )  # may raise → fail-closed (no charge without dedup guarantee)
     posting = {
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
@@ -555,8 +597,14 @@ async def _post_to_folio(tenant_id: str, appt: dict) -> None:
         "posted_at": datetime.now(UTC).isoformat(),
         "source": "spa_module",
         "reference": appt.get("id"),
+        "dedup_key": f"spa_module:{appt.get('id')}",
     }
-    await db.folio_postings.insert_one(posting)
+    try:
+        await db.folio_postings.insert_one(posting)
+    except DuplicateKeyError:
+        # Already posted for this appointment → idempotent no-op; do not
+        # re-publish the Xchange event.
+        return
     # Best-effort Xchange publish (don't fail the spa workflow on bus error)
     try:
         from integrations.xchange.bus import bus
