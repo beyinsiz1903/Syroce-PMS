@@ -1,10 +1,17 @@
 """
-Local development secrets backend.
+MongoDB-backed secrets store.
 
 Stores secrets in MongoDB collection `_dev_secrets` with AES-256-GCM encryption
 via core.crypto.CredentialEncryptionService.
 
-Explicitly gated: only usable when APP_ENV != production/staging.
+Usable in two modes:
+  - Development (default): SECRETS_PROVIDER=local_dev, APP_ENV != production.
+  - Production-approved: SECRETS_PROVIDER=env (encrypted-at-rest store for
+    deployments without AWS Secrets Manager / Vault). The master key
+    (CM_MASTER_KEY_CURRENT) is required and validated at startup.
+
+SECRETS_PROVIDER=local_dev remains forbidden in production by
+SecretsConfig.validate().
 """
 import json
 import logging
@@ -27,16 +34,46 @@ class LocalDevSecretsProvider(SecretsProviderBase):
     MongoDB-backed development secrets store with AES-256-GCM encryption at rest.
 
     Delegates all encryption to core.crypto.CredentialEncryptionService.
-    NOT FOR PRODUCTION. Gated by SecretsConfig.validate() at startup.
+    Approved for production only via SECRETS_PROVIDER=env (deployments without
+    AWS Secrets Manager / Vault). SECRETS_PROVIDER=local_dev is gated to
+    non-production by SecretsConfig.validate() at startup.
     """
 
     def __init__(self, encryption_key: str = ""):
         # encryption_key parameter kept for backward compat but ignored —
         # all encryption now handled by core.crypto
         self._svc = get_crypto_service()
-        logger.warning(
-            "LocalDevSecretsProvider initialized — THIS IS NOT A PRODUCTION SECRETS BACKEND"
-        )
+
+        app_env = os.environ.get("APP_ENV", "development")
+        provider = os.environ.get("SECRETS_PROVIDER", "local_dev")
+        is_production = app_env in ("production", "staging")
+
+        if is_production and provider == "env":
+            # Sanctioned production mode: MongoDB-backed store with
+            # AES-256-GCM encryption at rest via core.crypto. The master key
+            # (CM_MASTER_KEY_CURRENT) is required and validated at startup by
+            # core.crypto.load_keyring, so reaching this point means it is set.
+            logger.info(
+                "Secrets backend active: MongoDB-encrypted store "
+                "(SECRETS_PROVIDER=env, APP_ENV=%s). Credentials encrypted "
+                "at rest via core.crypto.",
+                app_env,
+            )
+        elif is_production:
+            # Reached production with a non-'env' local backend. This should
+            # have been blocked by SecretsConfig.validate(); warn loudly in
+            # case that guard is ever bypassed.
+            logger.warning(
+                "LocalDevSecretsProvider initialized in production with "
+                "SECRETS_PROVIDER=%s — THIS IS NOT A PRODUCTION-APPROVED MODE",
+                provider,
+            )
+        else:
+            logger.info(
+                "Secrets backend active: MongoDB-encrypted store "
+                "(development mode, APP_ENV=%s).",
+                app_env,
+            )
 
     def _get_db(self):
         # Use raw db (not TenantAwareDBProxy) — `_dev_secrets` is a system
