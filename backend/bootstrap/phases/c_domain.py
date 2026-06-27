@@ -13,6 +13,15 @@ async def phase_c_domain_indexes_and_workers(app):
     except Exception as e:
         logger.warning(f"Booking index creation error: {e}")
 
+    # Lock-bridge (physical door lock command queue) indexes
+    try:
+        from core.database import db as _db
+        from domains.pms.lock_bridge.service import ensure_lock_bridge_indexes
+        await ensure_lock_bridge_indexes(_db)
+        logger.info("Lock-bridge indexes ensured")
+    except Exception as e:
+        logger.warning(f"Lock-bridge index creation error: {e}")
+
     # Room-Type Inventory indexes + worker (ADR-003, Phase C.1)
     try:
         from core.room_type_inventory_service import (

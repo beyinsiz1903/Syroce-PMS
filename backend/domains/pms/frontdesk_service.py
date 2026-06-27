@@ -11,6 +11,7 @@ from typing import Any
 from common.audit_hook import SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
 from common.result import ServiceResult
+from domains.pms.lock_bridge.service import CMD_ENCODE, CMD_REVOKE, enqueue_lock_command
 
 logger = logging.getLogger(__name__)
 
@@ -552,6 +553,19 @@ class FrontdeskService:
             keycard_data["qr_code"] = f"QR-{keycard_id}"
 
         await self._db.keycards.insert_one(keycard_data)
+        if card_type == "physical":
+            # Drive the physical lock: ask the on-prem connector to encode the card.
+            await enqueue_lock_command(
+                self._db,
+                tenant_id=ctx.tenant_id,
+                command=CMD_ENCODE,
+                keycard_id=keycard_id,
+                booking_id=booking_id,
+                room_number=room["room_number"],
+                card_number=keycard_data.get("card_number"),
+                valid_from=issue_time.isoformat(),
+                valid_until=expiry_time.isoformat(),
+            )
         return ServiceResult.success({
             "message": f"{card_type.capitalize()} keycard issued successfully",
             "keycard_id": keycard_id,
@@ -571,6 +585,17 @@ class FrontdeskService:
             {"id": keycard_id},
             {"$set": {"status": "deactivated", "deactivated_at": datetime.now(UTC).isoformat(), "deactivated_by": ctx.actor_id, "deactivation_reason": reason}},
         )
+        if keycard.get("card_type") == "physical":
+            # Revoke the physical card on the lock via the on-prem connector.
+            await enqueue_lock_command(
+                self._db,
+                tenant_id=ctx.tenant_id,
+                command=CMD_REVOKE,
+                keycard_id=keycard_id,
+                booking_id=keycard.get("booking_id"),
+                room_number=keycard.get("room_number"),
+                card_number=keycard.get("card_number"),
+            )
         return ServiceResult.success({"message": "Keycard deactivated", "keycard_id": keycard_id, "reason": reason})
 
     async def get_booking_keycards(self, ctx: OperationContext, booking_id: str) -> ServiceResult:

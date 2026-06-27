@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from common.audit_hook import SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
 from common.result import ServiceResult
+from domains.pms.lock_bridge.service import CMD_REVOKE, enqueue_lock_command
 
 logger = logging.getLogger(__name__)
 
@@ -409,6 +410,16 @@ class FrontdeskServiceV2:
                     }
                 },
             )
+            if kc.get("card_type") == "physical":
+                await enqueue_lock_command(
+                    self._db,
+                    tenant_id=ctx.tenant_id,
+                    command=CMD_REVOKE,
+                    keycard_id=kc["id"],
+                    booking_id=booking_id,
+                    room_number=kc.get("room_number"),
+                    card_number=kc.get("card_number"),
+                )
 
         checked_out_at = datetime.now(UTC)
         await self._db.bookings.update_one(
@@ -578,6 +589,16 @@ class FrontdeskServiceV2:
                             }
                         },
                     )
+                    if card.get("card_type") == "physical":
+                        await enqueue_lock_command(
+                            self._db,
+                            tenant_id=ctx.tenant_id,
+                            command=CMD_REVOKE,
+                            keycard_id=card["id"],
+                            booking_id=booking_id,
+                            room_number=card.get("room_number"),
+                            card_number=card.get("card_number"),
+                        )
 
             old_room = await self._db.rooms.find_one(
                 {"id": old_room_id}, {"_id": 0, "room_number": 1}
