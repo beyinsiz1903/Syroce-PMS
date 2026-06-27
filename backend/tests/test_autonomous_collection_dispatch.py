@@ -144,7 +144,7 @@ class _Client:
 def _make_db(*, index_ok=True, tenants=("tenant-A", "tenant-B")):
     db = _DB(index_ok=index_ok)
     for t in tenants:
-        db.users.docs.append({"tenant_id": t, "active": True})
+        db.users.docs.append({"tenant_id": t, "is_active": True})
         db.tenant_settings.docs.append({"tenant_id": t, "timezone": TZ})
     return db
 

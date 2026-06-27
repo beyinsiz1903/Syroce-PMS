@@ -332,8 +332,8 @@ async def test_dispatcher_claims_each_tenant_once_per_local_day(monkeypatch):
 
     db = _FakeDB()
     db.users.docs = [
-        {"tenant_id": "t1", "active": True},
-        {"tenant_id": "t2", "active": True},
+        {"tenant_id": "t1", "is_active": True},
+        {"tenant_id": "t2", "is_active": True},
         {"tenant_id": "t3", "active": False},  # inactive -> skipped
     ]
     enqueued: list[str] = []
@@ -364,7 +364,7 @@ async def test_dispatcher_skips_tenants_outside_local_target_time(monkeypatch):
     import celery_tasks
 
     db = _FakeDB()
-    db.users.docs = [{"tenant_id": "t1", "active": True}]
+    db.users.docs = [{"tenant_id": "t1", "is_active": True}]
     enqueued: list[str] = []
 
     class _FakeTask:
@@ -390,8 +390,8 @@ async def test_dispatcher_uses_tenant_local_timezone(monkeypatch):
 
     db = _FakeDB()
     db.users.docs = [
-        {"tenant_id": "ist", "active": True},
-        {"tenant_id": "nyc", "active": True},
+        {"tenant_id": "ist", "is_active": True},
+        {"tenant_id": "nyc", "is_active": True},
     ]
     # nyc explicitly in America/New_York; at _ISTANBUL_0200_UTC it is NOT 02:00
     # local there, so only the Istanbul-default tenant should fire.

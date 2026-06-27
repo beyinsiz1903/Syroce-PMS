@@ -193,7 +193,7 @@ async def _seed_active_tenant(tenant_id, *, tz, check_in_day):
     from core.database import db
     await db.users.insert_one({
         "tenant_id": tenant_id, "id": str(uuid.uuid4()),
-        "email": f"u_{uuid.uuid4().hex[:6]}@example.com", "active": True,
+        "email": f"u_{uuid.uuid4().hex[:6]}@example.com", "is_active": True,
     })
     await db.tenant_settings.update_one(
         {"tenant_id": tenant_id}, {"$set": {"timezone": tz}}, upsert=True

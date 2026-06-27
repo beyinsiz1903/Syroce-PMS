@@ -486,7 +486,7 @@ async def _revenue_autopilot_dispatch_async() -> dict[str, Any]:
         except (TypeError, ValueError):
             target_minute = 0
 
-        tenant_ids = await raw_db.users.distinct("tenant_id", {"active": True})
+        tenant_ids = await raw_db.users.distinct("tenant_id", {"is_active": True})
         for tenant_id in tenant_ids:
             if not tenant_id:
                 continue
@@ -689,7 +689,7 @@ async def _autonomous_collection_dispatch_async() -> dict[str, Any]:
         except (TypeError, ValueError):
             target_minute = 0
 
-        tenant_ids = await raw_db.users.distinct("tenant_id", {"active": True})
+        tenant_ids = await raw_db.users.distinct("tenant_id", {"is_active": True})
         for tenant_id in tenant_ids:
             if not tenant_id:
                 continue
@@ -1058,7 +1058,7 @@ async def _kbs_nightly_sweep_dispatch_async() -> dict[str, Any]:
         # Sweep yalnızca KBS_NOTIFY feature'ı olan kiracılar için anlamlı; ama tenant
         # listesini geniş tutup (aktif kullanıcılı kiracılar) yerel-saat eşleşmesinde
         # daraltmak yeterli — eşleşmeyenler ucuzca atlanır.
-        tenant_ids = await raw_db.users.distinct("tenant_id", {"active": True})
+        tenant_ids = await raw_db.users.distinct("tenant_id", {"is_active": True})
         for tenant_id in tenant_ids:
             if not tenant_id:
                 continue
