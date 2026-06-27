@@ -565,8 +565,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     setDragOverCell(null);
     if (!draggingBooking) return;
 
-    const { getRoomBlockForDate: getRBF } = await import('./calendar/calendarHelpers');
-    const roomBlock = getRBF(newRoomId, newDate, roomBlocks);
+    const roomBlock = getRoomBlockForDate(newRoomId, newDate, roomBlocks);
     if (roomBlock && !roomBlock.allow_sell) {
       toast.error(`Cannot move booking: Room is ${roomBlock.type.replace('_', ' ')} (${roomBlock.reason})`);
       setDraggingBooking(null);
