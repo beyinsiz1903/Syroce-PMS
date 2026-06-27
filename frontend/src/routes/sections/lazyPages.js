@@ -240,6 +240,7 @@ export const WalkinPage = lazy(() => import("@/pages/WalkinPage"));
 export const RoomMapPage = lazy(() => import("@/pages/RoomMapPage"));
 export const WakeUpCallsPage = lazy(() => import("@/pages/WakeUpCallsPage"));
 export const LostFoundPage = lazy(() => import("@/pages/LostFoundPage"));
+export const MinibarPage = lazy(() => import("@/pages/MinibarPage"));
 export const GroupFolioPage = lazy(() => import("@/pages/GroupFolioPage"));
 export const RoomMappingWizard = lazy(() => import("@/pages/RoomMappingWizard"));
 export const B2BApiDocs = lazy(() => import("@/pages/B2BApiDocs"));

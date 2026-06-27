@@ -4,7 +4,7 @@ import {
   AfsadakatLauncher, OnboardingWizard, AIEnhancedPMS, AIModule, PMSModule,
   PMSOperationalDashboard, FolioDetailView, HousekeepingStatusPage,
   ShiftHandoverPage, EarlyLatePricingSettings, EodReportPage, WalkinPage,
-  RoomMapPage, WakeUpCallsPage, LostFoundPage, GuestJourney,
+  RoomMapPage, WakeUpCallsPage, LostFoundPage, MinibarPage, GuestJourney,
   OperationalEventDashboard, MigrationObservabilityPage, IntegrationHub,
   AdminControlPanel, HousekeepingDashboard, POSDashboard, POSWaiterTerminal, POSExtensions, FeaturesShowcase,
 } from "./lazyPages";
@@ -43,6 +43,7 @@ export function coreOperationsRoutes({ p, pa, pm, modules }) {
     { path: "/room-map", ...p(RoomMapPage), wrapLayout: true, layoutModule: "room_map" },
     { path: "/wake-up-calls", ...p(WakeUpCallsPage), wrapLayout: true, layoutModule: "wake_up_calls" },
     { path: "/lost-found", ...p(LostFoundPage), wrapLayout: true, layoutModule: "lost_found" },
+    { path: "/minibar", ...p(MinibarPage), wrapLayout: true, layoutModule: "minibar" },
     { path: "/guest-journey", ...p(GuestJourney), wrapLayout: true },
     { path: "/operational-events", ...p(OperationalEventDashboard), wrapLayout: true, layoutModule: "pms_operations" },
     { path: "/app/migration-observability", ...p(MigrationObservabilityPage), wrapLayout: true, layoutModule: "reports" },

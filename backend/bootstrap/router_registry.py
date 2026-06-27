@@ -274,6 +274,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.contact_center.voice_router", "public_router", ["contact-center-voice-webhook"], None, None),
     ("routers.regulatory", "router", ["regulatory"], None, None),
     ("routers.report_scheduler", "router", ["Report Scheduler"], None, None),
+    # PMS Minibar — Otomatik tüketim → folio (idempotent charge + stok düşümü)
+    ("domains.pms.minibar_router", "router", ["PMS / Minibar"], None, None),
     # PMS Cashier, Laundry, Meeting Rooms
     ("domains.pms.cashier_router", "router", ["PMS / Cashier"], None, None),
     # Opera-parity: Folio Routing, Block Mgmt, Activity Scheduler, Loyalty, Forecast
