@@ -190,7 +190,7 @@ async def update_item(
 ):
     _require_role(current_user, _CATALOG_ROLES)
     tenant_id = _tenant_of(current_user)
-    updates = {k: v for k, v in payload.model_dump(exclude_unset=True).items()}
+    updates = dict(payload.model_dump(exclude_unset=True))
     if "name" in updates and updates["name"]:
         updates["name"] = updates["name"].strip()
     if "price" in updates and updates["price"] is not None:

@@ -11,7 +11,7 @@ Guest CRM, upsell AI, messaging, feedback/reviews, guest mobile app.
 import logging
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from core.database import db
 from core.security import get_current_user
