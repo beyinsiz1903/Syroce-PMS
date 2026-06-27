@@ -92,6 +92,11 @@ const AuthPage = ({ onLogin }) => {
         return;
       }
       onLogin(response.data.access_token, response.data.user, response.data.tenant, response.data.refresh_token);
+      if (response.data?.user?.requires_password_change) {
+        toast.info('Devam etmek icin sifrenizi degistirmelisiniz.');
+        setTimeout(() => { window.location.href = '/profile'; }, 300);
+        return;
+      }
     } catch (error) {
       const errorMessage = error.response?.data?.detail || error.message || t('auth.loginFailed');
       toast.error(errorMessage);
@@ -110,6 +115,11 @@ const AuthPage = ({ onLogin }) => {
         code: twoFACode.trim(),
       });
       onLogin(r.data.access_token, r.data.user, r.data.tenant, r.data.refresh_token);
+      if (r.data?.user?.requires_password_change) {
+        toast.info('Devam etmek icin sifrenizi degistirmelisiniz.');
+        setTimeout(() => { window.location.href = '/profile'; }, 300);
+        return;
+      }
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Doğrulama başarısız');
     } finally {

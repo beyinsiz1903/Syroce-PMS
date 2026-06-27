@@ -23,6 +23,7 @@ import {
   deptLabel, positionLabel, employmentTypeLabel,
   EMPLOYMENT_TYPE_OPTIONS,
 } from '@/lib/hrLabels';
+import UserProvisionDialog from '@/components/UserProvisionDialog';
 
 const EMPTY_STAFF = {
   name: '', email: '', phone: '', department: '', position: '',
@@ -334,8 +335,9 @@ const StaffManagement = () => {
       <Button variant="outline" size="sm" onClick={loadAll} disabled={refreshing}>
         <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />Yenile
       </Button>
-      <Button size="sm" onClick={openCreate} data-testid="btn-add-staff">
-        <UserPlus className="w-4 h-4 mr-1.5" />Yeni Personel
+      <UserProvisionDialog departments={departments} onCreated={loadAll} />
+      <Button variant="outline" size="sm" onClick={openCreate} data-testid="btn-add-staff">
+        <UserPlus className="w-4 h-4 mr-1.5" />Yeni Personel (girissiz)
       </Button>
     </>
   );

@@ -14,7 +14,7 @@ import time
 from datetime import UTC, datetime, timedelta
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from core._pwd import BcryptContext
@@ -301,7 +301,10 @@ def create_refresh_token(user_id: str, tenant_id: str | None = None) -> tuple[st
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM), int(exp.timestamp())
 
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request = None,
+):
     """Decode JWT token and return the authenticated User."""
     # Import here to avoid circular imports with schemas
     from models.schemas import User
@@ -382,6 +385,26 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             )
 
         user_doc = decrypt_user_doc(user_doc)
+
+        # Force-reset sigortasi: requires_password_change=True olan kullanici,
+        # sifresini degistirene kadar yalnizca sifre-degistirme / cikis / profil
+        # uclarina erisebilir. Diger her sey fail-closed 403. Istek yolu
+        # belirlenemiyorsa (dogrudan, non-Depends cagri) yine reddedilir.
+        if user_doc.get('requires_password_change'):
+            # Exact-path allowlist (suffix degil) — gelecekte ayni son-eke sahip
+            # yeni bir route'un yanlislikla izin acmasini onler. Hem /api on-ekli
+            # hem on-eksiz mount varyantlari kapsanir.
+            _allowed = {
+                "/api/auth/change-password", "/auth/change-password",
+                "/api/auth/logout", "/auth/logout",
+                "/api/auth/me", "/auth/me",
+            }
+            _path = request.url.path.rstrip("/") if request is not None else None
+            if not _path or _path not in _allowed:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Devam etmeden once sifrenizi degistirmelisiniz.",
+                )
 
         if 'id' not in user_doc:
             user_doc['id'] = user_doc.get('user_id', user_id)

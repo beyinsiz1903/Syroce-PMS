@@ -314,6 +314,16 @@ def _build_token_response(user: User, tenant) -> TokenResponse:
 
 @router.post("/auth/register", response_model=TokenResponse)
 async def register_tenant(data: TenantRegister, request: Request):
+    # Self-servis tenant kaydi fail-closed: yalnizca SELF_REGISTRATION_ENABLED
+    # acikca etkinlestirildiginde calisir. Varsayilan KAPALI — pilotta yeni
+    # tesis onboarding'i super_admin/seed uzerinden yapilir. (register-guest
+    # bu kapidan etkilenmez.)
+    import os as _os
+    if (_os.environ.get("SELF_REGISTRATION_ENABLED") or "").strip().lower() not in ("1", "true", "yes", "on"):
+        raise HTTPException(
+            status_code=403,
+            detail="Self-servis kayit kapali. Lutfen yoneticinizle iletisime gecin.",
+        )
     # v54 (Bug CO): per-IP and per-email throttle. Without these the
     # endpoint allowed unbounded tenant creation and account-enumeration
     # via the existing/new email response shape difference.
@@ -1074,7 +1084,11 @@ async def change_password(
     await db.users.update_one(
         {"id": current_user.id},
         {
-            "$set": {"hashed_password": new_hash, "tokens_invalid_before": invalid_before_ts},
+            "$set": {
+                "hashed_password": new_hash,
+                "tokens_invalid_before": invalid_before_ts,
+                "requires_password_change": False,
+            },
             "$unset": {"password_hash": "", "password": ""},
         },
     )
@@ -1861,6 +1875,7 @@ async def reset_password_by_token(payload: dict, request: Request):
             "hashed_password": new_hash,
             "password_reset_at": datetime.now(UTC).isoformat(),
             "tokens_invalid_before": invalid_before_ts,
+            "requires_password_change": False,
         }},
     )
     invalidate_user_doc_cache(user.get('id'))

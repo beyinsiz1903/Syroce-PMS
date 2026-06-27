@@ -635,3 +635,276 @@ async def get_web_push_metrics(
     from shared_kernel.web_push_metrics import get_metrics_summary
     summary = await get_metrics_summary(db, tenant_id=target_tenant, days=days)
     return summary
+
+
+# ============================================================================
+# USER PROVISIONING — tek merkezi "Kullanici Ekle" akisi
+# ----------------------------------------------------------------------------
+# Yeni personele atomik olarak (1) guvenli giris hesabi + (2) ozluk kaydi acar.
+# Davet (magic-link, varsayilan) veya gecici sifre (requires_password_change).
+# Roller paket-duyarli + UserRole enum ile SUNUCU tarafinda dogrulanir.
+#
+# Onemli model ayrimi: DEPARTMAN organizasyoneldir (Spa, F&B, Satinalma...),
+# ROL ise yetki seviyesidir (enum-gecerli). Bir spa terapisti = departman "Spa"
+# + rol "staff". Bu nedenle asagidaki harita yalniz GERCEK, atanabilir enum
+# rollerini icerir; super_admin/guest/agency_*/call_center_agent bilincli
+# olarak DISARIDADIR (tenant yoneticisi tarafindan acilamaz).
+# ============================================================================
+from pydantic import BaseModel, EmailStr  # noqa: E402
+
+ASSIGNABLE_ROLES_BY_TIER: dict[str, list[str]] = {
+    "basic": ["admin", "staff"],
+    "professional": [
+        "admin", "supervisor", "front_desk", "housekeeping",
+        "finance", "procurement", "staff",
+    ],
+    "enterprise": [
+        "admin", "supervisor", "front_desk", "housekeeping",
+        "finance", "procurement", "sales", "staff",
+    ],
+}
+
+_ROLE_LABELS_TR: dict[str, str] = {
+    "admin": "Yonetici",
+    "supervisor": "Supervizor",
+    "front_desk": "Resepsiyon",
+    "housekeeping": "Kat Hizmetleri",
+    "finance": "Muhasebe",
+    "procurement": "Satinalma",
+    "sales": "Satis",
+    "staff": "Personel",
+}
+
+
+def _normalize_tier(tier: str | None) -> str:
+    t = (tier or "basic").strip().lower()
+    if t in ("pro", "professional"):
+        return "professional"
+    if t in ("ultra", "enterprise"):
+        return "enterprise"
+    return "basic"
+
+
+def _assignable_roles_for_tier(tier: str | None) -> list[str]:
+    return ASSIGNABLE_ROLES_BY_TIER.get(
+        _normalize_tier(tier), ASSIGNABLE_ROLES_BY_TIER["basic"]
+    )
+
+
+def _can_provision_users(current_user: User) -> bool:
+    """Giris hesabi acmak yuksek-yetki islemidir: super_admin + admin.
+    (manage_hr salt-ozluk kaydi icin /hr/staff akisini kullanmaya devam eder.)"""
+    if _is_super_admin(current_user):
+        return True
+    role_value = getattr(current_user.role, "value", str(current_user.role))
+    return role_value == UserRole.ADMIN.value
+
+
+def _gen_temp_password(length: int = 14) -> str:
+    import secrets as _s
+    # Belirsiz karakterler (0/O, 1/l/I) cikarildi — okunur ama yuksek-entropi.
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+    return "".join(_s.choice(alphabet) for _ in range(length))
+
+
+class ProvisionUserRequest(BaseModel):
+    name: str
+    email: EmailStr
+    role: str
+    department: str | None = None
+    position: str | None = None
+    phone: str | None = None
+    mode: str = "invite"  # "invite" | "temp"
+
+
+@router.get("/admin/assignable-roles")
+async def list_assignable_roles(current_user: User = Depends(get_current_user)):
+    """Tenant'in paketine (subscription_tier) gore atanabilir, enum-gecerli
+    rollerin tek dogruluk kaynagi. 'Kullanici Ekle' ekrani bunu kullanir."""
+    if not _can_provision_users(current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Yetkiniz yok.")
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="Tenant tanimsiz.")
+    tenant = await db.tenants.find_one(
+        {"id": current_user.tenant_id}, {"_id": 0, "subscription_tier": 1}
+    )
+    tier = _normalize_tier((tenant or {}).get("subscription_tier"))
+    roles = [
+        {"value": r, "label": _ROLE_LABELS_TR.get(r, r)}
+        for r in _assignable_roles_for_tier(tier)
+    ]
+    return {"tier": tier, "roles": roles}
+
+
+@router.post("/admin/users")
+async def provision_user(
+    payload: ProvisionUserRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Tek merkezi, atomik kullanici olusturma.
+
+    - Yetki: super_admin veya admin (yalniz kendi tenant'i).
+    - Atomik: users + staff_members tek transaction'da yazilir (fail-closed).
+    - mode='invite': giris sifresiz olusur; davet (magic-link) e-postasi gider.
+    - mode='temp': gecici sifre uretilir, requires_password_change=True; sifre
+      yanit govdesinde BIR KEZ doner (asla loglanmaz).
+    """
+    import secrets as _secrets
+    import uuid as _uuid
+    from datetime import UTC, datetime, timedelta
+
+    from core.email import _frontend_base_url, send_email
+    from core.security import hash_password
+    from security.encrypted_lookup import build_user_email_query, encrypt_user_doc
+
+    if not _can_provision_users(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Yalnizca yoneticiler kullanici olusturabilir.",
+        )
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="Tenant tanimsiz.")
+
+    name = (payload.name or "").strip()
+    email = (payload.email or "").strip().lower()
+    role = (payload.role or "").strip()
+    mode = (payload.mode or "invite").strip().lower()
+    if not name:
+        raise HTTPException(status_code=400, detail="Ad Soyad zorunludur.")
+    if mode not in ("invite", "temp"):
+        raise HTTPException(status_code=400, detail="Gecersiz yontem.")
+
+    # Rol dogrulama: hem enum-gecerli hem de tenant paketine uygun olmali.
+    if role not in {r.value for r in UserRole}:
+        raise HTTPException(status_code=400, detail="Gecersiz rol.")
+    tenant = await db.tenants.find_one(
+        {"id": tenant_id}, {"_id": 0, "subscription_tier": 1}
+    )
+    tier = _normalize_tier((tenant or {}).get("subscription_tier"))
+    if role not in _assignable_roles_for_tier(tier):
+        raise HTTPException(
+            status_code=400, detail=f"'{role}' rolu mevcut paketinizde atanamaz."
+        )
+
+    # Tekillik: ayni e-posta ile kullanici varsa reddet (yetkilendirilmis
+    # admin islemi — enumeration riski yok).
+    existing = await db.users.find_one(build_user_email_query(email))
+    if existing:
+        raise HTTPException(status_code=400, detail="Bu e-posta ile bir kullanici zaten var.")
+
+    user_id = str(_uuid.uuid4())
+    now_iso = datetime.now(UTC).isoformat()
+
+    if mode == "temp":
+        temp_password = _gen_temp_password()
+        hashed = hash_password(temp_password)
+        requires_change = True
+    else:
+        temp_password = None
+        # Giris yapilamayan rastgele hash — sifre yalniz davet linkiyle belirlenir.
+        hashed = hash_password(_secrets.token_urlsafe(32))
+        requires_change = False
+
+    user_doc = {
+        "id": user_id,
+        "user_id": user_id,
+        "tenant_id": tenant_id,
+        "email": email,
+        "username": (email.split("@", 1)[0] or name).lower(),
+        "name": name,
+        "role": role,
+        "phone": payload.phone,
+        "is_active": True,
+        "email_verified": False,
+        "granted_permissions": [],
+        "requires_password_change": requires_change,
+        "hashed_password": hashed,
+        "created_at": now_iso,
+        "created_by": current_user.id,
+    }
+    user_doc = encrypt_user_doc(user_doc)
+
+    staff_doc = {
+        "id": str(_uuid.uuid4()),
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "name": name,
+        "email": email,
+        "phone": payload.phone,
+        "department": payload.department,
+        "position": payload.position,
+        "employment_type": "full_time",
+        "annual_leave_entitlement": 14,
+        "performance_score": 0.0,
+        "active": True,
+        "created_at": now_iso,
+    }
+
+    # Atomik: ikisi de yazilir ya da hicbiri (fail-closed). Tek bir orphan
+    # giris hesabi birakmamak kritik.
+    try:
+        async with await db.client.start_session() as session:
+            async with session.start_transaction():
+                await db.users.insert_one(user_doc, session=session)
+                await db.staff_members.insert_one(staff_doc, session=session)
+    except Exception as e:
+        logger.error("provision_user atomic write failed tenant=%s: %s", tenant_id, e)
+        raise HTTPException(status_code=500, detail="Kullanici olusturulamadi.")
+
+    # --- Davet e-postasi / token (transaction disinda, best-effort) ---
+    email_sent = None
+    if mode == "invite":
+        try:
+            token = _secrets.token_urlsafe(32)
+            await db.password_reset_codes.delete_many({"email": email})
+            await db.password_reset_codes.insert_one({
+                "email": email,
+                "token": token,
+                "purpose": "invite",
+                "created_at": datetime.now(UTC),
+                "expires_at": datetime.now(UTC) + timedelta(days=7),
+                "used": False,
+            })
+            link = f"{_frontend_base_url()}/auth/reset-password?token={token}"
+            subject = "Syroce PMS — Hesabinizi etkinlestirin"
+            html = (
+                f"<p>Merhaba {name},</p>"
+                f"<p>Syroce PMS hesabiniz olusturuldu. Asagidaki baglantidan sifrenizi "
+                f"belirleyerek sisteme giris yapabilirsiniz:</p>"
+                f'<p><a href="{link}">Sifremi Belirle</a></p>'
+                f"<p>Bu baglanti 7 gun gecerlidir. Bu islemi siz talep etmediyseniz "
+                f"yoneticinizle iletisime gecin.</p>"
+            )
+            res = await send_email(email, subject, html)
+            email_sent = bool(res.get("sent"))
+        except Exception as e:
+            logger.warning("provision_user invite email failed: %s", e)
+            email_sent = False
+
+    # Audit (PII/secret YOK — gecici sifre asla yazilmaz).
+    try:
+        await log_audit_event(
+            tenant_id=tenant_id,
+            user_id=current_user.id,
+            action="admin.user.provision",
+            entity_type="user",
+            entity_id=user_id,
+            details=f"{current_user.name} yeni kullanici olusturdu (rol={role}, yontem={mode})",
+            severity="warning",
+            db=db,
+        )
+    except Exception:
+        pass
+
+    resp = {
+        "success": True,
+        "user_id": user_id,
+        "mode": mode,
+        "role": role,
+    }
+    if mode == "temp":
+        resp["temp_password"] = temp_password  # yalniz bir kez doner
+    else:
+        resp["email_sent"] = email_sent
+    return resp
