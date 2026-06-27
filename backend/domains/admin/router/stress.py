@@ -134,6 +134,44 @@ async def _delete_many_with_retry(col, flt: dict, *, col_name: str, attempts: in
     if last_exc is not None:  # defensive — loop above always returns or raises
         raise last_exc
 
+
+# Heavy stress collections whose prefix-scoped scrub/cleanup filter
+# {stress_seed:True, tenant_id, stress_prefix} can outgrow socketTimeoutMS on the
+# deploy Atlas tier WITHOUT a covering index — observed as both the teardown
+# cleanup#2 idempotency-verify 500 AND the seed-time orphan_cleanup folio_charges
+# timeout. folio_charges is the confirmed choke point (largest stress collection).
+STRESS_CLEANUP_INDEXED_COLLECTIONS = (
+    "folio_charges", "payments", "folios", "bookings", "guests", "rooms",
+    "room_night_locks", "housekeeping_tasks", "room_qr_requests",
+    "service_complaints", "messages", "notifications",
+)
+STRESS_CLEANUP_INDEX_NAME = "ix_stress_cleanup_prefix"
+
+
+async def _ensure_stress_cleanup_indexes(db) -> None:
+    """Idempotent PARTIAL covering index for the prefix-scoped stress filter
+    `{stress_seed:True, tenant_id, stress_prefix}` on the heavy stress
+    collections. `partialFilterExpression={stress_seed:True}` keeps the index to
+    stress rows only, so production (real tenants hold none) pays ~0 write cost,
+    while cleanup#2's idempotency-verify and the seed orphan scrub become index
+    seeks instead of full tenant-scoped collection walks that can trip
+    socketTimeoutMS. Best-effort: a failure here must NOT block seed/cleanup (the
+    delete loop keeps its own bounded retry) — log and continue, never fake-green.
+    """
+    for col_name in STRESS_CLEANUP_INDEXED_COLLECTIONS:
+        try:
+            await db[col_name].create_index(
+                [("tenant_id", 1), ("stress_prefix", 1)],
+                name=STRESS_CLEANUP_INDEX_NAME,
+                partialFilterExpression={"stress_seed": True},
+            )
+        except Exception as exc:  # noqa: BLE001
+            _stress_log.warning(
+                "stress cleanup index ensure failed (continuing): col=%s err=%r",
+                col_name, exc,
+            )
+
+
 from core.helpers import require_super_admin_guard
 from core.outbox_residue import DEAD_PENDING_EVENT_TYPES
 from core.tenant_db import tenant_context
@@ -2181,6 +2219,10 @@ async def stress_seed(
     orphan_cleanup: dict[str, int] = {}
     with tenant_context(stress_tid):
         from core.database import db
+        # Covering index for the prefix-scoped scrub/cleanup filter so the
+        # folio_charges orphan delete below (and teardown cleanup#2) stays an
+        # index seek instead of tripping socketTimeoutMS on the deploy Atlas tier.
+        await _ensure_stress_cleanup_indexes(db)
         # F8A tur-15 fix: residue from previous ABORTED runs (CI killed mid-spec,
         # network drop, OOM, etc.) accumulates in the stress tenant — teardown
         # only deletes the current-round prefix. Tur-14 verification surfaced
@@ -3115,6 +3157,10 @@ async def stress_cleanup(
     }
     with tenant_context(stress_tid):
         from core.database import db
+        # Ensure the covering index exists even if cleanup runs without a
+        # preceding seed (manual teardown); idempotent no-op when present so
+        # cleanup#2's idempotency-verify scan stays index-seeked, not a full walk.
+        await _ensure_stress_cleanup_indexes(db)
         for col_name in STRESS_COLLECTIONS:
             col = getattr(db, col_name)
             if col_name in CURRENCY_RATES_TENANT_SCOPED:
