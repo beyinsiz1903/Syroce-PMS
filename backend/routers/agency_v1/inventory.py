@@ -128,7 +128,6 @@ async def claim_floating_inventory(booking_doc: dict[str, Any]) -> dict[str, Any
     check_in = booking_doc.get("check_in") or booking_doc.get("check_in_date")
     check_out = booking_doc.get("check_out") or booking_doc.get("check_out_date")
     booking_id = booking_doc.get("id")
-    correlation_id = booking_doc.get("correlation_id") or booking_id
 
     if not (tenant_id and room_type and check_in and check_out and booking_id):
         raise ValueError(

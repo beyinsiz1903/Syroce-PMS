@@ -24,6 +24,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+import core.payments.providers  # noqa: F401  (import-time provider kaydi)
 from core.database import db
 from core.payments import (
     PaymentError,
@@ -31,7 +32,6 @@ from core.payments import (
     make_vault_card_ref,
 )
 from core.payments.collection import collect_booking_payment
-import core.payments.providers  # noqa: F401  (import-time provider kaydi)
 from core.security import get_current_user
 from models.enums import PaymentType
 from models.schemas import User

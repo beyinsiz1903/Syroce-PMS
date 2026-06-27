@@ -245,16 +245,16 @@ class IyzicoProvider(PaymentProvider):
         action_field: str | None = None,
     ) -> PaymentResult:
         status_raw = str(body.get("status") or "")
-        common = dict(
-            operation=operation,
-            provider=PROVIDER_NAME,
-            tenant_id=request.tenant_id,
-            idempotency_key=request.idempotency_key,
-            amount_minor=request.amount_minor,
-            currency=request.currency,
-            masked_card=masked_card,
-            raw_provider_status=status_raw,
-        )
+        common = {
+            "operation": operation,
+            "provider": PROVIDER_NAME,
+            "tenant_id": request.tenant_id,
+            "idempotency_key": request.idempotency_key,
+            "amount_minor": request.amount_minor,
+            "currency": request.currency,
+            "masked_card": masked_card,
+            "raw_provider_status": status_raw,
+        }
         if status_raw == "success":
             if action_field and body.get(action_field):
                 return PaymentResult(
@@ -284,15 +284,15 @@ class IyzicoProvider(PaymentProvider):
         self, request: PaymentRequest, body: dict, operation: PaymentOperation
     ) -> PaymentResult:
         status_raw = str(body.get("status") or "")
-        common = dict(
-            operation=operation,
-            provider=PROVIDER_NAME,
-            tenant_id=request.tenant_id,
-            idempotency_key=request.idempotency_key,
-            amount_minor=request.amount_minor,
-            currency=request.currency,
-            raw_provider_status=status_raw,
-        )
+        common = {
+            "operation": operation,
+            "provider": PROVIDER_NAME,
+            "tenant_id": request.tenant_id,
+            "idempotency_key": request.idempotency_key,
+            "amount_minor": request.amount_minor,
+            "currency": request.currency,
+            "raw_provider_status": status_raw,
+        }
         if status_raw == "success":
             return PaymentResult(
                 status=PaymentStatus.SUCCEEDED,

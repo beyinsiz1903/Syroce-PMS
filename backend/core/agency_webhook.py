@@ -166,7 +166,6 @@ async def dispatch_agency_webhook(event: dict[str, Any]) -> tuple[bool, str]:
       - (False, "retryable: ..") -> gecici; backoff ile yeniden denenir
       - (False, "permanent: ..") -> kalici; DLQ (status=failed) + alarm
     """
-    event_type = event.get("event_type", "")
     tenant_id = event.get("tenant_id", "")
     payload = event.get("payload", {}) or {}
     agency_id = payload.get("agency_id") or event.get("agency_id") or ""
