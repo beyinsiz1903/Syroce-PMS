@@ -2192,6 +2192,7 @@
           "dirty": "متسخ",
           "inspected": "تم الفحص",
           "maintenance": "صيانة",
+          "cleaning": "قيد التنظيف",
           "out_of_order": "خارج الخدمة"
         }
       },

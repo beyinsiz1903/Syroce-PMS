@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
   Bed, CheckCircle, AlertTriangle, Wrench, Search as SearchIcon,
-  Eye, Filter, RefreshCw, ChevronDown
+  Eye, Filter, RefreshCw, ChevronDown, Sparkles
 } from 'lucide-react';
 import EmptyState from '@/components/EmptyState';
 import { performRoomStatusUpdate } from '@/utils/offlineRoomStatus';
@@ -22,6 +22,7 @@ const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
   const STATUS_CONFIG = useMemo(() => ({
     clean: { label: ts('clean'), color: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: CheckCircle, dot: 'bg-emerald-500' },
     dirty: { label: ts('dirty'), color: 'bg-red-100 text-red-700 border-red-200', icon: AlertTriangle, dot: 'bg-red-500' },
+    cleaning: { label: ts('cleaning'), color: 'bg-yellow-100 text-yellow-800 border-yellow-300', icon: Sparkles, dot: 'bg-yellow-500' },
     inspected: { label: ts('inspected'), color: 'bg-blue-100 text-blue-700 border-blue-200', icon: Eye, dot: 'bg-blue-500' },
     maintenance: { label: ts('maintenance'), color: 'bg-amber-100 text-amber-700 border-amber-200', icon: Wrench, dot: 'bg-amber-500' },
     out_of_order: { label: ts('out_of_order'), color: 'bg-gray-200 text-gray-700 border-gray-300', icon: AlertTriangle, dot: 'bg-gray-500' },
@@ -190,7 +191,7 @@ const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
       )}
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
         {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
           const count = summary[key] || 0;
           return (

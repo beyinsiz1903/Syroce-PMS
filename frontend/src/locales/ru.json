@@ -2192,6 +2192,7 @@
           "dirty": "Грязный",
           "inspected": "Проверен",
           "maintenance": "Обслуживание",
+          "cleaning": "Уборка",
           "out_of_order": "Не в строю"
         }
       },

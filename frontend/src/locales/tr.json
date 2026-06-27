@@ -2265,6 +2265,7 @@
           "dirty": "Kirli",
           "inspected": "Kontrol Edildi",
           "maintenance": "Bakımda",
+          "cleaning": "Temizleniyor",
           "out_of_order": "Kullanım Dışı"
         }
       },

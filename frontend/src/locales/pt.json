@@ -2192,6 +2192,7 @@
           "dirty": "Sujo",
           "inspected": "Inspecionado",
           "maintenance": "Manutenção",
+          "cleaning": "Limpeza",
           "out_of_order": "Fora de Serviço"
         }
       },

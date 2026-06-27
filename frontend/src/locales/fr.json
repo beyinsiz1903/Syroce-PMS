@@ -2192,6 +2192,7 @@
           "dirty": "Sale",
           "inspected": "Contrôlée",
           "maintenance": "Maintenance",
+          "cleaning": "Nettoyage",
           "out_of_order": "Hors Service"
         }
       },

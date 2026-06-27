@@ -2192,6 +2192,7 @@
           "dirty": "脏",
           "inspected": "已检查",
           "maintenance": "维护中",
+          "cleaning": "清洁中",
           "out_of_order": "停用"
         }
       },

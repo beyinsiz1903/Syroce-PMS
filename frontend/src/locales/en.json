@@ -2200,6 +2200,7 @@
           "dirty": "Dirty",
           "inspected": "Inspected",
           "maintenance": "Maintenance",
+          "cleaning": "Cleaning",
           "out_of_order": "Out of Order"
         }
       },
