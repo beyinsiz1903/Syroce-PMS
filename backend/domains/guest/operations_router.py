@@ -17,6 +17,7 @@ from core.security import (
 )
 from models.enums import UserRole
 from models.schemas import LoyaltyProgram, LoyaltyProgramCreate, LoyaltyTransaction, LoyaltyTransactionCreate, RoomService, RoomServiceCreate, User
+from modules.guest_journey import feedback_reporting_service as feedback_report
 from modules.pms_core.role_permission_service import require_module as require_module_v100  # v100 DW
 from modules.pms_core.role_permission_service import (
     require_op,  # v96 DW
@@ -83,7 +84,8 @@ async def log_journey_event(event_data: dict, current_user: User = Depends(get_c
 
 
 def _nps_category(score: int) -> str:
-    return 'detractor' if score <= 6 else 'passive' if score <= 8 else 'promoter'
+    # Tek doğruluk kaynağı: birleşik raporlama servisi.
+    return feedback_report.nps_category(score)
 
 
 @router.post("/nps/survey")
@@ -150,42 +152,18 @@ async def delete_nps_survey(survey_id: str, current_user: User = Depends(get_cur
 
 
 def _bounded_days(days: int) -> int:
-    """Anormal aralıkları engelle (1..730 gün)."""
-    if days < 1: return 1
-    if days > 730: return 730
-    return days
+    """Anormal aralıkları engelle (1..730 gün). Tek doğruluk kaynağı: servis."""
+    return feedback_report.bounded_days(days)
 
 
 @router.get("/nps/score")
 async def get_nps_score(days: int = 30, current_user: User = Depends(get_current_user)):
-    """NPS skoru hesapla"""
-    days = _bounded_days(days)
-    start = (datetime.now(UTC) - timedelta(days=days)).isoformat()
+    """NPS skoru hesapla.
 
-    surveys = await db.nps_surveys.find({
-        'tenant_id': current_user.tenant_id,
-        'responded_at': {'$gte': start}
-    }, {'_id': 0, 'category': 1}).to_list(5000)
-
-    if not surveys:
-        return {'nps_score': 0, 'total_responses': 0,
-                'promoters': 0, 'passives': 0, 'detractors': 0,
-                'period_days': days}
-
-    promoters = len([s for s in surveys if s['category'] == 'promoter'])
-    detractors = len([s for s in surveys if s['category'] == 'detractor'])
-    total = len(surveys)
-
-    nps = ((promoters - detractors) / total * 100) if total > 0 else 0
-
-    return {
-        'nps_score': round(nps, 1),
-        'promoters': promoters,
-        'passives': len([s for s in surveys if s['category'] == 'passive']),
-        'detractors': detractors,
-        'total_responses': total,
-        'period_days': days
-    }
+    Birleşik raporlama servisinin ince adaptörü. Yanıt biçimi ve hesaplanan
+    sayılar legacy davranışla birebir aynıdır (yalnız NPS-uygun 0-10 kaynak).
+    """
+    return await feedback_report.compute_nps_score(current_user.tenant_id, days)
 
 
 @router.get("/nps/recent")
@@ -196,22 +174,10 @@ async def get_recent_nps(
     room_number: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
-    """Son misafir yorumları (kategori/oda filtreli)."""
-    days = _bounded_days(days)
-    limit = max(1, min(200, limit))
-    start = (datetime.now(UTC) - timedelta(days=days)).isoformat()
-    query: dict = {
-        'tenant_id': current_user.tenant_id,
-        'responded_at': {'$gte': start},
-    }
-    if category in ('promoter', 'passive', 'detractor'):
-        query['category'] = category
-    if room_number:
-        query['room_number'] = room_number
-
-    cursor = db.nps_surveys.find(query, {'_id': 0}).sort('responded_at', -1).limit(min(limit, 200))
-    items = await cursor.to_list(min(limit, 200))
-    return {'items': items, 'count': len(items)}
+    """Son misafir yorumları (kategori/oda filtreli) — servisin ince adaptörü."""
+    return await feedback_report.recent_feedback(
+        current_user.tenant_id, days, limit, category, room_number
+    )
 
 
 @router.get("/nps/by-room")
@@ -223,39 +189,9 @@ async def get_nps_by_room(
 
     Müşteri ilişkilerinin "hangi odalar tekrarlanan şikayet alıyor"
     sorusuna cevap verir. Oda numarası girilmemiş yanıtlar atlanır.
+    Birleşik raporlama servisinin ince adaptörü (çıktı legacy ile birebir).
     """
-    days = _bounded_days(days)
-    start = (datetime.now(UTC) - timedelta(days=days)).isoformat()
-    pipeline = [
-        {'$match': {
-            'tenant_id': current_user.tenant_id,
-            'responded_at': {'$gte': start},
-            'room_number': {'$nin': [None, '']},
-        }},
-        {'$group': {
-            '_id': '$room_number',
-            'avg_score': {'$avg': '$nps_score'},
-            'response_count': {'$sum': 1},
-            'promoters': {'$sum': {'$cond': [{'$eq': ['$category', 'promoter']}, 1, 0]}},
-            'passives': {'$sum': {'$cond': [{'$eq': ['$category', 'passive']}, 1, 0]}},
-            'detractors': {'$sum': {'$cond': [{'$eq': ['$category', 'detractor']}, 1, 0]}},
-            'last_responded_at': {'$max': '$responded_at'},
-        }},
-        {'$project': {
-            '_id': 0,
-            'room_number': '$_id',
-            'avg_score': {'$round': ['$avg_score', 2]},
-            'response_count': 1,
-            'promoters': 1,
-            'passives': 1,
-            'detractors': 1,
-            'last_responded_at': 1,
-        }},
-        {'$sort': {'avg_score': 1, 'response_count': -1}},
-        {'$limit': 200},
-    ]
-    rows = await db.nps_surveys.aggregate(pipeline).to_list(200)
-    return {'rooms': rows, 'period_days': days}
+    return await feedback_report.by_room(current_user.tenant_id, days)
 
 
 @router.post("/loyalty/earn-points")
