@@ -4,7 +4,36 @@ Otomatik rakip takip, fiyat optimizasyonu, OTA push.
 Rastgele değer kullanılmaz; rakip fiyatları yalnızca gerçek competitor_rates
 koleksiyonundan, doluluk gerçek rezervasyon/oda verisinden hesaplanır.
 """
+import os
 from datetime import UTC, datetime
+
+
+def _emission_globally_enabled() -> bool:
+    """Global kill-switch. Fail-closed: yalnizca acikca 'true' ise True."""
+    return (
+        os.environ.get("REVENUE_AUTOPILOT_EMISSION_ENABLED", "false")
+        .strip()
+        .lower()
+        == "true"
+    )
+
+
+def _pilot_allowlist() -> set[str]:
+    """Virgulle ayrilmis pilot tenant_id allowlist'i. Bos -> hicbir tenant."""
+    raw = os.environ.get("REVENUE_AUTOPILOT_PILOT_TENANTS", "")
+    return {t.strip() for t in raw.split(",") if t.strip()}
+
+
+def autopilot_emission_allowed(tenant_id: str) -> bool:
+    """Canliya-gecis CIFT KILIDI (fail-closed): global kill-switch ACIK
+    (REVENUE_AUTOPILOT_EMISSION_ENABLED=true) VE tenant pilot allowlist'te
+    (REVENUE_AUTOPILOT_PILOT_TENANTS) ise True. Aksi halde False -> tenant
+    DB'de full_auto yazsa bile RATE_UPDATED emisyonu / kanal push YAPILMAZ;
+    sistem shadow (supervised) gibi davranir. Tek operator tiklamasinin dis
+    dunyaya istenmeyen fiyat olaylari firlatmasini imkansiz kilar."""
+    if not _emission_globally_enabled():
+        return False
+    return bool(tenant_id) and tenant_id in _pilot_allowlist()
 
 
 class RevenueAutopilot:
@@ -61,7 +90,21 @@ class RevenueAutopilot:
         })
 
         # Step 4: Push to channels (06:45)
-        if self.mode == 'full_auto':
+        # Canliya-gecis ZIRHI (fail-closed cift kilit): full_auto talep edilse
+        # bile RATE_UPDATED emisyonu + kanal push YALNIZCA global kill-switch
+        # (REVENUE_AUTOPILOT_EMISSION_ENABLED=true) VE tenant pilot allowlist'te
+        # (REVENUE_AUTOPILOT_PILOT_TENANTS) ise yapilir. Biri eksikse sistem
+        # SESSIZCE DEGIL, raporda gorunur sekilde shadow'a duser (emission_gated).
+        emission_allowed = autopilot_emission_allowed(tenant_id)
+        do_emit = (self.mode == 'full_auto') and emission_allowed
+        report['emission_allowed'] = emission_allowed
+        report['emission_gated'] = (self.mode == 'full_auto') and not emission_allowed
+        report['effective_mode'] = (
+            'full_auto' if do_emit
+            else 'supervised' if self.mode == 'full_auto'
+            else self.mode
+        )
+        if do_emit:
             # Otonom karar: her oda tipi/tarih icin RATE_UPDATED olayini outbox'a
             # yaz. Mevcut acente fan-out zinciri bu olayi anonim olarak aktif
             # acentelere ulastirir. Idempotency anahtari (tenant:event:entity:
@@ -87,6 +130,14 @@ class RevenueAutopilot:
                 'action': 'Rate push attempted',
                 'channels': push_result['channels'],
                 'status': 'completed' if push_result.get('success') else 'not_implemented'
+            })
+        elif report['emission_gated']:
+            # full_auto istendi ama cift kilit acik degil -> fail-closed shadow.
+            # Sessiz fallback DEGIL: operator panelinde gorunur olsun diye raporla.
+            report['actions'].append({
+                'time': '06:45',
+                'action': 'RATE emission GATED by kill-switch/pilot-allowlist -> shadow',
+                'status': 'emission_gated_fail_closed'
             })
         else:
             report['actions'].append({

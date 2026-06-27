@@ -398,6 +398,8 @@ async def get_autopilot_last_run(
         "last_auto_run_completed_at": run.get("last_auto_run_completed_at"),
         "last_auto_run_status": run.get("last_auto_run_status"),
         "mode": run.get("last_mode"),
+        "effective_mode": run.get("last_effective_mode"),
+        "emission_gated": run.get("last_emission_gated", False),
         "competitors_checked": run.get("last_competitors_checked", 0),
         "avg_occupancy": run.get("last_avg_occupancy"),
         "demand_trend": run.get("last_demand_trend"),

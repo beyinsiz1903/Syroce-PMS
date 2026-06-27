@@ -212,6 +212,10 @@ async def test_full_auto_emits_idempotent_rate_updated(monkeypatch):
     import domains.ai.revenue_autopilot as mod
     from domains.ai.revenue_autopilot import RevenueAutopilot
 
+    # Canliya-gecis zirhi: emit yolu YALNIZCA cift kilit acikken test edilir.
+    monkeypatch.setenv("REVENUE_AUTOPILOT_EMISSION_ENABLED", "true")
+    monkeypatch.setenv("REVENUE_AUTOPILOT_PILOT_TENANTS", "t1")
+
     db = _FakeDB()
     await db.outbox_events.create_index([("idempotency_key", 1)], unique=True)
     db.rooms.docs = [
@@ -248,6 +252,72 @@ async def test_supervised_mode_emits_no_events():
     report = await ap.daily_optimization_cycle("t1")
     assert len(db.outbox_events.docs) == 0
     assert any(a.get("status") == "pending_approval" for a in report["actions"])
+
+
+# ── 2b. Canliya-gecis ZIRHI: global kill-switch + pilot allowlist (fail-closed)
+
+
+async def test_full_auto_gated_when_killswitch_off(monkeypatch):
+    """full_auto istense bile global kill-switch kapaliyken emit YOK (fail-closed
+    shadow): emission_gated True, effective_mode supervised, outbox bos."""
+    from domains.ai.revenue_autopilot import RevenueAutopilot
+
+    monkeypatch.delenv("REVENUE_AUTOPILOT_EMISSION_ENABLED", raising=False)
+    monkeypatch.setenv("REVENUE_AUTOPILOT_PILOT_TENANTS", "t1")
+
+    db = _FakeDB()
+    await db.outbox_events.create_index([("idempotency_key", 1)], unique=True)
+    db.rooms.docs = [
+        {"tenant_id": "t1", "room_type": "Deluxe", "base_price": 200.0},
+    ]
+    ap = RevenueAutopilot(db)
+    ap.mode = "full_auto"
+    report = await ap.daily_optimization_cycle("t1")
+    assert len(db.outbox_events.docs) == 0
+    assert report["emission_gated"] is True
+    assert report["effective_mode"] == "supervised"
+    assert any(
+        a.get("status") == "emission_gated_fail_closed" for a in report["actions"]
+    )
+
+
+async def test_full_auto_gated_when_tenant_not_in_allowlist(monkeypatch):
+    """Kill-switch acik ama tenant pilot allowlist'te DEGIL -> emit YOK."""
+    from domains.ai.revenue_autopilot import RevenueAutopilot
+
+    monkeypatch.setenv("REVENUE_AUTOPILOT_EMISSION_ENABLED", "true")
+    monkeypatch.setenv("REVENUE_AUTOPILOT_PILOT_TENANTS", "some-other-tenant")
+
+    db = _FakeDB()
+    await db.outbox_events.create_index([("idempotency_key", 1)], unique=True)
+    db.rooms.docs = [
+        {"tenant_id": "t1", "room_type": "Deluxe", "base_price": 200.0},
+    ]
+    ap = RevenueAutopilot(db)
+    ap.mode = "full_auto"
+    report = await ap.daily_optimization_cycle("t1")
+    assert len(db.outbox_events.docs) == 0
+    assert report["emission_gated"] is True
+
+
+async def test_autopilot_emission_allowed_double_lock(monkeypatch):
+    """Cift kilit: ikisi birden saglanmadan asla True donmez (fail-closed)."""
+    from domains.ai.revenue_autopilot import autopilot_emission_allowed
+
+    monkeypatch.delenv("REVENUE_AUTOPILOT_EMISSION_ENABLED", raising=False)
+    monkeypatch.delenv("REVENUE_AUTOPILOT_PILOT_TENANTS", raising=False)
+    assert autopilot_emission_allowed("t1") is False  # ikisi de kapali
+
+    monkeypatch.setenv("REVENUE_AUTOPILOT_EMISSION_ENABLED", "true")
+    assert autopilot_emission_allowed("t1") is False  # allowlist bos
+
+    monkeypatch.setenv("REVENUE_AUTOPILOT_PILOT_TENANTS", "t1,t2")
+    assert autopilot_emission_allowed("t1") is True  # ikisi de acik
+    assert autopilot_emission_allowed("t3") is False  # allowlist disi
+    assert autopilot_emission_allowed("") is False  # bos tenant
+
+    monkeypatch.setenv("REVENUE_AUTOPILOT_EMISSION_ENABLED", "false")
+    assert autopilot_emission_allowed("t1") is False  # kill-switch kapali
 
 
 # ── 3. Dispatcher local-time atomic per-local-day claim ────────────────────

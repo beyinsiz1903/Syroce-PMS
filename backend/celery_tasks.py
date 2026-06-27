@@ -617,6 +617,8 @@ async def _revenue_autopilot_for_tenant_async(tenant_id: str) -> dict[str, Any]:
                 "last_auto_run_status": "completed",
                 "last_auto_run_completed_at": completed_iso,
                 "last_mode": mode,
+                "last_effective_mode": report.get("effective_mode") or mode,
+                "last_emission_gated": bool(report.get("emission_gated")),
                 "last_optimal_prices": optimal_prices,
                 "last_room_types_priced": len(optimal_prices),
                 "last_rate_events_emitted": int(report.get("rate_events_emitted") or 0),
