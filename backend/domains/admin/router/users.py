@@ -848,11 +848,20 @@ async def provision_user(
     # `uniq_users_hash_email`) yaris durumunda (eszamanli ayni-email istegi)
     # ikinciyi DuplicateKeyError ile reddeder; transaction abort olur ->
     # orphan kalmaz. Bunu 500 DEGIL, tertemiz 400'e ceviriyoruz.
+    async def _provision_txn(session):
+        await db.users.insert_one(user_doc, session=session)
+        await db.staff_members.insert_one(staff_doc, session=session)
+
     try:
         async with await db.client.start_session() as session:
-            async with session.start_transaction():
-                await db.users.insert_one(user_doc, session=session)
-                await db.staff_members.insert_one(staff_doc, session=session)
+            # with_transaction, TransientTransactionError etiketli hatalarda
+            # (ornegin WriteConflict / code 112 — eszamanli yazimlarda gorulur)
+            # ve UnknownTransactionCommitResult'ta transaction'i OTOMATIK yeniden
+            # dener (MongoDB'nin onerilen kalibi). Boylece gecici write-conflict
+            # 500 yerine sessizce tekrarlanip basarir. DuplicateKeyError (E11000)
+            # bu etiketi TASIMAZ -> yeniden denenmez, aninda yukari cikip 400'e
+            # maplenir; gercek mukerrer asla sonsuz dongu yapmaz.
+            await session.with_transaction(_provision_txn)
     except DuplicateKeyError:
         raise HTTPException(
             status_code=400, detail="Bu e-posta ile bir kullanici zaten var."
