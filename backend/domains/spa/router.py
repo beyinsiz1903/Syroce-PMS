@@ -575,7 +575,7 @@ async def _post_to_folio(tenant_id: str, appt: dict) -> None:
     """
     from pymongo.errors import DuplicateKeyError
 
-    from domains.pms.pos_extensions._idem import ensure_compound_unique
+    from shared_kernel.pos_idem import ensure_compound_unique
 
     db = get_system_db()
     await ensure_compound_unique(

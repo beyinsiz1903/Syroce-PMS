@@ -146,7 +146,12 @@ async def test_index_ensure_failure_is_fail_closed_503(_patch, monkeypatch):
     async def _boom(*_a, **_kw):
         raise RuntimeError("index perms lost")
 
-    monkeypatch.setattr(_idem, "ensure_idem_index", _boom)
+    # idempotent_insert, ensure_idem_index'i kendi home modülünün (shared_kernel.
+    # pos_idem) global ad alanından çözer; patch'i orada yapmazsak iç çağrı
+    # gerçek fonksiyonu kullanır.
+    from shared_kernel import pos_idem
+
+    monkeypatch.setattr(pos_idem, "ensure_idem_index", _boom)
     with pytest.raises(HTTPException) as exc:
         await mobile_pos.create_quick_order_mobile(
             request=_req([("m1", 1)], idem="K"), credentials=None, _perm=None

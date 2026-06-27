@@ -152,12 +152,12 @@ def _patch(monkeypatch):
 
     # ensure_compound_unique is imported lazily inside _post_to_folio; patch
     # it on its home module so both routers pick up the noop.
-    from domains.pms.pos_extensions import _idem
+    from shared_kernel import pos_idem
 
     async def _noop_ensure(*a, **k):
         return None
 
-    monkeypatch.setattr(_idem, "ensure_compound_unique", _noop_ensure)
+    monkeypatch.setattr(pos_idem, "ensure_compound_unique", _noop_ensure)
 
     # Stub the Xchange bus (lazily imported) so we can count publishes and
     # avoid real I/O.
