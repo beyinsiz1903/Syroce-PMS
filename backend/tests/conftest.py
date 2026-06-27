@@ -91,3 +91,49 @@ def event_loop():
 
     yield loop
     loop.close()
+
+
+# ── live_mongo no-false-green gate (Task #323) ───────────────────────────
+# Doctrine gereği `live_mongo` testleri gerçek MongoDB erişilemezse atlanır.
+# Bu, CI'da Mongo bağlanamazsa tüm canlı testlerin "skip" olup build'in yine
+# yeşil görünmesine (false-green) yol açar. REQUIRE_LIVE_MONGO=1 set edildiğinde
+# (CI'da adanmış adım), `live_mongo` testlerinden HERHANGİ biri atlanırsa veya
+# hiç koşmazsa oturum FAIL olur. Yerelde (env yoksa) skip serbesttir.
+_LIVE_MONGO_OUTCOMES = {"passed": 0, "failed": 0, "skipped": 0}
+
+
+def _require_live_mongo() -> bool:
+    return os.environ.get("REQUIRE_LIVE_MONGO", "").strip().lower() in ("1", "true", "yes")
+
+
+def pytest_runtest_logreport(report):
+    # Yalnız live_mongo marker'lı testleri say. Skip fixture/setup'ta olur
+    # (report.when == "setup"); pass/fail call fazında raporlanır.
+    if "live_mongo" not in getattr(report, "keywords", {}):
+        return
+    if report.skipped and report.when in ("setup", "call"):
+        _LIVE_MONGO_OUTCOMES["skipped"] += 1
+    elif report.when == "call":
+        if report.passed:
+            _LIVE_MONGO_OUTCOMES["passed"] += 1
+        elif report.failed:
+            _LIVE_MONGO_OUTCOMES["failed"] += 1
+
+
+def pytest_sessionfinish(session, exitstatus):
+    if not _require_live_mongo():
+        return
+    o = _LIVE_MONGO_OUTCOMES
+    ran = o["passed"] + o["failed"]
+    if o["skipped"] > 0 or ran == 0:
+        msg = (
+            f"REQUIRE_LIVE_MONGO set ama live_mongo testleri gerçekten koşmadı "
+            f"(passed={o['passed']} failed={o['failed']} skipped={o['skipped']}). "
+            f"Skip-as-pass reddedildi (false-green guard)."
+        )
+        reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+        if reporter is not None:
+            reporter.write_line("")
+            reporter.write_line(msg, red=True, bold=True)
+        # Oturumu kırmızıya çevir (exit kodu != 0).
+        session.exitstatus = 1

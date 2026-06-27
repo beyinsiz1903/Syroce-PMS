@@ -214,12 +214,33 @@ jobs:
           # default of :8000.
           VITE_BACKEND_URL: http://localhost:8001
 
+      # Task #323: live_mongo testleri gerçek MongoDB gerektirir; Mongo erişilemezse
+      # doctrine gereği atlanır. REQUIRE_LIVE_MONGO=1 ile bu adım, testler GERÇEKTEN
+      # koşmadıkça (hepsi skip / hiç koşmama) FAIL olur — skip-as-pass false-green
+      # engellenir. Mongo service zaten yukarıda ayağa kalkıyor, bu yüzden CI'da
+      # bu testlerin koşması beklenir.
+      - name: Run live Mongo feedback tests (no-false-green gate)
+        run: |
+          cd backend
+          python -m pytest \
+            tests/test_feedback_reporting_unified_live.py \
+            -m live_mongo --strict-markers -v --tb=short -q --timeout=60 \
+            --junitxml=test-results-live-mongo.xml
+        env:
+          MONGO_URL: ${{ env.MONGO_URL }}
+          DB_NAME: ${{ env.DB_NAME }}
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET: ${{ env.JWT_SECRET }}
+          REQUIRE_LIVE_MONGO: "1"
+
       - name: Upload test results
         uses: actions/upload-artifact@v5
         if: always()
         with:
           name: backend-test-results
-          path: backend/test-results.xml
+          path: |
+            backend/test-results.xml
+            backend/test-results-live-mongo.xml
 
   # ============ LOAD TESTS (HARD GATE) ============
   load-test:

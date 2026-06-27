@@ -34,7 +34,7 @@ from pymongo.errors import DuplicateKeyError
 from modules.guest_journey import feedback_reporting_service as fr
 import scripts.migrate_feedback_unified as mig
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.live_mongo]
 
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 

@@ -12,6 +12,7 @@ markers = [
     "chaos_tenant: Multi-tenant safety tests",
     "chaos_provider: Provider failure tests",
     "chaos_outbox: Outbox/worker resilience tests",
+    "live_mongo: Tests that require a reachable real MongoDB; when REQUIRE_LIVE_MONGO=1 these must actually run (no skip-as-pass)",
 ]
 
 [tool.ruff]
