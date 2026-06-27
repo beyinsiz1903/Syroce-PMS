@@ -72,6 +72,19 @@ TO_APPLY = [
      [("tenant_id", 1), ("outlet_id", 1), ("table_number", 1)],
      "idx_pos_txn_open_tab",
      {"partialFilterExpression": {"status": "open"}}),
+    # Task #315 — Otonom tahsilat exactly-once invariant index'leri. Adlar
+    # bootstrap/phases/perf_indexes.py ile BIREBIR ayni -> operator hemen
+    # uygularsa ve sonra boot calisirsa duplicate olusmaz (name drift yok).
+    # autonomous_collection_runs (tenant_id) unique: coklu-beat dispatch tek-
+    # kazanan CAS'inin dayanagi. autonomous_collection_jobs (tenant_id,
+    # booking_id, charge_kind) unique: kuyruk satir-tekligi. Bos koleksiyonlar
+    # estimated_document_count==0 ise Atlas 500 limiti icin atlanir; worker bir
+    # kez kostuktan sonra dolar ve apply onlari indeksler.
+    ("autonomous_collection_runs", [("tenant_id", 1)],
+     "autonomous_collection_runs_tenant_uq", {"unique": True}),
+    ("autonomous_collection_jobs",
+     [("tenant_id", 1), ("booking_id", 1), ("charge_kind", 1)],
+     "autocollect_jobs_uq", {"unique": True}),
 ]
 
 

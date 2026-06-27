@@ -6,6 +6,7 @@ import {
   POSDashboard, FeaturesShowcase, WebhookOutboxAdmin, EarlyWarningDashboard,
   ModuleDiscovery, IntegrationCredentials, IntegrationsOverview, CapXIntegration,
   RnlAutoResolveRuns, RnlDuplicates, SiteContentEditor, VoiceNumberMapping,
+  AutonomousCollectionJobs,
 } from "./lazyPages";
 
 export function securityAdminRoutes({ p, pa }) {
@@ -42,6 +43,7 @@ export function securityAdminRoutes({ p, pa }) {
     { path: "/admin/capx-integration", ...pa(CapXIntegration), wrapLayout: true, layoutModule: "capx-integration" },
     { path: "/admin/rnl-auto-resolve-runs", ...pa(RnlAutoResolveRuns), wrapLayout: true, layoutModule: "rnl-auto-resolve-runs" },
     { path: "/admin/rnl-duplicates", ...pa(RnlDuplicates), wrapLayout: true, layoutModule: "rnl-duplicates" },
+    { path: "/admin/autonomous-collection", ...pa(AutonomousCollectionJobs), wrapLayout: true, layoutModule: "autonomous-collection" },
     { path: "/admin/site-content", ...pa(SiteContentEditor), wrapLayout: true, layoutModule: "site-content" },
     { path: "/admin/cost", type: "redirect", to: "/app/raporlar?section=expenses" },
     { path: "/app/cost-management", type: "redirect", to: "/app/raporlar?section=expenses" },

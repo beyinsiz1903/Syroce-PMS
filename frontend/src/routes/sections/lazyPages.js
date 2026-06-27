@@ -119,6 +119,7 @@ export const ModuleReport = lazy(() => import("@/pages/ModuleReport"));
 export const UserRoleManager = lazy(() => import("@/pages/UserRoleManager"));
 export const RnlAutoResolveRuns = lazy(() => import("@/pages/admin/RnlAutoResolveRuns"));
 export const RnlDuplicates = lazy(() => import("@/pages/admin/RnlDuplicates"));
+export const AutonomousCollectionJobs = lazy(() => import("@/pages/admin/AutonomousCollectionJobs"));
 
 // AI / Guest
 export const AIModule = lazy(() => import("@/pages/AIModule"));

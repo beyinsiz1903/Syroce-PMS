@@ -266,6 +266,72 @@ async def list_rnl_auto_resolve_runs(
     return {"total": len(runs), "runs": runs}
 
 
+@router.get("/autonomous-collection-runs")
+async def list_autonomous_collection_runs(
+    limit: int = Query(200, ge=1, le=500),
+    current_user: User = Depends(require_super_admin),
+) -> dict[str, Any]:
+    """Per-tenant otonom tahsilat (no-show + VCC check-in) kosu ozetleri (Task #314).
+
+    `autonomous_collection_runs` her kiraci icin son dispatch/kosu durumunu ve
+    PII'siz sayaclari (scanned / charged / failed / requires_action /
+    not_configured) tutar. Bu gorunum operatorun beat dongusunun calistigini ve
+    gunluk tahsilat sonuclarini worker log'larini grep'lemeden dogrulamasini
+    saglar. Cross-tenant ops gorunumu oldugundan `super_admin` sarttir.
+    """
+    cursor = (
+        _raw_db["autonomous_collection_runs"]
+        .find({}, {"_id": 0})
+        .sort("last_auto_run", -1)
+        .limit(limit)
+    )
+    runs = await cursor.to_list(length=limit)
+    logger.info(
+        "db_admin.autonomous_collection_runs.list actor=%s returned=%d",
+        getattr(current_user, "id", "?"), len(runs),
+    )
+    return {"total": len(runs), "runs": runs}
+
+
+@router.get("/autonomous-collection-jobs")
+async def list_autonomous_collection_jobs(
+    limit: int = Query(200, ge=1, le=500),
+    status: str | None = Query(None),
+    unresolved_only: bool = Query(False),
+    current_user: User = Depends(require_super_admin),
+) -> dict[str, Any]:
+    """Otonom tahsilat is kuyrugu: basarisiz/bekleyen tahsilat denemeleri (Task #314).
+
+    `autonomous_collection_jobs` her (tenant, booking, kind) icin TEK satir tutar;
+    basarisizlik fail-closed kuyruga yazilir (sahte basari YOK). Doc'lar misafir
+    PII'si icermez (yalniz booking_id + tutar + para birimi + durum + hata kodu).
+    Operator kalan manuel aksiyonlari (declined / requires_action / abandoned /
+    not_configured) buradan takip eder. `status` ile tek duruma, `unresolved_only`
+    ile cozulmemis satirlara filtrelenebilir.
+    """
+    query: dict[str, Any] = {}
+    if status:
+        query["status"] = status
+    if unresolved_only:
+        query["resolved"] = {"$ne": True}
+    cursor = (
+        _raw_db["autonomous_collection_jobs"]
+        .find(query, {"_id": 0})
+        .sort("updated_at", -1)
+        .limit(limit)
+    )
+    jobs = await cursor.to_list(length=limit)
+    status_counts: dict[str, int] = {}
+    for j in jobs:
+        st = j.get("status") or "unknown"
+        status_counts[st] = status_counts.get(st, 0) + 1
+    logger.info(
+        "db_admin.autonomous_collection_jobs.list actor=%s returned=%d status=%s",
+        getattr(current_user, "id", "?"), len(jobs), status or "all",
+    )
+    return {"total": len(jobs), "jobs": jobs, "status_counts": status_counts}
+
+
 @router.get("/room-night-lock-duplicates/summary")
 async def rnl_duplicates_summary(
     current_user: User = Depends(require_super_admin),

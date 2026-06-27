@@ -111,6 +111,28 @@ async def ensure_performance_indexes():
          "idx_payment_intents_tenant_idem", {}),
         ("payment_intents", [("tenant_id", 1), ("status", 1), ("created_at", -1)],
          "idx_payment_intents_tenant_status", {}),
+        # Task #315 — Otonom tahsilat (no-show + VCC check-in) deploy-ani indeks
+        # garantisi. Bu IKI index bir optimizasyon DEGIL, exactly-once cekirdegin
+        # ZORUNLU invariant'i:
+        #   - autonomous_collection_runs (tenant_id) UNIQUE: coklu-beat yarisinda
+        #     gunluk dispatch'in per-tenant tek-kazanan CAS claim'i bu unique
+        #     constraint'e dayanir (yoksa iki state dokumani -> cift dispatch ->
+        #     cift-charge zinciri). Beat dispatcher ayrica bu index'i runtime'da
+        #     fail-closed olarak ensure eder; burada deploy/boot aninda garanti
+        #     altina alinir ki fail-closed yol kural degil ISTISNA olsun.
+        #   - autonomous_collection_jobs (tenant_id, booking_id, charge_kind)
+        #     UNIQUE: is kuyrugunun (tenant, booking, kind) basina TEK satir
+        #     invariant'i; upsert/$inc attempts bu eszamansiz-guvenli olur.
+        # Adlar celery_tasks.py (autonomous_collection_runs_tenant_uq) ve
+        # core/autonomous_collection.py (autocollect_jobs_uq) ile BIREBIR ayni —
+        # runtime ensure ile boot ensure ASLA duplicate index uretmez (name drift
+        # yok). scripts/index_apply.py'de de ayni adlarla yer alir (operator
+        # immediate apply, bos koleksiyonlari Atlas limiti icin atlar).
+        ("autonomous_collection_runs", [("tenant_id", 1)],
+         "autonomous_collection_runs_tenant_uq", {"unique": True}),
+        ("autonomous_collection_jobs",
+         [("tenant_id", 1), ("booking_id", 1), ("charge_kind", 1)],
+         "autocollect_jobs_uq", {"unique": True}),
         ("audit_exceptions", [("tenant_id", 1), ("created_at", -1)], "idx_audit_exc_tenant_created", {}),
         ("agencies", [("tenant_id", 1), ("status", 1)], "idx_agencies_tenant_status", {}),
         ("night_audit_logs", [("tenant_id", 1), ("business_date", -1)], "idx_night_audit_logs_tenant_date", {}),

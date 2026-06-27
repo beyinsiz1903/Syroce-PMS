@@ -22,6 +22,7 @@ import {
   ChevronRight,
   History,
   AlertTriangle,
+  Wallet,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 
@@ -73,6 +74,7 @@ const SECTIONS = [
       { to: '/admin/early-warning',          icon: Bell,           labelKey: 'adminHub.items.earlyWarning',         labelFallback: 'Erken Uyarı' },
       { to: '/admin/rnl-auto-resolve-runs',  icon: History,        labelKey: 'adminHub.items.rnlAutoResolveRuns',   labelFallback: 'RNL Otomatik Çözücü Geçmişi' },
       { to: '/admin/rnl-duplicates',         icon: AlertTriangle,  labelKey: 'adminHub.items.rnlDuplicates',        labelFallback: 'RNL Duplikat Grupları' },
+      { to: '/admin/autonomous-collection',  icon: Wallet,         labelKey: 'adminHub.items.autonomousCollection', labelFallback: 'Otonom Tahsilat Sonuçları' },
     ],
   },
   {
