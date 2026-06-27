@@ -21,11 +21,29 @@ DEFAULT_FROM = os.environ.get("RESEND_FROM", "Syroce <onboarding@resend.dev>")
 # typo in the email column.
 _EMAIL_RE = re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+$")
 
+# Resend (and SES) accept the ``from`` header in two forms only:
+#   * a bare address      ->  "noreply@hotel.com"
+#   * a display-name form ->  "Syroce <noreply@hotel.com>"
+# Anything else (a bare name, an empty value, a malformed address) is rejected
+# by Resend with a HARD "Invalid `from` field" validation error that Sentry then
+# surfaces as a high-priority alert. We pre-flight the sender with the SAME
+# intent as the recipient guard so a misconfigured RESEND_FROM (or a bad caller
+# from_addr) is logged + skipped locally instead of paging on every send.
+_FROM_NAMED_RE = re.compile(r"^[^<>]+<\s*[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+\s*>$")
+
 
 def _is_valid_email(addr: str | None) -> bool:
     if not addr or not isinstance(addr, str):
         return False
     return bool(_EMAIL_RE.match(addr.strip()))
+
+
+def _is_valid_sender(sender: str | None) -> bool:
+    """Validate a ``from``/sender value as a bare address or ``Name <addr>``."""
+    if not sender or not isinstance(sender, str):
+        return False
+    s = sender.strip()
+    return bool(_EMAIL_RE.match(s) or _FROM_NAMED_RE.match(s))
 
 
 def _provider() -> str:
@@ -105,6 +123,19 @@ async def send_email(
     if not _is_valid_email(to):
         logger.warning("[email] skipping send — invalid recipient %r (subject=%r)", to, subject)
         return {"sent": False, "provider": "skipped", "error": "invalid_recipient"}
+
+    # Pre-flight the sender too: a malformed RESEND_FROM (or caller from_addr)
+    # otherwise reaches Resend as a hard "Invalid `from` field" validation error
+    # that pages Sentry on EVERY send. We log at WARNING (not ERROR) so the
+    # actionable config-fix signal stays in the console without paging — the
+    # value must be "email@domain" or "Name <email@domain>".
+    if not _is_valid_sender(sender):
+        logger.warning(
+            "[email] skipping send — invalid sender %r; set RESEND_FROM to "
+            "'email@domain' or 'Name <email@domain>' (subject=%r)",
+            sender, subject,
+        )
+        return {"sent": False, "provider": "skipped", "error": "invalid_sender"}
 
     if _provider() == "ses":
         return await _send_via_ses(to=to, subject=subject, html=html, text=text,

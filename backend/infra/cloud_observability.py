@@ -155,7 +155,9 @@ def get_sentry_filter_stats() -> dict[str, int]:
         "restart_bind_drops": _RESTART_BIND_DROP_COUNT,
         "nonprod_transient_db_drops": _TRANSIENT_DB_NONPROD_DROP_COUNT,
         "graphql_introspection_denied_drops": _GRAPHQL_INTROSPECTION_DENIED_DROP_COUNT,
+        "graphql_field_validation_drops": _GRAPHQL_FIELD_VALIDATION_DROP_COUNT,
         "hotelrunner_pull_rate_limit_drops": _HOTELRUNNER_PULL_RATE_LIMIT_DROP_COUNT,
+        "hotelrunner_obs_rate_limit_drops": _HOTELRUNNER_OBS_RATE_LIMIT_DROP_COUNT,
         "static_client_disconnect_drops": _STATIC_CLIENT_DISCONNECT_DROP_COUNT,
         "asgi_incomplete_response_drops": _ASGI_INCOMPLETE_RESPONSE_DROP_COUNT,
     }
@@ -254,6 +256,47 @@ def _is_graphql_introspection_denied(event: dict) -> bool:
         return False
 
 
+# ── GraphQL field-validation (bad client query) noise ──────────────
+# Counter for filtered GraphQL field-validation events. Exposed via
+# ``get_sentry_filter_stats()`` so ops can confirm the noise is gone.
+_GRAPHQL_FIELD_VALIDATION_DROP_COUNT = 0
+
+# graphql-core emits this EXACT template when a client query references a field
+# that does not exist on the queried type:
+#   "Cannot query field '<field>' on type '<Type>'."
+# Strawberry logs that validation error at ERROR on the ``strawberry.execution``
+# logger, so the default Sentry logging integration turns every malformed client
+# query into a paging event. This is a CLIENT input error (a stale frontend, a
+# scanner, or a bad integration), not a server fault — it must never page in ANY
+# environment. We anchor on the FULL graphql-core template so a genuine error
+# that merely mentions a field name is never dropped.
+_GRAPHQL_FIELD_VALIDATION_RE = re.compile(
+    r"Cannot query field '[^']*' on type '[^']*'\."
+)
+
+
+def _is_graphql_field_validation_error(event: dict) -> bool:
+    """Drop predicate for the EXPECTED GraphQL bad-field client query error."""
+    try:
+        le = event.get("logentry") or {}
+        ev_msg = event.get("message")
+        candidates = [
+            le.get("message"),
+            le.get("formatted"),
+            ev_msg if isinstance(ev_msg, str) else None,
+        ]
+        exc = event.get("exception") or {}
+        for val in (exc.get("values") or []):
+            if isinstance(val, dict):
+                candidates.append(val.get("value"))
+        return any(
+            isinstance(c, str) and _GRAPHQL_FIELD_VALIDATION_RE.search(c)
+            for c in candidates
+        )
+    except Exception:
+        return False
+
+
 # ── HotelRunner PULL rate-limit (429) noise ────────────────────────
 # Counter for filtered HotelRunner PULL 429 events. Exposed via
 # ``get_sentry_filter_stats()`` so ops can confirm the noise is gone.
@@ -290,6 +333,50 @@ def _is_hotelrunner_pull_rate_limited(event: dict) -> bool:
                 candidates.append(val.get("value"))
         return any(
             isinstance(c, str) and _HOTELRUNNER_PULL_RATE_LIMIT_RE.search(c)
+            for c in candidates
+        )
+    except Exception:
+        return False
+
+
+# ── HotelRunner provider-observability rate-limit (429) noise ──────
+# Counter for filtered HotelRunner [HR-OBS] 429 events. Exposed via
+# ``get_sentry_filter_stats()`` so ops can confirm the noise is gone.
+_HOTELRUNNER_OBS_RATE_LIMIT_DROP_COUNT = 0
+
+# The provider observability layer logs an ERROR for EVERY failed provider call
+# via the template ``"[HR-OBS] FAILURE <ErrorType>: <msg> (conn=.. path=..)"``.
+# When that failure is a 429 (HotelRunner throttling OUR push), the queue worker
+# has ALREADY caught it, set a cooldown, and scheduled an auto-retry — it is
+# expected operational backpressure, not a server fault. This is the PUSH-side
+# sibling of the PULL 429 noise above (different log template), so it gets the
+# same treatment: drop ONLY the 429 variant in Sentry while every other
+# [HR-OBS] FAILURE (auth / payload / parse / mapping) still pages, and the source
+# ERROR stays visible in the workflow console. We require BOTH the
+# HotelRunnerRateLimitError type AND the literal ``(429)`` status the client
+# embeds in the message, so the predicate is anchored to the real 429 path and
+# cannot swallow a same-typed error that lacks the status token.
+_HOTELRUNNER_OBS_RATE_LIMIT_RE = re.compile(
+    r"\[HR-OBS\] FAILURE HotelRunnerRateLimitError:.*Rate limit exceeded \(429\)"
+)
+
+
+def _is_hotelrunner_obs_rate_limited(event: dict) -> bool:
+    """Drop predicate for the EXPECTED HotelRunner [HR-OBS] PUSH 429 backpressure."""
+    try:
+        le = event.get("logentry") or {}
+        ev_msg = event.get("message")
+        candidates = [
+            le.get("message"),
+            le.get("formatted"),
+            ev_msg if isinstance(ev_msg, str) else None,
+        ]
+        exc = event.get("exception") or {}
+        for val in (exc.get("values") or []):
+            if isinstance(val, dict):
+                candidates.append(val.get("value"))
+        return any(
+            isinstance(c, str) and _HOTELRUNNER_OBS_RATE_LIMIT_RE.search(c)
             for c in candidates
         )
     except Exception:
@@ -461,7 +548,9 @@ def _sentry_before_send(event: dict, hint: dict) -> dict | None:
     """
     global _RESTART_BIND_DROP_COUNT, _TRANSIENT_DB_NONPROD_DROP_COUNT
     global _GRAPHQL_INTROSPECTION_DENIED_DROP_COUNT
+    global _GRAPHQL_FIELD_VALIDATION_DROP_COUNT
     global _HOTELRUNNER_PULL_RATE_LIMIT_DROP_COUNT
+    global _HOTELRUNNER_OBS_RATE_LIMIT_DROP_COUNT
     global _STATIC_CLIENT_DISCONNECT_DROP_COUNT
     global _ASGI_INCOMPLETE_RESPONSE_DROP_COUNT
     try:
@@ -475,11 +564,31 @@ def _sentry_before_send(event: dict, hint: dict) -> dict | None:
     except Exception:
         pass
     try:
+        if _is_graphql_field_validation_error(event):
+            _GRAPHQL_FIELD_VALIDATION_DROP_COUNT += 1
+            logger.info(
+                "sentry before_send dropped expected graphql field-validation client error "
+                f"(cumulative={_GRAPHQL_FIELD_VALIDATION_DROP_COUNT})"
+            )
+            return None
+    except Exception:
+        pass
+    try:
         if _is_hotelrunner_pull_rate_limited(event):
             _HOTELRUNNER_PULL_RATE_LIMIT_DROP_COUNT += 1
             logger.info(
                 "sentry before_send dropped expected hotelrunner PULL 429 backpressure "
                 f"(cumulative={_HOTELRUNNER_PULL_RATE_LIMIT_DROP_COUNT})"
+            )
+            return None
+    except Exception:
+        pass
+    try:
+        if _is_hotelrunner_obs_rate_limited(event):
+            _HOTELRUNNER_OBS_RATE_LIMIT_DROP_COUNT += 1
+            logger.info(
+                "sentry before_send dropped expected hotelrunner [HR-OBS] 429 backpressure "
+                f"(cumulative={_HOTELRUNNER_OBS_RATE_LIMIT_DROP_COUNT})"
             )
             return None
     except Exception:

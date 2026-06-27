@@ -20,7 +20,9 @@ import pytest
 from infra import cloud_observability as obs
 from infra.cloud_observability import (
     _is_asgi_incomplete_response_noise,
+    _is_graphql_field_validation_error,
     _is_graphql_introspection_denied,
+    _is_hotelrunner_obs_rate_limited,
     _is_hotelrunner_pull_rate_limited,
     _is_nonprod_sustained_transient_db,
     _is_static_client_disconnect,
@@ -307,6 +309,124 @@ class TestHotelRunnerPullRateLimit:
             {"logentry": {"message": self._PULL_429}}, {}
         ) is None
         after = get_sentry_filter_stats()["hotelrunner_pull_rate_limit_drops"]
+        assert after == before + 1
+
+
+class TestHotelRunnerObsRateLimit:
+    """The provider observability layer logs ``[HR-OBS] FAILURE`` at ERROR for
+    every failed provider call. A 429 (HotelRunner throttling our PUSH, already
+    caught + cooldown + auto-retry by the queue worker) is expected backpressure,
+    not a server fault — it must not page. Non-429 [HR-OBS] FAILUREs still page."""
+
+    _OBS_429 = (
+        "[HR-OBS] FAILURE HotelRunnerRateLimitError: Rate limit exceeded (429) "
+        "[99ab143f-f9d] (conn=hr-conn-1 path=/api/rooms)"
+    )
+
+    def test_detected_from_logentry(self):
+        assert _is_hotelrunner_obs_rate_limited(
+            {"logentry": {"message": self._OBS_429}}
+        ) is True
+
+    def test_detected_from_exception_value(self):
+        assert _is_hotelrunner_obs_rate_limited(
+            {"exception": {"values": [{"value": self._OBS_429}]}}
+        ) is True
+
+    def test_logger_prefixed_still_detected(self):
+        prefixed = "hotelrunner.observability ERROR " + self._OBS_429
+        assert _is_hotelrunner_obs_rate_limited(
+            {"logentry": {"formatted": prefixed}}
+        ) is True
+
+    def test_non_429_obs_failure_passes_through(self):
+        """A real [HR-OBS] failure (auth / payload / parse) must still page."""
+        msg = (
+            "[HR-OBS] FAILURE HotelRunnerAuthError: Invalid credentials (401) "
+            "[corr] (conn=hr-conn-1 path=/api/rooms)"
+        )
+        assert _is_hotelrunner_obs_rate_limited(
+            {"logentry": {"message": msg}}
+        ) is False
+
+    def test_429_outside_obs_context_passes_through(self):
+        """A 429 that is NOT the [HR-OBS] template must still page."""
+        msg = "some worker: Rate limit exceeded (429) [corr]"
+        assert _is_hotelrunner_obs_rate_limited(
+            {"logentry": {"message": msg}}
+        ) is False
+
+    def test_same_type_without_429_token_passes_through(self):
+        """A HotelRunnerRateLimitError [HR-OBS] FAILURE WITHOUT the literal
+        ``(429)`` status token is not the known backpressure path and must still
+        page — the predicate is anchored to BOTH the type AND the (429) token."""
+        msg = (
+            "[HR-OBS] FAILURE HotelRunnerRateLimitError: Rate limit exceeded "
+            "[corr] (conn=hr-conn-1 path=/api/rooms)"
+        )
+        assert _is_hotelrunner_obs_rate_limited(
+            {"logentry": {"message": msg}}
+        ) is False
+
+    def test_empty_event_safe(self):
+        assert _is_hotelrunner_obs_rate_limited({}) is False
+
+    def test_before_send_drops_and_counts(self):
+        before = get_sentry_filter_stats()["hotelrunner_obs_rate_limit_drops"]
+        assert _sentry_before_send(
+            {"logentry": {"message": self._OBS_429}}, {}
+        ) is None
+        after = get_sentry_filter_stats()["hotelrunner_obs_rate_limit_drops"]
+        assert after == before + 1
+
+
+class TestGraphQLFieldValidation:
+    """graphql-core rejects a query referencing a non-existent field with
+    ``Cannot query field '<f>' on type '<T>'.``, logged at ERROR by Strawberry.
+    This is a CLIENT input error (stale frontend / scanner / bad integration),
+    not a server fault — it must be dropped in every environment, while genuine
+    server-side GraphQL errors keep flowing."""
+
+    _BAD_FIELD = "Cannot query field 'reports' on type 'Query'."
+
+    def test_detected_from_logentry(self):
+        assert _is_graphql_field_validation_error(
+            {"logentry": {"message": self._BAD_FIELD}}
+        ) is True
+
+    def test_detected_from_exception_value(self):
+        assert _is_graphql_field_validation_error(
+            {"exception": {"values": [{"value": self._BAD_FIELD}]}}
+        ) is True
+
+    def test_logger_prefixed_still_detected(self):
+        prefixed = "strawberry.execution ERROR " + self._BAD_FIELD
+        assert _is_graphql_field_validation_error(
+            {"logentry": {"formatted": prefixed}}
+        ) is True
+
+    def test_detected_for_other_fields_and_types(self):
+        for field, typ in (("foo", "Mutation"), ("bar", "Booking")):
+            msg = f"Cannot query field '{field}' on type '{typ}'."
+            assert _is_graphql_field_validation_error(
+                {"logentry": {"message": msg}}
+            ) is True
+
+    def test_unrelated_graphql_error_passes_through(self):
+        assert _is_graphql_field_validation_error(
+            {"logentry": {"message": "GraphQLError: tenant_id resolver failed"}}
+        ) is False
+
+    def test_empty_event_safe(self):
+        assert _is_graphql_field_validation_error({}) is False
+
+    def test_before_send_drops_in_any_env_and_counts(self, monkeypatch):
+        monkeypatch.setenv("SENTRY_ENVIRONMENT", "production")
+        before = get_sentry_filter_stats()["graphql_field_validation_drops"]
+        assert _sentry_before_send(
+            {"logentry": {"message": self._BAD_FIELD}}, {}
+        ) is None
+        after = get_sentry_filter_stats()["graphql_field_validation_drops"]
         assert after == before + 1
 
 
