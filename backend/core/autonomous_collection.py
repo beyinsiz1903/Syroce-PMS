@@ -117,6 +117,29 @@ async def _ensure_indexes(db) -> None:
 # ─────────────────────────── candidate selection ───────────────────────────
 
 
+async def _posted_no_show_fee(db, tenant_id: str, folio_id: str, booking_id: str) -> float:
+    """Folyoya GERCEKTEN islenmis, void edilmemis no-show ucretinin toplami.
+
+    Night-audit no_show_fee'yi ``folio_charges`` (charge_category=no_show_fee)
+    olarak isler; void edilen ucret ``voided=True`` olur. Bu toplam, otonom
+    tahsilatin POLITIKA ucretine degil islenmis alacaga baglanmasini saglar.
+    """
+    total = 0.0
+    cur = db.folio_charges.find(
+        {
+            "tenant_id": tenant_id,
+            "folio_id": folio_id,
+            "booking_id": booking_id,
+            "charge_category": "no_show_fee",
+            "voided": {"$ne": True},
+        },
+        {"_id": 0, "amount": 1, "total": 1},
+    )
+    async for ch in cur:
+        total += float(ch.get("total") or ch.get("amount") or 0)
+    return total
+
+
 async def _build_candidate(db, tenant_id: str, booking: dict, kind: str) -> dict | None:
     booking_id = booking["id"]
     card = await db.vcc_cards.find_one(
@@ -143,19 +166,21 @@ async def _build_candidate(db, tenant_id: str, booking: dict, kind: str) -> dict
         if amount_minor <= 0:
             return None
     else:  # no_show
-        no_show_fee = (booking.get("cancellation_policy") or {}).get("no_show_fee", 0)
-        amount_minor = _to_minor(no_show_fee)
-        if amount_minor <= 0:
-            return None
+        # Otonom no-show tahsilati POLITIKA ucretine DEGIL, gercek acik borca
+        # baglanir: tahsil edilecek tutar = min(folyoya islenmis no-show ucreti,
+        # acik folyo bakiyesi). Boylece operatorun manuel tahsilati, kismi
+        # odeme, indirim veya ucretin void edilmesi sonrasi otonom worker ASLA
+        # cift-charge etmez (cross-path duplicate guard: acik bakiye tek dogruluk
+        # kaynagidir, sadece collection_kind intent marker'i degil).
         if not folio:
-            # Acik folyo yoksa borc folyosu kapanmis olabilir; kaydi yine de bagli
-            # tutmak icin herhangi bir guest folyosunu kullan; o da yoksa skip.
-            folio = await db.folios.find_one(
-                {"tenant_id": tenant_id, "booking_id": booking_id, "folio_type": "guest"},
-                {"_id": 0},
-            )
-            if not folio:
-                return None
+            return None  # acik guest folyo yok -> tahsil edilecek acik borc yok
+        posted_fee = await _posted_no_show_fee(db, tenant_id, folio["id"], booking_id)
+        if posted_fee <= 0:
+            return None  # night-audit ucreti islememis ya da void edilmis -> skip
+        outstanding = folio.get("balance", 0) or 0
+        amount_minor = _to_minor(min(posted_fee, outstanding))
+        if amount_minor <= 0:
+            return None  # borc zaten kapatilmis (manuel tahsilat / indirim) -> skip
 
     currency = (
         booking.get("currency")

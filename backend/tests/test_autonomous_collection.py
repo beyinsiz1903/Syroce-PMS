@@ -273,19 +273,33 @@ def _seed_vcc_checkin(db, *, tenant=TENANT, booking_id="bk-vcc", balance=150.0):
     })
 
 
-def _seed_no_show(db, *, tenant=TENANT, booking_id="bk-ns", fee=200.0):
+def _seed_no_show(
+    db, *, tenant=TENANT, booking_id="bk-ns", fee=200.0,
+    balance=None, fee_voided=False, post_fee_charge=True,
+):
+    if balance is None:
+        balance = fee
+    folio_id = f"folio-{booking_id}"
     db.bookings.docs.append({
         "id": booking_id, "tenant_id": tenant, "check_in": BUSINESS_DATE,
         "status": "no_show", "currency": "TRY", "paid_amount": 0.0,
         "cancellation_policy": {"no_show_fee": fee},
     })
     db.vcc_cards.docs.append({
-        "id": "card-ns", "tenant_id": tenant, "booking_id": booking_id,
+        "id": f"card-{booking_id}", "tenant_id": tenant, "booking_id": booking_id,
     })
     db.folios.docs.append({
-        "id": "folio-ns", "tenant_id": tenant, "booking_id": booking_id,
-        "folio_type": "guest", "status": "open", "balance": fee, "currency": "TRY",
+        "id": folio_id, "tenant_id": tenant, "booking_id": booking_id,
+        "folio_type": "guest", "status": "open", "balance": balance, "currency": "TRY",
     })
+    # Night-audit no_show_fee'yi folio_charges'a (charge_category=no_show_fee) isler.
+    if post_fee_charge:
+        db.folio_charges.docs.append({
+            "id": f"fc-{booking_id}", "tenant_id": tenant, "folio_id": folio_id,
+            "booking_id": booking_id, "charge_category": "no_show_fee",
+            "charge_type": "no_show_fee", "amount": fee, "total": fee,
+            "voided": fee_voided,
+        })
 
 
 def _run(db, provider, *, tenant=TENANT):
@@ -341,6 +355,53 @@ def test_no_show_penalty_charged():
     assert bk.get("autocollect_no_show_done") is True
     assert db.payments.docs[0]["amount"] == 200.0
     assert db.payments.docs[0]["payment_type"] == "final"
+
+
+def test_no_show_already_manually_paid_skipped():
+    # Operator no-show ucretini worker'dan once manuel tahsil etti -> acik bakiye 0.
+    db = _DB()
+    _seed_no_show(db, fee=200.0, balance=0.0)
+    provider = _Provider(behavior="ok")
+
+    summary = _run(db, provider)
+
+    assert summary["scanned"] == 0 and summary["charged"] == 0
+    assert provider.charge_calls == 0, "manuel tahsilat sonrasi cift-charge OLMAMALI"
+    assert len(db.payments.docs) == 0
+
+
+def test_no_show_partial_outstanding_charges_remainder():
+    # Kismi manuel tahsilat: fee 200, acik bakiye 50 -> yalnizca 50 tahsil edilir.
+    db = _DB()
+    _seed_no_show(db, fee=200.0, balance=50.0)
+    provider = _Provider(behavior="ok")
+
+    summary = _run(db, provider)
+
+    assert summary["charged"] == 1 and provider.charge_calls == 1
+    assert db.payments.docs[0]["amount"] == 50.0
+
+
+def test_no_show_fee_voided_skipped():
+    # Ucret void edildi (indirim) -> islenmis no-show alacagi 0 -> tahsil edilmez.
+    db = _DB()
+    _seed_no_show(db, fee=200.0, balance=200.0, fee_voided=True)
+    provider = _Provider(behavior="ok")
+
+    summary = _run(db, provider)
+
+    assert summary["scanned"] == 0 and provider.charge_calls == 0
+
+
+def test_no_show_fee_not_posted_skipped():
+    # Night-audit ucreti henuz folyoya islememis -> otonom tahsilat yapilmaz.
+    db = _DB()
+    _seed_no_show(db, fee=200.0, balance=200.0, post_fee_charge=False)
+    provider = _Provider(behavior="ok")
+
+    summary = _run(db, provider)
+
+    assert summary["scanned"] == 0 and provider.charge_calls == 0
 
 
 def test_double_scan_charges_once():
