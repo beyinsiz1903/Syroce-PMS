@@ -28,6 +28,7 @@ from models.schemas import (
     SubmitSurveyResponseRequest,
     User,
 )
+from modules.guest_journey import feedback_reporting_service as feedback_report
 from modules.guest_journey.review_invite_service import (
     check_invite_expiry_or_raise as _check_invite_expiry_or_raise,
     ensure_review_invite_indexes as _ensure_review_invite_indexes,
@@ -554,6 +555,13 @@ async def submit_survey_response(
             detail="Bu rezervasyon için bugün zaten bir anket yanıtı gönderilmiş.",
         ) from exc
 
+    # Kanonik modele dual-write (idempotent, en-iyi-çaba). NPS-uygun DEĞİL
+    # (nps_eligible=False) → NPS skorunu değiştirmez, yalnız birleşik modelde
+    # temsil edilir.
+    await feedback_report.dualwrite_canonical(
+        feedback_report.SOURCE_SURVEY_RESPONSE, response
+    )
+
     return {'message': 'Survey response submitted successfully', 'response_id': response['id']}
 # ── GET /feedback/surveys/{survey_id}/responses ──
 @router.get("/feedback/surveys/{survey_id}/responses")
@@ -949,6 +957,13 @@ async def submit_review_public(token: str, payload: dict, request: Request = Non
             "submitted_at": datetime.now(UTC).isoformat(),
             "review_id": review["id"],
         }},
+    )
+
+    # Kanonik modele dual-write (idempotent, en-iyi-çaba). 1-5 yıldız yorum
+    # NPS-uygun DEĞİL → NPS skorunu değiştirmez, yalnız birleşik modelde
+    # temsil edilir.
+    await feedback_report.dualwrite_canonical(
+        feedback_report.SOURCE_GUEST_REVIEW, review
     )
 
     return {"success": True, "review_id": review["id"]}

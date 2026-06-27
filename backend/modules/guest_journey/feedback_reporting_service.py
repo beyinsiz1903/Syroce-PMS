@@ -25,10 +25,14 @@ işaretlenmesidir.
 """
 from __future__ import annotations
 
+import logging
+import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from core.database import db
+
+logger = logging.getLogger(__name__)
 
 # ── Kaynak (source) etiketleri ──────────────────────────────────
 SOURCE_NPS_SURVEY = "nps_survey"
@@ -49,6 +53,33 @@ SOURCE_COLLECTIONS: dict[str, str] = {
 NPS_ELIGIBLE_SOURCES = (SOURCE_NPS_SURVEY,)
 
 MAX_DAYS = 730
+
+# Kanonik (birleşik) koleksiyon — tek doğruluk kaynağının fiziksel hedefi.
+UNIFIED_COLLECTION = "feedback_entries"
+
+# ── Fiziksel cutover feature-flag'i (fail-closed) ───────────────
+# Açıkça ``true`` verilmedikçe canlı ``/nps/*`` uçları AUTHORITATIVE
+# ``nps_surveys``'ten okur (sıfır-değişim, maksimum uyumluluk). Flag ``true``
+# olduğunda okuma yolu kanonik ``feedback_entries``'e geçer (``nps_eligible``
+# filtresiyle) — çıktı legacy ile birebir kalır.
+UNIFIED_READ_ENV = "FEEDBACK_UNIFIED_READ_ENABLED"
+
+
+def unified_read_enabled() -> bool:
+    """Okuma yolu kanonik modele geçmiş mi? Fail-closed: default ``false``.
+
+    Cutover yalnız operatör backfill (``migrate_feedback_unified --apply``)
+    sonrası ve parity yeşilken açılmalıdır. Açık değilse legacy davranış
+    (``nps_surveys``'ten okuma) korunur."""
+    return os.environ.get(UNIFIED_READ_ENV, "false").strip().lower() == "true"
+
+
+def dedup_key(tenant_id: str, source: str, source_id: str | None) -> str:
+    """Kanonik idempotency anahtarı (migration ile birebir aynı format).
+
+    ``feedback_entries`` üzerinde unique olan bu anahtar, dual-write ile
+    backfill migration'ın aynı kaydı çift yazmasını engeller."""
+    return f"{tenant_id}|{source}|{source_id}"
 
 
 # ── Ortak yardımcılar (legacy ile birebir kural) ────────────────
@@ -107,6 +138,7 @@ def normalize_nps_survey(doc: dict[str, Any]) -> dict[str, Any]:
         "comment": doc.get("feedback"),
         "channel": doc.get("source"),  # manual | email | qr | api
         "recorded_by": doc.get("recorded_by"),
+        "recorded_by_id": doc.get("recorded_by_id"),
         "responded_at": doc.get("responded_at"),
     }
 
@@ -173,21 +205,34 @@ def normalize(source: str, doc: dict[str, Any]) -> dict[str, Any]:
     return fn(doc)
 
 
-# ── Raporlama (legacy /nps/* uçlarının ince adaptör hedefi) ──────
-# Bu fonksiyonlar legacy uçlarla BİREBİR aynı yanıt biçimini üretir ve YALNIZ
-# NPS-uygun kaynaktan (nps_surveys) okur → paneldeki/mobildeki sayı değişmez,
-# çift sayım olmaz.
+# ── Kanonik → legacy biçim eşlemesi ─────────────────────────────
+# Birleşik okuma açıkken ``recent_feedback`` kanonik kaydı legacy
+# ``nps_surveys`` doküman biçimine geri çevirir (çıktı birebir kalsın).
 
-async def compute_nps_score(tenant_id: str, days: int = 30) -> dict[str, Any]:
-    """NPS skoru — legacy ``GET /nps/score`` ile birebir aynı çıktı."""
-    days = bounded_days(days)
-    start = _start_iso(days)
+def _canonical_to_legacy_nps(c: dict[str, Any]) -> dict[str, Any]:
+    """Kanonik ``feedback_entries`` kaydını legacy ``nps_surveys`` biçimine çevir.
 
-    surveys = await db.nps_surveys.find(
-        {"tenant_id": tenant_id, "responded_at": {"$gte": start}},
-        {"_id": 0, "category": 1},
-    ).to_list(5000)
+    POST ``/nps/survey``'in yazdığı alan kümesiyle birebir aynı doküman üretir;
+    böylece okuma kaynağı kanonik modele taşınsa da yanıt biçimi DEĞİŞMEZ."""
+    return {
+        "id": c.get("source_id"),
+        "tenant_id": c.get("tenant_id"),
+        "guest_id": c.get("guest_id"),
+        "booking_id": c.get("booking_id"),
+        "room_number": c.get("room_number"),
+        "guest_name": c.get("guest_name"),
+        "nps_score": c.get("nps_score"),
+        "category": c.get("category"),
+        "feedback": c.get("comment"),
+        "source": c.get("channel"),
+        "recorded_by": c.get("recorded_by"),
+        "recorded_by_id": c.get("recorded_by_id"),
+        "responded_at": c.get("responded_at"),
+    }
 
+
+def _score_from_categories(surveys: list[dict[str, Any]], days: int) -> dict[str, Any]:
+    """Kategori listesinden NPS skoru — legacy formülüyle birebir."""
     if not surveys:
         return {
             "nps_score": 0,
@@ -215,6 +260,35 @@ async def compute_nps_score(tenant_id: str, days: int = 30) -> dict[str, Any]:
     }
 
 
+# ── Raporlama (legacy /nps/* uçlarının ince adaptör hedefi) ──────
+# Bu fonksiyonlar legacy uçlarla BİREBİR aynı yanıt biçimini üretir ve YALNIZ
+# NPS-uygun kaynaktan okur → paneldeki/mobildeki sayı değişmez, çift sayım
+# olmaz. Okuma kaynağı feature-flag'e bağlıdır: flag KAPALI iken authoritative
+# ``nps_surveys``; AÇIK iken kanonik ``feedback_entries`` (nps_eligible).
+
+async def compute_nps_score(tenant_id: str, days: int = 30) -> dict[str, Any]:
+    """NPS skoru — legacy ``GET /nps/score`` ile birebir aynı çıktı."""
+    days = bounded_days(days)
+    start = _start_iso(days)
+
+    if unified_read_enabled():
+        query = {
+            "tenant_id": tenant_id,
+            "nps_eligible": True,
+            "responded_at": {"$gte": start},
+        }
+        surveys = await db.feedback_entries.find(
+            query, {"_id": 0, "category": 1}
+        ).to_list(5000)
+    else:
+        query = {"tenant_id": tenant_id, "responded_at": {"$gte": start}}
+        surveys = await db.nps_surveys.find(
+            query, {"_id": 0, "category": 1}
+        ).to_list(5000)
+
+    return _score_from_categories(surveys, days)
+
+
 async def recent_feedback(
     tenant_id: str,
     days: int = 30,
@@ -236,26 +310,37 @@ async def recent_feedback(
     if room_number:
         query["room_number"] = room_number
 
-    cursor = (
-        db.nps_surveys.find(query, {"_id": 0})
-        .sort("responded_at", -1)
-        .limit(min(limit, 200))
-    )
-    items = await cursor.to_list(min(limit, 200))
+    if unified_read_enabled():
+        query["nps_eligible"] = True
+        cursor = (
+            db.feedback_entries.find(query, {"_id": 0})
+            .sort("responded_at", -1)
+            .limit(min(limit, 200))
+        )
+        rows = await cursor.to_list(min(limit, 200))
+        # Kanonik kaydı legacy biçime çevir → yanıt birebir kalır.
+        items = [_canonical_to_legacy_nps(r) for r in rows]
+    else:
+        cursor = (
+            db.nps_surveys.find(query, {"_id": 0})
+            .sort("responded_at", -1)
+            .limit(min(limit, 200))
+        )
+        items = await cursor.to_list(min(limit, 200))
+
     return {"items": items, "count": len(items)}
 
 
-async def by_room(tenant_id: str, days: int = 30) -> dict[str, Any]:
-    """Oda bazlı ortalama puan — legacy ``GET /nps/by-room`` ile birebir aynı."""
-    days = bounded_days(days)
-    start = _start_iso(days)
-
-    pipeline = [
-        {"$match": {
-            "tenant_id": tenant_id,
-            "responded_at": {"$gte": start},
-            "room_number": {"$nin": [None, ""]},
-        }},
+def _by_room_pipeline(tenant_id: str, start: str, eligible: bool) -> list[dict[str, Any]]:
+    match: dict[str, Any] = {
+        "tenant_id": tenant_id,
+        "responded_at": {"$gte": start},
+        "room_number": {"$nin": [None, ""]},
+    }
+    if eligible:
+        match["nps_eligible"] = True
+    return [
+        {"$match": match},
         {"$group": {
             "_id": "$room_number",
             "avg_score": {"$avg": "$nps_score"},
@@ -278,5 +363,115 @@ async def by_room(tenant_id: str, days: int = 30) -> dict[str, Any]:
         {"$sort": {"avg_score": 1, "response_count": -1}},
         {"$limit": 200},
     ]
-    rows = await db.nps_surveys.aggregate(pipeline).to_list(200)
+
+
+async def by_room(tenant_id: str, days: int = 30) -> dict[str, Any]:
+    """Oda bazlı ortalama puan — legacy ``GET /nps/by-room`` ile birebir aynı."""
+    days = bounded_days(days)
+    start = _start_iso(days)
+
+    if unified_read_enabled():
+        pipeline = _by_room_pipeline(tenant_id, start, eligible=True)
+        rows = await db.feedback_entries.aggregate(pipeline).to_list(200)
+    else:
+        pipeline = _by_room_pipeline(tenant_id, start, eligible=False)
+        rows = await db.nps_surveys.aggregate(pipeline).to_list(200)
+
     return {"rooms": rows, "period_days": days}
+
+
+# ── Dual-write: kanonik modele canlı yazım (idempotent, en-iyi-çaba) ──
+# Legacy yazım (nps_surveys / survey_responses / guest_reviews) AUTHORITATIVE
+# kalır; kanonik kayıt aynı request içinde dedup_key upsert ile materyalize
+# edilir. Kanonik yazım başarısız olursa legacy yazım GERİ ALINMAZ (en-iyi-çaba)
+# — yalnız error loglanır; backfill migration her an kanonik modeli yeniden
+# tutarlı hale getirebilir. dedup_key, backfill migration ile çakışmayı önler
+# ($setOnInsert: var olan kaydın üstüne yazmaz).
+
+async def upsert_canonical(source: str, doc: dict[str, Any]) -> bool:
+    """Bir kaynak dokümanını kanonik koleksiyona idempotent upsert et.
+
+    True → yazım denendi (kayıt vardı veya yeni eklendi). False → kararlı
+    dedup anahtarı (tenant_id/source_id) yok, atlandı."""
+    canonical = normalize(source, doc)
+    tenant_id = canonical.get("tenant_id")
+    source_id = canonical.get("source_id")
+    if not tenant_id or not source_id:
+        return False
+    key = dedup_key(tenant_id, source, source_id)
+    canonical["dedup_key"] = key
+    canonical["written_by"] = "dualwrite"
+    canonical["written_at"] = datetime.now(UTC).isoformat()
+    await db.feedback_entries.update_one(
+        {"dedup_key": key}, {"$setOnInsert": canonical}, upsert=True
+    )
+    return True
+
+
+async def dualwrite_canonical(source: str, doc: dict[str, Any]) -> bool:
+    """``upsert_canonical``'ın en-iyi-çaba sarmalayıcısı: hata YÜKSELTMEZ.
+
+    Çağıran legacy yazım yolunu KIRMAMALI; kanonik yazım hatası yalnız
+    loglanır (cutover sonrası parity drift'i görünür kılmak için error)."""
+    try:
+        return await upsert_canonical(source, doc)
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "feedback dual-write başarısız (source=%s): %s",
+            source, type(exc).__name__,
+        )
+        return False
+
+
+async def dualdelete_canonical(
+    tenant_id: str, source: str, source_id: str | None
+) -> int:
+    """Kanonik kaydı dedup_key ile sil (legacy DELETE ile eşlik, en-iyi-çaba)."""
+    if not tenant_id or not source_id:
+        return 0
+    key = dedup_key(tenant_id, source, source_id)
+    try:
+        res = await db.feedback_entries.delete_one({"dedup_key": key})
+        return res.deleted_count
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "feedback dual-delete başarısız (source=%s): %s",
+            source, type(exc).__name__,
+        )
+        return 0
+
+
+# ── Parity doğrulaması (legacy vs unified) ──────────────────────
+# Cutover öncesi/sonrası güvence: aynı tenant+pencere için legacy
+# (nps_surveys) ve kanonik (feedback_entries, nps_eligible) okuma yolları
+# AYNI NPS skorunu üretmeli. Fark varsa flag AÇILMAMALI (fail-closed).
+
+async def verify_parity(tenant_id: str, days: int = 30) -> dict[str, Any]:
+    """Legacy ve kanonik NPS skorlarını karşılaştır (flag'den bağımsız okur).
+
+    Dönüş: ``{tenant_id, period_days, match, legacy, unified, diffs}``.
+    ``match=True`` → iki yol birebir aynı skoru üretir (cutover güvenli)."""
+    days = bounded_days(days)
+    start = _start_iso(days)
+
+    legacy_cats = await db.nps_surveys.find(
+        {"tenant_id": tenant_id, "responded_at": {"$gte": start}},
+        {"_id": 0, "category": 1},
+    ).to_list(5000)
+    unified_cats = await db.feedback_entries.find(
+        {"tenant_id": tenant_id, "nps_eligible": True, "responded_at": {"$gte": start}},
+        {"_id": 0, "category": 1},
+    ).to_list(5000)
+
+    legacy = _score_from_categories(legacy_cats, days)
+    unified = _score_from_categories(unified_cats, days)
+
+    diffs = [k for k in legacy if legacy.get(k) != unified.get(k)]
+    return {
+        "tenant_id": tenant_id,
+        "period_days": days,
+        "match": not diffs,
+        "legacy": legacy,
+        "unified": unified,
+        "diffs": diffs,
+    }

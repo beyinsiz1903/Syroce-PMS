@@ -135,6 +135,9 @@ async def submit_nps_survey(survey_data: dict, current_user: User = Depends(get_
         'responded_at': datetime.now(UTC).isoformat(),
     }
     await db.nps_surveys.insert_one(survey)
+    # Kanonik modele dual-write (idempotent, en-iyi-çaba): cutover sonrası
+    # /nps/* okuma yolu feedback_entries'ten beslenir.
+    await feedback_report.dualwrite_canonical(feedback_report.SOURCE_NPS_SURVEY, survey)
     return {'success': True, 'survey_id': survey['id'], 'category': survey['category']}
 
 
@@ -148,6 +151,11 @@ async def delete_nps_survey(survey_id: str, current_user: User = Depends(get_cur
     )
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Yorum bulunamadı")
+    # Kanonik modelden de sil (dual-delete, en-iyi-çaba) → cutover sonrası
+    # silinen yorum NPS skorundan da düşer.
+    await feedback_report.dualdelete_canonical(
+        current_user.tenant_id, feedback_report.SOURCE_NPS_SURVEY, survey_id
+    )
     return {'success': True}
 
 

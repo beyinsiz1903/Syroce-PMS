@@ -178,9 +178,37 @@ async def _rollback_tenant(db, tenant_id: str, apply: bool) -> int:
     return count
 
 
+async def _verify(db, tenant_ids: list[str], days: int) -> int:
+    """Legacy vs kanonik NPS skoru parity doğrulaması (salt-okunur).
+
+    Her tenant için ``feedback_reporting_service.verify_parity`` çağrılır.
+    Tüm tenant'lar eşleşirse 0 (yeşil), aksi halde 1 (kırmızı) döner. PII
+    loglanmaz; yalnız tenant başına eşleşme durumu ve toplam skorlar."""
+    mismatches = 0
+    for tid in tenant_ids:
+        res = await fr.verify_parity(tid, days=days)
+        if res["match"]:
+            logger.info(
+                "parity OK tenant=%s total=%d nps=%s",
+                tid, res["legacy"]["total_responses"], res["legacy"]["nps_score"],
+            )
+        else:
+            mismatches += 1
+            logger.error(
+                "parity MISMATCH tenant=%s diffs=%s legacy=%s unified=%s",
+                tid, res["diffs"], res["legacy"], res["unified"],
+            )
+    if mismatches:
+        logger.error("parity KIRMIZI: %d/%d tenant eşleşmedi", mismatches, len(tenant_ids))
+        return 1
+    logger.info("parity YEŞİL: %d tenant birebir eşleşti", len(tenant_ids))
+    return 0
+
+
 async def run(args: argparse.Namespace) -> int:
     apply = bool(args.apply)
     rollback = bool(args.rollback)
+    verify = bool(getattr(args, "verify", False))
 
     # Fail-closed: herhangi bir yazım için açık env opt-in şart.
     if apply and os.environ.get(ALLOW_ENV, "").lower() != "true":
@@ -192,13 +220,19 @@ async def run(args: argparse.Namespace) -> int:
 
     db = get_system_db()
 
-    if apply and not rollback:
+    if apply and not rollback and not verify:
         await _ensure_unique_index(db)
 
     if args.tenant_id:
         tenant_ids = [args.tenant_id]
     else:
         tenant_ids = await _all_tenant_ids(db)
+
+    # Parity doğrulaması: salt-okunur, hiçbir yazım yapmaz.
+    if verify:
+        logger.info("parity doğrulaması: %d tenant (salt-okunur)", len(tenant_ids))
+        return await _verify(db, tenant_ids, getattr(args, "days", 30))
+
     logger.info(
         "kapsam: %d tenant (mode=%s%s)",
         len(tenant_ids),
@@ -244,6 +278,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="Migrate edilen feedback_entries kayıtlarını sil (legacy'ye dokunmaz).")
     p.add_argument("--tenant-id", default=None,
                    help="Yalnız bu tenant'ı işle (verilmezse tüm tenant'lar).")
+    p.add_argument("--verify", action="store_true",
+                   help="Salt-okunur parity: legacy (nps_surveys) vs kanonik "
+                        "(feedback_entries) NPS skoru birebir mi? Yeşil=0, kırmızı=1.")
+    p.add_argument("--days", type=int, default=30,
+                   help="--verify için NPS penceresi (gün, varsayılan 30).")
     return p.parse_args(argv)
 
 
