@@ -52,7 +52,8 @@ const DigitalKey = ({ bookingId }) => {
         key_id: response.data.key_id,
         room_number: response.data.room_number,
         guest_id: response.data.guest_id,
-        expires_at: response.data.expires_at
+        expires_at: response.data.expires_at,
+        ...(response.data.token ? { token: response.data.token } : {})
       });
       
       const qrUrl = await QRCode.toDataURL(qrData, {

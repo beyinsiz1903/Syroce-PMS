@@ -11,6 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from core.database import db
 from core.security import (
+    generate_time_based_qr_token,
     get_current_user,
     security,
 )
@@ -837,19 +838,8 @@ async def guest_self_checkin(
             }}
         )
 
-    # Generate digital key
-    digital_key = {
-        'id': str(uuid.uuid4()),
-        'key_id': str(uuid.uuid4())[:8].upper(),
-        'tenant_id': current_user.tenant_id,
-        'booking_id': booking_id,
-        'guest_id': booking.get('guest_id'),
-        'room_number': booking.get('room_number'),
-        'status': 'active',
-        'created_at': datetime.now(UTC).isoformat(),
-        'expires_at': booking.get('check_out'),
-        'last_used': None
-    }
+    # Generate digital key (bound + signed token; mirrors the get/refresh path).
+    digital_key = _build_digital_key({**booking, 'id': booking_id, 'tenant_id': current_user.tenant_id})
 
     await db.digital_keys.insert_one(digital_key)
 
@@ -865,57 +855,151 @@ async def guest_self_checkin(
 
 
 
+# ── Digital key helpers ───────────────────────────────────────────────────────
+def _parse_dt(value):
+    """Best-effort parse of an ISO timestamp / datetime into an aware datetime."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    try:
+        return datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    except (ValueError, TypeError):
+        return None
+
+
+async def _resolve_guest_owned_booking(booking_id: str, current_user: User) -> dict:
+    """Resolve a booking the caller owns, tenant-scoped.
+
+    Mirrors the ownership contract used by the self-checkin and booking-detail
+    endpoints: the booking's ``guest_id`` must belong to a tenant-scoped guest
+    record matching the caller's e-mail. Raises 404 (not 403) so a caller cannot
+    probe for the existence of another guest's booking. Fail-closed: an empty
+    guest set yields 404 rather than a global lookup.
+    """
+    from security.encrypted_lookup import build_guest_pii_query
+    guest_ids: list[str] = []
+    async for g in db.guests.find(
+        {'tenant_id': current_user.tenant_id, **build_guest_pii_query('email', current_user.email)},
+        {'_id': 0, 'id': 1},
+    ):
+        gid = g.get('id')
+        if gid:
+            guest_ids.append(gid)
+
+    booking = await db.bookings.find_one(
+        {'id': booking_id, 'guest_id': {'$in': guest_ids}}, {'_id': 0}
+    ) if guest_ids else None
+
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return booking
+
+
+def _key_is_usable(booking: dict) -> bool:
+    """A digital key may exist only for an in-house stay that has not ended.
+
+    Enforced server-side so a key is never returned/minted past checkout or for
+    a cancelled / checked-out booking, regardless of any stale ``active`` row.
+    """
+    if booking.get('status') != 'checked_in':
+        return False
+    checkout = _parse_dt(booking.get('check_out'))
+    if checkout and datetime.now(UTC) > checkout:
+        return False
+    return True
+
+
+def _token_expiry_hours(booking: dict) -> float:
+    """Cap the signed QR token lifetime to the remaining stay (<= 72h).
+
+    A door reader that trusts the JWT ``exp`` alone must never accept a token
+    past checkout, so we bind the token expiry to the time left until checkout
+    (clamped to a 72h ceiling for very long stays, and a small positive floor).
+    """
+    checkout = _parse_dt(booking.get('check_out'))
+    if not checkout:
+        return 72.0
+    remaining = (checkout - datetime.now(UTC)).total_seconds() / 3600.0
+    return max(0.1, min(72.0, remaining))
+
+
+def _build_digital_key(booking: dict) -> dict:
+    """Build a fresh digital-key document bound to the booking.
+
+    ``token`` is a JWT (signed with JWT_SECRET) embedding the booking id and an
+    expiry, mirroring the mobile QR contract so a door reader can verify
+    authenticity server-side instead of trusting a forgeable plaintext payload.
+    The token expiry is bound to checkout so it cannot outlive the stay.
+    """
+    return {
+        'id': str(uuid.uuid4()),
+        'key_id': str(uuid.uuid4())[:8].upper(),
+        'tenant_id': booking.get('tenant_id'),
+        'booking_id': booking.get('id'),
+        'guest_id': booking.get('guest_id'),
+        'room_number': booking.get('room_number'),
+        'token': generate_time_based_qr_token(
+            booking.get('id'), expiry_hours=_token_expiry_hours(booking)
+        ),
+        'status': 'active',
+        'created_at': datetime.now(UTC).isoformat(),
+        'expires_at': booking.get('check_out'),
+        'last_used': None,
+    }
+
+
+def _key_response(key: dict) -> dict:
+    """Trim a stored key to the guest-facing contract the web/mobile UI needs."""
+    return {
+        'key_id': key.get('key_id'),
+        'room_number': key.get('room_number'),
+        'guest_id': key.get('guest_id'),
+        'token': key.get('token'),
+        'status': key.get('status'),
+        'expires_at': key.get('expires_at'),
+    }
+
+
 @router.get("/guest/digital-key/{booking_id}")
 async def get_digital_key(
     booking_id: str,
     current_user: User = Depends(get_current_user)
 ):
-    """Get digital room key for guest"""
-    # Find guest's booking (multi-tenant support)
-    from security.encrypted_lookup import build_guest_pii_query
-    guest_records = []
-    async for guest in db.guests.find(
-        {'tenant_id': current_user.tenant_id, **build_guest_pii_query('email', current_user.email)}
-    ):
-        guest_records.append(guest)
+    """Get digital room key for guest (ownership + tenant + expiry enforced)."""
+    booking = await _resolve_guest_owned_booking(booking_id, current_user)
+    tenant_id = booking.get('tenant_id')
 
-    guest_ids = [g['id'] for g in guest_records]
+    key = await db.digital_keys.find_one(
+        {'booking_id': booking_id, 'tenant_id': tenant_id, 'status': 'active'},
+        {'_id': 0},
+    )
 
-    booking = await db.bookings.find_one({
-        'id': booking_id,
-        'guest_id': {'$in': guest_ids}
-    })
-
-    if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
-
-    # Get or create digital key
-    key = await db.digital_keys.find_one({
-        'booking_id': booking_id,
-        'status': 'active'
-    }, {'_id': 0})
+    # Expire any stale active key once the stay has ended (checkout / cancel).
+    if key and not _key_is_usable(booking):
+        await db.digital_keys.update_many(
+            {'booking_id': booking_id, 'tenant_id': tenant_id, 'status': 'active'},
+            {'$set': {'status': 'expired'}},
+        )
+        key = None
 
     if not key:
-        # Auto-generate key if booking is checked-in
-        if booking.get('status') == 'checked_in':
-            key = {
-                'id': str(uuid.uuid4()),
-                'key_id': str(uuid.uuid4())[:8].upper(),
-                'tenant_id': booking.get('tenant_id'),
-                'booking_id': booking_id,
-                'guest_id': booking.get('guest_id'),
-                'room_number': booking.get('room_number'),
-                'status': 'active',
-                'created_at': datetime.now(UTC).isoformat(),
-                'expires_at': booking.get('check_out'),
-                'last_used': None
-            }
-            await db.digital_keys.insert_one(key)
-        else:
-            raise HTTPException(status_code=404, detail="Digital key not available - booking not checked in")
+        if not _key_is_usable(booking):
+            raise HTTPException(
+                status_code=404, detail="Digital key not available - booking not checked in"
+            )
+        key = _build_digital_key(booking)
+        await db.digital_keys.insert_one(key)
+    elif not key.get('token'):
+        # Backfill a signed token on keys minted before token binding existed.
+        token = generate_time_based_qr_token(booking_id)
+        await db.digital_keys.update_one(
+            {'booking_id': booking_id, 'tenant_id': tenant_id, 'status': 'active'},
+            {'$set': {'token': token}},
+        )
+        key['token'] = token
 
-    return key
-
+    return _key_response(key)
 
 
 @router.post("/guest/digital-key/{booking_id}/refresh")
@@ -923,33 +1007,24 @@ async def refresh_digital_key(
     booking_id: str,
     current_user: User = Depends(get_current_user)
 ):
-    """Refresh digital key"""
-    # Deactivate old key
+    """Refresh digital key (ownership + tenant enforced; refuses ended stays)."""
+    booking = await _resolve_guest_owned_booking(booking_id, current_user)
+    tenant_id = booking.get('tenant_id')
+
+    if not _key_is_usable(booking):
+        raise HTTPException(
+            status_code=404, detail="Digital key not available - booking not checked in"
+        )
+
+    # Deactivate previous keys for this booking (tenant-scoped).
     await db.digital_keys.update_many(
-        {'booking_id': booking_id, 'tenant_id': current_user.tenant_id},
-        {'$set': {'status': 'expired'}}
+        {'booking_id': booking_id, 'tenant_id': tenant_id},
+        {'$set': {'status': 'expired'}},
     )
 
-    # Get booking
-    booking = await db.bookings.find_one({'id': booking_id}, {'_id': 0})
-
-    # Create new key
-    digital_key = {
-        'id': str(uuid.uuid4()),
-        'key_id': str(uuid.uuid4())[:8].upper(),
-        'tenant_id': current_user.tenant_id,
-        'booking_id': booking_id,
-        'guest_id': booking.get('guest_id'),
-        'room_number': booking.get('room_number'),
-        'status': 'active',
-        'created_at': datetime.now(UTC).isoformat(),
-        'expires_at': booking.get('check_out'),
-        'last_used': None
-    }
-
-    await db.digital_keys.insert_one(digital_key)
-
-    return {'message': 'Key refreshed', 'key_id': digital_key['key_id']}
+    key = _build_digital_key(booking)
+    await db.digital_keys.insert_one(key)
+    return _key_response(key)
 
 
 
