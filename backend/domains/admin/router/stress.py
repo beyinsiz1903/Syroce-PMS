@@ -40,7 +40,16 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from pymongo.errors import AutoReconnect, NetworkTimeout, ServerSelectionTimeoutError
+from pymongo.errors import (
+    AutoReconnect,
+    ExecutionTimeout,
+    NetworkTimeout,
+    NotPrimaryError,
+    PyMongoError,
+    ServerSelectionTimeoutError,
+    WriteConcernError,
+    WTimeoutError,
+)
 
 _stress_log = logging.getLogger("stress.cleanup")
 
@@ -50,23 +59,65 @@ _TRANSIENT_DB_ERRORS: tuple[type[BaseException], ...] = (
     ServerSelectionTimeoutError,
     ConnectionError,
     OSError,
+    # Atlas operation-level transient classes observed on the deploy tier under
+    # heavy stress load (primary stepdown / server-imposed op time limit / write
+    # concern blips). Unlike a socket drop these surface as a CLEAN HTTP 500 from
+    # the long cleanup sweep, so the original connection-only set let them escape
+    # and reddened teardown even though every test passed. delete_many(by filter)
+    # is idempotent, so a bounded retry is safe and cannot double-delete.
+    ExecutionTimeout,
+    NotPrimaryError,
+    WriteConcernError,
+    WTimeoutError,
 )
 
 
-async def _delete_many_with_retry(col, flt: dict, *, col_name: str, attempts: int = 4):
-    """Wrap motor `delete_many` with bounded retries against transient Atlas drops.
+def _is_retryable_db_error(exc: BaseException) -> bool:
+    """True only for transient DB faults that are safe to retry (delete is
+    idempotent). Deterministic faults (e.g. a malformed query) are NOT retryable
+    and must surface — no masking, fail-closed preserved."""
+    if isinstance(exc, _TRANSIENT_DB_ERRORS):
+        return True
+    # Some Atlas faults arrive as a generic PyMongoError but carry a retryable
+    # server-supplied label.
+    if isinstance(exc, PyMongoError):
+        for label in ("RetryableWriteError", "TransientTransactionError"):
+            try:
+                if exc.has_error_label(label):
+                    return True
+            except Exception:
+                pass
+    return False
 
-    Sentry production drop: pymongo AutoReconnect / OSError("connection closed")
-    in the middle of a long cleanup loop blew up the whole admin endpoint with
-    a 500. Retries are bounded (4 attempts, exponential backoff 0.25/0.5/1.0s)
-    and reraise the original error if every attempt fails.
+
+async def _delete_many_with_retry(col, flt: dict, *, col_name: str, attempts: int = 4):
+    """Wrap motor `delete_many` with bounded retries against transient Atlas faults.
+
+    Sentry/CI production drops: a transient pymongo fault (a connection drop OR
+    an operation-level error such as a primary stepdown / server op-time-limit)
+    in the middle of a long cleanup loop blew up the whole admin endpoint with a
+    500 and reddened the stress suite teardown even though every test passed.
+    Retries are bounded (4 attempts, exponential backoff 0.25/0.5/1.0/2.0s) and
+    reraise the original error if every attempt fails. A NON-retryable error is
+    logged with its collection + class (so CI pinpoints the exact failure) and
+    immediately reraised — the endpoint still 500s, so this is observability +
+    resilience, never fake-green.
     """
     delay = 0.25
     last_exc: BaseException | None = None
     for attempt in range(1, attempts + 1):
         try:
             return await col.delete_many(flt)
-        except _TRANSIENT_DB_ERRORS as exc:
+        except Exception as exc:
+            if not _is_retryable_db_error(exc):
+                # Deterministic / unknown fault: surface it (with the collection
+                # that tripped) and let the 500 stand. No swallowing.
+                _stress_log.error(
+                    "stress.cleanup non-retryable db error (reraising -> 500): "
+                    "col=%s err=%s msg=%s",
+                    col_name, exc.__class__.__name__, str(exc)[:300],
+                )
+                raise
             last_exc = exc
             if attempt == attempts:
                 _stress_log.warning(
