@@ -142,8 +142,8 @@ th {{ background:#f1f5f9; padding:10px 8px; text-align:left; font-weight:600; fo
         <div>{_e(settings.get("hotel_address", ""))}</div>
         <div>{_e(settings.get("hotel_phone", ""))}</div>
         <div>{_e(settings.get("hotel_email", ""))}</div>
-        {f"<div>Vergi No: {_e(settings.get("tax_id", ""))}</div>" if settings.get("tax_id") else ""}
-        {f"<div>Vergi Dairesi: {_e(settings.get("tax_office", ""))}</div>" if settings.get("tax_office") else ""}
+        {f"<div>Vergi No: {_e(settings.get('tax_id', ''))}</div>" if settings.get("tax_id") else ""}
+        {f"<div>Vergi Dairesi: {_e(settings.get('tax_office', ''))}</div>" if settings.get("tax_office") else ""}
     </div>
 </div>
 

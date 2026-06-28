@@ -3,11 +3,13 @@ import {
   OTAMessagingHub, MessagingCenter, SalesModule, TravelAgentARAP,
   AgencyRequests, IncomingAgencyContracts, AgencyManagement,
   AgencyContentDistribution, B2BAnalyticsDashboard, ReportScheduler,
+  GuestRelationsDashboard,
 } from "./lazyPages";
 
 export function guestStaffRoutes({ p }) {
   return [
     // ── Guest Features ─────────────────────────────────
+    { path: "/app/guest-relations", ...p(GuestRelationsDashboard), wrapLayout: true, layoutModule: "guest_relations" },
     { path: "/guest/checkin/:bookingId", ...p(SelfCheckin) },
     { path: "/guest/digital-key/:bookingId", ...p(DigitalKey) },
     { path: "/guest/upsell/:bookingId", ...p(UpsellStore) },

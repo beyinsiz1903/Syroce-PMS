@@ -6,12 +6,13 @@ import {
   POSDashboard, FeaturesShowcase, WebhookOutboxAdmin, EarlyWarningDashboard,
   ModuleDiscovery, IntegrationCredentials, IntegrationsOverview, CapXIntegration,
   RnlAutoResolveRuns, RnlDuplicates, SiteContentEditor, VoiceNumberMapping,
-  AutonomousCollectionJobs,
+  AutonomousCollectionJobs, PhysicalSecurityDashboard,
 } from "./lazyPages";
 
 export function securityAdminRoutes({ p, pa }) {
   return [
     // ── Security & Compliance ──────────────────────────
+    { path: "/app/physical-security", ...pa(PhysicalSecurityDashboard), wrapLayout: true, layoutModule: "physical_security" },
     { path: "/security-center", type: "redirect", to: "/security?tab=center" },
     { path: "/app/güvenlik", type: "redirect", to: "/security?tab=monitor" },
     { path: "/gdpr-compliance", ...p(GDPRCompliance), wrapLayout: true },

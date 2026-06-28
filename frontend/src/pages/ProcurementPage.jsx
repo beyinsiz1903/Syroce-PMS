@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 
 import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
+import ProcurementB2BTab from './ProcurementB2BTab';
 
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
 // Status → CSS class only. Display label comes from i18n via prStatuses/poStatuses.
@@ -570,7 +571,12 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
           <TabsTrigger value="pos"><Package className="w-4 h-4 mr-1" />{t('procurement.tabs.pos')}</TabsTrigger>
           <TabsTrigger value="suppliers"><Truck className="w-4 h-4 mr-1" />{t('procurement.tabs.suppliers')}</TabsTrigger>
           <TabsTrigger value="credit"><TrendingUp className="w-4 h-4 mr-1" />{t('procurement.tabs.credit')}</TabsTrigger>
+          <TabsTrigger value="b2b"><FileCheck2 className="w-4 h-4 mr-1" />B2B Otomatik Sipariş</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="b2b">
+          <ProcurementB2BTab />
+        </TabsContent>
 
         {/* ── PR LIST ─────────────────────────────────────── */}
         <TabsContent value="summary">

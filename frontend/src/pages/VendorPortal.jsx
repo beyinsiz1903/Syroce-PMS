@@ -47,8 +47,13 @@ const fmt = (n) =>
 
 // Scoped axios instance — never inherits hotel staff Authorization from
 // axios.defaults. Always sends only the vendor token (or no auth header).
+const RAW_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "/api";
+const BACKEND_URL = RAW_BACKEND_URL.endsWith("/api")
+  ? RAW_BACKEND_URL
+  : RAW_BACKEND_URL.replace(/\/+$/, "") + "/api";
+
 const vendorApi = axios.create({
-  baseURL: "/api"
+  baseURL: BACKEND_URL
 });
 vendorApi.interceptors.request.use((config) => {
   const token = localStorage.getItem(VENDOR_TOKEN_KEY);
