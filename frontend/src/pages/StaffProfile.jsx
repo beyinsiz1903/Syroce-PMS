@@ -57,6 +57,7 @@ const StaffProfile = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
+  const [activeTab, setActiveTab] = useState('attendance');
 
   // Section states
   const [certs, setCerts] = useState({ items: [], active: 0, expired: 0, error: null });
@@ -176,15 +177,38 @@ const StaffProfile = () => {
   }, [id]);
 
   useEffect(() => {
+    // Only load basic profile data initially
     load();
-    loadCerts();
-    loadDocs();
-    loadSalary();
     loadTermination();
-    loadEquipment();
-    loadWarnings();
-    loadTrainings();
-  }, [load, loadCerts, loadDocs, loadSalary, loadTermination, loadEquipment, loadWarnings, loadTrainings]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, loadTermination]);
+
+  // Lazy Fan-out Reduction: Load tab data only when the tab is visited
+  useEffect(() => {
+    switch (activeTab) {
+      case 'certifications':
+        if (certs.items.length === 0 && !certs.error) loadCerts();
+        break;
+      case 'documents':
+        if (docs.length === 0 && !docsError) loadDocs();
+        break;
+      case 'salary':
+        if (salaryHistory.length === 0 && !salaryError) loadSalary();
+        break;
+      case 'equipment':
+        if (equipment.items.length === 0 && !equipment.error) loadEquipment();
+        break;
+      case 'warnings':
+        if (warnings.items.length === 0 && !warnings.error) loadWarnings();
+        break;
+      case 'trainings':
+        if (trainings.items.length === 0 && !trainings.error) loadTrainings();
+        break;
+      default:
+        break;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   // ===== Certifications =====
   const openCertDialog = () => setCertDialog({
@@ -574,7 +598,7 @@ const StaffProfile = () => {
         <KpiCard intent={certs.expired > 0 ? 'danger' : 'info'} icon={GraduationCap} label="Aktif Sertifika" value={certs.active} sub={certs.expired > 0 ? `${certs.expired} süresi geçmiş` : `${docs.length} belge`} />
       </div>
 
-      <Tabs defaultValue="attendance">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-11 text-xs">
           <TabsTrigger value="attendance">Devam</TabsTrigger>
           <TabsTrigger value="leave">İzin</TabsTrigger>

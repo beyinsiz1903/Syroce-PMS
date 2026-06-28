@@ -374,13 +374,27 @@ const Settings = ({ user, tenant, onLogout }) => {
   }, [grSettings.visible_roles]);
 
   useEffect(() => {
-    loadTeam();
-    loadSubscription();
-    loadBillingHistory();
-    loadInvoiceSettings();
-    loadRooms();
-    loadGuestRequestSettings();
-  }, [loadTeam, loadSubscription, loadBillingHistory, loadInvoiceSettings, loadRooms, loadGuestRequestSettings]);
+    // Only load what is needed for the active tab (Lazy fan-out reduction)
+    if (activeTab === 'hotel' || activeTab === 'plan') {
+      if (!subscription) loadSubscription();
+    }
+    if (activeTab === 'team') {
+      if (teamList.length === 0) loadTeam();
+    }
+    if (activeTab === 'billing') {
+      if (billingHistory.length === 0) loadBillingHistory();
+    }
+    if (activeTab === 'invoice') {
+      if (!invoiceSettings) loadInvoiceSettings();
+    }
+    if (activeTab === 'rooms') {
+      if (roomTypes.length === 0) loadRooms();
+    }
+    if (activeTab === 'guest-requests') {
+      if (!grSettings) loadGuestRequestSettings();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   // Init hotel form from tenant
   useEffect(() => {

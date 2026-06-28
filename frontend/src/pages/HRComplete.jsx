@@ -438,21 +438,43 @@ const HRComplete = () => {
   const loadAll = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([loadStaff(), loadAttendance(), loadLeaves(), loadPerformance(), loadJobs(), loadPerfTemplates(), loadOvertimeRequests(), loadSeveranceCap(), loadTaxRates(), loadCompliance()]);
+      // Sadece en temel (herkese lazım olan veya KPI için gereken) verileri önden yükle
+      await Promise.all([loadStaff(), loadCompliance()]);
     } finally {
       setRefreshing(false);
     }
-  }, [loadStaff, loadAttendance, loadLeaves, loadPerformance, loadJobs, loadPerfTemplates, loadOvertimeRequests, loadSeveranceCap, loadTaxRates, loadCompliance]);
+  }, [loadStaff, loadCompliance]);
 
   useEffect(() => {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // İzin sekmesi açılınca tüm personelin bakiyelerini yükle
+  // Tab-based data loading (Lazy fan-out reduction)
   useEffect(() => {
-    if (activeTab === 'leave' && staffList.length > 0) {
-      loadLeaveBalances(staffList.map((s) => s.id));
+    switch (activeTab) {
+      case 'attendance':
+        if (!attendanceSummary) loadAttendance();
+        if (!overtimeCounts) loadOvertimeRequests();
+        break;
+      case 'leave':
+        if (leaveItems.length === 0) loadLeaves();
+        if (staffList.length > 0) loadLeaveBalances(staffList.map((s) => s.id));
+        break;
+      case 'performance':
+        if (performanceItems.length === 0) loadPerformance();
+        if (perfTemplates.length === 0) loadPerfTemplates();
+        break;
+      case 'recruitment':
+        if (jobItems.length === 0) loadJobs();
+        break;
+      case 'payroll':
+        if (!taxRates) loadTaxRates();
+        if (!severanceCap) loadSeveranceCap();
+        // and optionally load current month payroll preview
+        break;
+      default:
+        break;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, staffList.length]);

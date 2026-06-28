@@ -195,6 +195,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
   const [validationRunning, setValidationRunning] = useState({});
   const [validationResults, setValidationResults] = useState({});
   const [credForms, setCredForms] = useState({});
+  const [activeTab, setActiveTab] = useState('ingest');
 
   const propertyId = tenant?.property_id || 'prop-001';
 
@@ -207,37 +208,67 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
     setLoading(true);
     try {
       const h = headers();
-      const [schemaRes, connRes, roomRes, rateRes, eventsRes, lineageRes, casesRes, summaryRes, ingestRes, reconDashRes, reconMetricsRes, monOverviewRes, monAlertsRes] = await Promise.all([
-        axios.get(`/channel-manager/model/schema`, { headers: h }).catch(() => ({ data: null })),
-        axios.get(`/channel-manager/model/connections`, { headers: h }).catch(() => ({ data: { connections: [] } })),
-        axios.get(`/channel-manager/model/room-mappings?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { mappings: [] } })),
-        axios.get(`/channel-manager/model/rate-plan-mappings?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { mappings: [] } })),
-        axios.get(`/channel-manager/ingest/events?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { events: [] } })),
-        axios.get(`/channel-manager/model/lineage?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { lineages: [] } })),
-        axios.get(`/channel-manager/reconciliation/cases`, { headers: h }).catch(() => ({ data: { cases: [] } })),
-        axios.get(`/channel-manager/model/reconciliation/summary`, { headers: h }).catch(() => ({ data: null })),
-        axios.get(`/channel-manager/ingest/status?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: null })),
-        axios.get(`/channel-manager/reconciliation/dashboard`, { headers: h }).catch(() => ({ data: null })),
-        axios.get(`/channel-manager/reconciliation/metrics`, { headers: h }).catch(() => ({ data: null })),
-        axios.get(`/channel-manager/monitoring/overview`, { headers: h }).catch(() => ({ data: null })),
-        axios.get(`/channel-manager/monitoring/alerts`, { headers: h }).catch(() => ({ data: { alerts: [] } })),
-      ]);
-      setSchema(schemaRes.data);
-      setConnections(connRes.data.connections || []);
-      setRoomMappings(roomRes.data.mappings || []);
-      setRatePlanMappings(rateRes.data.mappings || []);
-      setRawEvents(eventsRes.data.events || []);
-      setLineages(lineageRes.data.lineages || []);
-      setReconCases(casesRes.data.cases || []);
-      setReconSummary(summaryRes.data);
-      setIngestStatus(ingestRes.data);
-      setReconDashboard(reconDashRes.data);
-      setReconMetrics(reconMetricsRes.data);
-      setMonitoringOverview(monOverviewRes.data);
-      setMonitoringAlerts(monAlertsRes.data?.alerts || []);
+      switch (activeTab) {
+        case 'ingest': {
+            const [eventsRes, ingestRes] = await Promise.all([
+                axios.get(`/channel-manager/ingest/events?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { events: [] } })),
+                axios.get(`/channel-manager/ingest/status?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: null })),
+            ]);
+            setRawEvents(eventsRes.data.events || []);
+            setIngestStatus(ingestRes.data);
+            break;
+        }
+        case 'lineage': {
+            const [lineageRes, schemaRes] = await Promise.all([
+                axios.get(`/channel-manager/model/lineage?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { lineages: [] } })),
+                axios.get(`/channel-manager/model/schema`, { headers: h }).catch(() => ({ data: null }))
+            ]);
+            setLineages(lineageRes.data.lineages || []);
+            setSchema(schemaRes.data);
+            break;
+        }
+        case 'connections': {
+            const connRes = await axios.get(`/channel-manager/model/connections`, { headers: h }).catch(() => ({ data: { connections: [] } }));
+            setConnections(connRes.data.connections || []);
+            break;
+        }
+        case 'mappings': {
+            const [roomRes, rateRes] = await Promise.all([
+                axios.get(`/channel-manager/model/room-mappings?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { mappings: [] } })),
+                axios.get(`/channel-manager/model/rate-plan-mappings?property_id=${propertyId}`, { headers: h }).catch(() => ({ data: { mappings: [] } }))
+            ]);
+            setRoomMappings(roomRes.data.mappings || []);
+            setRatePlanMappings(rateRes.data.mappings || []);
+            break;
+        }
+        case 'reconciliation': {
+            const [casesRes, summaryRes, reconDashRes, reconMetricsRes] = await Promise.all([
+                axios.get(`/channel-manager/reconciliation/cases`, { headers: h }).catch(() => ({ data: { cases: [] } })),
+                axios.get(`/channel-manager/model/reconciliation/summary`, { headers: h }).catch(() => ({ data: null })),
+                axios.get(`/channel-manager/reconciliation/dashboard`, { headers: h }).catch(() => ({ data: null })),
+                axios.get(`/channel-manager/reconciliation/metrics`, { headers: h }).catch(() => ({ data: null }))
+            ]);
+            setReconCases(casesRes.data.cases || []);
+            setReconSummary(summaryRes.data);
+            setReconDashboard(reconDashRes.data);
+            setReconMetrics(reconMetricsRes.data);
+            break;
+        }
+        case 'monitoring': {
+            const [monOverviewRes, monAlertsRes] = await Promise.all([
+                axios.get(`/channel-manager/monitoring/overview`, { headers: h }).catch(() => ({ data: null })),
+                axios.get(`/channel-manager/monitoring/alerts`, { headers: h }).catch(() => ({ data: { alerts: [] } }))
+            ]);
+            setMonitoringOverview(monOverviewRes.data);
+            setMonitoringAlerts(monAlertsRes.data?.alerts || []);
+            break;
+        }
+        default:
+            break;
+      }
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, [propertyId, headers]);
+  }, [propertyId, headers, activeTab]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -434,7 +465,7 @@ const DataModelDashboard = ({ user, tenant, onLogout }) => {
         </div>
 
         {/* Tabs */}
-        <Tabs defaultValue="ingest" className="space-y-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList data-testid="model-tabs" className="bg-zinc-900 border border-zinc-800 p-1 flex-wrap h-auto">
             <TabsTrigger value="ingest" className="data-[state=active]:bg-zinc-800 text-xs">
               <Activity className="w-3.5 h-3.5 mr-1" /> Ingest Pipeline
