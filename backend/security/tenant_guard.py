@@ -3,6 +3,7 @@ Security — Tenant Guard
 Enforces tenant isolation at the query/response level.
 Ensures no cross-tenant data leakage.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -32,9 +33,7 @@ class TenantGuard:
                 "message": "Query does not contain tenant_id filter",
             }
         if query_tenant != expected_tenant_id:
-            await cls._log_violation(
-                expected_tenant_id, query_tenant, "tenant_mismatch"
-            )
+            await cls._log_violation(expected_tenant_id, query_tenant, "tenant_mismatch")
             return {
                 "valid": False,
                 "violation": "tenant_mismatch",
@@ -53,11 +52,13 @@ class TenantGuard:
         for i, doc in enumerate(documents):
             doc_tenant = doc.get("tenant_id")
             if doc_tenant and doc_tenant != expected_tenant_id:
-                violations.append({
-                    "index": i,
-                    "doc_tenant": doc_tenant,
-                    "expected_tenant": expected_tenant_id,
-                })
+                violations.append(
+                    {
+                        "index": i,
+                        "doc_tenant": doc_tenant,
+                        "expected_tenant": expected_tenant_id,
+                    }
+                )
         if violations:
             await cls._log_violation(
                 expected_tenant_id,
@@ -81,14 +82,14 @@ class TenantGuard:
         total_violations = await cls._violation_log_collection.count_documents(query)
 
         last_24h = (datetime.now(UTC) - __import__("datetime").timedelta(hours=24)).isoformat()
-        recent_violations = await cls._violation_log_collection.count_documents({
-            **query,
-            "timestamp": {"$gte": last_24h},
-        })
+        recent_violations = await cls._violation_log_collection.count_documents(
+            {
+                **query,
+                "timestamp": {"$gte": last_24h},
+            }
+        )
 
-        recent = await cls._violation_log_collection.find(
-            query, {"_id": 0}
-        ).sort("timestamp", -1).limit(10).to_list(10)
+        recent = await cls._violation_log_collection.find(query, {"_id": 0}).sort("timestamp", -1).limit(10).to_list(10)
 
         return {
             "enforcement": "active",
@@ -100,18 +101,20 @@ class TenantGuard:
 
     @classmethod
     async def _log_violation(
-        cls, expected_tenant: str, actual_tenant: str, violation_type: str,
+        cls,
+        expected_tenant: str,
+        actual_tenant: str,
+        violation_type: str,
     ) -> None:
-        logger.warning(
-            f"Tenant guard violation: type={violation_type} "
-            f"expected={expected_tenant} actual={actual_tenant}"
+        logger.warning(f"Tenant guard violation: type={violation_type} expected={expected_tenant} actual={actual_tenant}")
+        await cls._violation_log_collection.insert_one(
+            {
+                "expected_tenant_id": expected_tenant,
+                "actual_tenant_id": actual_tenant,
+                "violation_type": violation_type,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
         )
-        await cls._violation_log_collection.insert_one({
-            "expected_tenant_id": expected_tenant,
-            "actual_tenant_id": actual_tenant,
-            "violation_type": violation_type,
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
 
 
 tenant_guard = TenantGuard()

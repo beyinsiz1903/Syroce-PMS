@@ -5,6 +5,7 @@ as salted SHA-256 hashes (never plaintext, never logged). Command enqueue is
 idempotent via a unique ``(tenant_id, dedup_key)`` index, so a retried lifecycle
 event (re-issue, re-checkout) can never produce a duplicate physical-card action.
 """
+
 import hashlib
 import logging
 import os
@@ -52,9 +53,7 @@ async def ensure_lock_bridge_indexes(db) -> None:
         [("tenant_id", 1), ("status", 1), ("created_at", 1)],
         name="idx_lock_cmd_claim",
     )
-    await db.lock_bridge_connectors.create_index(
-        [("key_hash", 1)], unique=True, name="uniq_lock_connector_key"
-    )
+    await db.lock_bridge_connectors.create_index([("key_hash", 1)], unique=True, name="uniq_lock_connector_key")
 
 
 async def enqueue_lock_command(
@@ -140,9 +139,7 @@ async def claim_commands(
         }
         if seen:
             flt["id"] = {"$nin": seen}
-        candidate = await db.lock_commands.find_one(
-            flt, sort=[("created_at", 1)], projection={"_id": 0}
-        )
+        candidate = await db.lock_commands.find_one(flt, sort=[("created_at", 1)], projection={"_id": 0})
         if not candidate:
             break
         seen.append(candidate["id"])
@@ -204,9 +201,7 @@ async def ack_command(
     False if the command does not belong to this tenant, is already terminal, or
     is no longer held by this connector.
     """
-    cmd = await db.lock_commands.find_one(
-        {"id": command_id, "tenant_id": tenant_id}, {"_id": 0}
-    )
+    cmd = await db.lock_commands.find_one({"id": command_id, "tenant_id": tenant_id}, {"_id": 0})
     if not cmd or cmd.get("status") in _TERMINAL:
         return False
     now = datetime.now(UTC).isoformat()
@@ -260,9 +255,7 @@ async def resolve_connector(db, provided_key: str | None) -> dict | None:
     candidate = (provided_key or "").strip()
     if not candidate:
         return None
-    record = await db.lock_bridge_connectors.find_one(
-        {"key_hash": hash_connector_key(candidate), "active": True}, {"_id": 0}
-    )
+    record = await db.lock_bridge_connectors.find_one({"key_hash": hash_connector_key(candidate), "active": True}, {"_id": 0})
     if not record:
         return None
     try:

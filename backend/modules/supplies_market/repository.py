@@ -6,6 +6,7 @@ Collections:
   - mp_products
   - mp_orders
 """
+
 from __future__ import annotations
 
 import logging

@@ -11,6 +11,7 @@ Flow:
   3. Separate auto-apply vs needs-review vs conflict suggestions
   4. Accept confirmed pairs and bulk-create mappings
 """
+
 import asyncio as _aio
 import logging
 from difflib import SequenceMatcher
@@ -99,8 +100,8 @@ def _price_proximity(pms_price: float, ext_price: float) -> float:
 
 _PROVIDER_WEIGHTS = {
     "hotelrunner": {"name": 0.50, "capacity": 0.25, "price": 0.15, "alias": 0.10},
-    "exely":       {"name": 0.60, "capacity": 0.15, "price": 0.10, "alias": 0.15},
-    "default":     {"name": 0.55, "capacity": 0.20, "price": 0.15, "alias": 0.10},
+    "exely": {"name": 0.60, "capacity": 0.15, "price": 0.10, "alias": 0.15},
+    "default": {"name": 0.55, "capacity": 0.20, "price": 0.15, "alias": 0.10},
 }
 
 
@@ -137,10 +138,7 @@ def _compute_match_score_v2(
 
     active_weight_sum = sum(weights[k] for k in active_signals)
     if active_weight_sum > 0:
-        final = sum(
-            active_signals[k] * (weights[k] / active_weight_sum)
-            for k in active_signals
-        )
+        final = sum(active_signals[k] * (weights[k] / active_weight_sum) for k in active_signals)
     else:
         final = 0.0
 
@@ -171,7 +169,9 @@ class AutoMappingService:
         self._mapping_svc = MappingService(repo=self._repo)
 
     async def fetch_external_data_from_channel(
-        self, tenant_id: str, connector_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
     ) -> dict[str, Any]:
         """
         Fetch real room types and rate plans from HotelRunner API
@@ -197,12 +197,14 @@ class AutoMappingService:
                     import base64  # noqa: I001
                     import hashlib
                     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
                     prefix = "aes256gcm:"
                     creds = {}
                     for k, v in raw_creds.items():
                         if isinstance(v, str) and v.startswith(prefix):
                             # Try env key first, then default
                             import os
+
                             keys_to_try = [
                                 os.environ.get("CM_CREDENTIAL_KEY", ""),
                                 "syroce-pms-default-key-change-in-production",
@@ -213,7 +215,7 @@ class AutoMappingService:
                                     continue
                                 try:
                                     aes_key = hashlib.sha256(key_material.encode()).digest()
-                                    raw = base64.b64decode(v[len(prefix):])
+                                    raw = base64.b64decode(v[len(prefix) :])
                                     nonce, ct = raw[:12], raw[12:]
                                     plaintext = AESGCM(aes_key).decrypt(nonce, ct, None)
                                     creds[k] = plaintext.decode("utf-8")
@@ -246,20 +248,20 @@ class AutoMappingService:
             for attempt in range(max_retries):
                 try:
                     raw_data, _audit = await client._request_json(
-                        "GET", "/apps/rooms", params={"per_page": "200"},
+                        "GET",
+                        "/apps/rooms",
+                        params={"per_page": "200"},
                     )
-                    rooms_raw = (
-                        raw_data if isinstance(raw_data, list)
-                        else raw_data.get("rooms", []) if isinstance(raw_data, dict)
-                        else []
-                    )
+                    rooms_raw = raw_data if isinstance(raw_data, list) else raw_data.get("rooms", []) if isinstance(raw_data, dict) else []
                     break
                 except RateLimitError as rle:
                     wait = min(rle.retry_after_seconds, 30) if attempt < max_retries - 1 else 0
                     if attempt < max_retries - 1:
                         logger.warning(
                             "Rate limited on room fetch (attempt %d/%d), waiting %ds",
-                            attempt + 1, max_retries, wait,
+                            attempt + 1,
+                            max_retries,
+                            wait,
                         )
                         await _aio.sleep(wait)
                     else:
@@ -321,25 +323,23 @@ class AutoMappingService:
 
         logger.info(
             "Fetched %d room types and %d rate plans from HotelRunner for connector %s",
-            len(room_types), len(rate_plans), connector_id,
+            len(room_types),
+            len(rate_plans),
+            connector_id,
         )
 
         return {
             "success": True,
             "room_types_count": len(room_types),
             "rate_plans_count": len(rate_plans),
-            "room_types": [
-                {"external_id": rt["external_id"], "name": rt["name"], "max_occupancy": rt["max_occupancy"]}
-                for rt in room_types.values()
-            ],
-            "rate_plans": [
-                {"external_id": rp["external_id"], "name": rp["name"]}
-                for rp in rate_plans.values()
-            ],
+            "room_types": [{"external_id": rt["external_id"], "name": rt["name"], "max_occupancy": rt["max_occupancy"]} for rt in room_types.values()],
+            "rate_plans": [{"external_id": rp["external_id"], "name": rp["name"]} for rp in rate_plans.values()],
         }
 
     async def suggest_room_mappings(
-        self, tenant_id: str, connector_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
     ) -> dict[str, Any]:
         """Suggest room type mappings using multi-signal v2 scoring."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
@@ -351,12 +351,17 @@ class AutoMappingService:
 
         room_query = {"tenant_id": tenant_id, "status": {"$ne": "out_of_service"}}
         projection = {
-            "_id": 0, "room_type": 1, "room_number": 1,
-            "capacity": 1, "base_price": 1, "max_occupancy": 1,
+            "_id": 0,
+            "room_type": 1,
+            "room_number": 1,
+            "capacity": 1,
+            "base_price": 1,
+            "max_occupancy": 1,
         }
         if property_id:
             pms_rooms_raw = await db.rooms.find(
-                {**room_query, "property_id": property_id}, projection,
+                {**room_query, "property_id": property_id},
+                projection,
             ).to_list(500)
             if not pms_rooms_raw:
                 pms_rooms_raw = await db.rooms.find(room_query, projection).to_list(500)
@@ -394,7 +399,8 @@ class AutoMappingService:
                 ext_cap = ext.get("max_occupancy") or 0
                 ext_price = ext.get("base_price") or 0
                 breakdown = _compute_match_score_v2(
-                    pms["name"], ext_name,
+                    pms["name"],
+                    ext_name,
                     pms_capacity=pms.get("capacity", 0),
                     ext_capacity=ext_cap,
                     pms_price=pms.get("base_price", 0),
@@ -424,13 +430,15 @@ class AutoMappingService:
                     ext = available_ext[ei]
                     ext_name = ext.get("name", ext.get("external_id", ""))
                     pms_names = [available_pms[pi]["name"] for pi, _ in close]
-                    conflicts.append({
-                        "type": "duplicate_external",
-                        "external_entity_id": ext.get("external_id", ""),
-                        "external_entity_name": ext_name,
-                        "pms_entities": pms_names,
-                        "message": f"Kanal oda tipi '{ext_name}' birden fazla PMS tipine benziyor: {', '.join(pms_names)}",
-                    })
+                    conflicts.append(
+                        {
+                            "type": "duplicate_external",
+                            "external_entity_id": ext.get("external_id", ""),
+                            "external_entity_name": ext_name,
+                            "pms_entities": pms_names,
+                            "message": f"Kanal oda tipi '{ext_name}' birden fazla PMS tipine benziyor: {', '.join(pms_names)}",
+                        }
+                    )
                     conflicted_ext.add(ei)
                     for pi, _ in close:
                         conflicted_pms.add(pi)
@@ -465,47 +473,51 @@ class AutoMappingService:
                 if is_conflicted:
                     item_warnings.append("Cakisma: ayni kanal tipi birden fazla PMS tipine benziyor — onay gerekli")
 
-                suggestions.append({
-                    "pms_entity_id": pms["id"],
-                    "pms_entity_name": pms["name"],
-                    "pms_room_count": room_counts.get(pms["id"], 0),
-                    "pms_capacity": pms.get("capacity", 0),
-                    "pms_base_price": pms.get("base_price", 0),
-                    "external_entity_id": ext.get("external_id", ""),
-                    "external_entity_name": ext.get("name", ext.get("external_id", "")),
-                    "external_capacity": ext.get("max_occupancy") or 0,
-                    "external_base_price": ext.get("base_price") or 0,
-                    "confidence": round(best_score * 100),
-                    "status": status,
-                    "score_breakdown": {
-                        "name_similarity": breakdown["name_similarity"],
-                        "alias_boost": breakdown["alias_boost"],
-                        "capacity_match": breakdown["capacity_match"],
-                        "price_proximity": breakdown["price_proximity"],
-                    },
-                    "warnings": item_warnings,
-                })
+                suggestions.append(
+                    {
+                        "pms_entity_id": pms["id"],
+                        "pms_entity_name": pms["name"],
+                        "pms_room_count": room_counts.get(pms["id"], 0),
+                        "pms_capacity": pms.get("capacity", 0),
+                        "pms_base_price": pms.get("base_price", 0),
+                        "external_entity_id": ext.get("external_id", ""),
+                        "external_entity_name": ext.get("name", ext.get("external_id", "")),
+                        "external_capacity": ext.get("max_occupancy") or 0,
+                        "external_base_price": ext.get("base_price") or 0,
+                        "confidence": round(best_score * 100),
+                        "status": status,
+                        "score_breakdown": {
+                            "name_similarity": breakdown["name_similarity"],
+                            "alias_boost": breakdown["alias_boost"],
+                            "capacity_match": breakdown["capacity_match"],
+                            "price_proximity": breakdown["price_proximity"],
+                        },
+                        "warnings": item_warnings,
+                    }
+                )
             else:
-                suggestions.append({
-                    "pms_entity_id": pms["id"],
-                    "pms_entity_name": pms["name"],
-                    "pms_room_count": room_counts.get(pms["id"], 0),
-                    "pms_capacity": pms.get("capacity", 0),
-                    "pms_base_price": pms.get("base_price", 0),
-                    "external_entity_id": "",
-                    "external_entity_name": "",
-                    "external_capacity": 0,
-                    "external_base_price": 0,
-                    "confidence": 0,
-                    "status": "unmatched",
-                    "score_breakdown": {
-                        "name_similarity": 0,
-                        "alias_boost": 0,
-                        "capacity_match": None,
-                        "price_proximity": None,
-                    },
-                    "warnings": [],
-                })
+                suggestions.append(
+                    {
+                        "pms_entity_id": pms["id"],
+                        "pms_entity_name": pms["name"],
+                        "pms_room_count": room_counts.get(pms["id"], 0),
+                        "pms_capacity": pms.get("capacity", 0),
+                        "pms_base_price": pms.get("base_price", 0),
+                        "external_entity_id": "",
+                        "external_entity_name": "",
+                        "external_capacity": 0,
+                        "external_base_price": 0,
+                        "confidence": 0,
+                        "status": "unmatched",
+                        "score_breakdown": {
+                            "name_similarity": 0,
+                            "alias_boost": 0,
+                            "capacity_match": None,
+                            "price_proximity": None,
+                        },
+                        "warnings": [],
+                    }
+                )
 
         order = {"auto": 0, "review": 1, "unmatched": 2}
         suggestions.sort(key=lambda s: (order.get(s["status"], 3), -s["confidence"]))
@@ -548,7 +560,9 @@ class AutoMappingService:
         }
 
     async def suggest_rate_plan_mappings(
-        self, tenant_id: str, connector_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
     ) -> dict[str, Any]:
         """Suggest rate plan mappings based on fuzzy name matching."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
@@ -566,11 +580,13 @@ class AutoMappingService:
             ).to_list(500)
             if not pms_rooms:
                 pms_rooms = await db.rooms.find(
-                    room_query, {"_id": 0, "room_type": 1},
+                    room_query,
+                    {"_id": 0, "room_type": 1},
                 ).to_list(500)
         else:
             pms_rooms = await db.rooms.find(
-                room_query, {"_id": 0, "room_type": 1},
+                room_query,
+                {"_id": 0, "room_type": 1},
             ).to_list(500)
         pms_rate_plans = list({r.get("room_type", "") for r in pms_rooms if r.get("room_type")})
 
@@ -611,23 +627,27 @@ class AutoMappingService:
             if pi in pms_to_ext:
                 ei, best_score = pms_to_ext[pi]
                 ext = available_ext[ei]
-                suggestions.append({
-                    "pms_entity_id": pms_rp,
-                    "pms_entity_name": pms_rp,
-                    "external_entity_id": ext.get("external_id", ""),
-                    "external_entity_name": ext.get("name", ext.get("external_id", "")),
-                    "confidence": round(best_score * 100),
-                    "status": "auto" if best_score >= 0.6 else "review",
-                })
+                suggestions.append(
+                    {
+                        "pms_entity_id": pms_rp,
+                        "pms_entity_name": pms_rp,
+                        "external_entity_id": ext.get("external_id", ""),
+                        "external_entity_name": ext.get("name", ext.get("external_id", "")),
+                        "confidence": round(best_score * 100),
+                        "status": "auto" if best_score >= 0.6 else "review",
+                    }
+                )
             else:
-                suggestions.append({
-                    "pms_entity_id": pms_rp,
-                    "pms_entity_name": pms_rp,
-                    "external_entity_id": "",
-                    "external_entity_name": "",
-                    "confidence": 0,
-                    "status": "unmatched",
-                })
+                suggestions.append(
+                    {
+                        "pms_entity_id": pms_rp,
+                        "pms_entity_name": pms_rp,
+                        "external_entity_id": "",
+                        "external_entity_name": "",
+                        "confidence": 0,
+                        "status": "unmatched",
+                    }
+                )
 
         order = {"auto": 0, "review": 1, "unmatched": 2}
         suggestions.sort(key=lambda s: (order.get(s["status"], 3), -s["confidence"]))

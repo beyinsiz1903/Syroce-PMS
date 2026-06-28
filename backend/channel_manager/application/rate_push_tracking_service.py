@@ -20,6 +20,7 @@ Response parsing + failure classification:
   - auth_error: Authentication failure
   - unknown: Unclassified error
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -73,7 +74,10 @@ class RatePushTrackingService:
         return {"recorded": True, "failure_classification": failure_class}
 
     async def get_metrics(
-        self, tenant_id: str, connector_id: str, days: int = 7,
+        self,
+        tenant_id: str,
+        connector_id: str,
+        days: int = 7,
     ) -> dict[str, Any]:
         """Get aggregated rate push metrics for a connector."""
         datetime.now(UTC).isoformat()[:10]  # today
@@ -112,12 +116,8 @@ class RatePushTrackingService:
             failure_breakdown[doc["_id"] or "unknown"] = doc["count"]
 
         # Last success/failure
-        last_success = await db[RATE_PUSH_METRICS].find_one(
-            {**query, "success": True}, _NO_ID, sort=[("recorded_at", -1)]
-        )
-        last_failure = await db[RATE_PUSH_METRICS].find_one(
-            {**query, "success": False}, _NO_ID, sort=[("recorded_at", -1)]
-        )
+        last_success = await db[RATE_PUSH_METRICS].find_one({**query, "success": True}, _NO_ID, sort=[("recorded_at", -1)])
+        last_failure = await db[RATE_PUSH_METRICS].find_one({**query, "success": False}, _NO_ID, sort=[("recorded_at", -1)])
 
         return {
             "connector_id": connector_id,
@@ -135,7 +135,9 @@ class RatePushTrackingService:
         }
 
     async def get_health_score_component(
-        self, tenant_id: str, connector_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
     ) -> float:
         """Return a health score component (0-100) based on rate push metrics."""
         metrics = await self.get_metrics(tenant_id, connector_id)

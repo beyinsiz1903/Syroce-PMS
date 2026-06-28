@@ -20,6 +20,7 @@ Security:
     configured for a tenant, signature check is skipped (logged as
     warning). Production must always set app_secret.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -44,6 +45,7 @@ router = APIRouter(prefix="/api/whatsapp", tags=["WhatsApp Webhook"])
 
 def _get_db():
     from server import db
+
     return db
 
 
@@ -138,9 +140,7 @@ async def receive_webhook(request: Request) -> dict[str, Any]:
     for entry in payload.get("entry", []) or []:
         for change in entry.get("changes", []) or []:
             value = change.get("value", {}) or {}
-            phone_number_id = (
-                value.get("metadata", {}).get("phone_number_id", "") or ""
-            )
+            phone_number_id = value.get("metadata", {}).get("phone_number_id", "") or ""
             cfg = await _find_config_by_phone_id(phone_number_id)
             if not cfg:
                 logger.warning(
@@ -159,14 +159,12 @@ async def receive_webhook(request: Request) -> dict[str, Any]:
             if not app_secret:
                 if is_sandbox:
                     logger.warning(
-                        "WhatsApp webhook (sandbox): app_secret not set for tenant=%s — "
-                        "accepting unsigned payload (DO NOT use in production)",
+                        "WhatsApp webhook (sandbox): app_secret not set for tenant=%s — accepting unsigned payload (DO NOT use in production)",
                         tenant_id,
                     )
                 else:
                     logger.error(
-                        "WhatsApp webhook: app_secret not set for tenant=%s in LIVE mode — "
-                        "rejecting payload (set app_secret to enable inbound)",
+                        "WhatsApp webhook: app_secret not set for tenant=%s in LIVE mode — rejecting payload (set app_secret to enable inbound)",
                         tenant_id,
                     )
                     continue
@@ -257,16 +255,18 @@ async def receive_webhook(request: Request) -> dict[str, Any]:
                             },
                         )
                         if res.matched_count == 0:
-                            await db.messaging_consents.insert_one({
-                                "tenant_id": tenant_id,
-                                "channel": "whatsapp",
-                                "recipient_hash": s_hash,
-                                "recipient_enc": sealed.get("recipient_enc"),
-                                "status": ConsentStatus.OPT_IN.value,
-                                "source": "wa_inbound",
-                                "created_at": now_iso,
-                                "updated_at": now_iso,
-                            })
+                            await db.messaging_consents.insert_one(
+                                {
+                                    "tenant_id": tenant_id,
+                                    "channel": "whatsapp",
+                                    "recipient_hash": s_hash,
+                                    "recipient_enc": sealed.get("recipient_enc"),
+                                    "status": ConsentStatus.OPT_IN.value,
+                                    "source": "wa_inbound",
+                                    "created_at": now_iso,
+                                    "updated_at": now_iso,
+                                }
+                            )
                     except Exception:
                         logger.exception("WhatsApp consent upsert failed")
 
@@ -300,9 +300,7 @@ async def receive_webhook(request: Request) -> dict[str, Any]:
                     errors = st.get("errors", []) or []
                     if errors:
                         first = errors[0] or {}
-                        update_doc["error_message"] = (
-                            first.get("title") or first.get("message") or ""
-                        )[:500]
+                        update_doc["error_message"] = (first.get("title") or first.get("message") or "")[:500]
                 try:
                     await db.messaging_delivery_logs.update_one(
                         {

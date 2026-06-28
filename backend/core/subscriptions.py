@@ -5,6 +5,7 @@ A tenant has access to a module/integration when EITHER:
 2. There is an active (status=active, end_date > now) entry in
    the `tenant_subscriptions` collection.
 """
+
 from __future__ import annotations
 
 import logging
@@ -18,6 +19,7 @@ def _db():
     """Raw, non-tenant-scoped DB. tenant_subscriptions stores tenant_id
     explicitly and we always filter on it manually."""
     from core.database import _raw_db
+
     return _raw_db
 
 
@@ -69,24 +71,24 @@ async def tenant_has_module(tenant_id: str, module_key: str) -> bool:
                 return True
 
     now = datetime.now(UTC)
-    sub = await db.tenant_subscriptions.find_one({
-        "tenant_id": tenant_id,
-        "product_key": {"$in": accepted_keys},
-        "status": "active",
-        "$or": [
-            {"end_date": None},
-            {"end_date": {"$gt": now.isoformat()}},
-        ],
-    })
+    sub = await db.tenant_subscriptions.find_one(
+        {
+            "tenant_id": tenant_id,
+            "product_key": {"$in": accepted_keys},
+            "status": "active",
+            "$or": [
+                {"end_date": None},
+                {"end_date": {"$gt": now.isoformat()}},
+            ],
+        }
+    )
     return sub is not None
 
 
 async def ensure_indexes() -> None:
     db = _db()
     try:
-        await db.marketplace_products.create_index(
-            "key", unique=True, name="uniq_product_key"
-        )
+        await db.marketplace_products.create_index("key", unique=True, name="uniq_product_key")
         await db.tenant_subscriptions.create_index(
             [("tenant_id", 1), ("product_key", 1)],
             name="idx_sub_tenant_product",
@@ -101,12 +103,8 @@ async def ensure_indexes() -> None:
             partialFilterExpression={"status": "active"},
             name="uniq_active_sub_per_tenant_product",
         )
-        await db.tenant_subscriptions.create_index(
-            "status", name="idx_sub_status"
-        )
-        await db.marketplace_orders.create_index(
-            "order_id", unique=True, name="uniq_order_id"
-        )
+        await db.tenant_subscriptions.create_index("status", name="idx_sub_status")
+        await db.marketplace_orders.create_index("order_id", unique=True, name="uniq_order_id")
         # One subscription record per paid order — protects against
         # double-grant on callback replay.
         await db.tenant_subscriptions.create_index(
@@ -115,17 +113,13 @@ async def ensure_indexes() -> None:
             sparse=True,
             name="uniq_sub_order_id",
         )
-        await db.marketplace_orders.create_index(
-            "tenant_id", name="idx_order_tenant"
-        )
+        await db.marketplace_orders.create_index("tenant_id", name="idx_order_tenant")
         # Atomic activation marker: any callback (paid OR trial) inserts
         # one row per order_id. Unique index makes concurrent/replayed
         # callbacks fail-fast on the second insert, preventing duplicate
         # entitlement grants in the "extend existing sub" branch where
         # tenant_subscriptions.order_id is not always written.
-        await db.tenant_subscription_activations.create_index(
-            "order_id", unique=True, name="uniq_activation_order_id"
-        )
+        await db.tenant_subscription_activations.create_index("order_id", unique=True, name="uniq_activation_order_id")
         # Outbound folio-charge idempotency: enforce uniqueness on the
         # caller-supplied external_ref scoped per (tenant, source).
         # Sparse so charges without external_ref are not constrained.

@@ -3,6 +3,7 @@ guest_journey
 
 Auto-split sub-router (shared imports/classes inlined).
 """
+
 """
 Syroce Open API — Kapsamli Otel PMS Entegrasyon API'si
 ======================================================
@@ -101,8 +102,8 @@ from models.schemas import User
 logger = logging.getLogger(__name__)
 
 
-
 # ── Helpers ──────────────────────────────────────────────────────
+
 
 def _now_iso():
     return datetime.now(UTC).isoformat()
@@ -152,13 +153,16 @@ async def _agency_owns_block(tenant_id: str, agency_id: str, block_id: str) -> d
 
 # ── API Key Auth Dependency ──────────────────────────────────────
 
+
 async def get_b2b_agency(x_api_key: str | None = Header(None, alias="X-API-Key")):
     """API key ile acente kimlik dogrulamasi + per-subrouter scope kontrolu."""
     from ._scope import authenticate_b2b_agency
+
     return await authenticate_b2b_agency(x_api_key, required_scope="guest_journey")
 
 
 # ── Request Models ───────────────────────────────────────────────
+
 
 class B2BReservationCreate(BaseModel):
     room_type: str
@@ -204,29 +208,9 @@ async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
 # ═════════════════════════════════════════════════════════════════
 
 
-
-
-
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # B2B ENDPOINTS — Syroce Acente Sistemi (API Key Auth)
 # ═════════════════════════════════════════════════════════════════
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -236,22 +220,9 @@ async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
 VALID_WEBHOOK_EVENTS = {"reservation.created", "reservation.cancelled", "reservation.updated", "rates.updated", "availability.updated"}
 
 
-
-
-
-
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # GUEST & LOYALTY — Misafir ve Sadakat Programi
 # ═════════════════════════════════════════════════════════════════
-
-
-
-
-
 
 
 class LoyaltyPointsUpdate(BaseModel):
@@ -260,14 +231,9 @@ class LoyaltyPointsUpdate(BaseModel):
     operation: str = "add"
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # HOUSEKEEPING — Kat Hizmetleri
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class HousekeepingStatusUpdate(BaseModel):
@@ -275,12 +241,9 @@ class HousekeepingStatusUpdate(BaseModel):
     notes: str = ""
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # KBS / POLICE NOTIFICATION — Emniyet Bildirim Sistemi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class KBSReportCreate(BaseModel):
@@ -289,13 +252,10 @@ class KBSReportCreate(BaseModel):
     notes: str = ""
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # PASSPORT / ID — Kimlik ve Pasaport Okuma
 # ═════════════════════════════════════════════════════════════════
+
 
 class IdentityScanData(BaseModel):
     guest_id: str
@@ -314,14 +274,9 @@ class IdentityScanData(BaseModel):
     raw_ocr_data: dict | None = None
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # LOST & FOUND — Kayip Esya
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class LostFoundCreate(BaseModel):
@@ -334,8 +289,6 @@ class LostFoundCreate(BaseModel):
     room_number: str = ""
 
 
-
-
 class LostFoundUpdate(BaseModel):
     status: str | None = None
     guest_name: str | None = None
@@ -343,12 +296,9 @@ class LostFoundUpdate(BaseModel):
     claimed_by: str | None = None
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # WAKE-UP CALLS — Uyandirma Servisi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class WakeUpCallCreate(BaseModel):
@@ -361,21 +311,16 @@ class WakeUpCallCreate(BaseModel):
     recurring_until: str = ""  # YYYY-MM-DD
 
 
-
-
 class WakeUpCallUpdate(BaseModel):
     wake_time: str | None = None
     status: str | None = None
     notes: str | None = None
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # GUEST JOURNEY — Misafir Yolculugu
 # ═════════════════════════════════════════════════════════════════
+
 
 class B2BOnlineCheckin(BaseModel):
     booking_id: str
@@ -387,10 +332,6 @@ class B2BOnlineCheckin(BaseModel):
     nationality: str | None = None
 
 
-
-
-
-
 class B2BGuestRequest(BaseModel):
     booking_id: str
     request_type: str  # concierge, spa, room_service, maintenance, transport, other
@@ -398,14 +339,9 @@ class B2BGuestRequest(BaseModel):
     priority: str = "normal"
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # CONCIERGE & SPA — Concierge ve Spa Hizmetleri
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class ConciergeRequest(BaseModel):
@@ -417,10 +353,6 @@ class ConciergeRequest(BaseModel):
     guest_count: int = 1
 
 
-
-
-
-
 class SpaBookingCreate(BaseModel):
     booking_id: str
     service_id: str
@@ -430,12 +362,9 @@ class SpaBookingCreate(BaseModel):
     notes: str = ""
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # MICE & GROUPS — Grup ve Toplanti Yonetimi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class GroupBlockCreate(BaseModel):
@@ -452,10 +381,6 @@ class GroupBlockCreate(BaseModel):
     notes: str = ""
 
 
-
-
-
-
 class RoomingListEntry(BaseModel):
     guest_name: str
     room_type: str = ""
@@ -468,12 +393,9 @@ class RoomingListUpload(BaseModel):
     guests: list[RoomingListEntry]
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # FOLIO & BILLING — Folio ve Fatura
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class FolioChargeCreate(BaseModel):
@@ -481,6 +403,7 @@ class FolioChargeCreate(BaseModel):
     description: str = Field(..., min_length=1)
     amount: float = Field(..., gt=0, le=1000000)
     quantity: int = Field(1, ge=1, le=9999)
+
 
 router = APIRouter(prefix="/api/b2b", tags=["B2B API - Syroce"])
 
@@ -518,6 +441,7 @@ async def b2b_online_checkin(
         if guest_update and booking.get("guest_id"):
             # Encrypt PII (passport_number) + _hash_ token. No name field here.
             from security.guest_write import encrypt_guest_update
+
             guest_update = encrypt_guest_update(guest_update)
             await db.guests.update_one(
                 {"tenant_id": tenant_id, "id": booking["guest_id"]},
@@ -525,6 +449,8 @@ async def b2b_online_checkin(
             )
 
     return {"ok": True, "booking_id": data.booking_id, "message": "Online check-in tamamlandi"}
+
+
 # ── GET /guest-journey/pre-arrival/{booking_id} ──
 @router.get("/guest-journey/pre-arrival/{booking_id}")
 async def b2b_pre_arrival_status(booking_id: str, agency: dict = Depends(get_b2b_agency)):
@@ -535,14 +461,26 @@ async def b2b_pre_arrival_status(booking_id: str, agency: dict = Depends(get_b2b
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
     booking = await db.bookings.find_one(
         {"tenant_id": tenant_id, "id": booking_id},
-        {"_id": 0, "id": 1, "status": 1, "check_in": 1, "check_out": 1,
-         "guest_name": 1, "room_number": 1, "room_type": 1,
-         "online_checkin_completed": 1, "special_requests": 1,
-         "arrival_time": 1, "flight_number": 1},
+        {
+            "_id": 0,
+            "id": 1,
+            "status": 1,
+            "check_in": 1,
+            "check_out": 1,
+            "guest_name": 1,
+            "room_number": 1,
+            "room_type": 1,
+            "online_checkin_completed": 1,
+            "special_requests": 1,
+            "arrival_time": 1,
+            "flight_number": 1,
+        },
     )
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
     return {"booking": booking}
+
+
 # ── POST /guest-journey/request ──
 @router.post("/guest-journey/request")
 async def b2b_create_guest_request(
@@ -576,6 +514,8 @@ async def b2b_create_guest_request(
     await db.guest_requests.insert_one(req_doc)
     req_doc.pop("_id", None)
     return {"ok": True, "request": req_doc}
+
+
 # ── GET /guest-journey/requests ──
 @router.get("/guest-journey/requests")
 async def b2b_list_guest_requests(
@@ -600,7 +540,5 @@ async def b2b_list_guest_requests(
     if request_type:
         query["request_type"] = request_type
 
-    docs = await db.guest_requests.find(
-        query, {"_id": 0, "tenant_id": 0}
-    ).sort("created_at", -1).to_list(limit)
+    docs = await db.guest_requests.find(query, {"_id": 0, "tenant_id": 0}).sort("created_at", -1).to_list(limit)
     return {"requests": docs, "count": len(docs)}

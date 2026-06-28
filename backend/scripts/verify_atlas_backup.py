@@ -20,6 +20,7 @@ Exit codes:
 Usage:
   python backend/scripts/verify_atlas_backup.py --max-age-hours 26
 """
+
 from __future__ import annotations
 
 import argparse
@@ -32,12 +33,7 @@ from typing import Any
 
 
 def _has_atlas_keys() -> bool:
-    return bool(
-        os.environ.get("ATLAS_API_PUBLIC_KEY")
-        and os.environ.get("ATLAS_API_PRIVATE_KEY")
-        and os.environ.get("ATLAS_PROJECT_ID")
-        and os.environ.get("ATLAS_CLUSTER_NAME")
-    )
+    return bool(os.environ.get("ATLAS_API_PUBLIC_KEY") and os.environ.get("ATLAS_API_PRIVATE_KEY") and os.environ.get("ATLAS_PROJECT_ID") and os.environ.get("ATLAS_CLUSTER_NAME"))
 
 
 def _fetch_latest_snapshot() -> dict[str, Any]:
@@ -52,10 +48,7 @@ def _fetch_latest_snapshot() -> dict[str, Any]:
 
     project_id = os.environ["ATLAS_PROJECT_ID"]
     cluster = os.environ["ATLAS_CLUSTER_NAME"]
-    url = (
-        f"https://cloud.mongodb.com/api/atlas/v1.0/groups/{project_id}"
-        f"/clusters/{cluster}/backup/snapshots"
-    )
+    url = f"https://cloud.mongodb.com/api/atlas/v1.0/groups/{project_id}/clusters/{cluster}/backup/snapshots"
     auth = HTTPDigestAuth(
         os.environ["ATLAS_API_PUBLIC_KEY"],
         os.environ["ATLAS_API_PRIVATE_KEY"],
@@ -66,11 +59,13 @@ def _fetch_latest_snapshot() -> dict[str, Any]:
     results = payload.get("results", []) or []
     if not results:
         return {}
+
     # Don't trust API ordering — sort explicitly by createdAt desc.
     # Atlas returns ISO 8601 strings (e.g. "2026-05-12T03:14:00Z");
     # lexicographic sort is correct for this format.
     def _key(s: dict[str, Any]) -> str:
         return s.get("createdAt") or ""
+
     results.sort(key=_key, reverse=True)
     snap = results[0]
     return {
@@ -84,8 +79,7 @@ def _fetch_latest_snapshot() -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--max-age-hours", type=int, default=26,
-                   help="Fail if newest snapshot older than this (default 26)")
+    p.add_argument("--max-age-hours", type=int, default=26, help="Fail if newest snapshot older than this (default 26)")
     p.add_argument("--sidecar", default=".local/atlas_backup_verified.json")
     p.add_argument("--quiet", action="store_true")
     args = p.parse_args(argv)
@@ -117,19 +111,23 @@ def main(argv: list[str] | None = None) -> int:
 
     sidecar_path = Path(args.sidecar)
     sidecar_path.parent.mkdir(parents=True, exist_ok=True)
-    sidecar_path.write_text(json.dumps({
-        "verified_at": datetime.now(UTC).isoformat(),
-        "snapshot_id": snap["snapshot_id"],
-        "snapshot_age_hours": round(age_hours, 2),
-        "snapshot_type": snap.get("type"),
-        "fresh": fresh,
-        "max_age_hours": args.max_age_hours,
-    }, indent=2))
+    sidecar_path.write_text(
+        json.dumps(
+            {
+                "verified_at": datetime.now(UTC).isoformat(),
+                "snapshot_id": snap["snapshot_id"],
+                "snapshot_age_hours": round(age_hours, 2),
+                "snapshot_type": snap.get("type"),
+                "fresh": fresh,
+                "max_age_hours": args.max_age_hours,
+            },
+            indent=2,
+        )
+    )
 
     if not args.quiet:
         verdict = "FRESH" if fresh else "STALE"
-        print(f"verify_atlas_backup: {verdict} — newest snapshot {age_hours:.1f}h old "
-              f"(threshold {args.max_age_hours}h)")
+        print(f"verify_atlas_backup: {verdict} — newest snapshot {age_hours:.1f}h old (threshold {args.max_age_hours}h)")
 
     return 0 if fresh else 1
 

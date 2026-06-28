@@ -44,12 +44,10 @@ class RMSDataGenerator:
 
         # Define seasons
         high_season_months = [6, 7, 8, 12]  # Summer + December
-        mid_season_months = [4, 5, 9, 10]   # Spring + Fall
+        mid_season_months = [4, 5, 9, 10]  # Spring + Fall
 
         # Define holidays
-        holidays = [
-            (1, 1), (4, 23), (5, 1), (5, 19), (7, 15), (8, 30), (10, 29), (12, 25)
-        ]
+        holidays = [(1, 1), (4, 23), (5, 1), (5, 19), (7, 15), (8, 30), (10, 29), (12, 25)]
 
         # Define major events (randomly throughout year)
         events = [start_date + timedelta(days=random.randint(0, days)) for _ in range(20)]
@@ -136,23 +134,25 @@ class RMSDataGenerator:
             # Add some noise to optimal price
             optimal_price *= random.uniform(0.95, 1.05)
 
-            data.append({
-                'date': current_date.strftime('%Y-%m-%d'),
-                'day_of_week': day_of_week,
-                'month': month,
-                'season': season,
-                'is_weekend': is_weekend,
-                'is_holiday': is_holiday,
-                'days_until_event': days_until_event,
-                'competitor_avg_rate': round(competitor_avg_rate, 2),
-                'competitor_occupancy': round(competitor_occupancy, 3),
-                'historical_occupancy_7d': round(historical_occupancy_7d, 3),
-                'historical_occupancy_30d': round(historical_occupancy_30d, 3),
-                'lead_time_bookings': lead_time_bookings,
-                'current_price': round(current_price, 2),
-                'occupancy_rate': round(occupancy, 3),
-                'optimal_price': round(optimal_price, 2)
-            })
+            data.append(
+                {
+                    "date": current_date.strftime("%Y-%m-%d"),
+                    "day_of_week": day_of_week,
+                    "month": month,
+                    "season": season,
+                    "is_weekend": is_weekend,
+                    "is_holiday": is_holiday,
+                    "days_until_event": days_until_event,
+                    "competitor_avg_rate": round(competitor_avg_rate, 2),
+                    "competitor_occupancy": round(competitor_occupancy, 3),
+                    "historical_occupancy_7d": round(historical_occupancy_7d, 3),
+                    "historical_occupancy_30d": round(historical_occupancy_30d, 3),
+                    "lead_time_bookings": lead_time_bookings,
+                    "current_price": round(current_price, 2),
+                    "occupancy_rate": round(occupancy, 3),
+                    "optimal_price": round(optimal_price, 2),
+                }
+            )
 
         return pd.DataFrame(data)
 
@@ -188,20 +188,13 @@ class PersonaDataGenerator:
 
         data = []
 
-        persona_types = [
-            'price_sensitive',
-            'experience_seeker',
-            'complainer',
-            'upsell_candidate',
-            'high_ltv',
-            'ota_to_direct'
-        ]
+        persona_types = ["price_sensitive", "experience_seeker", "complainer", "upsell_candidate", "high_ltv", "ota_to_direct"]
 
         for i in range(num_guests):
             # Randomly assign a primary persona
             primary_persona = random.choice(persona_types)
 
-            if primary_persona == 'price_sensitive':
+            if primary_persona == "price_sensitive":
                 total_stays = random.randint(1, 3)
                 avg_spend = random.uniform(50, 100)
                 avg_lead_time = random.uniform(30, 90)
@@ -212,7 +205,7 @@ class PersonaDataGenerator:
                 positive_reviews = random.randint(0, 2)
                 days_since_last_visit = random.randint(60, 365)
 
-            elif primary_persona == 'experience_seeker':
+            elif primary_persona == "experience_seeker":
                 total_stays = random.randint(2, 8)
                 avg_spend = random.uniform(200, 400)
                 avg_lead_time = random.uniform(14, 60)
@@ -223,7 +216,7 @@ class PersonaDataGenerator:
                 positive_reviews = random.randint(3, 10)
                 days_since_last_visit = random.randint(30, 180)
 
-            elif primary_persona == 'complainer':
+            elif primary_persona == "complainer":
                 total_stays = random.randint(1, 5)
                 avg_spend = random.uniform(100, 250)
                 avg_lead_time = random.uniform(7, 45)
@@ -234,7 +227,7 @@ class PersonaDataGenerator:
                 positive_reviews = random.randint(0, 2)
                 days_since_last_visit = random.randint(90, 365)
 
-            elif primary_persona == 'upsell_candidate':
+            elif primary_persona == "upsell_candidate":
                 total_stays = random.randint(3, 10)
                 avg_spend = random.uniform(250, 450)
                 avg_lead_time = random.uniform(10, 45)
@@ -245,7 +238,7 @@ class PersonaDataGenerator:
                 positive_reviews = random.randint(2, 8)
                 days_since_last_visit = random.randint(20, 150)
 
-            elif primary_persona == 'high_ltv':
+            elif primary_persona == "high_ltv":
                 total_stays = random.randint(6, 20)
                 avg_spend = random.uniform(300, 500)
                 avg_lead_time = random.uniform(7, 60)
@@ -270,21 +263,23 @@ class PersonaDataGenerator:
             total_spent = avg_spend * total_stays
             booking_frequency = total_stays / max(1, days_since_last_visit / 365)
 
-            data.append({
-                'guest_id': f'G{i+1:04d}',
-                'total_stays': total_stays,
-                'avg_spend': round(avg_spend, 2),
-                'total_spent': round(total_spent, 2),
-                'avg_lead_time': round(avg_lead_time, 1),
-                'ota_bookings': ota_bookings,
-                'direct_bookings': direct_bookings,
-                'upsells_accepted': upsells_accepted,
-                'negative_reviews': negative_reviews,
-                'positive_reviews': positive_reviews,
-                'days_since_last_visit': days_since_last_visit,
-                'booking_frequency': round(booking_frequency, 2),
-                'persona_type': primary_persona
-            })
+            data.append(
+                {
+                    "guest_id": f"G{i + 1:04d}",
+                    "total_stays": total_stays,
+                    "avg_spend": round(avg_spend, 2),
+                    "total_spent": round(total_spent, 2),
+                    "avg_lead_time": round(avg_lead_time, 1),
+                    "ota_bookings": ota_bookings,
+                    "direct_bookings": direct_bookings,
+                    "upsells_accepted": upsells_accepted,
+                    "negative_reviews": negative_reviews,
+                    "positive_reviews": positive_reviews,
+                    "days_since_last_visit": days_since_last_visit,
+                    "booking_frequency": round(booking_frequency, 2),
+                    "persona_type": primary_persona,
+                }
+            )
 
         return pd.DataFrame(data)
 
@@ -317,7 +312,7 @@ class PredictiveMaintenanceDataGenerator:
         """
 
         data = []
-        equipment_types = ['hvac', 'plumbing', 'electrical', 'elevator']
+        equipment_types = ["hvac", "plumbing", "electrical", "elevator"]
 
         for i in range(num_samples):
             equipment = random.choice(equipment_types)
@@ -354,7 +349,7 @@ class PredictiveMaintenanceDataGenerator:
                 risk_score += 1
 
             # Equipment-specific features
-            if equipment == 'hvac':
+            if equipment == "hvac":
                 # Normal: 18-24°C, problematic: outside this range
                 if risk_score >= 5:
                     temperature = random.uniform(28, 35)  # Overheating
@@ -372,7 +367,7 @@ class PredictiveMaintenanceDataGenerator:
                 humidity = random.uniform(30, 70)
                 pressure = 0  # Not applicable
 
-            elif equipment == 'plumbing':
+            elif equipment == "plumbing":
                 temperature = random.uniform(15, 30)
                 vibration_level = random.uniform(0, 30)
 
@@ -389,7 +384,7 @@ class PredictiveMaintenanceDataGenerator:
                     error_count_24h = random.randint(0, 2)
                     humidity = random.uniform(40, 55)
 
-            elif equipment == 'electrical':
+            elif equipment == "electrical":
                 temperature = random.uniform(20, 40) if risk_score >= 5 else random.uniform(20, 30)
                 vibration_level = random.uniform(0, 20)
 
@@ -421,30 +416,32 @@ class PredictiveMaintenanceDataGenerator:
 
             # Determine failure risk category
             if risk_score >= 6:
-                failure_risk = 'high'
+                failure_risk = "high"
                 days_until_failure = random.randint(1, 30)
             elif risk_score >= 3:
-                failure_risk = 'medium'
+                failure_risk = "medium"
                 days_until_failure = random.randint(31, 90)
             else:
-                failure_risk = 'low'
+                failure_risk = "low"
                 days_until_failure = random.randint(91, 365)
 
-            data.append({
-                'equipment_id': f'EQ{i+1:04d}',
-                'equipment_type': equipment,
-                'equipment_type_idx': equipment_idx,
-                'temperature': round(temperature, 1),
-                'vibration_level': round(vibration_level, 1),
-                'error_count_24h': error_count_24h,
-                'usage_hours': usage_hours,
-                'days_since_maintenance': days_since_maintenance,
-                'humidity': round(humidity, 1),
-                'pressure': round(pressure, 1),
-                'age_years': round(age_years, 1),
-                'failure_risk': failure_risk,
-                'days_until_failure': days_until_failure
-            })
+            data.append(
+                {
+                    "equipment_id": f"EQ{i + 1:04d}",
+                    "equipment_type": equipment,
+                    "equipment_type_idx": equipment_idx,
+                    "temperature": round(temperature, 1),
+                    "vibration_level": round(vibration_level, 1),
+                    "error_count_24h": error_count_24h,
+                    "usage_hours": usage_hours,
+                    "days_since_maintenance": days_since_maintenance,
+                    "humidity": round(humidity, 1),
+                    "pressure": round(pressure, 1),
+                    "age_years": round(age_years, 1),
+                    "failure_risk": failure_risk,
+                    "days_until_failure": days_until_failure,
+                }
+            )
 
         return pd.DataFrame(data)
 
@@ -550,20 +547,22 @@ class HKSchedulerDataGenerator:
             staff_needed = int((estimated_hours / 6) * 1.2) + 1
             staff_needed = max(3, min(20, staff_needed))  # Min 3, max 20
 
-            data.append({
-                'date': current_date.strftime('%Y-%m-%d'),
-                'day_of_week': day_of_week,
-                'is_weekend': is_weekend,
-                'season': season,
-                'total_rooms': total_rooms,
-                'occupied_rooms': occupied_rooms,
-                'checkout_rooms': checkout_rooms,
-                'stayover_rooms': stayover_rooms,
-                'vip_rooms': vip_rooms,
-                'occupancy_rate': round(occupancy_rate, 3),
-                'avg_room_type_points': round(avg_room_type_points, 2),
-                'staff_needed': staff_needed,
-                'estimated_hours': round(estimated_hours, 1)
-            })
+            data.append(
+                {
+                    "date": current_date.strftime("%Y-%m-%d"),
+                    "day_of_week": day_of_week,
+                    "is_weekend": is_weekend,
+                    "season": season,
+                    "total_rooms": total_rooms,
+                    "occupied_rooms": occupied_rooms,
+                    "checkout_rooms": checkout_rooms,
+                    "stayover_rooms": stayover_rooms,
+                    "vip_rooms": vip_rooms,
+                    "occupancy_rate": round(occupancy_rate, 3),
+                    "avg_room_type_points": round(avg_room_type_points, 2),
+                    "staff_needed": staff_needed,
+                    "estimated_hours": round(estimated_hours, 1),
+                }
+            )
 
         return pd.DataFrame(data)

@@ -12,6 +12,7 @@ the operational dashboard, giving teams a single pane of glass
 for deploy history, success rates, rollback events, and smoke
 test results.
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -71,7 +72,9 @@ async def record_deploy_event(event: dict) -> dict:
     await db[COLL_DEPLOYS].insert_one(doc)
     logger.info(
         "Deploy event recorded: %s → %s (%s)",
-        doc["short_sha"], doc["environment"], doc["status"],
+        doc["short_sha"],
+        doc["environment"],
+        doc["status"],
     )
     return {
         "recorded": True,
@@ -90,12 +93,7 @@ async def get_deploy_history(
     if environment:
         query["environment"] = environment
 
-    cursor = (
-        db[COLL_DEPLOYS]
-        .find(query, {"_id": 0})
-        .sort("recorded_at", -1)
-        .limit(limit)
-    )
+    cursor = db[COLL_DEPLOYS].find(query, {"_id": 0}).sort("recorded_at", -1).limit(limit)
     return await cursor.to_list(limit)
 
 
@@ -106,15 +104,9 @@ async def get_deploy_stats() -> dict:
             "$group": {
                 "_id": "$environment",
                 "total": {"$sum": 1},
-                "success": {
-                    "$sum": {"$cond": [{"$eq": ["$status", "success"]}, 1, 0]}
-                },
-                "failure": {
-                    "$sum": {"$cond": [{"$eq": ["$status", "failure"]}, 1, 0]}
-                },
-                "rollback_count": {
-                    "$sum": {"$cond": [{"$eq": ["$rollback", True]}, 1, 0]}
-                },
+                "success": {"$sum": {"$cond": [{"$eq": ["$status", "success"]}, 1, 0]}},
+                "failure": {"$sum": {"$cond": [{"$eq": ["$status", "failure"]}, 1, 0]}},
+                "rollback_count": {"$sum": {"$cond": [{"$eq": ["$rollback", True]}, 1, 0]}},
                 "last_deploy": {"$max": "$recorded_at"},
                 "last_sha": {"$last": "$short_sha"},
             }
@@ -157,12 +149,9 @@ async def get_deploy_stats() -> dict:
             "total_success": success_all,
             "total_failure": sum(s["failure"] for s in stats),
             "total_rollbacks": sum(s["rollback_count"] for s in stats),
-            "overall_success_rate": round(
-                (success_all / total_all * 100) if total_all > 0 else 0, 1
-            ),
+            "overall_success_rate": round((success_all / total_all * 100) if total_all > 0 else 0, 1),
         },
     }
-
 
 
 async def get_deploy_trend(days: int = 14) -> list:
@@ -172,24 +161,14 @@ async def get_deploy_trend(days: int = 14) -> list:
     cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
     pipeline = [
         {"$match": {"recorded_at": {"$gte": cutoff}}},
-        {
-            "$addFields": {
-                "day": {"$substr": ["$recorded_at", 0, 10]}
-            }
-        },
+        {"$addFields": {"day": {"$substr": ["$recorded_at", 0, 10]}}},
         {
             "$group": {
                 "_id": "$day",
                 "total": {"$sum": 1},
-                "success": {
-                    "$sum": {"$cond": [{"$eq": ["$status", "success"]}, 1, 0]}
-                },
-                "failure": {
-                    "$sum": {"$cond": [{"$ne": ["$status", "success"]}, 1, 0]}
-                },
-                "rollbacks": {
-                    "$sum": {"$cond": [{"$eq": ["$rollback", True]}, 1, 0]}
-                },
+                "success": {"$sum": {"$cond": [{"$eq": ["$status", "success"]}, 1, 0]}},
+                "failure": {"$sum": {"$cond": [{"$ne": ["$status", "success"]}, 1, 0]}},
+                "rollbacks": {"$sum": {"$cond": [{"$eq": ["$rollback", True]}, 1, 0]}},
             }
         },
         {

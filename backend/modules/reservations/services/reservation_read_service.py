@@ -34,9 +34,7 @@ class ReservationReadService:
         # artigi olabilir ("V4 Refund", "X" gibi). TUM guest_id'ler icin lookup
         # yap, gercek isim varsa booking.guest_name'i override et.
         # Tenant scoping: lookup'lar tenant_id ile filtreli (IDOR-safe).
-        all_guest_ids = {
-            b["guest_id"] for b in bookings if b.get("guest_id")
-        }
+        all_guest_ids = {b["guest_id"] for b in bookings if b.get("guest_id")}
         room_ids = {b["room_id"] for b in bookings if b.get("room_id")}
 
         guest_map: dict[str, str] = {}
@@ -70,9 +68,7 @@ class ReservationReadService:
             elif is_placeholder_guest_name(booking.get("guest_name")):
                 # guest doc anlamli isim vermedi (yoksa veya kendisi de placeholder)
                 # → "Misafir <SHORTID>" fallback.
-                booking["guest_name"] = display_guest_name(
-                    booking.get("guest_name"), booking.get("guest_id")
-                )
+                booking["guest_name"] = display_guest_name(booking.get("guest_name"), booking.get("guest_id"))
 
             if booking.get("room_id"):
                 room_doc = room_map.get(booking["room_id"])

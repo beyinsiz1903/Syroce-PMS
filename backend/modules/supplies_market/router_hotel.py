@@ -1,4 +1,5 @@
 """Hotel-facing endpoints — uses the existing staff JWT (get_current_user)."""
+
 from __future__ import annotations
 
 import logging
@@ -54,7 +55,8 @@ async def list_products(
         query["category"] = category
     if q:
         from security.query_safety import safe_search_term
-        if (_s := safe_search_term(q)):
+
+        if _s := safe_search_term(q):
             query["name"] = {"$regex": _s, "$options": "i"}
     docs = await products_col.find(query).sort("created_at", -1).to_list(length=limit)
     return [public_product(d) for d in docs]
@@ -79,7 +81,8 @@ async def compare_products(
         query["category"] = category
     if q:
         from security.query_safety import safe_search_term
-        if (_s := safe_search_term(q)):
+
+        if _s := safe_search_term(q):
             query["name"] = {"$regex": _s, "$options": "i"}
 
     docs = await products_col.find(query).to_list(length=limit * 4)
@@ -89,11 +92,7 @@ async def compare_products(
     # Vendor adı ve onay kontrolü için bir kerelik fetch
     vendor_ids = list({d["vendor_id"] for d in docs})
     vendors = await vendors_col.find({"id": {"$in": vendor_ids}}).to_list(length=len(vendor_ids))
-    approved_vendors = {
-        v["id"]: v.get("company_name", "")
-        for v in vendors
-        if v.get("status") == "approved"
-    }
+    approved_vendors = {v["id"]: v.get("company_name", "") for v in vendors if v.get("status") == "approved"}
 
     options: list[dict] = []
     for d in docs:
@@ -104,24 +103,26 @@ async def compare_products(
             # qty kadar stok yoksa karşılaştırmaya alma
             continue
         priced = resolve_effective_price(d, qty)
-        options.append({
-            "product_id": d["id"],
-            "product_name": d["name"],
-            "vendor_id": vid,
-            "vendor_name": approved_vendors[vid] or d.get("vendor_name", ""),
-            "base_price_try": priced["base_price"],
-            "effective_price_try": priced["unit_price"],
-            "line_total_try": round(priced["unit_price"] * qty, 2),
-            "qty": qty,
-            "moq": int(d.get("moq", 1)),
-            "unit": d.get("unit", "adet"),
-            "stock": int(d.get("stock", 0)),
-            "lead_time_days": int(d.get("lead_time_days", 0) or 0),
-            "payment_terms_days": int(d.get("payment_terms_days", 0) or 0),
-            "applied_tier": priced["applied_tier"],
-            "applied_promotion": priced["applied_promotion"],
-            "savings_pct": priced["savings_pct"],
-        })
+        options.append(
+            {
+                "product_id": d["id"],
+                "product_name": d["name"],
+                "vendor_id": vid,
+                "vendor_name": approved_vendors[vid] or d.get("vendor_name", ""),
+                "base_price_try": priced["base_price"],
+                "effective_price_try": priced["unit_price"],
+                "line_total_try": round(priced["unit_price"] * qty, 2),
+                "qty": qty,
+                "moq": int(d.get("moq", 1)),
+                "unit": d.get("unit", "adet"),
+                "stock": int(d.get("stock", 0)),
+                "lead_time_days": int(d.get("lead_time_days", 0) or 0),
+                "payment_terms_days": int(d.get("payment_terms_days", 0) or 0),
+                "applied_tier": priced["applied_tier"],
+                "applied_promotion": priced["applied_promotion"],
+                "savings_pct": priced["savings_pct"],
+            }
+        )
 
     # Ucuz → pahalı sırala
     options.sort(key=lambda o: o["effective_price_try"])
@@ -167,16 +168,16 @@ async def get_product(product_id: str, _user=Depends(get_current_user)):
 
 
 @router.post("/orders", response_model=OrderOut)
-async def create_order(payload: OrderCreate, current_user=Depends(get_current_user),
+async def create_order(
+    payload: OrderCreate,
+    current_user=Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v99 DW
 ):
     hotel_tenant_id = getattr(current_user, "tenant_id", None)
     hotel_name = getattr(current_user, "tenant_name", None) or getattr(current_user, "username", "Hotel")
     if not hotel_tenant_id:
         raise HTTPException(400, "Tenant context missing")
-    doc = await place_order(
-        payload=payload, hotel_tenant_id=hotel_tenant_id, hotel_name=hotel_name
-    )
+    doc = await place_order(payload=payload, hotel_tenant_id=hotel_tenant_id, hotel_name=hotel_name)
     return doc
 
 
@@ -194,7 +195,9 @@ async def my_orders(current_user=Depends(get_current_user), limit: int = Query(d
 
 
 @router.post("/orders/{order_id}/confirm-delivery", response_model=OrderOut)
-async def confirm_delivery(order_id: str, current_user=Depends(get_current_user),
+async def confirm_delivery(
+    order_id: str,
+    current_user=Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v99 DW
 ):
     hotel_tenant_id = getattr(current_user, "tenant_id", None)

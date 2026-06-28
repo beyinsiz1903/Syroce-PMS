@@ -2,6 +2,7 @@
 PMS Domain — Room Service
 Business logic for room operations. No FastAPI dependencies.
 """
+
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -14,13 +15,21 @@ class RoomService:
 
     @staticmethod
     async def get_rooms(
-        tenant_id: str, *, status: str | None = None,
-        room_type: str | None = None, floor: str | None = None,
-        limit: int = 100, offset: int = 0,
+        tenant_id: str,
+        *,
+        status: str | None = None,
+        room_type: str | None = None,
+        floor: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         return await RoomRepository.find_by_tenant(
-            tenant_id, status=status, room_type=room_type,
-            floor=floor, limit=limit, offset=offset,
+            tenant_id,
+            status=status,
+            room_type=room_type,
+            floor=floor,
+            limit=limit,
+            offset=offset,
         )
 
     @staticmethod

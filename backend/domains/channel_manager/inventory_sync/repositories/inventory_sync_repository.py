@@ -2,6 +2,7 @@
 Channel Manager Domain — Inventory Sync Repository
 Data access layer for channel inventory sync operations. No FastAPI dependencies.
 """
+
 from typing import Any
 
 from core.tenant_db import LazyCollection
@@ -23,9 +24,7 @@ class InventorySyncRepository:
 
     @classmethod
     async def get_connection(cls, tenant_id: str, connection_id: str) -> dict[str, Any] | None:
-        return await cls.connections.find_one(
-            {"tenant_id": tenant_id, "id": connection_id}, {"_id": 0}
-        )
+        return await cls.connections.find_one({"tenant_id": tenant_id, "id": connection_id}, {"_id": 0})
 
     @classmethod
     async def upsert_connection(cls, connection: dict[str, Any]) -> None:
@@ -41,14 +40,16 @@ class InventorySyncRepository:
 
     @classmethod
     async def get_sync_logs(
-        cls, tenant_id: str, *, limit: int = 50, channel: str | None = None,
+        cls,
+        tenant_id: str,
+        *,
+        limit: int = 50,
+        channel: str | None = None,
     ) -> list[dict[str, Any]]:
         query: dict[str, Any] = {"tenant_id": tenant_id}
         if channel:
             query["channel"] = channel
-        return await cls.sync_logs.find(
-            query, {"_id": 0}
-        ).sort("timestamp", -1).limit(limit).to_list(limit)
+        return await cls.sync_logs.find(query, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
 
     @classmethod
     async def log_rate_update(cls, rate_entry: dict[str, Any]) -> None:

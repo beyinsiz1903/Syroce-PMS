@@ -7,6 +7,7 @@ koleksiyonuna yazılır.
 
 Disable: `TGA_SCHEDULER_INTERVAL_SECONDS=0` env değişkeni ile kapatılır.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -29,6 +30,7 @@ _retry_started = False
 async def _tick() -> None:
     """Tek bir tarama: aktif tenant'ları sırayla işler."""
     from core.tga_outbound import list_enabled_tenants, send_batch
+
     end_date = (datetime.now(UTC) - timedelta(days=1)).date()  # dün dahil son 7 gün
     try:
         tenants = await list_enabled_tenants()
@@ -40,15 +42,13 @@ async def _tick() -> None:
     for tid in tenants:
         try:
             res = await send_batch(tid, end_date, days=BACKFILL_DAYS, triggered_by="scheduler")
-            logger.info("[tga-scheduler] tenant=%s status=%s http=%s",
-                        tid, res.get("status"), res.get("http_status"))
+            logger.info("[tga-scheduler] tenant=%s status=%s http=%s", tid, res.get("status"), res.get("http_status"))
         except Exception as exc:
             logger.warning("[tga-scheduler] tenant=%s send failed: %s", tid, exc)
 
 
 async def _loop(interval_seconds: int) -> None:
-    logger.info("[tga-scheduler] loop started interval=%ss backfill=%sd",
-                interval_seconds, BACKFILL_DAYS)
+    logger.info("[tga-scheduler] loop started interval=%ss backfill=%sd", interval_seconds, BACKFILL_DAYS)
     # Başlangıçta küçük gecikme — diğer phase'lerin index oluşturmasını bekle.
     await asyncio.sleep(60)
     while True:
@@ -62,6 +62,7 @@ async def _loop(interval_seconds: int) -> None:
 async def _retry_tick() -> None:
     """Failed outbox kayıtları için retry tarama."""
     from core.tga_outbound import retry_failed_outbox
+
     try:
         stats = await retry_failed_outbox()
     except Exception as exc:
@@ -70,8 +71,11 @@ async def _retry_tick() -> None:
     if stats.get("attempted"):
         logger.info(
             "[tga-retry] attempted=%s succeeded=%s failed=%s alerted=%s skipped=%s",
-            stats.get("attempted"), stats.get("succeeded"),
-            stats.get("failed"), stats.get("alerted"), stats.get("skipped"),
+            stats.get("attempted"),
+            stats.get("succeeded"),
+            stats.get("failed"),
+            stats.get("alerted"),
+            stats.get("skipped"),
         )
 
 

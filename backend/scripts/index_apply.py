@@ -12,6 +12,7 @@ sahip olmalıdır; aksi halde operatör bu script'i boot öncesi koşunca Mongo 
 ayrı index oluşturur (name drift). Bu yüzden buraya eklenen kalıcı index'ler
 perf_indexes.py'deki adlarıyla birebir aynı yazılır.
 """
+
 import asyncio
 import os
 import sys
@@ -24,11 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from motor.motor_asyncio import AsyncIOMotorClient  # noqa: E402
 
-MONGO_URL = (
-    os.environ.get("MONGO_URL")
-    or os.environ.get("MONGO_ATLAS_URI")
-    or "mongodb://localhost:27017"
-)
+MONGO_URL = os.environ.get("MONGO_URL") or os.environ.get("MONGO_ATLAS_URI") or "mongodb://localhost:27017"
 DB_NAME = os.environ.get("DB_NAME", "syroce-pms")
 
 # Sadece koleksiyonu mevcut + indekslemesi anlamlı olanlar
@@ -51,27 +48,19 @@ TO_APPLY = [
     # them, so they COLLSCANned ~7.3k docs. Names match perf_indexes.py exactly
     # (idx_recon_cases_status_global / idx_recon_cases_created_global) so an
     # immediate apply here and a later boot never create duplicates.
-    ("channel_reconciliation_cases", [("status", 1)],
-     "idx_recon_cases_status_global", {}),
-    ("channel_reconciliation_cases", [("created_at", 1)],
-     "idx_recon_cases_created_global", {}),
+    ("channel_reconciliation_cases", [("status", 1)], "idx_recon_cases_status_global", {}),
+    ("channel_reconciliation_cases", [("created_at", 1)], "idx_recon_cases_created_global", {}),
     # POS F&B sicak okuma yollari (2026-06-18): pos_orders / pos_transactions
     # read-path tenant compound index'leri. Adlar bootstrap/phases/
     # perf_indexes.py ile BIREBIR ayni -> operator hemen uygularsa ve sonra boot
     # calisirsa duplicate olusmaz. (tenant_id, id) girisleri 2-tuple: default ad
     # "tenant_id_1_id_1" ile uyumlu. Gerekce + cagri yerleri perf_indexes.py'de.
-    ("pos_orders", [("tenant_id", 1), ("status", 1), ("created_at", 1)],
-     "idx_pos_orders_status_created", {}),
-    ("pos_orders", [("tenant_id", 1), ("created_at", 1)],
-     "idx_pos_orders_tenant_created", {}),
+    ("pos_orders", [("tenant_id", 1), ("status", 1), ("created_at", 1)], "idx_pos_orders_status_created", {}),
+    ("pos_orders", [("tenant_id", 1), ("created_at", 1)], "idx_pos_orders_tenant_created", {}),
     ("pos_orders", [("tenant_id", 1), ("id", 1)]),
     ("pos_transactions", [("tenant_id", 1), ("id", 1)]),
-    ("pos_transactions", [("tenant_id", 1), ("order_id", 1)],
-     "idx_pos_txn_tenant_order", {}),
-    ("pos_transactions",
-     [("tenant_id", 1), ("outlet_id", 1), ("table_number", 1)],
-     "idx_pos_txn_open_tab",
-     {"partialFilterExpression": {"status": "open"}}),
+    ("pos_transactions", [("tenant_id", 1), ("order_id", 1)], "idx_pos_txn_tenant_order", {}),
+    ("pos_transactions", [("tenant_id", 1), ("outlet_id", 1), ("table_number", 1)], "idx_pos_txn_open_tab", {"partialFilterExpression": {"status": "open"}}),
     # Task #315 — Otonom tahsilat exactly-once invariant index'leri. Adlar
     # bootstrap/phases/perf_indexes.py ile BIREBIR ayni -> operator hemen
     # uygularsa ve sonra boot calisirsa duplicate olusmaz (name drift yok).
@@ -80,11 +69,8 @@ TO_APPLY = [
     # booking_id, charge_kind) unique: kuyruk satir-tekligi. Bos koleksiyonlar
     # estimated_document_count==0 ise Atlas 500 limiti icin atlanir; worker bir
     # kez kostuktan sonra dolar ve apply onlari indeksler.
-    ("autonomous_collection_runs", [("tenant_id", 1)],
-     "autonomous_collection_runs_tenant_uq", {"unique": True}),
-    ("autonomous_collection_jobs",
-     [("tenant_id", 1), ("booking_id", 1), ("charge_kind", 1)],
-     "autocollect_jobs_uq", {"unique": True}),
+    ("autonomous_collection_runs", [("tenant_id", 1)], "autonomous_collection_runs_tenant_uq", {"unique": True}),
+    ("autonomous_collection_jobs", [("tenant_id", 1), ("booking_id", 1), ("charge_kind", 1)], "autocollect_jobs_uq", {"unique": True}),
 ]
 
 
@@ -110,10 +96,7 @@ async def main():
             existing_keys = [tuple(i["key"].keys()) for i in existing]
             want = tuple(k for k, _ in keys)
 
-            covered = any(
-                len(ex) >= len(want) and tuple(ex[: len(want)]) == want
-                for ex in existing_keys
-            )
+            covered = any(len(ex) >= len(want) and tuple(ex[: len(want)]) == want for ex in existing_keys)
             if covered:
                 print(f"  {col} ({cnt} doc): zaten kapsanmis, atlandi")
                 continue

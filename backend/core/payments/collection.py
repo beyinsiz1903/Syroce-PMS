@@ -21,6 +21,7 @@ sonucu kendi baglamina cevirir: endpoint -> HTTP eslemesi, worker -> operator
 kuyrugu + kalici marker. Ham PAN/CVV/secret ASLA loglanmaz; yanit yalnizca
 maskeli kart tasir.
 """
+
 from __future__ import annotations
 
 import logging
@@ -190,11 +191,13 @@ async def collect_booking_payment(
         unknown = pe.http_status >= 500
         await db_handle.payment_intents.update_one(
             {"id": intent_id, "tenant_id": tenant_id},
-            {"$set": {
-                "status": "unknown" if unknown else "failed",
-                "error_code": pe.error_code,
-                "updated_at": datetime.now(UTC).isoformat(),
-            }},
+            {
+                "$set": {
+                    "status": "unknown" if unknown else "failed",
+                    "error_code": pe.error_code,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            },
         )
         if not unknown:
             await release_idempotency(db_handle, lock_id=lock_id)
@@ -224,11 +227,13 @@ async def collect_booking_payment(
         # 3DS yonlendirmesi gerekli: intent acik kalir, webhook/worker tamamlar.
         await db_handle.payment_intents.update_one(
             {"id": intent_id, "tenant_id": tenant_id},
-            {"$set": {
-                "status": "requires_action",
-                "provider_ref": result.provider_ref,
-                "updated_at": datetime.now(UTC).isoformat(),
-            }},
+            {
+                "$set": {
+                    "status": "requires_action",
+                    "provider_ref": result.provider_ref,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            },
         )
         await release_idempotency(db_handle, lock_id=lock_id)
         return CollectionOutcome(
@@ -241,11 +246,13 @@ async def collect_booking_payment(
     if not result.ok:
         await db_handle.payment_intents.update_one(
             {"id": intent_id, "tenant_id": tenant_id},
-            {"$set": {
-                "status": "failed",
-                "error_code": result.error_code,
-                "updated_at": datetime.now(UTC).isoformat(),
-            }},
+            {
+                "$set": {
+                    "status": "failed",
+                    "error_code": result.error_code,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            },
         )
         await release_idempotency(db_handle, lock_id=lock_id)
         return CollectionOutcome(
@@ -312,12 +319,14 @@ async def collect_booking_payment(
         )
         await db_handle.payment_intents.update_one(
             {"id": intent_id, "tenant_id": tenant_id},
-            {"$set": {
-                "status": "completed",
-                "provider_ref": result.provider_ref,
-                "payment_id": payment_id,
-                "updated_at": datetime.now(UTC).isoformat(),
-            }},
+            {
+                "$set": {
+                    "status": "completed",
+                    "provider_ref": result.provider_ref,
+                    "payment_id": payment_id,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            },
             session=session,
         )
         if on_success_ops is not None:
@@ -327,9 +336,7 @@ async def collect_booking_payment(
         async with await db_handle.client.start_session() as session:
             async with session.start_transaction():
                 await _record(session=session)
-                await complete_idempotency(
-                    db_handle, lock_id=lock_id, response_body=response, session=session
-                )
+                await complete_idempotency(db_handle, lock_id=lock_id, response_body=response, session=session)
         lock_id = None
     except Exception as exc:  # noqa: BLE001
         # PSP zaten tahsil etti -> kaydi KAYBETMEK en kotu sonuc. Yalnizca
@@ -339,23 +346,21 @@ async def collect_booking_payment(
         if is_replica_set_unavailable(exc) and standalone_fallback_allowed():
             await _record(session=None)
             try:
-                await complete_idempotency(
-                    db_handle, lock_id=lock_id, response_body=response
-                )
+                await complete_idempotency(db_handle, lock_id=lock_id, response_body=response)
             except Exception:  # noqa: BLE001
                 logger.exception("idempotency complete failed (non-tx fallback)")
             lock_id = None
         else:
-            logger.exception(
-                "tahsilat kaydi atomik yazilamadi; intent reconcile'a birakildi"
-            )
+            logger.exception("tahsilat kaydi atomik yazilamadi; intent reconcile'a birakildi")
             await db_handle.payment_intents.update_one(
                 {"id": intent_id, "tenant_id": tenant_id},
-                {"$set": {
-                    "status": "completed_unrecorded",
-                    "provider_ref": result.provider_ref,
-                    "updated_at": datetime.now(UTC).isoformat(),
-                }},
+                {
+                    "$set": {
+                        "status": "completed_unrecorded",
+                        "provider_ref": result.provider_ref,
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
+                },
             )
             # Kilidi birakma: tekrar denenirse cift-charge yerine in-flight/replay.
             # Para PSP tarafinda alindi: cagiran (endpoint) basari yanitini dondurur

@@ -10,6 +10,7 @@ Flow:
   event -> validate -> create sync job -> coalescing -> dispatch
   Failure -> audit log + optional reconciliation issue
 """
+
 import logging
 from typing import Any
 
@@ -89,6 +90,7 @@ class EventSyncService:
 
             # Create sync job via inventory sync service
             from ..application.inventory_sync_service import InventorySyncService
+
             sync_svc = InventorySyncService(self._repo)
 
             try:
@@ -112,24 +114,33 @@ class EventSyncService:
                         trigger_reason=f"Domain event: {event_type}",
                         actor_id=f"event:{event_type}",
                     )
-                jobs_created.append({
-                    "connector_id": connector_id,
-                    "job_id": result.get("job_id", ""),
-                    "status": result.get("status", ""),
-                })
+                jobs_created.append(
+                    {
+                        "connector_id": connector_id,
+                        "job_id": result.get("job_id", ""),
+                        "status": result.get("status", ""),
+                    }
+                )
             except Exception as e:
                 logger.error(
-                    "Event sync failed for connector %s: %s", connector_id, e,
+                    "Event sync failed for connector %s: %s",
+                    connector_id,
+                    e,
                 )
-                jobs_created.append({
-                    "connector_id": connector_id,
-                    "error": str(e)[:200],
-                })
+                jobs_created.append(
+                    {
+                        "connector_id": connector_id,
+                        "error": str(e)[:200],
+                    }
+                )
 
                 # Audit failure
                 await self._audit(
-                    tenant_id, property_id, connector_id,
-                    AuditAction.EVENT_SYNC_FAILED, metadata={
+                    tenant_id,
+                    property_id,
+                    connector_id,
+                    AuditAction.EVENT_SYNC_FAILED,
+                    metadata={
                         "event_type": event_type,
                         "error": str(e)[:200],
                         "success": False,
@@ -138,6 +149,7 @@ class EventSyncService:
 
                 # Create reconciliation issue for persistent event sync failures
                 from ..application.reconciliation_service import ReconciliationService
+
                 recon = ReconciliationService(self._repo)
                 await recon.create_issue(
                     tenant_id=tenant_id,
@@ -156,8 +168,11 @@ class EventSyncService:
 
             # Audit success
             await self._audit(
-                tenant_id, property_id, connector_id,
-                AuditAction.EVENT_SYNC_TRIGGERED, metadata={
+                tenant_id,
+                property_id,
+                connector_id,
+                AuditAction.EVENT_SYNC_TRIGGERED,
+                metadata={
                     "event_type": event_type,
                     "sync_type": sync_type.value,
                     "date_range": f"{date_start} -> {date_end}",
@@ -230,7 +245,11 @@ class EventSyncService:
 
     async def _audit(self, tenant_id, property_id, connector_id, action, actor_id=None, metadata=None):
         log = IntegrationAuditLog(
-            tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-            action=action, actor_id=actor_id, metadata=metadata or {},
+            tenant_id=tenant_id,
+            property_id=property_id,
+            connector_id=connector_id,
+            action=action,
+            actor_id=actor_id,
+            metadata=metadata or {},
         )
         await self._repo.create_audit_log(log.to_doc())

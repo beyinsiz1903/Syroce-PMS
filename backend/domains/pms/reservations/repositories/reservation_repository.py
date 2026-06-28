@@ -2,6 +2,7 @@
 PMS Domain — Reservation Repository
 Data access layer for bookings/reservations. No FastAPI dependencies.
 """
+
 from datetime import UTC, datetime
 from typing import Any
 
@@ -15,10 +16,17 @@ class ReservationRepository:
 
     @classmethod
     async def find_by_tenant(
-        cls, tenant_id: str, *, status: str | None = None,
-        check_in_from: str | None = None, check_in_to: str | None = None,
-        guest_id: str | None = None, room_id: str | None = None,
-        limit: int = 50, offset: int = 0, sort_field: str = "check_in",
+        cls,
+        tenant_id: str,
+        *,
+        status: str | None = None,
+        check_in_from: str | None = None,
+        check_in_to: str | None = None,
+        guest_id: str | None = None,
+        room_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        sort_field: str = "check_in",
         sort_order: int = -1,
     ) -> list[dict[str, Any]]:
         query: dict[str, Any] = {"tenant_id": tenant_id}
@@ -33,19 +41,12 @@ class ReservationRepository:
         if check_in_to:
             query.setdefault("check_in", {})["$lte"] = check_in_to
 
-        cursor = (
-            cls.collection.find(query, {"_id": 0})
-            .sort(sort_field, sort_order)
-            .skip(offset)
-            .limit(limit)
-        )
+        cursor = cls.collection.find(query, {"_id": 0}).sort(sort_field, sort_order).skip(offset).limit(limit)
         return await cursor.to_list(limit)
 
     @classmethod
     async def find_one(cls, tenant_id: str, booking_id: str) -> dict[str, Any] | None:
-        return await cls.collection.find_one(
-            {"tenant_id": tenant_id, "id": booking_id}, {"_id": 0}
-        )
+        return await cls.collection.find_one({"tenant_id": tenant_id, "id": booking_id}, {"_id": 0})
 
     @classmethod
     async def count(cls, tenant_id: str, query_filter: dict | None = None) -> int:
@@ -57,6 +58,7 @@ class ReservationRepository:
     @classmethod
     async def insert(cls, booking_dict: dict[str, Any]) -> None:
         from core.atomic_booking import create_booking_atomic
+
         await create_booking_atomic(booking_dict)
 
     @classmethod
@@ -69,10 +71,14 @@ class ReservationRepository:
 
     @classmethod
     async def update_status(cls, tenant_id: str, booking_id: str, new_status: str) -> bool:
-        return await cls.update(tenant_id, booking_id, {
-            "status": new_status,
-            "updated_at": datetime.now(UTC).isoformat(),
-        })
+        return await cls.update(
+            tenant_id,
+            booking_id,
+            {
+                "status": new_status,
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        )
 
     @classmethod
     async def get_arrivals(cls, tenant_id: str, target_date: str) -> list[dict[str, Any]]:

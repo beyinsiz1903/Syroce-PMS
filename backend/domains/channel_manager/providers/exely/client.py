@@ -10,6 +10,7 @@ Responsibilities:
 - Map HTTP status codes and SOAP Faults to typed errors
 - Log every request with correlation context
 """
+
 import logging
 import time
 import uuid as _uuid
@@ -66,6 +67,7 @@ class ExelySoapTransport:
         # the host can't rebind to 169.254.169.254 / loopback / RFC 1918
         # between validation and the actual SOAP POST.
         from integrations.xchange.safety import EgressDenied, safe_post_async
+
         try:
             try:
                 resp = await safe_post_async(
@@ -77,7 +79,9 @@ class ExelySoapTransport:
             except EgressDenied as _e:
                 logger.warning(
                     "[EXELY] SOAP egress blocked (SSRF guard): endpoint=%s reason=%s [%s]",
-                    self._endpoint_url, _e, corr_id,
+                    self._endpoint_url,
+                    _e,
+                    corr_id,
                 )
                 raise ExelyPayloadError(f"endpoint URL not permitted: {_e}") from _e
 
@@ -85,7 +89,10 @@ class ExelySoapTransport:
 
             logger.info(
                 "[EXELY] SOAP %s -> %d (%dms) [%s]",
-                soap_action or "POST", resp.status_code, duration_ms, corr_id,
+                soap_action or "POST",
+                resp.status_code,
+                duration_ms,
+                corr_id,
             )
             if "NotifReport" in (soap_action or "") or "ResNotif" in (soap_action or ""):
                 logger.info("[EXELY] NOTIF REQUEST [%s]:\n%s", corr_id, xml_body[:3000])
@@ -93,28 +100,30 @@ class ExelySoapTransport:
             if "ReadReservation" in (soap_action or "") or "ResRetrieve" in (soap_action or ""):
                 logger.info("[EXELY] READRQ RESPONSE [%s]:\n%s", corr_id, resp.text[:8000])
             logger.debug(
-                "[EXELY] RAW REQUEST [%s]:\n%s", corr_id, xml_body[:2000],
+                "[EXELY] RAW REQUEST [%s]:\n%s",
+                corr_id,
+                xml_body[:2000],
             )
             logger.debug(
-                "[EXELY] RAW RESPONSE [%s]:\n%s", corr_id, resp.text[:3000],
+                "[EXELY] RAW RESPONSE [%s]:\n%s",
+                corr_id,
+                resp.text[:3000],
             )
 
             self._raise_for_http_status(resp, duration_ms, corr_id)
             return resp.content
 
         except (
-            ExelyAuthError, ExelyRateLimitError,
-            ExelyTemporaryError, ExelyPayloadError,
+            ExelyAuthError,
+            ExelyRateLimitError,
+            ExelyTemporaryError,
+            ExelyPayloadError,
         ):
             raise
         except httpx.ConnectError:
-            raise ExelyTemporaryError(
-                f"Cannot connect to Exely SOAP API ({self._endpoint_url})"
-            )
+            raise ExelyTemporaryError(f"Cannot connect to Exely SOAP API ({self._endpoint_url})")
         except httpx.TimeoutException:
-            raise ExelyTemporaryError(
-                f"Exely SOAP API timeout ({soap_action})"
-            )
+            raise ExelyTemporaryError(f"Exely SOAP API timeout ({soap_action})")
 
     @staticmethod
     def _raise_for_http_status(resp: httpx.Response, duration_ms: int, corr_id: str) -> None:

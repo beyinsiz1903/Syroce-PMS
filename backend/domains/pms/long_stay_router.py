@@ -17,6 +17,7 @@ Tutarlılık:
   - Listing: require_op("view_finance_reports")
   - audit_log entegrasyonu
 """
+
 from __future__ import annotations
 
 import logging
@@ -94,6 +95,7 @@ async def _ensure_indexes() -> None:
     """Partial unique index: (tenant_id, booking_id) bir booking → tek aktif config.
     Fail-closed: index oluşturulamazsa 503 + 30sn cooldown."""
     import time as _time
+
     global _INDEX_DONE, _INDEX_FAILED_AT
     if _INDEX_DONE:
         return
@@ -130,9 +132,7 @@ async def configure_long_stay(
     _perm=Depends(require_op("post_charge")),
 ):
     await _ensure_indexes()
-    booking = await db.bookings.find_one(
-        {"id": body.booking_id, "tenant_id": user.tenant_id}, {"_id": 0, "id": 1}
-    )
+    booking = await db.bookings.find_one({"id": body.booking_id, "tenant_id": user.tenant_id}, {"_id": 0, "id": 1})
     if not booking:
         raise HTTPException(404, "Rezervasyon bulunamadı")
 
@@ -203,10 +203,14 @@ async def list_due(
     """next_billing_date'i şimdiden eski olan aktif konfigürasyonlar."""
     await _ensure_indexes()
     now = _now_iso()
-    docs = await db.long_stay_configs.find(
-        {"tenant_id": user.tenant_id, "active": True, "next_billing_date": {"$lte": now}},
-        {"_id": 0},
-    ).sort("next_billing_date", 1).to_list(500)
+    docs = (
+        await db.long_stay_configs.find(
+            {"tenant_id": user.tenant_id, "active": True, "next_billing_date": {"$lte": now}},
+            {"_id": 0},
+        )
+        .sort("next_billing_date", 1)
+        .to_list(500)
+    )
     return docs
 
 
@@ -219,9 +223,7 @@ async def close_cycle(
     """Mevcut açık folyoyu kapat (canonical guard'larla), yeni folyo aç,
     next_billing_date'i ileri it. Compare-and-set ile race-safe."""
     await _ensure_indexes()
-    cfg = await db.long_stay_configs.find_one(
-        {"id": config_id, "tenant_id": user.tenant_id, "active": True}, {"_id": 0}
-    )
+    cfg = await db.long_stay_configs.find_one({"id": config_id, "tenant_id": user.tenant_id, "active": True}, {"_id": 0})
     if not cfg:
         raise HTTPException(404, "Aktif long-stay konfigürasyonu bulunamadı")
 
@@ -275,7 +277,8 @@ async def close_cycle(
                 balance = round(total_ch - total_pay, 2)
                 if balance > 0.01:
                     raise HTTPException(
-                        400, f"Folyo kapatılamaz, ödenmemiş bakiye: {balance:.2f}",
+                        400,
+                        f"Folyo kapatılamaz, ödenmemiş bakiye: {balance:.2f}",
                     )
                 close_res = await raw_db.folios.update_one(
                     {
@@ -283,11 +286,13 @@ async def close_cycle(
                         "tenant_id": user.tenant_id,
                         "status": FolioStatus.OPEN.value,
                     },
-                    {"$set": {
-                        "status": FolioStatus.CLOSED.value,
-                        "balance": 0.0,
-                        "closed_at": _now_iso(),
-                    }},
+                    {
+                        "$set": {
+                            "status": FolioStatus.CLOSED.value,
+                            "balance": 0.0,
+                            "closed_at": _now_iso(),
+                        }
+                    },
                     session=session,
                 )
                 if close_res.modified_count == 0:
@@ -304,8 +309,7 @@ async def close_cycle(
                     "next_billing_date": cfg["next_billing_date"],
                     "cycles_closed": cfg["cycles_closed"],
                 },
-                {"$set": {"next_billing_date": new_due.isoformat()},
-                 "$inc": {"cycles_closed": 1}},
+                {"$set": {"next_billing_date": new_due.isoformat()}, "$inc": {"cycles_closed": 1}},
                 session=session,
             )
             if cas_res.modified_count == 0:

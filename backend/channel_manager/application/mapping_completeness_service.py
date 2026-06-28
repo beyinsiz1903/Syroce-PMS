@@ -13,6 +13,7 @@ Checks:
 Missing mapping => sync blocked, reservation import manual review, admin alert.
 Produces a mapping readiness score visible on admin panel.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -43,7 +44,9 @@ class MappingCompletenessService:
         self._repo = repo or ChannelManagerRepository()
 
     async def validate_completeness(
-        self, tenant_id: str, connector_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
     ) -> dict[str, Any]:
         """Full mapping completeness check with per-type breakdown and readiness score."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
@@ -105,6 +108,7 @@ class MappingCompletenessService:
         if not sync_allowed:
             try:
                 from .alerting_service import AlertingService
+
                 alert_svc = AlertingService(repo=self._repo)
                 await alert_svc.check_and_fire_alert(
                     tenant_id=tenant_id,
@@ -117,7 +121,9 @@ class MappingCompletenessService:
 
         # Audit
         log = IntegrationAuditLog(
-            tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
+            tenant_id=tenant_id,
+            property_id=property_id,
+            connector_id=connector_id,
             action=AuditAction.MAPPING_READINESS_CHECKED,
             metadata={"score": readiness_score, "sync_allowed": sync_allowed, "import_allowed": import_allowed},
         )
@@ -146,7 +152,10 @@ class MappingCompletenessService:
     # ─── Per-type Checks ──────────────────────────────────────────────
 
     async def _check_room_type_completeness(
-        self, tenant_id: str, connector_id: str, property_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
+        property_id: str,
     ) -> dict[str, Any]:
         """Check that all PMS room types have active mappings to provider."""
         pms_rooms = await db.rooms.find(
@@ -180,7 +189,10 @@ class MappingCompletenessService:
         }
 
     async def _check_rate_plan_completeness(
-        self, tenant_id: str, connector_id: str, property_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
+        property_id: str,
     ) -> dict[str, Any]:
         """Check that all external rate plans have PMS mappings."""
         ext_rates = await self._repo.get_external_rate_plans(tenant_id, connector_id)

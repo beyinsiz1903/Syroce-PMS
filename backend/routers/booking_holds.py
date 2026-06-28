@@ -9,6 +9,7 @@ Endpoints for managing booking holds with automatic TTL-based expiry.
   GET /api/booking-holds/status     — Get hold status for a booking
   POST /api/booking-holds/sweep     — Manually trigger expired hold cleanup
 """
+
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -40,17 +41,24 @@ class HoldReleaseRequest(BaseModel):
 
 
 @router.post("")
-async def create_hold(req: HoldCreateRequest, http_request: Request, current_user=Depends(get_current_user),
+async def create_hold(
+    req: HoldCreateRequest,
+    http_request: Request,
+    current_user=Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Create a temporary hold on room nights with automatic TTL expiry."""
     from core.booking_hold_service import create_booking_hold
     from core.database import db
     from shared_kernel.idempotency import begin_idempotency
+
     # Idempotency-Key request-replay (additive: no-op without the header).
     guard, replay = await begin_idempotency(
-        db, http_request, tenant_id=current_user.tenant_id,
-        scope=f"booking_holds.create:{req.booking_id}", payload=req.model_dump(),
+        db,
+        http_request,
+        tenant_id=current_user.tenant_id,
+        scope=f"booking_holds.create:{req.booking_id}",
+        payload=req.model_dump(),
     )
     if replay is not None:
         return replay
@@ -71,19 +79,26 @@ async def create_hold(req: HoldCreateRequest, http_request: Request, current_use
 
 
 @router.post("/confirm")
-async def confirm_hold(req: HoldConfirmRequest, http_request: Request, current_user=Depends(get_current_user),
+async def confirm_hold(
+    req: HoldConfirmRequest,
+    http_request: Request,
+    current_user=Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Convert a hold to a confirmed booking lock (remove TTL)."""
     from core.booking_hold_service import confirm_hold as do_confirm
     from core.database import db
     from shared_kernel.idempotency import begin_idempotency
+
     # Idempotency-Key request-replay (additive: no-op without the header).
     # confirm is naturally idempotent (removes TTL); the guard adds replay-cache
     # of the exact response and double-submit serialization.
     guard, replay = await begin_idempotency(
-        db, http_request, tenant_id=current_user.tenant_id,
-        scope=f"booking_holds.confirm:{req.booking_id}", payload=req.model_dump(),
+        db,
+        http_request,
+        tenant_id=current_user.tenant_id,
+        scope=f"booking_holds.confirm:{req.booking_id}",
+        payload=req.model_dump(),
     )
     if replay is not None:
         return replay
@@ -104,6 +119,7 @@ async def release_hold_endpoint(
 ):
     """Manually release a booking hold before TTL expiry."""
     from core.booking_hold_service import release_hold
+
     result = await release_hold(
         tenant_id=current_user.tenant_id,
         booking_id=booking_id,
@@ -116,6 +132,7 @@ async def release_hold_endpoint(
 async def get_hold_status(booking_id: str, current_user=Depends(get_current_user)):
     """Get hold status for a booking."""
     from core.database import db
+
     locks = await db.room_night_locks.find(
         {
             "tenant_id": current_user.tenant_id,
@@ -139,10 +156,12 @@ async def get_hold_status(booking_id: str, current_user=Depends(get_current_user
 
 
 @router.post("/sweep")
-async def trigger_sweep(current_user=Depends(get_current_user),
+async def trigger_sweep(
+    current_user=Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Manually trigger a sweep of expired booking holds (admin action)."""
     from core.booking_hold_service import sweep_expired_holds
+
     result = await sweep_expired_holds()
     return result

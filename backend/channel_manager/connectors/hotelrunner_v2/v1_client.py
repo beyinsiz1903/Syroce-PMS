@@ -1,4 +1,5 @@
 """Compatibility alias — use hr_client instead."""
+
 from .hr_client import AUDIT_TRUNCATE_LEN as AUDIT_TRUNCATE_LEN  # noqa: F401
 from .hr_client import DEFAULT_PER_PAGE as DEFAULT_PER_PAGE  # noqa: F401
 from .hr_client import HOTELRUNNER_API_BASE as HOTELRUNNER_API_BASE  # noqa: F401

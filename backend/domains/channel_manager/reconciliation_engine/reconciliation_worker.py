@@ -15,6 +15,7 @@ The worker supports:
   - Incremental scanning (last 24h window)
   - Batching to avoid full table scans
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -81,15 +82,25 @@ async def reconciliation_run_once() -> dict[str, Any]:
 
     try:
         # Get all active provider connections across all tenants
-        active_connections = await db[COLL_PROVIDER_CONNECTIONS].find(
-            {"status": "active"}, _NO_ID,
-        ).to_list(100)
+        active_connections = (
+            await db[COLL_PROVIDER_CONNECTIONS]
+            .find(
+                {"status": "active"},
+                _NO_ID,
+            )
+            .to_list(100)
+        )
 
         if not active_connections:
             # Fall back to all connections for demo
-            active_connections = await db[COLL_PROVIDER_CONNECTIONS].find(
-                {}, _NO_ID,
-            ).to_list(100)
+            active_connections = (
+                await db[COLL_PROVIDER_CONNECTIONS]
+                .find(
+                    {},
+                    _NO_ID,
+                )
+                .to_list(100)
+            )
 
         # Group connections by (tenant_id, property_id)
         grouped: dict[str, list[dict]] = {}
@@ -104,7 +115,10 @@ async def reconciliation_run_once() -> dict[str, Any]:
                 provider = conn.get("provider", "")
                 try:
                     provider_result = await _reconcile_provider(
-                        tenant_id, property_id, provider, conn,
+                        tenant_id,
+                        property_id,
+                        provider,
+                        conn,
                     )
                     result["providers_checked"].append(provider)
                     result["total_pms_reservations"] += provider_result["pms_count"]
@@ -132,11 +146,7 @@ async def reconciliation_run_once() -> dict[str, Any]:
     finally:
         state["running"] = False
 
-    logger.info(
-        f"Reconciliation complete: mismatches={result['mismatches_found']}, "
-        f"cases_created={result['cases_created']}, "
-        f"auto_resolved={result['cases_auto_resolved']}"
-    )
+    logger.info(f"Reconciliation complete: mismatches={result['mismatches_found']}, cases_created={result['cases_created']}, auto_resolved={result['cases_auto_resolved']}")
     return result
 
 
@@ -157,28 +167,31 @@ async def _reconcile_provider(
     }
 
     # 1. Fetch PMS reservations from lineage
-    pms_reservations = await db[COLL_RESERVATION_LINEAGE].find(
-        {
-            "tenant_id": tenant_id,
-            "property_id": property_id,
-            "provider": provider,
-        },
-        _NO_ID,
-    ).to_list(5000)
+    pms_reservations = (
+        await db[COLL_RESERVATION_LINEAGE]
+        .find(
+            {
+                "tenant_id": tenant_id,
+                "property_id": property_id,
+                "provider": provider,
+            },
+            _NO_ID,
+        )
+        .to_list(5000)
+    )
     result["pms_count"] = len(pms_reservations)
 
     # 2. Fetch provider snapshot
     provider_snapshots = await collect_provider_snapshot(
-        provider, connection, since_hours=24,
+        provider,
+        connection,
+        since_hours=24,
     )
     result["provider_count"] = len(provider_snapshots)
 
     # If no provider snapshots (stub), skip comparison
     if not provider_snapshots:
-        logger.info(
-            f"No provider snapshots for {provider}/{property_id} — "
-            f"skipping comparison (pull workers are stubs)"
-        )
+        logger.info(f"No provider snapshots for {provider}/{property_id} — skipping comparison (pull workers are stubs)")
         return result
 
     # 3. Run comparison engine
@@ -279,14 +292,18 @@ async def reconciliation_run_with_snapshots(
     }
 
     # Fetch PMS reservations
-    pms_reservations = await db[COLL_RESERVATION_LINEAGE].find(
-        {
-            "tenant_id": tenant_id,
-            "property_id": property_id,
-            "provider": provider,
-        },
-        _NO_ID,
-    ).to_list(5000)
+    pms_reservations = (
+        await db[COLL_RESERVATION_LINEAGE]
+        .find(
+            {
+                "tenant_id": tenant_id,
+                "property_id": property_id,
+                "provider": provider,
+            },
+            _NO_ID,
+        )
+        .to_list(5000)
+    )
     result["pms_count"] = len(pms_reservations)
 
     # Run comparison

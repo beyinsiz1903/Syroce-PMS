@@ -14,6 +14,7 @@ This is NOT a dashboard module. This is a SYSTEM BEHAVIOR LAYER that provides:
 All failures across the system (reservation ingest, ARI push, outbox events,
 sync jobs, secret access) flow through this control plane.
 """
+
 from .failure_model import (
     FailureStatus,
     FailureType,

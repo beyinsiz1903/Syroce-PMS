@@ -1,4 +1,5 @@
 """Auto-split from schemas.py — domain: invoicing."""
+
 import uuid
 from datetime import UTC, datetime
 
@@ -15,6 +16,7 @@ class InvoiceItem(BaseModel):
     quantity: float
     unit_price: float
     total: float
+
 
 class InvoiceCreate(BaseModel):
     booking_id: str | None = None
@@ -42,10 +44,9 @@ class InvoiceCreate(BaseModel):
         if v == "":
             return None
         if not v.isdigit() or len(v) not in (10, 11):
-            raise ValueError(
-                "customer_tax_id must be 10 digits (VKN) or 11 digits (TCKN)"
-            )
+            raise ValueError("customer_tax_id must be 10 digits (VKN) or 11 digits (TCKN)")
         return v
+
 
 class Invoice(BaseModel):
     # v95 Bug fix: legacy DB rows from earlier seed/booking flows may lack
@@ -73,5 +74,3 @@ class Invoice(BaseModel):
     item_count: int | None = None
     created_at: str | None = None
     created_by: str | None = None
-
-

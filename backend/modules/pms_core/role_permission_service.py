@@ -114,8 +114,11 @@ MODULE_ROLES = {
     "frontdesk": {UserRole.FRONT_DESK, UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.SUPER_ADMIN},
     "pos": {UserRole.FRONT_DESK, UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.SUPER_ADMIN},
     "contact_center": {
-        UserRole.CALL_CENTER_AGENT, UserRole.FRONT_DESK, UserRole.SUPERVISOR,
-        UserRole.ADMIN, UserRole.SUPER_ADMIN,
+        UserRole.CALL_CENTER_AGENT,
+        UserRole.FRONT_DESK,
+        UserRole.SUPERVISOR,
+        UserRole.ADMIN,
+        UserRole.SUPER_ADMIN,
     },
 }
 
@@ -142,6 +145,7 @@ def require_op(operation: str):
     async def _dep(current_user: _User = _Depends(get_current_user)) -> None:
         # Super admin: full bypass on per-operation RBAC.
         from core.security import _is_super_admin as _is_sa
+
         if _is_sa(current_user):
             return
         RolePermissionService().enforce_permission(
@@ -149,6 +153,7 @@ def require_op(operation: str):
             operation,
             granted_permissions=getattr(current_user, "granted_permissions", None),
         )
+
     return _dep
 
 
@@ -165,17 +170,21 @@ def require_module(module: str):
     from models.schemas import User as _User
 
     allowed = MODULE_ROLES.get(module, set())
+
     def _norm(r):
         return getattr(r, "value", str(r))
+
     allowed_norm = {_norm(r) for r in allowed}
 
     async def _dep(current_user: _User = _Depends(get_current_user)) -> None:
         # Super admin: full bypass on module-role allowlist (uniform check).
         from core.security import _is_super_admin as _is_sa
+
         if _is_sa(current_user):
             return
         if _norm(current_user.role) not in allowed_norm:
             raise _HTTPException(status_code=403, detail=f"Module '{module}' access denied")
+
     return _dep
 
 
@@ -195,14 +204,18 @@ def require_role(*allowed_roles):
     # so we normalize via .value where available, then fall back to str().
     def _norm(r):
         return getattr(r, "value", str(r))
+
     allowed = {_norm(r) for r in allowed_roles}
+
     async def _dep(current_user: _User = _Depends(get_current_user)) -> None:
         # Super admin: full bypass on role allowlist.
         from core.security import _is_super_admin as _is_sa
+
         if _is_sa(current_user):
             return
         if _norm(current_user.role) not in allowed:
             raise _HTTPException(status_code=403, detail="Insufficient role")
+
     return _dep
 
 

@@ -21,6 +21,7 @@ Generated keys:
 Usage:
   python backend/scripts/gen_deploy_secrets.py
 """
+
 from __future__ import annotations
 
 import base64
@@ -77,9 +78,7 @@ def main() -> int:
     try:
         from infra.production_config import validate_vapid_key_format
 
-        errors = validate_vapid_key_format(
-            public_key=vapid_public, private_key=vapid_private
-        )
+        errors = validate_vapid_key_format(public_key=vapid_public, private_key=vapid_private)
         if errors:
             print("ERROR: generated VAPID keys failed self-validation:", file=sys.stderr)
             for err in errors:

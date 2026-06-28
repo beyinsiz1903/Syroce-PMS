@@ -4,6 +4,7 @@ Secret access audit logging.
 Writes audit records to MongoDB `secret_access_audit` collection.
 Never stores plaintext secret values. Records who/what/when/result.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -27,6 +28,7 @@ class SecretAuditLogger:
         # Use raw db (not TenantAwareDBProxy) — system audit logs must remain
         # globally queryable, never auto-scoped by tenant context.
         from core.database import _raw_db as db
+
         return db
 
     async def log(
@@ -88,10 +90,16 @@ class SecretAuditLogger:
     ) -> list:
         """Retrieve recent audit trail for a tenant."""
         db = self._get_db()
-        records = await db[COLL_SECRET_AUDIT].find(
-            {"tenant_id": tenant_id},
-            {"_id": 0},
-        ).sort("timestamp", -1).limit(limit).to_list(limit)
+        records = (
+            await db[COLL_SECRET_AUDIT]
+            .find(
+                {"tenant_id": tenant_id},
+                {"_id": 0},
+            )
+            .sort("timestamp", -1)
+            .limit(limit)
+            .to_list(limit)
+        )
         return records
 
     async def ensure_indexes(self) -> None:

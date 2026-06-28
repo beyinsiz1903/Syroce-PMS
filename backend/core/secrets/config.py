@@ -12,6 +12,7 @@ Optional:
   SECRET_ACCESS_AUDIT_ENABLED    — true/false (default: true)
   CM_CREDENTIAL_KEY              — encryption key for local dev backend
 """
+
 import logging
 import os
 from dataclasses import dataclass
@@ -39,29 +40,19 @@ class SecretsConfig:
     def validate(self) -> None:
         """Fail loudly on invalid configuration."""
         if self.provider not in VALID_PROVIDERS:
-            raise RuntimeError(
-                f"SECRETS_PROVIDER='{self.provider}' is not supported. "
-                f"Valid: {VALID_PROVIDERS}"
-            )
+            raise RuntimeError(f"SECRETS_PROVIDER='{self.provider}' is not supported. Valid: {VALID_PROVIDERS}")
 
         if self.provider == "local_dev" and self.is_production:
-            raise RuntimeError(
-                "SECRETS_PROVIDER=local_dev is forbidden in production/staging. "
-                "Set SECRETS_PROVIDER=aws_secrets_manager."
-            )
+            raise RuntimeError("SECRETS_PROVIDER=local_dev is forbidden in production/staging. Set SECRETS_PROVIDER=aws_secrets_manager.")
 
         if self.provider == "aws_secrets_manager":
             if not self.aws_region:
-                raise RuntimeError(
-                    "AWS_REGION is required when SECRETS_PROVIDER=aws_secrets_manager"
-                )
+                raise RuntimeError("AWS_REGION is required when SECRETS_PROVIDER=aws_secrets_manager")
 
         if self.provider == "vault":
             vault_addr = os.environ.get("VAULT_ADDR", "")
             if not vault_addr:
-                raise RuntimeError(
-                    "VAULT_ADDR is required when SECRETS_PROVIDER=vault"
-                )
+                raise RuntimeError("VAULT_ADDR is required when SECRETS_PROVIDER=vault")
 
 
 _cached_config: SecretsConfig | None = None
@@ -78,12 +69,8 @@ def get_secrets_config() -> SecretsConfig:
         app_env=os.environ.get("APP_ENV", "development"),
         aws_region=os.environ.get("AWS_REGION", ""),
         aws_secret_prefix=os.environ.get("AWS_SECRET_PREFIX", "syroce"),
-        enable_legacy_fallback=os.environ.get(
-            "ENABLE_LEGACY_SECRET_FALLBACK", "true"
-        ).lower() == "true",
-        audit_enabled=os.environ.get(
-            "SECRET_ACCESS_AUDIT_ENABLED", "true"
-        ).lower() == "true",
+        enable_legacy_fallback=os.environ.get("ENABLE_LEGACY_SECRET_FALLBACK", "true").lower() == "true",
+        audit_enabled=os.environ.get("SECRET_ACCESS_AUDIT_ENABLED", "true").lower() == "true",
         encryption_key=os.environ.get("CM_CREDENTIAL_KEY", ""),
     )
 
@@ -91,8 +78,10 @@ def get_secrets_config() -> SecretsConfig:
     _cached_config = config
     logger.info(
         "Secrets config loaded: provider=%s env=%s legacy_fallback=%s audit=%s",
-        config.provider, config.app_env,
-        config.enable_legacy_fallback, config.audit_enabled,
+        config.provider,
+        config.app_env,
+        config.enable_legacy_fallback,
+        config.audit_enabled,
     )
     return config
 

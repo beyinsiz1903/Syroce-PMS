@@ -7,6 +7,7 @@ Indexes:
   ExternalRoomType: (tenant_id, connector_id, external_id): unique
   ExternalRatePlan: (tenant_id, connector_id, external_id): unique
 """
+
 import uuid
 from datetime import UTC, datetime
 from typing import Any

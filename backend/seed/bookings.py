@@ -3,6 +3,7 @@
 Mutates ctx['rooms'] in-place (sets status occupied/dirty/cleaning) and writes
 ctx['bookings'], ctx['folios'], ctx['service_complaints'].
 """
+
 import random
 from datetime import timedelta
 
@@ -29,36 +30,38 @@ async def seed_bookings_and_folios(db, ctx):
         co = ci + timedelta(days=nights)
         total = room["base_price"] * nights
 
-        bookings.append({
-            "id": _uuid(),
-            "tenant_id": tenant_id,
-            "guest_id": guest["id"],
-            "room_id": room["id"],
-            "guest_name": guest["name"],
-            "room_number": room["room_number"],
-            "room_type": room["room_type"],
-            "check_in": ci.isoformat(),
-            "check_out": co.isoformat(),
-            "nights": nights,
-            "adults": random.randint(1, 2),
-            "children": random.randint(0, 2),
-            "children_ages": [],
-            "guests_count": random.randint(1, 3),
-            "total_amount": total,
-            "base_rate": room["base_price"],
-            "paid_amount": total,
-            "status": "checked_out",
-            "channel": random.choice(CHANNELS),
-            "source_channel": "direct",
-            "origin": "ui",
-            "hold_status": "none",
-            "allocation_source": "manual",
-            "rate_plan": random.choice(RATE_PLANS),
-            "special_requests": None,
-            "group_booking_id": None,
-            "company_id": None,
-            "created_at": (ci - timedelta(days=random.randint(1, 30))).isoformat(),
-        })
+        bookings.append(
+            {
+                "id": _uuid(),
+                "tenant_id": tenant_id,
+                "guest_id": guest["id"],
+                "room_id": room["id"],
+                "guest_name": guest["name"],
+                "room_number": room["room_number"],
+                "room_type": room["room_type"],
+                "check_in": ci.isoformat(),
+                "check_out": co.isoformat(),
+                "nights": nights,
+                "adults": random.randint(1, 2),
+                "children": random.randint(0, 2),
+                "children_ages": [],
+                "guests_count": random.randint(1, 3),
+                "total_amount": total,
+                "base_rate": room["base_price"],
+                "paid_amount": total,
+                "status": "checked_out",
+                "channel": random.choice(CHANNELS),
+                "source_channel": "direct",
+                "origin": "ui",
+                "hold_status": "none",
+                "allocation_source": "manual",
+                "rate_plan": random.choice(RATE_PLANS),
+                "special_requests": None,
+                "group_booking_id": None,
+                "company_id": None,
+                "created_at": (ci - timedelta(days=random.randint(1, 30))).isoformat(),
+            }
+        )
 
     # Current bookings (10) - checked_in → mark rooms as occupied
     occupied_rooms = random.sample(rooms, min(10, len(rooms)))
@@ -73,36 +76,38 @@ async def seed_bookings_and_folios(db, ctx):
         room["status"] = "occupied"
         room["current_booking_id"] = bid
 
-        bookings.append({
-            "id": bid,
-            "tenant_id": tenant_id,
-            "guest_id": guest["id"],
-            "room_id": room["id"],
-            "guest_name": guest["name"],
-            "room_number": room["room_number"],
-            "room_type": room["room_type"],
-            "check_in": ci.isoformat(),
-            "check_out": co.isoformat(),
-            "nights": nights,
-            "adults": random.randint(1, 2),
-            "children": random.randint(0, 1),
-            "children_ages": [],
-            "guests_count": random.randint(1, 3),
-            "total_amount": total,
-            "base_rate": room["base_price"],
-            "paid_amount": round(total * random.uniform(0.5, 1.0), 2),
-            "status": "checked_in",
-            "channel": random.choice(CHANNELS),
-            "source_channel": "direct",
-            "origin": "ui",
-            "hold_status": "none",
-            "allocation_source": "manual",
-            "rate_plan": random.choice(RATE_PLANS),
-            "special_requests": random.choice([None, "High floor", "Extra pillows", "Late check-out"]),
-            "group_booking_id": None,
-            "company_id": None,
-            "created_at": (ci - timedelta(days=random.randint(1, 60))).isoformat(),
-        })
+        bookings.append(
+            {
+                "id": bid,
+                "tenant_id": tenant_id,
+                "guest_id": guest["id"],
+                "room_id": room["id"],
+                "guest_name": guest["name"],
+                "room_number": room["room_number"],
+                "room_type": room["room_type"],
+                "check_in": ci.isoformat(),
+                "check_out": co.isoformat(),
+                "nights": nights,
+                "adults": random.randint(1, 2),
+                "children": random.randint(0, 1),
+                "children_ages": [],
+                "guests_count": random.randint(1, 3),
+                "total_amount": total,
+                "base_rate": room["base_price"],
+                "paid_amount": round(total * random.uniform(0.5, 1.0), 2),
+                "status": "checked_in",
+                "channel": random.choice(CHANNELS),
+                "source_channel": "direct",
+                "origin": "ui",
+                "hold_status": "none",
+                "allocation_source": "manual",
+                "rate_plan": random.choice(RATE_PLANS),
+                "special_requests": random.choice([None, "High floor", "Extra pillows", "Late check-out"]),
+                "group_booking_id": None,
+                "company_id": None,
+                "created_at": (ci - timedelta(days=random.randint(1, 60))).isoformat(),
+            }
+        )
 
     # Future bookings (20) - confirmed
     for _ in range(20):
@@ -113,46 +118,45 @@ async def seed_bookings_and_folios(db, ctx):
         co = ci + timedelta(days=nights)
         total = room["base_price"] * nights
 
-        bookings.append({
-            "id": _uuid(),
-            "tenant_id": tenant_id,
-            "guest_id": guest["id"],
-            "room_id": room["id"],
-            "guest_name": guest["name"],
-            "room_number": room["room_number"],
-            "room_type": room["room_type"],
-            "check_in": ci.isoformat(),
-            "check_out": co.isoformat(),
-            "nights": nights,
-            "adults": random.randint(1, 2),
-            "children": random.randint(0, 2),
-            "children_ages": [],
-            "guests_count": random.randint(1, 3),
-            "total_amount": total,
-            "base_rate": room["base_price"],
-            "paid_amount": round(total * random.uniform(0, 0.5), 2),
-            "status": "confirmed",
-            "channel": random.choice(CHANNELS),
-            "source_channel": "direct",
-            "origin": "ui",
-            "hold_status": "none",
-            "allocation_source": "manual",
-            "rate_plan": random.choice(RATE_PLANS),
-            "special_requests": None,
-            "group_booking_id": None,
-            "company_id": None,
-            "created_at": (_now() - timedelta(days=random.randint(0, 30))).isoformat(),
-        })
+        bookings.append(
+            {
+                "id": _uuid(),
+                "tenant_id": tenant_id,
+                "guest_id": guest["id"],
+                "room_id": room["id"],
+                "guest_name": guest["name"],
+                "room_number": room["room_number"],
+                "room_type": room["room_type"],
+                "check_in": ci.isoformat(),
+                "check_out": co.isoformat(),
+                "nights": nights,
+                "adults": random.randint(1, 2),
+                "children": random.randint(0, 2),
+                "children_ages": [],
+                "guests_count": random.randint(1, 3),
+                "total_amount": total,
+                "base_rate": room["base_price"],
+                "paid_amount": round(total * random.uniform(0, 0.5), 2),
+                "status": "confirmed",
+                "channel": random.choice(CHANNELS),
+                "source_channel": "direct",
+                "origin": "ui",
+                "hold_status": "none",
+                "allocation_source": "manual",
+                "rate_plan": random.choice(RATE_PLANS),
+                "special_requests": None,
+                "group_booking_id": None,
+                "company_id": None,
+                "created_at": (_now() - timedelta(days=random.randint(0, 30))).isoformat(),
+            }
+        )
 
     bookings = [_encrypt_doc(b, "bookings") for b in bookings]
     await db.bookings.insert_many(bookings)
 
     # Update occupied room statuses in DB
     for room in occupied_rooms:
-        await db.rooms.update_one(
-            {"id": room["id"]},
-            {"$set": {"status": "occupied", "current_booking_id": room["current_booking_id"]}}
-        )
+        await db.rooms.update_one({"id": room["id"]}, {"$set": {"status": "occupied", "current_booking_id": room["current_booking_id"]}})
 
     # Mark a few rooms as dirty/cleaning
     dirty_rooms = random.sample([r for r in rooms if r["status"] == "available"], min(4, len(rooms)))
@@ -213,9 +217,9 @@ async def seed_bookings_and_folios(db, ctx):
         if is_resolved:
             comp["resolved_at"] = (_now() - timedelta(days=max(0, days_ago - 1))).isoformat()
             comp["resolved_by"] = "system"
-            comp["resolution_notes"] = random.choice([
-                "Oda degistirildi", "Teknik ekip sorunu giderdi", "Misafire ozur dilendi ve indirim uygulandi",
-                "Housekeeping tekrar temizlik yapti", "Yonetici ile gorusuldu ve cozuldu"])
+            comp["resolution_notes"] = random.choice(
+                ["Oda degistirildi", "Teknik ekip sorunu giderdi", "Misafire ozur dilendi ve indirim uygulandi", "Housekeeping tekrar temizlik yapti", "Yonetici ile gorusuldu ve cozuldu"]
+            )
             comp["compensation_offered"] = random.choice([None, "room_upgrade", "fnb_credit", "discount", "free_night"])
             comp["compensation_amount"] = random.choice([0, 50, 100, 200]) if comp["compensation_offered"] else 0
 

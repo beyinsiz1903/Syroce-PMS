@@ -89,8 +89,7 @@ async def main(apply: bool) -> int:
     except Exception as e:
         print(f"ERROR: import build_user_email_query failed: {e}", file=sys.stderr)
         print(
-            "HINT: run from the project root with the Backend API venv active, "
-            "and ensure field-encryption env vars are in scope.",
+            "HINT: run from the project root with the Backend API venv active, and ensure field-encryption env vars are in scope.",
             file=sys.stderr,
         )
         return 4
@@ -117,12 +116,7 @@ async def main(apply: bool) -> int:
         return 5
 
     backup_count = len(user.get("two_factor_backup_codes") or [])
-    print(
-        f"FOUND: role={user.get('role')} active={user.get('is_active')} "
-        f"two_factor_enabled={user.get('two_factor_enabled')} "
-        f"has_secret={'two_factor_secret_enc' in user} "
-        f"backup_codes={backup_count}"
-    )
+    print(f"FOUND: role={user.get('role')} active={user.get('is_active')} two_factor_enabled={user.get('two_factor_enabled')} has_secret={'two_factor_secret_enc' in user} backup_codes={backup_count}")
 
     if not apply:
         print("\nDRY-RUN — no mutation performed. Re-run with --apply to clear 2FA.")
@@ -146,11 +140,7 @@ async def main(apply: bool) -> int:
         q,
         {"_id": 0, "two_factor_enabled": 1, "two_factor_secret_enc": 1, "two_factor_backup_codes": 1},
     )
-    print(
-        f"AFTER: two_factor_enabled={after.get('two_factor_enabled')} "
-        f"has_secret={'two_factor_secret_enc' in after} "
-        f"backup_codes={len(after.get('two_factor_backup_codes') or [])}"
-    )
+    print(f"AFTER: two_factor_enabled={after.get('two_factor_enabled')} has_secret={'two_factor_secret_enc' in after} backup_codes={len(after.get('two_factor_backup_codes') or [])}")
     return 0
 
 

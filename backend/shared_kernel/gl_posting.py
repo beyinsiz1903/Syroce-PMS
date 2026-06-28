@@ -13,6 +13,7 @@ Değişmezler:
     (partial-unique index + DuplicateKeyError → mevcut fiş döner). Fail-closed:
     index kurulamazsa yükseltir (sessiz çift-post YOK).
 """
+
 from __future__ import annotations
 
 import uuid
@@ -70,27 +71,25 @@ def _normalize_lines(lines: list[dict]) -> tuple[list[dict], float, float]:
         if debit < 0 or credit < 0:
             raise GLPostingError(f"Satır {idx}: negatif tutar")
         if (debit > 0) == (credit > 0):
-            raise GLPostingError(
-                f"Satır {idx}: debit XOR credit (>0) olmalı"
-            )
+            raise GLPostingError(f"Satır {idx}: debit XOR credit (>0) olmalı")
         tot_debit += debit
         tot_credit += credit
-        out.append({
-            "line_no": idx,
-            "account_code": code,
-            "account_name": (ln.get("account_name") or "").strip() or None,
-            "debit": debit,
-            "credit": credit,
-            "memo": (ln.get("memo") or "").strip() or None,
-        })
+        out.append(
+            {
+                "line_no": idx,
+                "account_code": code,
+                "account_name": (ln.get("account_name") or "").strip() or None,
+                "debit": debit,
+                "credit": credit,
+                "memo": (ln.get("memo") or "").strip() or None,
+            }
+        )
     tot_debit = round(tot_debit, 2)
     tot_credit = round(tot_credit, 2)
     if tot_debit <= 0:
         raise GLPostingError("Toplam tutar sıfır")
     if abs(tot_debit - tot_credit) > _EPS:
-        raise GLPostingError(
-            f"Fiş dengesiz: debit={tot_debit} credit={tot_credit}"
-        )
+        raise GLPostingError(f"Fiş dengesiz: debit={tot_debit} credit={tot_credit}")
     return out, tot_debit, tot_credit
 
 
@@ -114,9 +113,7 @@ async def post_journal_entry(
 
     # COA doğrulama — tüm hesaplar aktif olmalı; ad COA'dan doldurulur.
     codes = sorted({ln["account_code"] for ln in norm_lines})
-    accts = await db.gl_accounts.find(
-        {"tenant_id": tenant_id, "code": {"$in": codes}}, {"_id": 0}
-    ).to_list(1000)
+    accts = await db.gl_accounts.find({"tenant_id": tenant_id, "code": {"$in": codes}}, {"_id": 0}).to_list(1000)
     acct_by_code = {a["code"]: a for a in accts}
     for code in codes:
         a = acct_by_code.get(code)
@@ -151,9 +148,7 @@ async def post_journal_entry(
     try:
         await db.gl_journal_entries.insert_one(dict(doc))
     except DuplicateKeyError:
-        existing = await db.gl_journal_entries.find_one(
-            {"tenant_id": tenant_id, "idempotency_key": idempotency_key}, {"_id": 0}
-        )
+        existing = await db.gl_journal_entries.find_one({"tenant_id": tenant_id, "idempotency_key": idempotency_key}, {"_id": 0})
         if existing:
             return existing
         raise
@@ -190,15 +185,17 @@ async def compute_trial_balance(db, tenant_id: str, as_of: str | None = None) ->
         credit_bal = -net if net < 0 else 0.0
         tot_debit_bal += debit_bal
         tot_credit_bal += credit_bal
-        rows.append({
-            "account_code": code,
-            "account_name": name_by_code.get(code) or agg[code].get("name") or code,
-            "account_type": type_by_code.get(code),
-            "total_debit": d,
-            "total_credit": c,
-            "debit_balance": round(debit_bal, 2),
-            "credit_balance": round(credit_bal, 2),
-        })
+        rows.append(
+            {
+                "account_code": code,
+                "account_name": name_by_code.get(code) or agg[code].get("name") or code,
+                "account_type": type_by_code.get(code),
+                "total_debit": d,
+                "total_credit": c,
+                "debit_balance": round(debit_bal, 2),
+                "credit_balance": round(credit_bal, 2),
+            }
+        )
     return {
         "as_of": as_of,
         "rows": rows,

@@ -4,6 +4,7 @@ latency measurement, failure classification, and audit logging for all external 
 
 Supports: Twilio SMS, SendGrid Email, WhatsApp, Redis, Sentry, OTel Exporter.
 """
+
 import logging
 import os
 import time
@@ -49,9 +50,9 @@ def _mask_error(error: str) -> str:
     if not error:
         return ""
     import re
-    masked = re.sub(r'(key|token|secret|password|sid|dsn)[\s=:]+\S+',
-                     r'\1=***', error, flags=re.IGNORECASE)
-    masked = re.sub(r'https?://[^\s]+', '[URL_MASKED]', masked)
+
+    masked = re.sub(r"(key|token|secret|password|sid|dsn)[\s=:]+\S+", r"\1=***", error, flags=re.IGNORECASE)
+    masked = re.sub(r"https?://[^\s]+", "[URL_MASKED]", masked)
     return masked[:300]
 
 
@@ -129,7 +130,7 @@ class ProviderTestConnectionService:
         self._last_results[provider] = result_dict
         self._test_history.append(result_dict)
         if len(self._test_history) > self._max_history:
-            self._test_history = self._test_history[-self._max_history:]
+            self._test_history = self._test_history[-self._max_history :]
 
         self._record_audit(provider, "test_connection", result.status, user_id)
         return result_dict
@@ -199,6 +200,7 @@ class ProviderTestConnectionService:
         # Network test via HTTP
         try:
             import httpx
+
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(
                     f"https://api.twilio.com/2010-04-01/Accounts/{sid}.json",
@@ -250,6 +252,7 @@ class ProviderTestConnectionService:
 
         try:
             import httpx
+
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(
                     "https://api.sendgrid.com/v3/scopes",
@@ -300,6 +303,7 @@ class ProviderTestConnectionService:
         if not redis_url:
             # Check if in-memory fallback is active
             from infra.redis_cluster import redis_cluster
+
             if redis_cluster.connected:
                 result.status = "degraded"
                 result.mode = redis_cluster.mode
@@ -312,6 +316,7 @@ class ProviderTestConnectionService:
 
         try:
             from infra.redis_cluster import redis_cluster
+
             health = await redis_cluster.health_check()
             result.network_reachable = health.get("status") != "disconnected"
             result.credential_valid = health.get("status") == "healthy"
@@ -344,6 +349,7 @@ class ProviderTestConnectionService:
             return
 
         from infra.cloud_observability import sentry_integration
+
         sentry_status = sentry_integration.get_status()
         result.credential_valid = sentry_status.get("active", False) or bool(dsn)
         result.network_reachable = True
@@ -364,6 +370,7 @@ class ProviderTestConnectionService:
             return
 
         from infra.cloud_observability import otel_tracer
+
         otel_status = otel_tracer.get_status()
         result.credential_valid = otel_status.get("active", False)
         result.network_reachable = bool(endpoint)

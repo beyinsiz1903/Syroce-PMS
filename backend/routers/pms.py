@@ -16,6 +16,7 @@ All routes have been extracted to dedicated modules:
 This file retains the router object for backward compatibility
 with any code that imports `from routers.pms import router`.
 """
+
 from fastapi import APIRouter
 
 router = APIRouter(prefix="/api", tags=["pms"])

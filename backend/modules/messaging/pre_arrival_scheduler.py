@@ -8,6 +8,7 @@ and triggers 'pre_arrival' automation events (WhatsApp directions, facility info
 Runs as a background asyncio task, configurable interval.
 Also provides manual trigger endpoint.
 """
+
 import asyncio
 import logging
 import uuid
@@ -69,7 +70,9 @@ class PreArrivalScheduler:
                 break
             except Exception as e:
                 _transient_tracker.log_exception(
-                    logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                    logger,
+                    e,
+                    TransientFailureTracker.OUTER_LOOP_KEY,
                     context="scheduler loop",
                     non_transient_msg="%s scheduler loop error: %s",
                 )
@@ -79,6 +82,7 @@ class PreArrivalScheduler:
         """Scan all tenants for tomorrow's check-ins and fire pre_arrival events."""
         # v42 round-3: cross-tenant scan; manual `tenant_id` filters preserved.
         from core.tenant_db import get_system_db
+
         db = get_system_db()
 
         now = datetime.now(UTC)
@@ -113,9 +117,7 @@ class PreArrivalScheduler:
 
             for tenant_id in active_tenants:
                 try:
-                    await self._scan_tenant(
-                        db, tenant_id, tomorrow_start, tomorrow_end, result
-                    )
+                    await self._scan_tenant(db, tenant_id, tomorrow_start, tomorrow_end, result)
                 except Exception as e:
                     logger.exception(f"Pre-arrival scan error for tenant {tenant_id}: {e}")
                     result["errors"] += 1
@@ -129,8 +131,10 @@ class PreArrivalScheduler:
         self._last_run_result = result
         logger.info(
             "Pre-arrival scan complete: scanned=%d fired=%d skipped=%d errors=%d",
-            result["bookings_scanned"], result["events_fired"],
-            result["already_sent"], result["errors"],
+            result["bookings_scanned"],
+            result["events_fired"],
+            result["already_sent"],
+            result["errors"],
         )
         return result
 
@@ -177,6 +181,7 @@ class PreArrivalScheduler:
                 # is satisfied). The async ContextVar persists across the
                 # awaited call within the same task.
                 from core.tenant_db import tenant_context
+
                 with tenant_context(tenant_id):
                     await process_booking_event(tenant_id, "pre_arrival", booking)
                 result["events_fired"] += 1
@@ -184,7 +189,8 @@ class PreArrivalScheduler:
 
                 # Create in-app notification
                 await _create_notification(
-                    db, tenant_id,
+                    db,
+                    tenant_id,
                     title="Pre-Arrival Mesaji Gonderildi",
                     message=f"{booking.get('guest_name', 'Misafir')} icin yarin check-in oncesi mesaj gonderildi (Oda {booking.get('room_number', '?')})",
                     notif_type="messaging_automation",
@@ -223,8 +229,12 @@ def get_pre_arrival_scheduler() -> PreArrivalScheduler:
 
 # ── Shared notification helper ──
 async def _create_notification(
-    db, tenant_id: str, title: str, message: str,
-    notif_type: str = "info", action_url: str | None = None,
+    db,
+    tenant_id: str,
+    title: str,
+    message: str,
+    notif_type: str = "info",
+    action_url: str | None = None,
     priority: str = "normal",
 ):
     """Create an in-app notification visible in the NotificationBell."""

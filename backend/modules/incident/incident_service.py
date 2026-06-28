@@ -4,6 +4,7 @@ Incident Response & Recovery Service
 Tooling for first production incidents: stuck worker recovery, queue replay,
 drift workflow, degraded service detection, incident lifecycle management.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -28,6 +29,7 @@ class IncidentResponseService:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     # ==================================================================
@@ -73,16 +75,16 @@ class IncidentResponseService:
             "recovery_actions": [],
         }
         await self._db.incidents.insert_one(incident)
-        return ServiceResult.success({
-            "incident_id": incident_id,
-            "severity": severity,
-            "status": "open",
-        })
+        return ServiceResult.success(
+            {
+                "incident_id": incident_id,
+                "severity": severity,
+                "status": "open",
+            }
+        )
 
     @audited("incident.acknowledge", "incident", severity=SEVERITY_WARNING)
-    async def acknowledge_incident(
-        self, ctx: OperationContext, incident_id: str
-    ) -> ServiceResult:
+    async def acknowledge_incident(self, ctx: OperationContext, incident_id: str) -> ServiceResult:
         now = datetime.now(UTC)
         result = await self._db.incidents.update_one(
             {"id": incident_id, "tenant_id": ctx.tenant_id, "status": "open"},
@@ -148,9 +150,7 @@ class IncidentResponseService:
             query["status"] = status
         if severity:
             query["severity"] = severity
-        incidents = await self._db.incidents.find(
-            query, {"_id": 0}
-        ).sort("created_at", -1).limit(limit).to_list(limit)
+        incidents = await self._db.incidents.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
         return ServiceResult.success({"incidents": incidents, "count": len(incidents)})
 
     # ==================================================================
@@ -168,22 +168,28 @@ class IncidentResponseService:
         if not getattr(ctx, "actor_is_super_admin", False) and ctx.actor_role not in ("admin", "super_admin"):
             return ServiceResult.fail("Admin only operation", "FORBIDDEN")
 
-        dead_letters = await self._db.dead_letter_queue.find(
-            {"queue_name": queue_name, "tenant_id": ctx.tenant_id, "replayed": {"$ne": True}},
-            {"_id": 0},
-        ).limit(max_count).to_list(max_count)
+        dead_letters = (
+            await self._db.dead_letter_queue.find(
+                {"queue_name": queue_name, "tenant_id": ctx.tenant_id, "replayed": {"$ne": True}},
+                {"_id": 0},
+            )
+            .limit(max_count)
+            .to_list(max_count)
+        )
 
         replayed = 0
         for dl in dead_letters:
-            await self._db.task_queue.insert_one({
-                "id": str(uuid.uuid4()),
-                "tenant_id": ctx.tenant_id,
-                "queue_name": queue_name,
-                "payload": dl.get("payload"),
-                "status": "pending",
-                "replayed_from": dl.get("id"),
-                "created_at": datetime.now(UTC).isoformat(),
-            })
+            await self._db.task_queue.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": ctx.tenant_id,
+                    "queue_name": queue_name,
+                    "payload": dl.get("payload"),
+                    "status": "pending",
+                    "replayed_from": dl.get("id"),
+                    "created_at": datetime.now(UTC).isoformat(),
+                }
+            )
             await self._db.dead_letter_queue.update_one(
                 {"id": dl["id"]},
                 {
@@ -196,16 +202,16 @@ class IncidentResponseService:
             )
             replayed += 1
 
-        return ServiceResult.success({
-            "queue_name": queue_name,
-            "replayed_count": replayed,
-            "total_dead_letters": len(dead_letters),
-        })
+        return ServiceResult.success(
+            {
+                "queue_name": queue_name,
+                "replayed_count": replayed,
+                "total_dead_letters": len(dead_letters),
+            }
+        )
 
     @audited("recovery.stuck_worker", "worker", severity=SEVERITY_WARNING)
-    async def recover_stuck_workers(
-        self, ctx: OperationContext, stale_minutes: int = 30
-    ) -> ServiceResult:
+    async def recover_stuck_workers(self, ctx: OperationContext, stale_minutes: int = 30) -> ServiceResult:
         """Find and reset stuck worker tasks."""
         if not getattr(ctx, "actor_is_super_admin", False) and ctx.actor_role not in ("admin", "super_admin"):
             return ServiceResult.fail("Admin only operation", "FORBIDDEN")
@@ -236,11 +242,13 @@ class IncidentResponseService:
             )
             recovered += 1
 
-        return ServiceResult.success({
-            "stuck_tasks_found": len(stuck),
-            "recovered": recovered,
-            "stale_threshold_minutes": stale_minutes,
-        })
+        return ServiceResult.success(
+            {
+                "stuck_tasks_found": len(stuck),
+                "recovered": recovered,
+                "stale_threshold_minutes": stale_minutes,
+            }
+        )
 
     @audited("recovery.force_reconciliation", "reconciliation", severity=SEVERITY_WARNING, require_reason=True)
     async def force_reconciliation(
@@ -252,21 +260,25 @@ class IncidentResponseService:
         """Queue a force reconciliation for a specific provider."""
         recon_id = str(uuid.uuid4())
         now = datetime.now(UTC)
-        await self._db.reconciliation_queue.insert_one({
-            "id": recon_id,
-            "tenant_id": ctx.tenant_id,
-            "provider_id": provider_id,
-            "type": "force_full",
-            "status": "queued",
-            "triggered_by": ctx.actor_id,
-            "reason": reason,
-            "created_at": now.isoformat(),
-        })
-        return ServiceResult.success({
-            "reconciliation_id": recon_id,
-            "provider_id": provider_id,
-            "status": "queued",
-        })
+        await self._db.reconciliation_queue.insert_one(
+            {
+                "id": recon_id,
+                "tenant_id": ctx.tenant_id,
+                "provider_id": provider_id,
+                "type": "force_full",
+                "status": "queued",
+                "triggered_by": ctx.actor_id,
+                "reason": reason,
+                "created_at": now.isoformat(),
+            }
+        )
+        return ServiceResult.success(
+            {
+                "reconciliation_id": recon_id,
+                "provider_id": provider_id,
+                "status": "queued",
+            }
+        )
 
     # ==================================================================
     # Degraded Service Monitor
@@ -274,8 +286,14 @@ class IncidentResponseService:
     async def get_service_health_matrix(self, ctx: OperationContext) -> ServiceResult:
         """Check health of all major services and return matrix."""
         services = [
-            "pms_core", "channel_manager", "night_audit", "messaging",
-            "queue_workers", "security", "ml_pipeline", "websocket",
+            "pms_core",
+            "channel_manager",
+            "night_audit",
+            "messaging",
+            "queue_workers",
+            "security",
+            "ml_pipeline",
+            "websocket",
         ]
         matrix = []
         now = datetime.now(UTC)
@@ -296,16 +314,16 @@ class IncidentResponseService:
                 status = "unknown"
                 age = None
 
-            active_incidents = await self._db.incidents.count_documents(
-                {"affected_service": svc, "tenant_id": ctx.tenant_id, "status": {"$in": ["open", "acknowledged"]}}
-            )
+            active_incidents = await self._db.incidents.count_documents({"affected_service": svc, "tenant_id": ctx.tenant_id, "status": {"$in": ["open", "acknowledged"]}})
 
-            matrix.append({
-                "service": svc,
-                "status": status,
-                "last_heartbeat_age_seconds": round(age, 1) if age else None,
-                "active_incidents": active_incidents,
-            })
+            matrix.append(
+                {
+                    "service": svc,
+                    "status": status,
+                    "last_heartbeat_age_seconds": round(age, 1) if age else None,
+                    "active_incidents": active_incidents,
+                }
+            )
 
         overall = "healthy"
         for m in matrix:
@@ -315,11 +333,13 @@ class IncidentResponseService:
             if m["status"] == "degraded":
                 overall = "degraded"
 
-        return ServiceResult.success({
-            "services": matrix,
-            "overall_status": overall,
-            "checked_at": now.isoformat(),
-        })
+        return ServiceResult.success(
+            {
+                "services": matrix,
+                "overall_status": overall,
+                "checked_at": now.isoformat(),
+            }
+        )
 
 
 incident_response_service = IncidentResponseService()

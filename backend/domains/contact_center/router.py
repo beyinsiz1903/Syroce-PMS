@@ -14,6 +14,7 @@ kiracıya göre filtrelenir. PII (telefon/gövde/ad) YALNIZCA okuma sınırında
 DTO'da çözülür, maskelenir ve ASLA ciphertext/_id/_hash dışarı verilmez.
 Gönderim başarısızsa fake-green YOK — onur açıklamasıyla 502 döner.
 """
+
 from __future__ import annotations
 
 import logging
@@ -135,11 +136,7 @@ async def list_conversations(
     query: dict = {"tenant_id": current_user.tenant_id}
     if status:
         query["status"] = status
-    cursor = (
-        db.contact_center_conversations.find(query)
-        .sort("last_message_at", -1)
-        .limit(safe_limit)
-    )
+    cursor = db.contact_center_conversations.find(query).sort("last_message_at", -1).limit(safe_limit)
     docs = await cursor.to_list(length=safe_limit)
     svc = get_field_encryption_service()
     items = [conversation_to_dto(d, svc) for d in docs]
@@ -161,20 +158,12 @@ async def get_conversation(
     toplu liste ucunda numara ASLA açılmaz). DB'ye yan-etki yazımı yapılmaz; PII
     açma talebi/sonucu yalnızca PII'siz (yalnız user/konuşma id'si) iz bırakır.
     """
-    conv = await db.contact_center_conversations.find_one(
-        {"id": conversation_id, "tenant_id": current_user.tenant_id}
-    )
+    conv = await db.contact_center_conversations.find_one({"id": conversation_id, "tenant_id": current_user.tenant_id})
     if not conv:
         raise HTTPException(status_code=404, detail="Konuşma bulunamadı")
 
     safe_msg_limit = max(1, min(int(msg_limit or 100), 500))
-    msg_cursor = (
-        db.contact_center_messages.find(
-            {"tenant_id": current_user.tenant_id, "conversation_id": conversation_id}
-        )
-        .sort("created_at", 1)
-        .limit(safe_msg_limit)
-    )
+    msg_cursor = db.contact_center_messages.find({"tenant_id": current_user.tenant_id, "conversation_id": conversation_id}).sort("created_at", 1).limit(safe_msg_limit)
     msg_docs = await msg_cursor.to_list(length=safe_msg_limit)
     svc = get_field_encryption_service()
 
@@ -208,29 +197,19 @@ async def send_conversation_message(
     Gönderim başarısızsa kayıt FAILED olarak tutulur ve 502 döner (fake-green YOK).
     """
     tenant_id = current_user.tenant_id
-    conv = await db.contact_center_conversations.find_one(
-        {"id": conversation_id, "tenant_id": tenant_id}
-    )
+    conv = await db.contact_center_conversations.find_one({"id": conversation_id, "tenant_id": tenant_id})
     if not conv:
         raise HTTPException(status_code=404, detail="Konuşma bulunamadı")
     if conv.get("channel") != _CHANNEL_WHATSAPP:
-        raise HTTPException(
-            status_code=400, detail="Bu uç yalnızca WhatsApp konuşmaları içindir"
-        )
+        raise HTTPException(status_code=400, detail="Bu uç yalnızca WhatsApp konuşmaları içindir")
 
     svc = get_field_encryption_service()
     try:
-        recipient = (
-            svc.decrypt_value(conv.get("caller_id_enc") or "")
-            if conv.get("caller_id_enc")
-            else ""
-        )
+        recipient = svc.decrypt_value(conv.get("caller_id_enc") or "") if conv.get("caller_id_enc") else ""
     except Exception:
         # Decrypt hatası: alıcı çözülemedi → fail-closed 409 (500 sızdırma YOK),
         # PII'siz log. Henüz gönderim denenmediği için FAILED kaydı yazılmaz.
-        logger.warning(
-            "contact-center: alıcı numarası decrypt edilemedi conv=%s", conversation_id
-        )
+        logger.warning("contact-center: alıcı numarası decrypt edilemedi conv=%s", conversation_id)
         recipient = ""
     if not recipient:
         raise HTTPException(status_code=409, detail="Alıcı numarası çözülemedi")

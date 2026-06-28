@@ -50,6 +50,7 @@ mode, counts per kind, and applied counts. The admin dashboard / alerting
 can poll this collection: any row with ``found_total > 0`` after the next
 nightly run is an actionable signal that the recap spec is leaking.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -65,9 +66,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from core.database import db  # noqa: E402
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("cleanup_e2e_pilot_residue")
 
 E2E_PREFIX_REGEX = r"^E2E_"
@@ -202,9 +201,7 @@ async def record_scan(tenant_id: str, summary: dict) -> None:
 
 
 async def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Pilot tenant E2E residue sweep (Task #178)."
-    )
+    parser = argparse.ArgumentParser(description="Pilot tenant E2E residue sweep (Task #178).")
     parser.add_argument(
         "--hours",
         type=int,
@@ -220,16 +217,11 @@ async def main() -> int:
 
     tenant_id = os.environ.get("E2E_PILOT_TENANT_ID", "").strip()
     if not tenant_id:
-        logger.error(
-            "E2E_PILOT_TENANT_ID env var tanımlı değil — fail-closed; "
-            "production guard tetiklendi."
-        )
+        logger.error("E2E_PILOT_TENANT_ID env var tanımlı değil — fail-closed; production guard tetiklendi.")
         return 2
 
     if args.apply and os.environ.get("E2E_ALLOW_PILOT_CLEANUP", "").lower() != "true":
-        logger.error(
-            "--apply için E2E_ALLOW_PILOT_CLEANUP=true gerekli — fail-closed."
-        )
+        logger.error("--apply için E2E_ALLOW_PILOT_CLEANUP=true gerekli — fail-closed.")
         return 2
 
     logger.info(
@@ -267,10 +259,7 @@ async def main() -> int:
     await record_scan(tenant_id, summary)
 
     print("=" * 60)
-    print(
-        f"E2E pilot residue sweep "
-        f"({'APPLY' if args.apply else 'DRY-RUN'}) tenant={tenant_id}"
-    )
+    print(f"E2E pilot residue sweep ({'APPLY' if args.apply else 'DRY-RUN'}) tenant={tenant_id}")
     print("=" * 60)
     for k, v in counts.items():
         print(f"  {k:18s} -> {v}")
@@ -283,8 +272,7 @@ async def main() -> int:
 
     if total > 0:
         logger.warning(
-            "[e2e-residue] %d artık kayıt bulundu (bookings=%d guests=%d charges=%d) — "
-            "recap cleanup'ı kontrol et.",
+            "[e2e-residue] %d artık kayıt bulundu (bookings=%d guests=%d charges=%d) — recap cleanup'ı kontrol et.",
             total,
             counts["bookings"],
             counts["guests"],

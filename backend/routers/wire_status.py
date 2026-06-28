@@ -5,6 +5,7 @@ Import Bridge → Outbox → ARI Push.
 Provides a single endpoint to see the health and failure state
 of the entire reservation processing pipeline.
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -49,15 +50,19 @@ async def _subsystem_stats(db, tenant_id: str, operation_type: str, hours: int =
 
 async def _recent_failures(db, tenant_id: str, operation_type: str, limit: int = 5) -> list:
     """Get most recent failures for a subsystem."""
-    return await db.cp_failures.find(
-        {
-            "tenant_id": tenant_id,
-            "operation_type": operation_type,
-            "status": {"$in": ["open", "recurring"]},
-        },
-        {"_id": 0, "failure_id": 1, "error_code": 1, "error_message": 1,
-         "severity": 1, "occurrence_count": 1, "last_seen_at": 1, "provider": 1},
-    ).sort("last_seen_at", -1).limit(limit).to_list(limit)
+    return (
+        await db.cp_failures.find(
+            {
+                "tenant_id": tenant_id,
+                "operation_type": operation_type,
+                "status": {"$in": ["open", "recurring"]},
+            },
+            {"_id": 0, "failure_id": 1, "error_code": 1, "error_message": 1, "severity": 1, "occurrence_count": 1, "last_seen_at": 1, "provider": 1},
+        )
+        .sort("last_seen_at", -1)
+        .limit(limit)
+        .to_list(limit)
+    )
 
 
 def _health_status(stats: dict) -> str:

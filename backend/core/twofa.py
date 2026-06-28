@@ -10,6 +10,7 @@ Storage model on the user document:
 The TOTP secret is encrypted at rest using the same key as other PII
 fields. Backup codes are stored as bcrypt hashes (never plaintext).
 """
+
 from __future__ import annotations
 
 import base64
@@ -47,13 +48,12 @@ def _derive_key() -> bytes:
     if not base:
         try:
             from core.security import JWT_SECRET as _RUNTIME_JWT_SECRET
+
             base = _RUNTIME_JWT_SECRET or ""
         except Exception:
             base = ""
     if not base:
-        raise RuntimeError(
-            "TWOFA_SECRET or JWT_SECRET must be set to derive 2FA encryption key"
-        )
+        raise RuntimeError("TWOFA_SECRET or JWT_SECRET must be set to derive 2FA encryption key")
     digest = hashlib.sha256(b"2fa-secret-v1|" + base.encode()).digest()
     return base64.urlsafe_b64encode(digest)
 
@@ -80,9 +80,7 @@ def generate_secret() -> str:
 
 def provisioning_uri(secret_b32: str, account_label: str) -> str:
     """otpauth:// URI for QR codes (compatible with Google/MS Authenticator)."""
-    return pyotp.TOTP(secret_b32).provisioning_uri(
-        name=account_label, issuer_name=ISSUER
-    )
+    return pyotp.TOTP(secret_b32).provisioning_uri(name=account_label, issuer_name=ISSUER)
 
 
 def verify_totp(secret_b32: str, code: str, window: int = 1) -> bool:
@@ -101,9 +99,7 @@ def verify_totp(secret_b32: str, code: str, window: int = 1) -> bool:
         return False
 
 
-def verify_totp_with_counter(
-    secret_b32: str, code: str, window: int = 1
-) -> tuple[bool, int | None]:
+def verify_totp_with_counter(secret_b32: str, code: str, window: int = 1) -> tuple[bool, int | None]:
     """Backward-compatible single-counter helper. Prefers the current 30s
     slot (offset 0), then -1, then +1, etc. so the consumed counter is the
     most likely one. NOTE: callers that need same-window replay protection
@@ -115,9 +111,7 @@ def verify_totp_with_counter(
     return (bool(counters), counters[0] if counters else None)
 
 
-def verify_totp_matching_counters(
-    secret_b32: str, code: str, window: int = 1
-) -> list[int]:
+def verify_totp_matching_counters(secret_b32: str, code: str, window: int = 1) -> list[int]:
     """Return EVERY RFC-6238 counter (unix_seconds//30) within ±window
     whose generated code equals `code`. Order: current slot first, then
     expanding outward (-1, +1, -2, +2, ...). Empty list = no match.
@@ -160,9 +154,7 @@ async def _ensure_consumed_totp_index(raw_db) -> None:
     global _consumed_totp_index_ready
     if _consumed_totp_index_ready:
         return
-    await raw_db.consumed_totp.create_index(
-        [("user_id", 1), ("counter", 1)], unique=True, name="user_counter_unique"
-    )
+    await raw_db.consumed_totp.create_index([("user_id", 1), ("counter", 1)], unique=True, name="user_counter_unique")
     await raw_db.consumed_totp.create_index("expires_at", expireAfterSeconds=0)
     info = await raw_db.consumed_totp.index_information()
     has_unique = False
@@ -174,23 +166,16 @@ async def _ensure_consumed_totp_index(raw_db) -> None:
             has_unique = True
             break
     if not has_unique:
-        raise RuntimeError(
-            "consumed_totp: unique (user_id, counter) index missing — refusing "
-            "to verify TOTP without same-window replay protection (Bug CB guard)."
-        )
+        raise RuntimeError("consumed_totp: unique (user_id, counter) index missing — refusing to verify TOTP without same-window replay protection (Bug CB guard).")
     _consumed_totp_index_ready = True
 
 
-async def consume_totp_counter(
-    raw_db, user_id: str, counter: int, ttl_seconds: int = 180
-) -> bool:
+async def consume_totp_counter(raw_db, user_id: str, counter: int, ttl_seconds: int = 180) -> bool:
     """Single-counter convenience wrapper around `consume_totp_counters`."""
     return await consume_totp_counters(raw_db, user_id, [counter], ttl_seconds=ttl_seconds)
 
 
-async def consume_totp_counters(
-    raw_db, user_id: str, counters: list[int], ttl_seconds: int = 180
-) -> bool:
+async def consume_totp_counters(raw_db, user_id: str, counters: list[int], ttl_seconds: int = 180) -> bool:
     """Atomically claim ALL of (user_id, c) for c in counters. Returns
     True only if every slot was newly inserted. If any slot was already
     consumed (DuplicateKeyError), returns False and any not-yet-claimed
@@ -199,15 +184,13 @@ async def consume_totp_counters(
 
     Raises on any non-duplicate DB error (fail-closed)."""
     from pymongo.errors import BulkWriteError
+
     await _ensure_consumed_totp_index(raw_db)
     if not counters:
         return False
     now = datetime.now(UTC)
     expires_at = now + timedelta(seconds=ttl_seconds)
-    docs = [
-        {"user_id": user_id, "counter": c, "consumed_at": now, "expires_at": expires_at}
-        for c in counters
-    ]
+    docs = [{"user_id": user_id, "counter": c, "consumed_at": now, "expires_at": expires_at} for c in counters]
     try:
         # ordered=False so a duplicate on one slot does not prevent claiming
         # the others — we want both adjacent slots locked even if one

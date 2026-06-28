@@ -1,4 +1,5 @@
 """Connector CRUD, connection test, credential management endpoints."""
+
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -58,6 +59,7 @@ class ConnectionTestResponse(BaseModel):
 
 
 # ─── Connector CRUD ──────────────────────────────────────────────
+
 
 @router.get("/connectors")
 async def list_connectors(
@@ -148,7 +150,10 @@ async def update_credentials(
 ):
     svc = ConnectorService()
     await svc.update_credentials(
-        current_user.tenant_id, connector_id, req.credentials, current_user.id,
+        current_user.tenant_id,
+        connector_id,
+        req.credentials,
+        current_user.id,
     )
     return {"message": "Credentials updated"}
 
@@ -168,6 +173,7 @@ async def delete_connector(
 
 # ─── Secure Credential Management ──────────────────────────────────
 
+
 @router.put("/connectors/{connector_id}/credentials/secure")
 async def update_credentials_secure(
     connector_id: str,
@@ -176,15 +182,22 @@ async def update_credentials_secure(
     _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     await enforce_credential_access(
-        current_user, "credential_update", connector_id, repo, require_write=True,
+        current_user,
+        "credential_update",
+        connector_id,
+        repo,
+        require_write=True,
     )
     vault = CredentialVault()
     try:
         await vault.store_credentials(
-            current_user.tenant_id, connector_id,
-            req.credentials, current_user.id,
+            current_user.tenant_id,
+            connector_id,
+            req.credentials,
+            current_user.id,
         )
         return {"message": "Credentials securely updated (AES-256-GCM)"}
     except ValueError as e:
@@ -199,15 +212,22 @@ async def rotate_credentials(
     _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     await enforce_credential_access(
-        current_user, "credential_rotation", connector_id, repo, require_write=True,
+        current_user,
+        "credential_rotation",
+        connector_id,
+        repo,
+        require_write=True,
     )
     vault = CredentialVault()
     try:
         await vault.rotate_credentials(
-            current_user.tenant_id, connector_id,
-            req.credentials, current_user.id,
+            current_user.tenant_id,
+            connector_id,
+            req.credentials,
+            current_user.id,
         )
         return {"message": "Credentials rotated successfully (AES-256-GCM)"}
     except ValueError as e:
@@ -220,9 +240,14 @@ async def get_masked_credentials(
     current_user: User = Depends(get_current_user),
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     await enforce_credential_access(
-        current_user, "credential_view", connector_id, repo, require_write=False,
+        current_user,
+        "credential_view",
+        connector_id,
+        repo,
+        require_write=False,
     )
     svc = ConnectorService()
     connector = await svc.get_connector(current_user.tenant_id, connector_id)
@@ -257,14 +282,21 @@ async def migrate_credentials(
     _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     await enforce_credential_access(
-        current_user, "credential_update", connector_id, repo, require_write=True,
+        current_user,
+        "credential_update",
+        connector_id,
+        repo,
+        require_write=True,
     )
     vault = CredentialVault()
     try:
         result = await vault.migrate_legacy_credentials(
-            current_user.tenant_id, connector_id, current_user.id,
+            current_user.tenant_id,
+            connector_id,
+            current_user.id,
         )
         return result
     except ValueError as e:

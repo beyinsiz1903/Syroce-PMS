@@ -10,6 +10,7 @@ Flow:
 
 Disable / regenerate require both password AND a valid current TOTP code.
 """
+
 from __future__ import annotations
 
 import logging
@@ -82,15 +83,17 @@ async def setup_2fa(current_user: User = Depends(get_current_user)) -> dict:
 
     await db.users.update_one(
         {"id": current_user.id},
-        {"$set": {
-            "two_factor_secret_pending_enc": encrypt_secret(secret),
-            "two_factor_setup_started_at": _now(),
-        }},
+        {
+            "$set": {
+                "two_factor_secret_pending_enc": encrypt_secret(secret),
+                "two_factor_setup_started_at": _now(),
+            }
+        },
     )
     return {
-        "secret": secret,             # shown to user as manual fallback
+        "secret": secret,  # shown to user as manual fallback
         "otpauth_uri": uri,
-        "qr_code": qr_data_url,       # data:image/png;base64,...
+        "qr_code": qr_data_url,  # data:image/png;base64,...
         "issuer": "Syroce PMS",
         "account": label,
     }
@@ -110,15 +113,11 @@ async def confirm_setup(
         raise HTTPException(status_code=400, detail="2FA zaten etkin")
     pending = doc.get("two_factor_secret_pending_enc")
     if not pending:
-        raise HTTPException(
-            status_code=400, detail="Önce /setup çağrılmalı"
-        )
+        raise HTTPException(status_code=400, detail="Önce /setup çağrılmalı")
     try:
         secret = decrypt_secret(pending)
     except ValueError:
-        raise HTTPException(
-            status_code=500, detail="2FA gizli anahtar şifre çözülemedi"
-        )
+        raise HTTPException(status_code=500, detail="2FA gizli anahtar şifre çözülemedi")
     if not verify_totp(secret, payload.code):
         raise HTTPException(status_code=400, detail="Doğrulama kodu hatalı")
 
@@ -138,13 +137,15 @@ async def confirm_setup(
             },
         },
     )
-    await db.audit_logs.insert_one({
-        "tenant_id": current_user.tenant_id,
-        "user_id": current_user.id,
-        "action": "2fa_enabled",
-        "resource_type": "auth",
-        "timestamp": _now(),
-    })
+    await db.audit_logs.insert_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "user_id": current_user.id,
+            "action": "2fa_enabled",
+            "resource_type": "auth",
+            "timestamp": _now(),
+        }
+    )
     return {
         "ok": True,
         "enabled": True,
@@ -173,6 +174,7 @@ async def disable_2fa(
     # here at bcrypt-throttled speed, completely bypassing login throttles.
     from security.auth_throttle import SENSITIVE_AUTH_USER
     from security.auth_throttle import enforce as _throttle
+
     await _throttle(SENSITIVE_AUTH_USER, f"2fadis:{current_user.id}", "2FA kapatma denemesi")
 
     hashed = doc.get("hashed_password") or doc.get("password_hash") or doc.get("password", "")
@@ -201,27 +203,29 @@ async def disable_2fa(
     if matched_totp:
         won = await consume_totp_counters(db, current_user.id, totp_counters)
         if not won:
-            raise HTTPException(
-                status_code=401, detail="Bu doğrulama kodu zaten kullanıldı"
-            )
+            raise HTTPException(status_code=401, detail="Bu doğrulama kodu zaten kullanıldı")
 
     await db.users.update_one(
         {"id": current_user.id},
-        {"$unset": {
-            "two_factor_enabled": "",
-            "two_factor_secret_enc": "",
-            "two_factor_backup_codes": "",
-            "two_factor_enabled_at": "",
-            "two_factor_last_used_at": "",
-        }},
+        {
+            "$unset": {
+                "two_factor_enabled": "",
+                "two_factor_secret_enc": "",
+                "two_factor_backup_codes": "",
+                "two_factor_enabled_at": "",
+                "two_factor_last_used_at": "",
+            }
+        },
     )
-    await db.audit_logs.insert_one({
-        "tenant_id": current_user.tenant_id,
-        "user_id": current_user.id,
-        "action": "2fa_disabled",
-        "resource_type": "auth",
-        "timestamp": _now(),
-    })
+    await db.audit_logs.insert_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "user_id": current_user.id,
+            "action": "2fa_disabled",
+            "resource_type": "auth",
+            "timestamp": _now(),
+        }
+    )
     return {"ok": True, "enabled": False}
 
 
@@ -242,6 +246,7 @@ async def regenerate_backup_codes(
     # v48 (Bug CE): per-user throttle on TOTP brute-force surface.
     from security.auth_throttle import SENSITIVE_AUTH_USER
     from security.auth_throttle import enforce as _throttle
+
     await _throttle(SENSITIVE_AUTH_USER, f"2farb:{current_user.id}", "yedek kod yenileme denemesi")
 
     secret = decrypt_secret(doc.get("two_factor_secret_enc", ""))
@@ -255,22 +260,22 @@ async def regenerate_backup_codes(
     # Bug CB v45: claim ALL matching TOTP slots atomically (closes
     # adjacent-counter collisions and cross-endpoint replay).
     if not await consume_totp_counters(db, current_user.id, totp_counters):
-        raise HTTPException(
-            status_code=401, detail="Bu doğrulama kodu zaten kullanıldı"
-        )
+        raise HTTPException(status_code=401, detail="Bu doğrulama kodu zaten kullanıldı")
 
     new_codes = generate_backup_codes()
     await db.users.update_one(
         {"id": current_user.id},
         {"$set": {"two_factor_backup_codes": hash_backup_codes(new_codes)}},
     )
-    await db.audit_logs.insert_one({
-        "tenant_id": current_user.tenant_id,
-        "user_id": current_user.id,
-        "action": "2fa_backup_regenerated",
-        "resource_type": "auth",
-        "timestamp": _now(),
-    })
+    await db.audit_logs.insert_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "user_id": current_user.id,
+            "action": "2fa_backup_regenerated",
+            "resource_type": "auth",
+            "timestamp": _now(),
+        }
+    )
     return {
         "ok": True,
         "backup_codes": new_codes,
@@ -284,9 +289,7 @@ async def get_policy(current_user: User = Depends(get_current_user)) -> dict:
     """Return effective 2FA policy: required_for_admins (default: false)."""
     if not current_user.tenant_id:
         return {"required_for_admins": False}
-    t = await db.tenants.find_one(
-        {"id": current_user.tenant_id}, {"_id": 0, "security_policy": 1}
-    )
+    t = await db.tenants.find_one({"id": current_user.tenant_id}, {"_id": 0, "security_policy": 1})
     pol = (t or {}).get("security_policy") or {}
     return {
         "required_for_admins": bool(pol.get("require_2fa_for_admins")),

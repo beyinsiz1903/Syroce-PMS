@@ -4,6 +4,7 @@ Migration Verification — Schema Drift Detection & Index Validation
 Checks that MongoDB collections have the expected indexes and structure.
 Used as a hard gate in the deploy pipeline.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -37,9 +38,19 @@ REQUIRED_INDEXES = {
 
 # Expected collections that must exist
 REQUIRED_COLLECTIONS = [
-    "users", "bookings", "rooms", "guests", "tenants", "organizations",
-    "folios", "folio_charges", "payments", "outbox_events",
-    "event_timeline", "feature_flags", "usage_daily",
+    "users",
+    "bookings",
+    "rooms",
+    "guests",
+    "tenants",
+    "organizations",
+    "folios",
+    "folio_charges",
+    "payments",
+    "outbox_events",
+    "event_timeline",
+    "feature_flags",
+    "usage_daily",
 ]
 
 
@@ -48,6 +59,7 @@ class MigrationVerifier:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     async def verify_all(self) -> ServiceResult:
@@ -65,21 +77,25 @@ class MigrationVerifier:
             for coll_name in REQUIRED_COLLECTIONS:
                 collections_checked += 1
                 if coll_name not in existing_collections:
-                    drift_issues.append({
-                        "collection": coll_name,
-                        "issue": "Collection does not exist",
-                        "severity": "warning",
-                    })
+                    drift_issues.append(
+                        {
+                            "collection": coll_name,
+                            "issue": "Collection does not exist",
+                            "severity": "warning",
+                        }
+                    )
 
             # Check required indexes
             for coll_name, indexes in REQUIRED_INDEXES.items():
                 if coll_name not in existing_collections:
                     for idx in indexes:
-                        missing_indexes.append({
-                            "collection": coll_name,
-                            "index_name": idx["name"],
-                            "reason": "Collection missing",
-                        })
+                        missing_indexes.append(
+                            {
+                                "collection": coll_name,
+                                "index_name": idx["name"],
+                                "reason": "Collection missing",
+                            }
+                        )
                     continue
 
                 try:
@@ -97,17 +113,21 @@ class MigrationVerifier:
                                     found = True
                                     break
                             if not found:
-                                missing_indexes.append({
-                                    "collection": coll_name,
-                                    "index_name": idx["name"],
-                                    "reason": "Index not found",
-                                })
+                                missing_indexes.append(
+                                    {
+                                        "collection": coll_name,
+                                        "index_name": idx["name"],
+                                        "reason": "Index not found",
+                                    }
+                                )
                 except Exception as e:
-                    drift_issues.append({
-                        "collection": coll_name,
-                        "issue": f"Cannot read indexes: {str(e)[:100]}",
-                        "severity": "warning",
-                    })
+                    drift_issues.append(
+                        {
+                            "collection": coll_name,
+                            "issue": f"Cannot read indexes: {str(e)[:100]}",
+                            "severity": "warning",
+                        }
+                    )
 
             # Check for oversized collections (potential data issues)
             for coll_name in ["outbox_events", "event_timeline"]:
@@ -115,11 +135,13 @@ class MigrationVerifier:
                     try:
                         count = await self._db[coll_name].estimated_document_count()
                         if count > 10_000_000:
-                            drift_issues.append({
-                                "collection": coll_name,
-                                "issue": f"Very large collection ({count:,} docs) — consider archival",
-                                "severity": "info",
-                            })
+                            drift_issues.append(
+                                {
+                                    "collection": coll_name,
+                                    "issue": f"Very large collection ({count:,} docs) — consider archival",
+                                    "severity": "info",
+                                }
+                            )
                     except Exception:
                         pass
 
@@ -127,15 +149,17 @@ class MigrationVerifier:
             critical_count = len(missing_indexes)
             warning_count = len([d for d in drift_issues if d["severity"] == "warning"])
 
-            return ServiceResult.success({
-                "verified_at": now,
-                "collections_checked": collections_checked,
-                "drift_issues": drift_issues,
-                "missing_indexes": missing_indexes,
-                "critical_count": critical_count,
-                "warning_count": warning_count,
-                "verdict": "FAIL" if critical_count > 0 else ("WARN" if warning_count > 0 else "PASS"),
-            })
+            return ServiceResult.success(
+                {
+                    "verified_at": now,
+                    "collections_checked": collections_checked,
+                    "drift_issues": drift_issues,
+                    "missing_indexes": missing_indexes,
+                    "critical_count": critical_count,
+                    "warning_count": warning_count,
+                    "verdict": "FAIL" if critical_count > 0 else ("WARN" if warning_count > 0 else "PASS"),
+                }
+            )
 
         except Exception as e:
             return ServiceResult.fail(f"Migration verification error: {str(e)}", "VERIFY_ERROR")
@@ -149,11 +173,13 @@ class MigrationVerifier:
                 try:
                     count = await self._db[coll_name].estimated_document_count()
                     idx_info = await self._db[coll_name].index_information()
-                    stats.append({
-                        "collection": coll_name,
-                        "document_count": count,
-                        "index_count": len(idx_info),
-                    })
+                    stats.append(
+                        {
+                            "collection": coll_name,
+                            "document_count": count,
+                            "index_count": len(idx_info),
+                        }
+                    )
                 except Exception:
                     stats.append({"collection": coll_name, "document_count": -1, "index_count": -1})
 

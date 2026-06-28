@@ -3,6 +3,7 @@
 Reads ctx['guests'], ctx['rooms']. Writes ctx['room_types_docs'],
 ctx['extended_bookings'], ctx['yield_rules'], ctx['seasonal_entries'].
 """
+
 import random
 from datetime import timedelta
 
@@ -26,27 +27,26 @@ async def seed_rms(db, ctx):
     ]
     room_types_docs = []
     for rtd in room_type_data:
-        room_types_docs.append({
-            "id": _uuid(),
-            "tenant_id": tenant_id,
-            "name": rtd["name"],
-            "base_rate": rtd["base_rate"],
-            "max_rate": rtd["max_rate"],
-            "min_rate": rtd["min_rate"],
-            "capacity": rtd["capacity"],
-            "total_rooms": rtd["total_rooms"],
-            "currency": "TRY",
-            "created_at": _now().isoformat(),
-        })
+        room_types_docs.append(
+            {
+                "id": _uuid(),
+                "tenant_id": tenant_id,
+                "name": rtd["name"],
+                "base_rate": rtd["base_rate"],
+                "max_rate": rtd["max_rate"],
+                "min_rate": rtd["min_rate"],
+                "capacity": rtd["capacity"],
+                "total_rooms": rtd["total_rooms"],
+                "currency": "TRY",
+                "created_at": _now().isoformat(),
+            }
+        )
     await db.room_types.insert_many(room_types_docs)
     ctx["room_types_docs"] = room_types_docs
 
     # ── 13. Extended Historical Bookings (6 months, for RMS) ──
     extended_bookings = []
-    channels_weighted = (
-        ["direct"] * 35 + ["booking_com"] * 25 + ["expedia"] * 20 +
-        ["airbnb"] * 10 + ["own_website"] * 10
-    )
+    channels_weighted = ["direct"] * 35 + ["booking_com"] * 25 + ["expedia"] * 20 + ["airbnb"] * 10 + ["own_website"] * 10
     statuses_past = ["checked_out"] * 80 + ["cancelled"] * 15 + ["no_show"] * 5
 
     for month_offset in range(6):
@@ -80,41 +80,40 @@ async def seed_rms(db, ctx):
             if status == "cancelled":
                 paid = round(total * random.uniform(0, 0.3), 2)
 
-            extended_bookings.append({
-                "id": _uuid(),
-                "tenant_id": tenant_id,
-                "guest_id": guest["id"],
-                "room_id": room["id"],
-                "guest_name": guest.get("name", "Guest"),
-                "room_number": room["room_number"],
-                "room_type": room["room_type"],
-                "check_in": ci.isoformat(),
-                "check_out": co.isoformat(),
-                "nights": nights,
-                "adults": random.randint(1, 2),
-                "children": random.randint(0, 2),
-                "children_ages": [],
-                "guests_count": random.randint(1, 3),
-                "total_amount": total,
-                "base_rate": rate,
-                "paid_amount": paid,
-                "status": status,
-                "channel": channel,
-                "source_channel": channel,
-                "origin": "channel" if channel != "direct" else "ui",
-                "hold_status": "none",
-                "allocation_source": "channel" if channel != "direct" else "manual",
-                "rate_plan": random.choice(RATE_PLANS),
-                "special_requests": None,
-                "group_booking_id": None,
-                "company_id": None,
-                "created_at": (ci - timedelta(days=random.randint(1, 45))).isoformat(),
-                "cancelled_at": ci.isoformat() if status == "cancelled" else None,
-                "cancellation_reason": random.choice([
-                    "Planlar degisti", "Baska otel buldum", "Seyahat iptal",
-                    "Fiyat cok yuksek", "Kisisel nedenler"
-                ]) if status == "cancelled" else None,
-            })
+            extended_bookings.append(
+                {
+                    "id": _uuid(),
+                    "tenant_id": tenant_id,
+                    "guest_id": guest["id"],
+                    "room_id": room["id"],
+                    "guest_name": guest.get("name", "Guest"),
+                    "room_number": room["room_number"],
+                    "room_type": room["room_type"],
+                    "check_in": ci.isoformat(),
+                    "check_out": co.isoformat(),
+                    "nights": nights,
+                    "adults": random.randint(1, 2),
+                    "children": random.randint(0, 2),
+                    "children_ages": [],
+                    "guests_count": random.randint(1, 3),
+                    "total_amount": total,
+                    "base_rate": rate,
+                    "paid_amount": paid,
+                    "status": status,
+                    "channel": channel,
+                    "source_channel": channel,
+                    "origin": "channel" if channel != "direct" else "ui",
+                    "hold_status": "none",
+                    "allocation_source": "channel" if channel != "direct" else "manual",
+                    "rate_plan": random.choice(RATE_PLANS),
+                    "special_requests": None,
+                    "group_booking_id": None,
+                    "company_id": None,
+                    "created_at": (ci - timedelta(days=random.randint(1, 45))).isoformat(),
+                    "cancelled_at": ci.isoformat() if status == "cancelled" else None,
+                    "cancellation_reason": random.choice(["Planlar degisti", "Baska otel buldum", "Seyahat iptal", "Fiyat cok yuksek", "Kisisel nedenler"]) if status == "cancelled" else None,
+                }
+            )
 
     if extended_bookings:
         extended_bookings = [_encrypt_doc(b, "bookings") for b in extended_bookings]

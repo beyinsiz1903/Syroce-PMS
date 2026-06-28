@@ -9,6 +9,7 @@ Closes the gap with OPERA Sales & Catering:
 
 Authorisation reuses existing MICE roles via require_mice_ops.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -157,8 +158,7 @@ async def create_opportunity(
         "id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
         "stage": "lead",
-        "stage_history": [{"stage": "lead", "at": now,
-                           "by": getattr(current_user, "id", None)}],
+        "stage_history": [{"stage": "lead", "at": now, "by": getattr(current_user, "id", None)}],
         "created_at": now,
         "updated_at": now,
         "created_by": getattr(current_user, "id", None),
@@ -170,15 +170,17 @@ async def create_opportunity(
 
 @router.get("/opportunities/{opp_id}")
 async def get_opportunity(opp_id: str, current_user: User = Depends(get_current_user)):
-    o = await db.mice_opportunities.find_one(
-        {"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    o = await db.mice_opportunities.find_one({"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not o:
         raise HTTPException(404, "Opportunity not found")
-    acts = await db.mice_opportunity_activities.find(
-        {"_kind": _NOT_LEAD, "opportunity_id": opp_id, "tenant_id": current_user.tenant_id},
-        {"_id": 0},
-    ).sort("created_at", -1).to_list(200)
+    acts = (
+        await db.mice_opportunity_activities.find(
+            {"_kind": _NOT_LEAD, "opportunity_id": opp_id, "tenant_id": current_user.tenant_id},
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .to_list(200)
+    )
     o["activities"] = acts
     return o
 
@@ -193,8 +195,7 @@ async def update_opportunity(
     require_mice_ops(current_user)
     res = await db.mice_opportunities.update_one(
         {"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id},
-        {"$set": {**payload.model_dump(),
-                  "updated_at": datetime.now(UTC).isoformat()}},
+        {"$set": {**payload.model_dump(), "updated_at": datetime.now(UTC).isoformat()}},
     )
     if res.matched_count == 0:
         raise HTTPException(404, "Opportunity not found")
@@ -202,13 +203,13 @@ async def update_opportunity(
 
 
 @router.delete("/opportunities/{opp_id}")
-async def delete_opportunity(opp_id: str, current_user: User = Depends(get_current_user),
+async def delete_opportunity(
+    opp_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v95 DW
 ):
     require_mice_ops(current_user)
-    res = await db.mice_opportunities.delete_one(
-        {"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id}
-    )
+    res = await db.mice_opportunities.delete_one({"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id})
     if res.deleted_count == 0:
         raise HTTPException(404, "Opportunity not found")
     return {"ok": True}
@@ -224,9 +225,7 @@ async def transition_stage(
     require_mice_ops(current_user)
     if payload.to_stage not in STAGES:
         raise HTTPException(400, f"Invalid stage. One of: {STAGES}")
-    o = await db.mice_opportunities.find_one(
-        {"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    o = await db.mice_opportunities.find_one({"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not o:
         raise HTTPException(404, "Opportunity not found")
     if o.get("stage") == payload.to_stage:
@@ -248,12 +247,17 @@ async def transition_stage(
 
     await db.mice_opportunities.update_one(
         {"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id},
-        {"$set": update,
-         "$push": {"stage_history": {
-             "stage": payload.to_stage, "at": now,
-             "by": getattr(current_user, "id", None),
-             "reason": payload.reason,
-         }}},
+        {
+            "$set": update,
+            "$push": {
+                "stage_history": {
+                    "stage": payload.to_stage,
+                    "at": now,
+                    "by": getattr(current_user, "id", None),
+                    "reason": payload.reason,
+                }
+            },
+        },
     )
 
     try:
@@ -263,8 +267,7 @@ async def transition_stage(
             action=f"sales.opp.{payload.to_stage}",
             entity_type="mice_opportunity",
             entity_id=opp_id,
-            metadata={"from": o.get("stage"), "to": payload.to_stage,
-                      "reason": payload.reason},
+            metadata={"from": o.get("stage"), "to": payload.to_stage, "reason": payload.reason},
             severity="low",
         )
     except Exception:
@@ -275,8 +278,12 @@ async def transition_stage(
 
 def _stage_default_probability(stage: str, current: int) -> int:
     return {
-        "lead": 10, "qualified": 25, "proposal": 50,
-        "contract": 80, "won": 100, "lost": 0,
+        "lead": 10,
+        "qualified": 25,
+        "proposal": 50,
+        "contract": 80,
+        "won": 100,
+        "lost": 0,
     }.get(stage, current)
 
 
@@ -290,9 +297,7 @@ async def add_activity(
     require_mice_ops(current_user)
     if payload.type not in ACTIVITY_TYPES:
         raise HTTPException(400, f"Invalid activity type. One of: {ACTIVITY_TYPES}")
-    o = await db.mice_opportunities.find_one(
-        {"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1}
-    )
+    o = await db.mice_opportunities.find_one({"_kind": _NOT_LEAD, "id": opp_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1})
     if not o:
         raise HTTPException(404, "Opportunity not found")
 
@@ -317,16 +322,22 @@ async def add_activity(
 async def pipeline_summary(current_user: User = Depends(get_current_user)):
     pipeline = [
         {"$match": {"_kind": _NOT_LEAD, "tenant_id": current_user.tenant_id}},
-        {"$group": {
-            "_id": "$stage",
-            "count": {"$sum": 1},
-            "total_value": {"$sum": {"$ifNull": ["$estimated_value", 0]}},
-            "weighted_value": {"$sum": {"$multiply": [
-                {"$ifNull": ["$estimated_value", 0]},
-                {"$divide": [{"$ifNull": ["$probability", 0]}, 100]},
-            ]}},
-            "total_pax": {"$sum": {"$ifNull": ["$pax", 0]}},
-        }},
+        {
+            "$group": {
+                "_id": "$stage",
+                "count": {"$sum": 1},
+                "total_value": {"$sum": {"$ifNull": ["$estimated_value", 0]}},
+                "weighted_value": {
+                    "$sum": {
+                        "$multiply": [
+                            {"$ifNull": ["$estimated_value", 0]},
+                            {"$divide": [{"$ifNull": ["$probability", 0]}, 100]},
+                        ]
+                    }
+                },
+                "total_pax": {"$sum": {"$ifNull": ["$pax", 0]}},
+            }
+        },
     ]
     cursor = db.mice_opportunities.aggregate(pipeline)
     by_stage: dict[str, dict[str, Any]] = {}
@@ -338,14 +349,24 @@ async def pipeline_summary(current_user: User = Depends(get_current_user)):
             "total_pax": row.get("total_pax", 0),
         }
 
-    stages = [{"stage": s, **by_stage.get(s, {
-        "count": 0, "total_value": 0, "weighted_value": 0, "total_pax": 0,
-    })} for s in STAGES]
+    stages = [
+        {
+            "stage": s,
+            **by_stage.get(
+                s,
+                {
+                    "count": 0,
+                    "total_value": 0,
+                    "weighted_value": 0,
+                    "total_pax": 0,
+                },
+            ),
+        }
+        for s in STAGES
+    ]
 
-    open_value = sum(s["total_value"] for s in stages
-                     if s["stage"] not in ("won", "lost"))
-    weighted_open = sum(s["weighted_value"] for s in stages
-                        if s["stage"] not in ("won", "lost"))
+    open_value = sum(s["total_value"] for s in stages if s["stage"] not in ("won", "lost"))
+    weighted_open = sum(s["weighted_value"] for s in stages if s["stage"] not in ("won", "lost"))
     won_value = next((s["total_value"] for s in stages if s["stage"] == "won"), 0)
     lost_value = next((s["total_value"] for s in stages if s["stage"] == "lost"), 0)
     closed = won_value + lost_value
@@ -414,8 +435,7 @@ async def update_package(
         raise HTTPException(400, f"Invalid type. One of: {PACKAGE_TYPES}")
     res = await db.mice_packages.update_one(
         {"id": pkg_id, "tenant_id": current_user.tenant_id},
-        {"$set": {**payload.model_dump(),
-                  "updated_at": datetime.now(UTC).isoformat()}},
+        {"$set": {**payload.model_dump(), "updated_at": datetime.now(UTC).isoformat()}},
     )
     if res.matched_count == 0:
         raise HTTPException(404, "Package not found")
@@ -423,13 +443,13 @@ async def update_package(
 
 
 @router.delete("/packages/{pkg_id}")
-async def delete_package(pkg_id: str, current_user: User = Depends(get_current_user),
+async def delete_package(
+    pkg_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     require_catalog(current_user)
-    res = await db.mice_packages.delete_one(
-        {"id": pkg_id, "tenant_id": current_user.tenant_id}
-    )
+    res = await db.mice_packages.delete_one({"id": pkg_id, "tenant_id": current_user.tenant_id})
     if res.deleted_count == 0:
         raise HTTPException(404, "Package not found")
     return {"ok": True}
@@ -443,18 +463,13 @@ async def quote_package(
     _perm=Depends(require_op("manage_sales")),  # v95 DW
 ):
     """Compute a price quote for a package given pax count."""
-    pkg = await db.mice_packages.find_one(
-        {"id": pkg_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    pkg = await db.mice_packages.find_one({"id": pkg_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not pkg:
         raise HTTPException(404, "Package not found")
 
     base = float(pkg.get("base_price", 0))
     per_pax = float(pkg.get("per_pax_price", 0))
-    items_total = sum(
-        float(it.get("quantity", 1)) * float(it.get("unit_price", 0))
-        for it in pkg.get("items", [])
-    )
+    items_total = sum(float(it.get("quantity", 1)) * float(it.get("unit_price", 0)) for it in pkg.get("items", []))
     subtotal = base + (per_pax * pax) + items_total
 
     return {

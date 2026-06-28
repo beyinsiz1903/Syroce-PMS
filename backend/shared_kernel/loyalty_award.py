@@ -7,6 +7,7 @@ yaşar. Bu sayede `domains/pms` modülleri `domains/guest` modüllerinden
 import yapmadan loyalty entegrasyonunu kullanabilir (cross-domain
 coupling kuralı ihlali olmaz).
 """
+
 from __future__ import annotations
 
 import uuid
@@ -31,13 +32,9 @@ async def _ensure_indexes() -> None:
     db = get_system_db()
     try:
         await db.loyalty_tiers.create_index([("tenant_id", 1), ("min_points", 1)])
-        await db.loyalty_members.create_index(
-            [("tenant_id", 1), ("guest_id", 1)], unique=True, name="loyalty_member_guest"
-        )
+        await db.loyalty_members.create_index([("tenant_id", 1), ("guest_id", 1)], unique=True, name="loyalty_member_guest")
         await db.loyalty_rewards.create_index([("tenant_id", 1), ("active", 1)])
-        await db.loyalty_transactions.create_index(
-            [("tenant_id", 1), ("guest_id", 1), ("created_at", -1)]
-        )
+        await db.loyalty_transactions.create_index([("tenant_id", 1), ("guest_id", 1), ("created_at", -1)])
         # Stay-based award için idempotency: aynı booking için iki kez puan
         # verilmesini engelle. partialFilterExpression ile yalnızca
         # source="stay" ve reference_id dolu kayıtlara unique uygulanır.
@@ -57,9 +54,7 @@ async def _ensure_indexes() -> None:
 
 
 async def _resolve_tier(db, tenant_id: str, points: int) -> dict | None:
-    cur = db.loyalty_tiers.find({"tenant_id": tenant_id, "min_points": {"$lte": points}}).sort(
-        "min_points", -1
-    )
+    cur = db.loyalty_tiers.find({"tenant_id": tenant_id, "min_points": {"$lte": points}}).sort("min_points", -1)
     async for t in cur:
         return t
     return None
@@ -80,16 +75,12 @@ async def award_points_for_stay(
         return None
     await _ensure_indexes()
     db = get_system_db()
-    member = await db.loyalty_members.find_one(
-        {"tenant_id": tenant_id, "guest_id": guest_id}
-    )
+    member = await db.loyalty_members.find_one({"tenant_id": tenant_id, "guest_id": guest_id})
     if not member:
         return None
     tier = None
     if member.get("tier_id"):
-        tier = await db.loyalty_tiers.find_one(
-            {"tenant_id": tenant_id, "id": member["tier_id"]}
-        )
+        tier = await db.loyalty_tiers.find_one({"tenant_id": tenant_id, "id": member["tier_id"]})
     multiplier = float((tier or {}).get("earn_multiplier", 1.0))
     base = round(amount * LOYALTY_POINTS_PER_CURRENCY_UNIT)
     awarded = int(round(base * multiplier))
@@ -124,9 +115,7 @@ async def award_points_for_stay(
     # arasında tutarsızlık kalır ve idempotency unique kuralı yüzünden
     # retry mümkün olmaz.
     try:
-        await db.loyalty_members.update_one(
-            {"tenant_id": tenant_id, "guest_id": guest_id}, {"$set": update}
-        )
+        await db.loyalty_members.update_one({"tenant_id": tenant_id, "guest_id": guest_id}, {"$set": update})
     except Exception:
         await db.loyalty_transactions.delete_one({"id": tx_doc["id"]})
         raise

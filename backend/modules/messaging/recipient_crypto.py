@@ -14,6 +14,7 @@ Storage shape on disk:
 Plaintext ``recipient`` is removed on write and decrypted ONLY at the read
 boundary. Helpers never log the recipient value.
 """
+
 from __future__ import annotations
 
 

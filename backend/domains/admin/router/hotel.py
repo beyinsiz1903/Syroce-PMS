@@ -3,6 +3,7 @@ hotel
 
 Auto-split sub-router (shared imports/classes inlined).
 """
+
 """
 Admin / Operations Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
@@ -28,9 +29,11 @@ try:
     from cache_manager import cached as _cm_cached
 except ImportError:
     _cache_mgr = None  # type: ignore
+
     def _cm_cached(ttl=300, key_prefix=""):
         def decorator(func):
             return func
+
         return decorator
 
 
@@ -43,6 +46,7 @@ def _invalidate_admin_tenants_cache(tenant_id: str | None) -> None:
         _cache_mgr.invalidate_tenant_cache(tenant_id, "admin_tenants_list")
     except Exception:
         pass
+
 
 require_super_admin = require_super_admin_guard()
 from domains.admin.subscription_models import SUBSCRIPTION_PLANS, SubscriptionTier
@@ -58,6 +62,8 @@ def _has_permission(role: UserRole | str, perm: Permission) -> bool:
     perms = ROLE_PERMISSIONS.get(role_key, [])
     perm_value = perm.value if isinstance(perm, Permission) else perm
     return any((p.value if isinstance(p, Permission) else p) == perm_value for p in perms)
+
+
 from security.encrypted_lookup import (
     build_user_email_query,
     decrypt_user_doc,
@@ -70,9 +76,11 @@ logger = logging.getLogger(__name__)
 def _svc_enc():
     try:
         from security.field_encryption import get_field_encryption_service
+
         return get_field_encryption_service()
     except Exception:
         return None
+
 
 ROLES_BY_TIER = {
     "mini": ["admin", "front_desk", "housekeeping"],
@@ -97,36 +105,7 @@ from domains.admin.schemas import (  # noqa: E402
 # ============= CHANNEL MANAGER & RMS =============
 
 
-
-
-
-
-
-
-
 # ============= MOBILE APP ENDPOINTS (STAFF & GUEST) =============
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ── Task #28: Kullanıcı bazlı operasyon izinleri ──────────────────────
@@ -143,7 +122,8 @@ GRANTABLE_PERMISSIONS: set[str] = {"send_urgent_message"}
 
 
 def _require_admin_for_target_user(
-    current_user: User, target_tenant_id: str | None,
+    current_user: User,
+    target_tenant_id: str | None,
 ):
     """ADMIN ve SUPER_ADMIN'e izin ver; ADMIN'in başka tenant'a yazmasını
     engelle. Diğer roller 403 alır."""
@@ -163,115 +143,22 @@ def _require_admin_for_target_user(
         )
 
 
-
-
-
-
-
-
 # ── Task #32: Web push gönderim metrikleri ────────────────────────────
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ============= ADMIN TENANT INFO & TEAM MANAGEMENT =============
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ============= BILLING HISTORY & PLAN MANAGEMENT =============
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ============= HOTEL TEAM MANAGEMENT ENDPOINTS =============
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ============= DEMO ENVIRONMENT ENDPOINTS =============
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # 6. GET /api/sales/follow-ups - Follow-up reminders
-
-
-
-
-
-
 
 
 # ============================================================================
@@ -290,14 +177,15 @@ def _require_admin_for_target_user(
 # ============================================================================
 
 
-
 # api_metrics is now provided by apm_store from apm_middleware.py
 # Backward compat: alias api_metrics to apm_store.requests
 try:
     from apm_middleware import apm_store as _apm_store_ref
+
     api_metrics = _apm_store_ref.requests
 except ImportError:
     from collections import deque
+
     api_metrics = deque(maxlen=1000)
 
 # Legacy APIMetricsMiddleware replaced by APMMiddleware in apm_middleware.py
@@ -305,41 +193,25 @@ except ImportError:
 # 1. SYSTEM PERFORMANCE MONITORING
 
 
-
-
 # 1b. APM DETAILED ENDPOINT STATS
-
-
 
 
 # 1c. RATE LIMIT STATUS
 
 
-
-
 # 1d. DATABASE OPTIMIZATION STATUS
-
-
 
 
 # 1e. RECENT ERRORS
 
 
-
-
 # 2. LOG VIEWER
-
-
 
 
 # 3. NETWORK PING TEST
 
 
-
-
 # 4. ENDPOINT HEALTH CHECK
-
-
 
 
 # ============================================================================
@@ -355,17 +227,6 @@ except ImportError:
 # ============= 3. QUEUE ROOMS MODULE (EARLY ARRIVAL MANAGEMENT) =============
 
 # ============= AUDIT TRAIL LOGGING (AUTO-TRACKING) =============
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -411,15 +272,14 @@ async def update_hotel_info(
     if payload.total_rooms is not None:
         # Check plan limit
         tier = (tenant.get("subscription_tier", "basic")).lower()
-        if tier == "pro": tier = "professional"
-        if tier == "ultra": tier = "enterprise"
+        if tier == "pro":
+            tier = "professional"
+        if tier == "ultra":
+            tier = "enterprise"
         try:
             plan = SUBSCRIPTION_PLANS[SubscriptionTier(tier)]
             if plan.max_rooms and payload.total_rooms > plan.max_rooms:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Your plan room limit: {plan.max_rooms}. Upgrade your plan for more rooms."
-                )
+                raise HTTPException(status_code=400, detail=f"Your plan room limit: {plan.max_rooms}. Upgrade your plan for more rooms.")
         except (ValueError, KeyError):
             pass
         update_data["total_rooms"] = payload.total_rooms
@@ -436,6 +296,8 @@ async def update_hotel_info(
         "message": "Hotel information updated",
         "tenant": updated,
     }
+
+
 # ── GET /hotel/team ──
 @router.get("/hotel/team")
 async def list_hotel_team(current_user: User = Depends(get_current_user)):
@@ -443,17 +305,16 @@ async def list_hotel_team(current_user: User = Depends(get_current_user)):
     if not _is_super_admin(current_user) and current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
         raise HTTPException(status_code=403, detail="Only administrators can view team members")
 
-    users_raw = await db.users.find(
-        {"tenant_id": current_user.tenant_id},
-        {"_id": 0, "hashed_password": 0, "password_hash": 0, "password": 0}
-    ).to_list(200)
+    users_raw = await db.users.find({"tenant_id": current_user.tenant_id}, {"_id": 0, "hashed_password": 0, "password_hash": 0, "password": 0}).to_list(200)
     users = [decrypt_user_doc(u) for u in users_raw]
 
     # Get tier info
     tenant = await db.tenants.find_one({"id": current_user.tenant_id})
     tier = (tenant.get("subscription_tier", "basic") if tenant else "basic").lower()
-    if tier == "pro": tier = "professional"
-    if tier == "ultra": tier = "enterprise"
+    if tier == "pro":
+        tier = "professional"
+    if tier == "ultra":
+        tier = "enterprise"
 
     allowed_roles = ROLES_BY_TIER.get(tier, ROLES_BY_TIER["basic"])
 
@@ -469,6 +330,8 @@ async def list_hotel_team(current_user: User = Depends(get_current_user)):
         "max_users": max_users,
         "can_add": len(users) < max_users,
     }
+
+
 # ── POST /hotel/team ──
 @router.post("/hotel/team")
 async def add_team_member(
@@ -486,26 +349,22 @@ async def add_team_member(
         raise HTTPException(status_code=404, detail="Hotel not found")
 
     tier = (tenant.get("subscription_tier", "basic")).lower()
-    if tier == "pro": tier = "professional"
-    if tier == "ultra": tier = "enterprise"
+    if tier == "pro":
+        tier = "professional"
+    if tier == "ultra":
+        tier = "enterprise"
 
     # RBAC: Check if role is allowed for tier
     if not is_role_allowed_for_tier(payload.role, tier):
         allowed = ROLES_BY_TIER.get(tier, ROLES_BY_TIER["basic"])
-        raise HTTPException(
-            status_code=400,
-            detail=f"Role '{payload.role}' is not available for the {tier} plan. Allowed roles: {', '.join(allowed)}"
-        )
+        raise HTTPException(status_code=400, detail=f"Role '{payload.role}' is not available for the {tier} plan. Allowed roles: {', '.join(allowed)}")
 
     # Max users check
     plan = SUBSCRIPTION_PLANS.get(SubscriptionTier(tier))
     max_users = plan.max_users if plan and plan.max_users else 999
     current_count = await db.users.count_documents({"tenant_id": current_user.tenant_id})
     if current_count >= max_users:
-        raise HTTPException(
-            status_code=400,
-            detail=f"User limit reached ({max_users}). Upgrade your plan to add more users."
-        )
+        raise HTTPException(status_code=400, detail=f"User limit reached ({max_users}). Upgrade your plan to add more users.")
 
     # Check duplicate email
     existing = await db.users.find_one(build_user_email_query(payload.email))
@@ -532,6 +391,8 @@ async def add_team_member(
         "message": f"{payload.name} added successfully ({payload.role})",
         "user_id": new_user["id"],
     }
+
+
 # ── PATCH /hotel/team/{user_id}/role ──
 @router.patch("/hotel/team/{user_id}/role")
 async def update_team_member_role(
@@ -560,15 +421,14 @@ async def update_team_member_role(
     # Tier check
     tenant = await db.tenants.find_one({"id": current_user.tenant_id})
     tier = (tenant.get("subscription_tier", "basic") if tenant else "basic").lower()
-    if tier == "pro": tier = "professional"
-    if tier == "ultra": tier = "enterprise"
+    if tier == "pro":
+        tier = "professional"
+    if tier == "ultra":
+        tier = "enterprise"
 
     if not is_role_allowed_for_tier(payload.role, tier):
         allowed = ROLES_BY_TIER.get(tier, ROLES_BY_TIER["basic"])
-        raise HTTPException(
-            status_code=400,
-            detail=f"Role '{payload.role}' is not available for the {tier} plan. Allowed: {', '.join(allowed)}"
-        )
+        raise HTTPException(status_code=400, detail=f"Role '{payload.role}' is not available for the {tier} plan. Allowed: {', '.join(allowed)}")
 
     # v106 audit T03 spot-fix: defense-in-depth — tenant-scope the update
     # filter. find_one above already enforces tenant; this closes a TOCTOU
@@ -580,6 +440,8 @@ async def update_team_member_role(
     if res.matched_count == 0:
         raise HTTPException(status_code=409, detail="User changed concurrently, retry")
     return {"success": True, "message": f"Role updated: {payload.role}"}
+
+
 # ── DELETE /hotel/team/{user_id} ──
 @router.delete("/hotel/team/{user_id}")
 async def remove_team_member(

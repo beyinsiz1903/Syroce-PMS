@@ -5,6 +5,7 @@ HotelRunner Provider — Response Parsers
 Safe response parsing with validation.
 Each parser takes raw API data and returns typed schemas.
 """
+
 import logging
 from typing import Any
 
@@ -31,13 +32,15 @@ def parse_rooms_response(data: dict[str, Any]) -> list[HotelRunnerRoom]:
     rooms = []
     for r in rooms_raw:
         try:
-            rooms.append(HotelRunnerRoom(
-                inv_code=str(r.get("inv_code", "") or r.get("code", "")),
-                name=str(r.get("name", "") or r.get("name_presentation", "")),
-                rate_plans=r.get("rate_plans", []),
-                channel_codes=r.get("channel_codes", []),
-                raw=r,
-            ))
+            rooms.append(
+                HotelRunnerRoom(
+                    inv_code=str(r.get("inv_code", "") or r.get("code", "")),
+                    name=str(r.get("name", "") or r.get("name_presentation", "")),
+                    rate_plans=r.get("rate_plans", []),
+                    channel_codes=r.get("channel_codes", []),
+                    raw=r,
+                )
+            )
         except Exception as e:
             logger.warning("Failed to parse room: %s — %s", r, e)
     return rooms
@@ -53,11 +56,13 @@ def parse_channels_response(data: dict[str, Any]) -> list[HotelRunnerChannel]:
         )
     channels = []
     for c in channels_raw:
-        channels.append(HotelRunnerChannel(
-            code=str(c.get("code", "")),
-            name=str(c.get("name", "")),
-            raw=c,
-        ))
+        channels.append(
+            HotelRunnerChannel(
+                code=str(c.get("code", "")),
+                name=str(c.get("name", "")),
+                raw=c,
+            )
+        )
     return channels
 
 
@@ -71,12 +76,14 @@ def parse_connected_channels_response(data: dict[str, Any]) -> list[HotelRunnerC
         )
     result = []
     for c in items:
-        result.append(HotelRunnerConnectedChannel(
-            code=str(c.get("code", "")),
-            name=str(c.get("name", "")),
-            status=str(c.get("status", "")),
-            raw=c,
-        ))
+        result.append(
+            HotelRunnerConnectedChannel(
+                code=str(c.get("code", "")),
+                name=str(c.get("name", "")),
+                status=str(c.get("status", "")),
+                raw=c,
+            )
+        )
     return result
 
 
@@ -99,28 +106,30 @@ def parse_reservations_response(data: dict[str, Any]) -> HotelRunnerReservationP
             rooms = r.get("rooms", [])
             first_room = rooms[0] if rooms and isinstance(rooms[0], dict) else {}
 
-            reservations.append(HotelRunnerReservation(
-                reservation_id=str(r.get("reservation_id", "")),
-                hr_number=str(r.get("hr_number", "")),
-                status=str(r.get("state", r.get("status", "confirmed"))),
-                guest_firstname=str(r.get("firstname", guest.get("first_name", ""))),
-                guest_lastname=str(r.get("lastname", guest.get("last_name", ""))),
-                guest_email=str(address.get("email", guest.get("email", ""))),
-                guest_phone=str(address.get("phone", guest.get("phone", ""))),
-                check_in=str(r.get("checkin_date", r.get("check_in", ""))),
-                check_out=str(r.get("checkout_date", r.get("check_out", ""))),
-                room_type_code=str(first_room.get("inv_code", first_room.get("room_code", r.get("room_type", "")))),
-                rate_plan_code=str(first_room.get("rate_plan_code", first_room.get("rate_code", r.get("rate_plan", "")))),
-                adults=int(first_room.get("total_adult", first_room.get("adults", r.get("adults", 1))) or 1),
-                children=len(first_room.get("child_ages", [])) or int(first_room.get("children", r.get("children", 0)) or 0),
-                total_amount=float(r.get("total", 0) or 0),
-                currency=str(r.get("currency", "TRY")),
-                channel=str(r.get("channel_display", r.get("channel", ""))),
-                message_uid=str(r.get("message_uid", "")),
-                last_modified=str(r.get("updated_at", r.get("last_modified", ""))),
-                requires_response=bool(r.get("requires_response", False)),
-                raw=r,
-            ))
+            reservations.append(
+                HotelRunnerReservation(
+                    reservation_id=str(r.get("reservation_id", "")),
+                    hr_number=str(r.get("hr_number", "")),
+                    status=str(r.get("state", r.get("status", "confirmed"))),
+                    guest_firstname=str(r.get("firstname", guest.get("first_name", ""))),
+                    guest_lastname=str(r.get("lastname", guest.get("last_name", ""))),
+                    guest_email=str(address.get("email", guest.get("email", ""))),
+                    guest_phone=str(address.get("phone", guest.get("phone", ""))),
+                    check_in=str(r.get("checkin_date", r.get("check_in", ""))),
+                    check_out=str(r.get("checkout_date", r.get("check_out", ""))),
+                    room_type_code=str(first_room.get("inv_code", first_room.get("room_code", r.get("room_type", "")))),
+                    rate_plan_code=str(first_room.get("rate_plan_code", first_room.get("rate_code", r.get("rate_plan", "")))),
+                    adults=int(first_room.get("total_adult", first_room.get("adults", r.get("adults", 1))) or 1),
+                    children=len(first_room.get("child_ages", [])) or int(first_room.get("children", r.get("children", 0)) or 0),
+                    total_amount=float(r.get("total", 0) or 0),
+                    currency=str(r.get("currency", "TRY")),
+                    channel=str(r.get("channel_display", r.get("channel", ""))),
+                    message_uid=str(r.get("message_uid", "")),
+                    last_modified=str(r.get("updated_at", r.get("last_modified", ""))),
+                    requires_response=bool(r.get("requires_response", False)),
+                    raw=r,
+                )
+            )
         except Exception as e:
             ext_id = r.get("hr_number", r.get("reservation_id", "?"))
             logger.warning("Failed to parse reservation %s: %s", ext_id, e)

@@ -1,4 +1,5 @@
 """Auto-split from hotel_services.py — backward-compatible sub-router."""
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -18,6 +19,7 @@ from ._common import (
 
 logger = logging.getLogger(__name__)
 sub_router = APIRouter()
+
 
 @sub_router.post("/group-folio/merge")
 async def merge_group_folios(
@@ -86,10 +88,7 @@ async def merge_group_folios(
                 merged_payments.append(new_payment)
 
         # Mark source booking folio as merged
-        await db.bookings.update_one(
-            {"id": bid, "tenant_id": tid},
-            {"$set": {"folio_merged_to": data.master_booking_id, "folio_merged_at": datetime.now(UTC).isoformat()}}
-        )
+        await db.bookings.update_one({"id": bid, "tenant_id": tid}, {"$set": {"folio_merged_to": data.master_booking_id, "folio_merged_at": datetime.now(UTC).isoformat()}})
 
     # Log the merge
     merge_log = {
@@ -147,16 +146,18 @@ async def get_group_folio_status(
         async for p in db.payments.find({"booking_id": bid, "tenant_id": tid}, {"_id": 0}):
             payment_total += p.get("amount", 0)
 
-        bookings_data.append({
-            "booking_id": bid,
-            "guest_name": booking.get("guest_name", "-"),
-            "room_number": booking.get("room_number", "-"),
-            "accommodation_total": booking.get("total_amount", 0),
-            "folio_charges": folio_total,
-            "payments": payment_total,
-            "balance": booking.get("total_amount", 0) + folio_total - payment_total,
-            "folio_merged_to": booking.get("folio_merged_to"),
-        })
+        bookings_data.append(
+            {
+                "booking_id": bid,
+                "guest_name": booking.get("guest_name", "-"),
+                "room_number": booking.get("room_number", "-"),
+                "accommodation_total": booking.get("total_amount", 0),
+                "folio_charges": folio_total,
+                "payments": payment_total,
+                "balance": booking.get("total_amount", 0) + folio_total - payment_total,
+                "folio_merged_to": booking.get("folio_merged_to"),
+            }
+        )
 
     # Check merge logs
     merge_logs = []
@@ -170,10 +171,10 @@ async def get_group_folio_status(
     }
 
 
-
 # ═══════════════════════════════════════════════════
 # 7. GROUP FOLIO - BOOKING DETAIL & GROUP PAYMENT
 # ═══════════════════════════════════════════════════
+
 
 @sub_router.get("/group-folio/{group_id}/booking/{booking_id}")
 async def get_group_booking_folio_detail(
@@ -220,7 +221,6 @@ async def get_group_booking_folio_detail(
     }
 
 
-
 @sub_router.post("/group-folio/payment")
 async def record_group_payment(
     data: GroupPaymentRequest,
@@ -250,8 +250,6 @@ async def record_group_payment(
     payment.pop("_id", None)
 
     return {"success": True, "payment": payment}
-
-
 
 
 @sub_router.post("/group-folio/bulk-payment")
@@ -284,12 +282,14 @@ async def record_group_bulk_payment(
             payment_total += p.get("amount", 0)
 
         balance = booking.get("total_amount", 0) + folio_total - payment_total
-        active_bookings.append({
-            "booking_id": bid,
-            "guest_name": booking.get("guest_name", "-"),
-            "room_number": booking.get("room_number", "-"),
-            "balance": balance,
-        })
+        active_bookings.append(
+            {
+                "booking_id": bid,
+                "guest_name": booking.get("guest_name", "-"),
+                "room_number": booking.get("room_number", "-"),
+                "balance": balance,
+            }
+        )
 
     if not active_bookings:
         raise HTTPException(status_code=400, detail="Aktif rezervasyon bulunamadi")
@@ -347,7 +347,6 @@ async def record_group_bulk_payment(
     }
 
 
-
 @sub_router.get("/group-folio-summary")
 async def get_group_folio_summary(
     current_user: User = Depends(get_current_user),
@@ -402,11 +401,13 @@ async def get_group_folio_summary(
     # Bulk-aggregate folio totals (excluding payments) (1 query)
     folio_totals: dict[str, float] = {}
     folio_pipeline = [
-        {"$match": {
-            "booking_id": {"$in": unique_booking_ids},
-            "tenant_id": tid,
-            "type": {"$ne": "payment"},
-        }},
+        {
+            "$match": {
+                "booking_id": {"$in": unique_booking_ids},
+                "tenant_id": tid,
+                "type": {"$ne": "payment"},
+            }
+        },
         {"$group": {"_id": "$booking_id", "total": {"$sum": "$amount"}}},
     ]
     async for doc in db.folios.aggregate(folio_pipeline):
@@ -429,11 +430,7 @@ async def get_group_folio_summary(
             continue
         if booking.get("folio_merged_to"):
             merged_count += 1
-        total_balance += (
-            (booking.get("total_amount") or 0)
-            + folio_totals.get(bid, 0)
-            - payment_totals.get(bid, 0)
-        )
+        total_balance += (booking.get("total_amount") or 0) + folio_totals.get(bid, 0) - payment_totals.get(bid, 0)
 
     merge_log_count = await db.folio_merge_logs.count_documents({"tenant_id": tid})
 
@@ -447,9 +444,6 @@ async def get_group_folio_summary(
     }
 
 
-
 # ═══════════════════════════════════════════════════
 # 10. RESERVATION CANCELLATION
 # ═══════════════════════════════════════════════════
-
-

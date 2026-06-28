@@ -7,6 +7,7 @@ queries based on the current request's tenant context (set by middleware).
 
 For system operations (startup, health), use `_raw_db` directly.
 """
+
 import os
 from pathlib import Path
 
@@ -14,10 +15,10 @@ from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 
 ROOT_DIR = Path(__file__).parent.parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / ".env")
 
-mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017/hotel_pms')
-db_name = os.environ.get('DB_NAME', 'hotel_pms')
+mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
+db_name = os.environ.get("DB_NAME", "hotel_pms")
 
 # Optimized connection pool for high concurrency (550 rooms, 300+ daily transactions)
 client = AsyncIOMotorClient(

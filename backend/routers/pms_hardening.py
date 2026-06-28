@@ -2,6 +2,7 @@
 PMS Hardening Router - Production-grade API endpoints for all PMS core operations.
 Covers: Reservation lifecycle, Front desk, Folio/Billing, Housekeeping, Night Audit, Dashboard.
 """
+
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -50,24 +51,29 @@ auto_hk_svc = AutoHousekeepingService()
 
 # ── REQUEST MODELS ──
 
+
 class CheckInRequest(BaseModel):
     booking_id: str
     override_reason: str | None = None
 
+
 class CheckoutRequest(BaseModel):
     booking_id: str
     force: bool = False
+
 
 class RoomMoveRequest(BaseModel):
     booking_id: str
     new_room_id: str
     reason: str
 
+
 class RoomUpgradeRequest(BaseModel):
     booking_id: str
     new_room_id: str
     reason: str
     rate_adjustment: float = 0.0
+
 
 class WalkInRequest(BaseModel):
     room_id: str
@@ -79,21 +85,26 @@ class WalkInRequest(BaseModel):
     guest_id_number: str = ""
     adults: int = 1
 
+
 class CancellationRequest(BaseModel):
     booking_id: str
     reason: str
 
+
 class NoShowRequest(BaseModel):
     booking_id: str
+
 
 class LateCheckoutRequest(BaseModel):
     booking_id: str
     requested_time: str
     charge: float = 0.0
 
+
 class EarlyCheckinRequest(BaseModel):
     booking_id: str
     requested_time: str
+
 
 class ChargePostRequest(BaseModel):
     folio_id: str
@@ -105,6 +116,7 @@ class ChargePostRequest(BaseModel):
     tax_rate: float = 0.0
     department: str | None = None
 
+
 class PaymentPostRequest(BaseModel):
     folio_id: str
     booking_id: str
@@ -114,6 +126,7 @@ class PaymentPostRequest(BaseModel):
     reference: str | None = None
     notes: str | None = None
 
+
 class RefundRequest(BaseModel):
     folio_id: str
     booking_id: str
@@ -121,10 +134,12 @@ class RefundRequest(BaseModel):
     reason: str
     method: str = "cash"
 
+
 class VoidRequest(BaseModel):
     charge_id: str | None = None
     payment_id: str | None = None
     reason: str
+
 
 class SplitFolioRequest(BaseModel):
     source_folio_id: str
@@ -132,19 +147,23 @@ class SplitFolioRequest(BaseModel):
     target_folio_type: str = "guest"
     reason: str
 
+
 class FolioSplitItem(BaseModel):
     amount: float
     target_folio_type: str = "guest"
+
 
 class SplitFolioByAmountRequest(BaseModel):
     source_folio_id: str
     splits: list[FolioSplitItem]
     reason: str
 
+
 class CityLedgerTransferRequest(BaseModel):
     folio_id: str
     account_id: str
     reason: str
+
 
 class RoomStatusUpdateRequest(BaseModel):
     room_id: str
@@ -152,12 +171,15 @@ class RoomStatusUpdateRequest(BaseModel):
     notes: str | None = None
     force: bool = False
 
+
 class InspectionApprovalRequest(BaseModel):
     room_id: str
     approved: bool
 
+
 class NightAuditRequest(BaseModel):
     business_date: str | None = None
+
 
 class ExceptionResolveRequest(BaseModel):
     exception_id: str
@@ -168,6 +190,7 @@ class ExceptionResolveRequest(BaseModel):
 # RESERVATION LIFECYCLE
 # ══════════════════════════════════════════════
 
+
 @router.post("/check-in", tags=["front-desk"])
 async def api_check_in(req: CheckInRequest, current_user: User = Depends(get_current_user)):
     """Check-in a guest with room readiness validation."""
@@ -177,8 +200,10 @@ async def api_check_in(req: CheckInRequest, current_user: User = Depends(get_cur
         raise HTTPException(status_code=400, detail=result)
     # Fire reservation.updated to subscribed agency webhooks (non-blocking, GC-safe).
     from routers.webhook_retry_service import schedule_emit_reservation_updated
+
     schedule_emit_reservation_updated(current_user.tenant_id, req.booking_id, "checked_in")
     return result
+
 
 @router.post("/checkout", tags=["front-desk"])
 async def api_checkout(req: CheckoutRequest, current_user: User = Depends(get_current_user)):
@@ -189,16 +214,20 @@ async def api_checkout(req: CheckoutRequest, current_user: User = Depends(get_cu
         raise HTTPException(status_code=400, detail=result)
     # Folio finalization shifts revenue/payment buckets → drop dashboards.
     from domains.pms.night_audit.router import invalidate_finance_cache
+
     invalidate_finance_cache(current_user.tenant_id)
     # Fire reservation.updated to subscribed agency webhooks (non-blocking, GC-safe).
     from routers.webhook_retry_service import schedule_emit_reservation_updated
+
     schedule_emit_reservation_updated(current_user.tenant_id, req.booking_id, "checked_out")
     return result
+
 
 @router.get("/checkout-preview/{booking_id}", tags=["front-desk"])
 async def api_checkout_preview(booking_id: str, current_user: User = Depends(get_current_user)):
     """Get checkout preview with folio summary and blockers."""
     return await front_desk.get_checkout_preview(current_user.tenant_id, booking_id)
+
 
 @router.post("/room-move", tags=["front-desk"])
 async def api_room_move(req: RoomMoveRequest, current_user: User = Depends(get_current_user)):
@@ -208,11 +237,15 @@ async def api_room_move(req: RoomMoveRequest, current_user: User = Depends(get_c
     if not result["success"]:
         raise HTTPException(status_code=409 if result.get("conflict") else 400, detail=result)
     from routers.webhook_retry_service import schedule_emit_reservation_updated
+
     schedule_emit_reservation_updated(
-        current_user.tenant_id, req.booking_id, "room_moved",
+        current_user.tenant_id,
+        req.booking_id,
+        "room_moved",
         {"new_room_id": req.new_room_id, "reason": req.reason},
     )
     return result
+
 
 @router.post("/room-upgrade", tags=["front-desk"])
 async def api_room_upgrade(req: RoomUpgradeRequest, current_user: User = Depends(get_current_user)):
@@ -222,21 +255,29 @@ async def api_room_upgrade(req: RoomUpgradeRequest, current_user: User = Depends
     if not result["success"]:
         raise HTTPException(status_code=409 if result.get("conflict") else 400, detail=result)
     from routers.webhook_retry_service import schedule_emit_reservation_updated
+
     schedule_emit_reservation_updated(
-        current_user.tenant_id, req.booking_id, "room_upgraded",
+        current_user.tenant_id,
+        req.booking_id,
+        "room_upgraded",
         {"new_room_id": req.new_room_id, "rate_adjustment": req.rate_adjustment},
     )
     return result
+
 
 @router.post("/walk-in", tags=["front-desk"])
 async def api_walk_in(req: WalkInRequest, http_request: Request, current_user: User = Depends(get_current_user)):
     """Create a walk-in reservation with immediate check-in."""
     from shared_kernel.idempotency import begin_idempotency
+
     perm_svc.enforce_permission(current_user.role, "walk_in")
     # Idempotency-Key request-replay (additive: no-op without the header).
     guard, replay = await begin_idempotency(
-        db, http_request, tenant_id=current_user.tenant_id,
-        scope="pms_core.walk_in", payload=req.model_dump(),
+        db,
+        http_request,
+        tenant_id=current_user.tenant_id,
+        scope="pms_core.walk_in",
+        payload=req.model_dump(),
     )
     if replay is not None:
         return replay
@@ -256,6 +297,7 @@ async def api_walk_in(req: WalkInRequest, http_request: Request, current_user: U
     await guard.complete(result)
     return result
 
+
 @router.post("/cancel", tags=["reservation"])
 async def api_cancel_booking(req: CancellationRequest, current_user: User = Depends(get_current_user)):
     """Cancel a reservation with state machine validation."""
@@ -272,16 +314,20 @@ async def api_cancel_booking(req: CancellationRequest, current_user: User = Depe
         import asyncio
 
         from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
-        asyncio.create_task(sync_availability_after_booking(
-            tenant_id=current_user.tenant_id,
-            room_id=booking.get("room_id", ""),
-            check_in=booking.get("check_in", ""),
-            check_out=booking.get("check_out", ""),
-        ))
+
+        asyncio.create_task(
+            sync_availability_after_booking(
+                tenant_id=current_user.tenant_id,
+                room_id=booking.get("room_id", ""),
+                check_in=booking.get("check_in", ""),
+                check_out=booking.get("check_out", ""),
+            )
+        )
     except Exception:
         pass
 
     return result
+
 
 @router.post("/no-show", tags=["reservation"])
 async def api_no_show(req: NoShowRequest, current_user: User = Depends(get_current_user)):
@@ -299,19 +345,25 @@ async def api_no_show(req: NoShowRequest, current_user: User = Depends(get_curre
         import asyncio
 
         from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
-        asyncio.create_task(sync_availability_after_booking(
-            tenant_id=current_user.tenant_id,
-            room_id=booking.get("room_id", ""),
-            check_in=booking.get("check_in", ""),
-            check_out=booking.get("check_out", ""),
-        ))
+
+        asyncio.create_task(
+            sync_availability_after_booking(
+                tenant_id=current_user.tenant_id,
+                room_id=booking.get("room_id", ""),
+                check_in=booking.get("check_in", ""),
+                check_out=booking.get("check_out", ""),
+            )
+        )
     except Exception:
         pass
 
     return result
 
+
 @router.post("/late-checkout", tags=["front-desk"])
-async def api_late_checkout(req: LateCheckoutRequest, current_user: User = Depends(get_current_user),
+async def api_late_checkout(
+    req: LateCheckoutRequest,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Request late checkout with optional charge."""
@@ -319,14 +371,20 @@ async def api_late_checkout(req: LateCheckoutRequest, current_user: User = Depen
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
     from routers.webhook_retry_service import schedule_emit_reservation_updated
+
     schedule_emit_reservation_updated(
-        current_user.tenant_id, req.booking_id, "late_checkout_approved",
+        current_user.tenant_id,
+        req.booking_id,
+        "late_checkout_approved",
         {"requested_time": req.requested_time, "charge": req.charge},
     )
     return result
 
+
 @router.post("/early-checkin", tags=["front-desk"])
-async def api_early_checkin(req: EarlyCheckinRequest, current_user: User = Depends(get_current_user),
+async def api_early_checkin(
+    req: EarlyCheckinRequest,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Request early check-in."""
@@ -334,16 +392,21 @@ async def api_early_checkin(req: EarlyCheckinRequest, current_user: User = Depen
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
     from routers.webhook_retry_service import schedule_emit_reservation_updated
+
     schedule_emit_reservation_updated(
-        current_user.tenant_id, req.booking_id, "early_checkin_approved",
+        current_user.tenant_id,
+        req.booking_id,
+        "early_checkin_approved",
         {"requested_time": req.requested_time},
     )
     return result
+
 
 @router.get("/reservation-audit/{booking_id}", tags=["reservation"])
 async def api_reservation_audit(booking_id: str, current_user: User = Depends(get_current_user)):
     """Get full audit trail for a reservation."""
     return await rsm.get_audit_trail(current_user.tenant_id, booking_id)
+
 
 @router.get("/overbooking-check", tags=["reservation"])
 async def api_overbooking_check(room_id: str, check_in: str, check_out: str, exclude_booking_id: str | None = None, current_user: User = Depends(get_current_user)):
@@ -356,6 +419,7 @@ async def api_overbooking_check(room_id: str, check_in: str, check_out: str, exc
 # FOLIO / BILLING
 # ══════════════════════════════════════════════
 
+
 @router.post("/folio/charge", tags=["folio"])
 async def api_post_charge(req: ChargePostRequest, current_user: User = Depends(get_current_user)):
     """Post a charge to a folio."""
@@ -364,8 +428,10 @@ async def api_post_charge(req: ChargePostRequest, current_user: User = Depends(g
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
     from domains.pms.night_audit.router import invalidate_finance_cache
+
     invalidate_finance_cache(current_user.tenant_id)
     return result
+
 
 @router.post("/folio/payment", tags=["folio"])
 async def api_post_payment(req: PaymentPostRequest, current_user: User = Depends(get_current_user)):
@@ -375,8 +441,10 @@ async def api_post_payment(req: PaymentPostRequest, current_user: User = Depends
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
     from domains.pms.night_audit.router import invalidate_finance_cache
+
     invalidate_finance_cache(current_user.tenant_id)
     return result
+
 
 @router.post("/folio/refund", tags=["folio"])
 async def api_post_refund(req: RefundRequest, request: Request, current_user: User = Depends(get_current_user)):
@@ -415,6 +483,7 @@ async def api_post_refund(req: RefundRequest, request: Request, current_user: Us
             await complete_idempotency(db, lock_id=idem_lock_id, response_body=result)
             idem_lock_id = None
         from domains.pms.night_audit.router import invalidate_finance_cache
+
         invalidate_finance_cache(current_user.tenant_id)
         return result
     except HTTPException:
@@ -425,6 +494,7 @@ async def api_post_refund(req: RefundRequest, request: Request, current_user: Us
         if idem_lock_id:
             await release_idempotency(db, lock_id=idem_lock_id, error=str(exc))
         raise
+
 
 @router.post("/folio/void-charge", tags=["folio"])
 async def api_void_charge(req: VoidRequest, request: Request, current_user: User = Depends(get_current_user)):
@@ -464,6 +534,7 @@ async def api_void_charge(req: VoidRequest, request: Request, current_user: User
             await complete_idempotency(db, lock_id=idem_lock_id, response_body=result)
             idem_lock_id = None
         from domains.pms.night_audit.router import invalidate_finance_cache
+
         invalidate_finance_cache(current_user.tenant_id)
         return result
     except HTTPException:
@@ -474,6 +545,7 @@ async def api_void_charge(req: VoidRequest, request: Request, current_user: User
         if idem_lock_id:
             await release_idempotency(db, lock_id=idem_lock_id, error=str(exc))
         raise
+
 
 @router.post("/folio/void-payment", tags=["folio"])
 async def api_void_payment(req: VoidRequest, request: Request, current_user: User = Depends(get_current_user)):
@@ -512,6 +584,7 @@ async def api_void_payment(req: VoidRequest, request: Request, current_user: Use
             await complete_idempotency(db, lock_id=idem_lock_id, response_body=result)
             idem_lock_id = None
         from domains.pms.night_audit.router import invalidate_finance_cache
+
         invalidate_finance_cache(current_user.tenant_id)
         return result
     except HTTPException:
@@ -522,6 +595,7 @@ async def api_void_payment(req: VoidRequest, request: Request, current_user: Use
         if idem_lock_id:
             await release_idempotency(db, lock_id=idem_lock_id, error=str(exc))
         raise
+
 
 @router.post("/folio/split", tags=["folio"])
 async def api_split_folio(req: SplitFolioRequest, request: Request, current_user: User = Depends(get_current_user)):
@@ -568,6 +642,7 @@ async def api_split_folio(req: SplitFolioRequest, request: Request, current_user
             await release_idempotency(db, lock_id=idem_lock_id, error=str(exc))
         raise
 
+
 @router.post("/folio/split-by-amount", tags=["folio"])
 async def api_split_folio_by_amount(req: SplitFolioByAmountRequest, request: Request, current_user: User = Depends(get_current_user)):
     """Split a folio by transferring monetary amounts (even or custom)."""
@@ -596,9 +671,7 @@ async def api_split_folio_by_amount(req: SplitFolioByAmountRequest, request: Req
 
     try:
         splits = [s.model_dump() for s in req.splits]
-        result = await folio_svc.split_folio_by_amounts(
-            current_user.tenant_id, req.source_folio_id, splits, req.reason, current_user.id
-        )
+        result = await folio_svc.split_folio_by_amounts(current_user.tenant_id, req.source_folio_id, splits, req.reason, current_user.id)
         if not result["success"]:
             if idem_lock_id:
                 await release_idempotency(db, lock_id=idem_lock_id)
@@ -617,10 +690,12 @@ async def api_split_folio_by_amount(req: SplitFolioByAmountRequest, request: Req
             await release_idempotency(db, lock_id=idem_lock_id, error=str(exc))
         raise
 
+
 @router.get("/folio/tax-breakdown/{folio_id}", tags=["folio"])
 async def api_tax_breakdown(folio_id: str, current_user: User = Depends(get_current_user)):
     """Get tax breakdown for a folio."""
     return await folio_svc.get_tax_breakdown(current_user.tenant_id, folio_id)
+
 
 @router.post("/folio/city-ledger-transfer", tags=["folio"])
 async def api_city_ledger_transfer(req: CityLedgerTransferRequest, request: Request, current_user: User = Depends(get_current_user)):
@@ -668,6 +743,7 @@ async def api_city_ledger_transfer(req: CityLedgerTransferRequest, request: Requ
             await release_idempotency(db, lock_id=idem_lock_id, error=str(exc))
         raise
 
+
 @router.get("/folio/audit/{folio_id}", tags=["folio"])
 async def api_folio_audit(folio_id: str, current_user: User = Depends(get_current_user)):
     """Get audit trail for a folio."""
@@ -678,6 +754,7 @@ async def api_folio_audit(folio_id: str, current_user: User = Depends(get_curren
 # HOUSEKEEPING
 # ══════════════════════════════════════════════
 
+
 @router.post("/housekeeping/room-status", tags=["housekeeping"])
 async def api_update_room_status(req: RoomStatusUpdateRequest, current_user: User = Depends(get_current_user)):
     """Update room status with state machine validation."""
@@ -687,8 +764,11 @@ async def api_update_room_status(req: RoomStatusUpdateRequest, current_user: Use
         raise HTTPException(status_code=400, detail=result)
     return result
 
+
 @router.post("/housekeeping/inspection-approval", tags=["housekeeping"])
-async def api_inspection_approval(req: InspectionApprovalRequest, current_user: User = Depends(get_current_user),
+async def api_inspection_approval(
+    req: InspectionApprovalRequest,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_approvals")),  # v99 DW
 ):
     """Approve or reject room inspection."""
@@ -697,15 +777,18 @@ async def api_inspection_approval(req: InspectionApprovalRequest, current_user: 
         raise HTTPException(status_code=400, detail=result)
     return result
 
+
 @router.get("/housekeeping/room-readiness/{room_id}", tags=["housekeeping"])
 async def api_room_readiness(room_id: str, current_user: User = Depends(get_current_user)):
     """Check if a room is ready for check-in."""
     return await hk_svc.check_room_readiness(current_user.tenant_id, room_id)
 
+
 @router.get("/housekeeping/room-summary", tags=["housekeeping"])
 async def api_room_summary(current_user: User = Depends(get_current_user)):
     """Get room status summary."""
     return await hk_svc.get_room_status_summary(current_user.tenant_id)
+
 
 @router.get("/housekeeping/maintenance-impact", tags=["housekeeping"])
 async def api_maintenance_impact(room_id: str, start_date: str, end_date: str, current_user: User = Depends(get_current_user)):
@@ -716,6 +799,7 @@ async def api_maintenance_impact(room_id: str, start_date: str, end_date: str, c
 # ══════════════════════════════════════════════
 # NIGHT AUDIT
 # ══════════════════════════════════════════════
+
 
 @router.post("/night-audit/run", tags=["night-audit"])
 async def api_run_night_audit(req: NightAuditRequest, current_user: User = Depends(get_current_user)):
@@ -729,21 +813,27 @@ async def api_run_night_audit(req: NightAuditRequest, current_user: User = Depen
         raise HTTPException(status_code=409, detail=result)
     return result
 
+
 @router.get("/night-audit/business-date", tags=["night-audit"])
-async def api_get_business_date(current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports"))  # v103 DX
+async def api_get_business_date(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v103 DX
 ):
     """Get current business date."""
     bd = await night_audit.get_business_date(current_user.tenant_id)
     return {"business_date": bd}
+
 
 @router.get("/night-audit/exceptions", tags=["night-audit"])
 async def api_get_exceptions(status: str = "open", current_user: User = Depends(get_current_user)):
     """Get audit exceptions."""
     return await night_audit.get_audit_exceptions(current_user.tenant_id, status)
 
+
 @router.post("/night-audit/resolve-exception", tags=["night-audit"])
-async def api_resolve_exception(req: ExceptionResolveRequest, current_user: User = Depends(get_current_user),
+async def api_resolve_exception(
+    req: ExceptionResolveRequest,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_night_audit")),  # v90 DW
 ):
     """Resolve an audit exception."""
@@ -751,6 +841,7 @@ async def api_resolve_exception(req: ExceptionResolveRequest, current_user: User
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
     return result
+
 
 @router.get("/night-audit/snapshot/{business_date}", tags=["night-audit"])
 async def api_get_snapshot(business_date: str, current_user: User = Depends(get_current_user)):
@@ -765,6 +856,7 @@ async def api_get_snapshot(business_date: str, current_user: User = Depends(get_
 # OPERATIONAL DASHBOARD
 # ══════════════════════════════════════════════
 
+
 @router.get("/dashboard/operational", tags=["dashboard"])
 async def api_operational_dashboard(current_user: User = Depends(get_current_user)):
     """Get comprehensive operational dashboard data."""
@@ -775,6 +867,7 @@ async def api_operational_dashboard(current_user: User = Depends(get_current_use
 # ROLE / PERMISSIONS
 # ══════════════════════════════════════════════
 
+
 @router.get("/permissions/me", tags=["permissions"])
 async def api_my_permissions(current_user: User = Depends(get_current_user)):
     """Get current user's permissions."""
@@ -782,6 +875,7 @@ async def api_my_permissions(current_user: User = Depends(get_current_user)):
         "role": current_user.role,
         "permissions": perm_svc.get_user_permissions(current_user.role),
     }
+
 
 @router.get("/audit-trail", tags=["audit"])
 async def api_get_audit_trail(entity_type: str | None = None, entity_id: str | None = None, limit: int = 50, current_user: User = Depends(get_current_user)):
@@ -799,6 +893,7 @@ async def api_get_audit_trail(entity_type: str | None = None, entity_id: str | N
 # FOLIO DETAIL VIEW
 # ══════════════════════════════════════════════
 
+
 @router.get("/folio/detail/{folio_id}", tags=["folio"])
 async def api_folio_detail(folio_id: str, current_user: User = Depends(get_current_user)):
     """Get comprehensive folio detail: timeline, running balance, splits, tax, audit."""
@@ -812,6 +907,7 @@ async def api_folio_detail(folio_id: str, current_user: User = Depends(get_curre
 # DASHBOARD TRENDS + DATE RANGE FILTERS
 # ══════════════════════════════════════════════
 
+
 @router.get("/dashboard/trends", tags=["dashboard"])
 @cached(ttl=300, key_prefix="pms_dashboard_trends")  # Tur 3: tenant-aware cache (was timeout)
 async def api_dashboard_trends(
@@ -822,6 +918,7 @@ async def api_dashboard_trends(
     """Get operational trends for date range (arrivals, departures, occupancy, etc.)."""
     from datetime import date as date_cls
     from datetime import timedelta as _td
+
     # Tur 3: default range = last 7 days (30 caused timeout)
     if not end_date:
         end_date = date_cls.today().isoformat()
@@ -843,20 +940,24 @@ async def api_dashboard_trends(
 # MULTI-PROPERTY NIGHT AUDIT COORDINATION
 # ══════════════════════════════════════════════
 
+
 @router.get("/multi-property/audit-board", tags=["multi-property"])
 async def api_audit_status_board(current_user: User = Depends(get_current_user)):
     """Get multi-property night audit status board."""
     return await mp_audit_svc.get_audit_status_board(current_user.tenant_id)
+
 
 @router.get("/multi-property/exception-summary", tags=["multi-property"])
 async def api_exception_summary(current_user: User = Depends(get_current_user)):
     """Get aggregated exception summary across properties."""
     return await mp_audit_svc.get_exception_summary(current_user.tenant_id)
 
+
 @router.get("/multi-property/unresolved-blockers", tags=["multi-property"])
 async def api_unresolved_blockers(current_user: User = Depends(get_current_user)):
     """Get unresolved blockers across properties."""
     return await mp_audit_svc.get_unresolved_blockers(current_user.tenant_id)
+
 
 @router.get("/multi-property/readiness-score", tags=["multi-property"])
 async def api_readiness_score(current_user: User = Depends(get_current_user)):
@@ -868,8 +969,11 @@ class EscalateRequest(BaseModel):
     exception_id: str
     note: str
 
+
 @router.post("/multi-property/escalate", tags=["multi-property"])
-async def api_escalate_exception(req: EscalateRequest, current_user: User = Depends(get_current_user),
+async def api_escalate_exception(
+    req: EscalateRequest,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Escalate an audit exception."""
@@ -883,11 +987,15 @@ async def api_escalate_exception(req: EscalateRequest, current_user: User = Depe
 # AUTO HOUSEKEEPING TASK ASSIGNMENT
 # ══════════════════════════════════════════════
 
+
 class AutoAssignRequest(BaseModel):
     booking_id: str
 
+
 @router.post("/housekeeping/auto-assign", tags=["housekeeping"])
-async def api_auto_assign_after_checkout(req: AutoAssignRequest, current_user: User = Depends(get_current_user),
+async def api_auto_assign_after_checkout(
+    req: AutoAssignRequest,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v99 DW
 ):
     """Auto-assign housekeeping task after checkout."""
@@ -896,10 +1004,12 @@ async def api_auto_assign_after_checkout(req: AutoAssignRequest, current_user: U
         raise HTTPException(status_code=400, detail=result)
     return result
 
+
 @router.get("/housekeeping/assignment-suggestions", tags=["housekeeping"])
 async def api_assignment_suggestions(current_user: User = Depends(get_current_user)):
     """Get housekeeping task assignment suggestions."""
     return await auto_hk_svc.get_assignment_suggestions(current_user.tenant_id)
+
 
 @router.get("/housekeeping/room-eta/{room_id}", tags=["housekeeping"])
 async def api_room_readiness_eta(room_id: str, current_user: User = Depends(get_current_user)):
@@ -912,14 +1022,15 @@ class ManualOverrideRequest(BaseModel):
     new_assignee_id: str
     reason: str
 
+
 @router.post("/housekeeping/manual-override", tags=["housekeeping"])
-async def api_manual_override(req: ManualOverrideRequest, current_user: User = Depends(get_current_user),
+async def api_manual_override(
+    req: ManualOverrideRequest,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v99 DW
 ):
     """Manually override a housekeeping task assignment."""
-    result = await auto_hk_svc.manual_override_assignment(
-        current_user.tenant_id, req.task_id, req.new_assignee_id, req.reason, current_user.id
-    )
+    result = await auto_hk_svc.manual_override_assignment(current_user.tenant_id, req.task_id, req.new_assignee_id, req.reason, current_user.id)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
     return result

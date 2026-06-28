@@ -10,6 +10,7 @@ Provides endpoints for:
   - Connector health aggregates with standardized contract
   - Prioritized incident feed
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -33,6 +34,7 @@ def _get_tenant(user: User) -> str:
 # 1. Correlation Timeline — Full event chain for a single correlation_id
 # ══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/timeline/{correlation_id}")
 async def get_event_timeline(
     correlation_id: str,
@@ -43,38 +45,28 @@ async def get_event_timeline(
     Webhook → import → push → retry → DLQ/success zincirini gosterir.
     """
     from core.tenant_db import get_system_db
+
     sysdb = get_system_db()
     tenant_id = _get_tenant(current_user)
 
     # 1. Get all ops_events with this correlation_id
-    events = await db.ops_events.find(
-        {"tenant_id": tenant_id, "correlation_id": correlation_id},
-        {"_id": 0}
-    ).sort("created_at", 1).to_list(100)
+    events = await db.ops_events.find({"tenant_id": tenant_id, "correlation_id": correlation_id}, {"_id": 0}).sort("created_at", 1).to_list(100)
 
     if not events:
         raise HTTPException(status_code=404, detail="Bu correlation_id icin event bulunamadi")
 
     # 2. Get related delivery record (if webhook)
-    delivery = await sysdb.webhook_deliveries.find_one(
-        {"tenant_id": tenant_id, "correlation_id": correlation_id},
-        {"_id": 0}
-    )
+    delivery = await sysdb.webhook_deliveries.find_one({"tenant_id": tenant_id, "correlation_id": correlation_id}, {"_id": 0})
 
     # 3. Get DLQ item if exists
-    dlq_item = await sysdb.webhook_dlq.find_one(
-        {"tenant_id": tenant_id, "correlation_id": correlation_id},
-        {"_id": 0}
-    )
+    dlq_item = await sysdb.webhook_dlq.find_one({"tenant_id": tenant_id, "correlation_id": correlation_id}, {"_id": 0})
 
     # 4. Analyze timeline
     first_event = events[0]
     last_event = events[-1]
 
     # Determine terminal state
-    terminal_states = ["webhook.delivery.succeeded", "webhook.delivery.terminal_failure",
-                       "webhook.delivery.dlq", "push.succeeded", "push.failed_terminal",
-                       "import.completed", "import.failed"]
+    terminal_states = ["webhook.delivery.succeeded", "webhook.delivery.terminal_failure", "webhook.delivery.dlq", "push.succeeded", "push.failed_terminal", "import.completed", "import.failed"]
 
     terminal_event = None
     for ev in reversed(events):
@@ -98,13 +90,8 @@ async def get_event_timeline(
     max_severity = "critical" if has_critical else ("warning" if has_warning else "info")
 
     # Check if recovered
-    is_recovered = terminal_event and terminal_event["event_type"] in [
-        "webhook.delivery.succeeded", "push.succeeded", "import.completed"
-    ]
-    is_terminal_failure = terminal_event and terminal_event["event_type"] in [
-        "webhook.delivery.terminal_failure", "webhook.delivery.dlq",
-        "push.failed_terminal", "import.failed"
-    ]
+    is_recovered = terminal_event and terminal_event["event_type"] in ["webhook.delivery.succeeded", "push.succeeded", "import.completed"]
+    is_terminal_failure = terminal_event and terminal_event["event_type"] in ["webhook.delivery.terminal_failure", "webhook.delivery.dlq", "push.failed_terminal", "import.failed"]
 
     # Calculate duration
     try:
@@ -169,6 +156,7 @@ async def get_event_timeline(
 # 2. Incident Summary — Quick incident overview by event ID
 # ══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/incident/{event_id}/summary")
 async def get_incident_summary(
     event_id: str,
@@ -179,14 +167,12 @@ async def get_incident_summary(
     Bir satira tiklandiginda drilldown icin kullanilir.
     """
     from core.tenant_db import get_system_db
+
     sysdb = get_system_db()
     tenant_id = _get_tenant(current_user)
 
     # Get the event
-    event = await db.ops_events.find_one(
-        {"tenant_id": tenant_id, "id": event_id},
-        {"_id": 0}
-    )
+    event = await db.ops_events.find_one({"tenant_id": tenant_id, "id": event_id}, {"_id": 0})
 
     if not event:
         raise HTTPException(status_code=404, detail="Event bulunamadi")
@@ -199,25 +185,15 @@ async def get_incident_summary(
     dlq_item = None
 
     if correlation_id:
-        related_events = await db.ops_events.find(
-            {"tenant_id": tenant_id, "correlation_id": correlation_id},
-            {"_id": 0}
-        ).sort("created_at", 1).to_list(50)
+        related_events = await db.ops_events.find({"tenant_id": tenant_id, "correlation_id": correlation_id}, {"_id": 0}).sort("created_at", 1).to_list(50)
 
-        delivery = await sysdb.webhook_deliveries.find_one(
-            {"tenant_id": tenant_id, "correlation_id": correlation_id},
-            {"_id": 0}
-        )
+        delivery = await sysdb.webhook_deliveries.find_one({"tenant_id": tenant_id, "correlation_id": correlation_id}, {"_id": 0})
 
-        dlq_item = await sysdb.webhook_dlq.find_one(
-            {"tenant_id": tenant_id, "correlation_id": correlation_id},
-            {"_id": 0}
-        )
+        dlq_item = await sysdb.webhook_dlq.find_one({"tenant_id": tenant_id, "correlation_id": correlation_id}, {"_id": 0})
 
     # Check if notification was sent
     notification = await db.notifications.find_one(
-        {"tenant_id": tenant_id, "correlation_id": correlation_id} if correlation_id else {"id": "nonexistent"},
-        {"_id": 0, "id": 1, "read": 1, "created_at": 1}
+        {"tenant_id": tenant_id, "correlation_id": correlation_id} if correlation_id else {"id": "nonexistent"}, {"_id": 0, "id": 1, "read": 1, "created_at": 1}
     )
 
     # Determine impact
@@ -245,6 +221,7 @@ async def get_incident_summary(
 # 3. Prioritized Incident Feed — Sorted by priority for ops dashboard
 # ══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/incidents/prioritized")
 async def get_prioritized_incidents(
     limit: int = Query(50, ge=1, le=200),
@@ -261,155 +238,175 @@ async def get_prioritized_incidents(
     5. info-level recovered events (info)
     """
     from core.tenant_db import get_system_db
+
     sysdb = get_system_db()
     tenant_id = _get_tenant(current_user)
     since_24h = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
 
     # Priority 1: Terminal DLQ items (pending)
-    dlq_pending = await sysdb.webhook_dlq.find(
-        {"tenant_id": tenant_id, "status": "pending"},
-        {"_id": 0}
-    ).sort("created_at", -1).limit(20).to_list(20)
+    dlq_pending = await sysdb.webhook_dlq.find({"tenant_id": tenant_id, "status": "pending"}, {"_id": 0}).sort("created_at", -1).limit(20).to_list(20)
 
     # Priority 2: Active rate limit / throttle events
-    throttle_events = await db.ops_events.find(
-        {
-            "tenant_id": tenant_id,
-            "event_type": {"$in": ["rate_limit.active", "push.throttled"]},
-            "created_at": {"$gte": since_24h},
-        },
-        {"_id": 0}
-    ).sort("created_at", -1).limit(10).to_list(10)
+    throttle_events = (
+        await db.ops_events.find(
+            {
+                "tenant_id": tenant_id,
+                "event_type": {"$in": ["rate_limit.active", "push.throttled"]},
+                "created_at": {"$gte": since_24h},
+            },
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .limit(10)
+        .to_list(10)
+    )
 
     # Priority 3: Terminal failures (last 24h)
-    terminal_failures = await db.ops_events.find(
-        {
-            "tenant_id": tenant_id,
-            "event_type": {"$in": [
-                "webhook.delivery.terminal_failure",
-                "push.failed_terminal",
-                "import.failed"
-            ]},
-            "created_at": {"$gte": since_24h},
-        },
-        {"_id": 0}
-    ).sort("created_at", -1).limit(20).to_list(20)
+    terminal_failures = (
+        await db.ops_events.find(
+            {
+                "tenant_id": tenant_id,
+                "event_type": {"$in": ["webhook.delivery.terminal_failure", "push.failed_terminal", "import.failed"]},
+                "created_at": {"$gte": since_24h},
+            },
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .limit(20)
+        .to_list(20)
+    )
 
     # Priority 4: Warning events (retrying)
-    warning_events = await db.ops_events.find(
-        {
-            "tenant_id": tenant_id,
-            "severity": "warning",
-            "created_at": {"$gte": since_24h},
-        },
-        {"_id": 0}
-    ).sort("created_at", -1).limit(20).to_list(20)
+    warning_events = (
+        await db.ops_events.find(
+            {
+                "tenant_id": tenant_id,
+                "severity": "warning",
+                "created_at": {"$gte": since_24h},
+            },
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .limit(20)
+        .to_list(20)
+    )
 
     # Priority 5: Success/recovered (optional)
     recovered_events = []
     if include_resolved:
-        recovered_events = await db.ops_events.find(
-            {
-                "tenant_id": tenant_id,
-                "event_type": {"$in": [
-                    "webhook.delivery.succeeded",
-                    "push.succeeded",
-                    "import.completed"
-                ]},
-                "created_at": {"$gte": since_24h},
-            },
-            {"_id": 0}
-        ).sort("created_at", -1).limit(20).to_list(20)
+        recovered_events = (
+            await db.ops_events.find(
+                {
+                    "tenant_id": tenant_id,
+                    "event_type": {"$in": ["webhook.delivery.succeeded", "push.succeeded", "import.completed"]},
+                    "created_at": {"$gte": since_24h},
+                },
+                {"_id": 0},
+            )
+            .sort("created_at", -1)
+            .limit(20)
+            .to_list(20)
+        )
 
     # Build prioritized feed
     prioritized = []
 
     # Add DLQ items as priority 1
     for item in dlq_pending:
-        prioritized.append({
-            "priority": 1,
-            "priority_label": "KRITIK - DLQ",
-            "type": "dlq",
-            "id": item.get("id"),
-            "correlation_id": item.get("correlation_id"),
-            "title": f"DLQ: {item.get('event')}",
-            "description": item.get("last_error", ""),
-            "url": item.get("url"),
-            "created_at": item.get("created_at"),
-            "status": item.get("status"),
-            "attempt_count": item.get("attempt_count"),
-            "actionable": True,
-            "action_type": "retry",
-        })
+        prioritized.append(
+            {
+                "priority": 1,
+                "priority_label": "KRITIK - DLQ",
+                "type": "dlq",
+                "id": item.get("id"),
+                "correlation_id": item.get("correlation_id"),
+                "title": f"DLQ: {item.get('event')}",
+                "description": item.get("last_error", ""),
+                "url": item.get("url"),
+                "created_at": item.get("created_at"),
+                "status": item.get("status"),
+                "attempt_count": item.get("attempt_count"),
+                "actionable": True,
+                "action_type": "retry",
+            }
+        )
 
     # Add throttle events as priority 2
     for ev in throttle_events:
-        prioritized.append({
-            "priority": 2,
-            "priority_label": "KRITIK - Rate Limit",
-            "type": "ops_event",
-            "id": ev.get("id"),
-            "correlation_id": ev.get("correlation_id"),
-            "title": ev.get("title"),
-            "description": f"Kanal: {ev.get('channel', 'N/A')}",
-            "event_type": ev.get("event_type"),
-            "created_at": ev.get("created_at"),
-            "severity": ev.get("severity"),
-            "details": ev.get("details", {}),
-            "actionable": False,
-        })
+        prioritized.append(
+            {
+                "priority": 2,
+                "priority_label": "KRITIK - Rate Limit",
+                "type": "ops_event",
+                "id": ev.get("id"),
+                "correlation_id": ev.get("correlation_id"),
+                "title": ev.get("title"),
+                "description": f"Kanal: {ev.get('channel', 'N/A')}",
+                "event_type": ev.get("event_type"),
+                "created_at": ev.get("created_at"),
+                "severity": ev.get("severity"),
+                "details": ev.get("details", {}),
+                "actionable": False,
+            }
+        )
 
     # Add terminal failures as priority 3
     for ev in terminal_failures:
-        prioritized.append({
-            "priority": 3,
-            "priority_label": "YUKSEK - Terminal Failure",
-            "type": "ops_event",
-            "id": ev.get("id"),
-            "correlation_id": ev.get("correlation_id"),
-            "title": ev.get("title"),
-            "description": ev.get("details", {}).get("last_error", ""),
-            "event_type": ev.get("event_type"),
-            "created_at": ev.get("created_at"),
-            "severity": ev.get("severity"),
-            "details": ev.get("details", {}),
-            "actionable": ev.get("event_type") == "webhook.delivery.terminal_failure",
-            "action_type": "inspect",
-        })
+        prioritized.append(
+            {
+                "priority": 3,
+                "priority_label": "YUKSEK - Terminal Failure",
+                "type": "ops_event",
+                "id": ev.get("id"),
+                "correlation_id": ev.get("correlation_id"),
+                "title": ev.get("title"),
+                "description": ev.get("details", {}).get("last_error", ""),
+                "event_type": ev.get("event_type"),
+                "created_at": ev.get("created_at"),
+                "severity": ev.get("severity"),
+                "details": ev.get("details", {}),
+                "actionable": ev.get("event_type") == "webhook.delivery.terminal_failure",
+                "action_type": "inspect",
+            }
+        )
 
     # Add warning events as priority 4
     for ev in warning_events:
         # Skip if already added (throttle events)
         if any(p.get("id") == ev.get("id") for p in prioritized):
             continue
-        prioritized.append({
-            "priority": 4,
-            "priority_label": "ORTA - Dikkat",
-            "type": "ops_event",
-            "id": ev.get("id"),
-            "correlation_id": ev.get("correlation_id"),
-            "title": ev.get("title"),
-            "event_type": ev.get("event_type"),
-            "created_at": ev.get("created_at"),
-            "severity": ev.get("severity"),
-            "details": ev.get("details", {}),
-            "actionable": False,
-        })
+        prioritized.append(
+            {
+                "priority": 4,
+                "priority_label": "ORTA - Dikkat",
+                "type": "ops_event",
+                "id": ev.get("id"),
+                "correlation_id": ev.get("correlation_id"),
+                "title": ev.get("title"),
+                "event_type": ev.get("event_type"),
+                "created_at": ev.get("created_at"),
+                "severity": ev.get("severity"),
+                "details": ev.get("details", {}),
+                "actionable": False,
+            }
+        )
 
     # Add recovered as priority 5
     for ev in recovered_events:
-        prioritized.append({
-            "priority": 5,
-            "priority_label": "BILGI - Cozuldu",
-            "type": "ops_event",
-            "id": ev.get("id"),
-            "correlation_id": ev.get("correlation_id"),
-            "title": ev.get("title"),
-            "event_type": ev.get("event_type"),
-            "created_at": ev.get("created_at"),
-            "severity": ev.get("severity"),
-            "actionable": False,
-        })
+        prioritized.append(
+            {
+                "priority": 5,
+                "priority_label": "BILGI - Cozuldu",
+                "type": "ops_event",
+                "id": ev.get("id"),
+                "correlation_id": ev.get("correlation_id"),
+                "title": ev.get("title"),
+                "event_type": ev.get("event_type"),
+                "created_at": ev.get("created_at"),
+                "severity": ev.get("severity"),
+                "actionable": False,
+            }
+        )
 
     # Sort by priority then by created_at desc
     prioritized.sort(key=lambda x: (x["priority"], x.get("created_at", "")), reverse=False)
@@ -433,6 +430,7 @@ async def get_prioritized_incidents(
 # 4. Unified Connector Health Contract
 # ══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/connectors/health")
 async def get_connectors_health(
     current_user: User = Depends(get_current_user),
@@ -452,6 +450,7 @@ async def get_connectors_health(
     - health_score (0-100)
     """
     from core.tenant_db import get_system_db
+
     sysdb = get_system_db()
     tenant_id = _get_tenant(current_user)
 
@@ -459,10 +458,7 @@ async def get_connectors_health(
     since_1h = (now - timedelta(hours=1)).isoformat()
 
     # Get all connectors
-    connectors = await db.cm_connectors.find(
-        {"tenant_id": tenant_id},
-        {"_id": 0}
-    ).to_list(50)
+    connectors = await db.cm_connectors.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(50)
 
     health_reports = []
 
@@ -473,39 +469,51 @@ async def get_connectors_health(
     last_failure_map: dict = {}
     push_counts_map: dict = {}
     if h_connector_ids:
-        async for r in db.cm_rate_push_metrics.aggregate([
-            {"$match": {"tenant_id": tenant_id, "connector_id": {"$in": h_connector_ids}, "success": True}},
-            {"$sort": {"recorded_at": -1}},
-            {"$group": {"_id": "$connector_id", "doc": {"$first": "$$ROOT"}}},
-        ]):
+        async for r in db.cm_rate_push_metrics.aggregate(
+            [
+                {"$match": {"tenant_id": tenant_id, "connector_id": {"$in": h_connector_ids}, "success": True}},
+                {"$sort": {"recorded_at": -1}},
+                {"$group": {"_id": "$connector_id", "doc": {"$first": "$$ROOT"}}},
+            ]
+        ):
             last_success_map[r["_id"]] = r["doc"]
-        async for r in db.cm_rate_push_metrics.aggregate([
-            {"$match": {"tenant_id": tenant_id, "connector_id": {"$in": h_connector_ids}, "success": False}},
-            {"$sort": {"recorded_at": -1}},
-            {"$group": {"_id": "$connector_id", "doc": {"$first": "$$ROOT"}}},
-        ]):
+        async for r in db.cm_rate_push_metrics.aggregate(
+            [
+                {"$match": {"tenant_id": tenant_id, "connector_id": {"$in": h_connector_ids}, "success": False}},
+                {"$sort": {"recorded_at": -1}},
+                {"$group": {"_id": "$connector_id", "doc": {"$first": "$$ROOT"}}},
+            ]
+        ):
             last_failure_map[r["_id"]] = r["doc"]
-        async for r in db.cm_rate_push_metrics.aggregate([
-            {"$match": {"tenant_id": tenant_id, "connector_id": {"$in": h_connector_ids},
-                        "recorded_at": {"$gte": since_1h}}},
-            {"$group": {"_id": "$connector_id",
-                        "total": {"$sum": 1},
-                        "failed": {"$sum": {"$cond": [{"$eq": ["$success", False]}, 1, 0]}}}},
-        ]):
+        async for r in db.cm_rate_push_metrics.aggregate(
+            [
+                {"$match": {"tenant_id": tenant_id, "connector_id": {"$in": h_connector_ids}, "recorded_at": {"$gte": since_1h}}},
+                {"$group": {"_id": "$connector_id", "total": {"$sum": 1}, "failed": {"$sum": {"$cond": [{"$eq": ["$success", False]}, 1, 0]}}}},
+            ]
+        ):
             push_counts_map[r["_id"]] = r
     # Retry backlog ve DLQ count tenant geneli — her connector icin ayni, bir kez al
-    retry_backlog = await sysdb.webhook_deliveries.count_documents({
-        "tenant_id": tenant_id, "status": "retrying",
-    })
-    dlq_count = await sysdb.webhook_dlq.count_documents({
-        "tenant_id": tenant_id, "status": "pending",
-    })
+    retry_backlog = await sysdb.webhook_deliveries.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "retrying",
+        }
+    )
+    dlq_count = await sysdb.webhook_dlq.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "pending",
+        }
+    )
     # Throttle event'leri tek sorgu ile, Python'da provider'a gore filtrele
-    throttle_events_all = await db.ops_events.find({
-        "tenant_id": tenant_id,
-        "event_type": {"$in": ["rate_limit.active", "push.throttled"]},
-        "created_at": {"$gte": since_1h},
-    }, {"_id": 0, "channel": 1}).to_list(2000)
+    throttle_events_all = await db.ops_events.find(
+        {
+            "tenant_id": tenant_id,
+            "event_type": {"$in": ["rate_limit.active", "push.throttled"]},
+            "created_at": {"$gte": since_1h},
+        },
+        {"_id": 0, "channel": 1},
+    ).to_list(2000)
 
     for conn in connectors:
         provider = conn.get("provider", "unknown")
@@ -521,8 +529,7 @@ async def get_connectors_health(
         total_1h = pc.get("total", 0)
         failed_1h = pc.get("failed", 0)
         failure_rate_1h = round(failed_1h / max(total_1h, 1) * 100, 1)
-        throttle_events = sum(1 for e in throttle_events_all
-                              if prov_lower in (e.get("channel") or "").lower())
+        throttle_events = sum(1 for e in throttle_events_all if prov_lower in (e.get("channel") or "").lower())
         throttle_active = throttle_events > 0
 
         # Calculate health score (0-100)
@@ -589,31 +596,32 @@ async def get_connectors_health(
                     "channel": {"$regex": provider, "$options": "i"},
                 },
                 {"_id": 0},
-                sort=[("created_at", -1)]
+                sort=[("created_at", -1)],
             )
             if last_throttle:
-                next_available_at = last_throttle.get("details", {}).get("next_available_at") or \
-                                    last_throttle.get("details", {}).get("cooldown_until")
+                next_available_at = last_throttle.get("details", {}).get("next_available_at") or last_throttle.get("details", {}).get("cooldown_until")
 
-        health_reports.append({
-            "connector_id": connector_id,
-            "provider": provider,
-            "property_name": property_name,
-            "status": status,
-            "health_score": health_score,
-            "last_success_at": last_success_at,
-            "last_failure_at": last_failure_at,
-            "failure_rate_1h": failure_rate_1h,
-            "retry_backlog": retry_backlog,
-            "dlq_count": dlq_count,
-            "throttle_active": throttle_active,
-            "next_available_at": next_available_at,
-            "metrics_1h": {
-                "total_operations": total_1h,
-                "failed_operations": failed_1h,
-                "success_rate": round(100 - failure_rate_1h, 1),
-            },
-        })
+        health_reports.append(
+            {
+                "connector_id": connector_id,
+                "provider": provider,
+                "property_name": property_name,
+                "status": status,
+                "health_score": health_score,
+                "last_success_at": last_success_at,
+                "last_failure_at": last_failure_at,
+                "failure_rate_1h": failure_rate_1h,
+                "retry_backlog": retry_backlog,
+                "dlq_count": dlq_count,
+                "throttle_active": throttle_active,
+                "next_available_at": next_available_at,
+                "metrics_1h": {
+                    "total_operations": total_1h,
+                    "failed_operations": failed_1h,
+                    "success_rate": round(100 - failure_rate_1h, 1),
+                },
+            }
+        )
 
     # Sort by health_score ascending (worst first)
     health_reports.sort(key=lambda x: x["health_score"])
@@ -640,6 +648,7 @@ async def get_connectors_health(
 # 5. Impacted Tenants/Channels Filter
 # ══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/impact-analysis")
 async def get_impact_analysis(
     since_hours: int = Query(24, ge=1, le=168),
@@ -656,7 +665,7 @@ async def get_impact_analysis(
             "severity": {"$in": ["critical", "warning"]},
             "created_at": {"$gte": since},
         },
-        {"_id": 0}
+        {"_id": 0},
     ).to_list(500)
 
     # Aggregate by channel
@@ -700,10 +709,10 @@ async def get_impact_analysis(
     }
 
 
-
 # ══════════════════════════════════════════════════════════════════════
 # 6. Auto-Remediation Control Endpoints
 # ══════════════════════════════════════════════════════════════════════
+
 
 @router.get("/remediation/status")
 async def get_remediation_status(

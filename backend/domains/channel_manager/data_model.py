@@ -15,6 +15,7 @@ Collections:
   8. ari_drift_state            — ARI parity / consistency tracking
   9. channel_reconciliation_cases — Discrepancy tracking
 """
+
 import hashlib
 import json
 import uuid
@@ -26,12 +27,14 @@ from pydantic import BaseModel, Field
 
 # ── Provider Enum (HotelRunner + Exely only) ──────────────────────────
 
+
 class ConnectorProvider(str, Enum):
     HOTELRUNNER = "hotelrunner"
     EXELY = "exely"
 
 
 # ── Connection Status ─────────────────────────────────────────────────
+
 
 class ConnectionStatus(str, Enum):
     DRAFT = "draft"
@@ -44,6 +47,7 @@ class ConnectionStatus(str, Enum):
 # ══════════════════════════════════════════════════════════════════════
 # CANONICAL RESERVATION STATE MODEL
 # ══════════════════════════════════════════════════════════════════════
+
 
 class ReservationState(str, Enum):
     PENDING = "pending"
@@ -69,15 +73,20 @@ class MutationType(str, Enum):
 # Valid state transitions: {from_state: [allowed_to_states]}
 STATE_TRANSITIONS: dict[str, list[str]] = {
     ReservationState.PENDING: [
-        ReservationState.CONFIRMED, ReservationState.CANCELLED,
+        ReservationState.CONFIRMED,
+        ReservationState.CANCELLED,
     ],
     ReservationState.CONFIRMED: [
-        ReservationState.MODIFIED, ReservationState.CANCELLED,
-        ReservationState.CHECKED_IN, ReservationState.NO_SHOW,
+        ReservationState.MODIFIED,
+        ReservationState.CANCELLED,
+        ReservationState.CHECKED_IN,
+        ReservationState.NO_SHOW,
     ],
     ReservationState.MODIFIED: [
-        ReservationState.CONFIRMED, ReservationState.MODIFIED,
-        ReservationState.CANCELLED, ReservationState.CHECKED_IN,
+        ReservationState.CONFIRMED,
+        ReservationState.MODIFIED,
+        ReservationState.CANCELLED,
+        ReservationState.CHECKED_IN,
         ReservationState.NO_SHOW,
     ],
     ReservationState.CHECKED_IN: [
@@ -102,6 +111,7 @@ def is_valid_transition(from_state: str, to_state: str) -> bool:
 # DELIVERY CONFIRMATION MODEL
 # ══════════════════════════════════════════════════════════════════════
 
+
 class DeliveryState(str, Enum):
     QUEUED = "queued"
     SENT = "sent"
@@ -116,6 +126,7 @@ class DeliveryState(str, Enum):
 # ERROR CLASSIFICATION
 # ══════════════════════════════════════════════════════════════════════
 
+
 class ErrorClass(str, Enum):
     RETRYABLE = "retryable"
     CONFIGURATION = "configuration"
@@ -125,6 +136,7 @@ class ErrorClass(str, Enum):
 # ══════════════════════════════════════════════════════════════════════
 # DRIFT TAXONOMY
 # ══════════════════════════════════════════════════════════════════════
+
 
 class DriftType(str, Enum):
     MISSING_LOCALLY = "missing_locally"
@@ -147,6 +159,7 @@ class DriftResolution(str, Enum):
 # MAPPING VALIDATION STATUS
 # ══════════════════════════════════════════════════════════════════════
 
+
 class MappingFailure(str, Enum):
     UNMAPPED = "unmapped"
     INACTIVE = "inactive"
@@ -159,6 +172,7 @@ class MappingFailure(str, Enum):
 # ══════════════════════════════════════════════════════════════════════
 
 COLL_PROVIDER_CONNECTIONS = "provider_connections"
+
 
 class ProviderConnection(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -214,6 +228,7 @@ class ProviderConnection(BaseModel):
 
 COLL_ROOM_MAPPINGS = "room_mappings"
 
+
 class RoomMapping(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
@@ -256,6 +271,7 @@ class RoomMapping(BaseModel):
 # ══════════════════════════════════════════════════════════════════════
 
 COLL_RATE_PLAN_MAPPINGS = "rate_plan_mappings"
+
 
 class RatePlanMapping(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -302,6 +318,7 @@ class RatePlanMapping(BaseModel):
 COLL_RAW_CHANNEL_EVENTS = "raw_channel_events"
 COLL_CHANNEL_EVENT_DEDUP = "channel_event_dedup"
 
+
 class RawEventSource(str, Enum):
     WEBHOOK = "webhook"
     PULL = "pull"
@@ -336,7 +353,7 @@ class RawChannelEvent(BaseModel):
     raw_payload: dict[str, Any] = Field(default_factory=dict)
     payload_hash: str = ""
     raw_payload_hash: str = ""  # hash of raw payload before normalization
-    canonical_hash: str = ""    # hash of canonicalized payload (same meaning despite format diffs)
+    canonical_hash: str = ""  # hash of canonicalized payload (same meaning despite format diffs)
 
     # Processing state
     processing_status: ProcessingStatus = ProcessingStatus.PENDING
@@ -344,9 +361,9 @@ class RawChannelEvent(BaseModel):
     processed_at: str | None = None
 
     # Decision tracking (stored on raw event for traceability)
-    decision_result: str | None = None    # create/update/cancel/skip etc
+    decision_result: str | None = None  # create/update/cancel/skip etc
     decision_reason: str | None = None
-    decision_version: int = 0                # aggregate version at decision time
+    decision_version: int = 0  # aggregate version at decision time
     normalization_result: dict[str, Any] | None = None  # canonical form after normalization
 
     # Ingest tracking
@@ -382,6 +399,7 @@ class RawChannelEvent(BaseModel):
 # ══════════════════════════════════════════════════════════════════════
 
 COLL_RESERVATION_LINEAGE = "reservation_lineage"
+
 
 class ReservationLineage(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -491,6 +509,7 @@ COLL_ARI_DRIFT_STATE = "ari_drift_state"
 # ══════════════════════════════════════════════════════════════════════
 
 COLL_RECONCILIATION_CASES = "channel_reconciliation_cases"
+
 
 class CaseSeverity(str, Enum):
     CRITICAL = "critical"

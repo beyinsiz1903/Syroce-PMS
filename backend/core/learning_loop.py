@@ -4,6 +4,7 @@ Learning Loop System
 Closed-loop incident learning: auto-classification, recurrence detection,
 RCA tracking, and never-again rule enforcement.
 """
+
 import hashlib
 import logging
 import uuid
@@ -15,26 +16,16 @@ from core.database import db
 logger = logging.getLogger(__name__)
 
 CLASSIFICATION_RULES = [
-    {"keywords": ["exely", "hotelrunner", "provider", "503", "502", "ota"],
-     "category": "provider", "subcategory": "provider_error"},
-    {"keywords": ["timeout", "timed out", "connection refused"],
-     "category": "infrastructure", "subcategory": "timeout"},
-    {"keywords": ["memory", "oom", "disk", "cpu", "resource"],
-     "category": "infrastructure", "subcategory": "resource_exhaustion"},
-    {"keywords": ["mongodb", "redis", "connection pool", "replica"],
-     "category": "infrastructure", "subcategory": "database"},
-    {"keywords": ["mapping error", "validation", "schema", "corrupt"],
-     "category": "data", "subcategory": "data_corruption"},
-    {"keywords": ["duplicate", "conflict", "idempotency"],
-     "category": "data", "subcategory": "duplicate"},
-    {"keywords": ["unauthorized", "forbidden", "token", "credential", "breach"],
-     "category": "security", "subcategory": "auth_failure"},
-    {"keywords": ["null pointer", "attribute error", "type error", "unhandled", "traceback"],
-     "category": "code_bug", "subcategory": "unhandled_exception"},
-    {"keywords": ["race condition", "concurrent", "deadlock"],
-     "category": "code_bug", "subcategory": "race_condition"},
-    {"keywords": ["config", "configuration", "env", "environment"],
-     "category": "human_error", "subcategory": "config_error"},
+    {"keywords": ["exely", "hotelrunner", "provider", "503", "502", "ota"], "category": "provider", "subcategory": "provider_error"},
+    {"keywords": ["timeout", "timed out", "connection refused"], "category": "infrastructure", "subcategory": "timeout"},
+    {"keywords": ["memory", "oom", "disk", "cpu", "resource"], "category": "infrastructure", "subcategory": "resource_exhaustion"},
+    {"keywords": ["mongodb", "redis", "connection pool", "replica"], "category": "infrastructure", "subcategory": "database"},
+    {"keywords": ["mapping error", "validation", "schema", "corrupt"], "category": "data", "subcategory": "data_corruption"},
+    {"keywords": ["duplicate", "conflict", "idempotency"], "category": "data", "subcategory": "duplicate"},
+    {"keywords": ["unauthorized", "forbidden", "token", "credential", "breach"], "category": "security", "subcategory": "auth_failure"},
+    {"keywords": ["null pointer", "attribute error", "type error", "unhandled", "traceback"], "category": "code_bug", "subcategory": "unhandled_exception"},
+    {"keywords": ["race condition", "concurrent", "deadlock"], "category": "code_bug", "subcategory": "race_condition"},
+    {"keywords": ["config", "configuration", "env", "environment"], "category": "human_error", "subcategory": "config_error"},
 ]
 
 
@@ -78,10 +69,25 @@ class IncidentClassifier:
 
     def _extract_tags(self, text: str) -> list[str]:
         tag_candidates = [
-            "exely", "hotelrunner", "timeout", "reservation", "booking",
-            "channel", "sync", "import", "outbox", "night_audit",
-            "folio", "payment", "checkin", "checkout", "mapping",
-            "rate", "availability", "webhook", "provider",
+            "exely",
+            "hotelrunner",
+            "timeout",
+            "reservation",
+            "booking",
+            "channel",
+            "sync",
+            "import",
+            "outbox",
+            "night_audit",
+            "folio",
+            "payment",
+            "checkin",
+            "checkout",
+            "mapping",
+            "rate",
+            "availability",
+            "webhook",
+            "provider",
         ]
         return [tag for tag in tag_candidates if tag in text]
 
@@ -253,26 +259,33 @@ class RecurrenceDetector:
             {"$set": {"recurrence.pattern_signature": signature}},
         )
 
-        previous = await db.incidents.find(
-            {
-                "tenant_id": tenant_id,
-                "recurrence.pattern_signature": signature,
-                "id": {"$ne": incident_id},
-                "status": {"$in": ["resolved", "postmortem", "closed"]},
-            },
-            {"_id": 0, "id": 1, "title": 1, "created_at": 1, "never_again_rules": 1},
-        ).sort("created_at", -1).limit(5).to_list(5)
+        previous = (
+            await db.incidents.find(
+                {
+                    "tenant_id": tenant_id,
+                    "recurrence.pattern_signature": signature,
+                    "id": {"$ne": incident_id},
+                    "status": {"$in": ["resolved", "postmortem", "closed"]},
+                },
+                {"_id": 0, "id": 1, "title": 1, "created_at": 1, "never_again_rules": 1},
+            )
+            .sort("created_at", -1)
+            .limit(5)
+            .to_list(5)
+        )
 
         if previous:
             violated_rules = []
             for prev in previous:
                 for rule in prev.get("never_again_rules", []):
                     if rule.get("status") in ("implemented", "verified", "enforced"):
-                        violated_rules.append({
-                            "rule_id": rule["id"],
-                            "description": rule["description"],
-                            "from_incident": prev["id"],
-                        })
+                        violated_rules.append(
+                            {
+                                "rule_id": rule["id"],
+                                "description": rule["description"],
+                                "from_incident": prev["id"],
+                            }
+                        )
 
             recurrence_data = {
                 "is_recurrence": True,
@@ -303,23 +316,19 @@ class LearningDashboard:
 
     async def get_metrics(self, tenant_id: str) -> dict[str, Any]:
         total = await db.incidents.count_documents({"tenant_id": tenant_id})
-        resolved = await db.incidents.count_documents(
-            {"tenant_id": tenant_id, "status": {"$in": ["resolved", "closed"]}}
-        )
-        recurring = await db.incidents.count_documents(
-            {"tenant_id": tenant_id, "recurrence.is_recurrence": True}
-        )
+        resolved = await db.incidents.count_documents({"tenant_id": tenant_id, "status": {"$in": ["resolved", "closed"]}})
+        recurring = await db.incidents.count_documents({"tenant_id": tenant_id, "recurrence.is_recurrence": True})
 
         # MTTR calculation
         pipeline = [
             {"$match": {"tenant_id": tenant_id, "status": {"$in": ["resolved", "closed"]}}},
-            {"$addFields": {
-                "metrics_total": {"$ifNull": ["$metrics.total_duration_seconds", 0]}
-            }},
-            {"$group": {
-                "_id": None,
-                "avg_mttr": {"$avg": "$metrics_total"},
-            }},
+            {"$addFields": {"metrics_total": {"$ifNull": ["$metrics.total_duration_seconds", 0]}}},
+            {
+                "$group": {
+                    "_id": None,
+                    "avg_mttr": {"$avg": "$metrics_total"},
+                }
+            },
         ]
         mttr_result = await db.incidents.aggregate(pipeline).to_list(1)
         avg_mttr = mttr_result[0]["avg_mttr"] if mttr_result else 0
@@ -328,10 +337,12 @@ class LearningDashboard:
         rule_pipeline = [
             {"$match": {"tenant_id": tenant_id, "never_again_rules": {"$exists": True, "$ne": []}}},
             {"$unwind": "$never_again_rules"},
-            {"$group": {
-                "_id": "$never_again_rules.status",
-                "count": {"$sum": 1},
-            }},
+            {
+                "$group": {
+                    "_id": "$never_again_rules.status",
+                    "count": {"$sum": 1},
+                }
+            },
         ]
         rule_stats = await db.incidents.aggregate(rule_pipeline).to_list(20)
         rules_by_status = {r["_id"]: r["count"] for r in rule_stats}

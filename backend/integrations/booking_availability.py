@@ -3,6 +3,7 @@
 This does not perform real Booking.com API calls yet. It only prepares
 payloads that a future real integration can reuse.
 """
+
 from typing import Any
 
 
@@ -37,16 +38,19 @@ def normalize_availability_response(
     """
     by_type: dict[str, dict[str, Any]] = {}
     for room in rooms:
-        rt = room.get('room_type') or 'Unknown'
-        entry = by_type.setdefault(rt, {
-            'room_type': rt,
-            'date_from': check_in,
-            'date_to': check_out,
-            'total_rooms': 0,
-            'available_rooms': 0,
-        })
-        entry['total_rooms'] += 1
-        if room.get('available'):
-            entry['available_rooms'] += 1
+        rt = room.get("room_type") or "Unknown"
+        entry = by_type.setdefault(
+            rt,
+            {
+                "room_type": rt,
+                "date_from": check_in,
+                "date_to": check_out,
+                "total_rooms": 0,
+                "available_rooms": 0,
+            },
+        )
+        entry["total_rooms"] += 1
+        if room.get("available"):
+            entry["available_rooms"] += 1
 
     return list(by_type.values())

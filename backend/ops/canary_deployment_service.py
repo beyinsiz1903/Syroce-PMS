@@ -4,6 +4,7 @@ Phase 7 — Canary Deployment Strategy Service
 Manages staged rollout from internal → pilot → gradual traffic increase.
 Feature flags, rollback triggers, canary monitoring.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -77,26 +78,32 @@ class CanaryDeploymentService:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     async def get_deployment_plan(self) -> ServiceResult:
-        return ServiceResult.success({
-            "stages": DEPLOYMENT_STAGES,
-            "rollback_triggers": ROLLBACK_TRIGGERS,
-            "canary_metrics": CANARY_METRICS,
-        })
+        return ServiceResult.success(
+            {
+                "stages": DEPLOYMENT_STAGES,
+                "rollback_triggers": ROLLBACK_TRIGGERS,
+                "canary_metrics": CANARY_METRICS,
+            }
+        )
 
     async def get_current_stage(self, ctx: OperationContext) -> ServiceResult:
         state = await self._db.canary_deployments.find_one(
-            {"tenant_id": ctx.tenant_id}, {"_id": 0},
+            {"tenant_id": ctx.tenant_id},
+            {"_id": 0},
             sort=[("updated_at", -1)],
         )
         if not state:
-            return ServiceResult.success({
-                "current_stage": None,
-                "status": "not_started",
-                "history": [],
-            })
+            return ServiceResult.success(
+                {
+                    "current_stage": None,
+                    "status": "not_started",
+                    "history": [],
+                }
+            )
         return ServiceResult.success(state)
 
     async def advance_stage(self, ctx: OperationContext, target_stage_id: str) -> ServiceResult:
@@ -108,7 +115,8 @@ class CanaryDeploymentService:
 
         # Check prerequisites for advancing
         current = await self._db.canary_deployments.find_one(
-            {"tenant_id": ctx.tenant_id}, {"_id": 0},
+            {"tenant_id": ctx.tenant_id},
+            {"_id": 0},
             sort=[("updated_at", -1)],
         )
         current_idx = -1
@@ -142,7 +150,8 @@ class CanaryDeploymentService:
     async def rollback(self, ctx: OperationContext, reason: str) -> ServiceResult:
         now = datetime.now(UTC).isoformat()
         current = await self._db.canary_deployments.find_one(
-            {"tenant_id": ctx.tenant_id, "status": "active"}, {"_id": 0},
+            {"tenant_id": ctx.tenant_id, "status": "active"},
+            {"_id": 0},
             sort=[("updated_at", -1)],
         )
         if not current:
@@ -177,21 +186,25 @@ class CanaryDeploymentService:
             # Simulated metric evaluation — in production reads from Prometheus/metrics store
             current_value = await self._get_metric_value(ctx, trigger["metric"])
             triggered = current_value > trigger["threshold"]
-            results.append({
-                "trigger_id": trigger["id"],
-                "name": trigger["name"],
-                "threshold": trigger["threshold"],
-                "current_value": current_value,
-                "triggered": triggered,
-                "action": trigger["action"] if triggered else "none",
-            })
+            results.append(
+                {
+                    "trigger_id": trigger["id"],
+                    "name": trigger["name"],
+                    "threshold": trigger["threshold"],
+                    "current_value": current_value,
+                    "triggered": triggered,
+                    "action": trigger["action"] if triggered else "none",
+                }
+            )
 
         any_triggered = any(r["triggered"] for r in results)
-        return ServiceResult.success({
-            "triggers": results,
-            "any_triggered": any_triggered,
-            "recommendation": "rollback" if any_triggered else "continue",
-        })
+        return ServiceResult.success(
+            {
+                "triggers": results,
+                "any_triggered": any_triggered,
+                "recommendation": "rollback" if any_triggered else "continue",
+            }
+        )
 
     async def _get_metric_value(self, ctx: OperationContext, metric: str) -> float:
         """Get current metric value. In prod reads from Prometheus."""

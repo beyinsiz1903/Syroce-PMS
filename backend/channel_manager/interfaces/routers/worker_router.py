@@ -1,4 +1,5 @@
 """Background Worker Router — Job execution, history, and stats."""
+
 import logging
 
 from fastapi import APIRouter, Depends, Query

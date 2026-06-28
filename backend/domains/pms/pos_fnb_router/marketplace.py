@@ -3,6 +3,7 @@ marketplace
 
 Auto-split sub-router (shared imports/classes inlined).
 """
+
 """
 PMS / POS & F&B Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
@@ -28,27 +29,26 @@ from modules.pms_core.role_permission_service import require_module as require_m
 try:
     from websocket_server import broadcast_kitchen_orders
 except Exception:  # pragma: no cover
+
     async def broadcast_kitchen_orders(tenant_id: str, orders: Any):
         return None
 
 
 async def _get_active_kitchen_orders(tenant_id: str, statuses: list[str] | None = None):
-    query = {'tenant_id': tenant_id}
+    query = {"tenant_id": tenant_id}
     if statuses:
-        query['status'] = {'$in': statuses}
+        query["status"] = {"$in": statuses}
     else:
-        query['status'] = {'$in': ['pending', 'preparing']}
-    return await db.kitchen_orders.find(query, {'_id': 0}).sort(
-        [('priority', -1), ('ordered_at', 1)]
-    ).to_list(200)
+        query["status"] = {"$in": ["pending", "preparing"]}
+    return await db.kitchen_orders.find(query, {"_id": 0}).sort([("priority", -1), ("ordered_at", 1)]).to_list(200)
 
 
 async def _next_kitchen_order_number(tenant_id: str) -> int:
-    last_order = await db.kitchen_orders.find({'tenant_id': tenant_id}).sort('order_number', -1).limit(1).to_list(1)
+    last_order = await db.kitchen_orders.find({"tenant_id": tenant_id}).sort("order_number", -1).limit(1).to_list(1)
     if not last_order:
         return 1
     try:
-        return int(last_order[0].get('order_number', 0)) + 1
+        return int(last_order[0].get("order_number", 0)) + 1
     except (TypeError, ValueError):
         return 1
 
@@ -67,7 +67,7 @@ def calculate_table_duration(opened_at: Any) -> int:
         return 0
     try:
         if isinstance(opened_at, str):
-            dt = datetime.fromisoformat(opened_at.replace('Z', '+00:00'))
+            dt = datetime.fromisoformat(opened_at.replace("Z", "+00:00"))
         else:
             dt = opened_at
         if dt.tzinfo is None:
@@ -79,32 +79,32 @@ def calculate_table_duration(opened_at: Any) -> int:
 
 def create_default_table_layout() -> list[dict[str, Any]]:
     """Return a generic 8-table layout for first-time setup."""
-    return [
-        {'id': str(uuid.uuid4()), 'number': str(i + 1), 'capacity': 4, 'status': 'available', 'zone': 'main'}
-        for i in range(8)
-    ]
+    return [{"id": str(uuid.uuid4()), "number": str(i + 1), "capacity": 4, "status": "available", "zone": "main"} for i in range(8)]
 
 
 async def recalculate_folio_balance(folio_id: str, tenant_id: str) -> float:
     """F&B post sonrası bakiye yeniden hesabı — core helper'a delege (fail-closed)."""
     from core.utils import calculate_folio_balance
+
     return await calculate_folio_balance(folio_id, tenant_id)
 
 
 def get_menu_recommendation(_guest_profile: dict | None = None) -> list[str]:
     """Heuristic menu recommendation stub — to be replaced by ML model."""
-    return ['Chef\'s Special', 'Local Wine Pairing', 'Seasonal Dessert']
+    return ["Chef's Special", "Local Wine Pairing", "Seasonal Dessert"]
+
 
 logger = logging.getLogger(__name__)
 
 try:
     from cache_manager import cached
 except ImportError:
+
     def cached(ttl=300, key_prefix=""):
-        def decorator(func): return func
+        def decorator(func):
+            return func
+
         return decorator
-
-
 
 
 # ── Inline Models ──
@@ -181,6 +181,7 @@ class UpdateOrderStatusRequest(BaseModel):
 
 class TableLayout(BaseModel):
     """Table layout for restaurant floor plan"""
+
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
@@ -199,6 +200,7 @@ class TableLayout(BaseModel):
 
 class KitchenOrderItem(BaseModel):
     """Kitchen order item for KDS"""
+
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
@@ -217,6 +219,7 @@ class KitchenOrderItem(BaseModel):
 
 class Alert(BaseModel):
     """Universal alert model"""
+
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
@@ -233,18 +236,7 @@ class Alert(BaseModel):
     read_at: datetime | None = None
 
 
-
-
-
-
-
-
-
 # ============= PHOTO UPLOAD (KAT HİZMETLERİ İÇİN) =============
-
-
-
-
 
 
 # rbac-allow: cache-rbac — POS F&B orders operasyonel
@@ -252,66 +244,13 @@ class Alert(BaseModel):
 # ============= HOTEL INVENTORY MANAGEMENT =============
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ============= CHANNEL MANAGER ENHANCEMENTS =============
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ============= HOTEL INTERNAL MESSAGING =============
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 # ===== 5. MESSAGING MODULE (WHATSAPP / SMS / AUTO MESSAGES) =====
-
-
-
-
 
 
 # NOTE: GET /pos/orders moved to pos_router.py — canonical implementation
@@ -329,22 +268,13 @@ class Alert(BaseModel):
 # ============= MAINTENANCE TASKS ENDPOINT =============
 
 
-
-
-
 # 2. GET /api/pos/mobile/order/{order_id} - Get detailed order info
-
-
 
 
 # 3. PUT /api/pos/mobile/order/{order_id}/status - Update order status
 
 
-
-
 # 4. GET /api/pos/mobile/order-history - Get order history with filters
-
-
 
 
 # ============================================================================
@@ -354,21 +284,13 @@ class Alert(BaseModel):
 # 5. GET /api/pos/mobile/inventory-movements - Get stock movements
 
 
-
-
 # 6. GET /api/pos/mobile/stock-levels - Get current stock levels
-
-
 
 
 # 7. GET /api/pos/mobile/low-stock-alerts - Get low stock alerts
 
 
-
-
 # 8. POST /api/pos/mobile/stock-adjust - Adjust stock (Warehouse/F&B Manager only)
-
-
 
 
 # ============================================================================
@@ -379,10 +301,10 @@ class Alert(BaseModel):
 
 
 _ME_RECOMMENDATIONS = {
-    'Stars':       'Yıldız ürün - menüde öne çıkar, kaliteyi koru, fiyat esnekliğini test et',
-    'Plowhorses':  'İş ineği - maliyeti düşür (porsiyon/tedarikçi), üst-satış kombinasyonu öner',
-    'Puzzles':     'Bulmaca - tanıtım/sunum iyileştir, menüde üst sıraya taşı, ad değiştir',
-    'Dogs':        'Köpek - menüden çıkar veya tarifi yeniden tasarla',
+    "Stars": "Yıldız ürün - menüde öne çıkar, kaliteyi koru, fiyat esnekliğini test et",
+    "Plowhorses": "İş ineği - maliyeti düşür (porsiyon/tedarikçi), üst-satış kombinasyonu öner",
+    "Puzzles": "Bulmaca - tanıtım/sunum iyileştir, menüde üst sıraya taşı, ad değiştir",
+    "Dogs": "Köpek - menüden çıkar veya tarifi yeniden tasarla",
 }
 
 
@@ -399,48 +321,49 @@ async def _build_menu_engineering(
     Karlılık eşiği = ağırlıklı ortalama katkı payı (CM/birim).
     """
     # 1) Menü kataloğu — fiyat + maliyet için
-    catalog_raw = await db.pos_menu_items.find(
-        {'tenant_id': tenant_id}, {'_id': 0}
-    ).to_list(500)
+    catalog_raw = await db.pos_menu_items.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(500)
     catalog: dict[str, dict[str, Any]] = {}
     for it in catalog_raw:
-        nm = it.get('name') or it.get('item_name')
+        nm = it.get("name") or it.get("item_name")
         if not nm:
             continue
         catalog[nm] = {
-            'price': float(it.get('price', 0) or 0),
-            'cost': float(it.get('cost', 0) or 0),
-            'menu_category': it.get('category') or 'Diğer',
+            "price": float(it.get("price", 0) or 0),
+            "cost": float(it.get("cost", 0) or 0),
+            "menu_category": it.get("category") or "Diğer",
         }
 
     # 2) Sipariş satırlarını topla
     order_filter: dict[str, Any] = {
-        'tenant_id': tenant_id,
-        'created_at': {'$gte': start_iso, '$lte': end_iso},
+        "tenant_id": tenant_id,
+        "created_at": {"$gte": start_iso, "$lte": end_iso},
     }
     if outlet_id:
-        order_filter['outlet_id'] = outlet_id
+        order_filter["outlet_id"] = outlet_id
 
-    orders = await db.pos_orders.find(order_filter, {'_id': 0, 'items': 1}).to_list(20000)
+    orders = await db.pos_orders.find(order_filter, {"_id": 0, "items": 1}).to_list(20000)
 
     agg: dict[str, dict[str, float]] = {}
     for order in orders:
-        for line in order.get('items', []) or []:
-            nm = line.get('item_name') or line.get('name') or 'Bilinmiyor'
-            qty = float(line.get('quantity', 1) or 1)
-            line_price = float(line.get('price', 0) or 0)
-            row = agg.setdefault(nm, {'qty': 0.0, 'revenue': 0.0})
-            row['qty'] += qty
-            row['revenue'] += qty * line_price
+        for line in order.get("items", []) or []:
+            nm = line.get("item_name") or line.get("name") or "Bilinmiyor"
+            qty = float(line.get("quantity", 1) or 1)
+            line_price = float(line.get("price", 0) or 0)
+            row = agg.setdefault(nm, {"qty": 0.0, "revenue": 0.0})
+            row["qty"] += qty
+            row["revenue"] += qty * line_price
 
     if not agg:
         return {
-            'period': {'start_date': start_iso[:10], 'end_date': end_iso[:10]},
-            'outlet_id': outlet_id,
-            'stars': 0, 'plowhorses': 0, 'puzzles': 0, 'dogs': 0,
-            'menu_items': [],
-            'thresholds': {'popularity_pct': 0, 'avg_cm_per_unit': 0},
-            'totals': {'items': 0, 'units_sold': 0, 'revenue': 0.0, 'contribution_margin': 0.0},
+            "period": {"start_date": start_iso[:10], "end_date": end_iso[:10]},
+            "outlet_id": outlet_id,
+            "stars": 0,
+            "plowhorses": 0,
+            "puzzles": 0,
+            "dogs": 0,
+            "menu_items": [],
+            "thresholds": {"popularity_pct": 0, "avg_cm_per_unit": 0},
+            "totals": {"items": 0, "units_sold": 0, "revenue": 0.0, "contribution_margin": 0.0},
         }
 
     # 3) Birim ekonomisi — fallback maliyet %35 food-cost varsayımı
@@ -449,25 +372,27 @@ async def _build_menu_engineering(
     total_cm = 0.0
     for nm, row in agg.items():
         cat = catalog.get(nm, {})
-        unit_price = cat.get('price') or (row['revenue'] / row['qty'] if row['qty'] else 0)
-        unit_cost = cat.get('cost') or unit_price * 0.35
-        cost_total = unit_cost * row['qty']
-        cm_total = row['revenue'] - cost_total
-        cm_per_unit = cm_total / row['qty'] if row['qty'] else 0
-        margin_pct = (cm_total / row['revenue'] * 100) if row['revenue'] else 0
-        enriched.append({
-            '_name': nm,
-            '_menu_cat': cat.get('menu_category', 'Diğer'),
-            '_qty': row['qty'],
-            '_revenue': row['revenue'],
-            '_cost': cost_total,
-            '_cm_total': cm_total,
-            '_cm_unit': cm_per_unit,
-            '_margin_pct': margin_pct,
-            '_unit_price': unit_price,
-            '_unit_cost': unit_cost,
-        })
-        total_qty += row['qty']
+        unit_price = cat.get("price") or (row["revenue"] / row["qty"] if row["qty"] else 0)
+        unit_cost = cat.get("cost") or unit_price * 0.35
+        cost_total = unit_cost * row["qty"]
+        cm_total = row["revenue"] - cost_total
+        cm_per_unit = cm_total / row["qty"] if row["qty"] else 0
+        margin_pct = (cm_total / row["revenue"] * 100) if row["revenue"] else 0
+        enriched.append(
+            {
+                "_name": nm,
+                "_menu_cat": cat.get("menu_category", "Diğer"),
+                "_qty": row["qty"],
+                "_revenue": row["revenue"],
+                "_cost": cost_total,
+                "_cm_total": cm_total,
+                "_cm_unit": cm_per_unit,
+                "_margin_pct": margin_pct,
+                "_unit_price": unit_price,
+                "_unit_cost": unit_cost,
+            }
+        )
+        total_qty += row["qty"]
         total_cm += cm_total
 
     # 4) Eşikler
@@ -477,77 +402,84 @@ async def _build_menu_engineering(
 
     # 5) Sınıflandırma
     out_items = []
-    counts = {'Stars': 0, 'Plowhorses': 0, 'Puzzles': 0, 'Dogs': 0}
+    counts = {"Stars": 0, "Plowhorses": 0, "Puzzles": 0, "Dogs": 0}
     for e in enriched:
-        pop_pct = (e['_qty'] / total_qty * 100) if total_qty else 0
+        pop_pct = (e["_qty"] / total_qty * 100) if total_qty else 0
         high_pop = pop_pct >= pop_threshold_pct
-        high_cm = e['_cm_unit'] >= cm_threshold
+        high_cm = e["_cm_unit"] >= cm_threshold
         if high_pop and high_cm:
-            cls = 'Stars'
+            cls = "Stars"
         elif high_pop and not high_cm:
-            cls = 'Plowhorses'
+            cls = "Plowhorses"
         elif not high_pop and high_cm:
-            cls = 'Puzzles'
+            cls = "Puzzles"
         else:
-            cls = 'Dogs'
+            cls = "Dogs"
         counts[cls] += 1
-        out_items.append({
-            'item_name': e['_name'],
-            'menu_category': e['_menu_cat'],
-            'category': cls,                # frontend bunu rozet için kullanıyor
-            'classification': cls,
-            'quantity_sold': int(e['_qty']),
-            'revenue': round(e['_revenue'], 2),
-            'unit_price': round(e['_unit_price'], 2),
-            'unit_cost': round(e['_unit_cost'], 2),
-            'contribution_margin': round(e['_cm_total'], 2),
-            'cm_per_unit': round(e['_cm_unit'], 2),
-            'profit_margin': round(e['_margin_pct'], 1),
-            'popularity_pct': round(pop_pct, 2),
-            'recommendation': _ME_RECOMMENDATIONS[cls],
-        })
+        out_items.append(
+            {
+                "item_name": e["_name"],
+                "menu_category": e["_menu_cat"],
+                "category": cls,  # frontend bunu rozet için kullanıyor
+                "classification": cls,
+                "quantity_sold": int(e["_qty"]),
+                "revenue": round(e["_revenue"], 2),
+                "unit_price": round(e["_unit_price"], 2),
+                "unit_cost": round(e["_unit_cost"], 2),
+                "contribution_margin": round(e["_cm_total"], 2),
+                "cm_per_unit": round(e["_cm_unit"], 2),
+                "profit_margin": round(e["_margin_pct"], 1),
+                "popularity_pct": round(pop_pct, 2),
+                "recommendation": _ME_RECOMMENDATIONS[cls],
+            }
+        )
 
     # Yıldızlar önce, köpekler sonra
-    rank = {'Stars': 0, 'Puzzles': 1, 'Plowhorses': 2, 'Dogs': 3}
-    out_items.sort(key=lambda x: (rank[x['classification']], -x['revenue']))
+    rank = {"Stars": 0, "Puzzles": 1, "Plowhorses": 2, "Dogs": 3}
+    out_items.sort(key=lambda x: (rank[x["classification"]], -x["revenue"]))
 
     return {
-        'period': {'start_date': start_iso[:10], 'end_date': end_iso[:10]},
-        'outlet_id': outlet_id,
-        'stars': counts['Stars'],
-        'plowhorses': counts['Plowhorses'],
-        'puzzles': counts['Puzzles'],
-        'dogs': counts['Dogs'],
-        'menu_items': out_items,
-        'thresholds': {
-            'popularity_pct': round(pop_threshold_pct, 2),
-            'avg_cm_per_unit': round(cm_threshold, 2),
-            'method': 'Kasavana-Smith (1/N × 70% popülerlik, ağırlıklı CM ortalaması)',
+        "period": {"start_date": start_iso[:10], "end_date": end_iso[:10]},
+        "outlet_id": outlet_id,
+        "stars": counts["Stars"],
+        "plowhorses": counts["Plowhorses"],
+        "puzzles": counts["Puzzles"],
+        "dogs": counts["Dogs"],
+        "menu_items": out_items,
+        "thresholds": {
+            "popularity_pct": round(pop_threshold_pct, 2),
+            "avg_cm_per_unit": round(cm_threshold, 2),
+            "method": "Kasavana-Smith (1/N × 70% popülerlik, ağırlıklı CM ortalaması)",
         },
-        'totals': {
-            'items': n_items,
-            'units_sold': int(total_qty),
-            'revenue': round(sum(e['_revenue'] for e in enriched), 2),
-            'contribution_margin': round(total_cm, 2),
+        "totals": {
+            "items": n_items,
+            "units_sold": int(total_qty),
+            "revenue": round(sum(e["_revenue"] for e in enriched), 2),
+            "contribution_margin": round(total_cm, 2),
         },
     }
+
 
 router = APIRouter(prefix="/api", tags=["PMS / POS & F&B"])
 
 
 # ── POST /marketplace/orders ──
 @router.post("/marketplace/orders", response_model=Order, dependencies=[Depends(require_feature("hidden_marketplace"))])
-async def create_order(order_data: OrderCreate, current_user: User = Depends(get_current_user),
+async def create_order(
+    order_data: OrderCreate,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     order = Order(tenant_id=current_user.tenant_id, **order_data.model_dump())
     order_dict = order.model_dump()
-    order_dict['created_at'] = order_dict['created_at'].isoformat()
+    order_dict["created_at"] = order_dict["created_at"].isoformat()
     await db.orders.insert_one(order_dict)
     return order
+
+
 # ── GET /marketplace/orders ──
 @router.get("/marketplace/orders", response_model=list[Order], dependencies=[Depends(require_feature("hidden_marketplace"))])
 @cached(ttl=300, key_prefix="marketplace_orders")  # Cache for 5 min
 async def get_orders(current_user: User = Depends(get_current_user)):
-    orders = await db.orders.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
+    orders = await db.orders.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
     return orders

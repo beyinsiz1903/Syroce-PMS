@@ -4,6 +4,7 @@ ARI Event Buffer with debounce.
 In-memory buffer that collects ARI events and flushes them
 after a debounce window per event type. Each flush triggers coalescing.
 """
+
 import asyncio
 import logging
 import time
@@ -18,11 +19,7 @@ logger = logging.getLogger(__name__)
 
 def _coalescing_key(event: ARIChangeEvent) -> str:
     """Build the coalescing key for grouping events."""
-    return (
-        f"{event.tenant_id}|{event.property_id}|"
-        f"{event.room_type_code}|{event.rate_plan_code or ''}|"
-        f"{event.date_from}:{event.date_to}|{event.event_type}"
-    )
+    return f"{event.tenant_id}|{event.property_id}|{event.room_type_code}|{event.rate_plan_code or ''}|{event.date_from}:{event.date_to}|{event.event_type}"
 
 
 class ARIEventBuffer:

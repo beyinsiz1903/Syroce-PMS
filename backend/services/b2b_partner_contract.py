@@ -21,6 +21,7 @@ Resolution (additive, non-destructive, back-compatible):
 Read-only. No writes, no PII. Tenant-scoped by construction: the contract lookup
 is keyed (agency_id, tenant_id) and the agency id is unique within its tenant.
 """
+
 from __future__ import annotations
 
 import logging
@@ -97,13 +98,15 @@ def _normalize_allotments(raw) -> list[dict]:
     for item in raw:
         if not isinstance(item, dict):
             continue
-        out.append({
-            "room_type": item.get("room_type"),
-            "period_start": item.get("period_start"),
-            "period_end": item.get("period_end"),
-            "rooms_allocated": int(item.get("rooms_allocated", 0) or 0),
-            "rooms_used": int(item.get("rooms_used", 0) or 0),
-        })
+        out.append(
+            {
+                "room_type": item.get("room_type"),
+                "period_start": item.get("period_start"),
+                "period_end": item.get("period_end"),
+                "rooms_allocated": int(item.get("rooms_allocated", 0) or 0),
+                "rooms_used": int(item.get("rooms_used", 0) or 0),
+            }
+        )
     return out
 
 
@@ -130,13 +133,17 @@ async def build_snapshot(
 
     contract = await has_active_contract(agency_id, tenant_id, on_date)
 
-    agency = await sysdb.agencies.find_one(
-        {"id": agency_id, "tenant_id": tenant_id},
-        {"_id": 0, "commission_rate": 1, "current_debt": 1, "currency": 1},
-    ) or {}
+    agency = (
+        await sysdb.agencies.find_one(
+            {"id": agency_id, "tenant_id": tenant_id},
+            {"_id": 0, "commission_rate": 1, "current_debt": 1, "currency": 1},
+        )
+        or {}
+    )
 
-    legacy_commission = float(agency_doc.get("commission_rate", agency.get("commission_rate", _DEFAULT_COMMISSION_PCT))
-                              if agency_doc else agency.get("commission_rate", _DEFAULT_COMMISSION_PCT) or _DEFAULT_COMMISSION_PCT)
+    legacy_commission = float(
+        agency_doc.get("commission_rate", agency.get("commission_rate", _DEFAULT_COMMISSION_PCT)) if agency_doc else agency.get("commission_rate", _DEFAULT_COMMISSION_PCT) or _DEFAULT_COMMISSION_PCT
+    )
     current_debt = float(agency.get("current_debt", 0.0) or 0.0)
 
     if contract:
@@ -162,9 +169,7 @@ async def build_snapshot(
         allotments = []
         contract_id = contract_code = valid_from = valid_to = None
 
-    available_credit = (
-        round(credit_limit - current_debt, 2) if credit_limit is not None else None
-    )
+    available_credit = round(credit_limit - current_debt, 2) if credit_limit is not None else None
 
     return PartnerContractSnapshot(
         tenant_id=tenant_id,

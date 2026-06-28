@@ -85,8 +85,7 @@ class ReservationsRepository:
             {"_id": 0},
         )
 
-    async def update_booking(self, tenant_id: str, booking_id: str, update_doc: dict[str, Any],
-                             expected_version: int | None = None) -> bool:
+    async def update_booking(self, tenant_id: str, booking_id: str, update_doc: dict[str, Any], expected_version: int | None = None) -> bool:
         """Update booking with optional optimistic locking (INV-4).
 
         If expected_version is provided, the update only succeeds if the
@@ -110,6 +109,7 @@ class ReservationsRepository:
 
     async def insert_booking(self, booking_doc: dict[str, Any]) -> None:
         from core.atomic_booking import create_booking_atomic
+
         await create_booking_atomic(booking_doc)
 
     async def insert_rate_override_log(self, override_doc: dict[str, Any]) -> None:
@@ -135,6 +135,7 @@ class ReservationsRepository:
             IDEMPOTENCY_PROCESSING_GRACE_SECONDS,
             unseal_response_body,
         )
+
         lock_id = hashlib.sha256(f"{tenant_id}:{scope}:{idempotency_key}".encode()).hexdigest()
         now = datetime.now(UTC)
         lock_doc = {
@@ -173,6 +174,7 @@ class ReservationsRepository:
             IDEMPOTENCY_RETENTION_SECONDS,
             seal_response_body,
         )
+
         now = datetime.now(UTC)
         await db.idempotency_keys.update_one(
             {"_id": lock_id},
@@ -193,6 +195,7 @@ class ReservationsRepository:
         from datetime import timedelta as _td
 
         from shared_kernel.idempotency import IDEMPOTENCY_RETENTION_SECONDS
+
         now = datetime.now(UTC)
         await db.idempotency_keys.update_one(
             {"_id": lock_id},

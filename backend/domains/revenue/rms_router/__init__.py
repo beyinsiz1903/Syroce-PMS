@@ -3,6 +3,7 @@
 Auto-generated split of legacy rms_router.py into sub-modules.
 External imports (`from domains.revenue.rms_router import router`) continue to work.
 """
+
 from fastapi import APIRouter
 
 from .comp_set import router as _comp_set_router
@@ -26,4 +27,4 @@ router.include_router(_housekeeping_inventory_router)
 router.include_router(_notifications_mobile_router)
 router.include_router(_dashboards_router)
 
-__all__ = ['router']
+__all__ = ["router"]

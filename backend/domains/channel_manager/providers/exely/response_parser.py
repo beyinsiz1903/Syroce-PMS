@@ -2,6 +2,7 @@
 Exely SOAP Response Parser
 Parses OTA-standard XML responses from the Exely channel manager.
 """
+
 import logging
 from typing import Any
 
@@ -143,10 +144,12 @@ def _parse_hotel_reservation(hr_el) -> dict[str, Any] | None:
             room["rate_plan_code"] = room.get("rate_plan_code") or _attr(rr, "RatePlanCode")
 
             for rate in rr.iter(_ns("Rate")):
-                daily_rates.append({
-                    "date": _attr(rate, "EffectiveDate", ""),
-                    "amount": _safe_float(_attr(rate, "AmountAfterTax", _attr(rate, "AmountBeforeTax", "0"))),
-                })
+                daily_rates.append(
+                    {
+                        "date": _attr(rate, "EffectiveDate", ""),
+                        "amount": _safe_float(_attr(rate, "AmountAfterTax", _attr(rate, "AmountBeforeTax", "0"))),
+                    }
+                )
 
         room["daily_rates"] = daily_rates
 
@@ -239,18 +242,22 @@ def parse_hotel_avail_rs(xml_bytes: bytes) -> dict[str, Any]:
             # HopenAPI uses RoomDescription with Name attribute
             desc = rt.find(_ns("RoomDescription"))
             name = _attr(desc, "Name", _attr(rt, "RoomDescription", _attr(rt, "RoomTypeCode")))
-            room_types.append({
-                "code": _attr(rt, "RoomTypeCode"),
-                "name": name,
-                "quantity": int(_attr(rt, "NumberOfUnits", "0")),
-            })
+            room_types.append(
+                {
+                    "code": _attr(rt, "RoomTypeCode"),
+                    "name": name,
+                    "quantity": int(_attr(rt, "NumberOfUnits", "0")),
+                }
+            )
         for rp in room_stay.iter(_ns("RatePlan")):
             desc = rp.find(_ns("RatePlanDescription"))
             name = _attr(desc, "Name", _attr(rp, "RatePlanName", ""))
-            rate_plans.append({
-                "code": _attr(rp, "RatePlanCode"),
-                "name": name,
-            })
+            rate_plans.append(
+                {
+                    "code": _attr(rp, "RatePlanCode"),
+                    "name": name,
+                }
+            )
 
     # Deduplicate
     seen_rooms = set()

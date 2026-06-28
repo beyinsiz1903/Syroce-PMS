@@ -1,6 +1,7 @@
 """
 Analytics Export Router.
 """
+
 import io
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,6 +22,7 @@ def _get_service():
     if _service is None:
         from modules.analytics_export.service import AnalyticsExportService
         from server import db
+
         _service = AnalyticsExportService(db)
     return _service
 
@@ -39,12 +41,18 @@ class ExportReq(BaseModel):
 
 
 @router.post("/generate")
-async def generate_export(req: ExportReq, current_user: User = Depends(get_current_user),
+async def generate_export(
+    req: ExportReq,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),  # v98 DW
 ):
     svc = _get_service()
     result = await svc.create_export(
-        current_user.tenant_id, req.report_type, req.export_format, req.filters, current_user.id,
+        current_user.tenant_id,
+        req.report_type,
+        req.export_format,
+        req.filters,
+        current_user.id,
     )
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error", "Export failed"))
@@ -61,12 +69,18 @@ async def generate_export(req: ExportReq, current_user: User = Depends(get_curre
 
 
 @router.post("/download")
-async def download_export(req: ExportReq, current_user: User = Depends(get_current_user),
+async def download_export(
+    req: ExportReq,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),  # v98 DW
 ):
     svc = _get_service()
     result = await svc.create_export(
-        current_user.tenant_id, req.report_type, req.export_format, req.filters, current_user.id,
+        current_user.tenant_id,
+        req.report_type,
+        req.export_format,
+        req.filters,
+        current_user.id,
     )
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error", "Export failed"))

@@ -1,6 +1,7 @@
 """
 ARI Push Engine — MongoDB repositories.
 """
+
 import hashlib
 import json
 import uuid
@@ -56,6 +57,7 @@ def compute_outbound_delta_hash(
 
 # ── ARI Events ───────────────────────────────────────────────────────
 
+
 async def insert_ari_event(event: dict) -> str:
     event_id = event.get("id", str(uuid.uuid4()))
     doc = {
@@ -78,8 +80,10 @@ async def insert_ari_event(event: dict) -> str:
 
 
 async def get_ari_events(
-    tenant_id: str, property_id: str,
-    limit: int = 50, skip: int = 0,
+    tenant_id: str,
+    property_id: str,
+    limit: int = 50,
+    skip: int = 0,
     event_type: str | None = None,
 ) -> list[dict]:
     query: dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
@@ -90,6 +94,7 @@ async def get_ari_events(
 
 
 # ── ARI Change Sets ──────────────────────────────────────────────────
+
 
 async def upsert_change_set(cs: dict) -> str:
     """Upsert a change set by coalescing_key. Returns the change set id."""
@@ -102,14 +107,16 @@ async def upsert_change_set(cs: dict) -> str:
     if existing:
         await db[COLL_ARI_CHANGE_SETS].update_one(
             {"id": existing["id"]},
-            {"$set": {
-                "compacted_payload": cs["compacted_payload"],
-                "provider_delta_hash": cs["provider_delta_hash"],
-                "date_from": cs["date_from"],
-                "date_to": cs["date_to"],
-                "updated_at": now,
-                "status": STATUS_PENDING,
-            }},
+            {
+                "$set": {
+                    "compacted_payload": cs["compacted_payload"],
+                    "provider_delta_hash": cs["provider_delta_hash"],
+                    "date_from": cs["date_from"],
+                    "date_to": cs["date_to"],
+                    "updated_at": now,
+                    "status": STATUS_PENDING,
+                }
+            },
         )
         return existing["id"]
     else:
@@ -141,7 +148,9 @@ async def upsert_change_set(cs: dict) -> str:
 
 
 async def get_pending_change_sets(
-    tenant_id: str, provider: str | None = None, limit: int = 50,
+    tenant_id: str,
+    provider: str | None = None,
+    limit: int = 50,
 ) -> list[dict]:
     query: dict[str, Any] = {"tenant_id": tenant_id, "status": {"$in": ["pending", "failed_retryable"]}}
     if provider:
@@ -151,9 +160,12 @@ async def get_pending_change_sets(
 
 
 async def get_change_sets(
-    tenant_id: str, property_id: str,
-    status: str | None = None, provider: str | None = None,
-    limit: int = 50, skip: int = 0,
+    tenant_id: str,
+    property_id: str,
+    status: str | None = None,
+    provider: str | None = None,
+    limit: int = 50,
+    skip: int = 0,
 ) -> list[dict]:
     query: dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
     if status:
@@ -165,7 +177,8 @@ async def get_change_sets(
 
 
 async def update_change_set_status(
-    cs_id: str, status: str,
+    cs_id: str,
+    status: str,
     error: str | None = None,
     inc_attempt: bool = False,
 ) -> None:
@@ -184,18 +197,22 @@ async def update_change_set_status(
 async def check_outbound_idempotency(provider: str, property_id: str, delta_hash: str) -> bool:
     """Return True if this exact delta was already pushed recently (within last hour)."""
     from datetime import timedelta
+
     cutoff = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
-    existing = await db[COLL_ARI_CHANGE_SETS].find_one({
-        "provider": provider,
-        "property_id": property_id,
-        "provider_delta_hash": delta_hash,
-        "status": "acked",
-        "last_provider_ack_at": {"$gte": cutoff},
-    })
+    existing = await db[COLL_ARI_CHANGE_SETS].find_one(
+        {
+            "provider": provider,
+            "property_id": property_id,
+            "provider_delta_hash": delta_hash,
+            "status": "acked",
+            "last_provider_ack_at": {"$gte": cutoff},
+        }
+    )
     return existing is not None
 
 
 # ── Outbound Logs ────────────────────────────────────────────────────
+
 
 async def insert_outbound_log(log: dict) -> str:
     log_id = str(uuid.uuid4())
@@ -219,9 +236,11 @@ async def insert_outbound_log(log: dict) -> str:
 
 
 async def get_outbound_logs(
-    tenant_id: str, property_id: str,
+    tenant_id: str,
+    property_id: str,
     provider: str | None = None,
-    limit: int = 50, skip: int = 0,
+    limit: int = 50,
+    skip: int = 0,
 ) -> list[dict]:
     query: dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
     if provider:
@@ -231,6 +250,7 @@ async def get_outbound_logs(
 
 
 # ── Drift State ──────────────────────────────────────────────────────
+
 
 async def upsert_drift_state(ds: dict) -> None:
     key = {
@@ -245,17 +265,20 @@ async def upsert_drift_state(ds: dict) -> None:
     now = _now_iso()
     await db[COLL_ARI_DRIFT_STATE].update_one(
         key,
-        {"$set": {
-            **ds,
-            "last_checked_at": now,
-            "updated_at": now,
-        }},
+        {
+            "$set": {
+                **ds,
+                "last_checked_at": now,
+                "updated_at": now,
+            }
+        },
         upsert=True,
     )
 
 
 async def get_drift_states(
-    tenant_id: str, property_id: str,
+    tenant_id: str,
+    property_id: str,
     provider: str | None = None,
     drift_only: bool = False,
     limit: int = 50,
@@ -285,7 +308,8 @@ DRIFT_CONFIG = {
 async def get_tenant_drift_mode(tenant_id: str) -> dict:
     """Return tenant-scoped drift mode config. Defaults to normal."""
     doc = await db[COLL_ARI_DRIFT_MODES].find_one(
-        {"tenant_id": tenant_id}, {"_id": 0},
+        {"tenant_id": tenant_id},
+        {"_id": 0},
     )
     mode = (doc or {}).get("mode") or DRIFT_MODE_NORMAL
     if mode not in DRIFT_CONFIG:
@@ -302,12 +326,14 @@ async def set_tenant_drift_mode(tenant_id: str, mode: str, actor_id: str | None 
     prev = await db[COLL_ARI_DRIFT_MODES].find_one({"tenant_id": tenant_id}, {"_id": 0, "mode": 1})
     await db[COLL_ARI_DRIFT_MODES].update_one(
         {"tenant_id": tenant_id},
-        {"$set": {
-            "tenant_id": tenant_id,
-            "mode": mode,
-            "actor_id": actor_id,
-            "updated_at": now,
-        }},
+        {
+            "$set": {
+                "tenant_id": tenant_id,
+                "mode": mode,
+                "actor_id": actor_id,
+                "updated_at": now,
+            }
+        },
         upsert=True,
     )
     cfg = DRIFT_CONFIG[mode]
@@ -366,9 +392,7 @@ async def get_operational_metrics(tenant_id: str, property_id: str) -> dict:
     """
     # Provider health metrics per provider
     provider_health = {}
-    providers = await db[COLL_ARI_OUTBOUND_LOGS].distinct(
-        "provider", {"tenant_id": tenant_id, "property_id": property_id}
-    )
+    providers = await db[COLL_ARI_OUTBOUND_LOGS].distinct("provider", {"tenant_id": tenant_id, "property_id": property_id})
 
     for prov in providers:
         base_query = {"tenant_id": tenant_id, "property_id": property_id, "provider": prov}
@@ -377,10 +401,14 @@ async def get_operational_metrics(tenant_id: str, property_id: str) -> dict:
         failed = total - success
 
         # Retry count from change sets
-        retry_count = await db[COLL_ARI_CHANGE_SETS].count_documents({
-            "tenant_id": tenant_id, "property_id": property_id,
-            "provider": prov, "status": "failed_retryable",
-        })
+        retry_count = await db[COLL_ARI_CHANGE_SETS].count_documents(
+            {
+                "tenant_id": tenant_id,
+                "property_id": property_id,
+                "provider": prov,
+                "status": "failed_retryable",
+            }
+        )
 
         provider_health[prov] = {
             "total_pushes": total,
@@ -393,11 +421,13 @@ async def get_operational_metrics(tenant_id: str, property_id: str) -> dict:
     latency_pipeline = [
         {"$match": {"tenant_id": tenant_id, "property_id": property_id, "duration_ms": {"$gt": 0}}},
         {"$sort": {"duration_ms": 1}},
-        {"$group": {
-            "_id": "$provider",
-            "durations": {"$push": "$duration_ms"},
-            "count": {"$sum": 1},
-        }},
+        {
+            "$group": {
+                "_id": "$provider",
+                "durations": {"$push": "$duration_ms"},
+                "count": {"$sum": 1},
+            }
+        },
     ]
     latency_data = await db[COLL_ARI_OUTBOUND_LOGS].aggregate(latency_pipeline).to_list(10)
 
@@ -414,18 +444,27 @@ async def get_operational_metrics(tenant_id: str, property_id: str) -> dict:
         }
 
     # Queue stats
-    queue_depth = await db[COLL_ARI_CHANGE_SETS].count_documents({
-        "tenant_id": tenant_id, "property_id": property_id,
-        "status": {"$in": ["pending", "queued"]},
-    })
-    retry_backlog = await db[COLL_ARI_CHANGE_SETS].count_documents({
-        "tenant_id": tenant_id, "property_id": property_id,
-        "status": "failed_retryable",
-    })
-    dead_letter_count = await db[COLL_ARI_CHANGE_SETS].count_documents({
-        "tenant_id": tenant_id, "property_id": property_id,
-        "status": "manual_review",
-    })
+    queue_depth = await db[COLL_ARI_CHANGE_SETS].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "property_id": property_id,
+            "status": {"$in": ["pending", "queued"]},
+        }
+    )
+    retry_backlog = await db[COLL_ARI_CHANGE_SETS].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "property_id": property_id,
+            "status": "failed_retryable",
+        }
+    )
+    dead_letter_count = await db[COLL_ARI_CHANGE_SETS].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "property_id": property_id,
+            "status": "manual_review",
+        }
+    )
 
     return {
         "provider_health": provider_health,

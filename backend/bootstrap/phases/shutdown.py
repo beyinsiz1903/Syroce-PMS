@@ -1,4 +1,5 @@
 """Graceful shutdown — closes connections and stops workers (mirrors original on_shutdown)."""
+
 import logging
 
 from core.database import client
@@ -10,20 +11,25 @@ async def shutdown_all(app):
     # Infrastructure cleanup
     try:
         from infra.horizontal_scaling import scaling_manager
+
         await scaling_manager.deregister()
         from infra.ws_redis_adapter import ws_redis_adapter
+
         await ws_redis_adapter.close()
         try:
             from infra.auth_cache_pubsub import auth_cache_pubsub
+
             await auth_cache_pubsub.close()
         except Exception as e:
             logger.warning(f"Auth cache pub/sub shutdown warning: {e}")
         try:
             from infra.kbs_queue_pubsub import kbs_queue_pubsub
+
             await kbs_queue_pubsub.close()
         except Exception as e:
             logger.warning(f"KBS queue pub/sub shutdown warning: {e}")
         from infra.redis_cluster import redis_cluster
+
         await redis_cluster.close()
     except Exception as e:
         logger.warning(f"Infrastructure shutdown warning: {e}")
@@ -83,6 +89,7 @@ async def shutdown_all(app):
     # Monitoring worker
     try:
         from domains.channel_manager.monitoring.monitoring_worker import stop_monitoring_worker
+
         await stop_monitoring_worker()
     except Exception as e:
         logger.warning(f"Monitoring worker shutdown warning: {e}")
@@ -90,6 +97,7 @@ async def shutdown_all(app):
     # Cockpit snapshot worker
     try:
         from domains.channel_manager.cockpit_snapshot_worker import stop_cockpit_worker
+
         stop_cockpit_worker()
     except Exception as e:
         logger.warning(f"Cockpit snapshot worker shutdown warning: {e}")
@@ -126,6 +134,7 @@ async def shutdown_all(app):
         from domains.guest.messaging.web_push_cleanup import (
             stop_web_push_cleanup_worker,
         )
+
         await stop_web_push_cleanup_worker()
     except Exception as e:
         logger.warning(f"Web Push cleanup worker shutdown warning: {e}")

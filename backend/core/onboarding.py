@@ -2,6 +2,7 @@
 Onboarding Automation Engine
 Structured per-tenant onboarding checklist with auto-detection and progress tracking.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -167,19 +168,20 @@ async def _auto_detect_step(tenant_id: str, step: dict) -> bool:
     try:
         if handler == "hotel_info":
             from core.database import _raw_db
-            tenant = await _raw_db.tenants.find_one(
-                {"id": tenant_id},
-                {"_id": 0, "property_name": 1, "contact_phone": 1, "total_rooms": 1},
-            ) or {}
-            return bool(
-                (tenant.get("property_name") or "").strip()
-                and (tenant.get("contact_phone") or "").strip()
-                and int(tenant.get("total_rooms") or 0) > 0
+
+            tenant = (
+                await _raw_db.tenants.find_one(
+                    {"id": tenant_id},
+                    {"_id": 0, "property_name": 1, "contact_phone": 1, "total_rooms": 1},
+                )
+                or {}
             )
+            return bool((tenant.get("property_name") or "").strip() and (tenant.get("contact_phone") or "").strip() and int(tenant.get("total_rooms") or 0) > 0)
 
         if step.get("step_id") == "account_created":
             # Tenant doc'u var = hesap oluşturulmuş ✓ (P2 #22 fix).
             from core.database import _raw_db
+
             t = await _raw_db.tenants.find_one({"id": tenant_id}, {"_id": 0, "id": 1})
             return bool(t)
 
@@ -209,9 +211,7 @@ async def _auto_detect_step(tenant_id: str, step: dict) -> bool:
 async def get_onboarding_progress(tenant_id: str) -> dict[str, Any]:
     """Get onboarding progress for a tenant. Auto-detects completed steps."""
     # Get or create progress doc
-    progress = await db.onboarding_progress.find_one(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    )
+    progress = await db.onboarding_progress.find_one({"tenant_id": tenant_id}, {"_id": 0})
 
     completed_steps = {}
     if progress:
@@ -220,16 +220,15 @@ async def get_onboarding_progress(tenant_id: str) -> dict[str, Any]:
     # Get tenant modules for filtering
     tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "modules": 1, "subscription_tier": 1})
     from core.helpers import get_tenant_modules
+
     modules = get_tenant_modules(tenant) if tenant else {}
 
     # Filter steps to only those the tenant has modules for.
-    eligible_steps = [
-        s for s in DEFAULT_STEPS
-        if not s.get("requires_module") or modules.get(s["requires_module"], False)
-    ]
+    eligible_steps = [s for s in DEFAULT_STEPS if not s.get("requires_module") or modules.get(s["requires_module"], False)]
 
     # Run all auto-detect probes concurrently (was: sequential per-step query).
     import asyncio as _asyncio
+
     detect_tasks = []
     for step in eligible_steps:
         sid = step["step_id"]
@@ -237,8 +236,10 @@ async def get_onboarding_progress(tenant_id: str) -> dict[str, Any]:
         if not already and step.get("auto_detect"):
             detect_tasks.append(_auto_detect_step(tenant_id, step))
         else:
+
             async def _noop(v=already):
                 return v
+
             detect_tasks.append(_noop())
     detect_results = await _asyncio.gather(*detect_tasks)
 
@@ -253,14 +254,16 @@ async def get_onboarding_progress(tenant_id: str) -> dict[str, Any]:
             completed_steps[sid] = True
         if is_completed:
             done += 1
-        steps_result.append({
-            "step_id": sid,
-            "label": step["label"],
-            "description": step["description"],
-            "category": step["category"],
-            "order": step["order"],
-            "completed": is_completed,
-        })
+        steps_result.append(
+            {
+                "step_id": sid,
+                "label": step["label"],
+                "description": step["description"],
+                "category": step["category"],
+                "order": step["order"],
+                "completed": is_completed,
+            }
+        )
 
     # Update stored progress
     now = datetime.now(UTC).isoformat()
@@ -326,13 +329,15 @@ async def get_all_onboarding_status() -> list[dict[str, Any]]:
     results = []
     for t in tenants:
         progress = progress_map.get(t["id"])
-        results.append({
-            "tenant_id": t["id"],
-            "property_name": t.get("property_name", "?"),
-            "tier": t.get("subscription_tier", "basic"),
-            "progress_pct": progress.get("progress_pct", 0) if progress else 0,
-            "completed": progress.get("completed_count", 0) if progress else 0,
-            "total": progress.get("total_steps", 0) if progress else 0,
-        })
+        results.append(
+            {
+                "tenant_id": t["id"],
+                "property_name": t.get("property_name", "?"),
+                "tier": t.get("subscription_tier", "basic"),
+                "progress_pct": progress.get("progress_pct", 0) if progress else 0,
+                "completed": progress.get("completed_count", 0) if progress else 0,
+                "total": progress.get("total_steps", 0) if progress else 0,
+            }
+        )
 
     return sorted(results, key=lambda r: r["progress_pct"])

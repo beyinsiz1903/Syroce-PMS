@@ -28,6 +28,7 @@ Each warning produces:
   - recommended_action
   - impacted_scope
 """
+
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
@@ -83,9 +84,7 @@ class EarlyWarningConfig:
             self._values.update(overrides)
         self._connector_overrides: dict[str, dict[str, int | float]] = {}
 
-    def register_connector_override(
-        self, connector: str, overrides: dict[str, int | float]
-    ) -> None:
+    def register_connector_override(self, connector: str, overrides: dict[str, int | float]) -> None:
         self._connector_overrides[connector] = overrides
 
     def get(self, key: str, connector: str | None = None) -> int | float:
@@ -142,6 +141,7 @@ DEDUP_WINDOW_MINUTES = ew_config.get("dedup_window_minutes")
 # Data Models
 # ══════════════════════════════════════════════════════════════════════
 
+
 class EarlyWarning:
     """Represents a predictive warning."""
 
@@ -187,11 +187,8 @@ class EarlyWarning:
 # Trend Data Collectors
 # ══════════════════════════════════════════════════════════════════════
 
-async def get_failure_rate_trend(
-    tenant_id: str,
-    connector_id: str,
-    provider: str
-) -> dict[str, Any]:
+
+async def get_failure_rate_trend(tenant_id: str, connector_id: str, provider: str) -> dict[str, Any]:
     """Get failure rate trend across multiple time windows."""
     now = datetime.now(UTC)
 
@@ -203,17 +200,21 @@ async def get_failure_rate_trend(
 
     results = {}
     for window_name, since in windows.items():
-        total = await db.cm_rate_push_metrics.count_documents({
-            "tenant_id": tenant_id,
-            "connector_id": connector_id,
-            "recorded_at": {"$gte": since},
-        })
-        failed = await db.cm_rate_push_metrics.count_documents({
-            "tenant_id": tenant_id,
-            "connector_id": connector_id,
-            "success": False,
-            "recorded_at": {"$gte": since},
-        })
+        total = await db.cm_rate_push_metrics.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "connector_id": connector_id,
+                "recorded_at": {"$gte": since},
+            }
+        )
+        failed = await db.cm_rate_push_metrics.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "connector_id": connector_id,
+                "success": False,
+                "recorded_at": {"$gte": since},
+            }
+        )
         rate = round(failed / max(total, 1) * 100, 1)
         results[window_name] = {
             "total": total,
@@ -247,6 +248,7 @@ async def get_failure_rate_trend(
 async def get_dlq_trend(tenant_id: str) -> dict[str, Any]:
     """Get DLQ growth trend."""
     from core.tenant_db import get_system_db
+
     sysdb = get_system_db()
 
     now = datetime.now(UTC)
@@ -254,20 +256,26 @@ async def get_dlq_trend(tenant_id: str) -> dict[str, Any]:
     short_since = (now - timedelta(minutes=tw_short)).isoformat()
     medium_since = (now - timedelta(minutes=ew_config.get("trend_window_medium"))).isoformat()
 
-    pending_count = await sysdb.webhook_dlq.count_documents({
-        "tenant_id": tenant_id,
-        "status": "pending",
-    })
+    pending_count = await sysdb.webhook_dlq.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "pending",
+        }
+    )
 
-    recent_additions = await sysdb.webhook_dlq.count_documents({
-        "tenant_id": tenant_id,
-        "created_at": {"$gte": short_since},
-    })
+    recent_additions = await sysdb.webhook_dlq.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "created_at": {"$gte": short_since},
+        }
+    )
 
-    medium_additions = await sysdb.webhook_dlq.count_documents({
-        "tenant_id": tenant_id,
-        "created_at": {"$gte": medium_since},
-    })
+    medium_additions = await sysdb.webhook_dlq.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "created_at": {"$gte": medium_since},
+        }
+    )
 
     growth_rate = recent_additions
 
@@ -284,21 +292,26 @@ async def get_dlq_trend(tenant_id: str) -> dict[str, Any]:
 async def get_backlog_trend(tenant_id: str) -> dict[str, Any]:
     """Get retry backlog trend."""
     from core.tenant_db import get_system_db
+
     sysdb = get_system_db()
 
     now = datetime.now(UTC)
     short_since = (now - timedelta(minutes=ew_config.get("trend_window_short"))).isoformat()
 
-    current_backlog = await sysdb.webhook_deliveries.count_documents({
-        "tenant_id": tenant_id,
-        "status": "retrying",
-    })
+    current_backlog = await sysdb.webhook_deliveries.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "retrying",
+        }
+    )
 
-    recent_retrying = await sysdb.webhook_deliveries.count_documents({
-        "tenant_id": tenant_id,
-        "status": "retrying",
-        "created_at": {"$gte": short_since},
-    })
+    recent_retrying = await sysdb.webhook_deliveries.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "retrying",
+            "created_at": {"$gte": short_since},
+        }
+    )
 
     return {
         "current_backlog": current_backlog,
@@ -316,26 +329,32 @@ async def get_throttle_trend(tenant_id: str, provider: str) -> dict[str, Any]:
     since_24h = (now - timedelta(hours=24)).isoformat()
 
     # Throttle events by window
-    throttle_1h = await db.ops_events.count_documents({
-        "tenant_id": tenant_id,
-        "event_type": {"$in": ["rate_limit.active", "push.throttled"]},
-        "channel": {"$regex": provider, "$options": "i"},
-        "created_at": {"$gte": since_1h},
-    })
+    throttle_1h = await db.ops_events.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "event_type": {"$in": ["rate_limit.active", "push.throttled"]},
+            "channel": {"$regex": provider, "$options": "i"},
+            "created_at": {"$gte": since_1h},
+        }
+    )
 
-    throttle_6h = await db.ops_events.count_documents({
-        "tenant_id": tenant_id,
-        "event_type": {"$in": ["rate_limit.active", "push.throttled"]},
-        "channel": {"$regex": provider, "$options": "i"},
-        "created_at": {"$gte": since_6h},
-    })
+    throttle_6h = await db.ops_events.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "event_type": {"$in": ["rate_limit.active", "push.throttled"]},
+            "channel": {"$regex": provider, "$options": "i"},
+            "created_at": {"$gte": since_6h},
+        }
+    )
 
-    throttle_24h = await db.ops_events.count_documents({
-        "tenant_id": tenant_id,
-        "event_type": {"$in": ["rate_limit.active", "push.throttled"]},
-        "channel": {"$regex": provider, "$options": "i"},
-        "created_at": {"$gte": since_24h},
-    })
+    throttle_24h = await db.ops_events.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "event_type": {"$in": ["rate_limit.active", "push.throttled"]},
+            "channel": {"$regex": provider, "$options": "i"},
+            "created_at": {"$gte": since_24h},
+        }
+    )
 
     # Check if frequency is increasing
     avg_6h = throttle_6h / 6  # per hour
@@ -354,10 +373,7 @@ async def get_throttle_trend(tenant_id: str, provider: str) -> dict[str, Any]:
     }
 
 
-async def get_staleness_data(
-    tenant_id: str,
-    connector_id: str
-) -> dict[str, Any]:
+async def get_staleness_data(tenant_id: str, connector_id: str) -> dict[str, Any]:
     """Get last success age data."""
     now = datetime.now(UTC)
 
@@ -417,22 +433,27 @@ async def get_health_score_trend(
     async def calc_health(since: str) -> int:
         """Calculate health score for a time window."""
         from core.tenant_db import get_system_db
+
         sysdb = get_system_db()
 
         score = 100
 
         # Failure rate impact
-        total = await db.cm_rate_push_metrics.count_documents({
-            "tenant_id": tenant_id,
-            "connector_id": connector_id,
-            "recorded_at": {"$gte": since},
-        })
-        failed = await db.cm_rate_push_metrics.count_documents({
-            "tenant_id": tenant_id,
-            "connector_id": connector_id,
-            "success": False,
-            "recorded_at": {"$gte": since},
-        })
+        total = await db.cm_rate_push_metrics.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "connector_id": connector_id,
+                "recorded_at": {"$gte": since},
+            }
+        )
+        failed = await db.cm_rate_push_metrics.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "connector_id": connector_id,
+                "success": False,
+                "recorded_at": {"$gte": since},
+            }
+        )
         failure_rate = failed / max(total, 1) * 100
 
         if failure_rate > 50:
@@ -443,10 +464,12 @@ async def get_health_score_trend(
             score -= 10
 
         # DLQ impact
-        dlq_count = await sysdb.webhook_dlq.count_documents({
-            "tenant_id": tenant_id,
-            "status": "pending",
-        })
+        dlq_count = await sysdb.webhook_dlq.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "status": "pending",
+            }
+        )
         if dlq_count > 10:
             score -= 30
         elif dlq_count > 5:
@@ -455,10 +478,12 @@ async def get_health_score_trend(
             score -= 10
 
         # Retry backlog impact
-        backlog = await sysdb.webhook_deliveries.count_documents({
-            "tenant_id": tenant_id,
-            "status": "retrying",
-        })
+        backlog = await sysdb.webhook_deliveries.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "status": "retrying",
+            }
+        )
         if backlog > 20:
             score -= 15
         elif backlog > 5:
@@ -494,6 +519,7 @@ async def get_health_score_trend(
 # ══════════════════════════════════════════════════════════════════════
 # Warning Generators
 # ══════════════════════════════════════════════════════════════════════
+
 
 async def check_failure_rate_warning(
     tenant_id: str,
@@ -763,6 +789,7 @@ async def check_recovery_signal(
 # Main Analysis Engine
 # ══════════════════════════════════════════════════════════════════════
 
+
 async def analyze_connector_warnings(
     tenant_id: str,
     connector_id: str,
@@ -818,15 +845,9 @@ async def generate_all_warnings(tenant_id: str) -> list[dict[str, Any]]:
     all_warnings.extend(system_warnings)
 
     # Per-connector warnings
-    connectors = await db.cm_connectors.find(
-        {"tenant_id": tenant_id},
-        {"_id": 0, "id": 1, "provider": 1, "status": 1}
-    ).to_list(50)
+    connectors = await db.cm_connectors.find({"tenant_id": tenant_id}, {"_id": 0, "id": 1, "provider": 1, "status": 1}).to_list(50)
 
-    connector_tasks = [
-        analyze_connector_warnings(tenant_id, conn["id"], conn.get("provider", ""))
-        for conn in connectors
-    ]
+    connector_tasks = [analyze_connector_warnings(tenant_id, conn["id"], conn.get("provider", "")) for conn in connectors]
 
     if connector_tasks:
         connector_results = await asyncio.gather(*connector_tasks, return_exceptions=True)
@@ -850,12 +871,14 @@ async def emit_warning_events(tenant_id: str, warnings: list[dict[str, Any]]) ->
         if warning["severity"] == "info":
             continue
 
-        recent_same = await db.ops_events.find_one({
-            "tenant_id": tenant_id,
-            "event_type": warning["warning_type"],
-            "connector_id": warning.get("connector_id", ""),
-            "created_at": {"$gte": (datetime.now(UTC) - timedelta(minutes=DEDUP_WINDOW_MINUTES)).isoformat()},
-        })
+        recent_same = await db.ops_events.find_one(
+            {
+                "tenant_id": tenant_id,
+                "event_type": warning["warning_type"],
+                "connector_id": warning.get("connector_id", ""),
+                "created_at": {"$gte": (datetime.now(UTC) - timedelta(minutes=DEDUP_WINDOW_MINUTES)).isoformat()},
+            }
+        )
 
         if recent_same:
             continue  # Already emitted recently
@@ -863,6 +886,7 @@ async def emit_warning_events(tenant_id: str, warnings: list[dict[str, Any]]) ->
         severity = SEVERITY_WARNING if warning["severity"] == "warning" else SEVERITY_WARNING
         if warning["severity"] == "critical":
             from routers.ops_event_emitter import SEVERITY_CRITICAL
+
             severity = SEVERITY_CRITICAL
 
         await emit_ops_event(
@@ -890,6 +914,7 @@ async def emit_warning_events(tenant_id: str, warnings: list[dict[str, Any]]) ->
 # ══════════════════════════════════════════════════════════════════════
 # Background Engine (Optional)
 # ══════════════════════════════════════════════════════════════════════
+
 
 class EarlyWarningEngine:
     """Background engine for periodic warning generation."""
@@ -954,10 +979,7 @@ class EarlyWarningEngine:
                     if warnings:
                         emitted = await emit_warning_events(tenant_id, warnings)
                         if emitted > 0:
-                            logger.info(
-                                "[EARLY-WARNING] tenant=%s warnings=%d emitted=%d",
-                                tenant_id, len(warnings), emitted
-                            )
+                            logger.info("[EARLY-WARNING] tenant=%s warnings=%d emitted=%d", tenant_id, len(warnings), emitted)
             except Exception as exc:
                 logger.warning("[EARLY-WARNING] tenant=%s error: %s", tenant_id, exc)
 

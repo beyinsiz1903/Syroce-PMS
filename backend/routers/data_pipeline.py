@@ -46,9 +46,7 @@ async def generate_dataset(
     description: str = Query(""),
     tenant: TenantContext = Depends(get_current_tenant),
 ):
-    return await dataset_generator.generate_dataset(
-        tenant.tenant_id, model_type, feature_set, description
-    )
+    return await dataset_generator.generate_dataset(tenant.tenant_id, model_type, feature_set, description)
 
 
 @router.get("/models")
@@ -123,9 +121,7 @@ async def execute_pipeline(
     model_type: str = Query(...),
     tenant: TenantContext = Depends(get_current_tenant),
 ):
-    return await pipeline_orchestrator.run_full_pipeline(
-        tenant.tenant_id, model_type, triggered_by=tenant.user_id or "api"
-    )
+    return await pipeline_orchestrator.run_full_pipeline(tenant.tenant_id, model_type, triggered_by=tenant.user_id or "api")
 
 
 @router.get("/health")

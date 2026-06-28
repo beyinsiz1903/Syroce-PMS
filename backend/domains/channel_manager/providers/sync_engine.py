@@ -6,6 +6,7 @@ Phase A.5 — Modified reservations (from_last_update_date)
 Phase A.6 — PMS booking diff + update
 Phase B   — Full catch-up reconciliation
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -64,23 +65,18 @@ async def run_phase_a(
             sub_reservations = explode_multi_room_reservation(res)
             rooms_count = len(res.get("rooms", []) or [])
             if rooms_count > 1:
-                logger.info(
-                    f"[PULL] Multi-room reservation {res.get('hr_number')}: "
-                    f"{rooms_count} rooms -> {len(sub_reservations)} sub-reservations"
-                )
+                logger.info(f"[PULL] Multi-room reservation {res.get('hr_number')}: {rooms_count} rooms -> {len(sub_reservations)} sub-reservations")
 
             for sub_res in sub_reservations:
                 try:
                     sub_state_a = (sub_res.get("state") or "").lower()
-                    is_cancel_a = (
-                        sub_state_a in ("cancelled", "canceled")
-                        or sub_res.get("_room_cancelled")
-                        or bool(sub_res.get("cancel_reason"))
-                    )
+                    is_cancel_a = sub_state_a in ("cancelled", "canceled") or sub_res.get("_room_cancelled") or bool(sub_res.get("cancel_reason"))
                     evt_type_a = "reservation_cancel_pull" if is_cancel_a else "reservation_pull"
                     await _persist_and_process(
-                        tenant_id, _resolve_property_id(sub_res),
-                        sub_res, evt_type_a,
+                        tenant_id,
+                        _resolve_property_id(sub_res),
+                        sub_res,
+                        evt_type_a,
                     )
                     processed += 1
                     if is_cancel_a:
@@ -123,7 +119,8 @@ async def run_phase_a5(
     mod_processed = 0
     try:
         cursor_doc = await db.hotelrunner_pull_cursors.find_one(
-            {"tenant_id": tenant_id}, {"_id": 0, "last_pull_at": 1},
+            {"tenant_id": tenant_id},
+            {"_id": 0, "last_pull_at": 1},
         )
         if cursor_doc and cursor_doc.get("last_pull_at"):
             last_pull_dt = datetime.fromisoformat(cursor_doc["last_pull_at"])
@@ -154,15 +151,13 @@ async def run_phase_a5(
                         for sub_res in sub_reservations:
                             try:
                                 sub_state = (sub_res.get("state") or "").lower()
-                                is_cancelled = (
-                                    sub_state in ("cancelled", "canceled")
-                                    or sub_res.get("_room_cancelled")
-                                    or bool(sub_res.get("cancel_reason"))
-                                )
+                                is_cancelled = sub_state in ("cancelled", "canceled") or sub_res.get("_room_cancelled") or bool(sub_res.get("cancel_reason"))
                                 evt_type = "reservation_cancel_pull" if is_cancelled else "reservation_modified_pull"
                                 await _persist_and_process(
-                                    tenant_id, _resolve_property_id(sub_res),
-                                    sub_res, evt_type,
+                                    tenant_id,
+                                    _resolve_property_id(sub_res),
+                                    sub_res,
+                                    evt_type,
                                 )
                                 mod_processed += 1
                                 if is_cancelled:
@@ -206,7 +201,11 @@ async def run_phase_a6(tenant_id: str) -> int:
 
         try:
             was_updated = await sync_reservation_update(
-                tenant_id, ext_id, payload, hr_state, hr_updated_at,
+                tenant_id,
+                ext_id,
+                payload,
+                hr_state,
+                hr_updated_at,
             )
             if was_updated:
                 updated += 1
@@ -264,11 +263,7 @@ async def run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
             if hr_state in ("cancelled", "canceled") or hr_cancel_reason:
                 effective_state = "canceled"
 
-            logger.info(
-                f"[PULL-PHASE-B] {hr_number}: state={hr_state}, effective={effective_state}, "
-                f"next_states={hr_next_states}, cancel_reason={hr_cancel_reason}, "
-                f"updated_at={hr_updated_at}"
-            )
+            logger.info(f"[PULL-PHASE-B] {hr_number}: state={hr_state}, effective={effective_state}, next_states={hr_next_states}, cancel_reason={hr_cancel_reason}, updated_at={hr_updated_at}")
 
             sub_reservations = explode_multi_room_reservation(res)
 
@@ -294,8 +289,10 @@ async def run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
                     try:
                         catchup_evt = "reservation_cancel_catchup" if sub_room_cancelled or effective_state == "canceled" else "reservation_catchup"
                         await _persist_and_process(
-                            tenant_id, _resolve_property_id(sub_res),
-                            sub_res, catchup_evt,
+                            tenant_id,
+                            _resolve_property_id(sub_res),
+                            sub_res,
+                            catchup_evt,
                         )
                         catchup_imported += 1
                     except Exception as e:
@@ -331,7 +328,11 @@ async def run_phase_b(tenant_id: str, provider) -> tuple[int, int]:
                     if state_changed or timestamp_changed:
                         try:
                             updated = await sync_reservation_update(
-                                tenant_id, sub_ext, sub_res, sub_effective_state, hr_updated_at,
+                                tenant_id,
+                                sub_ext,
+                                sub_res,
+                                sub_effective_state,
+                                hr_updated_at,
                             )
                             if updated:
                                 catchup_updated += 1
@@ -366,10 +367,7 @@ async def sync_reservation_update(
 
     existing_sync_ts = booking.get("last_synced_from_provider_at", "")
     if existing_sync_ts and hr_updated_at and hr_updated_at <= existing_sync_ts:
-        logger.debug(
-            f"[PULL-SYNC] {ext_reservation_id}: skipping stale update "
-            f"(hr={hr_updated_at} <= existing={existing_sync_ts})"
-        )
+        logger.debug(f"[PULL-SYNC] {ext_reservation_id}: skipping stale update (hr={hr_updated_at} <= existing={existing_sync_ts})")
         return False
 
     rooms = hr_payload.get("rooms") or []
@@ -463,11 +461,13 @@ async def sync_reservation_update(
         guest_last = guest_parts[1] if len(guest_parts) > 1 else ""
         await db.guests.update_one(
             {"tenant_id": tenant_id, "id": booking["guest_id"]},
-            {"$set": {
-                "first_name": guest_first,
-                "last_name": guest_last,
-                "updated_at": datetime.now(UTC).isoformat(),
-            }},
+            {
+                "$set": {
+                    "first_name": guest_first,
+                    "last_name": guest_last,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            },
         )
 
     await _timeline_append(
@@ -491,62 +491,64 @@ async def sync_reservation_update(
     try:
         notifications_to_create = []
         if "status" in updates and updates["status"] == "cancelled":
-            notifications_to_create.append({
-                "title": f"Rezervasyon Iptali - {guest_name_hr or booking.get('guest_name', '')}",
-                "message": (
-                    f"{guest_name_hr or booking.get('guest_name', '')} adli misafirin "
-                    f"{booking.get('check_in', '')[:10]} - {booking.get('check_out', '')[:10]} "
-                    f"tarihli rezervasyonu iptal edildi."
-                ),
-                "type": "reservation_cancelled",
-                "priority": "high",
-                "category": "reservation",
-                "dedup_key": f"cancel_{ext_reservation_id}",
-            })
+            notifications_to_create.append(
+                {
+                    "title": f"Rezervasyon Iptali - {guest_name_hr or booking.get('guest_name', '')}",
+                    "message": (
+                        f"{guest_name_hr or booking.get('guest_name', '')} adli misafirin {booking.get('check_in', '')[:10]} - {booking.get('check_out', '')[:10]} tarihli rezervasyonu iptal edildi."
+                    ),
+                    "type": "reservation_cancelled",
+                    "priority": "high",
+                    "category": "reservation",
+                    "dedup_key": f"cancel_{ext_reservation_id}",
+                }
+            )
         if "guest_name" in updates:
-            notifications_to_create.append({
-                "title": f"Misafir Adi Degisikligi - {ext_reservation_id}",
-                "message": (
-                    f"Misafir adi degistirildi: {booking.get('guest_name', '')} -> {updates['guest_name']}"
-                ),
-                "type": "reservation_modified",
-                "priority": "normal",
-                "category": "reservation",
-                "dedup_key": f"name_{ext_reservation_id}_{updates['guest_name']}",
-            })
+            notifications_to_create.append(
+                {
+                    "title": f"Misafir Adi Degisikligi - {ext_reservation_id}",
+                    "message": (f"Misafir adi degistirildi: {booking.get('guest_name', '')} -> {updates['guest_name']}"),
+                    "type": "reservation_modified",
+                    "priority": "normal",
+                    "category": "reservation",
+                    "dedup_key": f"name_{ext_reservation_id}_{updates['guest_name']}",
+                }
+            )
         if "check_in" in updates or "check_out" in updates:
-            notifications_to_create.append({
-                "title": f"Tarih Degisikligi - {ext_reservation_id}",
-                "message": (
-                    f"Tarih degistirildi: "
-                    f"Giris: {updates.get('check_in', booking.get('check_in', ''))[:10]}, "
-                    f"Cikis: {updates.get('check_out', booking.get('check_out', ''))[:10]}"
-                ),
-                "type": "reservation_modified",
-                "priority": "normal",
-                "category": "reservation",
-                "dedup_key": f"date_{ext_reservation_id}_{updates.get('check_in', '')}_{updates.get('check_out', '')}",
-            })
+            notifications_to_create.append(
+                {
+                    "title": f"Tarih Degisikligi - {ext_reservation_id}",
+                    "message": (f"Tarih degistirildi: Giris: {updates.get('check_in', booking.get('check_in', ''))[:10]}, Cikis: {updates.get('check_out', booking.get('check_out', ''))[:10]}"),
+                    "type": "reservation_modified",
+                    "priority": "normal",
+                    "category": "reservation",
+                    "dedup_key": f"date_{ext_reservation_id}_{updates.get('check_in', '')}_{updates.get('check_out', '')}",
+                }
+            )
 
         for notif_data in notifications_to_create:
             dedup_key = notif_data.pop("dedup_key")
-            existing = await db.notifications.find_one({
-                "tenant_id": tenant_id,
-                "external_reservation_id": ext_reservation_id,
-                "dedup_key": dedup_key,
-            })
+            existing = await db.notifications.find_one(
+                {
+                    "tenant_id": tenant_id,
+                    "external_reservation_id": ext_reservation_id,
+                    "dedup_key": dedup_key,
+                }
+            )
             if existing:
                 continue
-            await db.notifications.insert_one({
-                "id": str(uuid.uuid4()),
-                "tenant_id": tenant_id,
-                "booking_id": booking.get("id", ""),
-                "external_reservation_id": ext_reservation_id,
-                "read": False,
-                "created_at": datetime.now(UTC).isoformat(),
-                "dedup_key": dedup_key,
-                **notif_data,
-            })
+            await db.notifications.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "booking_id": booking.get("id", ""),
+                    "external_reservation_id": ext_reservation_id,
+                    "read": False,
+                    "created_at": datetime.now(UTC).isoformat(),
+                    "dedup_key": dedup_key,
+                    **notif_data,
+                }
+            )
     except Exception as e:
         logger.error(f"[PULL-SYNC] Notification creation error for {ext_reservation_id}: {e}")
 
@@ -554,14 +556,16 @@ async def sync_reservation_update(
 
 
 async def log_pull(tenant_id: str, status: str, records: int, error: str | None = None, duration_ms: int = 0):
-    await db.hotelrunner_sync_logs.insert_one({
-        "id": str(uuid.uuid4()),
-        "tenant_id": tenant_id,
-        "timestamp": datetime.now(UTC).isoformat(),
-        "sync_type": "scheduled_pull",
-        "status": status,
-        "duration_ms": duration_ms,
-        "records_synced": records,
-        "error_message": error,
-        "initiator": "system",
-    })
+    await db.hotelrunner_sync_logs.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "sync_type": "scheduled_pull",
+            "status": status,
+            "duration_ms": duration_ms,
+            "records_synced": records,
+            "error_message": error,
+            "initiator": "system",
+        }
+    )

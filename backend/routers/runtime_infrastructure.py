@@ -2,6 +2,7 @@
 Runtime Infrastructure Router — Production runtime status for all platform components.
 Redis/Event Bus, Messaging Providers, Persistence Health, Alerts, Observability.
 """
+
 from fastapi import APIRouter, Depends, Query
 
 from core.security import get_current_user
@@ -13,9 +14,11 @@ router = APIRouter(prefix="/api/runtime", tags=["runtime-infrastructure"])
 
 # ── Event Bus Runtime ──
 
+
 @router.get("/event-bus/status")
 async def get_event_bus_runtime(current_user: User = Depends(get_current_user)):
     from modules.event_bus.abstraction import event_bus
+
     status = await event_bus.get_status()
     metrics = await event_bus.get_metrics()
     return {"status": status, "metrics": metrics}
@@ -24,6 +27,7 @@ async def get_event_bus_runtime(current_user: User = Depends(get_current_user)):
 @router.get("/event-bus/delivery-metrics")
 async def get_event_bus_delivery_metrics(current_user: User = Depends(get_current_user)):
     from modules.event_bus.abstraction import event_bus
+
     metrics = await event_bus.get_metrics()
     return {
         "mode": metrics.get("mode"),
@@ -39,10 +43,12 @@ async def get_event_bus_delivery_metrics(current_user: User = Depends(get_curren
 
 # ── Messaging Provider Runtime ──
 
+
 @router.get("/messaging/status")
 async def get_messaging_runtime(current_user: User = Depends(get_current_user)):
     from modules.messaging.service import MessagingService
     from server import db
+
     svc = MessagingService(db)
     providers = await svc.check_all_providers(current_user.tenant_id)
     runtime = svc.get_runtime_status()
@@ -61,20 +67,29 @@ async def get_messaging_delivery_summary(
 ):
     from modules.messaging.service import MessagingService
     from server import db
+
     svc = MessagingService(db)
     return await svc.get_delivery_metrics(current_user.tenant_id, days)
 
 
 # ── Persistence Health ──
 
+
 @router.get("/persistence/health")
 async def get_persistence_health(current_user: User = Depends(get_current_user)):
     from core.database import db
+
     collections_to_check = [
-        "event_bus_log", "messaging_delivery_logs", "observability_traces",
-        "observability_metrics", "observability_errors", "alert_history",
-        "messaging_provider_configs", "messaging_templates",
-        "pipeline_runs", "analytics_export_history",
+        "event_bus_log",
+        "messaging_delivery_logs",
+        "observability_traces",
+        "observability_metrics",
+        "observability_errors",
+        "alert_history",
+        "messaging_provider_configs",
+        "messaging_templates",
+        "pipeline_runs",
+        "analytics_export_history",
     ]
     results = {}
     for coll_name in collections_to_check:
@@ -95,9 +110,11 @@ async def get_persistence_health(current_user: User = Depends(get_current_user))
 
 # ── Alerting ──
 
+
 @router.get("/alerts/evaluate")
 async def evaluate_alerts(current_user: User = Depends(get_current_user)):
     from modules.observability.alerting_engine import alert_engine
+
     alerts = await alert_engine.evaluate_all()
     return {"alerts": alerts, "count": len(alerts)}
 
@@ -105,6 +122,7 @@ async def evaluate_alerts(current_user: User = Depends(get_current_user)):
 @router.get("/alerts/candidates")
 async def get_alert_candidates(current_user: User = Depends(get_current_user)):
     from modules.observability.alerting_engine import alert_engine
+
     return await alert_engine.get_alert_candidates()
 
 
@@ -115,24 +133,30 @@ async def get_alert_history(
     current_user: User = Depends(get_current_user),
 ):
     from modules.observability.alerting_engine import alert_engine
+
     return await alert_engine.get_alert_history(hours, limit)
 
 
 @router.post("/alerts/{alert_id}/acknowledge")
-async def acknowledge_alert(alert_id: str, current_user: User = Depends(get_current_user),
+async def acknowledge_alert(
+    alert_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     from modules.observability.alerting_engine import alert_engine
+
     return await alert_engine.acknowledge_alert(alert_id, current_user.id)
 
 
 @router.get("/alerts/engine-status")
 async def get_alert_engine_status(current_user: User = Depends(get_current_user)):
     from modules.observability.alerting_engine import alert_engine
+
     return alert_engine.get_engine_status()
 
 
 # ── Observability Summary ──
+
 
 @router.get("/observability/summary")
 async def get_observability_summary(current_user: User = Depends(get_current_user)):
@@ -156,6 +180,7 @@ async def get_observability_summary(current_user: User = Depends(get_current_use
 
 # ── Infrastructure Overview ──
 
+
 @router.get("/overview")
 async def get_infrastructure_overview(current_user: User = Depends(get_current_user)):
     """Single endpoint returning full runtime infrastructure status."""
@@ -171,6 +196,7 @@ async def get_infrastructure_overview(current_user: User = Depends(get_current_u
     # DB health
     try:
         from core.database import db as dbconn
+
         await dbconn.command("ping")
         db_status = "healthy"
     except Exception:

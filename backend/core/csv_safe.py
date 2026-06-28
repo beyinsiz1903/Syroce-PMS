@@ -21,6 +21,7 @@ Use `csv_safe(value)` on every user-controlled cell, or wrap the whole
 writer with `safe_writerow(writer, row)`. For openpyxl, assign
 `cell.value = csv_safe(value)` instead of the raw value.
 """
+
 from __future__ import annotations
 
 # C0 control chars that some parsers strip before evaluating formulas,

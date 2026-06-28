@@ -3,6 +3,7 @@ ARI Outbound Service — Main push orchestrator.
 
 Coordinates: buffer → coalesce → compile delta → rate limit check → provider push → ack.
 """
+
 import logging
 
 from . import repositories as repo
@@ -61,21 +62,16 @@ async def get_active_providers_async(tenant_id: str) -> list[str]:
         return _ACTIVE_PROVIDERS[tenant_id]
     try:
         from core.database import db as _db
+
         active: list[str] = []
-        if await _db.hotelrunner_connections.find_one(
-            {"tenant_id": tenant_id}, {"_id": 1}
-        ):
+        if await _db.hotelrunner_connections.find_one({"tenant_id": tenant_id}, {"_id": 1}):
             active.append("hotelrunner")
-        if await _db.exely_connections.find_one(
-            {"tenant_id": tenant_id}, {"_id": 1}
-        ):
+        if await _db.exely_connections.find_one({"tenant_id": tenant_id}, {"_id": 1}):
             active.append("exely")
         if active:
             # Cache so subsequent flushes don't pay the DB hit
             _ACTIVE_PROVIDERS[tenant_id] = active
-            logger.info(
-                f"[ARI] Auto-detected active providers for {tenant_id}: {active}"
-            )
+            logger.info(f"[ARI] Auto-detected active providers for {tenant_id}: {active}")
             return active
     except Exception as exc:
         logger.warning(f"[ARI] active provider auto-detect failed: {exc}")
@@ -99,6 +95,7 @@ async def _on_buffer_flush(coalescing_key: str, events: list[ARIChangeEvent]):
     # AND inside the service (Redis-down => Mongo outbox replayed later).
     try:
         from services.b2b_streams import publish_ari_to_agency_streams
+
         await publish_ari_to_agency_streams(events)
     except Exception:  # noqa: BLE001
         logger.exception("[ARI] B2B stream fanout failed (non-fatal)")
@@ -160,15 +157,14 @@ async def push_pending_changes(
 
         # Hard fail gate check (runtime mapping enforcement)
         from .hard_fail_gate import HF_PASS, enforce_hard_fail_gate
+
         verdict = await enforce_hard_fail_gate(cs)
         if verdict.status != HF_PASS:
             results["failed"] += 1
             continue
 
         # Outbound idempotency check
-        is_dupe = await repo.check_outbound_idempotency(
-            prov, prop_id, cs["provider_delta_hash"]
-        )
+        is_dupe = await repo.check_outbound_idempotency(prov, prop_id, cs["provider_delta_hash"])
         if is_dupe:
             await repo.update_change_set_status(cs["id"], "skipped")
             results["skipped"] += 1
@@ -203,18 +199,14 @@ async def push_pending_changes(
         try:
             result = await _push_to_provider(adapter, delta)
         except Exception as e:
-            result = ProviderResult(
-                success=False, provider=prov, error=str(e), retryable=True
-            )
+            result = ProviderResult(success=False, provider=prov, error=str(e), retryable=True)
 
         # Handle 429
         if result.status_code == 429:
             rate_limiter.record_429(prov, prop_id)
 
         # Process ack
-        status = await process_ack(
-            cs, result, cs.get("outbound_change_id", "")
-        )
+        status = await process_ack(cs, result, cs.get("outbound_change_id", ""))
 
         if status == "acked":
             results["pushed"] += 1
@@ -234,10 +226,7 @@ async def _push_to_provider(adapter, delta: ARIDelta) -> ProviderResult:
     elif scope == "restriction":
         return await adapter.push_restrictions(delta)
     else:
-        return ProviderResult(
-            success=False, provider=delta.provider,
-            error=f"Unknown change scope: {scope}"
-        )
+        return ProviderResult(success=False, provider=delta.provider, error=f"Unknown change scope: {scope}")
 
 
 async def force_push_change_set(cs_id: str) -> dict:
@@ -251,9 +240,7 @@ async def force_push_change_set(cs_id: str) -> dict:
         return {"error": "Change set not found"}
 
     await repo.update_change_set_status(cs_id, "pending")
-    result = await push_pending_changes(
-        cs["tenant_id"], cs["provider"], limit=1
-    )
+    result = await push_pending_changes(cs["tenant_id"], cs["provider"], limit=1)
     return result
 
 

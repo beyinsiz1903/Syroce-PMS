@@ -41,6 +41,7 @@ router = APIRouter(prefix="/api/marketplace/v1", tags=["Marketplace v1"])
 
 # ─── Helpers ──────────────────────────────────────────────────────────────
 
+
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -72,6 +73,7 @@ async def _try_get_super_admin(authorization: str | None = Header(None)) -> bool
         return False
     try:
         from fastapi.security import HTTPAuthorizationCredentials
+
         creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=authorization.split(" ", 1)[1])
         user = await get_current_user(creds)
         return _is_super_admin(user)
@@ -99,21 +101,18 @@ def _require_system_admin(
 
 # ─── Cross-tenant Agency Auth ─────────────────────────────────────────────
 
+
 async def get_marketplace_agency(x_api_key: str = Header(..., alias="X-API-Key")) -> dict:
     """Cross-tenant API key doğrulama. Tenant context BURADA SET EDİLMEZ;
     her endpoint istek bazında set eder."""
     sysdb = get_system_db()
     key_hash = _hash_key(x_api_key)
 
-    key_doc = await sysdb.marketplace_api_keys.find_one(
-        {"key_hash": key_hash, "is_active": True}, {"_id": 0}
-    )
+    key_doc = await sysdb.marketplace_api_keys.find_one({"key_hash": key_hash, "is_active": True}, {"_id": 0})
     if not key_doc:
         raise HTTPException(401, "Geçersiz veya devre dışı marketplace API key")
 
-    agency = await sysdb.marketplace_agencies.find_one(
-        {"id": key_doc["agency_id"], "status": "active"}, {"_id": 0}
-    )
+    agency = await sysdb.marketplace_agencies.find_one({"id": key_doc["agency_id"], "status": "active"}, {"_id": 0})
     if not agency:
         raise HTTPException(403, "Marketplace acentesi aktif değil")
 
@@ -133,9 +132,7 @@ async def get_marketplace_agency(x_api_key: str = Header(..., alias="X-API-Key")
 async def _get_listing_or_404(tenant_id: str) -> dict:
     """Bir otelin marketplace listing'ini döner. Liste edilmemişse 404."""
     sysdb = get_system_db()
-    listing = await sysdb.marketplace_listings.find_one(
-        {"tenant_id": tenant_id, "is_listed": True}, {"_id": 0}
-    )
+    listing = await sysdb.marketplace_listings.find_one({"tenant_id": tenant_id, "is_listed": True}, {"_id": 0})
     if not listing:
         raise HTTPException(404, "Bu otel marketplace'te listelenmemiş")
     return listing
@@ -150,6 +147,7 @@ def _commission_for(agency: dict, listing: dict) -> float:
 
 
 # ─── Pydantic Modelleri ───────────────────────────────────────────────────
+
 
 class MarketplaceAgencyCreate(BaseModel):
     name: str
@@ -219,6 +217,7 @@ class MarketplaceReservationCreate(BaseModel):
 # SYSTEM ADMIN — Marketplace Agency Yönetimi
 # ═══════════════════════════════════════════════════════════════════════
 
+
 @router.post("/admin/agencies")
 async def admin_create_agency(
     data: MarketplaceAgencyCreate,
@@ -277,9 +276,7 @@ async def admin_disable_agency(
     _: bool = Depends(_require_system_admin),
 ):
     sysdb = get_system_db()
-    res = await sysdb.marketplace_agencies.update_one(
-        {"id": agency_id}, {"$set": {"status": "disabled", "disabled_at": _now_iso()}}
-    )
+    res = await sysdb.marketplace_agencies.update_one({"id": agency_id}, {"$set": {"status": "disabled", "disabled_at": _now_iso()}})
     if res.matched_count == 0:
         raise HTTPException(404, "Acente bulunamadı")
     await sysdb.marketplace_api_keys.update_many(
@@ -304,22 +301,25 @@ async def admin_regenerate_key(
         {"$set": {"is_active": False, "revoked_at": _now_iso()}},
     )
     raw_key = f"syroce_mkt_{secrets.token_urlsafe(32)}"
-    await sysdb.marketplace_api_keys.insert_one({
-        "id": _uuid(),
-        "agency_id": agency_id,
-        "key_hash": _hash_key(raw_key),
-        "key_prefix": raw_key[:18] + "...",
-        "is_active": True,
-        "usage_count": 0,
-        "created_at": _now_iso(),
-        "last_used_at": None,
-    })
+    await sysdb.marketplace_api_keys.insert_one(
+        {
+            "id": _uuid(),
+            "agency_id": agency_id,
+            "key_hash": _hash_key(raw_key),
+            "key_prefix": raw_key[:18] + "...",
+            "is_active": True,
+            "usage_count": 0,
+            "created_at": _now_iso(),
+            "last_used_at": None,
+        }
+    )
     return {"api_key": raw_key, "warning": "Bu key sadece bir kez gösterilir"}
 
 
 # ═══════════════════════════════════════════════════════════════════════
 # HOTEL ADMIN — Marketplace Listing (Opt-in)
 # ═══════════════════════════════════════════════════════════════════════
+
 
 @router.post("/listings/me")
 async def listing_opt_in(
@@ -354,9 +354,7 @@ async def listing_opt_in(
         "created_by": current_user.id,
     }
     if existing:
-        await sysdb.marketplace_listings.update_one(
-            {"tenant_id": tenant_id}, {"$set": {**{k: v for k, v in doc.items() if k != "id"}, "id": existing["id"]}}
-        )
+        await sysdb.marketplace_listings.update_one({"tenant_id": tenant_id}, {"$set": {**{k: v for k, v in doc.items() if k != "id"}, "id": existing["id"]}})
         doc["id"] = existing["id"]
     else:
         await sysdb.marketplace_listings.insert_one(doc)
@@ -409,6 +407,7 @@ async def listing_opt_out(current_user: User = Depends(get_current_user)):
 # AGENCY (X-API-Key) — Hotel Discovery & Search
 # ═══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/hotels")
 async def agency_list_hotels(
     city: str | None = Query(None),
@@ -419,14 +418,15 @@ async def agency_list_hotels(
 ):
     """Marketplace'te listelenen ve aktif sözleşmesi bulunan otelleri keşfet."""
     from routers.agency_contracts import list_partner_tenant_ids
+
     partner_tenant_ids = await list_partner_tenant_ids(agency["agency_id"])
     if not partner_tenant_ids:
-        return {"hotels": [], "total": 0,
-                "message": "Henüz onaylı sözleşmeniz olan otel yok. Önce otele teklif gönderin."}
+        return {"hotels": [], "total": 0, "message": "Henüz onaylı sözleşmeniz olan otel yok. Önce otele teklif gönderin."}
 
     sysdb = get_system_db()
     query: dict = {"is_listed": True, "tenant_id": {"$in": partner_tenant_ids}}
     from security.query_safety import safe_search_term
+
     if city and (_c := safe_search_term(city)):
         query["city"] = {"$regex": f"^{_c}$", "$options": "i"}
     if country:
@@ -437,10 +437,14 @@ async def agency_list_hotels(
             {"description": {"$regex": _s, "$options": "i"}},
         ]
 
-    docs = await sysdb.marketplace_listings.find(
-        query,
-        {"_id": 0, "blocked_dates": 0, "created_by": 0},
-    ).limit(limit).to_list(limit)
+    docs = (
+        await sysdb.marketplace_listings.find(
+            query,
+            {"_id": 0, "blocked_dates": 0, "created_by": 0},
+        )
+        .limit(limit)
+        .to_list(limit)
+    )
     return {"hotels": docs, "total": len(docs)}
 
 
@@ -450,6 +454,7 @@ async def agency_get_hotel(
     agency: dict = Depends(get_marketplace_agency),
 ):
     from routers.agency_contracts import has_active_contract
+
     if not await has_active_contract(agency["agency_id"], tenant_id):
         raise HTTPException(403, "Bu otelle aktif sözleşmeniz yok")
     listing = await _get_listing_or_404(tenant_id)
@@ -494,15 +499,15 @@ async def agency_search(
         raise HTTPException(400, "check_out, check_in'den sonra olmalı")
 
     from routers.agency_contracts import list_partner_tenant_ids
+
     partner_tenant_ids = await list_partner_tenant_ids(agency["agency_id"], on_date=req.check_in)
     if not partner_tenant_ids:
-        return {"check_in": req.check_in, "check_out": req.check_out,
-                "results": [], "total_hotels": 0,
-                "message": "Henüz onaylı sözleşmeniz olan otel yok."}
+        return {"check_in": req.check_in, "check_out": req.check_out, "results": [], "total_hotels": 0, "message": "Henüz onaylı sözleşmeniz olan otel yok."}
 
     sysdb = get_system_db()
     list_query: dict = {"is_listed": True, "tenant_id": {"$in": partner_tenant_ids}}
     from security.query_safety import safe_search_term
+
     if req.city and (_c := safe_search_term(req.city)):
         list_query["city"] = {"$regex": f"^{_c}$", "$options": "i"}
     if req.country:
@@ -534,25 +539,30 @@ async def agency_search(
                     continue
                 if r.get("capacity", 2) < capacity_needed:
                     continue
-                rt_data = room_types.setdefault(rt, {
-                    "room_type": rt,
-                    "capacity": r.get("capacity", 2),
-                    "base_price": r.get("base_price", 0),
-                    "total_rooms": 0,
-                    "available_rooms": 0,
-                    "_room_ids": [],
-                })
+                rt_data = room_types.setdefault(
+                    rt,
+                    {
+                        "room_type": rt,
+                        "capacity": r.get("capacity", 2),
+                        "base_price": r.get("base_price", 0),
+                        "total_rooms": 0,
+                        "available_rooms": 0,
+                        "_room_ids": [],
+                    },
+                )
                 rt_data["total_rooms"] += 1
                 rt_data["_room_ids"].append(r.get("id"))
 
             for rt_data in room_types.values():
-                booked = await db.bookings.count_documents({
-                    "tenant_id": tenant_id,
-                    "room_id": {"$in": rt_data["_room_ids"]},
-                    "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                    "check_in": {"$lt": req.check_out + "T23:59:59"},
-                    "check_out": {"$gt": req.check_in + "T00:00:00"},
-                })
+                booked = await db.bookings.count_documents(
+                    {
+                        "tenant_id": tenant_id,
+                        "room_id": {"$in": rt_data["_room_ids"]},
+                        "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+                        "check_in": {"$lt": req.check_out + "T23:59:59"},
+                        "check_out": {"$gt": req.check_in + "T00:00:00"},
+                    }
+                )
                 rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
                 del rt_data["_room_ids"]
 
@@ -566,24 +576,28 @@ async def agency_search(
             total_price = rt_data["base_price"] * nights
             if req.max_price and total_price > req.max_price:
                 continue
-            available.append({
-                **rt_data,
-                "nights": nights,
-                "total_price": total_price,
-                "commission_pct": commission_pct,
-                "agency_payable": round(total_price * (1 - commission_pct / 100), 2),
-            })
+            available.append(
+                {
+                    **rt_data,
+                    "nights": nights,
+                    "total_price": total_price,
+                    "commission_pct": commission_pct,
+                    "agency_payable": round(total_price * (1 - commission_pct / 100), 2),
+                }
+            )
 
         if available:
-            results.append({
-                "tenant_id": tenant_id,
-                "hotel_name": listing.get("hotel_name"),
-                "city": listing.get("city"),
-                "country": listing.get("country"),
-                "star_rating": listing.get("star_rating"),
-                "photos": listing.get("photos", [])[:3],
-                "available_room_types": available,
-            })
+            results.append(
+                {
+                    "tenant_id": tenant_id,
+                    "hotel_name": listing.get("hotel_name"),
+                    "city": listing.get("city"),
+                    "country": listing.get("country"),
+                    "star_rating": listing.get("star_rating"),
+                    "photos": listing.get("photos", [])[:3],
+                    "available_room_types": available,
+                }
+            )
 
     return {
         "check_in": req.check_in,
@@ -601,6 +615,7 @@ async def agency_hotel_availability(
     agency: dict = Depends(get_marketplace_agency),
 ):
     from routers.agency_contracts import has_active_contract
+
     if not await has_active_contract(agency["agency_id"], tenant_id, on_date=check_in):
         raise HTTPException(403, "Bu otelle bu tarih için aktif sözleşmeniz yok")
     listing = await _get_listing_or_404(tenant_id)
@@ -622,28 +637,33 @@ async def agency_hotel_availability(
             rt = r.get("room_type", "Standard")
             if listing.get("allowed_room_types") and rt not in listing["allowed_room_types"]:
                 continue
-            rt_data = room_types.setdefault(rt, {
-                "room_type": rt,
-                "capacity": r.get("capacity", 2),
-                "base_price": r.get("base_price", 0),
-                "amenities": r.get("amenities", []),
-                "total_rooms": 0,
-                "available_rooms": 0,
-                "_room_ids": [],
-            })
+            rt_data = room_types.setdefault(
+                rt,
+                {
+                    "room_type": rt,
+                    "capacity": r.get("capacity", 2),
+                    "base_price": r.get("base_price", 0),
+                    "amenities": r.get("amenities", []),
+                    "total_rooms": 0,
+                    "available_rooms": 0,
+                    "_room_ids": [],
+                },
+            )
             rt_data["total_rooms"] += 1
             rt_data["_room_ids"].append(r.get("id"))
 
         nights = (co - ci).days
         commission_pct = _commission_for(agency, listing)
         for rt_data in room_types.values():
-            booked = await db.bookings.count_documents({
-                "tenant_id": tenant_id,
-                "room_id": {"$in": rt_data["_room_ids"]},
-                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                "check_in": {"$lt": check_out + "T23:59:59"},
-                "check_out": {"$gt": check_in + "T00:00:00"},
-            })
+            booked = await db.bookings.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "room_id": {"$in": rt_data["_room_ids"]},
+                    "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+                    "check_in": {"$lt": check_out + "T23:59:59"},
+                    "check_out": {"$gt": check_in + "T00:00:00"},
+                }
+            )
             rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
             rt_data["nights"] = nights
             rt_data["total_price"] = rt_data["base_price"] * nights
@@ -686,6 +706,7 @@ async def agency_hotel_rates(
 # AGENCY — Reservation Lifecycle (Cross-tenant)
 # ═══════════════════════════════════════════════════════════════════════
 
+
 @router.post("/reservations")
 async def agency_create_reservation(
     data: MarketplaceReservationCreate,
@@ -694,13 +715,10 @@ async def agency_create_reservation(
 ):
     """Listed otele cross-tenant rezervasyon oluştur. Mevcut bookings koleksiyonuna düşer."""
     from routers.agency_contracts import has_active_contract
+
     contract = await has_active_contract(agency["agency_id"], data.tenant_id, on_date=data.check_in)
     if not contract:
-        raise HTTPException(
-            403,
-            "Bu otelle bu tarih için aktif sözleşmeniz yok. Önce sözleşme teklifi "
-            "gönderip otelin onayını bekleyin."
-        )
+        raise HTTPException(403, "Bu otelle bu tarih için aktif sözleşmeniz yok. Önce sözleşme teklifi gönderip otelin onayını bekleyin.")
 
     listing = await _get_listing_or_404(data.tenant_id)
 
@@ -727,21 +745,21 @@ async def agency_create_reservation(
     # üretebilir. Bu kapsamda kabul edilmiştir; gelecek sprint'te per-room
     # atomic find_and_modify lock'a geçirilecek.
     with tenant_context(data.tenant_id):
-        rooms = await db.rooms.find(
-            {"tenant_id": data.tenant_id, "room_type": data.room_type}, {"_id": 0}
-        ).to_list(500)
+        rooms = await db.rooms.find({"tenant_id": data.tenant_id, "room_type": data.room_type}, {"_id": 0}).to_list(500)
         if not rooms:
             raise HTTPException(404, "Oda tipi bulunamadı")
 
         available_room = None
         for room in rooms:
-            conflict = await db.bookings.count_documents({
-                "tenant_id": data.tenant_id,
-                "room_id": room["id"],
-                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-                "check_in": {"$lt": data.check_out + "T23:59:59"},
-                "check_out": {"$gt": data.check_in + "T00:00:00"},
-            })
+            conflict = await db.bookings.count_documents(
+                {
+                    "tenant_id": data.tenant_id,
+                    "room_id": room["id"],
+                    "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+                    "check_in": {"$lt": data.check_out + "T23:59:59"},
+                    "check_out": {"$gt": data.check_in + "T00:00:00"},
+                }
+            )
             if conflict == 0:
                 available_room = room
                 break
@@ -758,8 +776,7 @@ async def agency_create_reservation(
             if abs(data.total_amount - server_total) > PRICE_TOLERANCE:
                 raise HTTPException(
                     422,
-                    f"Fiyat uyuşmazlığı: gönderilen {data.total_amount}, beklenen {server_total} "
-                    f"(tolerans ±{PRICE_TOLERANCE}). Lütfen güncel fiyat için /search çağrısını tekrarlayın.",
+                    f"Fiyat uyuşmazlığı: gönderilen {data.total_amount}, beklenen {server_total} (tolerans ±{PRICE_TOLERANCE}). Lütfen güncel fiyat için /search çağrısını tekrarlayın.",
                 )
         total = server_total
         commission_amount = round(total * commission_pct / 100, 2)
@@ -767,51 +784,56 @@ async def agency_create_reservation(
 
         guest_id = _uuid()
         from security.guest_write import encrypt_guest_insert
-        await db.guests.insert_one(encrypt_guest_insert({
-            "id": guest_id,
-            "tenant_id": data.tenant_id,
-            "name": data.guest_name.strip(),
-            "email": data.guest_email.strip() or f"mkt-{guest_id[:8]}@placeholder.local",
-            "phone": data.guest_phone.strip(),
-            "id_number": "",
-            "vip_status": False,
-            "loyalty_points": 0,
-            "total_stays": 0,
-            "total_spend": 0.0,
-            "created_at": _now_iso(),
-        }))
+
+        await db.guests.insert_one(
+            encrypt_guest_insert(
+                {
+                    "id": guest_id,
+                    "tenant_id": data.tenant_id,
+                    "name": data.guest_name.strip(),
+                    "email": data.guest_email.strip() or f"mkt-{guest_id[:8]}@placeholder.local",
+                    "phone": data.guest_phone.strip(),
+                    "id_number": "",
+                    "vip_status": False,
+                    "loyalty_points": 0,
+                    "total_stays": 0,
+                    "total_spend": 0.0,
+                    "created_at": _now_iso(),
+                }
+            )
+        )
 
         booking_id = _uuid()
         confirmation_code = f"MKT-{booking_id[:8].upper()}"
         booking_doc = {
-        "id": booking_id,
-        "tenant_id": data.tenant_id,
-        "guest_id": guest_id,
-        "room_id": available_room["id"],
-        "room_number": available_room.get("room_number", ""),
-        "room_type": available_room.get("room_type", ""),
-        "check_in": data.check_in + "T14:00:00",
-        "check_out": data.check_out + "T11:00:00",
-        "adults": data.adults,
-        "children": data.children,
-        "guests_count": data.adults + data.children,
-        "status": "confirmed",
-        "payment_status": "pending",
-        "total_amount": total,
-        "balance": total,
-        "channel": "marketplace",
-        "source_channel": "marketplace",
-        "marketplace_agency_id": agency["agency_id"],
-        "marketplace_agency_name": agency["agency_name"],
-        "agency_commission_rate": commission_pct,
-        "agency_commission_amount": commission_amount,
-        "net_to_hotel": net_to_hotel,
-        "confirmation_code": confirmation_code,
-        "external_reference": data.external_reference,
-        "special_requests": data.special_requests,
-        "guest_name": data.guest_name.strip(),
-        "guest_email": data.guest_email.strip(),
-        "guest_phone": data.guest_phone.strip(),
+            "id": booking_id,
+            "tenant_id": data.tenant_id,
+            "guest_id": guest_id,
+            "room_id": available_room["id"],
+            "room_number": available_room.get("room_number", ""),
+            "room_type": available_room.get("room_type", ""),
+            "check_in": data.check_in + "T14:00:00",
+            "check_out": data.check_out + "T11:00:00",
+            "adults": data.adults,
+            "children": data.children,
+            "guests_count": data.adults + data.children,
+            "status": "confirmed",
+            "payment_status": "pending",
+            "total_amount": total,
+            "balance": total,
+            "channel": "marketplace",
+            "source_channel": "marketplace",
+            "marketplace_agency_id": agency["agency_id"],
+            "marketplace_agency_name": agency["agency_name"],
+            "agency_commission_rate": commission_pct,
+            "agency_commission_amount": commission_amount,
+            "net_to_hotel": net_to_hotel,
+            "confirmation_code": confirmation_code,
+            "external_reference": data.external_reference,
+            "special_requests": data.special_requests,
+            "guest_name": data.guest_name.strip(),
+            "guest_email": data.guest_email.strip(),
+            "guest_phone": data.guest_phone.strip(),
             "origin": "syroce_marketplace",
             "created_at": _now_iso(),
             "updated_at": _now_iso(),
@@ -827,29 +849,35 @@ async def agency_create_reservation(
 
     # Cross-tenant ledger (ileride mutabakat için) — sysdb tenant-bağımsız
     sysdb = get_system_db()
-    await sysdb.marketplace_bookings.insert_one({
-        "id": booking_id,
-        "agency_id": agency["agency_id"],
-        "tenant_id": data.tenant_id,
-        "hotel_name": listing.get("hotel_name"),
-        "confirmation_code": confirmation_code,
-        "external_reference": data.external_reference,
-        "check_in": data.check_in,
-        "check_out": data.check_out,
-        "guest_name": data.guest_name,
-        "total_amount": total,
-        "commission_pct": commission_pct,
-        "commission_amount": commission_amount,
-        "net_to_hotel": net_to_hotel,
-        "status": "confirmed",
-        "created_at": _now_iso(),
-    })
+    await sysdb.marketplace_bookings.insert_one(
+        {
+            "id": booking_id,
+            "agency_id": agency["agency_id"],
+            "tenant_id": data.tenant_id,
+            "hotel_name": listing.get("hotel_name"),
+            "confirmation_code": confirmation_code,
+            "external_reference": data.external_reference,
+            "check_in": data.check_in,
+            "check_out": data.check_out,
+            "guest_name": data.guest_name,
+            "total_amount": total,
+            "commission_pct": commission_pct,
+            "commission_amount": commission_amount,
+            "net_to_hotel": net_to_hotel,
+            "status": "confirmed",
+            "created_at": _now_iso(),
+        }
+    )
 
     # Webhook bildirimi (otele)
     try:
         from routers.b2b_api import fire_webhooks
+
         background_tasks.add_task(
-            fire_webhooks, data.tenant_id, agency["agency_id"], "marketplace.reservation.created",
+            fire_webhooks,
+            data.tenant_id,
+            agency["agency_id"],
+            "marketplace.reservation.created",
             {
                 "reservation_id": booking_id,
                 "confirmation_code": confirmation_code,
@@ -906,9 +934,7 @@ async def agency_list_reservations(
     if check_in_to:
         query.setdefault("check_in", {})["$lte"] = check_in_to
 
-    docs = await sysdb.marketplace_bookings.find(
-        query, {"_id": 0}
-    ).sort("created_at", -1).limit(limit).to_list(limit)
+    docs = await sysdb.marketplace_bookings.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
     return {"reservations": docs, "total": len(docs)}
 
 
@@ -918,9 +944,7 @@ async def agency_get_reservation(
     agency: dict = Depends(get_marketplace_agency),
 ):
     sysdb = get_system_db()
-    doc = await sysdb.marketplace_bookings.find_one(
-        {"id": reservation_id, "agency_id": agency["agency_id"]}, {"_id": 0}
-    )
+    doc = await sysdb.marketplace_bookings.find_one({"id": reservation_id, "agency_id": agency["agency_id"]}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Rezervasyon bulunamadı")
 
@@ -940,9 +964,7 @@ async def agency_cancel_reservation(
     agency: dict = Depends(get_marketplace_agency),
 ):
     sysdb = get_system_db()
-    summary = await sysdb.marketplace_bookings.find_one(
-        {"id": reservation_id, "agency_id": agency["agency_id"]}, {"_id": 0}
-    )
+    summary = await sysdb.marketplace_bookings.find_one({"id": reservation_id, "agency_id": agency["agency_id"]}, {"_id": 0})
     if not summary:
         raise HTTPException(404, "Rezervasyon bulunamadı")
     if summary.get("status") == "cancelled":
@@ -955,13 +977,15 @@ async def agency_cancel_reservation(
 
         await db.bookings.update_one(
             {"id": reservation_id, "tenant_id": summary["tenant_id"]},
-            {"$set": {
-                "status": "cancelled",
-                "cancellation_reason": reason,
-                "cancelled_by": "marketplace_agency",
-                "cancelled_at": _now_iso(),
-                "updated_at": _now_iso(),
-            }},
+            {
+                "$set": {
+                    "status": "cancelled",
+                    "cancellation_reason": reason,
+                    "cancelled_by": "marketplace_agency",
+                    "cancelled_at": _now_iso(),
+                    "updated_at": _now_iso(),
+                }
+            },
         )
     await sysdb.marketplace_bookings.update_one(
         {"id": reservation_id},
@@ -970,8 +994,12 @@ async def agency_cancel_reservation(
 
     try:
         from routers.b2b_api import fire_webhooks
+
         background_tasks.add_task(
-            fire_webhooks, summary["tenant_id"], agency["agency_id"], "marketplace.reservation.cancelled",
+            fire_webhooks,
+            summary["tenant_id"],
+            agency["agency_id"],
+            "marketplace.reservation.cancelled",
             {
                 "reservation_id": reservation_id,
                 "confirmation_code": summary.get("confirmation_code"),
@@ -987,6 +1015,7 @@ async def agency_cancel_reservation(
 # ═══════════════════════════════════════════════════════════════════════
 # Reconciliation — Cross-tenant Komisyon Raporu
 # ═══════════════════════════════════════════════════════════════════════
+
 
 @router.get("/reconciliation/agency")
 async def agency_reconciliation(
@@ -1011,14 +1040,17 @@ async def agency_reconciliation(
             totals["cancelled"] += 1
             continue
         tid = d["tenant_id"]
-        bucket = by_hotel.setdefault(tid, {
-            "tenant_id": tid,
-            "hotel_name": d.get("hotel_name"),
-            "bookings": 0,
-            "gross_revenue": 0.0,
-            "commission": 0.0,
-            "net_to_hotel": 0.0,
-        })
+        bucket = by_hotel.setdefault(
+            tid,
+            {
+                "tenant_id": tid,
+                "hotel_name": d.get("hotel_name"),
+                "bookings": 0,
+                "gross_revenue": 0.0,
+                "commission": 0.0,
+                "net_to_hotel": 0.0,
+            },
+        )
         gross = float(d.get("total_amount", 0))
         comm = float(d.get("commission_amount", 0))
         net = float(d.get("net_to_hotel", gross - comm))
@@ -1036,12 +1068,7 @@ async def agency_reconciliation(
         "period_end": period_end,
         "agency_id": agency["agency_id"],
         "totals": {k: (round(v, 2) if isinstance(v, float) else v) for k, v in totals.items()},
-        "by_hotel": [
-            {**v, "gross_revenue": round(v["gross_revenue"], 2),
-             "commission": round(v["commission"], 2),
-             "net_to_hotel": round(v["net_to_hotel"], 2)}
-            for v in by_hotel.values()
-        ],
+        "by_hotel": [{**v, "gross_revenue": round(v["gross_revenue"], 2), "commission": round(v["commission"], 2), "net_to_hotel": round(v["net_to_hotel"], 2)} for v in by_hotel.values()],
     }
 
 
@@ -1069,13 +1096,16 @@ async def hotel_reconciliation(
             totals["cancelled"] += 1
             continue
         aid = d["agency_id"]
-        bucket = by_agency.setdefault(aid, {
-            "agency_id": aid,
-            "bookings": 0,
-            "gross_revenue": 0.0,
-            "commission_owed": 0.0,
-            "net_received": 0.0,
-        })
+        bucket = by_agency.setdefault(
+            aid,
+            {
+                "agency_id": aid,
+                "bookings": 0,
+                "gross_revenue": 0.0,
+                "commission_owed": 0.0,
+                "net_received": 0.0,
+            },
+        )
         gross = float(d.get("total_amount", 0))
         comm = float(d.get("commission_amount", 0))
         net = float(d.get("net_to_hotel", gross - comm))
@@ -1093,20 +1123,17 @@ async def hotel_reconciliation(
         "period_end": period_end,
         "tenant_id": tenant_id,
         "totals": {k: (round(v, 2) if isinstance(v, float) else v) for k, v in totals.items()},
-        "by_agency": [
-            {**v, "gross_revenue": round(v["gross_revenue"], 2),
-             "commission_owed": round(v["commission_owed"], 2),
-             "net_received": round(v["net_received"], 2)}
-            for v in by_agency.values()
-        ],
+        "by_agency": [{**v, "gross_revenue": round(v["gross_revenue"], 2), "commission_owed": round(v["commission_owed"], 2), "net_received": round(v["net_received"], 2)} for v in by_agency.values()],
     }
 
 
 # ─── Utility ──────────────────────────────────────────────────────────────
 
+
 def _date_range(start: str, end: str) -> list[str]:
     """[start, end) aralığındaki YYYY-MM-DD listesi."""
     from datetime import date, timedelta
+
     s = date.fromisoformat(start)
     e = date.fromisoformat(end)
     out = []

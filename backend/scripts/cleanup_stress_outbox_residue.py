@@ -70,6 +70,7 @@ Every run inserts a summary doc into ``stress_outbox_residue_scans`` with
 counts. A row with ``found_total > 0`` after the next nightly run signals the
 stress outbox backlog is rebuilding (the query-targeting risk is returning).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -85,9 +86,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from core.database import db  # noqa: E402
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("cleanup_stress_outbox_residue")
 
 # Known pilot tenant UUID. The pilot is a live demo tenant and must never be
@@ -130,18 +129,8 @@ async def scan(tenant_id: str, hours: int) -> dict:
     # wasteful. A small sample is fetched separately for the metric row.
     outbox_count = await db[OUTBOX_COLL].count_documents(oq, maxTimeMS=MAX_TIME_MS)
     recon_count = await db[RECON_COLL].count_documents(rq, maxTimeMS=MAX_TIME_MS)
-    outbox_sample = (
-        await db[OUTBOX_COLL]
-        .find(oq, {"_id": 0, "id": 1, "event_type": 1, "status": 1})
-        .limit(10)
-        .to_list(10)
-    )
-    recon_sample = (
-        await db[RECON_COLL]
-        .find(rq, {"_id": 0, "id": 1, "status": 1, "case_type": 1})
-        .limit(10)
-        .to_list(10)
-    )
+    outbox_sample = await db[OUTBOX_COLL].find(oq, {"_id": 0, "id": 1, "event_type": 1, "status": 1}).limit(10).to_list(10)
+    recon_sample = await db[RECON_COLL].find(rq, {"_id": 0, "id": 1, "status": 1, "case_type": 1}).limit(10).to_list(10)
     return {
         "cutoff": cutoff.isoformat(),
         "outbox_query": oq,
@@ -176,9 +165,7 @@ async def record_scan(summary: dict) -> None:
 
 
 async def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Stress tenant outbox + reconciliation residue sweep."
-    )
+    parser = argparse.ArgumentParser(description="Stress tenant outbox + reconciliation residue sweep.")
     parser.add_argument(
         "--hours",
         type=int,
@@ -193,18 +180,12 @@ async def main() -> int:
     args = parser.parse_args()
 
     if args.hours <= 0:
-        logger.error(
-            "--hours pozitif bir tam sayı olmalı; age guard kazara bypass "
-            "edilemez — fail-closed."
-        )
+        logger.error("--hours pozitif bir tam sayı olmalı; age guard kazara bypass edilemez — fail-closed.")
         return 2
 
     tenant_id = os.environ.get("E2E_STRESS_TENANT_ID", "").strip()
     if not tenant_id:
-        logger.error(
-            "E2E_STRESS_TENANT_ID env var tanımlı değil — fail-closed; "
-            "production guard tetiklendi."
-        )
+        logger.error("E2E_STRESS_TENANT_ID env var tanımlı değil — fail-closed; production guard tetiklendi.")
         return 2
 
     # Pilot exclusion guard: refuse if the resolved tenant is the pilot, via
@@ -212,16 +193,13 @@ async def main() -> int:
     pilot_tid = os.environ.get("PILOT_TENANT_ID", "").strip()
     if tenant_id == PILOT_TENANT_UUID or (pilot_tid and tenant_id == pilot_tid):
         logger.error(
-            "E2E_STRESS_TENANT_ID pilot tenant'a (%s) eşit — fail-closed; "
-            "stress residue sweep pilot'a dokunamaz.",
+            "E2E_STRESS_TENANT_ID pilot tenant'a (%s) eşit — fail-closed; stress residue sweep pilot'a dokunamaz.",
             tenant_id,
         )
         return 2
 
     if args.apply and os.environ.get("E2E_ALLOW_STRESS_CLEANUP", "").lower() != "true":
-        logger.error(
-            "--apply için E2E_ALLOW_STRESS_CLEANUP=true gerekli — fail-closed."
-        )
+        logger.error("--apply için E2E_ALLOW_STRESS_CLEANUP=true gerekli — fail-closed.")
         return 2
 
     logger.info(
@@ -254,10 +232,7 @@ async def main() -> int:
     await record_scan(summary)
 
     print("=" * 60)
-    print(
-        f"Stress outbox/recon residue sweep "
-        f"({'APPLY' if args.apply else 'DRY-RUN'}) tenant={tenant_id}"
-    )
+    print(f"Stress outbox/recon residue sweep ({'APPLY' if args.apply else 'DRY-RUN'}) tenant={tenant_id}")
     print("=" * 60)
     for k, v in counts.items():
         print(f"  {k:30s} -> {v}")
@@ -266,15 +241,11 @@ async def main() -> int:
         print("  -- applied (deleted) --")
         for k, v in applied.items():
             print(f"  {k:30s} -> {v}")
-    print(
-        f"  metric row -> stress_outbox_residue_scans @ {summary['scanned_at']}"
-    )
+    print(f"  metric row -> stress_outbox_residue_scans @ {summary['scanned_at']}")
 
     if total > 0:
         logger.warning(
-            "[stress-outbox-residue] %d artık kayıt bulundu "
-            "(outbox=%d recon=%d) — stress backlog birikiyor, "
-            "query-targeting riski geri dönebilir.",
+            "[stress-outbox-residue] %d artık kayıt bulundu (outbox=%d recon=%d) — stress backlog birikiyor, query-targeting riski geri dönebilir.",
             total,
             counts[OUTBOX_COLL],
             counts[RECON_COLL],

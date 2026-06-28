@@ -3,6 +3,7 @@
 Hourly: marks subscriptions whose end_date has passed as expired.
 Sends a heads-up email at 7/3/1 days remaining (best-effort).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -18,6 +19,7 @@ _transient_tracker = TransientFailureTracker("sub-expiry")
 
 def _db():
     from server import db
+
     return db
 
 
@@ -32,8 +34,7 @@ async def _expire_due() -> int:
         {"$set": {"status": "expired", "expired_at": now_iso}},
     )
     if res.modified_count:
-        logger.info("[sub-expiry] marked %d subscriptions expired",
-                    res.modified_count)
+        logger.info("[sub-expiry] marked %d subscriptions expired", res.modified_count)
     return res.modified_count
 
 
@@ -49,17 +50,18 @@ async def _send_warnings() -> None:
         target = now + timedelta(days=days)
         window_start = target - timedelta(hours=1)
         window_end = target
-        cur = db.tenant_subscriptions.find({
-            "status": "active",
-            "end_date": {
-                "$gte": window_start.isoformat(),
-                "$lt": window_end.isoformat(),
+        cur = db.tenant_subscriptions.find(
+            {
+                "status": "active",
+                "end_date": {
+                    "$gte": window_start.isoformat(),
+                    "$lt": window_end.isoformat(),
+                },
             },
-        }, {"_id": 0})
+            {"_id": 0},
+        )
         async for sub in cur:
-            tenant = await db.tenants.find_one(
-                {"id": sub["tenant_id"]}, {"_id": 0, "email": 1, "property_name": 1}
-            )
+            tenant = await db.tenants.find_one({"id": sub["tenant_id"]}, {"_id": 0, "email": 1, "property_name": 1})
             email = (tenant or {}).get("email")
             if not email:
                 continue
@@ -68,9 +70,10 @@ async def _send_warnings() -> None:
                 # sub.product_key tenant-controlled — raw f-string HTML
                 # injection olur. safe_html_value ile escape ediyoruz.
                 from core.mailing_safe import safe_html_value, safe_subject_value
-                hotel_html = safe_html_value((tenant or {}).get('property_name') or 'Otelimiz')
-                product_html = safe_html_value(sub['product_key'])
-                product_subj = safe_subject_value(sub['product_key'])
+
+                hotel_html = safe_html_value((tenant or {}).get("property_name") or "Otelimiz")
+                product_html = safe_html_value(sub["product_key"])
+                product_subj = safe_subject_value(sub["product_key"])
                 await send_email(
                     to=email,
                     subject=f"{product_subj} aboneliğinizin sona ermesine {days} gün kaldı",
@@ -95,7 +98,9 @@ async def run_loop(interval_seconds: int = 3600) -> None:
             _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
         except Exception as e:
             _transient_tracker.log_exception(
-                logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                logger,
+                e,
+                TransientFailureTracker.OUTER_LOOP_KEY,
                 context="tick",
                 non_transient_msg="%s tick failed: %s",
             )

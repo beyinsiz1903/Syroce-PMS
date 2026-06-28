@@ -17,6 +17,7 @@ Index seçimi
     bekleyen şarjlarını listeleme (pending list endpoint).
   - (tenant_id, status, expires_at) — lazy expire update_many için.
 """
+
 from __future__ import annotations
 
 import logging

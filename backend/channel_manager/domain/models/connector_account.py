@@ -7,6 +7,7 @@ Indexes:
   - (tenant_id, status)
   - (provider, status)
 """
+
 import uuid
 from datetime import UTC, datetime
 from enum import Enum

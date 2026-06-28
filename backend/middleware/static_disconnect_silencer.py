@@ -88,12 +88,14 @@ _BENIGN_DISCONNECT_MSG = "Response content shorter than Content-Length"
 # reverse-proxy a closed upstream socket surfaces as Input/output error; the
 # static-path scope (below) keeps a genuine disk/IO fault on a non-asset route
 # from ever being silenced.
-_BENIGN_DISCONNECT_ERRNOS = frozenset({
-    _errno.EPIPE,       # 32  broken pipe
-    _errno.ECONNRESET,  # 104 connection reset by peer
-    _errno.ESHUTDOWN,   # 108 cannot send after transport endpoint shutdown
-    _errno.EIO,         # 5   input/output error (proxied upstream closed)
-})
+_BENIGN_DISCONNECT_ERRNOS = frozenset(
+    {
+        _errno.EPIPE,  # 32  broken pipe
+        _errno.ECONNRESET,  # 104 connection reset by peer
+        _errno.ESHUTDOWN,  # 108 cannot send after transport endpoint shutdown
+        _errno.EIO,  # 5   input/output error (proxied upstream closed)
+    }
+)
 
 # Cumulative count of swallowed disconnects in this process (resets on restart).
 _STATIC_DISCONNECT_SWALLOW_COUNT = 0
@@ -105,9 +107,7 @@ _STATIC_DISCONNECT_SWALLOW_COUNT = 0
 # backstop can read this to drop that one log without suppressing a real
 # mid-response handler bug (which never swallows → flag stays False). Default
 # False; a fresh request runs in a fresh task context, so there is no staleness.
-_benign_static_disconnect_in_flight: ContextVar[bool] = ContextVar(
-    "benign_static_disconnect_in_flight", default=False
-)
+_benign_static_disconnect_in_flight: ContextVar[bool] = ContextVar("benign_static_disconnect_in_flight", default=False)
 
 
 def get_static_disconnect_swallow_count() -> int:
@@ -163,9 +163,7 @@ class StaticDisconnectSilencerMiddleware:
             )
 
 
-def _is_benign_static_disconnect(
-    scope: Scope, exc: BaseException, response_started: bool
-) -> bool:
+def _is_benign_static_disconnect(scope: Scope, exc: BaseException, response_started: bool) -> bool:
     # Classify the disconnect signature first. An OSError qualifies only when its
     # ``errno`` is a peer-gone code AND the response had already started (a
     # socket-write failure); an OSError with any other/absent errno, or before

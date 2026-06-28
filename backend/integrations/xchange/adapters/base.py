@@ -1,4 +1,5 @@
 """Base adapter contract for Syroce Xchange partners."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -36,5 +37,4 @@ class BaseAdapter(ABC):
         return False
 
     @abstractmethod
-    async def deliver(self, envelope: XchangeEnvelope) -> DeliveryResult:
-        ...
+    async def deliver(self, envelope: XchangeEnvelope) -> DeliveryResult: ...

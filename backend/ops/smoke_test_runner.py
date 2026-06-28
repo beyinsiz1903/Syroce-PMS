@@ -4,6 +4,7 @@ Smoke Test Runner — Post-Deploy Critical Path Validation
 Executes real HTTP requests against critical endpoints.
 Used as the final gate in the deploy pipeline and after canary promotion.
 """
+
 import logging
 import time
 from datetime import UTC, datetime
@@ -122,15 +123,17 @@ class SmokeTestRunner:
                 if test.get("extract_token") and test_result["passed"] and test_result.get("token"):
                     token = test_result["token"]
 
-        return ServiceResult.success({
-            "ran_at": now,
-            "total": len(SMOKE_TESTS),
-            "passed": total_passed,
-            "failed": len(SMOKE_TESTS) - total_passed,
-            "results": results,
-            "critical_failures": [r for r in results if not r["passed"] and r.get("critical")],
-            "verdict": "PASS" if total_passed == len(SMOKE_TESTS) else "FAIL",
-        })
+        return ServiceResult.success(
+            {
+                "ran_at": now,
+                "total": len(SMOKE_TESTS),
+                "passed": total_passed,
+                "failed": len(SMOKE_TESTS) - total_passed,
+                "results": results,
+                "critical_failures": [r for r in results if not r["passed"] and r.get("critical")],
+                "verdict": "PASS" if total_passed == len(SMOKE_TESTS) else "FAIL",
+            }
+        )
 
     async def _run_single(self, client: httpx.AsyncClient, test: dict, token: str = None) -> dict:
         result = {

@@ -2,6 +2,7 @@
 
 Mounted under /api/supplies-market/vendor.
 """
+
 from __future__ import annotations
 
 import logging
@@ -88,6 +89,7 @@ async def vendor_login(request: Request, payload: VendorLogin):
         normalize_identity,
     )
     from security.auth_throttle import enforce as _throttle
+
     _ip = client_ip(request)
     _email_key = normalize_identity(payload.email)
     _ip_key = f"vendor_login_ip:{_ip}"
@@ -206,9 +208,7 @@ async def vendor_upload_product_image(
     # Magic-bytes verify (rejects SVG, PDF, spoofed-MIME polyglots and
     # canonicalizes ext/content-type from the real decoded format).
     content = await file.read(MAX_IMAGE_BYTES + 1)
-    _, ext = validate_image_bytes(
-        content, max_bytes=MAX_IMAGE_BYTES, field_label="Gorsel"
-    )
+    _, ext = validate_image_bytes(content, max_bytes=MAX_IMAGE_BYTES, field_label="Gorsel")
 
     folder = _UPLOAD_DIR / "vendors" / vendor_id / "products"
     folder.mkdir(parents=True, exist_ok=True)

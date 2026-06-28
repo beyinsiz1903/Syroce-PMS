@@ -2,6 +2,7 @@
 Revenue / Pricing Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
+
 from __future__ import annotations
 
 import logging
@@ -41,13 +42,17 @@ def get_pricing_reason(strategy: str | None, demand: float | None = None) -> str
         return "Lead-time based curve applied."
     return f"Strategy '{strategy}' applied."
 
+
 logger = logging.getLogger(__name__)
 
 try:
     from cache_manager import cached
 except ImportError:
+
     def cached(ttl=300, key_prefix=""):
-        def decorator(func): return func
+        def decorator(func):
+            return func
+
         return decorator
 
 
@@ -55,6 +60,7 @@ router = APIRouter(prefix="/api", tags=["Revenue / Pricing"])
 
 
 # ── Inline Models ──
+
 
 class RatePlanFilter(BaseModel):
     channel: ChannelType | None = None
@@ -101,6 +107,7 @@ class DynamicRestrictionsRequest(BaseModel):
 
 class DemandForecast(BaseModel):
     """Demand forecast model"""
+
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
@@ -115,6 +122,7 @@ class DemandForecast(BaseModel):
 
 class CompetitorRate(BaseModel):
     """Competitor rate scraping"""
+
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
@@ -138,7 +146,9 @@ class RateOverrideRequest(BaseModel):
 
 
 @router.post("/rms/update-rate")
-async def update_room_rate(rate_data: dict, current_user: User = Depends(get_current_user),
+async def update_room_rate(
+    rate_data: dict,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """Fiyat degisikligini yerel niyet/audit olarak kaydet ve pinned-provider durumunu durustce raporla.
@@ -150,25 +160,22 @@ async def update_room_rate(rate_data: dict, current_user: User = Depends(get_cur
     result = await pricing_service.update_room_rate(ctx, rate_data)
     return result.data
 
+
 # ============= PAYMENT & FINANCIAL (ALREADY ADDED ABOVE) =============
 
 
-
-
-
 @router.post("/rms/analysis", response_model=PriceAnalysis)
-async def create_price_analysis(analysis: PriceAnalysis, current_user: User = Depends(get_current_user),
+async def create_price_analysis(
+    analysis: PriceAnalysis,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     analysis.tenant_id = current_user.tenant_id
     analysis_dict = analysis.model_dump()
-    analysis_dict['date'] = analysis_dict['date'].isoformat()
-    analysis_dict['created_at'] = analysis_dict['created_at'].isoformat()
+    analysis_dict["date"] = analysis_dict["date"].isoformat()
+    analysis_dict["created_at"] = analysis_dict["created_at"].isoformat()
     await db.price_analysis.insert_one(analysis_dict)
     return analysis
-
-
-
 
 
 @router.get("/rms/analysis", response_model=list[PriceAnalysis])
@@ -177,13 +184,11 @@ async def get_price_analysis(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v86 DV: RMS price analysis
 ):
-    analyses = await db.price_analysis.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
+    analyses = await db.price_analysis.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
     return analyses
 
+
 # ============= LOYALTY =============
-
-
-
 
 
 @router.post("/rms/restrictions")
@@ -200,49 +205,31 @@ async def set_dynamic_restrictions(
     - Stop Sell
     """
     restriction = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'date': request.date,
-        'room_type': request.room_type,
-        'min_los': request.min_los,
-        'cta': request.cta,
-        'ctd': request.ctd,
-        'stop_sell': request.stop_sell,
-        'created_by': current_user.name,
-        'created_at': datetime.now(UTC).isoformat()
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "date": request.date,
+        "room_type": request.room_type,
+        "min_los": request.min_los,
+        "cta": request.cta,
+        "ctd": request.ctd,
+        "stop_sell": request.stop_sell,
+        "created_by": current_user.name,
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
     # Check if restriction exists
-    existing = await db.rms_restrictions.find_one({
-        'tenant_id': current_user.tenant_id,
-        'date': request.date,
-        'room_type': request.room_type
-    })
+    existing = await db.rms_restrictions.find_one({"tenant_id": current_user.tenant_id, "date": request.date, "room_type": request.room_type})
 
     if existing:
-        await db.rms_restrictions.update_one(
-            {'id': existing.get('id')},
-            {'$set': restriction}
-        )
+        await db.rms_restrictions.update_one({"id": existing.get("id")}, {"$set": restriction})
     else:
         await db.rms_restrictions.insert_one(restriction)
 
-    return {
-        'success': True,
-        'message': 'Restrictions updated',
-        'restriction': restriction
-    }
-
-
-
-
+    return {"success": True, "message": "Restrictions updated", "restriction": restriction}
 
 
 @router.get("/rms/market-compression")
-async def get_market_compression(
-    date: str | None = None,
-    current_user: User = Depends(get_current_user)
-):
+async def get_market_compression(date: str | None = None, current_user: User = Depends(get_current_user)):
     """
     Market compression score
     - Overall city occupancy estimate
@@ -257,88 +244,64 @@ async def get_market_compression(
     # city-occupancy estimate, or competitor-based pricing opportunity (the
     # previous implementation hardcoded competitor=120 / our=100 / base=50).
     # We DO surface the one real signal we have: confirmed city events.
-    events = await db.city_events.find({
-        'date': target_date
-    }).to_list(length=10)
+    events = await db.city_events.find({"date": target_date}).to_list(length=10)
 
-    has_major_event = any(e.get('impact') == 'high' for e in events)
+    has_major_event = any(e.get("impact") == "high" for e in events)
 
     return {
-        'date': target_date,
-        'data_available': False,
-        'compression_score': None,
-        'compression_level': None,
-        'city_occupancy_estimate': None,
-        'events': [{'name': e.get('name'), 'impact': e.get('impact')} for e in events] if events else [],
-        'has_major_event': has_major_event,
-        'pricing_opportunity_pct': None,
-        'recommendation': (
-            'Onemli sehir etkinligi var; talebi yakindan izleyin.' if has_major_event else None
-        ),
-        'message': (
-            'Pazar sikismasi skoru icin dis veri kaynagi (STR/DMO sehir doluluk, '
-            'rakip fiyat) yapilandirilmamis. Sahte skor uretilmez; sadece '
-            'dogrulanmis sehir etkinlikleri gosterilir.'
-        ),
+        "date": target_date,
+        "data_available": False,
+        "compression_score": None,
+        "compression_level": None,
+        "city_occupancy_estimate": None,
+        "events": [{"name": e.get("name"), "impact": e.get("impact")} for e in events] if events else [],
+        "has_major_event": has_major_event,
+        "pricing_opportunity_pct": None,
+        "recommendation": ("Onemli sehir etkinligi var; talebi yakindan izleyin." if has_major_event else None),
+        "message": ("Pazar sikismasi skoru icin dis veri kaynagi (STR/DMO sehir doluluk, rakip fiyat) yapilandirilmamis. Sahte skor uretilmez; sadece dogrulanmis sehir etkinlikleri gosterilir."),
     }
 
 
 # ============= MAINTENANCE ENHANCEMENTS =============
 
 
-
-
-
 @router.get("/rms/price-recommendation-slider")
-async def get_price_recommendation_with_range(
-    room_type: str,
-    check_in_date: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
+async def get_price_recommendation_with_range(room_type: str, check_in_date: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get price recommendations with slider range (min, recommended, max)"""
     current_user = await get_current_user(credentials)
 
     # Get base room price
-    room = await db.rooms.find_one({
-        'tenant_id': current_user.tenant_id,
-        'room_type': room_type
-    })
+    room = await db.rooms.find_one({"tenant_id": current_user.tenant_id, "room_type": room_type})
 
-    base_price = room.get('base_price', 100) if room else 100
+    base_price = room.get("base_price", 100) if room else 100
 
     # Get historical occupancy - handle date parsing
     try:
-        check_in = datetime.fromisoformat(check_in_date.replace('Z', '+00:00'))
+        check_in = datetime.fromisoformat(check_in_date.replace("Z", "+00:00"))
     except Exception:
         # Try alternative formats
         try:
-            check_in = datetime.strptime(check_in_date, '%Y-%m-%d')
+            check_in = datetime.strptime(check_in_date, "%Y-%m-%d")
         except Exception:
             check_in = datetime.now(UTC)
 
     # Calculate occupancy for same date last year
     last_year_date = check_in - timedelta(days=365)
-    last_year_bookings = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'check_in': {
-            '$gte': last_year_date,
-            '$lt': last_year_date + timedelta(days=1)
-        },
-        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in', 'checked_out']}
-    })
+    last_year_bookings = await db.bookings.count_documents(
+        {
+            "tenant_id": current_user.tenant_id,
+            "check_in": {"$gte": last_year_date, "$lt": last_year_date + timedelta(days=1)},
+            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
+        }
+    )
 
-    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+    total_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id})
     historical_occupancy_pct = (last_year_bookings / total_rooms * 100) if total_rooms > 0 else 50
 
     # Calculate current occupancy for the target date
-    current_bookings = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'check_in': {
-            '$gte': check_in,
-            '$lt': check_in + timedelta(days=1)
-        },
-        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
-    })
+    current_bookings = await db.bookings.count_documents(
+        {"tenant_id": current_user.tenant_id, "check_in": {"$gte": check_in, "$lt": check_in + timedelta(days=1)}, "status": {"$in": ["confirmed", "guaranteed", "checked_in"]}}
+    )
 
     current_occupancy_pct = (current_bookings / total_rooms * 100) if total_rooms > 0 else 0
 
@@ -365,33 +328,22 @@ async def get_price_recommendation_with_range(
         max_price = base_price * 1.5
 
     return {
-        'room_type': room_type,
-        'check_in_date': check_in_date,
-        'base_price': round(base_price, 2),
-        'pricing_recommendation': {
-            'min_price': round(min_price, 2),
-            'recommended_price': round(recommended_price, 2),
-            'max_price': round(max_price, 2)
+        "room_type": room_type,
+        "check_in_date": check_in_date,
+        "base_price": round(base_price, 2),
+        "pricing_recommendation": {"min_price": round(min_price, 2), "recommended_price": round(recommended_price, 2), "max_price": round(max_price, 2)},
+        "occupancy_analysis": {
+            "current_occupancy_pct": round(current_occupancy_pct, 1),
+            "historical_occupancy_pct": round(historical_occupancy_pct, 1),
+            "current_bookings": current_bookings,
+            "total_rooms": total_rooms,
         },
-        'occupancy_analysis': {
-            'current_occupancy_pct': round(current_occupancy_pct, 1),
-            'historical_occupancy_pct': round(historical_occupancy_pct, 1),
-            'current_bookings': current_bookings,
-            'total_rooms': total_rooms
-        },
-        'recommendation_reason': get_pricing_reason(current_occupancy_pct)
+        "recommendation_reason": get_pricing_reason(current_occupancy_pct),
     }
 
 
-
-
-
 @router.get("/rms/demand-heatmap")
-async def get_demand_heatmap(
-    start_date: str | None = None,
-    end_date: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
+async def get_demand_heatmap(start_date: str | None = None, end_date: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get historical demand heatmap for visualization"""
     current_user = await get_current_user(credentials)
 
@@ -403,17 +355,17 @@ async def get_demand_heatmap(
         start = datetime.now(UTC)
         end = start + timedelta(days=90)
 
-    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+    total_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id})
 
     # Single fetch of all overlapping bookings in window, then count per-day in memory
     overlapping = await db.bookings.find(
         {
-            'tenant_id': current_user.tenant_id,
-            'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-            'check_in': {'$lte': end},
-            'check_out': {'$gt': start},
+            "tenant_id": current_user.tenant_id,
+            "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
+            "check_in": {"$lte": end},
+            "check_out": {"$gt": start},
         },
-        {'_id': 0, 'check_in': 1, 'check_out': 1},
+        {"_id": 0, "check_in": 1, "check_out": 1},
     ).to_list(10000)
 
     def _to_dt(v):
@@ -421,15 +373,15 @@ async def get_demand_heatmap(
             return v
         if isinstance(v, str):
             try:
-                return datetime.fromisoformat(v.replace('Z', '+00:00'))
+                return datetime.fromisoformat(v.replace("Z", "+00:00"))
             except Exception:
                 return None
         return None
 
     parsed = []
     for b in overlapping:
-        ci = _to_dt(b.get('check_in'))
-        co = _to_dt(b.get('check_out'))
+        ci = _to_dt(b.get("check_in"))
+        co = _to_dt(b.get("check_out"))
         if ci and co:
             parsed.append((ci, co))
 
@@ -439,45 +391,35 @@ async def get_demand_heatmap(
         bookings_count = sum(1 for ci, co in parsed if ci <= current_date < co)
         occupancy_pct = (bookings_count / total_rooms * 100) if total_rooms > 0 else 0
         if occupancy_pct < 30:
-            demand_level = 'low'
+            demand_level = "low"
         elif occupancy_pct < 60:
-            demand_level = 'medium'
+            demand_level = "medium"
         elif occupancy_pct < 80:
-            demand_level = 'high'
+            demand_level = "high"
         else:
-            demand_level = 'very_high'
-        heatmap_data.append({
-            'date': current_date.strftime('%Y-%m-%d'),
-            'day_of_week': current_date.strftime('%A'),
-            'occupancy_pct': round(occupancy_pct, 1),
-            'bookings_count': bookings_count,
-            'demand_level': demand_level
-        })
+            demand_level = "very_high"
+        heatmap_data.append(
+            {
+                "date": current_date.strftime("%Y-%m-%d"),
+                "day_of_week": current_date.strftime("%A"),
+                "occupancy_pct": round(occupancy_pct, 1),
+                "bookings_count": bookings_count,
+                "demand_level": demand_level,
+            }
+        )
         current_date += timedelta(days=1)
 
-    return {
-        'period': {
-            'start_date': start.isoformat(),
-            'end_date': end.isoformat(),
-            'total_days': len(heatmap_data)
-        },
-        'heatmap_data': heatmap_data
-    }
-
-
-
+    return {"period": {"start_date": start.isoformat(), "end_date": end.isoformat(), "total_days": len(heatmap_data)}, "heatmap_data": heatmap_data}
 
 
 @router.get("/rms/compset-analysis")
-async def get_compset_analysis(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
+async def get_compset_analysis(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get competitive set analysis - most wanted features"""
     current_user = await get_current_user(credentials)
 
     # Get competitor data
     competitors = []
-    async for comp in db.competitors.find({'tenant_id': current_user.tenant_id}):
+    async for comp in db.competitors.find({"tenant_id": current_user.tenant_id}):
         competitors.append(comp)
 
     # Gerçek rakip verisi yoksa SAHTE rakip (Competitor Hotel A/B/C) üretilmez (fail-closed);
@@ -486,32 +428,27 @@ async def get_compset_analysis(
     # Analyze features
     feature_count = {}
     for comp in competitors:
-        for feature in comp.get('features', []):
+        for feature in comp.get("features", []):
             feature_count[feature] = feature_count.get(feature, 0) + 1
 
     # Sort by popularity
     most_wanted_features = [
-        {'feature': feature, 'competitor_count': count, 'popularity_pct': round(count / len(competitors) * 100, 1)}
+        {"feature": feature, "competitor_count": count, "popularity_pct": round(count / len(competitors) * 100, 1)}
         for feature, count in sorted(feature_count.items(), key=lambda x: x[1], reverse=True)
     ]
 
     # Calculate averages
-    avg_rate = sum(c.get('avg_rate', 0) for c in competitors) / len(competitors) if competitors else 0
-    avg_occupancy = sum(c.get('occupancy_estimate', 0) for c in competitors) / len(competitors) if competitors else 0
-    avg_rating = sum(c.get('rating', 0) for c in competitors) / len(competitors) if competitors else 0
+    avg_rate = sum(c.get("avg_rate", 0) for c in competitors) / len(competitors) if competitors else 0
+    avg_occupancy = sum(c.get("occupancy_estimate", 0) for c in competitors) / len(competitors) if competitors else 0
+    avg_rating = sum(c.get("rating", 0) for c in competitors) / len(competitors) if competitors else 0
 
     return {
-        'compset_summary': {
-            'total_competitors': len(competitors),
-            'avg_rate': round(avg_rate, 2),
-            'avg_occupancy_pct': round(avg_occupancy, 1),
-            'avg_rating': round(avg_rating, 2)
-        },
-        'competitors': competitors,
-        'most_wanted_features': most_wanted_features[:10],  # Top 10
-        'feature_gap_analysis': 'To be implemented with property amenity comparison',
-        'data_available': len(competitors) > 0,
-        'message': None if len(competitors) > 0 else 'Rakip set (comp set) verisi yok; analiz için gerçek rakip kaydı gerekir.'
+        "compset_summary": {"total_competitors": len(competitors), "avg_rate": round(avg_rate, 2), "avg_occupancy_pct": round(avg_occupancy, 1), "avg_rating": round(avg_rating, 2)},
+        "competitors": competitors,
+        "most_wanted_features": most_wanted_features[:10],  # Top 10
+        "feature_gap_analysis": "To be implemented with property amenity comparison",
+        "data_available": len(competitors) > 0,
+        "message": None if len(competitors) > 0 else "Rakip set (comp set) verisi yok; analiz için gerçek rakip kaydı gerekir.",
     }
 
 
@@ -519,18 +456,12 @@ async def get_compset_analysis(
 # Comprehensive revenue management endpoints optimized for mobile apps
 
 
-
-
-
 @router.get("/rms/compset/real-time-prices")
-async def get_compset_real_time_prices(
-    check_in_date: str | None = None,
-    room_type: str = 'Standard',
-    current_user: User = Depends(get_current_user)
-):
+async def get_compset_real_time_prices(check_in_date: str | None = None, room_type: str = "Standard", current_user: User = Depends(get_current_user)):
     if not check_in_date:
         from datetime import UTC as _UTC
         from datetime import datetime as _dt
+
         check_in_date = _dt.now(_UTC).date().isoformat()
     """Get competitor prices - REAL DATA from compset database
 
@@ -542,41 +473,26 @@ async def get_compset_real_time_prices(
     """
 
     # Get competitor data from database
-    competitors = await db.competitor_prices.find({
-        'tenant_id': current_user.tenant_id,
-        'check_in_date': check_in_date,
-        'room_type': room_type
-    }, {'_id': 0}).to_list(20)
+    competitors = await db.competitor_prices.find({"tenant_id": current_user.tenant_id, "check_in_date": check_in_date, "room_type": room_type}, {"_id": 0}).to_list(20)
 
     # If no data, return empty (no mock data)
     if not competitors:
         return {
-            'check_in_date': check_in_date,
-            'room_type': room_type,
-            'competitors': [],
-            'market_average': 0,
-            'recommendation': {
-                'suggested_price': 0,
-                'strategy': 'No competitor data available',
-                'confidence': 0
-            },
-            'last_updated': datetime.now(UTC).isoformat()
+            "check_in_date": check_in_date,
+            "room_type": room_type,
+            "competitors": [],
+            "market_average": 0,
+            "recommendation": {"suggested_price": 0, "strategy": "No competitor data available", "confidence": 0},
+            "last_updated": datetime.now(UTC).isoformat(),
         }
 
-    avg_price = sum(c['price'] for c in competitors) / len(competitors)
+    avg_price = sum(c["price"] for c in competitors) / len(competitors)
 
     return {
-        'check_in_date': check_in_date,
-        'room_type': room_type,
-        'competitors': competitors,
-        'market_average': round(avg_price, 2),
-        'recommendation': {
-            'suggested_price': round(avg_price * 0.95, 2),
-            'strategy': 'Price competitively to maximize occupancy',
-            'confidence': 85
-        },
-        'last_updated': datetime.now(UTC).isoformat()
+        "check_in_date": check_in_date,
+        "room_type": room_type,
+        "competitors": competitors,
+        "market_average": round(avg_price, 2),
+        "recommendation": {"suggested_price": round(avg_price * 0.95, 2), "strategy": "Price competitively to maximize occupancy", "confidence": 85},
+        "last_updated": datetime.now(UTC).isoformat(),
     }
-
-
-

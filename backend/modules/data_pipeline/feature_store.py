@@ -2,6 +2,7 @@
 Feature Store - Feature engineering from operational data.
 Extracts features from reservations, stays, folios, guest journey events, and channel signals.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -19,33 +20,49 @@ class FeatureStore:
         "revenue": {
             "sources": ["bookings", "rooms", "folios"],
             "features": [
-                "avg_daily_rate", "occupancy_rate", "revpar", "booking_lead_time",
-                "cancellation_rate", "length_of_stay", "channel_mix", "day_of_week_demand",
-                "seasonal_factor", "group_vs_transient_ratio",
+                "avg_daily_rate",
+                "occupancy_rate",
+                "revpar",
+                "booking_lead_time",
+                "cancellation_rate",
+                "length_of_stay",
+                "channel_mix",
+                "day_of_week_demand",
+                "seasonal_factor",
+                "group_vs_transient_ratio",
             ],
         },
         "operational": {
             "sources": ["tasks", "rooms", "bookings"],
             "features": [
-                "housekeeping_turnaround_time", "maintenance_request_frequency",
-                "room_turnover_rate", "staffing_density", "task_completion_rate",
-                "average_response_time", "overdue_task_ratio", "check_in_peak_hour",
+                "housekeeping_turnaround_time",
+                "maintenance_request_frequency",
+                "room_turnover_rate",
+                "staffing_density",
+                "task_completion_rate",
+                "average_response_time",
+                "overdue_task_ratio",
+                "check_in_peak_hour",
             ],
         },
         "guest_intelligence": {
             "sources": ["guests", "bookings", "folios"],
             "features": [
-                "guest_lifetime_value", "booking_frequency", "avg_spend_per_stay",
-                "preferred_room_type", "channel_preference", "complaint_history",
-                "loyalty_tier", "churn_risk_score", "upsell_propensity",
+                "guest_lifetime_value",
+                "booking_frequency",
+                "avg_spend_per_stay",
+                "preferred_room_type",
+                "channel_preference",
+                "complaint_history",
+                "loyalty_tier",
+                "churn_risk_score",
+                "upsell_propensity",
                 "satisfaction_trend",
             ],
         },
     }
 
-    async def extract_revenue_features(self, tenant_id: str,
-                                       date_from: str | None = None,
-                                       date_to: str | None = None) -> dict[str, Any]:
+    async def extract_revenue_features(self, tenant_id: str, date_from: str | None = None, date_to: str | None = None) -> dict[str, Any]:
         """Extract revenue-related features from operational data."""
         now = datetime.now(UTC)
         if not date_from:
@@ -120,10 +137,12 @@ class FeatureStore:
             "record_count": len(bookings),
         }
 
-        await db.feature_store.insert_one({
-            "id": str(uuid.uuid4()),
-            **features,
-        })
+        await db.feature_store.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                **features,
+            }
+        )
         return features
 
     async def extract_operational_features(self, tenant_id: str) -> dict[str, Any]:
@@ -206,12 +225,14 @@ class FeatureStore:
         pipeline = [
             {"$match": {"tenant_id": tenant_id}},
             {"$sort": {"extracted_at": -1}},
-            {"$group": {
-                "_id": "$feature_set",
-                "latest_extraction": {"$first": "$extracted_at"},
-                "record_count": {"$first": "$record_count"},
-                "total_extractions": {"$sum": 1},
-            }},
+            {
+                "$group": {
+                    "_id": "$feature_set",
+                    "latest_extraction": {"$first": "$extracted_at"},
+                    "record_count": {"$first": "$record_count"},
+                    "total_extractions": {"$sum": 1},
+                }
+            },
         ]
         results = await db.feature_store.aggregate(pipeline).to_list(10)
         return {

@@ -41,6 +41,7 @@ Failure mode: a Redis outage degrades to "single-worker SSE", not
 broken SSE. Local subscribers continue to receive events from
 publishers on the same worker.
 """
+
 import asyncio
 import json
 import logging
@@ -50,6 +51,7 @@ from typing import Any
 try:
     from redis.exceptions import TimeoutError as RedisTimeoutError
 except Exception:  # pragma: no cover
+
     class RedisTimeoutError(Exception):
         """Shim used when redis.exceptions is unavailable."""
 
@@ -125,9 +127,7 @@ class KBSQueuePubSub:
 
         if redis_client is None:
             self._redis = None
-            logger.info(
-                "KBS queue pub/sub: no Redis client, local-only mode"
-            )
+            logger.info("KBS queue pub/sub: no Redis client, local-only mode")
             return
 
         self._redis = redis_client
@@ -136,9 +136,7 @@ class KBSQueuePubSub:
             await self._pubsub.subscribe(CHANNEL)
             self._active = True
             self._listener_task = asyncio.create_task(self._listen())
-            logger.info(
-                f"KBS queue pub/sub initialized (instance={instance_id})"
-            )
+            logger.info(f"KBS queue pub/sub initialized (instance={instance_id})")
         except Exception as e:
             logger.warning(f"KBS queue pub/sub init failed: {e}")
             self._active = False
@@ -151,14 +149,10 @@ class KBSQueuePubSub:
         q: asyncio.Queue = asyncio.Queue(maxsize=256)
         async with self._get_lock():
             self._subscribers.setdefault(tenant_id, set()).add(q)
-            self._metrics["subscribers_total"] = sum(
-                len(s) for s in self._subscribers.values()
-            )
+            self._metrics["subscribers_total"] = sum(len(s) for s in self._subscribers.values())
         return q
 
-    async def remove_subscriber(
-        self, tenant_id: str, q: asyncio.Queue
-    ) -> None:
+    async def remove_subscriber(self, tenant_id: str, q: asyncio.Queue) -> None:
         """Unregister a closed SSE connection."""
         async with self._get_lock():
             bucket = self._subscribers.get(tenant_id)
@@ -166,9 +160,7 @@ class KBSQueuePubSub:
                 bucket.discard(q)
                 if not bucket:
                     self._subscribers.pop(tenant_id, None)
-            self._metrics["subscribers_total"] = sum(
-                len(s) for s in self._subscribers.values()
-            )
+            self._metrics["subscribers_total"] = sum(len(s) for s in self._subscribers.values())
 
     async def _fanout_local(self, tenant_id: str, event: dict) -> None:
         """Push ``event`` to every local subscriber for ``tenant_id``.
@@ -191,8 +183,7 @@ class KBSQueuePubSub:
                 # job on its next polling reconciliation. Logged so
                 # ops can detect a chronically slow consumer.
                 logger.warning(
-                    "KBS SSE subscriber queue full for tenant %s — "
-                    "dropping event",
+                    "KBS SSE subscriber queue full for tenant %s — dropping event",
                     tenant_id,
                 )
 
@@ -252,12 +243,8 @@ class KBSQueuePubSub:
                 self._metrics["events_published_redis"] += 1
             except Exception as e:
                 self._metrics["publish_errors"] += 1
-                self._metrics["last_publish_error"] = (
-                    f"{type(e).__name__}: {str(e)[:200]}"
-                )
-                self._metrics["last_publish_error_at"] = (
-                    datetime.now(UTC).isoformat()
-                )
+                self._metrics["last_publish_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+                self._metrics["last_publish_error_at"] = datetime.now(UTC).isoformat()
                 # WARNING (not DEBUG) — a cross-worker publish failure
                 # silently degrades the SSE bridge to single-worker
                 # delivery and operators must see it. But we throttle
@@ -272,23 +259,11 @@ class KBSQueuePubSub:
                 # "in last 30s" to avoid mis-implying a fixed window.
                 now = datetime.now(UTC)
                 last = self._last_publish_warn_at
-                interval_elapsed = (
-                    last is None
-                    or (now - last).total_seconds()
-                    >= self._publish_warn_interval_s
-                )
+                interval_elapsed = last is None or (now - last).total_seconds() >= self._publish_warn_interval_s
                 if interval_elapsed:
                     suppressed = self._suppressed_publish_warns
-                    suffix = (
-                        f" (+{suppressed} similar suppressed since last warning)"
-                        if suppressed
-                        else ""
-                    )
-                    logger.warning(
-                        f"KBS SSE Redis publish error "
-                        f"(total={self._metrics['publish_errors']}): "
-                        f"{e}{suffix}"
-                    )
+                    suffix = f" (+{suppressed} similar suppressed since last warning)" if suppressed else ""
+                    logger.warning(f"KBS SSE Redis publish error (total={self._metrics['publish_errors']}): {e}{suffix}")
                     self._last_publish_warn_at = now
                     self._suppressed_publish_warns = 0
                 else:
@@ -306,32 +281,18 @@ class KBSQueuePubSub:
                         if message.get("type") != "message":
                             continue
                         await self._handle_message(message)
-                    logger.warning(
-                        "KBS SSE pubsub listener exited; reconnecting"
-                    )
+                    logger.warning("KBS SSE pubsub listener exited; reconnecting")
                 except asyncio.CancelledError:
                     return
                 except (TimeoutError, RedisTimeoutError) as e:
-                    self._metrics["last_listen_error"] = (
-                        f"IdleTimeout: {str(e)[:120]}"
-                    )
-                    self._metrics["last_listen_error_at"] = (
-                        datetime.now(UTC).isoformat()
-                    )
-                    logger.debug(
-                        "KBS SSE pubsub idle timeout; reconnecting"
-                    )
+                    self._metrics["last_listen_error"] = f"IdleTimeout: {str(e)[:120]}"
+                    self._metrics["last_listen_error_at"] = datetime.now(UTC).isoformat()
+                    logger.debug("KBS SSE pubsub idle timeout; reconnecting")
                 except Exception as e:
                     self._metrics["listen_errors"] += 1
-                    self._metrics["last_listen_error"] = (
-                        f"{type(e).__name__}: {str(e)[:200]}"
-                    )
-                    self._metrics["last_listen_error_at"] = (
-                        datetime.now(UTC).isoformat()
-                    )
-                    logger.warning(
-                        f"KBS SSE pubsub listener error: {e}; reconnecting"
-                    )
+                    self._metrics["last_listen_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+                    self._metrics["last_listen_error_at"] = datetime.now(UTC).isoformat()
+                    logger.warning(f"KBS SSE pubsub listener error: {e}; reconnecting")
 
             if not self._active or self._redis is None:
                 return
@@ -361,12 +322,8 @@ class KBSQueuePubSub:
             await self._fanout_local(tenant_id, event)
         except Exception as e:
             self._metrics["listen_errors"] += 1
-            self._metrics["last_listen_error"] = (
-                f"handle: {type(e).__name__}: {str(e)[:200]}"
-            )
-            self._metrics["last_listen_error_at"] = (
-                datetime.now(UTC).isoformat()
-            )
+            self._metrics["last_listen_error"] = f"handle: {type(e).__name__}: {str(e)[:200]}"
+            self._metrics["last_listen_error_at"] = datetime.now(UTC).isoformat()
             logger.warning(f"KBS SSE handle error: {e}")
 
     async def _reconnect(self) -> bool:

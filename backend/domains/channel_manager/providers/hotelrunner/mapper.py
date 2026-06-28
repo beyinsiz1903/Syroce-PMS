@@ -7,6 +7,7 @@ Bidirectional mapping between HotelRunner models and canonical models.
 Inbound:  HotelRunner reservation → canonical reservation dict
 Outbound: PMS ARI delta → HotelRunner inventory payload
 """
+
 import logging
 from typing import Any
 
@@ -98,6 +99,7 @@ def map_raw_payload_to_canonical(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 # ── Outbound Mapping: ARI Push ────────────────────────────────────────
+
 
 def map_ari_delta_to_daily_payload(
     delta: dict[str, Any],

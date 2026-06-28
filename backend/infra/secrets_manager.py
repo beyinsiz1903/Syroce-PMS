@@ -8,6 +8,7 @@ Environment:
     VAULT_ADDR         — HashiCorp Vault address
     VAULT_TOKEN        — HashiCorp Vault token
 """
+
 import json
 import logging
 import os
@@ -64,9 +65,8 @@ class AWSSecretsProvider(SecretsProvider):
         if not self._client:
             try:
                 import boto3
-                self._client = boto3.client(
-                    "secretsmanager", region_name=self._region
-                )
+
+                self._client = boto3.client("secretsmanager", region_name=self._region)
             except Exception as e:
                 logger.error(f"AWS Secrets Manager client init failed: {e}")
         return self._client
@@ -129,6 +129,7 @@ class VaultSecretsProvider(SecretsProvider):
             return None
         try:
             import httpx
+
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
                     f"{self._addr}/v1/secret/data/{key}",
@@ -159,10 +160,9 @@ class VaultSecretsProvider(SecretsProvider):
             return {"provider": "vault", "status": "not_configured"}
         try:
             import httpx
+
             async with httpx.AsyncClient() as client:
-                resp = await client.get(
-                    f"{self._addr}/v1/sys/health", timeout=5
-                )
+                resp = await client.get(f"{self._addr}/v1/sys/health", timeout=5)
                 return {
                     "provider": "vault",
                     "status": "healthy" if resp.status_code == 200 else "unhealthy",
@@ -212,14 +212,16 @@ class SecretsManager:
             return None
 
     def _log_access(self, key: str, requester: str):
-        self._access_log.append({
-            "key": key,
-            "requester": requester,
-            "timestamp": datetime.now(UTC).isoformat(),
-            "provider": self._provider_name,
-        })
+        self._access_log.append(
+            {
+                "key": key,
+                "requester": requester,
+                "timestamp": datetime.now(UTC).isoformat(),
+                "provider": self._provider_name,
+            }
+        )
         if len(self._access_log) > self._max_log:
-            self._access_log = self._access_log[-self._max_log:]
+            self._access_log = self._access_log[-self._max_log :]
 
     async def health_check(self) -> dict[str, Any]:
         result = await self._provider.health_check()
@@ -228,10 +230,7 @@ class SecretsManager:
 
     def get_access_log(self, limit: int = 50) -> list:
         # Mask secret keys for security
-        return [
-            {**entry, "key": entry["key"][:3] + "***"}
-            for entry in self._access_log[-limit:]
-        ]
+        return [{**entry, "key": entry["key"][:3] + "***"} for entry in self._access_log[-limit:]]
 
     def get_metrics(self) -> dict[str, Any]:
         return {

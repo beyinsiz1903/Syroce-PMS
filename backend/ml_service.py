@@ -16,6 +16,7 @@ akislari etkilenmez.
 `run_training` cagrildiginda agir importlar tembel (fonksiyon icinde) yapilir,
 boylece bu modulun salt yuklenmesi numpy/xgboost gerektirmez.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -73,9 +74,7 @@ def _train_persona(params: dict[str, Any]) -> dict[str, Any]:
         "metrics": metrics,
         "data_summary": {
             "total_guests": int(len(data_df)),
-            "persona_distribution": {
-                str(k): int(v) for k, v in data_df["persona_type"].value_counts().to_dict().items()
-            },
+            "persona_distribution": {str(k): int(v) for k, v in data_df["persona_type"].value_counts().to_dict().items()},
             "avg_stays": float(data_df["total_stays"].mean()),
             "avg_spend": float(data_df["avg_spend"].mean()),
         },
@@ -97,12 +96,8 @@ def _train_predictive_maintenance(params: dict[str, Any]) -> dict[str, Any]:
         "metrics": metrics,
         "data_summary": {
             "total_samples": int(len(data_df)),
-            "equipment_distribution": {
-                str(k): int(v) for k, v in data_df["equipment_type"].value_counts().to_dict().items()
-            },
-            "risk_distribution": {
-                str(k): int(v) for k, v in data_df["failure_risk"].value_counts().to_dict().items()
-            },
+            "equipment_distribution": {str(k): int(v) for k, v in data_df["equipment_type"].value_counts().to_dict().items()},
+            "risk_distribution": {str(k): int(v) for k, v in data_df["failure_risk"].value_counts().to_dict().items()},
             "avg_days_until_failure": float(data_df["days_until_failure"].mean()),
         },
     }
@@ -185,8 +180,6 @@ def run_training(model: str, params: dict[str, Any] | None = None) -> dict[str, 
 
     runner = dispatch.get(key)
     if runner is None:
-        raise ValueError(
-            f"unknown ml model '{model}'; supported: {', '.join(SUPPORTED_MODELS)}"
-        )
+        raise ValueError(f"unknown ml model '{model}'; supported: {', '.join(SUPPORTED_MODELS)}")
 
     return runner(params)

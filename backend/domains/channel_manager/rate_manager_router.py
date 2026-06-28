@@ -2,6 +2,7 @@
 Rate Manager Router — Fiyat, Müsaitlik, Min Konaklama Yönetimi
 PMS üzerinden ayarla → Exely'ye push et → OTA'lara yansısın.
 """
+
 import asyncio
 import logging
 import uuid
@@ -51,8 +52,6 @@ class BulkRateUpdateRequest(BaseModel):
     updates: list[RateUpdateRequest]
 
 
-
-
 @router.get("/grid")
 async def get_rate_grid(
     start_date: str | None = None,
@@ -67,14 +66,10 @@ async def get_rate_grid(
         end_date = (datetime.now(UTC) + timedelta(days=14)).date().isoformat()
 
     # Get room type mappings
-    mappings = await db.exely_room_mappings.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).to_list(100)
+    mappings = await db.exely_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(100)
 
     # Get connection for room/rate info
-    conn = await db.exely_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    )
+    conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found")
 
@@ -99,9 +94,7 @@ async def get_rate_grid(
     # Count rooms per type and collect room IDs per type
     room_counts = {}
     room_ids_by_type = {}
-    rooms = await db.rooms.find(
-        {"tenant_id": tenant_id}, {"_id": 0, "id": 1, "room_type": 1, "status": 1}
-    ).to_list(500)
+    rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0, "id": 1, "room_type": 1, "status": 1}).to_list(500)
     for r in rooms:
         rt = r.get("room_type", "")
         room_counts.setdefault(rt, {"total": 0, "available": 0})
@@ -168,31 +161,33 @@ async def get_rate_grid(
                 else:
                     real_avail = max(counts["total"] - sold_count, 0)
 
-                dates_data.append({
-                    "date": ds,
-                    "rate": entry.get("rate"),
-                    "availability": real_avail,
-                    "base_availability": base_avail if base_avail is not None else counts["total"],
-                    "sold": sold_count,
-                    "min_stay": entry.get("min_stay", 1),
-                    "stop_sell": entry.get("stop_sell", False),
-                })
+                dates_data.append(
+                    {
+                        "date": ds,
+                        "rate": entry.get("rate"),
+                        "availability": real_avail,
+                        "base_availability": base_avail if base_avail is not None else counts["total"],
+                        "sold": sold_count,
+                        "min_stay": entry.get("min_stay", 1),
+                        "stop_sell": entry.get("stop_sell", False),
+                    }
+                )
                 d += timedelta(days=1)
 
-            grid.append({
-                "room_type_code": rt["code"],
-                "room_type_name": rt["name"],
-                "rate_plan_code": rp["code"],
-                "rate_plan_name": rp["name"],
-                "pms_room_type": pms_type or rt["name"],
-                "total_rooms": counts["total"],
-                "dates": dates_data,
-            })
+            grid.append(
+                {
+                    "room_type_code": rt["code"],
+                    "room_type_name": rt["name"],
+                    "rate_plan_code": rp["code"],
+                    "rate_plan_name": rp["name"],
+                    "pms_room_type": pms_type or rt["name"],
+                    "total_rooms": counts["total"],
+                    "dates": dates_data,
+                }
+            )
 
     # Fetch pricing settings
-    pricing_docs = await db.pricing_settings.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).to_list(200)
+    pricing_docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
     pricing_map = {}
     for doc in pricing_docs:
         pricing_map[doc["room_type_code"]] = doc.get("pricing_type", "per_person")
@@ -222,9 +217,7 @@ async def update_rates(
     saved = 0
     push_results = []
 
-    conn = await db.exely_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    )
+    conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found")
 
@@ -234,6 +227,7 @@ async def update_rates(
     provider = None
     if creds:
         from domains.channel_manager.providers.exely.provider import ExelyProvider
+
         provider_kwargs = {
             "username": creds.get("username", ""),
             "password": creds.get("password", ""),
@@ -274,21 +268,24 @@ async def update_rates(
             if upd.stop_sell is not None:
                 set_fields["stop_sell"] = upd.stop_sell
 
-            bulk_ops.append(UpdateOne(
-                {
-                    "tenant_id": tenant_id,
-                    "room_type_code": upd.room_type_code,
-                    "rate_plan_code": upd.rate_plan_code,
-                    "date": ds,
-                },
-                {"$set": set_fields},
-                upsert=True,
-            ))
+            bulk_ops.append(
+                UpdateOne(
+                    {
+                        "tenant_id": tenant_id,
+                        "room_type_code": upd.room_type_code,
+                        "rate_plan_code": upd.rate_plan_code,
+                        "date": ds,
+                    },
+                    {"$set": set_fields},
+                    upsert=True,
+                )
+            )
             saved += 1
             d += timedelta(days=1)
 
         # Prepare Exely push task (will run in parallel)
         if provider:
+
             async def _push(u=upd):
                 try:
                     result = await provider.push_ari(
@@ -306,14 +303,17 @@ async def update_rates(
                 except Exception as e:
                     logger.error(f"[RATE-MGR] Exely push error: {e}")
                     return {"room_type_code": u.room_type_code, "rate_plan_code": u.rate_plan_code, "success": False, "error": str(e)}
+
             push_tasks.append(_push())
         else:
-            push_results.append({
-                "room_type_code": upd.room_type_code,
-                "rate_plan_code": upd.rate_plan_code,
-                "success": False,
-                "error": "Exely credentials not found",
-            })
+            push_results.append(
+                {
+                    "room_type_code": upd.room_type_code,
+                    "rate_plan_code": upd.rate_plan_code,
+                    "success": False,
+                    "error": "Exely credentials not found",
+                }
+            )
 
     # Execute DB bulk write in one batch
     if bulk_ops:
@@ -337,16 +337,12 @@ async def update_rates(
 async def get_room_types(current_user: User = Depends(get_current_user)):
     """Return available room types, rate plans, and pricing settings."""
     tenant_id = current_user.tenant_id
-    conn = await db.exely_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    )
+    conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found")
 
     # Fetch pricing settings
-    pricing_docs = await db.pricing_settings.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).to_list(200)
+    pricing_docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
     pricing_map = {}
     for doc in pricing_docs:
         pricing_map[doc["room_type_code"]] = doc.get("pricing_type", "per_person")
@@ -356,7 +352,6 @@ async def get_room_types(current_user: User = Depends(get_current_user)):
         "rate_plans": conn.get("rate_plans", []),
         "pricing_settings": pricing_map,
     }
-
 
 
 @router.post("/bulk-grid-update")
@@ -375,9 +370,7 @@ async def bulk_grid_update(
     saved = 0
     _push_results = []
 
-    conn = await db.exely_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    )
+    conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found")
 
@@ -387,6 +380,7 @@ async def bulk_grid_update(
     provider = None
     if creds:
         from domains.channel_manager.providers.exely.provider import ExelyProvider
+
         provider_kwargs = {
             "username": creds.get("username", ""),
             "password": creds.get("password", ""),
@@ -476,16 +470,18 @@ async def bulk_grid_update(
             if "ctd" in update_fields and v_ctd is not None:
                 set_fields["ctd"] = v_ctd
 
-            bulk_ops.append(UpdateOne(
-                {
-                    "tenant_id": tenant_id,
-                    "room_type_code": rt_code,
-                    "rate_plan_code": rp_code,
-                    "date": ds,
-                },
-                {"$set": set_fields},
-                upsert=True,
-            ))
+            bulk_ops.append(
+                UpdateOne(
+                    {
+                        "tenant_id": tenant_id,
+                        "room_type_code": rt_code,
+                        "rate_plan_code": rp_code,
+                        "date": ds,
+                    },
+                    {"$set": set_fields},
+                    upsert=True,
+                )
+            )
             saved += 1
             d += timedelta(days=1)
 
@@ -524,6 +520,7 @@ async def bulk_grid_update(
 
     # Fire-and-forget: push to Exely in background (don't block response)
     if push_tasks:
+
         async def _background_push(tasks):
             try:
                 results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -531,6 +528,7 @@ async def bulk_grid_update(
                 logger.info(f"[BULK-UPDATE] Background Exely push done: {success}/{len(results)} successful")
             except Exception as e:
                 logger.error(f"[BULK-UPDATE] Background Exely push failed: {e}")
+
         asyncio.create_task(_background_push(push_tasks))
 
     return {
@@ -539,11 +537,8 @@ async def bulk_grid_update(
         "all_pushed": False,
         "background_push": len(push_tasks) > 0,
         "total_room_types": len(total_room_types_set),
-        "message": f"{saved} kayıt güncellendi" + (
-            f", {len(push_tasks)} Exely push arka planda gönderiliyor" if push_tasks else ""
-        ),
+        "message": f"{saved} kayıt güncellendi" + (f", {len(push_tasks)} Exely push arka planda gönderiliyor" if push_tasks else ""),
     }
-
 
 
 @router.get("/stop-sale-summary")
@@ -579,9 +574,7 @@ async def get_stop_sale_summary(
     results = await db.rate_calendar.aggregate(pipeline).to_list(500)
 
     # Get room type names
-    conn = await db.exely_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0, "room_types": 1}
-    )
+    conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0, "room_types": 1})
     rt_map = {}
     if conn:
         for rt in conn.get("room_types", []):
@@ -591,24 +584,23 @@ async def get_stop_sale_summary(
     for r in results:
         code = r["_id"]
         dates = sorted(r["dates"])
-        stops.append({
-            "room_type_code": code,
-            "room_type_name": rt_map.get(code, code),
-            "dates": dates,
-            "count": r["count"],
-        })
+        stops.append(
+            {
+                "room_type_code": code,
+                "room_type_name": rt_map.get(code, code),
+                "dates": dates,
+                "count": r["count"],
+            }
+        )
 
     return {"stops": stops}
-
 
 
 @router.get("/pricing-settings")
 async def get_pricing_settings(current_user: User = Depends(get_current_user)):
     """Oda tipi bazında fiyatlandırma tipi ayarlarını döndürür (per_person / per_room)."""
     tenant_id = current_user.tenant_id
-    docs = await db.pricing_settings.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).to_list(200)
+    docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
 
     settings = {}
     for doc in docs:
@@ -634,13 +626,15 @@ async def update_pricing_settings(
 
         await db.pricing_settings.update_one(
             {"tenant_id": tenant_id, "room_type_code": item.room_type_code},
-            {"$set": {
-                "tenant_id": tenant_id,
-                "room_type_code": item.room_type_code,
-                "pricing_type": item.pricing_type,
-                "updated_at": now,
-                "updated_by": current_user.id,
-            }},
+            {
+                "$set": {
+                    "tenant_id": tenant_id,
+                    "room_type_code": item.room_type_code,
+                    "pricing_type": item.pricing_type,
+                    "updated_at": now,
+                    "updated_by": current_user.id,
+                }
+            },
             upsert=True,
         )
         updated += 1
@@ -648,10 +642,7 @@ async def update_pricing_settings(
     return {"updated": updated, "message": f"{updated} oda tipi fiyatlandırma ayarı güncellendi"}
 
 
-
 # ─── Holiday & Scheduler ────────────────────────────────────────
-
-
 
 
 @router.get("/holidays")
@@ -680,16 +671,13 @@ async def get_holidays(
 # ─── Stop Sale Scheduler ────────────────────────────────────────
 
 
-
 @router.get("/stop-sale-schedules")
 async def list_stop_sale_schedules(
     current_user: User = Depends(get_current_user),
 ):
     """Kaydedilmis stop sale zamanlayicilari listeler."""
     tenant_id = current_user.tenant_id
-    docs = await db.stop_sale_schedules.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).sort("start_date", 1).to_list(200)
+    docs = await db.stop_sale_schedules.find({"tenant_id": tenant_id}, {"_id": 0}).sort("start_date", 1).to_list(200)
     return {"schedules": docs}
 
 
@@ -722,9 +710,7 @@ async def create_stop_sale_schedule(
 
     # If auto_apply is True, immediately apply the stop sale
     if request.auto_apply:
-        conn = await db.exely_connections.find_one(
-            {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-        )
+        conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
         if conn:
             rate_plans = conn.get("rate_plans", [])
             rp_codes = [rp["code"] for rp in rate_plans]
@@ -767,17 +753,13 @@ async def delete_stop_sale_schedule(
 ):
     """Stop sale zamanlayiciyi siler. remove_stop_sale=true ise stop sale'i de kaldirir."""
     tenant_id = current_user.tenant_id
-    schedule = await db.stop_sale_schedules.find_one(
-        {"tenant_id": tenant_id, "id": schedule_id}, {"_id": 0}
-    )
+    schedule = await db.stop_sale_schedules.find_one({"tenant_id": tenant_id, "id": schedule_id}, {"_id": 0})
     if not schedule:
         raise HTTPException(status_code=404, detail="Zamanlayici bulunamadi")
 
     # Optionally remove the stop sale
     if remove_stop_sale and schedule.get("applied"):
-        conn = await db.exely_connections.find_one(
-            {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-        )
+        conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
         if conn:
             rate_plans = conn.get("rate_plans", [])
             rp_codes = [rp["code"] for rp in rate_plans]
@@ -798,9 +780,7 @@ async def delete_stop_sale_schedule(
             )
             await bulk_grid_update(bulk_req, current_user)
 
-    await db.stop_sale_schedules.delete_one(
-        {"tenant_id": tenant_id, "id": schedule_id}
-    )
+    await db.stop_sale_schedules.delete_one({"tenant_id": tenant_id, "id": schedule_id})
     return {"message": "Zamanlayici silindi"}
 
 
@@ -844,29 +824,23 @@ async def get_push_providers(current_user: User = Depends(get_current_user)):
     providers = []
 
     # 1. Exely status — check exely_connections for active connection
-    exely_conn = await db.exely_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    )
+    exely_conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
     exely_active = bool(exely_conn)
-    providers.append({
-        "name": "Exely",
-        "slug": "exely",
-        "push_active": exely_active,
-        "mode": "live" if exely_active else "inactive",
-    })
+    providers.append(
+        {
+            "name": "Exely",
+            "slug": "exely",
+            "push_active": exely_active,
+            "mode": "live" if exely_active else "inactive",
+        }
+    )
 
     # 2. HotelRunner v2 status — check connector_feature_flags
-    hr_flags = await db.connector_feature_flags.find_one(
-        {"tenant_id": tenant_id, "provider": "hotelrunner_v2"}, {"_id": 0}
-    )
+    hr_flags = await db.connector_feature_flags.find_one({"tenant_id": tenant_id, "provider": "hotelrunner_v2"}, {"_id": 0})
     if not hr_flags:
         # Fallback: check for any hotelrunner flag
-        hr_flags = await db.connector_feature_flags.find_one(
-            {"provider": "hotelrunner_v2"}, {"_id": 0}
-        )
-    hr_conn = await db.hotelrunner_connections.find_one(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    )
+        hr_flags = await db.connector_feature_flags.find_one({"provider": "hotelrunner_v2"}, {"_id": 0})
+    hr_conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id}, {"_id": 0})
 
     if hr_flags and hr_flags.get("connector_enabled"):
         hr_shadow = hr_flags.get("shadow_mode", True)
@@ -884,11 +858,13 @@ async def get_push_providers(current_user: User = Depends(get_current_user)):
         hr_mode = "inactive"
         hr_write = False
 
-    providers.append({
-        "name": "HotelRunner",
-        "slug": "hotelrunner",
-        "push_active": hr_write,
-        "mode": hr_mode,
-    })
+    providers.append(
+        {
+            "name": "HotelRunner",
+            "slug": "hotelrunner",
+            "push_active": hr_write,
+            "mode": hr_mode,
+        }
+    )
 
     return {"providers": providers}

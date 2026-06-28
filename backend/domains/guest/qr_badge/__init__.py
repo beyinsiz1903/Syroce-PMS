@@ -11,6 +11,7 @@ Sonraki haftalar:
   Hafta 2 — POS web ekranı, davranış izleme, şüpheli işlem alarmı
   Hafta 3 — SMS yedek kodu, refakatçi modeli, manuel resepsiyon onayı
 """
+
 from .router import router
 
 __all__ = ["router"]

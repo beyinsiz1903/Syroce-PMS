@@ -5,6 +5,7 @@ Rules (per project convention):
 - Pure helpers ONLY — no side effects, no domain logic.
 - No business rules, no cross-domain dependencies.
 """
+
 from core.database import db
 
 

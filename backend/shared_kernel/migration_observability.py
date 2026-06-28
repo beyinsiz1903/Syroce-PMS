@@ -136,13 +136,7 @@ def _derive_event_source(event: dict[str, Any]) -> dict[str, str]:
     payload = event.get("payload") or {}
     hint = EVENT_SOURCE_HINTS.get(event_type, {})
 
-    source = (
-        payload.get("source")
-        or payload.get("origin")
-        or event.get("source")
-        or hint.get("source")
-        or "unknown"
-    )
+    source = payload.get("source") or payload.get("origin") or event.get("source") or hint.get("source") or "unknown"
     source_lower = str(source).lower()
 
     if "legacy" in source_lower:
@@ -283,9 +277,7 @@ def build_stale_pending_triage(
         likely_root_cause = "Consumer partially active; state transition or retry behavior needs further investigation"
 
     recommended_action_key = "clarify_worker_strategy"
-    recommended_action = (
-        "Clarify consumer/worker strategy before opening new write-path, define outbox cleanup or explicit park policy if needed"
-    )
+    recommended_action = "Clarify consumer/worker strategy before opening new write-path, define outbox cleanup or explicit park policy if needed"
 
     return {
         "generated_at": generated_at,
@@ -363,9 +355,7 @@ def build_health_score(
     shadow_summary: list[dict[str, Any]],
 ) -> dict[str, Any]:
     compare_error_count = sum(int(item.get("errors") or 0) for item in shadow_summary)
-    max_mismatch_rate_percent = max(
-        [float(item.get("mismatch_rate_percent") or 0.0) for item in shadow_summary] or [0.0]
-    )
+    max_mismatch_rate_percent = max([float(item.get("mismatch_rate_percent") or 0.0) for item in shadow_summary] or [0.0])
     highest_mismatch = max(
         shadow_summary,
         key=lambda item: float(item.get("mismatch_rate_percent") or 0.0),
@@ -450,44 +440,48 @@ class MigrationObservabilityService:
         five_minutes_ago = now - timedelta(minutes=5)
         fifteen_minutes_ago = now - timedelta(minutes=15)
 
-        outbox_events = await db.outbox_events.find(
-            {
-                "tenant_id": tenant_id,
-                "event_type": {"$in": MIGRATION_EVENT_TYPES},
-            },
-            {"_id": 0},
-        ).sort("created_at", -1).to_list(500)
+        outbox_events = (
+            await db.outbox_events.find(
+                {
+                    "tenant_id": tenant_id,
+                    "event_type": {"$in": MIGRATION_EVENT_TYPES},
+                },
+                {"_id": 0},
+            )
+            .sort("created_at", -1)
+            .to_list(500)
+        )
 
-        audit_logs_24h = await db.audit_logs.find(
-            {
-                "tenant_id": tenant_id,
-                "action": {"$in": MIGRATION_AUDIT_ACTIONS},
-                "timestamp": {"$gte": twenty_four_hours_ago.isoformat()},
-            },
-            {
-                "_id": 0,
-                "id": 1,
-                "actor_id": 1,
-                "entity_type": 1,
-                "entity_id": 1,
-                "action": 1,
-                "property_id": 1,
-                "correlation_id": 1,
-                "timestamp": 1,
-                "metadata": 1,
-            },
-        ).sort("timestamp", -1).to_list(500)
+        audit_logs_24h = (
+            await db.audit_logs.find(
+                {
+                    "tenant_id": tenant_id,
+                    "action": {"$in": MIGRATION_AUDIT_ACTIONS},
+                    "timestamp": {"$gte": twenty_four_hours_ago.isoformat()},
+                },
+                {
+                    "_id": 0,
+                    "id": 1,
+                    "actor_id": 1,
+                    "entity_type": 1,
+                    "entity_id": 1,
+                    "action": 1,
+                    "property_id": 1,
+                    "correlation_id": 1,
+                    "timestamp": 1,
+                    "metadata": 1,
+                },
+            )
+            .sort("timestamp", -1)
+            .to_list(500)
+        )
 
         audit_logs = audit_logs_24h[:20]
 
         shadow_events = [
             event
             for event in shadow_metrics_store.get_recent_events()
-            if (
-                event.get("tenant_id") == tenant_id
-                and event.get("endpoint") in {"availability", "folio"}
-                and (_parse_timestamp(event.get("timestamp")) or now) >= twenty_four_hours_ago
-            )
+            if (event.get("tenant_id") == tenant_id and event.get("endpoint") in {"availability", "folio"} and (_parse_timestamp(event.get("timestamp")) or now) >= twenty_four_hours_ago)
         ]
 
         recent_outbox = []
@@ -714,10 +708,7 @@ class MigrationObservabilityService:
             "audit": {
                 "recent_count": len(audit_logs),
                 "audit_gap_count": audit_gap_count,
-                "actions_breakdown": [
-                    {"action": action, "count": count}
-                    for action, count in audit_action_breakdown.most_common()
-                ],
+                "actions_breakdown": [{"action": action, "count": count} for action, count in audit_action_breakdown.most_common()],
                 "recent_stream": audit_logs,
             },
             "shadow": {

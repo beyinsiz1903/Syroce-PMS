@@ -6,6 +6,7 @@ sync jobs, and secret access MUST be classified using this taxonomy.
 
 No silent failures. No unclassified errors.
 """
+
 import uuid
 from datetime import UTC, datetime
 from enum import Enum
@@ -14,6 +15,7 @@ from typing import Any
 
 class FailureType(str, Enum):
     """Strict failure classification. Every failure MUST map to one of these."""
+
     RETRYABLE = "retryable"
     PERMANENT = "permanent"
     PROVIDER_ERROR = "provider_error"
@@ -23,6 +25,7 @@ class FailureType(str, Enum):
 
 class Severity(str, Enum):
     """Failure severity for alerting and prioritization."""
+
     INFO = "info"
     WARNING = "warning"
     HIGH = "high"
@@ -31,6 +34,7 @@ class Severity(str, Enum):
 
 class FailureStatus(str, Enum):
     """Lifecycle status of a failure event."""
+
     OPEN = "open"
     RESOLVED = "resolved"
     IGNORED = "ignored"
@@ -39,6 +43,7 @@ class FailureStatus(str, Enum):
 
 class OperationType(str, Enum):
     """Every operation that can fail."""
+
     RESERVATION_PULL = "reservation_pull"
     RESERVATION_IMPORT = "reservation_import"
     ARI_PUSH = "ari_push"
@@ -67,26 +72,59 @@ DEFAULT_SEVERITY: dict[FailureType, Severity] = {
 
 # ── Classification Keywords ────────────────────────────────────────
 _RETRYABLE_KEYWORDS = [
-    "timeout", "timed out", "connection refused", "connection reset",
-    "temporary", "unavailable", "network", "write conflict",
-    "lock", "replica", "rate limit", "throttl", "429", "503",
+    "timeout",
+    "timed out",
+    "connection refused",
+    "connection reset",
+    "temporary",
+    "unavailable",
+    "network",
+    "write conflict",
+    "lock",
+    "replica",
+    "rate limit",
+    "throttl",
+    "429",
+    "503",
 ]
 
 _PERMANENT_KEYWORDS = [
-    "mapping error", "invalid payload", "validation",
-    "business rule", "not found", "schema",
-    "unsupported", "deprecated", "rejected",
+    "mapping error",
+    "invalid payload",
+    "validation",
+    "business rule",
+    "not found",
+    "schema",
+    "unsupported",
+    "deprecated",
+    "rejected",
 ]
 
 _PROVIDER_KEYWORDS = [
-    "exely", "hotelrunner", "ota", "provider", "api key",
-    "wsse", "authentication failed", "403", "401", "502",
+    "exely",
+    "hotelrunner",
+    "ota",
+    "provider",
+    "api key",
+    "wsse",
+    "authentication failed",
+    "403",
+    "401",
+    "502",
 ]
 
 _SECURITY_KEYWORDS = [
-    "decrypt", "encrypt", "credential", "secret",
-    "unauthorized", "forbidden", "denied", "key not found",
-    "tamper", "integrity", "aad mismatch",
+    "decrypt",
+    "encrypt",
+    "credential",
+    "secret",
+    "unauthorized",
+    "forbidden",
+    "denied",
+    "key not found",
+    "tamper",
+    "integrity",
+    "aad mismatch",
 ]
 
 
@@ -185,19 +223,24 @@ def build_failure_event(
 # ── Sanitization ───────────────────────────────────────────────────
 
 _FORBIDDEN_CONTEXT_KEYS = {
-    "password", "secret", "key", "token", "credential",
-    "api_key", "apikey", "auth_token", "private_key",
-    "plaintext", "decrypted", "raw_value",
+    "password",
+    "secret",
+    "key",
+    "token",
+    "credential",
+    "api_key",
+    "apikey",
+    "auth_token",
+    "private_key",
+    "plaintext",
+    "decrypted",
+    "raw_value",
 }
 
 
 def _sanitize_context(context: dict[str, Any]) -> dict[str, Any]:
     """Remove any keys that might contain sensitive data."""
-    return {
-        k: v for k, v in context.items()
-        if k.lower() not in _FORBIDDEN_CONTEXT_KEYS
-        and not any(s in k.lower() for s in ("secret", "password", "credential", "key"))
-    }
+    return {k: v for k, v in context.items() if k.lower() not in _FORBIDDEN_CONTEXT_KEYS and not any(s in k.lower() for s in ("secret", "password", "credential", "key"))}
 
 
 def _sanitize_error_message(msg: str, max_length: int = 1000) -> str:

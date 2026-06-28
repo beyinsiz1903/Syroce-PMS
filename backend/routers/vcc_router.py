@@ -5,6 +5,7 @@ OTA/Agency virtual credit cards are stored encrypted (AES-256-GCM).
 Hoteliers can view card details a maximum of 3 times, enforced at the API level.
 Every view is logged in the activity log for audit trail.
 """
+
 import uuid
 from datetime import UTC, datetime
 
@@ -26,6 +27,7 @@ _role_perm = RolePermissionService()
 def _enforce_perm(role: str, op: str):
     """Bug CS (v58) — PCI VCC endpoint'leri için RBAC zorunlu."""
     _role_perm.enforce_permission(role, op)
+
 
 router = APIRouter(prefix="/api/pms", tags=["vcc"])
 
@@ -83,9 +85,7 @@ async def store_vcc(
 
     enc = _get_enc()
 
-    existing = await db.vcc_cards.find_one(
-        {"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}
-    )
+    existing = await db.vcc_cards.find_one({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=409, detail="Bu rezervasyon icin zaten kart bilgisi mevcut")
 
@@ -110,15 +110,17 @@ async def store_vcc(
     card_doc.pop("_id", None)
 
     # Activity log
-    await db.reservation_activity_log.insert_one({
-        "id": str(uuid.uuid4()),
-        "tenant_id": tid,
-        "booking_id": booking_id,
-        "action": "vcc_stored",
-        "actor": current_user.name or current_user.email,
-        "details": {"card_type": data.card_type, "card_mask": card_doc["card_mask"]},
-        "created_at": datetime.now(UTC).isoformat(),
-    })
+    await db.reservation_activity_log.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tid,
+            "booking_id": booking_id,
+            "action": "vcc_stored",
+            "actor": current_user.name or current_user.email,
+            "details": {"card_type": data.card_type, "card_mask": card_doc["card_mask"]},
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+    )
 
     return {
         "success": True,
@@ -143,9 +145,7 @@ async def get_vcc_status(
     _enforce_perm(current_user.role, "view_card_status")  # Bug CS
     tid = current_user.tenant_id
 
-    card = await db.vcc_cards.find_one(
-        {"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}
-    )
+    card = await db.vcc_cards.find_one({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not card:
         return {"has_vcc": False}
 
@@ -176,9 +176,7 @@ async def reveal_vcc(
     _enforce_perm(current_user.role, "reveal_card")  # Bug CS — PCI critical
     tid = current_user.tenant_id
 
-    card = await db.vcc_cards.find_one(
-        {"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}
-    )
+    card = await db.vcc_cards.find_one({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not card:
         raise HTTPException(status_code=404, detail="Kart bilgisi bulunamadi")
 
@@ -230,19 +228,21 @@ async def reveal_vcc(
     cvv = enc.decrypt_value(card.get("cvv_enc", "")) if card.get("cvv_enc") else None
 
     # Activity log
-    await db.reservation_activity_log.insert_one({
-        "id": str(uuid.uuid4()),
-        "tenant_id": tid,
-        "booking_id": booking_id,
-        "action": "vcc_revealed",
-        "actor": current_user.name or current_user.email,
-        "details": {
-            "view_number": new_view_count,
-            "remaining_views": max_views - new_view_count,
-            "card_mask": card.get("card_mask", "****"),
-        },
-        "created_at": datetime.now(UTC).isoformat(),
-    })
+    await db.reservation_activity_log.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tid,
+            "booking_id": booking_id,
+            "action": "vcc_revealed",
+            "actor": current_user.name or current_user.email,
+            "details": {
+                "view_number": new_view_count,
+                "remaining_views": max_views - new_view_count,
+                "card_mask": card.get("card_mask", "****"),
+            },
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+    )
 
     return {
         "success": True,
@@ -271,22 +271,22 @@ async def delete_vcc(
     _enforce_perm(current_user.role, "delete_card")  # Bug CS — prevents view-counter reset abuse
     tid = current_user.tenant_id
 
-    card = await db.vcc_cards.find_one(
-        {"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}
-    )
+    card = await db.vcc_cards.find_one({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0})
     if not card:
         raise HTTPException(status_code=404, detail="Kart bilgisi bulunamadi")
 
     await db.vcc_cards.delete_one({"booking_id": booking_id, "tenant_id": tid})
 
-    await db.reservation_activity_log.insert_one({
-        "id": str(uuid.uuid4()),
-        "tenant_id": tid,
-        "booking_id": booking_id,
-        "action": "vcc_deleted",
-        "actor": current_user.name or current_user.email,
-        "details": {"card_mask": card.get("card_mask", "****")},
-        "created_at": datetime.now(UTC).isoformat(),
-    })
+    await db.reservation_activity_log.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tid,
+            "booking_id": booking_id,
+            "action": "vcc_deleted",
+            "actor": current_user.name or current_user.email,
+            "details": {"card_mask": card.get("card_mask", "****")},
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+    )
 
     return {"success": True, "message": "Kart bilgisi silindi"}

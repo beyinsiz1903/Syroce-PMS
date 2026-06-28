@@ -49,6 +49,7 @@ Safety
 - Idempotent: re-running after a successful purge is a no-op.
 - Never logs the private key material.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -121,9 +122,7 @@ async def _run(args: argparse.Namespace) -> int:
     try:
         await client.admin.command("ping")
     except Exception as exc:
-        logger.error(
-            "Could not reach MongoDB at %s: %s", _redact_mongo_url(mongo_url), exc
-        )
+        logger.error("Could not reach MongoDB at %s: %s", _redact_mongo_url(mongo_url), exc)
         return 2
 
     coll = db.web_push_keys
@@ -135,9 +134,7 @@ async def _run(args: argparse.Namespace) -> int:
         docs.append(d)
 
     if not docs:
-        logger.info(
-            "web_push_keys is already empty in db=%s — nothing to clean up.", db_name
-        )
+        logger.info("web_push_keys is already empty in db=%s — nothing to clean up.", db_name)
         return 0
 
     logger.info("Found %d record(s) in db=%s.web_push_keys:", len(docs), db_name)
@@ -152,14 +149,10 @@ async def _run(args: argparse.Namespace) -> int:
     if args.mark_only:
         unmarked = [d for d in docs if not d.get("auto_generated")]
         if not unmarked:
-            logger.info(
-                "No unmarked records found; auto_generated marker is already "
-                "present on every row."
-            )
+            logger.info("No unmarked records found; auto_generated marker is already present on every row.")
             return 0
         logger.info(
-            "Stamping auto_generated=true on %d unmarked record(s) "
-            "(these predate the fallback marker contract).",
+            "Stamping auto_generated=true on %d unmarked record(s) (these predate the fallback marker contract).",
             len(unmarked),
         )
         for d in unmarked:
@@ -205,15 +198,11 @@ async def _run(args: argparse.Namespace) -> int:
     remaining = await coll.count_documents({})
     if remaining:
         logger.info(
-            "%d record(s) remain in web_push_keys (left untouched: missing "
-            "auto_generated marker).",
+            "%d record(s) remain in web_push_keys (left untouched: missing auto_generated marker).",
             remaining,
         )
         if not args.force:
-            logger.info(
-                "Use --force to also remove rows missing the auto_generated marker, "
-                "or --mark-only on a separate run to stamp the marker first."
-            )
+            logger.info("Use --force to also remove rows missing the auto_generated marker, or --mark-only on a separate run to stamp the marker first.")
     else:
         logger.info("web_push_keys is now empty.")
     return 0

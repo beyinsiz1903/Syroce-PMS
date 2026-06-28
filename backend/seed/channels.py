@@ -7,6 +7,7 @@
 - Connector flags (LIVE for both)
 - CM v2 connectors + external room types/rate plans + mappings
 """
+
 from seed._helpers import _now, _uuid
 
 
@@ -108,18 +109,48 @@ async def seed_channels(db, ctx):
         "last_sync_at": None,
         "created_by": "auto_seed",
         "cached_rooms": [
-            {"inv_code": "HR:1271568", "name": "Standart Oda", "id": 1271568, "pms_code": "STD",
-             "rate_plan_id": 220505, "rate_plan_name": "Ana fiyat", "availability_update": True,
-             "restrictions_update": True, "price_update": True, "pricing_type": "guest_based",
-             "sales_currency": "TRY", "sales_currency_symbol": "₺"},
-            {"inv_code": "HR:1271569", "name": "Deluxe Oda", "id": 1271569, "pms_code": "DLX",
-             "rate_plan_id": 220505, "rate_plan_name": "Ana fiyat", "availability_update": True,
-             "restrictions_update": True, "price_update": True, "pricing_type": "guest_based",
-             "sales_currency": "TRY", "sales_currency_symbol": "₺"},
-            {"inv_code": "HR:1271567", "name": "Corner Süit", "id": 1271567, "pms_code": "SUI",
-             "rate_plan_id": 220505, "rate_plan_name": "Ana fiyat", "availability_update": True,
-             "restrictions_update": True, "price_update": True, "pricing_type": "guest_based",
-             "sales_currency": "TRY", "sales_currency_symbol": "₺"},
+            {
+                "inv_code": "HR:1271568",
+                "name": "Standart Oda",
+                "id": 1271568,
+                "pms_code": "STD",
+                "rate_plan_id": 220505,
+                "rate_plan_name": "Ana fiyat",
+                "availability_update": True,
+                "restrictions_update": True,
+                "price_update": True,
+                "pricing_type": "guest_based",
+                "sales_currency": "TRY",
+                "sales_currency_symbol": "₺",
+            },
+            {
+                "inv_code": "HR:1271569",
+                "name": "Deluxe Oda",
+                "id": 1271569,
+                "pms_code": "DLX",
+                "rate_plan_id": 220505,
+                "rate_plan_name": "Ana fiyat",
+                "availability_update": True,
+                "restrictions_update": True,
+                "price_update": True,
+                "pricing_type": "guest_based",
+                "sales_currency": "TRY",
+                "sales_currency_symbol": "₺",
+            },
+            {
+                "inv_code": "HR:1271567",
+                "name": "Corner Süit",
+                "id": 1271567,
+                "pms_code": "SUI",
+                "rate_plan_id": 220505,
+                "rate_plan_name": "Ana fiyat",
+                "availability_update": True,
+                "restrictions_update": True,
+                "price_update": True,
+                "pricing_type": "guest_based",
+                "sales_currency": "TRY",
+                "sales_currency_symbol": "₺",
+            },
         ],
     }
     await db.hotelrunner_connections.update_one(
@@ -190,15 +221,17 @@ async def seed_channels(db, ctx):
     for prov in ["hotelrunner", "exely"]:
         await db.connector_flags.update_one(
             {"tenant_id": tenant_id, "provider": prov},
-            {"$set": {
-                "tenant_id": tenant_id,
-                "provider": prov,
-                "connector_enabled": True,
-                "shadow_mode": False,
-                "write_enabled": True,
-                "updated_at": now_iso,
-                "updated_by": "auto_seed",
-            }},
+            {
+                "$set": {
+                    "tenant_id": tenant_id,
+                    "provider": prov,
+                    "connector_enabled": True,
+                    "shadow_mode": False,
+                    "write_enabled": True,
+                    "updated_at": now_iso,
+                    "updated_by": "auto_seed",
+                }
+            },
             upsert=True,
         )
 
@@ -271,76 +304,84 @@ async def seed_channels(db, ctx):
         prefix = prov[:2]
         ext_rooms = []
         for r in ext_room_defs:
-            ext_rooms.append({
-                "id": f"ext-room-{prefix}-{r['code'].lower()}",
-                "tenant_id": tenant_id,
-                "connector_id": cid,
-                "provider": prov,
-                "external_id": f"{prefix}-{r['code'].lower()}-001",
-                "name": r["name"],
-                "code": r["code"],
-                "max_occupancy": r["capacity"],
-                "base_price": r["base_price"],
-                "is_active": True,
-                "created_at": now_iso,
-            })
+            ext_rooms.append(
+                {
+                    "id": f"ext-room-{prefix}-{r['code'].lower()}",
+                    "tenant_id": tenant_id,
+                    "connector_id": cid,
+                    "provider": prov,
+                    "external_id": f"{prefix}-{r['code'].lower()}-001",
+                    "name": r["name"],
+                    "code": r["code"],
+                    "max_occupancy": r["capacity"],
+                    "base_price": r["base_price"],
+                    "is_active": True,
+                    "created_at": now_iso,
+                }
+            )
         if ext_rooms:
             await db.cm_external_room_types.insert_many(ext_rooms)
 
         ext_rates = []
         for rp in pms_rate_defs:
-            ext_rates.append({
-                "id": f"ext-rate-{prefix}-{rp['code'].lower()}",
-                "tenant_id": tenant_id,
-                "connector_id": cid,
-                "provider": prov,
-                "external_id": f"{prefix}-{rp['code'].lower()}-001",
-                "name": rp["name"],
-                "code": rp["code"],
-                "is_active": True,
-                "created_at": now_iso,
-            })
+            ext_rates.append(
+                {
+                    "id": f"ext-rate-{prefix}-{rp['code'].lower()}",
+                    "tenant_id": tenant_id,
+                    "connector_id": cid,
+                    "provider": prov,
+                    "external_id": f"{prefix}-{rp['code'].lower()}-001",
+                    "name": rp["name"],
+                    "code": rp["code"],
+                    "is_active": True,
+                    "created_at": now_iso,
+                }
+            )
         if ext_rates:
             await db.cm_external_rate_plans.insert_many(ext_rates)
 
         room_mappings_v2 = []
         for pms_name, ext_id, ext_name in pms_to_ext:
-            room_mappings_v2.append({
-                "id": f"map-room-{prefix}-{ext_id}",
-                "tenant_id": tenant_id,
-                "connector_id": cid,
-                "entity_type": "room_type",
-                "pms_entity_id": pms_name,
-                "pms_entity_name": pms_name,
-                "external_entity_id": f"{prefix}-{ext_id.split('-')[0]}-001",
-                "external_entity_name": ext_name,
-                "status": "active",
-                "validation_status": "valid",
-                "confidence_score": 100,
-                "created_by": "auto_seed",
-                "created_at": now_iso,
-                "updated_at": now_iso,
-            })
+            room_mappings_v2.append(
+                {
+                    "id": f"map-room-{prefix}-{ext_id}",
+                    "tenant_id": tenant_id,
+                    "connector_id": cid,
+                    "entity_type": "room_type",
+                    "pms_entity_id": pms_name,
+                    "pms_entity_name": pms_name,
+                    "external_entity_id": f"{prefix}-{ext_id.split('-')[0]}-001",
+                    "external_entity_name": ext_name,
+                    "status": "active",
+                    "validation_status": "valid",
+                    "confidence_score": 100,
+                    "created_by": "auto_seed",
+                    "created_at": now_iso,
+                    "updated_at": now_iso,
+                }
+            )
         if room_mappings_v2:
             await db.cm_mappings.insert_many(room_mappings_v2)
 
         rate_mappings_v2 = []
         for rp in pms_rate_defs:
-            rate_mappings_v2.append({
-                "id": f"map-rate-{prefix}-{rp['code'].lower()}",
-                "tenant_id": tenant_id,
-                "connector_id": cid,
-                "entity_type": "rate_plan",
-                "pms_entity_id": rp["id"],
-                "pms_entity_name": rp["name"],
-                "external_entity_id": f"{prefix}-{rp['code'].lower()}-001",
-                "external_entity_name": rp["name"],
-                "status": "active",
-                "validation_status": "valid",
-                "confidence_score": 100,
-                "created_by": "auto_seed",
-                "created_at": now_iso,
-                "updated_at": now_iso,
-            })
+            rate_mappings_v2.append(
+                {
+                    "id": f"map-rate-{prefix}-{rp['code'].lower()}",
+                    "tenant_id": tenant_id,
+                    "connector_id": cid,
+                    "entity_type": "rate_plan",
+                    "pms_entity_id": rp["id"],
+                    "pms_entity_name": rp["name"],
+                    "external_entity_id": f"{prefix}-{rp['code'].lower()}-001",
+                    "external_entity_name": rp["name"],
+                    "status": "active",
+                    "validation_status": "valid",
+                    "confidence_score": 100,
+                    "created_by": "auto_seed",
+                    "created_at": now_iso,
+                    "updated_at": now_iso,
+                }
+            )
         if rate_mappings_v2:
             await db.cm_mappings.insert_many(rate_mappings_v2)

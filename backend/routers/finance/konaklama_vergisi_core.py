@@ -9,6 +9,7 @@ Tek doğruluk kaynağı:
 - Config: ``db.city_tax_rules`` (tenant başına bir aktif kayıt)
 - Posting izi: ``db.accommodation_tax_postings`` (folio_id başına tek satır)
 """
+
 from __future__ import annotations
 
 import logging
@@ -86,9 +87,7 @@ async def post_konaklama_vergisi_to_folio(
             raise ValueError(msg)
         return {"ok": False, "posted": False, "reason": "folio_not_found"}
 
-    existing = await db.accommodation_tax_postings.find_one(
-        {"tenant_id": tenant_id, "folio_id": folio_id}
-    )
+    existing = await db.accommodation_tax_postings.find_one({"tenant_id": tenant_id, "folio_id": folio_id})
     if existing:
         return {
             "ok": True,
@@ -117,28 +116,32 @@ async def post_konaklama_vergisi_to_folio(
             # index sayesinde idempotent; tekrar çağrıda DuplicateKeyError
             # sessizce yutulur (mevcut iz korunur).
             try:
-                await db.accommodation_tax_postings.insert_one({
-                    "id": str(uuid.uuid4()),
-                    "tenant_id": tenant_id,
-                    "folio_id": folio_id,
-                    "exempt": True,
-                    "exempt_reason": "exempt_segment",
-                    "exempt_segment": booking.get("segment"),
-                    "rate_percent": float(cfg.get("rate_percent", DEFAULT_RATE_PERCENT)),
-                    "tax_amount": 0.0,
-                    "base_amount": 0.0,
-                    "posted_at": datetime.now(UTC).isoformat(),
-                    "posted_by": posted_by,
-                })
+                await db.accommodation_tax_postings.insert_one(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "tenant_id": tenant_id,
+                        "folio_id": folio_id,
+                        "exempt": True,
+                        "exempt_reason": "exempt_segment",
+                        "exempt_segment": booking.get("segment"),
+                        "rate_percent": float(cfg.get("rate_percent", DEFAULT_RATE_PERCENT)),
+                        "tax_amount": 0.0,
+                        "base_amount": 0.0,
+                        "posted_at": datetime.now(UTC).isoformat(),
+                        "posted_by": posted_by,
+                    }
+                )
             except Exception as exc:  # noqa: BLE001
                 # Yalnızca duplicate-key (aynı folio için iz zaten var) sessiz
                 # geç; diğer hataları logla ki denetim izi kaybı görünür olsun.
                 from pymongo.errors import DuplicateKeyError
+
                 if not isinstance(exc, DuplicateKeyError):
                     logger.warning(
-                        "konaklama_vergisi exempt audit insert failed: "
-                        "tenant=%s folio=%s err=%s",
-                        tenant_id, folio_id, exc,
+                        "konaklama_vergisi exempt audit insert failed: tenant=%s folio=%s err=%s",
+                        tenant_id,
+                        folio_id,
+                        exc,
                     )
             return {"ok": False, "posted": False, "reason": "exempt_segment"}
 
@@ -203,23 +206,22 @@ async def post_konaklama_vergisi_to_folio(
         # v95.7: yalnızca unique-index ihlalini idempotent kabul et;
         # diğer DB hataları (timeout, network, validation) maskelenmesin.
         from pymongo.errors import DuplicateKeyError
+
         if not isinstance(exc, DuplicateKeyError):
             # Charge'ı geri al ve hatayı yukarı raporla (gerçek bir
             # arıza vardır; "already_posted" gibi sessiz davranma).
             await db.folio_charges.delete_one({"id": charge_id})
             logger.exception(
-                "konaklama_vergisi posting insert failed (non-duplicate): "
-                "tenant=%s folio=%s",
-                tenant_id, folio_id,
+                "konaklama_vergisi posting insert failed (non-duplicate): tenant=%s folio=%s",
+                tenant_id,
+                folio_id,
             )
             if raise_on_error:
                 raise
             return {"ok": False, "posted": False, "reason": "posting_insert_failed"}
         # Duplicate-key race: charge'ı geri al, idempotent dön.
         await db.folio_charges.delete_one({"id": charge_id})
-        existing = await db.accommodation_tax_postings.find_one(
-            {"tenant_id": tenant_id, "folio_id": folio_id}
-        )
+        existing = await db.accommodation_tax_postings.find_one({"tenant_id": tenant_id, "folio_id": folio_id})
         return {
             "ok": True,
             "posted": False,

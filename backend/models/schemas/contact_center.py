@@ -11,6 +11,7 @@ Doktrin:
 - Bu Faz 0 iskeletidir: gerçek transport (WhatsApp Cloud API, Twilio,
   on-prem PBX) bağlı DEĞİL — sağlayıcı katmanı mock + fail-closed çalışır.
 """
+
 import uuid
 from datetime import UTC, datetime
 
@@ -27,6 +28,7 @@ from models.enums import (
 
 class Conversation(BaseModel):
     """Omnichannel konuşma başlığı (WhatsApp/voice/web/social/email)."""
+
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
@@ -50,6 +52,7 @@ class Conversation(BaseModel):
 
 class Message(BaseModel):
     """Konuşma içindeki tekil mesaj (gelen/giden)."""
+
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
@@ -74,6 +77,7 @@ class Message(BaseModel):
 
 class CallLog(BaseModel):
     """Sesli çağrı kaydı (Faz 2'de PBX/Twilio Voice ile dolacak)."""
+
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str

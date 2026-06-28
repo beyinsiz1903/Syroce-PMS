@@ -3,6 +3,7 @@ Enterprise WebSocket Hub - Production-grade real-time push system.
 Authenticated sessions, tenant-aware channels, role-based filtering,
 heartbeat/keepalive, event replay, reconnect tokens.
 """
+
 import asyncio
 import json
 import logging
@@ -28,6 +29,7 @@ if not JWT_SECRET:
     if os.environ.get("STRICT_JWT_SECRET") == "1" or os.environ.get("ENV", "").lower() == "production":
         raise RuntimeError("JWT_SECRET environment variable is required in production (websocket_hub).")
     import secrets as _secrets
+
     JWT_SECRET = _secrets.token_urlsafe(64)
     logger.warning("⚠️ JWT_SECRET unset; websocket_hub using random per-process secret (DEV ONLY — WS tokens won't match HTTP backend).")
 JWT_ALGORITHM = "HS256"
@@ -37,18 +39,36 @@ ROLE_EVENT_FILTER = {
     "admin": None,  # None = all events
     "super_admin": None,
     "revenue": {
-        "rate_alert", "revenue_alert", "demand_spike", "competitor_price_change",
-        "ml_prediction_alert", "occupancy_threshold_breach", "channel_parity_violation",
-        "auto_pricing_applied", "auto_pricing_rollback", "pricing_approval_needed",
+        "rate_alert",
+        "revenue_alert",
+        "demand_spike",
+        "competitor_price_change",
+        "ml_prediction_alert",
+        "occupancy_threshold_breach",
+        "channel_parity_violation",
+        "auto_pricing_applied",
+        "auto_pricing_rollback",
+        "pricing_approval_needed",
     },
     "front_desk": {
-        "check_in_created", "guest_arrived", "vip_arrival", "reservation_modified",
-        "checkout_completed", "guest_complaint_escalation", "cross_property_transfer",
-        "overbooking_risk", "reservation_risk_warning", "walk_in_alert",
+        "check_in_created",
+        "guest_arrived",
+        "vip_arrival",
+        "reservation_modified",
+        "checkout_completed",
+        "guest_complaint_escalation",
+        "cross_property_transfer",
+        "overbooking_risk",
+        "reservation_risk_warning",
+        "walk_in_alert",
     },
     "housekeeping": {
-        "housekeeping_task_overdue", "room_ready", "checkout_completed",
-        "vip_room_priority", "guest_request_housekeeping", "room_inspection_needed",
+        "housekeeping_task_overdue",
+        "room_ready",
+        "checkout_completed",
+        "vip_room_priority",
+        "guest_request_housekeeping",
+        "room_inspection_needed",
     },
     "maintenance": {"maintenance_block", "system_health_alert", "equipment_alert"},
     "night_auditor": {"night_audit_completed", "audit_exception", "audit_escalation"},
@@ -62,9 +82,17 @@ EVENT_REPLAY_BUFFER_SIZE = 500  # per tenant
 
 class WebSocketSession:
     """Represents a single authenticated WebSocket connection."""
+
     __slots__ = (
-        "session_id", "websocket", "tenant_id", "user_id", "role",
-        "channels", "connected_at", "last_heartbeat", "reconnect_token",
+        "session_id",
+        "websocket",
+        "tenant_id",
+        "user_id",
+        "role",
+        "channels",
+        "connected_at",
+        "last_heartbeat",
+        "reconnect_token",
     )
 
     def __init__(self, websocket, tenant_id: str, user_id: str, role: str):
@@ -132,6 +160,7 @@ class WebSocketHub:
             jti = payload.get("jti")
             if jti:
                 from core.security import is_jti_revoked
+
                 if await is_jti_revoked(jti):
                     logger.warning(f"WS auth: revoked jti rejected user={user_id}")
                     return None
@@ -146,6 +175,7 @@ class WebSocketHub:
             # enforced by the explicit jwt_tenant == doc_tenant consistency
             # check below (Parity #3).
             from core.tenant_db import get_system_db
+
             sys_db = get_system_db()
             user_doc = await sys_db.users.find_one(
                 {"$or": [{"id": user_id}, {"user_id": user_id}]},
@@ -169,9 +199,7 @@ class WebSocketHub:
                 logger.warning(f"WS auth: user has no tenant_id user={user_id}")
                 return None
             if jwt_tenant and jwt_tenant != doc_tenant:
-                logger.warning(
-                    f"WS auth: tenant mismatch user={user_id} jwt_tenant={jwt_tenant} doc_tenant={doc_tenant}"
-                )
+                logger.warning(f"WS auth: tenant mismatch user={user_id} jwt_tenant={jwt_tenant} doc_tenant={doc_tenant}")
                 return None
 
             return {
@@ -197,6 +225,7 @@ class WebSocketHub:
         # TenantViolationError under STRICT_TENANT_MODE. Safe: the tenant comes
         # from the verified token and is constant for this connection's task.
         from core.tenant_db import set_tenant_context
+
         set_tenant_context(user_ctx["tenant_id"])
 
         session = WebSocketSession(
@@ -211,35 +240,43 @@ class WebSocketHub:
         self._reconnect_tokens[session.reconnect_token] = session.session_id
 
         # Send connection ack
-        await self._send(session, {
-            "type": "connection_established",
-            "session_id": session.session_id,
-            "reconnect_token": session.reconnect_token,
-            "role": session.role,
-            "tenant_id": session.tenant_id,
-            "heartbeat_interval": HEARTBEAT_INTERVAL,
-        })
+        await self._send(
+            session,
+            {
+                "type": "connection_established",
+                "session_id": session.session_id,
+                "reconnect_token": session.reconnect_token,
+                "role": session.role,
+                "tenant_id": session.tenant_id,
+                "heartbeat_interval": HEARTBEAT_INTERVAL,
+            },
+        )
 
         # Replay missed events if reconnecting
         if last_event_ts:
             missed = self._replay_buffer.get_since(session.tenant_id, last_event_ts)
             filtered = self._filter_events_for_role(missed, session.role)
             if filtered:
-                await self._send(session, {
-                    "type": "event_replay",
-                    "count": len(filtered),
-                    "events": filtered,
-                })
+                await self._send(
+                    session,
+                    {
+                        "type": "event_replay",
+                        "count": len(filtered),
+                        "events": filtered,
+                    },
+                )
 
         # Log connection
-        await db.ws_connection_log.insert_one({
-            "session_id": session.session_id,
-            "tenant_id": session.tenant_id,
-            "user_id": session.user_id,
-            "role": session.role,
-            "action": "connect",
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        await db.ws_connection_log.insert_one(
+            {
+                "session_id": session.session_id,
+                "tenant_id": session.tenant_id,
+                "user_id": session.user_id,
+                "role": session.role,
+                "action": "connect",
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
 
         logger.info(f"WS connected: user={session.user_id} tenant={session.tenant_id} role={session.role}")
         return session
@@ -253,13 +290,15 @@ class WebSocketHub:
         self._user_sessions[session.user_id].discard(session_id)
         self._reconnect_tokens.pop(session.reconnect_token, None)
 
-        await db.ws_connection_log.insert_one({
-            "session_id": session_id,
-            "tenant_id": session.tenant_id,
-            "user_id": session.user_id,
-            "action": "disconnect",
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        await db.ws_connection_log.insert_one(
+            {
+                "session_id": session_id,
+                "tenant_id": session.tenant_id,
+                "user_id": session.user_id,
+                "action": "disconnect",
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
         logger.info(f"WS disconnected: session={session_id}")
 
     async def handle_message(self, session_id: str, raw: str):
@@ -363,46 +402,60 @@ class WebSocketHub:
         today = datetime.now(UTC).strftime("%Y-%m-%d")
 
         # Front desk queue
-        front_desk_queue = await db.bookings.find(
-            {"tenant_id": tenant_id, "check_in": today,
-             "status": {"$in": ["confirmed", "guaranteed"]}},
-            {"_id": 0, "id": 1, "guest_name": 1, "room_id": 1, "check_in": 1,
-             "room_type": 1, "vip_status": 1, "estimated_arrival_time": 1},
-        ).sort("estimated_arrival_time", 1).limit(50).to_list(50)
+        front_desk_queue = (
+            await db.bookings.find(
+                {"tenant_id": tenant_id, "check_in": today, "status": {"$in": ["confirmed", "guaranteed"]}},
+                {"_id": 0, "id": 1, "guest_name": 1, "room_id": 1, "check_in": 1, "room_type": 1, "vip_status": 1, "estimated_arrival_time": 1},
+            )
+            .sort("estimated_arrival_time", 1)
+            .limit(50)
+            .to_list(50)
+        )
 
         # Housekeeping board
-        hk_tasks = await db.housekeeping_tasks.find(
-            {"tenant_id": tenant_id, "status": {"$in": ["pending", "assigned", "in_progress"]}},
-            {"_id": 0, "id": 1, "room_id": 1, "task_type": 1, "status": 1,
-             "priority": 1, "assigned_to": 1, "created_at": 1},
-        ).sort("priority", -1).limit(50).to_list(50)
+        hk_tasks = (
+            await db.housekeeping_tasks.find(
+                {"tenant_id": tenant_id, "status": {"$in": ["pending", "assigned", "in_progress"]}},
+                {"_id": 0, "id": 1, "room_id": 1, "task_type": 1, "status": 1, "priority": 1, "assigned_to": 1, "created_at": 1},
+            )
+            .sort("priority", -1)
+            .limit(50)
+            .to_list(50)
+        )
 
         # Audit exceptions (last 24h)
         cutoff = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
-        audit_exceptions = await db.platform_events.find(
-            {"tenant_id": tenant_id, "event_type": "audit_exception",
-             "created_at": {"$gte": cutoff}},
-            {"_id": 0},
-        ).sort("created_at", -1).limit(20).to_list(20)
+        audit_exceptions = (
+            await db.platform_events.find(
+                {"tenant_id": tenant_id, "event_type": "audit_exception", "created_at": {"$gte": cutoff}},
+                {"_id": 0},
+            )
+            .sort("created_at", -1)
+            .limit(20)
+            .to_list(20)
+        )
 
         # VIP arrivals
         vip_arrivals = await db.bookings.find(
-            {"tenant_id": tenant_id, "check_in": today,
-             "status": {"$in": ["confirmed", "guaranteed"]},
-             "$or": [{"vip_status": True}, {"tags": "vip"}]},
+            {"tenant_id": tenant_id, "check_in": today, "status": {"$in": ["confirmed", "guaranteed"]}, "$or": [{"vip_status": True}, {"tags": "vip"}]},
             {"_id": 0, "id": 1, "guest_name": 1, "room_id": 1, "room_type": 1},
         ).to_list(20)
 
         # Overbooking risk
-        total_rooms = await db.rooms.count_documents({
-            "tenant_id": tenant_id,
-            "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
-        })
-        booked = await db.bookings.count_documents({
-            "tenant_id": tenant_id,
-            "check_in": {"$lte": today}, "check_out": {"$gt": today},
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-        })
+        total_rooms = await db.rooms.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
+            }
+        )
+        booked = await db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "check_in": {"$lte": today},
+                "check_out": {"$gt": today},
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
+            }
+        )
         overbooking_risk = booked >= total_rooms if total_rooms > 0 else False
 
         return {

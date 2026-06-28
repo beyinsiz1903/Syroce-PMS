@@ -3,6 +3,7 @@ Domain Router: RMS Revenue
 
 Revenue management system, comp-set, yield management, Faz 2 sales/revenue features.
 """
+
 import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -61,9 +62,7 @@ async def is_rms_demo_mode(tenant_id: str) -> bool:
     When True the legacy hardcoded fallbacks are used so a freshly
     provisioned tenant can demo the RMS module without real data.
     """
-    doc = await db.tenants.find_one(
-        {"id": tenant_id}, {"_id": 0, "settings": 1}
-    )
+    doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "settings": 1})
     if not doc:
         return False
     return bool((doc.get("settings") or {}).get("rms_demo_mode", False))
@@ -88,23 +87,22 @@ async def _build_data_quality(tenant_id: str, period_days: int = 30) -> dict:
     ) = await asyncio.gather(
         db.rooms.count_documents({"tenant_id": tenant_id}),
         db.room_types.count_documents({"tenant_id": tenant_id}),
-        db.yield_rules.count_documents(
-            {"tenant_id": tenant_id, "is_active": True}
+        db.yield_rules.count_documents({"tenant_id": tenant_id, "is_active": True}),
+        db.seasonal_calendar.count_documents({"tenant_id": tenant_id, "is_active": True}),
+        db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "check_in": {"$gte": period_start_iso},
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
+            }
         ),
-        db.seasonal_calendar.count_documents(
-            {"tenant_id": tenant_id, "is_active": True}
-        ),
-        db.bookings.count_documents({
-            "tenant_id": tenant_id,
-            "check_in": {"$gte": period_start_iso},
-            "status": {"$in": [
-                "confirmed", "guaranteed", "checked_in", "checked_out"
-            ]},
-        }),
         db.bookings.find(
             {"tenant_id": tenant_id},
             {"_id": 0, "created_at": 1, "check_in": 1},
-        ).sort("created_at", 1).limit(1).to_list(1),
+        )
+        .sort("created_at", 1)
+        .limit(1)
+        .to_list(1),
     )
 
     days_of_history = 0
@@ -135,15 +133,8 @@ async def _build_data_quality(tenant_id: str, period_days: int = 30) -> dict:
     if seasons_count == 0:
         warnings.append("no_seasons")
 
-    sufficient_for_kpis = (
-        rooms_count > 0 and bookings_in_period >= KPI_MIN_BOOKINGS
-    )
-    sufficient_for_pricing = (
-        rooms_count > 0
-        and room_types_count > 0
-        and bookings_in_period >= PRICING_MIN_BOOKINGS
-        and days_of_history >= PRICING_MIN_HISTORY_DAYS
-    )
+    sufficient_for_kpis = rooms_count > 0 and bookings_in_period >= KPI_MIN_BOOKINGS
+    sufficient_for_pricing = rooms_count > 0 and room_types_count > 0 and bookings_in_period >= PRICING_MIN_BOOKINGS and days_of_history >= PRICING_MIN_HISTORY_DAYS
 
     return {
         "has_rooms": rooms_count > 0,
@@ -172,9 +163,7 @@ async def _build_data_quality(tenant_id: str, period_days: int = 30) -> dict:
 @router.get("/rms/settings")
 async def get_rms_settings(current_user: User = Depends(get_current_user)):
     """Return RMS-specific tenant settings (currently just demo mode flag)."""
-    doc = await db.tenants.find_one(
-        {"id": current_user.tenant_id}, {"_id": 0, "settings": 1}
-    )
+    doc = await db.tenants.find_one({"id": current_user.tenant_id}, {"_id": 0, "settings": 1})
     settings = (doc or {}).get("settings") or {}
     return {
         "rms_demo_mode": bool(settings.get("rms_demo_mode", False)),
@@ -198,15 +187,18 @@ async def update_rms_settings(
         )
     await db.tenants.update_one(
         {"id": current_user.tenant_id},
-        {"$set": {
-            "settings.rms_demo_mode": bool(payload.rms_demo_mode),
-            "settings.rms_demo_mode_updated_at": datetime.now(UTC).isoformat(),
-            "settings.rms_demo_mode_updated_by": current_user.email,
-        }},
+        {
+            "$set": {
+                "settings.rms_demo_mode": bool(payload.rms_demo_mode),
+                "settings.rms_demo_mode_updated_at": datetime.now(UTC).isoformat(),
+                "settings.rms_demo_mode_updated_by": current_user.email,
+            }
+        },
     )
     # Toggle değişti — dashboard cache'ini hemen düşür ki eski demo değerleri görünmesin.
     try:
         from cache_manager import cache as _cache  # noqa: WPS433
+
         if _cache is not None:
             _cache.safe_invalidate(current_user.tenant_id, "rms_dashboard_kpis")
     except Exception:
@@ -255,29 +247,17 @@ async def get_rms_dashboard_kpis(
     ) = await asyncio.gather(
         db.rooms.count_documents({"tenant_id": tid}),
         db.bookings.find(
-            {"tenant_id": tid, "check_in": {"$gte": period_start},
-             "status": {"$in": booking_statuses}},
-            {"_id": 0, "total_amount": 1, "nights": 1, "base_rate": 1, "channel": 1,
-             "source_channel": 1, "status": 1, "check_in": 1, "check_out": 1,
-             "room_type": 1, "room_id": 1, "room_number": 1},
+            {"tenant_id": tid, "check_in": {"$gte": period_start}, "status": {"$in": booking_statuses}},
+            {"_id": 0, "total_amount": 1, "nights": 1, "base_rate": 1, "channel": 1, "source_channel": 1, "status": 1, "check_in": 1, "check_out": 1, "room_type": 1, "room_id": 1, "room_number": 1},
         ).to_list(10000),
         db.bookings.find(
-            {"tenant_id": tid, "check_in": {"$gte": prev_period_start, "$lt": prev_period_end},
-             "status": {"$in": booking_statuses}},
+            {"tenant_id": tid, "check_in": {"$gte": prev_period_start, "$lt": prev_period_end}, "status": {"$in": booking_statuses}},
             {"_id": 0, "total_amount": 1, "nights": 1, "check_in": 1, "check_out": 1},
         ).to_list(10000),
-        db.bookings.count_documents(
-            {"tenant_id": tid, "check_in": {"$gte": period_start}, "status": "cancelled"}
-        ),
-        db.bookings.count_documents(
-            {"tenant_id": tid, "created_at": {"$gte": seven_days_ago},
-             "status": {"$in": ["confirmed", "guaranteed"]}}
-        ),
+        db.bookings.count_documents({"tenant_id": tid, "check_in": {"$gte": period_start}, "status": "cancelled"}),
+        db.bookings.count_documents({"tenant_id": tid, "created_at": {"$gte": seven_days_ago}, "status": {"$in": ["confirmed", "guaranteed"]}}),
         db.bookings.find(
-            {"tenant_id": tid,
-             "status": {"$in": booking_statuses},
-             "check_in": {"$lt": trend_window_end_exclusive},
-             "check_out": {"$gt": trend_window_start}},
+            {"tenant_id": tid, "status": {"$in": booking_statuses}, "check_in": {"$lt": trend_window_end_exclusive}, "check_out": {"$gt": trend_window_start}},
             {"_id": 0, "check_in": 1, "check_out": 1},
         ).to_list(20000),
         _build_data_quality(tid, period_days=days),
@@ -292,15 +272,9 @@ async def get_rms_dashboard_kpis(
     # `b.get("nights", 1)` her zaman 1 dönüyordu → ADR/RevPAR ve oda-tipi/kanal
     # gece sayıları gerçek değer yerine her rezervasyona "1 gece" atıyordu.
     for b in current_bookings:
-        b["_computed_nights"] = (
-            int(b["nights"]) if isinstance(b.get("nights"), (int, float)) and b.get("nights")
-            else _compute_nights(b.get("check_in"), b.get("check_out"))
-        )
+        b["_computed_nights"] = int(b["nights"]) if isinstance(b.get("nights"), (int, float)) and b.get("nights") else _compute_nights(b.get("check_in"), b.get("check_out"))
     for b in prev_bookings:
-        b["_computed_nights"] = (
-            int(b["nights"]) if isinstance(b.get("nights"), (int, float)) and b.get("nights")
-            else _compute_nights(b.get("check_in"), b.get("check_out"))
-        )
+        b["_computed_nights"] = int(b["nights"]) if isinstance(b.get("nights"), (int, float)) and b.get("nights") else _compute_nights(b.get("check_in"), b.get("check_out"))
 
     # Bookings'te `room_type` alanı stored değil; `room_id` üzerinden rooms
     # koleksiyonundan çözülür. Dashboard daha önce her rezervasyonu "Standard"
@@ -349,29 +323,26 @@ async def get_rms_dashboard_kpis(
         channel_map[ch]["revenue"] += b.get("total_amount", 0)
         channel_map[ch]["nights"] += b["_computed_nights"]
 
-    channel_labels = {"direct": "Direkt", "booking_com": "Booking.com",
-                      "expedia": "Expedia", "airbnb": "Airbnb", "own_website": "Web Sitesi"}
+    channel_labels = {"direct": "Direkt", "booking_com": "Booking.com", "expedia": "Expedia", "airbnb": "Airbnb", "own_website": "Web Sitesi"}
     channels = []
     for ch, data in channel_map.items():
-        channels.append({
-            "channel": ch,
-            "label": channel_labels.get(ch, ch),
-            "bookings": data["count"],
-            "revenue": round(data["revenue"], 0),
-            "nights": data["nights"],
-            "share_pct": round(data["revenue"] / total_revenue * 100, 1) if total_revenue > 0 else 0,
-        })
+        channels.append(
+            {
+                "channel": ch,
+                "label": channel_labels.get(ch, ch),
+                "bookings": data["count"],
+                "revenue": round(data["revenue"], 0),
+                "nights": data["nights"],
+                "share_pct": round(data["revenue"] / total_revenue * 100, 1) if total_revenue > 0 else 0,
+            }
+        )
     channels.sort(key=lambda x: x["revenue"], reverse=True)
 
     # Room type breakdown — bookings.room_id → rooms.room_type lookup,
     # b.get("room_type") legacy/external (Exely/HotelRunner) için fallback.
     rt_map = {}
     for b in current_bookings:
-        rt = (
-            b.get("room_type")
-            or room_type_map.get(b.get("room_id"))
-            or "Belirtilmemiş"
-        )
+        rt = b.get("room_type") or room_type_map.get(b.get("room_id")) or "Belirtilmemiş"
         if rt not in rt_map:
             rt_map[rt] = {"count": 0, "revenue": 0, "nights": 0}
         rt_map[rt]["count"] += 1
@@ -429,28 +400,21 @@ async def get_rms_dashboard_kpis(
     }
 
 
-
-
 @router.get("/rms/channel-performance")
-async def get_channel_performance(
-    months: int = 6,
-    current_user: User = Depends(get_current_user)
-):
+async def get_channel_performance(months: int = 6, current_user: User = Depends(get_current_user)):
     """Monthly channel performance breakdown."""
     tid = current_user.tenant_id
     now = datetime.now(UTC)
     result = []
 
     for m in range(months):
-        month_start = (now - timedelta(days=30 * (m + 1)))
-        month_end = (now - timedelta(days=30 * m))
+        month_start = now - timedelta(days=30 * (m + 1))
+        month_end = now - timedelta(days=30 * m)
         month_label = month_start.strftime("%Y-%m")
 
         bookings = await db.bookings.find(
-            {"tenant_id": tid,
-             "check_in": {"$gte": month_start.isoformat(), "$lt": month_end.isoformat()},
-             "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]}},
-            {"_id": 0, "channel": 1, "source_channel": 1, "total_amount": 1}
+            {"tenant_id": tid, "check_in": {"$gte": month_start.isoformat(), "$lt": month_end.isoformat()}, "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]}},
+            {"_id": 0, "channel": 1, "source_channel": 1, "total_amount": 1},
         ).to_list(5000)
 
         ch_data = {}
@@ -469,6 +433,7 @@ async def get_channel_performance(
 
 # ── YIELD RULES CRUD ──
 
+
 class YieldRuleCreate(BaseModel):
     name: str
     description: str = ""
@@ -481,16 +446,10 @@ class YieldRuleCreate(BaseModel):
     room_types: list[str] = []
 
 
-
-
 @router.get("/rms/yield-rules")
 async def get_yield_rules(current_user: User = Depends(get_current_user)):
-    rules = await db.yield_rules.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).sort("priority", 1).to_list(100)
+    rules = await db.yield_rules.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("priority", 1).to_list(100)
     return {"rules": rules, "count": len(rules)}
-
-
 
 
 @router.post("/rms/yield-rules")
@@ -511,8 +470,6 @@ async def create_yield_rule(
     return doc
 
 
-
-
 @router.put("/rms/yield-rules/{rule_id}")
 async def update_yield_rule(
     rule_id: str,
@@ -520,15 +477,10 @@ async def update_yield_rule(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v98 DW
 ):
-    result = await db.yield_rules.update_one(
-        {"id": rule_id, "tenant_id": current_user.tenant_id},
-        {"$set": {**rule.model_dump(), "updated_at": datetime.now(UTC).isoformat()}}
-    )
+    result = await db.yield_rules.update_one({"id": rule_id, "tenant_id": current_user.tenant_id}, {"$set": {**rule.model_dump(), "updated_at": datetime.now(UTC).isoformat()}})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Rule not found")
     return {"message": "Kural guncellendi", "id": rule_id}
-
-
 
 
 @router.delete("/rms/yield-rules/{rule_id}")
@@ -537,15 +489,14 @@ async def delete_yield_rule(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v98 DW
 ):
-    result = await db.yield_rules.delete_one(
-        {"id": rule_id, "tenant_id": current_user.tenant_id}
-    )
+    result = await db.yield_rules.delete_one({"id": rule_id, "tenant_id": current_user.tenant_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Rule not found")
     return {"message": "Kural silindi"}
 
 
 # ── SEASONAL CALENDAR CRUD ──
+
 
 class SeasonCreate(BaseModel):
     name: str
@@ -558,16 +509,10 @@ class SeasonCreate(BaseModel):
     is_active: bool = True
 
 
-
-
 @router.get("/rms/seasonal-calendar")
 async def get_seasonal_calendar(current_user: User = Depends(get_current_user)):
-    seasons = await db.seasonal_calendar.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).sort("start_date", 1).to_list(100)
+    seasons = await db.seasonal_calendar.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("start_date", 1).to_list(100)
     return {"seasons": seasons, "count": len(seasons)}
-
-
 
 
 @router.post("/rms/seasonal-calendar")
@@ -587,8 +532,6 @@ async def create_season(
     return doc
 
 
-
-
 @router.put("/rms/seasonal-calendar/{season_id}")
 async def update_season(
     season_id: str,
@@ -596,15 +539,10 @@ async def update_season(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v98 DW
 ):
-    result = await db.seasonal_calendar.update_one(
-        {"id": season_id, "tenant_id": current_user.tenant_id},
-        {"$set": {**season.model_dump(), "updated_at": datetime.now(UTC).isoformat()}}
-    )
+    result = await db.seasonal_calendar.update_one({"id": season_id, "tenant_id": current_user.tenant_id}, {"$set": {**season.model_dump(), "updated_at": datetime.now(UTC).isoformat()}})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Season not found")
     return {"message": "Sezon guncellendi", "id": season_id}
-
-
 
 
 @router.delete("/rms/seasonal-calendar/{season_id}")
@@ -613,16 +551,13 @@ async def delete_season(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v98 DW
 ):
-    result = await db.seasonal_calendar.delete_one(
-        {"id": season_id, "tenant_id": current_user.tenant_id}
-    )
+    result = await db.seasonal_calendar.delete_one({"id": season_id, "tenant_id": current_user.tenant_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Season not found")
     return {"message": "Sezon silindi"}
 
 
 # ── REWRITTEN AUTO-PRICING (7 Internal Factors) ──
-
 
 
 @router.post("/rms/generate-pricing")
@@ -669,32 +604,22 @@ async def generate_internal_pricing(
                 status_code=422,
                 detail={
                     "error": "no_room_types",
-                    "message": (
-                        "Once oda tipi tanimlamaniz gerekiyor."
-                    ),
+                    "message": ("Once oda tipi tanimlamaniz gerekiyor."),
                 },
             )
 
     # Load yield rules
-    yield_rules = await db.yield_rules.find(
-        {"tenant_id": tid, "is_active": True}, {"_id": 0}
-    ).sort("priority", 1).to_list(100)
+    yield_rules = await db.yield_rules.find({"tenant_id": tid, "is_active": True}, {"_id": 0}).sort("priority", 1).to_list(100)
 
     # Load seasonal calendar
-    seasons = await db.seasonal_calendar.find(
-        {"tenant_id": tid, "is_active": True}, {"_id": 0}
-    ).to_list(50)
+    seasons = await db.seasonal_calendar.find({"tenant_id": tid, "is_active": True}, {"_id": 0}).to_list(50)
 
     # Historical cancellation rate (last 90 days). When no history exists
     # we leave the signal *unset* in prod mode — the cancel-rate factor
     # in the loop will then skip its multiplier instead of inventing 10%.
     ninety_days_ago = (now - timedelta(days=90)).isoformat()
-    total_hist = await db.bookings.count_documents(
-        {"tenant_id": tid, "check_in": {"$gte": ninety_days_ago}}
-    )
-    cancelled_hist = await db.bookings.count_documents(
-        {"tenant_id": tid, "check_in": {"$gte": ninety_days_ago}, "status": "cancelled"}
-    )
+    total_hist = await db.bookings.count_documents({"tenant_id": tid, "check_in": {"$gte": ninety_days_ago}})
+    cancelled_hist = await db.bookings.count_documents({"tenant_id": tid, "check_in": {"$gte": ninety_days_ago}, "status": "cancelled"})
     if total_hist > 0:
         hist_cancel_rate = cancelled_hist / total_hist
     elif demo_mode:
@@ -705,9 +630,7 @@ async def generate_internal_pricing(
     # Channel performance (last 30 days)
     thirty_days = (now - timedelta(days=30)).isoformat()
     recent_bookings = await db.bookings.find(
-        {"tenant_id": tid, "created_at": {"$gte": thirty_days},
-         "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]}},
-        {"_id": 0, "channel": 1, "total_amount": 1, "nights": 1}
+        {"tenant_id": tid, "created_at": {"$gte": thirty_days}, "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]}}, {"_id": 0, "channel": 1, "total_amount": 1, "nights": 1}
     ).to_list(5000)
 
     channel_adr = {}
@@ -721,11 +644,13 @@ async def generate_internal_pricing(
     # YoY comparison data
     year_ago_start = (start - timedelta(days=365)).isoformat()
     year_ago_end = (end - timedelta(days=365)).isoformat()
-    yoy_bookings = await db.bookings.count_documents({
-        "tenant_id": tid,
-        "check_in": {"$gte": year_ago_start, "$lte": year_ago_end},
-        "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
-    })
+    yoy_bookings = await db.bookings.count_documents(
+        {
+            "tenant_id": tid,
+            "check_in": {"$gte": year_ago_start, "$lte": year_ago_end},
+            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
+        }
+    )
 
     recommendations = []
 
@@ -749,12 +674,14 @@ async def generate_internal_pricing(
             max_rate = rt.get("max_rate") or base_rate * 2
 
             # Current occupancy for this date
-            occ_count = await db.bookings.count_documents({
-                "tenant_id": tid,
-                "check_in": {"$lte": current_date},
-                "check_out": {"$gt": current_date},
-                "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-            })
+            occ_count = await db.bookings.count_documents(
+                {
+                    "tenant_id": tid,
+                    "check_in": {"$lte": current_date},
+                    "check_out": {"$gt": current_date},
+                    "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
+                }
+            )
             rt_rooms = await db.rooms.count_documents({"tenant_id": tid, "room_type": rt["name"]})
             if rt_rooms == 0:
                 # In demo mode, fall back to legacy 5-rooms guess so the
@@ -770,12 +697,14 @@ async def generate_internal_pricing(
 
             # Booking pace (last 7 days for this target date)
             seven_ago = (now - timedelta(days=7)).isoformat()
-            pace_count = await db.bookings.count_documents({
-                "tenant_id": tid,
-                "check_in": {"$lte": current_date},
-                "check_out": {"$gt": current_date},
-                "created_at": {"$gte": seven_ago},
-            })
+            pace_count = await db.bookings.count_documents(
+                {
+                    "tenant_id": tid,
+                    "check_in": {"$lte": current_date},
+                    "check_out": {"$gt": current_date},
+                    "created_at": {"$gte": seven_ago},
+                }
+            )
             daily_pace = pace_count / 7
 
             multiplier = 1.0
@@ -900,10 +829,10 @@ async def generate_internal_pricing(
 
                 if rule_applies:
                     if at == "increase_percent":
-                        multiplier *= (1 + av / 100)
+                        multiplier *= 1 + av / 100
                         reasons.append(f"Kural '{yr['name']}': +{av}%")
                     elif at == "decrease_percent":
-                        multiplier *= (1 - av / 100)
+                        multiplier *= 1 - av / 100
                         reasons.append(f"Kural '{yr['name']}': -{av}%")
 
             suggested_rate = round(base_rate * multiplier)
@@ -958,4 +887,3 @@ async def generate_internal_pricing(
             "avg_confidence": round(sum(r["confidence"] for r in recommendations) / len(recommendations), 2) if recommendations else 0,
         },
     }
-

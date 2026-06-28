@@ -8,6 +8,7 @@ Done criteria (per user spec):
   - stale provider state    → reconciliation recovers
   - modify/cancel races     → deterministic outcome
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -37,18 +38,24 @@ SANDBOX_RESULTS = "sandbox_simulation_results"
 
 async def _write_timeline(tenant_id: str, run_id: str, event: dict[str, Any]):
     """Write an event to the sandbox event timeline."""
-    event.update({
-        "tenant_id": tenant_id,
-        "run_id": run_id,
-        "timestamp": datetime.now(UTC).isoformat(),
-    })
+    event.update(
+        {
+            "tenant_id": tenant_id,
+            "run_id": run_id,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    )
     await db[SANDBOX_TIMELINE].insert_one(event)
 
 
 async def _process_reservation_direct(
-    tenant_id: str, property_id: str, connector_id: str,
-    batch_id: str, canonical: CanonicalReservation,
-    room_reverse: dict[str, str], rate_reverse: dict[str, str],
+    tenant_id: str,
+    property_id: str,
+    connector_id: str,
+    batch_id: str,
+    canonical: CanonicalReservation,
+    room_reverse: dict[str, str],
+    rate_reverse: dict[str, str],
     repo: ChannelManagerRepository,
 ) -> dict[str, Any]:
     """
@@ -58,7 +65,9 @@ async def _process_reservation_direct(
     fingerprint = ImportedReservation.compute_fingerprint(canonical.model_dump())
 
     existing = await repo.get_imported_reservation_by_external_id(
-        tenant_id, connector_id, canonical.external_id,
+        tenant_id,
+        connector_id,
+        canonical.external_id,
     )
 
     pms_room_type = room_reverse.get(canonical.room_type_id)
@@ -147,11 +156,13 @@ async def _process_reservation_direct(
             if imported.pms_booking_id:
                 await db.bookings.update_one(
                     {"id": imported.pms_booking_id, "tenant_id": tenant_id},
-                    {"$set": {
-                        "total_amount": imported.total_amount,
-                        "special_requests": imported.special_requests,
-                        "updated_at": datetime.now(UTC).isoformat(),
-                    }},
+                    {
+                        "$set": {
+                            "total_amount": imported.total_amount,
+                            "special_requests": imported.special_requests,
+                            "updated_at": datetime.now(UTC).isoformat(),
+                        }
+                    },
                 )
             imported.import_status = ImportStatus.MODIFIED
             imported.ack_status = AckStatus.ACK_PENDING
@@ -204,10 +215,15 @@ async def _process_reservation_direct(
 #  SCENARIO 1: Duplicate Delivery
 # ════════════════════════════════════════════════════════════════════════
 
+
 async def run_duplicate_delivery(
-    tenant_id: str, property_id: str, connector_id: str,
-    run_id: str, provider: str,
-    room_reverse: dict[str, str], rate_reverse: dict[str, str],
+    tenant_id: str,
+    property_id: str,
+    connector_id: str,
+    run_id: str,
+    provider: str,
+    room_reverse: dict[str, str],
+    rate_reverse: dict[str, str],
     repo: ChannelManagerRepository,
     duplicate_count: int = 5,
 ) -> dict[str, Any]:
@@ -221,32 +237,54 @@ async def run_duplicate_delivery(
     reservations = generate_duplicate_batch(provider, count=duplicate_count)
     ext_id = reservations[0].external_id
 
-    await _write_timeline(tenant_id, run_id, {
-        "event": "scenario_start", "scenario": "duplicate_delivery",
-        "provider": provider, "external_id": ext_id, "count": duplicate_count,
-    })
+    await _write_timeline(
+        tenant_id,
+        run_id,
+        {
+            "event": "scenario_start",
+            "scenario": "duplicate_delivery",
+            "provider": provider,
+            "external_id": ext_id,
+            "count": duplicate_count,
+        },
+    )
 
     results = []
     for i, res in enumerate(reservations):
         result = await _process_reservation_direct(
-            tenant_id, property_id, connector_id, batch_id,
-            res, room_reverse, rate_reverse, repo,
+            tenant_id,
+            property_id,
+            connector_id,
+            batch_id,
+            res,
+            room_reverse,
+            rate_reverse,
+            repo,
         )
         results.append(result)
-        await _write_timeline(tenant_id, run_id, {
-            "event": "reservation_processed", "scenario": "duplicate_delivery",
-            "provider": provider, "iteration": i + 1, "action": result["action"],
-        })
+        await _write_timeline(
+            tenant_id,
+            run_id,
+            {
+                "event": "reservation_processed",
+                "scenario": "duplicate_delivery",
+                "provider": provider,
+                "iteration": i + 1,
+                "action": result["action"],
+            },
+        )
 
     new_count = sum(1 for r in results if r["action"] == "new")
     dup_count = sum(1 for r in results if r["action"] == "duplicate")
 
     # Count PMS bookings created for this external_id
-    pms_bookings = await db.bookings.count_documents({
-        "tenant_id": tenant_id,
-        "external_confirmation": reservations[0].confirmation_number,
-        "source": "ota_sandbox",
-    })
+    pms_bookings = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "external_confirmation": reservations[0].confirmation_number,
+            "source": "ota_sandbox",
+        }
+    )
 
     passed = (new_count == 1) and (dup_count == duplicate_count - 1) and (pms_bookings == 1)
 
@@ -266,10 +304,17 @@ async def run_duplicate_delivery(
         },
     }
 
-    await _write_timeline(tenant_id, run_id, {
-        "event": "scenario_complete", "scenario": "duplicate_delivery",
-        "provider": provider, "passed": passed, "outcome": outcome,
-    })
+    await _write_timeline(
+        tenant_id,
+        run_id,
+        {
+            "event": "scenario_complete",
+            "scenario": "duplicate_delivery",
+            "provider": provider,
+            "passed": passed,
+            "outcome": outcome,
+        },
+    )
 
     return outcome
 
@@ -278,10 +323,15 @@ async def run_duplicate_delivery(
 #  SCENARIO 2: Delayed Acknowledgment
 # ════════════════════════════════════════════════════════════════════════
 
+
 async def run_delayed_ack(
-    tenant_id: str, property_id: str, connector_id: str,
-    run_id: str, provider: str,
-    room_reverse: dict[str, str], rate_reverse: dict[str, str],
+    tenant_id: str,
+    property_id: str,
+    connector_id: str,
+    run_id: str,
+    provider: str,
+    room_reverse: dict[str, str],
+    rate_reverse: dict[str, str],
     repo: ChannelManagerRepository,
 ) -> dict[str, Any]:
     """
@@ -292,47 +342,86 @@ async def run_delayed_ack(
     ext_id = f"ACK-{uuid.uuid4().hex[:8]}"
     res = generate_reservation(provider, external_id=ext_id, seq=2)
 
-    await _write_timeline(tenant_id, run_id, {
-        "event": "scenario_start", "scenario": "delayed_ack",
-        "provider": provider, "external_id": ext_id,
-    })
+    await _write_timeline(
+        tenant_id,
+        run_id,
+        {
+            "event": "scenario_start",
+            "scenario": "delayed_ack",
+            "provider": provider,
+            "external_id": ext_id,
+        },
+    )
 
     # Step 1: Import reservation
     result = await _process_reservation_direct(
-        tenant_id, property_id, connector_id, batch_id,
-        res, room_reverse, rate_reverse, repo,
+        tenant_id,
+        property_id,
+        connector_id,
+        batch_id,
+        res,
+        room_reverse,
+        rate_reverse,
+        repo,
     )
 
-    await _write_timeline(tenant_id, run_id, {
-        "event": "reservation_imported", "scenario": "delayed_ack",
-        "provider": provider, "action": result["action"],
-    })
+    await _write_timeline(
+        tenant_id,
+        run_id,
+        {
+            "event": "reservation_imported",
+            "scenario": "delayed_ack",
+            "provider": provider,
+            "action": result["action"],
+        },
+    )
 
     # Step 2: Simulate ACK failure — mark ACK as failed
     if result.get("reservation_id"):
-        await repo.update_imported_reservation(tenant_id, result["reservation_id"], {
-            "ack_status": AckStatus.ACK_FAILED.value,
-            "ack_failed_reason": "Simulated: provider timeout after 30s",
-        })
-        await _write_timeline(tenant_id, run_id, {
-            "event": "ack_failed", "scenario": "delayed_ack",
-            "provider": provider, "reason": "simulated_timeout",
-        })
+        await repo.update_imported_reservation(
+            tenant_id,
+            result["reservation_id"],
+            {
+                "ack_status": AckStatus.ACK_FAILED.value,
+                "ack_failed_reason": "Simulated: provider timeout after 30s",
+            },
+        )
+        await _write_timeline(
+            tenant_id,
+            run_id,
+            {
+                "event": "ack_failed",
+                "scenario": "delayed_ack",
+                "provider": provider,
+                "reason": "simulated_timeout",
+            },
+        )
 
     # Step 3: Simulate ACK retry — mark ACK as sent
     if result.get("reservation_id"):
-        await repo.update_imported_reservation(tenant_id, result["reservation_id"], {
-            "ack_status": AckStatus.ACK_SENT.value,
-            "ack_sent_at": datetime.now(UTC).isoformat(),
-        })
-        await _write_timeline(tenant_id, run_id, {
-            "event": "ack_retry_success", "scenario": "delayed_ack",
-            "provider": provider,
-        })
+        await repo.update_imported_reservation(
+            tenant_id,
+            result["reservation_id"],
+            {
+                "ack_status": AckStatus.ACK_SENT.value,
+                "ack_sent_at": datetime.now(UTC).isoformat(),
+            },
+        )
+        await _write_timeline(
+            tenant_id,
+            run_id,
+            {
+                "event": "ack_retry_success",
+                "scenario": "delayed_ack",
+                "provider": provider,
+            },
+        )
 
     # Verify: reservation is in correct state
     final_rec = await repo.get_imported_reservation_by_external_id(
-        tenant_id, connector_id, ext_id,
+        tenant_id,
+        connector_id,
+        ext_id,
     )
     booking_ok = result["action"] == "new" and result.get("pms_booking_id")
     ack_ok = final_rec and final_rec.get("ack_status") == AckStatus.ACK_SENT.value
@@ -352,10 +441,17 @@ async def run_delayed_ack(
         "ack_flow": ["imported", "ack_failed (timeout)", "ack_retry_success"],
     }
 
-    await _write_timeline(tenant_id, run_id, {
-        "event": "scenario_complete", "scenario": "delayed_ack",
-        "provider": provider, "passed": passed, "outcome": outcome,
-    })
+    await _write_timeline(
+        tenant_id,
+        run_id,
+        {
+            "event": "scenario_complete",
+            "scenario": "delayed_ack",
+            "provider": provider,
+            "passed": passed,
+            "outcome": outcome,
+        },
+    )
 
     return outcome
 
@@ -364,10 +460,15 @@ async def run_delayed_ack(
 #  SCENARIO 3: Retry Storm
 # ════════════════════════════════════════════════════════════════════════
 
+
 async def run_retry_storm(
-    tenant_id: str, property_id: str, connector_id: str,
-    run_id: str, provider: str,
-    room_reverse: dict[str, str], rate_reverse: dict[str, str],
+    tenant_id: str,
+    property_id: str,
+    connector_id: str,
+    run_id: str,
+    provider: str,
+    room_reverse: dict[str, str],
+    rate_reverse: dict[str, str],
     repo: ChannelManagerRepository,
     storm_size: int = 10,
 ) -> dict[str, Any]:
@@ -385,22 +486,33 @@ async def run_retry_storm(
     unique_reservations = []
     for i in range(unique_count):
         ext_id = f"STORM-{uuid.uuid4().hex[:8]}"
-        unique_reservations.append(
-            generate_reservation(provider, external_id=ext_id, seq=10 + i, total_amount=1000.0 + i * 500)
-        )
+        unique_reservations.append(generate_reservation(provider, external_id=ext_id, seq=10 + i, total_amount=1000.0 + i * 500))
 
-    await _write_timeline(tenant_id, run_id, {
-        "event": "scenario_start", "scenario": "retry_storm",
-        "provider": provider, "unique_reservations": unique_count,
-        "sends_per_reservation": sends_per_res, "total_deliveries": unique_count * sends_per_res,
-    })
+    await _write_timeline(
+        tenant_id,
+        run_id,
+        {
+            "event": "scenario_start",
+            "scenario": "retry_storm",
+            "provider": provider,
+            "unique_reservations": unique_count,
+            "sends_per_reservation": sends_per_res,
+            "total_deliveries": unique_count * sends_per_res,
+        },
+    )
 
     all_results = []
     for res in unique_reservations:
         for attempt in range(sends_per_res):
             result = await _process_reservation_direct(
-                tenant_id, property_id, connector_id, batch_id,
-                res, room_reverse, rate_reverse, repo,
+                tenant_id,
+                property_id,
+                connector_id,
+                batch_id,
+                res,
+                room_reverse,
+                rate_reverse,
+                repo,
             )
             all_results.append({"external_id": res.external_id, **result})
 
@@ -409,11 +521,13 @@ async def run_retry_storm(
     total = len(all_results)
 
     # Verify: exactly unique_count PMS bookings
-    _pms_bookings = await db.bookings.count_documents({
-        "tenant_id": tenant_id,
-        "source": "ota_sandbox",
-        "created_by": "sandbox_simulation",
-    })
+    _pms_bookings = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "source": "ota_sandbox",
+            "created_by": "sandbox_simulation",
+        }
+    )
 
     # We need to count only those created in THIS scenario
     pms_booking_ids = set()
@@ -441,10 +555,17 @@ async def run_retry_storm(
         },
     }
 
-    await _write_timeline(tenant_id, run_id, {
-        "event": "scenario_complete", "scenario": "retry_storm",
-        "provider": provider, "passed": passed, "outcome": outcome,
-    })
+    await _write_timeline(
+        tenant_id,
+        run_id,
+        {
+            "event": "scenario_complete",
+            "scenario": "retry_storm",
+            "provider": provider,
+            "passed": passed,
+            "outcome": outcome,
+        },
+    )
 
     return outcome
 
@@ -453,9 +574,13 @@ async def run_retry_storm(
 #  SCENARIO 4: Stale Provider State
 # ════════════════════════════════════════════════════════════════════════
 
+
 async def run_stale_provider_state(
-    tenant_id: str, property_id: str, connector_id: str,
-    run_id: str, provider: str,
+    tenant_id: str,
+    property_id: str,
+    connector_id: str,
+    run_id: str,
+    provider: str,
     repo: ChannelManagerRepository,
 ) -> dict[str, Any]:
     """
@@ -468,54 +593,73 @@ async def run_stale_provider_state(
     dates = [(now + timedelta(days=d)).strftime("%Y-%m-%d") for d in range(1, 4)]
     room_type_id = f"{profile['room_type_prefix']}STD"
 
-    await _write_timeline(tenant_id, run_id, {
-        "event": "scenario_start", "scenario": "stale_provider_state",
-        "provider": provider, "dates": dates,
-    })
+    await _write_timeline(
+        tenant_id,
+        run_id,
+        {
+            "event": "scenario_start",
+            "scenario": "stale_provider_state",
+            "provider": provider,
+            "dates": dates,
+        },
+    )
 
     # Step 1: Create synthetic "last pushed" state (what we told the provider)
     _snapshot_id = str(uuid.uuid4())
     for date in dates:
-        await db.cm_sync_snapshots.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "connector_id": connector_id,
-            "room_type_id": room_type_id,
-            "date": date,
-            "available": 5,
-            "pushed_at": (now - timedelta(hours=6)).isoformat(),
-            "source": "sandbox_simulation",
-        })
+        await db.cm_sync_snapshots.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "connector_id": connector_id,
+                "room_type_id": room_type_id,
+                "date": date,
+                "available": 5,
+                "pushed_at": (now - timedelta(hours=6)).isoformat(),
+                "source": "sandbox_simulation",
+            }
+        )
 
     # Step 2: Create synthetic "PMS actual" state (different from pushed)
     # Use room_type field (not room_type_id) to match actual collection schema
     for date in dates:
         await db.room_type_inventory.update_one(
             {"tenant_id": tenant_id, "room_type": room_type_id, "date": date},
-            {"$set": {
-                "tenant_id": tenant_id,
-                "room_type": room_type_id,
-                "date": date,
-                "physical_total": 10,
-                "locked_booking": 7,
-                "locked_hold": 0,
-                "locked_ooo": 1,
-                "locked_oos": 0,
-                "sellable": 2,
-                "last_computed_at": now.isoformat(),
-                "computation_source": "sandbox_simulation",
-            }},
+            {
+                "$set": {
+                    "tenant_id": tenant_id,
+                    "room_type": room_type_id,
+                    "date": date,
+                    "physical_total": 10,
+                    "locked_booking": 7,
+                    "locked_hold": 0,
+                    "locked_ooo": 1,
+                    "locked_oos": 0,
+                    "sellable": 2,
+                    "last_computed_at": now.isoformat(),
+                    "computation_source": "sandbox_simulation",
+                }
+            },
             upsert=True,
         )
 
-    await _write_timeline(tenant_id, run_id, {
-        "event": "stale_state_injected", "scenario": "stale_provider_state",
-        "provider": provider, "pushed_available": 5, "actual_available": 2,
-        "drift_rooms": 3, "drift_direction": "provider_overselling",
-    })
+    await _write_timeline(
+        tenant_id,
+        run_id,
+        {
+            "event": "stale_state_injected",
+            "scenario": "stale_provider_state",
+            "provider": provider,
+            "pushed_available": 5,
+            "actual_available": 2,
+            "drift_rooms": 3,
+            "drift_direction": "provider_overselling",
+        },
+    )
 
     # Step 3: Run reconciliation check — detect drift
     from ...application.reconciliation_service import ReconciliationService
+
     _recon_svc = ReconciliationService(repo)
 
     # Simulate the inventory mismatch detection
@@ -523,8 +667,7 @@ async def run_stale_provider_state(
     drift_records = []
     for date in dates:
         snapshot = await db.cm_sync_snapshots.find_one(
-            {"tenant_id": tenant_id, "connector_id": connector_id,
-             "room_type_id": room_type_id, "date": date},
+            {"tenant_id": tenant_id, "connector_id": connector_id, "room_type_id": room_type_id, "date": date},
             {"_id": 0},
         )
         actual = await db.room_type_inventory.find_one(
@@ -536,12 +679,14 @@ async def run_stale_provider_state(
             actual_avail = actual.get("sellable", 0)
             if pushed_avail != actual_avail:
                 drift_detected = True
-                drift_records.append({
-                    "date": date,
-                    "pushed": pushed_avail,
-                    "actual": actual_avail,
-                    "drift": pushed_avail - actual_avail,
-                })
+                drift_records.append(
+                    {
+                        "date": date,
+                        "pushed": pushed_avail,
+                        "actual": actual_avail,
+                        "drift": pushed_avail - actual_avail,
+                    }
+                )
 
     # Step 4: Simulate reconciliation recovery — update pushed state
     recovered = False
@@ -553,20 +698,28 @@ async def run_stale_provider_state(
             )
             if actual:
                 await db.cm_sync_snapshots.update_one(
-                    {"tenant_id": tenant_id, "connector_id": connector_id,
-                     "room_type_id": room_type_id, "date": date},
-                    {"$set": {
-                        "available": actual.get("sellable", 0),
-                        "pushed_at": datetime.now(UTC).isoformat(),
-                        "reconciled": True,
-                    }},
+                    {"tenant_id": tenant_id, "connector_id": connector_id, "room_type_id": room_type_id, "date": date},
+                    {
+                        "$set": {
+                            "available": actual.get("sellable", 0),
+                            "pushed_at": datetime.now(UTC).isoformat(),
+                            "reconciled": True,
+                        }
+                    },
                 )
         recovered = True
 
-        await _write_timeline(tenant_id, run_id, {
-            "event": "reconciliation_triggered", "scenario": "stale_provider_state",
-            "provider": provider, "drift_records": drift_records, "recovered": recovered,
-        })
+        await _write_timeline(
+            tenant_id,
+            run_id,
+            {
+                "event": "reconciliation_triggered",
+                "scenario": "stale_provider_state",
+                "provider": provider,
+                "drift_records": drift_records,
+                "recovered": recovered,
+            },
+        )
 
     passed = drift_detected and recovered
 
@@ -583,10 +736,17 @@ async def run_stale_provider_state(
         },
     }
 
-    await _write_timeline(tenant_id, run_id, {
-        "event": "scenario_complete", "scenario": "stale_provider_state",
-        "provider": provider, "passed": passed, "outcome": outcome,
-    })
+    await _write_timeline(
+        tenant_id,
+        run_id,
+        {
+            "event": "scenario_complete",
+            "scenario": "stale_provider_state",
+            "provider": provider,
+            "passed": passed,
+            "outcome": outcome,
+        },
+    )
 
     return outcome
 
@@ -595,10 +755,15 @@ async def run_stale_provider_state(
 #  SCENARIO 5: Modify / Cancel Race
 # ════════════════════════════════════════════════════════════════════════
 
+
 async def run_modify_cancel_race(
-    tenant_id: str, property_id: str, connector_id: str,
-    run_id: str, provider: str,
-    room_reverse: dict[str, str], rate_reverse: dict[str, str],
+    tenant_id: str,
+    property_id: str,
+    connector_id: str,
+    run_id: str,
+    provider: str,
+    room_reverse: dict[str, str],
+    rate_reverse: dict[str, str],
     repo: ChannelManagerRepository,
 ) -> dict[str, Any]:
     """
@@ -610,24 +775,43 @@ async def run_modify_cancel_race(
     batch_id = f"sandbox-race-{uuid.uuid4().hex[:8]}"
     sequence = generate_modify_then_cancel(provider)
 
-    await _write_timeline(tenant_id, run_id, {
-        "event": "scenario_start", "scenario": "modify_cancel_race",
-        "provider": provider, "external_id": sequence[0].external_id,
-        "sequence": ["new", "modify", "cancel"],
-    })
+    await _write_timeline(
+        tenant_id,
+        run_id,
+        {
+            "event": "scenario_start",
+            "scenario": "modify_cancel_race",
+            "provider": provider,
+            "external_id": sequence[0].external_id,
+            "sequence": ["new", "modify", "cancel"],
+        },
+    )
 
     results = []
     for i, res in enumerate(sequence):
         label = ["original", "modification", "cancellation"][i]
         result = await _process_reservation_direct(
-            tenant_id, property_id, connector_id, batch_id,
-            res, room_reverse, rate_reverse, repo,
+            tenant_id,
+            property_id,
+            connector_id,
+            batch_id,
+            res,
+            room_reverse,
+            rate_reverse,
+            repo,
         )
         results.append({"step": label, **result})
-        await _write_timeline(tenant_id, run_id, {
-            "event": "reservation_processed", "scenario": "modify_cancel_race",
-            "provider": provider, "step": label, "action": result["action"],
-        })
+        await _write_timeline(
+            tenant_id,
+            run_id,
+            {
+                "event": "reservation_processed",
+                "scenario": "modify_cancel_race",
+                "provider": provider,
+                "step": label,
+                "action": result["action"],
+            },
+        )
 
     # Validate sequence
     step_actions = [r["action"] for r in results]
@@ -664,9 +848,16 @@ async def run_modify_cancel_race(
         },
     }
 
-    await _write_timeline(tenant_id, run_id, {
-        "event": "scenario_complete", "scenario": "modify_cancel_race",
-        "provider": provider, "passed": passed, "outcome": outcome,
-    })
+    await _write_timeline(
+        tenant_id,
+        run_id,
+        {
+            "event": "scenario_complete",
+            "scenario": "modify_cancel_race",
+            "provider": provider,
+            "passed": passed,
+            "outcome": outcome,
+        },
+    )
 
     return outcome

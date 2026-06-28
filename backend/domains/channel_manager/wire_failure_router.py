@@ -18,6 +18,7 @@ Tur 23 (May 2026) — kullanici geri bildirimi sonrasi 7-madde duzeltme:
      alanlari okunur, DLQ icin retried_at kontrolu yapilir (hardcoded
      False kaldirildi).
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -61,15 +62,23 @@ _UNRESOLVED_MATCH: dict = {
         {"$or": [{"resolved": {"$ne": True}}, {"resolved": {"$exists": False}}]},
         {"$or": [{"resolved_at": {"$in": [None, ""]}}, {"resolved_at": {"$exists": False}}]},
         {"$or": [{"retried_at": {"$in": [None, ""]}}, {"retried_at": {"$exists": False}}]},
-        {"$or": [
-            {"retry_succeeded_at": {"$in": [None, ""]}},
-            {"retry_succeeded_at": {"$exists": False}},
-        ]},
+        {
+            "$or": [
+                {"retry_succeeded_at": {"$in": [None, ""]}},
+                {"retry_succeeded_at": {"$exists": False}},
+            ]
+        },
         # Status case-insensitive: _doc_resolved (str.lower()) ile parite
-        {"$expr": {"$not": {"$in": [
-            {"$toLower": {"$ifNull": ["$status", ""]}},
-            list(_RESOLVED_STATUSES),
-        ]}}},
+        {
+            "$expr": {
+                "$not": {
+                    "$in": [
+                        {"$toLower": {"$ifNull": ["$status", ""]}},
+                        list(_RESOLVED_STATUSES),
+                    ]
+                }
+            }
+        },
     ],
 }
 
@@ -159,51 +168,67 @@ async def get_failure_summary(
     cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
     # ARI hard fail log — UNRESOLVED ayrimi
-    ari_fails = await db.ari_hard_fail_log.count_documents({
-        "tenant_id": tenant_id,
-        "timestamp": {"$gte": cutoff},
-    })
-    ari_unresolved = await db.ari_hard_fail_log.count_documents({
-        "tenant_id": tenant_id,
-        "timestamp": {"$gte": cutoff},
-        **_UNRESOLVED_MATCH,
-    })
+    ari_fails = await db.ari_hard_fail_log.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "timestamp": {"$gte": cutoff},
+        }
+    )
+    ari_unresolved = await db.ari_hard_fail_log.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "timestamp": {"$gte": cutoff},
+            **_UNRESOLVED_MATCH,
+        }
+    )
 
     # Exely sync failures
-    exely_fails = await db.exely_sync_logs.count_documents({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["failed", "error"]},
-        "timestamp": {"$gte": cutoff},
-    })
+    exely_fails = await db.exely_sync_logs.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["failed", "error"]},
+            "timestamp": {"$gte": cutoff},
+        }
+    )
 
     # Connector outbox failures (DLQ) — daima unresolved (failed/dead_letter)
-    dlq_count = await db.connector_outbox.count_documents({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["failed", "dead_letter"]},
-    })
+    dlq_count = await db.connector_outbox.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["failed", "dead_letter"]},
+        }
+    )
 
     # CP failures — UNRESOLVED ayrimi (resolved=True olanlar saglikli)
-    cp_fails = await db.cp_failures.count_documents({
-        "tenant_id": tenant_id,
-        "timestamp": {"$gte": cutoff},
-    })
-    cp_unresolved = await db.cp_failures.count_documents({
-        "tenant_id": tenant_id,
-        "timestamp": {"$gte": cutoff},
-        **_UNRESOLVED_MATCH,
-    })
+    cp_fails = await db.cp_failures.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "timestamp": {"$gte": cutoff},
+        }
+    )
+    cp_unresolved = await db.cp_failures.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "timestamp": {"$gte": cutoff},
+            **_UNRESOLVED_MATCH,
+        }
+    )
 
     # Reconciliation issues (her zaman unresolved sayar)
-    recon_issues = await db.cm_reconciliation_issues.count_documents({
-        "tenant_id": tenant_id,
-        "status": {"$ne": "resolved"},
-    })
+    recon_issues = await db.cm_reconciliation_issues.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$ne": "resolved"},
+        }
+    )
 
     # Observability errors — TENANT-SCOPED
-    obs_errors = await db.observability_errors.count_documents({
-        "tenant_id": tenant_id,
-        "timestamp": {"$gte": cutoff},
-    })
+    obs_errors = await db.observability_errors.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "timestamp": {"$gte": cutoff},
+        }
+    )
 
     total = ari_fails + exely_fails + dlq_count + cp_fails + obs_errors
 
@@ -229,12 +254,10 @@ async def get_failure_summary(
             "reconciliation_issues": recon_issues,
         },
         "health_status": _classify_health(
-            unresolved_critical=unresolved_critical, total=total,
+            unresolved_critical=unresolved_critical,
+            total=total,
         ),
-        "health_basis": (
-            f"{unresolved_critical} acik sorun (recon+DLQ+CP+ARI), "
-            f"{total} toplam olay (son {days} gun)"
-        ),
+        "health_basis": (f"{unresolved_critical} acik sorun (recon+DLQ+CP+ARI), {total} toplam olay (son {days} gun)"),
     }
 
 
@@ -303,7 +326,7 @@ async def get_recent_failures(
     # Eger kind degil (raw provider name), exely sabit "exely" provider'ina
     # esitse Exely de dahil olsun.
     if not is_kind:
-        include["exely"] = (p == "exely")
+        include["exely"] = p == "exely"
 
     failures: list[dict] = []
 
@@ -316,96 +339,118 @@ async def get_recent_failures(
     sources_used: list[tuple[str, dict]] = []  # (collection, project_stage)
 
     if include["ari"]:
-        sources_used.append(("ari_hard_fail_log", {
-            "$project": {
-                "_id": 0,
-                "id": {"$ifNull": ["$id", ""]},
-                "type": {"$literal": "ari_hard_fail"},
-                "provider": {"$ifNull": ["$provider", "unknown"]},
-                "raw_reason": {"$ifNull": ["$reason", ""]},
-                "raw_error": {"$ifNull": ["$error", ""]},
-                "raw_error_message": {"$ifNull": ["$error_message", ""]},
-                "raw_message": {"$ifNull": ["$message", ""]},
-                "room_type": {"$ifNull": ["$room_type_code", ""]},
-                "timestamp": {"$ifNull": ["$timestamp", ""]},
-                "severity": {"$literal": "high"},
-                "resolved_flag": {"$ifNull": ["$resolved", False]},
-                "resolved_at": {"$ifNull": ["$resolved_at", None]},
-                "status": {"$ifNull": ["$status", ""]},
-                "retried_at": {"$ifNull": ["$retried_at", None]},
-                "retry_succeeded_at": {"$ifNull": ["$retry_succeeded_at", None]},
-            },
-        }))
+        sources_used.append(
+            (
+                "ari_hard_fail_log",
+                {
+                    "$project": {
+                        "_id": 0,
+                        "id": {"$ifNull": ["$id", ""]},
+                        "type": {"$literal": "ari_hard_fail"},
+                        "provider": {"$ifNull": ["$provider", "unknown"]},
+                        "raw_reason": {"$ifNull": ["$reason", ""]},
+                        "raw_error": {"$ifNull": ["$error", ""]},
+                        "raw_error_message": {"$ifNull": ["$error_message", ""]},
+                        "raw_message": {"$ifNull": ["$message", ""]},
+                        "room_type": {"$ifNull": ["$room_type_code", ""]},
+                        "timestamp": {"$ifNull": ["$timestamp", ""]},
+                        "severity": {"$literal": "high"},
+                        "resolved_flag": {"$ifNull": ["$resolved", False]},
+                        "resolved_at": {"$ifNull": ["$resolved_at", None]},
+                        "status": {"$ifNull": ["$status", ""]},
+                        "retried_at": {"$ifNull": ["$retried_at", None]},
+                        "retry_succeeded_at": {"$ifNull": ["$retry_succeeded_at", None]},
+                    },
+                },
+            )
+        )
     if include["exely"]:
         exely_match = {**base_match, "status": {"$in": ["failed", "error"]}}
         if not is_kind and p != "exely":
             # raw provider but not exely → skip exely source effectively
             pass
         else:
-            sources_used.append(("exely_sync_logs", {
-                "$project": {
-                    "_id": 0,
-                    "id": {"$ifNull": ["$id", ""]},
-                    "type": {"$literal": "exely_sync_fail"},
-                    "provider": {"$literal": "exely"},
-                    "raw_reason": {"$ifNull": ["$reason", ""]},
-                    "raw_error": {"$ifNull": ["$error", ""]},
-                    "raw_error_message": {"$ifNull": ["$error_message", ""]},
-                    "raw_message": {"$ifNull": ["$message", ""]},
-                    "room_type": {"$literal": ""},
-                    "timestamp": {"$ifNull": ["$timestamp", ""]},
-                    "severity": {"$literal": "medium"},
-                    "resolved_flag": {"$ifNull": ["$resolved", False]},
-                    "resolved_at": {"$ifNull": ["$resolved_at", None]},
-                    "status": {"$ifNull": ["$status", ""]},
-                    "retried_at": {"$ifNull": ["$retried_at", None]},
-                    "retry_succeeded_at": {"$ifNull": ["$retry_succeeded_at", None]},
-                    "sync_type": {"$ifNull": ["$sync_type", ""]},
-                },
-            }, exely_match))
+            sources_used.append(
+                (
+                    "exely_sync_logs",
+                    {
+                        "$project": {
+                            "_id": 0,
+                            "id": {"$ifNull": ["$id", ""]},
+                            "type": {"$literal": "exely_sync_fail"},
+                            "provider": {"$literal": "exely"},
+                            "raw_reason": {"$ifNull": ["$reason", ""]},
+                            "raw_error": {"$ifNull": ["$error", ""]},
+                            "raw_error_message": {"$ifNull": ["$error_message", ""]},
+                            "raw_message": {"$ifNull": ["$message", ""]},
+                            "room_type": {"$literal": ""},
+                            "timestamp": {"$ifNull": ["$timestamp", ""]},
+                            "severity": {"$literal": "medium"},
+                            "resolved_flag": {"$ifNull": ["$resolved", False]},
+                            "resolved_at": {"$ifNull": ["$resolved_at", None]},
+                            "status": {"$ifNull": ["$status", ""]},
+                            "retried_at": {"$ifNull": ["$retried_at", None]},
+                            "retry_succeeded_at": {"$ifNull": ["$retry_succeeded_at", None]},
+                            "sync_type": {"$ifNull": ["$sync_type", ""]},
+                        },
+                    },
+                    exely_match,
+                )
+            )
     if include["dlq"]:
-        sources_used.append(("connector_outbox", {
-            "$project": {
-                "_id": 0,
-                "id": {"$ifNull": ["$id", ""]},
-                "type": {"$literal": "dlq_item"},
-                "provider": {"$ifNull": ["$provider", "unknown"]},
-                "raw_reason": {"$ifNull": ["$reason", ""]},
-                "raw_error": {"$ifNull": ["$error", ""]},
-                "raw_error_message": {"$ifNull": ["$error_message", ""]},
-                "raw_message": {"$ifNull": ["$last_error", ""]},
-                "payload_type": {"$ifNull": ["$payload_type", ""]},
-                "room_type": {"$ifNull": ["$room_type_code", ""]},
-                "timestamp": {"$ifNull": ["$created_at", ""]},
-                "severity": {"$literal": "high"},
-                "resolved_flag": {"$literal": False},
-                "resolved_at": {"$ifNull": ["$resolved_at", None]},
-                "retried_at": {"$ifNull": ["$retried_at", None]},
-                "retry_succeeded_at": {"$ifNull": ["$retry_succeeded_at", None]},
-                "status": {"$ifNull": ["$status", ""]},
-            },
-        }, {**base_match, "status": {"$in": ["failed", "dead_letter"]}}))
+        sources_used.append(
+            (
+                "connector_outbox",
+                {
+                    "$project": {
+                        "_id": 0,
+                        "id": {"$ifNull": ["$id", ""]},
+                        "type": {"$literal": "dlq_item"},
+                        "provider": {"$ifNull": ["$provider", "unknown"]},
+                        "raw_reason": {"$ifNull": ["$reason", ""]},
+                        "raw_error": {"$ifNull": ["$error", ""]},
+                        "raw_error_message": {"$ifNull": ["$error_message", ""]},
+                        "raw_message": {"$ifNull": ["$last_error", ""]},
+                        "payload_type": {"$ifNull": ["$payload_type", ""]},
+                        "room_type": {"$ifNull": ["$room_type_code", ""]},
+                        "timestamp": {"$ifNull": ["$created_at", ""]},
+                        "severity": {"$literal": "high"},
+                        "resolved_flag": {"$literal": False},
+                        "resolved_at": {"$ifNull": ["$resolved_at", None]},
+                        "retried_at": {"$ifNull": ["$retried_at", None]},
+                        "retry_succeeded_at": {"$ifNull": ["$retry_succeeded_at", None]},
+                        "status": {"$ifNull": ["$status", ""]},
+                    },
+                },
+                {**base_match, "status": {"$in": ["failed", "dead_letter"]}},
+            )
+        )
     if include["cp"]:
-        sources_used.append(("cp_failures", {
-            "$project": {
-                "_id": 0,
-                "id": {"$ifNull": ["$id", ""]},
-                "type": {"$literal": "cp_failure"},
-                "provider": {"$ifNull": ["$component", "control_plane"]},
-                "raw_reason": {"$ifNull": ["$reason", ""]},
-                "raw_error": {"$ifNull": ["$error", ""]},
-                "raw_error_message": {"$ifNull": ["$error_message", ""]},
-                "raw_message": {"$ifNull": ["$message", ""]},
-                "room_type": {"$literal": ""},
-                "timestamp": {"$ifNull": ["$timestamp", ""]},
-                "severity": {"$ifNull": ["$severity", "medium"]},
-                "resolved_flag": {"$ifNull": ["$resolved", False]},
-                "resolved_at": {"$ifNull": ["$resolved_at", None]},
-                "retried_at": {"$ifNull": ["$retried_at", None]},
-                "retry_succeeded_at": {"$ifNull": ["$retry_succeeded_at", None]},
-                "status": {"$ifNull": ["$status", ""]},
-            },
-        }))
+        sources_used.append(
+            (
+                "cp_failures",
+                {
+                    "$project": {
+                        "_id": 0,
+                        "id": {"$ifNull": ["$id", ""]},
+                        "type": {"$literal": "cp_failure"},
+                        "provider": {"$ifNull": ["$component", "control_plane"]},
+                        "raw_reason": {"$ifNull": ["$reason", ""]},
+                        "raw_error": {"$ifNull": ["$error", ""]},
+                        "raw_error_message": {"$ifNull": ["$error_message", ""]},
+                        "raw_message": {"$ifNull": ["$message", ""]},
+                        "room_type": {"$literal": ""},
+                        "timestamp": {"$ifNull": ["$timestamp", ""]},
+                        "severity": {"$ifNull": ["$severity", "medium"]},
+                        "resolved_flag": {"$ifNull": ["$resolved", False]},
+                        "resolved_at": {"$ifNull": ["$resolved_at", None]},
+                        "retried_at": {"$ifNull": ["$retried_at", None]},
+                        "retry_succeeded_at": {"$ifNull": ["$retry_succeeded_at", None]},
+                        "status": {"$ifNull": ["$status", ""]},
+                    },
+                },
+            )
+        )
 
     if not sources_used:
         return {"failures": [], "total": 0}
@@ -421,21 +466,25 @@ async def get_recent_failures(
         col_name = src[0]
         proj = src[1]
         match = src[2] if len(src) > 2 else base_match
-        pipeline_root.append({
-            "$unionWith": {
-                "coll": col_name,
-                "pipeline": [{"$match": match}, proj],
-            },
-        })
+        pipeline_root.append(
+            {
+                "$unionWith": {
+                    "coll": col_name,
+                    "pipeline": [{"$match": match}, proj],
+                },
+            }
+        )
 
     # Raw provider name filtrelemesi (kind disindaki uzerinde)
     if not is_kind:
         # provider field icindeki esitlik (case-insensitive)
-        pipeline_root.append({
-            "$match": {
-                "$expr": {"$eq": [{"$toLower": "$provider"}, p]},
-            },
-        })
+        pipeline_root.append(
+            {
+                "$match": {
+                    "$expr": {"$eq": [{"$toLower": "$provider"}, p]},
+                },
+            }
+        )
 
     pipeline_root.append({"$sort": {"timestamp": -1}})
     pipeline_root.append({"$limit": limit})
@@ -449,45 +498,65 @@ async def get_recent_failures(
     for d in docs:
         kind = d.get("type", "")
         if kind == "ari_hard_fail":
-            msg = _ari_message({
-                "reason": d.get("raw_reason"), "error": d.get("raw_error"),
-                "error_message": d.get("raw_error_message"), "message": d.get("raw_message"),
-            })
+            msg = _ari_message(
+                {
+                    "reason": d.get("raw_reason"),
+                    "error": d.get("raw_error"),
+                    "error_message": d.get("raw_error_message"),
+                    "message": d.get("raw_message"),
+                }
+            )
         elif kind == "exely_sync_fail":
-            msg = _exely_message({
-                "error_message": d.get("raw_error_message"), "error": d.get("raw_error"),
-                "reason": d.get("raw_reason"), "message": d.get("raw_message"),
-                "sync_type": d.get("sync_type"),
-            })
+            msg = _exely_message(
+                {
+                    "error_message": d.get("raw_error_message"),
+                    "error": d.get("raw_error"),
+                    "reason": d.get("raw_reason"),
+                    "message": d.get("raw_message"),
+                    "sync_type": d.get("sync_type"),
+                }
+            )
         elif kind == "dlq_item":
-            msg = _dlq_message({
-                "error": d.get("raw_error"), "error_message": d.get("raw_error_message"),
-                "last_error": d.get("raw_message"), "reason": d.get("raw_reason"),
-                "payload_type": d.get("payload_type"),
-            })
+            msg = _dlq_message(
+                {
+                    "error": d.get("raw_error"),
+                    "error_message": d.get("raw_error_message"),
+                    "last_error": d.get("raw_message"),
+                    "reason": d.get("raw_reason"),
+                    "payload_type": d.get("payload_type"),
+                }
+            )
         else:  # cp_failure
-            msg = _cp_message({
-                "message": d.get("raw_message"), "error": d.get("raw_error"),
-                "error_message": d.get("raw_error_message"), "reason": d.get("raw_reason"),
-                "component": d.get("provider"),
-            })
+            msg = _cp_message(
+                {
+                    "message": d.get("raw_message"),
+                    "error": d.get("raw_error"),
+                    "error_message": d.get("raw_error_message"),
+                    "reason": d.get("raw_reason"),
+                    "component": d.get("provider"),
+                }
+            )
 
-        failures.append({
-            "id": d.get("id", ""),
-            "type": kind,
-            "provider": d.get("provider", "unknown"),
-            "message": msg,
-            "room_type": d.get("room_type", ""),
-            "timestamp": d.get("timestamp", ""),
-            "severity": d.get("severity", "medium"),
-            "resolved": _doc_resolved({
-                "resolved": d.get("resolved_flag"),
-                "resolved_at": d.get("resolved_at"),
-                "retried_at": d.get("retried_at"),
-                "retry_succeeded_at": d.get("retry_succeeded_at"),
-                "status": d.get("status"),
-            }),
-        })
+        failures.append(
+            {
+                "id": d.get("id", ""),
+                "type": kind,
+                "provider": d.get("provider", "unknown"),
+                "message": msg,
+                "room_type": d.get("room_type", ""),
+                "timestamp": d.get("timestamp", ""),
+                "severity": d.get("severity", "medium"),
+                "resolved": _doc_resolved(
+                    {
+                        "resolved": d.get("resolved_flag"),
+                        "resolved_at": d.get("resolved_at"),
+                        "retried_at": d.get("retried_at"),
+                        "retry_succeeded_at": d.get("retry_succeeded_at"),
+                        "status": d.get("status"),
+                    }
+                ),
+            }
+        )
 
     return {"failures": failures, "total": len(failures)}
 
@@ -510,8 +579,12 @@ async def get_failure_trend(
     for i in range(days):
         day = (datetime.now(UTC) - timedelta(days=i)).strftime("%Y-%m-%d")
         daily[day] = {
-            "date": day, "ari_fails": 0, "sync_fails": 0,
-            "dlq": 0, "cp": 0, "total": 0,
+            "date": day,
+            "ari_fails": 0,
+            "sync_fails": 0,
+            "dlq": 0,
+            "cp": 0,
+            "total": 0,
         }
 
     async def _bump(col: str, ts_field: str, bucket_key: str, extra_match: dict | None = None):

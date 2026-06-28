@@ -3,6 +3,7 @@ Canonical Data Models - Provider-agnostic representations of hospitality entitie
 All provider data is normalized into these models before entering PMS domain logic.
 This ensures HotelRunner (or any future provider) differences are absorbed at the connector layer.
 """
+
 import uuid
 from enum import Enum
 from typing import Any
@@ -21,11 +22,11 @@ class ReservationStatus(str, Enum):
 
 
 class MealPlan(str, Enum):
-    RO = "RO"    # Room Only
-    BB = "BB"    # Bed & Breakfast
-    HB = "HB"    # Half Board
-    FB = "FB"    # Full Board
-    AI = "AI"    # All Inclusive
+    RO = "RO"  # Room Only
+    BB = "BB"  # Bed & Breakfast
+    HB = "HB"  # Half Board
+    FB = "FB"  # Full Board
+    AI = "AI"  # All Inclusive
 
 
 class TaxBreakdown(BaseModel):
@@ -50,6 +51,7 @@ class PriceBreakdown(BaseModel):
 
 class CanonicalRoomType(BaseModel):
     """Provider-agnostic room type representation."""
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     pms_room_type_id: str = ""  # Link to PMS rooms collection
     name: str = ""
@@ -65,6 +67,7 @@ class CanonicalRoomType(BaseModel):
 
 class CanonicalRatePlan(BaseModel):
     """Provider-agnostic rate plan representation."""
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     pms_rate_plan_id: str = ""
     room_type_id: str = ""
@@ -83,6 +86,7 @@ class CanonicalRatePlan(BaseModel):
 
 class InventorySlice(BaseModel):
     """A single date's inventory for a room type."""
+
     date: str  # YYYY-MM-DD
     room_type_id: str
     total_inventory: int = 0
@@ -94,6 +98,7 @@ class InventorySlice(BaseModel):
 
 class RestrictionSet(BaseModel):
     """Rate/availability restrictions for a room-rate-date combination."""
+
     date: str  # YYYY-MM-DD
     room_type_id: str
     rate_plan_id: str
@@ -109,6 +114,7 @@ class RestrictionSet(BaseModel):
 
 class CanonicalGuest(BaseModel):
     """Provider-agnostic guest representation."""
+
     first_name: str = ""
     last_name: str = ""
     email: str = ""
@@ -132,6 +138,7 @@ class CanonicalGuest(BaseModel):
 
 class CanonicalReservation(BaseModel):
     """Provider-agnostic reservation representation."""
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     external_id: str = ""
     hr_number: str = ""

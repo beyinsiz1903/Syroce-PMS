@@ -14,6 +14,7 @@ Endpoints:
   POST   /api/report-scheduler/history/{id}/retry — Başarısız gönderimleri tekrar dene
   GET    /api/report-scheduler/report-types       — Mevcut rapor tipleri
 """
+
 import asyncio
 import logging
 import os
@@ -42,18 +43,26 @@ def _invalidate_scheduler_cache(tenant_id: str) -> None:
         except Exception as e:  # pragma: no cover — best-effort
             logger.debug("scheduler cache invalidation skipped (%s): %s", prefix, e)
 
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/report-scheduler", tags=["Report Scheduler"])
 
 HOTEL_ROLES = {
-    UserRole.SUPER_ADMIN, UserRole.ADMIN,
-    "super_admin", "admin", "manager", "staff",
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    "super_admin",
+    "admin",
+    "manager",
+    "staff",
 }
 
 MANAGER_ROLES = {
-    UserRole.SUPER_ADMIN, UserRole.ADMIN,
-    "super_admin", "admin", "manager",
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    "super_admin",
+    "admin",
+    "manager",
 }
 
 
@@ -137,20 +146,24 @@ def _get_tenant_id(user: User) -> str:
 
 
 async def _get_schedule_for_tenant(schedule_id: str, user: User) -> dict:
-    schedule = await db.report_schedules.find_one({
-        "_id": schedule_id,
-        "tenant_id": _get_tenant_id(user),
-    })
+    schedule = await db.report_schedules.find_one(
+        {
+            "_id": schedule_id,
+            "tenant_id": _get_tenant_id(user),
+        }
+    )
     if not schedule:
         raise HTTPException(status_code=404, detail="Zamanlama bulunamadi")
     return schedule
 
 
 async def _get_history_for_tenant(history_id: str, user: User) -> dict:
-    entry = await db.report_schedule_history.find_one({
-        "_id": history_id,
-        "tenant_id": _get_tenant_id(user),
-    })
+    entry = await db.report_schedule_history.find_one(
+        {
+            "_id": history_id,
+            "tenant_id": _get_tenant_id(user),
+        }
+    )
     if not entry:
         raise HTTPException(status_code=404, detail="Gönderim kaydi bulunamadi")
     return entry
@@ -223,7 +236,9 @@ async def get_report_types(
 
 
 @router.post("/schedules")
-async def create_schedule(body: ScheduleCreate, current_user: User = Depends(get_current_user),
+async def create_schedule(
+    body: ScheduleCreate,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),  # v98 DW
 ):
     _require_manager_role(current_user)
@@ -281,7 +296,10 @@ async def get_schedule(
 
 
 @router.put("/schedules/{schedule_id}")
-async def update_schedule(schedule_id: str, body: ScheduleUpdate, current_user: User = Depends(get_current_user),
+async def update_schedule(
+    schedule_id: str,
+    body: ScheduleUpdate,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),  # v98 DW
 ):
     _require_manager_role(current_user)
@@ -307,7 +325,9 @@ async def update_schedule(schedule_id: str, body: ScheduleUpdate, current_user: 
 
 
 @router.delete("/schedules/{schedule_id}")
-async def delete_schedule(schedule_id: str, current_user: User = Depends(get_current_user),
+async def delete_schedule(
+    schedule_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),  # v98 DW
 ):
     _require_manager_role(current_user)
@@ -321,7 +341,9 @@ async def delete_schedule(schedule_id: str, current_user: User = Depends(get_cur
 
 
 @router.post("/schedules/{schedule_id}/toggle")
-async def toggle_schedule(schedule_id: str, current_user: User = Depends(get_current_user),
+async def toggle_schedule(
+    schedule_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),  # v98 DW
 ):
     _require_manager_role(current_user)
@@ -332,8 +354,10 @@ async def toggle_schedule(schedule_id: str, current_user: User = Depends(get_cur
     updates = {"is_active": new_status, "updated_at": datetime.now(UTC).isoformat()}
     if new_status:
         updates["next_run"] = _compute_next_run(
-            schedule["frequency"], schedule["send_time"],
-            schedule.get("day_of_week"), schedule.get("day_of_month"),
+            schedule["frequency"],
+            schedule["send_time"],
+            schedule.get("day_of_week"),
+            schedule.get("day_of_month"),
         )
 
     await db.report_schedules.update_one({"_id": schedule_id}, {"$set": updates})
@@ -342,7 +366,9 @@ async def toggle_schedule(schedule_id: str, current_user: User = Depends(get_cur
 
 
 @router.post("/schedules/{schedule_id}/send-now")
-async def send_now(schedule_id: str, current_user: User = Depends(get_current_user),
+async def send_now(
+    schedule_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),  # v98 DW
 ):
     _require_manager_role(current_user)
@@ -390,7 +416,9 @@ async def get_history_detail(
 
 
 @router.post("/history/{history_id}/retry")
-async def retry_send(history_id: str, current_user: User = Depends(get_current_user),
+async def retry_send(
+    history_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),  # v98 DW
 ):
     _require_manager_role(current_user)
@@ -420,6 +448,7 @@ async def _build_report_payload(schedule: dict, now: datetime) -> dict:
     boş "veri yok" raporu yerine mock gönderilmesin diye).
     """
     from core.database import _raw_db as raw_db
+
     tenant_id = schedule.get("tenant_id") or "default"
     rtype = schedule.get("report_type", "")
     today_iso = now.date().isoformat()
@@ -428,20 +457,26 @@ async def _build_report_payload(schedule: dict, now: datetime) -> dict:
 
     try:
         if rtype in ("daily_summary", "occupancy", "reservations", "flash_report"):
-            arrivals = await raw_db.bookings.count_documents({
-                "tenant_id": tenant_id,
-                "check_in_date": today_iso,
-                "status": {"$in": ["confirmed", "checked_in", "arriving"]},
-            })
-            departures = await raw_db.bookings.count_documents({
-                "tenant_id": tenant_id,
-                "check_out_date": today_iso,
-                "status": {"$in": ["checked_in", "checked_out", "departing"]},
-            })
-            in_house = await raw_db.bookings.count_documents({
-                "tenant_id": tenant_id,
-                "status": "checked_in",
-            })
+            arrivals = await raw_db.bookings.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "check_in_date": today_iso,
+                    "status": {"$in": ["confirmed", "checked_in", "arriving"]},
+                }
+            )
+            departures = await raw_db.bookings.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "check_out_date": today_iso,
+                    "status": {"$in": ["checked_in", "checked_out", "departing"]},
+                }
+            )
+            in_house = await raw_db.bookings.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "status": "checked_in",
+                }
+            )
             total_rooms = await raw_db.rooms.count_documents({"tenant_id": tenant_id})
             occ = round((in_house / total_rooms) * 100, 1) if total_rooms else 0
             rows = [
@@ -460,9 +495,12 @@ async def _build_report_payload(schedule: dict, now: datetime) -> dict:
             agg = await raw_db.folio_entries.aggregate(pipeline).to_list(length=1)
             total = agg[0]["total"] if agg else 0
             count = agg[0]["count"] if agg else 0
-            in_house = await raw_db.bookings.count_documents({
-                "tenant_id": tenant_id, "status": "checked_in",
-            })
+            in_house = await raw_db.bookings.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "status": "checked_in",
+                }
+            )
             adr = round(total / in_house, 2) if in_house else 0
             total_rooms = await raw_db.rooms.count_documents({"tenant_id": tenant_id})
             revpar = round(total / total_rooms, 2) if total_rooms else 0
@@ -474,10 +512,12 @@ async def _build_report_payload(schedule: dict, now: datetime) -> dict:
                 {"label": "RevPAR (Oda Başı Gelir)", "value": revpar},
             ]
         elif rtype == "guest_analytics":
-            new_guests = await raw_db.guests.count_documents({
-                "tenant_id": tenant_id,
-                "created_at": {"$regex": f"^{today_iso}"},
-            })
+            new_guests = await raw_db.guests.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "created_at": {"$regex": f"^{today_iso}"},
+                }
+            )
             total_guests = await raw_db.guests.count_documents({"tenant_id": tenant_id})
             rows = [
                 {"label": "Bugün eklenen misafir", "value": new_guests},
@@ -496,14 +536,20 @@ async def _build_report_payload(schedule: dict, now: datetime) -> dict:
                 notes = "Bu tenant için kanal verisi bulunamadı."
         elif rtype == "housekeeping":
             for st in ("clean", "dirty", "inspected", "out_of_order"):
-                cnt = await raw_db.rooms.count_documents({
-                    "tenant_id": tenant_id, "housekeeping_status": st,
-                })
+                cnt = await raw_db.rooms.count_documents(
+                    {
+                        "tenant_id": tenant_id,
+                        "housekeeping_status": st,
+                    }
+                )
                 rows.append({"label": f"Oda durumu — {st}", "value": cnt})
         elif rtype == "b2b_analytics":
-            cnt = await raw_db.bookings.count_documents({
-                "tenant_id": tenant_id, "agency_id": {"$exists": True, "$ne": None},
-            })
+            cnt = await raw_db.bookings.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "agency_id": {"$exists": True, "$ne": None},
+                }
+            )
             rows = [{"label": "Acente kanalı rezervasyon (toplam)", "value": cnt}]
         else:
             notes = f"'{rtype}' için özet hazırlayıcı tanımlı değil; e-posta gönderildi."
@@ -522,6 +568,7 @@ async def _build_report_payload(schedule: dict, now: datetime) -> dict:
 def _payload_to_csv(report_label: str, payload: dict) -> bytes:
     import csv
     import io
+
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow([report_label])
@@ -539,6 +586,7 @@ def _payload_to_csv(report_label: str, payload: dict) -> bytes:
 def _payload_to_pdf(report_label: str, payload: dict, html: str) -> bytes | None:
     try:
         from weasyprint import HTML  # type: ignore
+
         return HTML(string=html).write_pdf()
     except Exception as exc:
         logger.warning("[report-scheduler] PDF render failed: %s", exc)
@@ -607,26 +655,32 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
         attachments: list = []
         date_tag = now.strftime("%Y%m%d")
         if fmt == "csv":
-            attachments.append((
-                f"{schedule['report_type']}_{date_tag}.csv",
-                "text/csv",
-                _payload_to_csv(report_label, payload),
-            ))
-        elif fmt == "pdf":
-            pdf_bytes = _payload_to_pdf(report_label, payload, html_content)
-            if pdf_bytes:
-                attachments.append((
-                    f"{schedule['report_type']}_{date_tag}.pdf",
-                    "application/pdf",
-                    pdf_bytes,
-                ))
-            else:
-                # PDF üretilemediyse en azından CSV ile fallback gönder.
-                attachments.append((
+            attachments.append(
+                (
                     f"{schedule['report_type']}_{date_tag}.csv",
                     "text/csv",
                     _payload_to_csv(report_label, payload),
-                ))
+                )
+            )
+        elif fmt == "pdf":
+            pdf_bytes = _payload_to_pdf(report_label, payload, html_content)
+            if pdf_bytes:
+                attachments.append(
+                    (
+                        f"{schedule['report_type']}_{date_tag}.pdf",
+                        "application/pdf",
+                        pdf_bytes,
+                    )
+                )
+            else:
+                # PDF üretilemediyse en azından CSV ile fallback gönder.
+                attachments.append(
+                    (
+                        f"{schedule['report_type']}_{date_tag}.csv",
+                        "text/csv",
+                        _payload_to_csv(report_label, payload),
+                    )
+                )
 
         # 4) Gönderim
         sent_count = 0
@@ -639,7 +693,11 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
                     # SMTP senkron — event loop'u bloklamasın.
                     success = await asyncio.to_thread(
                         email_service._send_email_smtp,
-                        recipient, subject, html_content, text_content, attachments,
+                        recipient,
+                        subject,
+                        html_content,
+                        text_content,
+                        attachments,
                     )
                     if success:
                         sent_count += 1
@@ -672,33 +730,37 @@ async def _execute_schedule(schedule: dict, triggered_by: str = "system", histor
 
         await db.report_schedule_history.update_one(
             {"_id": hid},
-            {"$set": {
-                "status": status,
-                "error_message": error_msg,
-                "delivery_details": {
-                    "sent_count": sent_count,
-                    "failed_count": len(failed_recipients),
-                    "failed_recipients": failed_recipients,
-                    "mock_count": len(mock_recipients),
-                    "total_recipients": total,
-                    "attachment_count": len(attachments),
-                    "report_summary": payload.get("rows", [])[:8],
-                },
-            }},
+            {
+                "$set": {
+                    "status": status,
+                    "error_message": error_msg,
+                    "delivery_details": {
+                        "sent_count": sent_count,
+                        "failed_count": len(failed_recipients),
+                        "failed_recipients": failed_recipients,
+                        "mock_count": len(mock_recipients),
+                        "total_recipients": total,
+                        "attachment_count": len(attachments),
+                        "report_summary": payload.get("rows", [])[:8],
+                    },
+                }
+            },
         )
 
         # KPI'yı sadece gerçekten gönderilen sayısı kadar artır.
         await db.report_schedules.update_one(
             {"_id": schedule["_id"]},
-            {"$set": {
-                "last_sent_at": now.isoformat(),
-                "last_status": status,
-                "updated_at": now.isoformat(),
+            {
+                "$set": {
+                    "last_sent_at": now.isoformat(),
+                    "last_status": status,
+                    "updated_at": now.isoformat(),
+                },
+                "$inc": {
+                    "total_sent": sent_count,
+                    "total_failed": len(failed_recipients),
+                },
             },
-             "$inc": {
-                 "total_sent": sent_count,
-                 "total_failed": len(failed_recipients),
-             }},
         )
 
         return {
@@ -737,12 +799,15 @@ def _build_report_email_html(
     # girilir; XSS önlemek için tüm dinamik alanlar HTML-escape edilir.
     # Sprint A DS (May 2026): mor gradient kaldırıldı → indigo (#4f46e5) düz renk.
     import html as _html_mod
-    def _e(v): return _html_mod.escape("" if v is None else str(v), quote=True)
+
+    def _e(v):
+        return _html_mod.escape("" if v is None else str(v), quote=True)
+
     fmt = _e(schedule.get("format", "pdf").upper())
     freq_labels = {"daily": "Günlük", "weekly": "Haftalık", "monthly": "Aylık"}
     freq_label = _e(freq_labels.get(schedule.get("frequency", ""), schedule.get("frequency", "")))
-    sched_name = _e(schedule.get('name', '-'))
-    sched_notes = _e(schedule.get('notes')) if schedule.get('notes') else None
+    sched_name = _e(schedule.get("name", "-"))
+    sched_notes = _e(schedule.get("notes")) if schedule.get("notes") else None
     report_label = _e(report_label)
     safe_app_url = _e(app_url) if app_url else ""
 
@@ -752,24 +817,20 @@ def _build_report_email_html(
     if payload:
         rows = payload.get("rows") or []
         if rows:
-            summary_rows_html = "".join(
-                f"<tr><td>{_e(r.get('label',''))}</td><td>{_e(r.get('value',''))}</td></tr>"
-                for r in rows
-            )
+            summary_rows_html = "".join(f"<tr><td>{_e(r.get('label', ''))}</td><td>{_e(r.get('value', ''))}</td></tr>" for r in rows)
         if payload.get("notes"):
             notes_html = f'<p style="color:#92400e;background:#fef3c7;border:1px solid #fcd34d;padding:10px;border-radius:6px">{_e(payload["notes"])}</p>'
 
     summary_block = (
-        f'<h3 style="margin-top:24px;color:#1e293b">Özet</h3>'
-        f'<table class="meta-table">{summary_rows_html}</table>'
-        if summary_rows_html else
-        '<p style="color:#64748b"><em>Bu rapor için detay özet henüz hazır değil; lütfen ekteki dosyayı inceleyiniz.</em></p>'
+        f'<h3 style="margin-top:24px;color:#1e293b">Özet</h3><table class="meta-table">{summary_rows_html}</table>'
+        if summary_rows_html
+        else '<p style="color:#64748b"><em>Bu rapor için detay özet henüz hazır değil; lütfen ekteki dosyayı inceleyiniz.</em></p>'
     )
 
     cta_block = (
         f'<p style="text-align:center;"><a href="{safe_app_url}" class="button">Raporu Görüntüle</a></p>'
-        if safe_app_url else
-        '<p style="text-align:center;color:#64748b;font-size:12px"><em>Tam rapora ulaşmak için sisteminize giriş yapın.</em></p>'
+        if safe_app_url
+        else '<p style="text-align:center;color:#64748b;font-size:12px"><em>Tam rapora ulaşmak için sisteminize giriş yapın.</em></p>'
     )
 
     return f"""
@@ -808,13 +869,13 @@ def _build_report_email_html(
                     <tr><td>Rapor</td><td>{report_label}</td></tr>
                     <tr><td>Frekans</td><td>{freq_label}</td></tr>
                     <tr><td>Format</td><td>{fmt}</td></tr>
-                    <tr><td>Oluşturulma</td><td>{now.strftime('%d.%m.%Y %H:%M')}</td></tr>
+                    <tr><td>Oluşturulma</td><td>{now.strftime("%d.%m.%Y %H:%M")}</td></tr>
                     <tr><td>Zamanlama</td><td>{sched_name}</td></tr>
                 </table>
                 {summary_block}
                 {notes_html}
                 {cta_block}
-                {f'<p style="color:#475569"><em>Not: {sched_notes}</em></p>' if sched_notes else ''}
+                {f'<p style="color:#475569"><em>Not: {sched_notes}</em></p>' if sched_notes else ""}
             </div>
             <div class="footer">
                 <p>Syroce Otel Yönetim Sistemi</p>

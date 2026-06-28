@@ -2,6 +2,7 @@
 Metrics Collector — production-grade application metrics with histogram support.
 Collects counters, gauges, histograms. Supports flush to MongoDB.
 """
+
 import logging
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -99,16 +100,11 @@ class MetricsCollector:
             "ml_execution_time": self._summarize_list(self._ml_execution_times),
             "autopricing": {
                 **self._autopricing_results,
-                "success_rate": (
-                    self._autopricing_results["success"] /
-                    max(self._autopricing_results["success"] + self._autopricing_results["failure"], 1)
-                ),
+                "success_rate": (self._autopricing_results["success"] / max(self._autopricing_results["success"] + self._autopricing_results["failure"], 1)),
             },
             "messaging_delivery": {
                 **self._messaging_delivery,
-                "delivery_rate": (
-                    self._messaging_delivery["success"] / max(msg_total, 1)
-                ),
+                "delivery_rate": (self._messaging_delivery["success"] / max(msg_total, 1)),
                 "success_count": self._messaging_delivery["success"],
                 "failure_count": self._messaging_delivery["failure"],
             },
@@ -129,6 +125,7 @@ class MetricsCollector:
         """Flush current metrics snapshot to MongoDB."""
         try:
             from core.database import db
+
             snapshot = {
                 "counters": dict(self._counters),
                 "gauges": dict(self._gauges),

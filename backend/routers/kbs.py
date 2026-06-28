@@ -127,24 +127,29 @@ async def _raise_kbs_alert(
     Hata fırlatmaz (alarm sistemi ana akışı etkilememeli).
     """
     try:
-        await db.kbs_alerts.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "kind": kind,  # "dead_letter" | "missing_data" | "max_attempts"
-            "job_id": job.get("id"),
-            "booking_id": job.get("booking_id"),
-            "guest_name": (job.get("payload") or {}).get("guest_name", ""),
-            "room_number": (job.get("payload") or {}).get("room_number", ""),
-            "action": job.get("action"),
-            "attempts": job.get("attempts"),
-            "last_error": error or job.get("last_error"),
-            "worker_id": job.get("worker_id"),
-            "created_at": _now_iso(),
-            "acknowledged": False,
-        })
+        await db.kbs_alerts.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "kind": kind,  # "dead_letter" | "missing_data" | "max_attempts"
+                "job_id": job.get("id"),
+                "booking_id": job.get("booking_id"),
+                "guest_name": (job.get("payload") or {}).get("guest_name", ""),
+                "room_number": (job.get("payload") or {}).get("room_number", ""),
+                "action": job.get("action"),
+                "attempts": job.get("attempts"),
+                "last_error": error or job.get("last_error"),
+                "worker_id": job.get("worker_id"),
+                "created_at": _now_iso(),
+                "acknowledged": False,
+            }
+        )
         logger.warning(
             "KBS alert raised: tenant=%s kind=%s booking=%s err=%s",
-            tenant_id, kind, job.get("booking_id"), error,
+            tenant_id,
+            kind,
+            job.get("booking_id"),
+            error,
         )
     except Exception as e:
         logger.warning("KBS alert insert failed: %s", e)
@@ -171,39 +176,47 @@ async def kbs_guest_list(
         raise HTTPException(403, "Kullanıcının bir oteli (tenant_id) yok")
 
     target_date = date or datetime.now(UTC).strftime("%Y-%m-%d")
-    status_filter = (
-        [status] if status
-        else ["checked_in", "confirmed", "guaranteed"]
-    )
+    status_filter = [status] if status else ["checked_in", "confirmed", "guaranteed"]
 
     with tenant_context(tenant_id):
-        bookings = await db.bookings.find(
-            {
-                "tenant_id": tenant_id,
-                "status": {"$in": status_filter},
-                "check_in": {
-                    "$gte": target_date + "T00:00:00",
-                    "$lte": target_date + "T23:59:59",
+        bookings = (
+            await db.bookings.find(
+                {
+                    "tenant_id": tenant_id,
+                    "status": {"$in": status_filter},
+                    "check_in": {
+                        "$gte": target_date + "T00:00:00",
+                        "$lte": target_date + "T23:59:59",
+                    },
                 },
-            },
-            {
-                "_id": 0, "id": 1, "guest_id": 1, "guest_name": 1,
-                "guest_email": 1, "guest_phone": 1, "room_number": 1,
-                "check_in": 1, "check_out": 1, "adults": 1, "children": 1,
-                "status": 1, "confirmation_code": 1,
-            },
-        ).sort("check_in", 1).to_list(limit)
+                {
+                    "_id": 0,
+                    "id": 1,
+                    "guest_id": 1,
+                    "guest_name": 1,
+                    "guest_email": 1,
+                    "guest_phone": 1,
+                    "room_number": 1,
+                    "check_in": 1,
+                    "check_out": 1,
+                    "adults": 1,
+                    "children": 1,
+                    "status": 1,
+                    "confirmation_code": 1,
+                },
+            )
+            .sort("check_in", 1)
+            .to_list(limit)
+        )
 
         guest_ids = [b.get("guest_id") for b in bookings if b.get("guest_id")]
         guest_map: dict[str, dict] = {}
         if guest_ids:
             from security.encrypted_lookup import decrypt_guest_doc
+
             async for g in db.guests.find(
                 {"tenant_id": tenant_id, "id": {"$in": guest_ids}},
-                {"_id": 0, "id": 1, "nationality": 1, "id_number": 1,
-                 "passport_number": 1, "birth_date": 1, "gender": 1,
-                 "address": 1, "father_name": 1, "mother_name": 1,
-                 "birth_place": 1},
+                {"_id": 0, "id": 1, "nationality": 1, "id_number": 1, "passport_number": 1, "birth_date": 1, "gender": 1, "address": 1, "father_name": 1, "mother_name": 1, "birth_place": 1},
             ):
                 guest_map[g["id"]] = decrypt_guest_doc(g)
 
@@ -218,19 +231,20 @@ async def kbs_guest_list(
             b["father_name"] = g.get("father_name", "")
             b["mother_name"] = g.get("mother_name", "")
             b["birth_place"] = g.get("birth_place", "")
-            b["kbs_ready"] = bool(
-                (g.get("id_number") or g.get("passport_number"))
-                and g.get("birth_date")
-                and g.get("nationality")
-            )
+            b["kbs_ready"] = bool((g.get("id_number") or g.get("passport_number")) and g.get("birth_date") and g.get("nationality"))
 
-        reports = await db.kbs_reports.find(
-            {
-                "tenant_id": tenant_id, "date": target_date,
-                "_kind": {"$ne": "queue_job"},
-            },
-            {"_id": 0},
-        ).sort("created_at", -1).to_list(50)
+        reports = (
+            await db.kbs_reports.find(
+                {
+                    "tenant_id": tenant_id,
+                    "date": target_date,
+                    "_kind": {"$ne": "queue_job"},
+                },
+                {"_id": 0},
+            )
+            .sort("created_at", -1)
+            .to_list(50)
+        )
 
     return {
         "date": target_date,
@@ -282,11 +296,13 @@ async def kbs_create_report(
         if data.booking_ids:
             await db.bookings.update_many(
                 {"tenant_id": tenant_id, "id": {"$in": data.booking_ids}},
-                {"$set": {
-                    "kbs_reported": True,
-                    "kbs_report_id": report_id,
-                    "kbs_reported_at": _now_iso(),
-                }},
+                {
+                    "$set": {
+                        "kbs_reported": True,
+                        "kbs_report_id": report_id,
+                        "kbs_reported_at": _now_iso(),
+                    }
+                },
             )
     report.pop("_id", None)
     return {"ok": True, "report": report}
@@ -329,7 +345,8 @@ async def kbs_get_report(
     with tenant_context(tenant_id):
         doc = await db.kbs_reports.find_one(
             {
-                "tenant_id": tenant_id, "id": report_id,
+                "tenant_id": tenant_id,
+                "id": report_id,
                 "_kind": {"$ne": "queue_job"},
             },
             {"_id": 0},
@@ -392,9 +409,7 @@ def _scrub(doc: dict | None) -> dict | None:
     return doc
 
 
-async def _build_payload_snapshot(
-    tenant_id: str, booking_id: str
-) -> tuple[dict, dict, dict]:
+async def _build_payload_snapshot(tenant_id: str, booking_id: str) -> tuple[dict, dict, dict]:
     """booking + guest verisini birleştirip snapshot çıkarır.
 
     Returns: (booking, guest, snapshot)
@@ -403,10 +418,20 @@ async def _build_payload_snapshot(
     booking = await db.bookings.find_one(
         {"tenant_id": tenant_id, "id": booking_id},
         {
-            "_id": 0, "id": 1, "guest_id": 1, "guest_name": 1,
-            "guest_email": 1, "guest_phone": 1, "room_number": 1,
-            "check_in": 1, "check_out": 1, "adults": 1, "children": 1,
-            "status": 1, "confirmation_code": 1, "guest_nationality": 1,
+            "_id": 0,
+            "id": 1,
+            "guest_id": 1,
+            "guest_name": 1,
+            "guest_email": 1,
+            "guest_phone": 1,
+            "room_number": 1,
+            "check_in": 1,
+            "check_out": 1,
+            "adults": 1,
+            "children": 1,
+            "status": 1,
+            "confirmation_code": 1,
+            "guest_nationality": 1,
         },
     )
     if not booking:
@@ -415,23 +440,35 @@ async def _build_payload_snapshot(
     guest = {}
     if booking.get("guest_id"):
         from security.encrypted_lookup import decrypt_guest_doc
-        guest = decrypt_guest_doc(await db.guests.find_one(
-            {"tenant_id": tenant_id, "id": booking["guest_id"]},
-            {
-                "_id": 0, "id": 1, "nationality": 1, "id_number": 1,
-                "passport_number": 1, "birth_date": 1, "gender": 1,
-                "address": 1, "father_name": 1, "mother_name": 1,
-                "birth_place": 1,
-            },
-        )) or {}
+
+        guest = (
+            decrypt_guest_doc(
+                await db.guests.find_one(
+                    {"tenant_id": tenant_id, "id": booking["guest_id"]},
+                    {
+                        "_id": 0,
+                        "id": 1,
+                        "nationality": 1,
+                        "id_number": 1,
+                        "passport_number": 1,
+                        "birth_date": 1,
+                        "gender": 1,
+                        "address": 1,
+                        "father_name": 1,
+                        "mother_name": 1,
+                        "birth_place": 1,
+                    },
+                )
+            )
+            or {}
+        )
 
     snapshot = {
         "guest_name": booking.get("guest_name", ""),
         "room_number": booking.get("room_number", ""),
         "check_in": booking.get("check_in", ""),
         "check_out": booking.get("check_out", ""),
-        "nationality": guest.get("nationality")
-            or booking.get("guest_nationality") or "",
+        "nationality": guest.get("nationality") or booking.get("guest_nationality") or "",
         "id_number": guest.get("id_number", ""),
         "passport_number": guest.get("passport_number", ""),
         "birth_date": guest.get("birth_date", ""),
@@ -445,6 +482,7 @@ async def _build_payload_snapshot(
 
 
 # --- 1) Enqueue ---------------------------------------------
+
 
 class KBSQueueEnqueue(BaseModel):
     booking_id: str = Field(..., min_length=1)
@@ -478,7 +516,8 @@ async def kbs_queue_enqueue(
     idem_lock_id: str | None = None
     if idem_key:
         claim = await claim_idempotency(
-            db, tenant_id=tenant_id,
+            db,
+            tenant_id=tenant_id,
             scope=f"kbs:queue:{data.booking_id}:{data.action}",
             idempotency_key=idem_key,
         )
@@ -505,13 +544,13 @@ async def kbs_queue_enqueue(
                     response = {"job": existing, "created": False}
                     if idem_lock_id:
                         await complete_idempotency(
-                            db, lock_id=idem_lock_id, response_body=response,
+                            db,
+                            lock_id=idem_lock_id,
+                            response_body=response,
                         )
                     return response
 
-            booking, guest, snapshot = await _build_payload_snapshot(
-                tenant_id, data.booking_id
-            )
+            booking, guest, snapshot = await _build_payload_snapshot(tenant_id, data.booking_id)
 
             # Madde 7: enqueue zamanında payload tamlığı kontrolü.
             # force=true → bypass (eksik bilgiyle bilinçli kuyruğa atma).
@@ -523,10 +562,7 @@ async def kbs_queue_enqueue(
                         detail={
                             "error": "kbs_payload_incomplete",
                             "missing_fields": missing,
-                            "message": (
-                                "KBS bildirimi için zorunlu alanlar eksik: "
-                                + ", ".join(missing)
-                            ),
+                            "message": ("KBS bildirimi için zorunlu alanlar eksik: " + ", ".join(missing)),
                         },
                     )
 
@@ -565,10 +601,7 @@ async def kbs_queue_enqueue(
                 await db.kbs_reports.insert_one(job)
             except Exception as ins_err:
                 # Race: eşzamanlı başka enqueue açık iş yarattı → idempotent dön
-                if (
-                    "duplicate key" in str(ins_err).lower()
-                    or "E11000" in str(ins_err)
-                ):
+                if "duplicate key" in str(ins_err).lower() or "E11000" in str(ins_err):
                     existing2 = await db.kbs_reports.find_one(
                         {
                             "_kind": QUEUE_KIND,
@@ -594,7 +627,9 @@ async def kbs_queue_enqueue(
                         response = {"job": existing2, "created": False}
                         if idem_lock_id:
                             await complete_idempotency(
-                                db, lock_id=idem_lock_id, response_body=response,
+                                db,
+                                lock_id=idem_lock_id,
+                                response_body=response,
                             )
                         return response
                 raise
@@ -602,7 +637,9 @@ async def kbs_queue_enqueue(
         response = {"job": job, "created": True}
         if idem_lock_id:
             await complete_idempotency(
-                db, lock_id=idem_lock_id, response_body=response,
+                db,
+                lock_id=idem_lock_id,
+                response_body=response,
             )
         # SSE fan-out: tell every connected agent (this worker AND
         # other workers via Redis) that a new job is ready to claim.
@@ -631,11 +668,10 @@ async def kbs_queue_enqueue(
 
 # --- 2) List + stats ----------------------------------------
 
+
 @router.get("/queue")
 async def kbs_queue_list(
-    status: str | None = Query(
-        None, description="Virgülle ayrılmış: pending,in_progress,done,failed,dead"
-    ),
+    status: str | None = Query(None, description="Virgülle ayrılmış: pending,in_progress,done,failed,dead"),
     booking_id: str | None = Query(None),
     date_from: str | None = Query(None, description="created_at >= ISO date"),
     date_to: str | None = Query(None, description="created_at <= ISO date"),
@@ -695,9 +731,7 @@ async def kbs_queue_list(
         q["status"] = {"$in": wanted_statuses}
 
     with tenant_context(tenant_id):
-        jobs = await db.kbs_reports.find(q, {"_id": 0}).sort(
-            "created_at", -1
-        ).to_list(limit)
+        jobs = await db.kbs_reports.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
 
         # Tüm statüler için sayım (status bar)
         pipeline = [
@@ -717,6 +751,7 @@ async def kbs_queue_list(
 
 
 # --- 3) Atomic claim with lease -----------------------------
+
 
 class KBSQueueClaim(BaseModel):
     worker_id: str = Field(..., min_length=1, max_length=120)
@@ -752,14 +787,18 @@ async def kbs_queue_claim(
         "$or": [
             # Server-side backoff zorlaması: pending iş ancak retry penceresi
             # geçtiyse claim edilebilir (next_retry_at boş ya da geçmişte)
-            {"$and": [
-                {"status": "pending"},
-                {"$or": [
-                    {"next_retry_at": None},
-                    {"next_retry_at": {"$exists": False}},
-                    {"next_retry_at": {"$lte": now_iso}},
-                ]},
-            ]},
+            {
+                "$and": [
+                    {"status": "pending"},
+                    {
+                        "$or": [
+                            {"next_retry_at": None},
+                            {"next_retry_at": {"$exists": False}},
+                            {"next_retry_at": {"$lte": now_iso}},
+                        ]
+                    },
+                ]
+            },
             # Stuck-worker kurtarma: lease süresi dolmuş in_progress
             {"status": "in_progress", "leased_until": {"$lt": now_iso}},
         ],
@@ -801,17 +840,14 @@ async def kbs_queue_claim(
                 )
             raise HTTPException(
                 409,
-                f"İş başka bir worker tarafından işleniyor: "
-                f"{existing.get('worker_id')}",
+                f"İş başka bir worker tarafından işleniyor: {existing.get('worker_id')}",
             )
         job = await db.kbs_reports.find_one(
             {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id},
             {"_id": 0},
         )
         # max_attempts aşıldıysa hemen dead'e çek
-        if job and job.get("attempts", 0) > job.get(
-            "max_attempts", DEFAULT_MAX_ATTEMPTS
-        ):
+        if job and job.get("attempts", 0) > job.get("max_attempts", DEFAULT_MAX_ATTEMPTS):
             await db.kbs_reports.update_one(
                 {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id},
                 {
@@ -827,17 +863,18 @@ async def kbs_queue_claim(
             )
             # Madde 6: dead-letter alarm
             await _raise_kbs_alert(
-                tenant_id, kind="dead_letter", job=job,
+                tenant_id,
+                kind="dead_letter",
+                job=job,
                 error="max_attempts exceeded on claim",
             )
-            raise HTTPException(
-                409, "Maks. deneme sayısı aşıldı (dead)"
-            )
+            raise HTTPException(409, "Maks. deneme sayısı aşıldı (dead)")
 
     return {"job": job}
 
 
 # --- 4) Complete --------------------------------------------
+
 
 class KBSQueueComplete(BaseModel):
     worker_id: str = Field(..., min_length=1)
@@ -880,7 +917,8 @@ async def kbs_queue_complete(
     idem_lock_id: str | None = None
     if idem_key:
         claim = await claim_idempotency(
-            db, tenant_id=tenant_id,
+            db,
+            tenant_id=tenant_id,
             scope=f"kbs:complete:{job_id}",
             idempotency_key=idem_key,
         )
@@ -927,9 +965,7 @@ async def kbs_queue_complete(
                         "completed_at": _iso(now),
                         "updated_at": _iso(now),
                         "kbs_test": is_test_ref,
-                        "notes": (job.get("notes") or "") + (
-                            ("\n" + data.notes) if data.notes else ""
-                        ),
+                        "notes": (job.get("notes") or "") + (("\n" + data.notes) if data.notes else ""),
                     },
                     # Closed state: _open_lock'u kaldır → aynı booking+action için
                     # tekrar enqueue açılabilsin (örn. checkout sonrası farklı action).
@@ -956,22 +992,24 @@ async def kbs_queue_complete(
             )
             # Legacy uyumluluk: kbs_reports'a özet ekle (_kind=report)
             report_id = _uuid()
-            await db.kbs_reports.insert_one({
-                "_kind": REPORT_KIND,
-                "id": report_id,
-                "tenant_id": tenant_id,
-                "date": (job["payload"].get("check_in") or _iso(now))[:10],
-                "status": "submitted",
-                "guest_count": 1,
-                "guest_ids": [job["booking_id"]],
-                "submission_reference": data.kbs_reference,
-                "notes": data.notes or "via queue",
-                "submitted_by": f"worker:{data.worker_id}",
-                "submitted_by_email": current_user.email,
-                "queue_job_id": job_id,
-                "kbs_test": is_test_ref,
-                "created_at": _iso(now),
-            })
+            await db.kbs_reports.insert_one(
+                {
+                    "_kind": REPORT_KIND,
+                    "id": report_id,
+                    "tenant_id": tenant_id,
+                    "date": (job["payload"].get("check_in") or _iso(now))[:10],
+                    "status": "submitted",
+                    "guest_count": 1,
+                    "guest_ids": [job["booking_id"]],
+                    "submission_reference": data.kbs_reference,
+                    "notes": data.notes or "via queue",
+                    "submitted_by": f"worker:{data.worker_id}",
+                    "submitted_by_email": current_user.email,
+                    "queue_job_id": job_id,
+                    "kbs_test": is_test_ref,
+                    "created_at": _iso(now),
+                }
+            )
 
             job = await db.kbs_reports.find_one(
                 {"_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id},
@@ -980,7 +1018,9 @@ async def kbs_queue_complete(
         response = {"job": job, "report_id": report_id, "test_mode": test_mode}
         if idem_lock_id:
             await complete_idempotency(
-                db, lock_id=idem_lock_id, response_body=response,
+                db,
+                lock_id=idem_lock_id,
+                response_body=response,
             )
         # SSE fan-out: notify other connected agents that this job is
         # closed so a stale UI can stop showing it. Best-effort.
@@ -1006,6 +1046,7 @@ async def kbs_queue_complete(
 
 
 # --- 5) Fail (with retry / dead) ----------------------------
+
 
 class KBSQueueFail(BaseModel):
     worker_id: str = Field(..., min_length=1)
@@ -1037,7 +1078,8 @@ async def kbs_queue_fail(
     idem_lock_id: str | None = None
     if idem_key:
         claim = await claim_idempotency(
-            db, tenant_id=tenant_id,
+            db,
+            tenant_id=tenant_id,
             scope=f"kbs:fail:{job_id}",
             idempotency_key=idem_key,
         )
@@ -1073,9 +1115,7 @@ async def kbs_queue_fail(
             next_retry_at = None
 
             if will_retry:
-                next_retry_at = _iso(
-                    now + timedelta(seconds=_backoff_seconds(attempts))
-                )
+                next_retry_at = _iso(now + timedelta(seconds=_backoff_seconds(attempts)))
                 update = {
                     "status": "pending",
                     "worker_id": None,
@@ -1120,7 +1160,10 @@ async def kbs_queue_fail(
         # Madde 6: dead-letter alarmı (transaction sonrası)
         if not will_retry and job and job.get("status") == "dead":
             await _raise_kbs_alert(
-                tenant_id, kind="dead_letter", job=job, error=data.error,
+                tenant_id,
+                kind="dead_letter",
+                job=job,
+                error=data.error,
             )
 
         response = {
@@ -1130,7 +1173,9 @@ async def kbs_queue_fail(
         }
         if idem_lock_id:
             await complete_idempotency(
-                db, lock_id=idem_lock_id, response_body=response,
+                db,
+                lock_id=idem_lock_id,
+                response_body=response,
             )
         # SSE fan-out:
         #   will_retry=True  → ``job.retry_scheduled`` *now*. The job
@@ -1152,9 +1197,7 @@ async def kbs_queue_fail(
                     extra={
                         "next_retry_at": next_retry_at,
                         "attempts": (job or {}).get("attempts", 0),
-                        "max_attempts": (job or {}).get(
-                            "max_attempts", DEFAULT_MAX_ATTEMPTS
-                        ),
+                        "max_attempts": (job or {}).get("max_attempts", DEFAULT_MAX_ATTEMPTS),
                     },
                 )
             else:
@@ -1269,10 +1312,7 @@ async def kbs_queue_stream(
                 if await request.is_disconnected():
                     break
                 if (datetime.now(UTC) - started_at).total_seconds() > _SSE_MAX_STREAM_SECONDS:
-                    yield (
-                        "event: server_rotate\n"
-                        f"data: {{\"reason\": \"max_stream_age\"}}\n\n"
-                    )
+                    yield (f'event: server_rotate\ndata: {{"reason": "max_stream_age"}}\n\n')
                     break
 
                 # Wait for next event or heartbeat tick — whichever
@@ -1284,10 +1324,7 @@ async def kbs_queue_stream(
                         timeout=_SSE_HEARTBEAT_SECONDS,
                     )
                 except TimeoutError:
-                    yield (
-                        f"event: heartbeat\n"
-                        f"data: {json.dumps({'ts': _iso(_now())})}\n\n"
-                    )
+                    yield (f"event: heartbeat\ndata: {json.dumps({'ts': _iso(_now())})}\n\n")
                     continue
 
                 event_type = str(event.get("type") or "message")
@@ -1345,9 +1382,7 @@ async def kbs_alerts_list(
         q["acknowledged"] = acknowledged
 
     with tenant_context(tenant_id):
-        alerts = await db.kbs_alerts.find(q, {"_id": 0}).sort(
-            "created_at", -1
-        ).to_list(limit)
+        alerts = await db.kbs_alerts.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
         unack_count = await db.kbs_alerts.count_documents(
             {"tenant_id": tenant_id, "acknowledged": False},
         )
@@ -1357,15 +1392,15 @@ async def kbs_alerts_list(
     # Bunu yalnızca platform yöneticisi (super_admin) görür; tenant proxy
     # _system'i context'e çekemediğinden ayrı sistem-db sorgusuyla eklenir.
     from core.security import _is_super_admin
+
     if _is_super_admin(current_user):
         from core.tenant_db import get_system_db
+
         sys_db = get_system_db()
         sys_q: dict = {"tenant_id": "_system"}
         if acknowledged is not None:
             sys_q["acknowledged"] = acknowledged
-        sys_alerts = await sys_db.kbs_alerts.find(sys_q, {"_id": 0}).sort(
-            "created_at", -1
-        ).to_list(limit)
+        sys_alerts = await sys_db.kbs_alerts.find(sys_q, {"_id": 0}).sort("created_at", -1).to_list(limit)
         if sys_alerts:
             alerts = sorted(
                 alerts + sys_alerts,
@@ -1392,11 +1427,13 @@ async def kbs_alert_ack(
     with tenant_context(tenant_id):
         result = await db.kbs_alerts.update_one(
             {"tenant_id": tenant_id, "id": alert_id},
-            {"$set": {
-                "acknowledged": True,
-                "acknowledged_by": current_user.email,
-                "acknowledged_at": _now_iso(),
-            }},
+            {
+                "$set": {
+                    "acknowledged": True,
+                    "acknowledged_by": current_user.email,
+                    "acknowledged_at": _now_iso(),
+                }
+            },
         )
     if result.matched_count == 0:
         raise HTTPException(404, "Alarm bulunamadı")

@@ -4,6 +4,7 @@ Immutable Folio Ledger Service
 Append-only ledger for all folio financial entries.
 Entries are NEVER updated — voids, adjustments, and transfers create new entries.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -16,17 +17,35 @@ from core.database import db
 logger = logging.getLogger(__name__)
 
 VALID_ENTRY_TYPES = {
-    "charge", "payment", "void", "adjustment",
-    "transfer_out", "transfer_in", "refund", "tax",
+    "charge",
+    "payment",
+    "void",
+    "adjustment",
+    "transfer_out",
+    "transfer_in",
+    "refund",
+    "tax",
 }
 
 VALID_CHARGE_CODES = {
-    "ROOM", "FB", "SPA", "MINIBAR", "PARKING",
-    "TELEPHONE", "LAUNDRY", "TAX", "MISC", "NOSHOW",
+    "ROOM",
+    "FB",
+    "SPA",
+    "MINIBAR",
+    "PARKING",
+    "TELEPHONE",
+    "LAUNDRY",
+    "TAX",
+    "MISC",
+    "NOSHOW",
 }
 
 VALID_PAYMENT_METHODS = {
-    "cash", "card", "bank_transfer", "online", "city_ledger",
+    "cash",
+    "card",
+    "bank_transfer",
+    "online",
+    "city_ledger",
 }
 
 
@@ -401,13 +420,15 @@ class FolioLedgerService:
         result = await self.coll.aggregate(pipeline).to_list(1)
         return round(result[0]["total"], 2) if result else 0.0
 
-    async def get_ledger(
-        self, tenant_id: str, folio_id: str
-    ) -> dict[str, Any]:
-        entries = await self.coll.find(
-            {"tenant_id": tenant_id, "folio_id": folio_id},
-            {"_id": 0},
-        ).sort("sequence_number", 1).to_list(10000)
+    async def get_ledger(self, tenant_id: str, folio_id: str) -> dict[str, Any]:
+        entries = (
+            await self.coll.find(
+                {"tenant_id": tenant_id, "folio_id": folio_id},
+                {"_id": 0},
+            )
+            .sort("sequence_number", 1)
+            .to_list(10000)
+        )
         balance = await self.compute_balance(tenant_id, folio_id)
         return {"entries": entries, "balance": balance, "entry_count": len(entries)}
 
@@ -474,14 +495,16 @@ class ReconciliationEngine:
                 if abs(difference) < 0.01:
                     balanced_count += 1
                 else:
-                    mismatches.append({
-                        "folio_id": fid,
-                        "booking_id": folio.get("booking_id", ""),
-                        "ledger_balance": ledger_balance,
-                        "folio_balance": folio_balance,
-                        "difference": difference,
-                        "probable_cause": "ledger_folio_drift",
-                    })
+                    mismatches.append(
+                        {
+                            "folio_id": fid,
+                            "booking_id": folio.get("booking_id", ""),
+                            "ledger_balance": ledger_balance,
+                            "folio_balance": folio_balance,
+                            "difference": difference,
+                            "probable_cause": "ledger_folio_drift",
+                        }
+                    )
 
         status = "balanced" if not mismatches and not error_count else ("mismatch" if mismatches else "error")
 
@@ -506,7 +529,9 @@ class ReconciliationEngine:
         if mismatches:
             logger.warning(
                 "Reconciliation found %d mismatches for tenant %s on %s",
-                len(mismatches), tenant_id, business_date,
+                len(mismatches),
+                tenant_id,
+                business_date,
             )
 
         return {"report_id": report_id, "summary": report["summary"], "mismatches": mismatches}

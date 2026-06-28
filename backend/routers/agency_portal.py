@@ -21,6 +21,7 @@ Endpoints:
     POST   /api/agency-portal/reservations - Create reservation (auto PMS)
     GET    /api/agency-portal/reservations - List own reservations
 """
+
 import uuid
 from datetime import UTC, datetime
 
@@ -53,6 +54,7 @@ router = APIRouter(prefix="/api", tags=["agency-portal"])
 
 
 # ─── Request / Response Models ────────────────────────────────────
+
 
 class AgencyCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=120)
@@ -99,15 +101,18 @@ class AgencyUpdate(BaseModel):
             raise ValueError("status sadece 'active' veya 'inactive' olabilir")
         return v
 
+
 class AgencyUserCreate(BaseModel):
     name: str
     email: str
     password: str
     role: str = "agency_agent"  # agency_admin or agency_agent
 
+
 class AgencyLoginRequest(BaseModel):
     email: str
     password: str
+
 
 class AgencyReservationCreate(BaseModel):
     room_type_id: str
@@ -123,6 +128,7 @@ class AgencyReservationCreate(BaseModel):
 
 
 # ─── Helpers ──────────────────────────────────────────────────────
+
 
 def _now_iso():
     return datetime.now(UTC).isoformat()
@@ -147,9 +153,7 @@ def _require_agency_user(user: User):
     if user.role in (UserRole.AGENCY_ADMIN, UserRole.AGENCY_AGENT):
         return
     extra_roles = getattr(user, "roles", None) or []
-    if isinstance(extra_roles, list) and any(
-        r in ("agency_admin", "agency_agent", "super_admin") for r in extra_roles
-    ):
+    if isinstance(extra_roles, list) and any(r in ("agency_admin", "agency_agent", "super_admin") for r in extra_roles):
         return
     raise HTTPException(status_code=403, detail="Bu endpoint sadece acente kullanicilari icindir")
 
@@ -165,21 +169,13 @@ async def _get_agency_user_from_token(token: str) -> dict:
         user_id = payload.get("user_id")
         if not user_id:
             raise HTTPException(status_code=401, detail="Gecersiz token")
-        user_doc = await db.users.find_one(
-            {"$or": [{"id": user_id}, {"user_id": user_id}]}, {"_id": 0}
-        )
+        user_doc = await db.users.find_one({"$or": [{"id": user_id}, {"user_id": user_id}]}, {"_id": 0})
         if not user_doc:
             raise HTTPException(status_code=401, detail="Kullanici bulunamadi")
         primary_role = user_doc.get("role")
         roles_arr = user_doc.get("roles") or []
-        is_sa = (
-            primary_role == "super_admin"
-            or (isinstance(roles_arr, list) and "super_admin" in roles_arr)
-        )
-        is_agency = (
-            primary_role in ("agency_admin", "agency_agent")
-            or (isinstance(roles_arr, list) and any(r in ("agency_admin", "agency_agent") for r in roles_arr))
-        )
+        is_sa = primary_role == "super_admin" or (isinstance(roles_arr, list) and "super_admin" in roles_arr)
+        is_agency = primary_role in ("agency_admin", "agency_agent") or (isinstance(roles_arr, list) and any(r in ("agency_admin", "agency_agent") for r in roles_arr))
         if not is_sa and not is_agency:
             raise HTTPException(status_code=403, detail="Bu endpoint sadece acente kullanicilari icindir")
         return user_doc
@@ -193,8 +189,11 @@ async def _get_agency_user_from_token(token: str) -> dict:
 # HOTEL ADMIN — Agency CRUD
 # ═══════════════════════════════════════════════════════════════════
 
+
 @router.post("/agencies")
-async def create_agency(data: AgencyCreate, current_user: User = Depends(get_current_user),
+async def create_agency(
+    data: AgencyCreate,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Yeni acente olustur."""
@@ -247,14 +246,17 @@ async def list_agencies(
         needle = q.strip()
         if needle:
             import re as _re
+
             rx = {"$regex": _re.escape(needle), "$options": "i"}
             and_clause = [
-                {"$or": [
-                    {"name": rx},
-                    {"contact_name": rx},
-                    {"contact_email": rx},
-                    {"contact_phone": rx},
-                ]}
+                {
+                    "$or": [
+                        {"name": rx},
+                        {"contact_name": rx},
+                        {"contact_email": rx},
+                        {"contact_phone": rx},
+                    ]
+                }
             ]
             # name regex'i query[name] ile cakismasin diye $and'e tasi.
             existing_name = query.pop("name", None)
@@ -262,21 +264,10 @@ async def list_agencies(
                 and_clause.append({"name": existing_name})
             query["$and"] = and_clause
 
-    wrapped = (
-        status is not None
-        or q is not None
-        or page != 1
-        or page_size != 50
-        or include_placeholders
-    )
+    wrapped = status is not None or q is not None or page != 1 or page_size != 50 or include_placeholders
 
     total = await db.agencies.count_documents(query)
-    cursor = (
-        db.agencies.find(query, {"_id": 0})
-        .sort("created_at", -1)
-        .skip((page - 1) * page_size)
-        .limit(page_size)
-    )
+    cursor = db.agencies.find(query, {"_id": 0}).sort("created_at", -1).skip((page - 1) * page_size).limit(page_size)
     docs = await cursor.to_list(page_size)
 
     if wrapped:
@@ -295,25 +286,24 @@ async def list_agencies(
 async def get_agency(agency_id: str, current_user: User = Depends(get_current_user)):
     """Acente detay."""
     _require_hotel_staff(current_user)
-    doc = await db.agencies.find_one(
-        {"id": agency_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    doc = await db.agencies.find_one({"id": agency_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Acente bulunamadi")
     return doc
 
 
 @router.put("/agencies/{agency_id}")
-async def update_agency(agency_id: str, data: AgencyUpdate, current_user: User = Depends(get_current_user),
+async def update_agency(
+    agency_id: str,
+    data: AgencyUpdate,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Acente guncelle."""
     _require_hotel_staff(current_user)
     tenant_id = current_user.tenant_id
 
-    existing = await db.agencies.find_one(
-        {"id": agency_id, "tenant_id": tenant_id}, {"_id": 0}
-    )
+    existing = await db.agencies.find_one({"id": agency_id, "tenant_id": tenant_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Acente bulunamadi")
 
@@ -338,18 +328,16 @@ async def agency_usage(agency_id: str, current_user: User = Depends(get_current_
         raise HTTPException(status_code=404, detail="Acente bulunamadi")
 
     today_iso = datetime.now(UTC).strftime("%Y-%m-%d")
-    total_bookings = await db.bookings.count_documents(
-        {"tenant_id": tenant_id, "agency_id": agency_id}
+    total_bookings = await db.bookings.count_documents({"tenant_id": tenant_id, "agency_id": agency_id})
+    future_active_bookings = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "agency_id": agency_id,
+            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+            "check_out": {"$gte": today_iso},
+        }
     )
-    future_active_bookings = await db.bookings.count_documents({
-        "tenant_id": tenant_id,
-        "agency_id": agency_id,
-        "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-        "check_out": {"$gte": today_iso},
-    })
-    user_count = await db.users.count_documents(
-        {"tenant_id": tenant_id, "agency_id": agency_id}
-    )
+    user_count = await db.users.count_documents({"tenant_id": tenant_id, "agency_id": agency_id})
     return {
         "agency_id": agency_id,
         "agency_name": agency.get("name", ""),
@@ -380,27 +368,25 @@ async def delete_agency(
         raise HTTPException(status_code=404, detail="Acente bulunamadi")
 
     today_iso = datetime.now(UTC).strftime("%Y-%m-%d")
-    future_active = await db.bookings.count_documents({
-        "tenant_id": tenant_id,
-        "agency_id": agency_id,
-        "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-        "check_out": {"$gte": today_iso},
-    })
+    future_active = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "agency_id": agency_id,
+            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+            "check_out": {"$gte": today_iso},
+        }
+    )
     if future_active > 0 and not force:
         raise HTTPException(
             status_code=409,
             detail={
                 "code": "agency_has_active_bookings",
-                "message": f"Bu acentenin {future_active} aktif/gelecek rezervasyonu var. "
-                           "Yine de devre disi birakmak icin onay verin.",
+                "message": f"Bu acentenin {future_active} aktif/gelecek rezervasyonu var. Yine de devre disi birakmak icin onay verin.",
                 "future_active_bookings": future_active,
             },
         )
 
-    await db.agencies.update_one(
-        {"id": agency_id, "tenant_id": tenant_id},
-        {"$set": {"status": "inactive", "updated_at": _now_iso()}}
-    )
+    await db.agencies.update_one({"id": agency_id, "tenant_id": tenant_id}, {"$set": {"status": "inactive", "updated_at": _now_iso()}})
     return {
         "ok": True,
         "message": "Acente devre disi birakildi",
@@ -410,17 +396,19 @@ async def delete_agency(
 
 # ─── Agency User Management ──────────────────────────────────────
 
+
 @router.post("/agencies/{agency_id}/users")
-async def create_agency_user(agency_id: str, data: AgencyUserCreate, current_user: User = Depends(get_current_user),
+async def create_agency_user(
+    agency_id: str,
+    data: AgencyUserCreate,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Acente kullanicisi olustur."""
     _require_hotel_staff(current_user)
     tenant_id = current_user.tenant_id
 
-    agency = await db.agencies.find_one(
-        {"id": agency_id, "tenant_id": tenant_id}, {"_id": 0}
-    )
+    agency = await db.agencies.find_one({"id": agency_id, "tenant_id": tenant_id}, {"_id": 0})
     if not agency:
         raise HTTPException(status_code=404, detail="Acente bulunamadi")
 
@@ -428,9 +416,7 @@ async def create_agency_user(agency_id: str, data: AgencyUserCreate, current_use
     # `{"email": ...}` misses modern accounts whose email is stored as
     # ciphertext, which would let the same address be re-registered and
     # break the unique-email invariant. Use the blind-index `$or` helper.
-    existing = await db.users.find_one(
-        build_user_email_query(data.email.strip().lower()), {"_id": 0}
-    )
+    existing = await db.users.find_one(build_user_email_query(data.email.strip().lower()), {"_id": 0})
     if existing:
         raise HTTPException(status_code=409, detail="Bu e-posta adresi zaten kayitli")
 
@@ -470,22 +456,20 @@ async def list_agency_users(agency_id: str, current_user: User = Depends(get_cur
         # Exclude every known password-hash field name so neither the
         # canonical (`hashed_password`) nor legacy (`password_hash`,
         # `password`) variant leaks into the agency-users listing.
-        {"_id": 0, "password": 0, "hashed_password": 0, "password_hash": 0}
+        {"_id": 0, "password": 0, "hashed_password": 0, "password_hash": 0},
     ).to_list(100)
     return docs
 
 
 @router.delete("/agencies/users/{user_id}")
-async def delete_agency_user(user_id: str, current_user: User = Depends(get_current_user),
+async def delete_agency_user(
+    user_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Acente kullanicisini sil."""
     _require_hotel_staff(current_user)
-    result = await db.users.delete_one({
-        "id": user_id,
-        "tenant_id": current_user.tenant_id,
-        "role": {"$in": ["agency_admin", "agency_agent"]}
-    })
+    result = await db.users.delete_one({"id": user_id, "tenant_id": current_user.tenant_id, "role": {"$in": ["agency_admin", "agency_agent"]}})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Acente kullanicisi bulunamadi")
     return {"ok": True}
@@ -493,11 +477,9 @@ async def delete_agency_user(user_id: str, current_user: User = Depends(get_curr
 
 # ─── Agency Reservations (Hotel Side) ────────────────────────────
 
+
 @router.get("/agency-reservations")
-async def list_agency_reservations(
-    agency_id: str | None = None,
-    current_user: User = Depends(get_current_user)
-):
+async def list_agency_reservations(agency_id: str | None = None, current_user: User = Depends(get_current_user)):
     """Otel icin tum acente rezervasyonlarini listele."""
     _require_hotel_staff(current_user)
     query = {"tenant_id": current_user.tenant_id, "source_channel": "agency"}
@@ -510,6 +492,7 @@ async def list_agency_reservations(
 # ═══════════════════════════════════════════════════════════════════
 # AGENCY PORTAL — Auth & Operations
 # ═══════════════════════════════════════════════════════════════════
+
 
 @router.post("/agency-portal/auth/login")
 async def agency_login(request: Request, data: AgencyLoginRequest):
@@ -539,6 +522,7 @@ async def agency_login(request: Request, data: AgencyLoginRequest):
         normalize_identity,
     )
     from security.auth_throttle import enforce as _throttle
+
     _ip = client_ip(request)
     _email_key = normalize_identity(data.email)
     _ip_key = f"agency_login_ip:{_ip}"
@@ -556,6 +540,7 @@ async def agency_login(request: Request, data: AgencyLoginRequest):
         raise HTTPException(status_code=status_code, detail=detail)
 
     from core.tenant_db import get_system_db
+
     sysdb = get_system_db()
 
     # Encrypted email lookup parity with `auth.py:563` — PII fields
@@ -571,9 +556,7 @@ async def agency_login(request: Request, data: AgencyLoginRequest):
     # blind index or legacy plaintext email; `decrypt_user_doc` restores
     # plaintext PII fields after read so downstream role/password checks
     # see the same shape as before.
-    user_doc_raw = await sysdb.users.find_one(
-        build_user_email_query(data.email.strip().lower()), {"_id": 0}
-    )
+    user_doc_raw = await sysdb.users.find_one(build_user_email_query(data.email.strip().lower()), {"_id": 0})
 
     # Timing-attack equalization mirror of `auth.py:587-590` (Bug AI).
     # ALWAYS run verify_password — on the real user's hash if found, on
@@ -588,11 +571,7 @@ async def agency_login(request: Request, data: AgencyLoginRequest):
     # chain accepts all three; verify_password itself is unchanged.
     if user_doc_raw:
         user_doc = decrypt_user_doc(user_doc_raw)
-        hashed_pwd = (
-            user_doc.get("hashed_password")
-            or user_doc.get("password_hash")
-            or user_doc.get("password", "")
-        ) or _DUMMY_PWHASH
+        hashed_pwd = (user_doc.get("hashed_password") or user_doc.get("password_hash") or user_doc.get("password", "")) or _DUMMY_PWHASH
     else:
         user_doc = None
         hashed_pwd = _DUMMY_PWHASH
@@ -610,9 +589,7 @@ async def agency_login(request: Request, data: AgencyLoginRequest):
     _login_role = user_doc.get("role")
     _login_roles = user_doc.get("roles") or []
     _login_is_sa = _login_role == "super_admin" or "super_admin" in _login_roles
-    _login_is_agency = _login_role in ("agency_admin", "agency_agent") or any(
-        r in ("agency_admin", "agency_agent") for r in _login_roles
-    )
+    _login_is_agency = _login_role in ("agency_admin", "agency_agent") or any(r in ("agency_admin", "agency_agent") for r in _login_roles)
     if not (_login_is_sa or _login_is_agency):
         # Role-block is an authorization decision, NOT a credential
         # probe (it reveals nothing about whether the password is
@@ -640,9 +617,7 @@ async def agency_login(request: Request, data: AgencyLoginRequest):
 
     agency = None
     if user_doc.get("agency_id"):
-        agency = await sysdb.agencies.find_one(
-            {"id": user_doc.get("agency_id")}, {"_id": 0}
-        )
+        agency = await sysdb.agencies.find_one({"id": user_doc.get("agency_id")}, {"_id": 0})
     if not _login_is_sa:
         if not agency or agency.get("status") != "active":
             raise HTTPException(status_code=403, detail="Acente hesabi aktif degil")
@@ -698,15 +673,11 @@ async def agency_portal_content(current_user: User = Depends(get_current_user)):
     tenant_id = current_user.tenant_id
 
     # Check if content is published to this agency
-    agency = await db.agencies.find_one(
-        {"id": agency_id, "tenant_id": tenant_id}, {"_id": 0}
-    )
+    agency = await db.agencies.find_one({"id": agency_id, "tenant_id": tenant_id}, {"_id": 0})
     if not agency or not agency.get("published_content"):
         return {"published": False, "hotel_content": None}
 
-    content = await db.hotel_content.find_one(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    )
+    content = await db.hotel_content.find_one({"tenant_id": tenant_id}, {"_id": 0})
     return {"published": True, "hotel_content": content}
 
 
@@ -727,9 +698,7 @@ async def agency_portal_availability(
         raise HTTPException(status_code=400, detail="Cikis tarihi giristen sonra olmalidir")
 
     # Get all room types for this hotel
-    rooms = await db.rooms.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).to_list(1000)
+    rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
 
     # Group by room_type
     room_types = {}
@@ -751,13 +720,15 @@ async def agency_portal_availability(
 
     # Count booked rooms for date range
     for rt_name, rt_data in room_types.items():
-        booked_count = await db.bookings.count_documents({
-            "tenant_id": tenant_id,
-            "room_id": {"$in": rt_data["room_ids"]},
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-            "check_in": {"$lt": check_out + "T23:59:59"},
-            "check_out": {"$gt": check_in + "T00:00:00"},
-        })
+        booked_count = await db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "room_id": {"$in": rt_data["room_ids"]},
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+                "check_in": {"$lt": check_out + "T23:59:59"},
+                "check_out": {"$gt": check_in + "T00:00:00"},
+            }
+        )
         rt_data["booked_rooms"] = booked_count
         rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked_count)
         rt_data.pop("room_ids")  # Don't expose internal IDs
@@ -782,23 +753,22 @@ async def agency_portal_create_reservation(
         raise HTTPException(status_code=400, detail="Cikis tarihi giristen sonra olmalidir")
 
     # Find an available room of the requested type
-    rooms = await db.rooms.find(
-        {"tenant_id": tenant_id, "room_type": data.room_type_id},
-        {"_id": 0}
-    ).to_list(500)
+    rooms = await db.rooms.find({"tenant_id": tenant_id, "room_type": data.room_type_id}, {"_id": 0}).to_list(500)
 
     if not rooms:
         raise HTTPException(status_code=404, detail="Bu oda tipi bulunamadi")
 
     available_room = None
     for room in rooms:
-        conflict = await db.bookings.count_documents({
-            "tenant_id": tenant_id,
-            "room_id": room["id"],
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-            "check_in": {"$lt": data.check_out + "T23:59:59"},
-            "check_out": {"$gt": data.check_in + "T00:00:00"},
-        })
+        conflict = await db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "room_id": room["id"],
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+                "check_in": {"$lt": data.check_out + "T23:59:59"},
+                "check_out": {"$gt": data.check_in + "T00:00:00"},
+            }
+        )
         if conflict == 0:
             available_room = room
             break
@@ -827,6 +797,7 @@ async def agency_portal_create_reservation(
         "created_at": _now_iso(),
     }
     from security.guest_write import encrypt_guest_insert
+
     guest_doc = encrypt_guest_insert(guest_doc)
     await db.guests.insert_one(guest_doc)
 
@@ -892,12 +863,16 @@ async def agency_portal_list_reservations(current_user: User = Depends(get_curre
     _require_agency_user(current_user)
     agency_id = getattr(current_user, "agency_id", None)
 
-    docs = await db.bookings.find(
-        {
-            "tenant_id": current_user.tenant_id,
-            "agency_id": agency_id,
-            "source_channel": "agency",
-        },
-        {"_id": 0}
-    ).sort("created_at", -1).to_list(500)
+    docs = (
+        await db.bookings.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "agency_id": agency_id,
+                "source_channel": "agency",
+            },
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .to_list(500)
+    )
     return docs

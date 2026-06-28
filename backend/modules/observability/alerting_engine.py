@@ -3,6 +3,7 @@ Production Alerting Engine.
 Threshold-based operational alerts with dedup, cooldown, severity mapping,
 and integration with observability metrics.
 """
+
 import logging
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
@@ -84,15 +85,9 @@ RUNBOOK_HINTS = {
     AlertType.HIGH_ERROR_RATE: "Check application logs. Review recent deployments. Investigate error patterns.",
     AlertType.DB_CONNECTION_ISSUE: "Check MongoDB connection. Review connection pool settings. Check disk space.",
     AlertType.WS_BRIDGE_PUBLISH_ERRORS: (
-        "Multi-instance live chat bridge is failing to publish to Redis. "
-        "Check REDIS_URL connectivity, Redis pub/sub health, and "
-        "ws_redis_adapter.get_metrics() for last_publish_error details."
+        "Multi-instance live chat bridge is failing to publish to Redis. Check REDIS_URL connectivity, Redis pub/sub health, and ws_redis_adapter.get_metrics() for last_publish_error details."
     ),
-    AlertType.WS_BRIDGE_INACTIVE: (
-        "Multi-instance live chat bridge is running in local-only mode. "
-        "Cross-instance WebSocket events will not be delivered. "
-        "Verify Redis is reachable on startup."
-    ),
+    AlertType.WS_BRIDGE_INACTIVE: ("Multi-instance live chat bridge is running in local-only mode. Cross-instance WebSocket events will not be delivered. Verify Redis is reachable on startup."),
 }
 
 
@@ -118,6 +113,7 @@ class ProductionAlertEngine:
         # 1. Redis disconnected
         try:
             from modules.event_bus.abstraction import event_bus
+
             status = await event_bus.get_status()
             if status.get("mode") == "redis" and status.get("backend_status") != "healthy":
                 alert = await self._fire_alert(
@@ -134,6 +130,7 @@ class ProductionAlertEngine:
         # 2. Event drop spike
         try:
             from modules.event_bus.abstraction import event_bus
+
             metrics = await event_bus.get_metrics()
             dropped = metrics.get("total_dropped", 0)
             if dropped > DEFAULT_THRESHOLDS[AlertType.EVENT_DROP_SPIKE]["count"]:
@@ -151,10 +148,12 @@ class ProductionAlertEngine:
         # 3. Messaging failure spike
         try:
             one_hour_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
-            msg_failures = await db.messaging_delivery_logs.count_documents({
-                "status": "failed",
-                "created_at": {"$gte": one_hour_ago},
-            })
+            msg_failures = await db.messaging_delivery_logs.count_documents(
+                {
+                    "status": "failed",
+                    "created_at": {"$gte": one_hour_ago},
+                }
+            )
             threshold = DEFAULT_THRESHOLDS[AlertType.MESSAGING_FAILURE_SPIKE]["count"]
             if msg_failures > threshold:
                 alert = await self._fire_alert(
@@ -171,6 +170,7 @@ class ProductionAlertEngine:
         # 4. Slow endpoint breach
         try:
             from modules.observability.metrics_collector import metrics as obs_metrics
+
             all_metrics = obs_metrics.get_all_metrics()
             for key, summary in all_metrics.get("histograms", {}).items():
                 if "http_request_duration_ms" in key and summary.get("p95", 0) > 2000:
@@ -189,10 +189,12 @@ class ProductionAlertEngine:
         # 5. High error rate
         try:
             one_hour_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
-            error_count = await db.observability_errors.count_documents({
-                "timestamp": {"$gte": one_hour_ago},
-                "severity": {"$in": ["critical", "high"]},
-            })
+            error_count = await db.observability_errors.count_documents(
+                {
+                    "timestamp": {"$gte": one_hour_ago},
+                    "severity": {"$in": ["critical", "high"]},
+                }
+            )
             if error_count > 10:
                 alert = await self._fire_alert(
                     AlertType.HIGH_ERROR_RATE,
@@ -207,11 +209,13 @@ class ProductionAlertEngine:
 
         # 6. Abnormal retry burst
         try:
-            retry_burst = await db.messaging_delivery_logs.count_documents({
-                "status": "failed",
-                "retry_count": {"$gte": 2},
-                "created_at": {"$gte": (datetime.now(UTC) - timedelta(minutes=10)).isoformat()},
-            })
+            retry_burst = await db.messaging_delivery_logs.count_documents(
+                {
+                    "status": "failed",
+                    "retry_count": {"$gte": 2},
+                    "created_at": {"$gte": (datetime.now(UTC) - timedelta(minutes=10)).isoformat()},
+                }
+            )
             if retry_burst > DEFAULT_THRESHOLDS[AlertType.ABNORMAL_RETRY_BURST]["count"]:
                 alert = await self._fire_alert(
                     AlertType.ABNORMAL_RETRY_BURST,
@@ -240,8 +244,7 @@ class ProductionAlertEngine:
                 alert = await self._fire_alert(
                     AlertType.WS_BRIDGE_INACTIVE,
                     "Multi-Instance Chat Bridge Inactive",
-                    "ws_redis_adapter is not active — cross-instance "
-                    "WebSocket events will not be delivered.",
+                    "ws_redis_adapter is not active — cross-instance WebSocket events will not be delivered.",
                     context={
                         "instance_id": instance_id,
                         "subscribed_channels": ws_metrics.get("subscribed_channels", []),
@@ -270,20 +273,13 @@ class ProductionAlertEngine:
             # Fire when either the absolute counter crosses the threshold
             # for the first time, or when new failures (delta) accumulate
             # past the per-window threshold AFTER an earlier fire.
-            should_fire = (
-                publish_errors >= threshold and baseline == 0
-            ) or (
-                baseline > 0
-                and delta_threshold > 0
-                and delta >= delta_threshold
-            )
+            should_fire = (publish_errors >= threshold and baseline == 0) or (baseline > 0 and delta_threshold > 0 and delta >= delta_threshold)
 
             if should_fire:
                 alert = await self._fire_alert(
                     AlertType.WS_BRIDGE_PUBLISH_ERRORS,
                     "Multi-Instance Chat Bridge Publish Errors",
-                    f"WS Redis bridge has {publish_errors} publish errors "
-                    f"(+{delta} since last alert).",
+                    f"WS Redis bridge has {publish_errors} publish errors (+{delta} since last alert).",
                     context={
                         "publish_errors": publish_errors,
                         "delta": delta,
@@ -321,8 +317,7 @@ class ProductionAlertEngine:
         self._active_alerts = alerts
         return alerts
 
-    async def _fire_alert(self, alert_type: str, title: str, message: str,
-                          context: dict = None) -> dict | None:
+    async def _fire_alert(self, alert_type: str, title: str, message: str, context: dict = None) -> dict | None:
         """Fire an alert with dedup and cooldown."""
         # Cooldown check
         last_fired = self._cooldowns.get(alert_type)
@@ -367,37 +362,49 @@ class ProductionAlertEngine:
             from domains.channel_manager.monitoring.alert_dispatch import (
                 dispatch_alert,
             )
+
             await dispatch_alert(alert_doc)
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning(
                 "alerting: notification dispatch failed for %s: %s",
-                alert_type, exc,
+                alert_type,
+                exc,
             )
 
         return {k: v for k, v in alert_doc.items() if k != "_id"}
 
     async def get_alert_candidates(self) -> list[dict]:
         """Get recent unacknowledged alerts."""
-        return await db.alert_history.find(
-            {"acknowledged": False},
-            {"_id": 0},
-        ).sort("created_at", -1).to_list(50)
+        return (
+            await db.alert_history.find(
+                {"acknowledged": False},
+                {"_id": 0},
+            )
+            .sort("created_at", -1)
+            .to_list(50)
+        )
 
     async def get_alert_history(self, hours: int = 24, limit: int = 100) -> list[dict]:
         cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
-        return await db.alert_history.find(
-            {"created_at": {"$gte": cutoff}},
-            {"_id": 0},
-        ).sort("created_at", -1).to_list(limit)
+        return (
+            await db.alert_history.find(
+                {"created_at": {"$gte": cutoff}},
+                {"_id": 0},
+            )
+            .sort("created_at", -1)
+            .to_list(limit)
+        )
 
     async def acknowledge_alert(self, alert_id: str, user_id: str) -> dict:
         await db.alert_history.update_one(
             {"id": alert_id},
-            {"$set": {
-                "acknowledged": True,
-                "acknowledged_by": user_id,
-                "acknowledged_at": datetime.now(UTC).isoformat(),
-            }},
+            {
+                "$set": {
+                    "acknowledged": True,
+                    "acknowledged_by": user_id,
+                    "acknowledged_at": datetime.now(UTC).isoformat(),
+                }
+            },
         )
         return {"id": alert_id, "acknowledged": True}
 

@@ -2,6 +2,7 @@
 Pilot Hotel Readiness — API Router
 ====================================
 """
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -15,9 +16,11 @@ try:
     from cache_manager import cache, cached
 except ImportError:  # pragma: no cover
     cache = None
+
     def cached(ttl=300, key_prefix=""):
         def decorator(func):
             return func
+
         return decorator
 
 
@@ -29,12 +32,14 @@ def _invalidate_pilot(tenant_id: str):
         except Exception:  # pragma: no cover
             pass
 
+
 router = APIRouter(prefix="/api/pilot", tags=["Pilot Readiness"])
 
 
 class SignOffRequest(BaseModel):
     check_id: str
     notes: str = ""
+
 
 class FeatureToggleRequest(BaseModel):
     feature: str
@@ -53,7 +58,9 @@ async def run_readiness_check(
 
 
 @router.post("/sign-off")
-async def sign_off_check(req: SignOffRequest, user=Depends(get_current_user),
+async def sign_off_check(
+    req: SignOffRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     ctx = OperationContext.from_user(user)
@@ -72,7 +79,9 @@ async def get_feature_toggles(user=Depends(get_current_user)):
 
 
 @router.post("/feature-toggles")
-async def set_feature_toggle(req: FeatureToggleRequest, user=Depends(get_current_user),
+async def set_feature_toggle(
+    req: FeatureToggleRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     ctx = OperationContext.from_user(user)

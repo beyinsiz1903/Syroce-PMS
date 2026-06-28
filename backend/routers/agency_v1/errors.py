@@ -9,6 +9,7 @@ testler ayni zarfi uretmek icin buradan beslenir.
 
 Yalniz sekil/zarf uretir; DB/secret/IO icermez.
 """
+
 from __future__ import annotations
 
 from typing import Any

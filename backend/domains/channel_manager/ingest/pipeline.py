@@ -16,6 +16,7 @@ Unified ingest pipeline with full traceability and hardening:
 
 TIMELINE: Writes normalized, deduplicated, validated stages for end-to-end traceability.
 """
+
 import logging
 import uuid as _uuid
 from datetime import UTC, datetime, timedelta
@@ -52,10 +53,13 @@ def _timeline_append(**kwargs):
     """Fire-and-forget timeline write. Returns a coroutine."""
     try:
         from controlplane.timeline_writer import get_timeline_writer
+
         return get_timeline_writer().append(**kwargs)
     except Exception:
+
         async def _noop():
             return None
+
         return _noop()
 
 
@@ -106,6 +110,7 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
 
     # Ensure tenant context is set for strict mode
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
 
     try:
@@ -113,7 +118,9 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
         provider_event_id = event.get("provider_event_id", "")
         if provider_event_id:
             is_dup = await repo.check_provider_event_exists(
-                tenant_id, provider, provider_event_id,
+                tenant_id,
+                provider,
+                provider_event_id,
             )
             if is_dup:
                 result.decision = IngestDecision.SKIP
@@ -144,7 +151,10 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
         payload_hash = event.get("payload_hash", "")
         if payload_hash and ext_res_id:
             hash_exists = await repo.check_payload_hash_exists(
-                tenant_id, provider, ext_res_id, payload_hash,
+                tenant_id,
+                provider,
+                ext_res_id,
+                payload_hash,
             )
             if hash_exists:
                 result.decision = IngestDecision.SKIP
@@ -175,7 +185,9 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
         incoming_version = event.get("provider_version", "")
         if ext_res_id:
             existing_lineage = await repo.get_lineage_by_external_id(
-                tenant_id, provider, ext_res_id,
+                tenant_id,
+                provider,
+                ext_res_id,
             )
 
         if existing_lineage and incoming_version:
@@ -259,11 +271,17 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
 
         if room_code:
             room_mapping = await repo.find_room_mapping_by_provider(
-                tenant_id, property_id, provider, room_code,
+                tenant_id,
+                property_id,
+                provider,
+                room_code,
             )
         if rate_code:
             rate_mapping = await repo.find_rate_plan_mapping_by_provider(
-                tenant_id, property_id, provider, rate_code,
+                tenant_id,
+                property_id,
+                provider,
+                rate_code,
             )
 
         # ── Timeline: validated (mapping result) ──────────────────
@@ -291,7 +309,11 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
 
         # ── Stage 7: Decision Engine + Mutation Detection ────────
         decision, reason = decide(
-            canonical, existing_lineage, room_mapping, rate_mapping, canonical_hash,
+            canonical,
+            existing_lineage,
+            room_mapping,
+            rate_mapping,
+            canonical_hash,
         )
         result.decision = decision
         result.reason = reason
@@ -302,7 +324,8 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
         # ── Stage 8: Concurrency Control ──────────────────────────
         if decision in (IngestDecision.UPDATE, IngestDecision.CANCEL) and existing_lineage:
             lock_ok = await _acquire_reservation_lock(
-                existing_lineage, event["id"],
+                existing_lineage,
+                event["id"],
             )
             if not lock_ok:
                 result.decision = IngestDecision.SKIP
@@ -317,8 +340,13 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
 
         if decision == IngestDecision.CREATE:
             lineage_id = await _create_lineage(
-                tenant_id, property_id, provider, canonical,
-                canonical_hash, received_via, mutation_type,
+                tenant_id,
+                property_id,
+                provider,
+                canonical,
+                canonical_hash,
+                received_via,
+                mutation_type,
             )
             result.lineage_id = lineage_id
             result.status = "processed"
@@ -326,20 +354,29 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
             # ── DATA-001: Trigger import bridge for new reservations ──
             try:
                 await _trigger_import_bridge(
-                    tenant_id, property_id, provider, lineage_id,
-                    canonical, room_mapping, rate_mapping,
+                    tenant_id,
+                    property_id,
+                    provider,
+                    lineage_id,
+                    canonical,
+                    room_mapping,
+                    rate_mapping,
                     event.get("connection_id", ""),
                 )
             except Exception as e:
                 logger.warning(
                     "[%s] Import bridge trigger failed (non-blocking): %s",
-                    event["id"], e,
+                    event["id"],
+                    e,
                 )
 
         elif decision == IngestDecision.UPDATE:
             lineage_id = await _update_lineage(
-                existing_lineage, canonical, canonical_hash,
-                received_via, mutation_type,
+                existing_lineage,
+                canonical,
+                canonical_hash,
+                received_via,
+                mutation_type,
             )
             result.lineage_id = lineage_id
             result.status = "processed"
@@ -355,7 +392,9 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
                     logger.warning("[%s] Booking cancellation propagation failed: %s", event["id"], e)
             else:
                 case_id = await _create_recon_case(
-                    tenant_id, property_id, provider,
+                    tenant_id,
+                    property_id,
+                    provider,
                     CaseType.CANCELLATION_WITHOUT_RESERVATION,
                     CaseSeverity.MEDIUM,
                     f"Cancellation received for unknown reservation: {ext_res_id}",
@@ -369,7 +408,9 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
 
         elif decision == IngestDecision.PENDING_MAPPING:
             case_id = await _create_recon_case(
-                tenant_id, property_id, provider,
+                tenant_id,
+                property_id,
+                provider,
                 CaseType.MISSING_MAPPING,
                 CaseSeverity.HIGH,
                 reason,
@@ -381,7 +422,9 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
 
         elif decision == IngestDecision.MANUAL_REVIEW:
             case_id = await _create_recon_case(
-                tenant_id, property_id, provider,
+                tenant_id,
+                property_id,
+                provider,
                 CaseType.RESERVATION_CONFLICT,
                 CaseSeverity.HIGH,
                 reason,
@@ -394,10 +437,7 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
         # Enrich the raw event with decision trace
         await _finalize_event(event["id"], result.status, result, canonical)
 
-        logger.info(
-            f"[{event['id']}] {decision}: {reason} "
-            f"mutation={mutation_type} trace={result.trace_id}"
-        )
+        logger.info(f"[{event['id']}] {decision}: {reason} mutation={mutation_type} trace={result.trace_id}")
         return result
 
     except Exception as e:
@@ -415,6 +455,7 @@ async def process_event(event: dict[str, Any]) -> PipelineResult:
 # ══════════════════════════════════════════════════════════════════════
 # Event Finalization (trace enrichment on raw event)
 # ══════════════════════════════════════════════════════════════════════
+
 
 async def _finalize_event(
     event_id: str,
@@ -438,11 +479,13 @@ async def _finalize_event(
     # Also store decision trace fields
     await db[COLL_RAW_CHANNEL_EVENTS].update_one(
         {"id": event_id},
-        {"$set": {
-            "decision_result": result.decision,
-            "decision_reason": result.reason,
-            "normalization_result": canonical,
-        }},
+        {
+            "$set": {
+                "decision_result": result.decision,
+                "decision_reason": result.reason,
+                "normalization_result": canonical,
+            }
+        },
     )
 
 
@@ -450,8 +493,10 @@ async def _finalize_event(
 # Concurrency Control (reservation-scoped optimistic locking)
 # ══════════════════════════════════════════════════════════════════════
 
+
 async def _acquire_reservation_lock(
-    lineage: dict, worker_id: str,
+    lineage: dict,
+    worker_id: str,
 ) -> bool:
     """
     Acquire a reservation-scoped lock using optimistic concurrency.
@@ -470,20 +515,19 @@ async def _acquire_reservation_lock(
                 {"lock_expires_at": {"$lt": now.isoformat()}},
             ],
         },
-        {"$set": {
-            "lock_holder": worker_id,
-            "lock_acquired_at": now.isoformat(),
-            "lock_expires_at": expires,
-        }},
+        {
+            "$set": {
+                "lock_holder": worker_id,
+                "lock_acquired_at": now.isoformat(),
+                "lock_expires_at": expires,
+            }
+        },
     )
     if result.modified_count > 0:
         lineage["lock_holder"] = worker_id
         return True
 
-    logger.warning(
-        f"Lock contention: lineage={lineage['id']} "
-        f"held_by={lineage.get('lock_holder')}"
-    )
+    logger.warning(f"Lock contention: lineage={lineage['id']} held_by={lineage.get('lock_holder')}")
     return False
 
 
@@ -492,11 +536,13 @@ async def _release_reservation_lock(lineage: dict) -> None:
 
     await db[COLL_RESERVATION_LINEAGE].update_one(
         {"id": lineage["id"]},
-        {"$set": {
-            "lock_holder": None,
-            "lock_acquired_at": None,
-            "lock_expires_at": None,
-        }},
+        {
+            "$set": {
+                "lock_holder": None,
+                "lock_acquired_at": None,
+                "lock_expires_at": None,
+            }
+        },
     )
 
 
@@ -504,9 +550,14 @@ async def _release_reservation_lock(lineage: dict) -> None:
 # Lineage Operations
 # ══════════════════════════════════════════════════════════════════════
 
+
 async def _create_lineage(
-    tenant_id: str, property_id: str, provider: str,
-    canonical: dict, payload_hash: str, received_via: str,
+    tenant_id: str,
+    property_id: str,
+    provider: str,
+    canonical: dict,
+    payload_hash: str,
+    received_via: str,
     mutation_type: str,
 ) -> str:
     now = _now()
@@ -549,8 +600,11 @@ async def _create_lineage(
 
 
 async def _update_lineage(
-    existing: dict, canonical: dict, payload_hash: str,
-    received_via: str, mutation_type: str,
+    existing: dict,
+    canonical: dict,
+    payload_hash: str,
+    received_via: str,
+    mutation_type: str,
 ) -> str:
     now = _now()
     # Track previous status for transition auditing
@@ -595,7 +649,6 @@ async def _cancel_lineage(existing: dict, canonical: dict) -> str:
     return await repo.upsert_reservation_lineage(existing)
 
 
-
 async def _propagate_cancellation_to_booking(tenant_id: str, ext_res_id: str) -> None:
     """Propagate cancellation from lineage to bookings and imported_reservations collections."""
     now = _now()
@@ -607,6 +660,7 @@ async def _propagate_cancellation_to_booking(tenant_id: str, ext_res_id: str) ->
         from domains.channel_manager.providers.unmatched_hold import (
             release_unmatched_reservation_hold,
         )
+
         await release_unmatched_reservation_hold(
             tenant_id=tenant_id,
             external_id=ext_res_id,
@@ -614,9 +668,7 @@ async def _propagate_cancellation_to_booking(tenant_id: str, ext_res_id: str) ->
             delete_hold=False,
         )
     except Exception as e:  # noqa: BLE001
-        logger.warning(
-            "[CANCEL-PROPAGATE] unmatched hold release hatasi %s: %s", ext_res_id, e
-        )
+        logger.warning("[CANCEL-PROPAGATE] unmatched hold release hatasi %s: %s", ext_res_id, e)
 
     # Get booking info before cancelling (for notification)
     booking = await db.bookings.find_one(
@@ -638,27 +690,31 @@ async def _propagate_cancellation_to_booking(tenant_id: str, ext_res_id: str) ->
             check_in = (booking.get("check_in", "") or "")[:10]
             check_out = (booking.get("check_out", "") or "")[:10]
             dedup_key = f"cancel_{ext_res_id}"
-            existing_notif = await db.notifications.find_one({
-                "tenant_id": tenant_id,
-                "external_reservation_id": ext_res_id,
-                "dedup_key": dedup_key,
-            })
+            existing_notif = await db.notifications.find_one(
+                {
+                    "tenant_id": tenant_id,
+                    "external_reservation_id": ext_res_id,
+                    "dedup_key": dedup_key,
+                }
+            )
             if not existing_notif:
                 try:
-                    await db.notifications.insert_one({
-                        "id": str(_uuid.uuid4()),
-                        "tenant_id": tenant_id,
-                        "type": "reservation_cancelled",
-                        "priority": "high",
-                        "category": "reservation",
-                        "title": f"Rezervasyon Iptali - {guest_name}",
-                        "message": f"{guest_name} adli misafirin {check_in} - {check_out} tarihli rezervasyonu iptal edildi.",
-                        "booking_id": booking.get("id", ""),
-                        "external_reservation_id": ext_res_id,
-                        "read": False,
-                        "dedup_key": dedup_key,
-                        "created_at": now,
-                    })
+                    await db.notifications.insert_one(
+                        {
+                            "id": str(_uuid.uuid4()),
+                            "tenant_id": tenant_id,
+                            "type": "reservation_cancelled",
+                            "priority": "high",
+                            "category": "reservation",
+                            "title": f"Rezervasyon Iptali - {guest_name}",
+                            "message": f"{guest_name} adli misafirin {check_in} - {check_out} tarihli rezervasyonu iptal edildi.",
+                            "booking_id": booking.get("id", ""),
+                            "external_reservation_id": ext_res_id,
+                            "read": False,
+                            "dedup_key": dedup_key,
+                            "created_at": now,
+                        }
+                    )
                 except Exception as e:
                     logger.warning("[CANCEL-PROPAGATE] Notification creation failed: %s", e)
 
@@ -673,9 +729,15 @@ async def _propagate_cancellation_to_booking(tenant_id: str, ext_res_id: str) ->
 # Reconciliation Case Creation
 # ══════════════════════════════════════════════════════════════════════
 
+
 async def _trigger_import_bridge(
-    tenant_id: str, property_id: str, provider: str,
-    lineage_id: str, canonical: dict, room_mapping, rate_mapping,
+    tenant_id: str,
+    property_id: str,
+    provider: str,
+    lineage_id: str,
+    canonical: dict,
+    room_mapping,
+    rate_mapping,
     connector_id: str,
 ) -> None:
     """
@@ -683,6 +745,7 @@ async def _trigger_import_bridge(
     for PMS booking import.
     """
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
 
     from core.import_bridge_service import create_import_record
@@ -694,7 +757,8 @@ async def _trigger_import_bridge(
     already = await check_already_imported(tenant_id, connector_id, ext_res_id)
     if already:
         logger.info(
-            "Import bridge: already imported ext=%s, skipping", ext_res_id,
+            "Import bridge: already imported ext=%s, skipping",
+            ext_res_id,
         )
         return
 
@@ -723,7 +787,9 @@ async def _trigger_import_bridge(
     }
 
     import_status, review_reason = classify_for_import(
-        lineage_data, room_mapping, rate_mapping,
+        lineage_data,
+        room_mapping,
+        rate_mapping,
     )
 
     await create_import_record(
@@ -734,14 +800,20 @@ async def _trigger_import_bridge(
     )
     logger.info(
         "Import bridge: enqueued ext=%s status=%s reason=%s",
-        ext_res_id, import_status, review_reason,
+        ext_res_id,
+        import_status,
+        review_reason,
     )
 
 
 async def _create_recon_case(
-    tenant_id: str, property_id: str, provider: str,
-    case_type: CaseType, severity: CaseSeverity,
-    description: str, ext_res_id: str,
+    tenant_id: str,
+    property_id: str,
+    provider: str,
+    case_type: CaseType,
+    severity: CaseSeverity,
+    description: str,
+    ext_res_id: str,
     suggested_action: str = "",
 ) -> str:
     case = ReconciliationCase(

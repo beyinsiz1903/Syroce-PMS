@@ -10,6 +10,7 @@ Tenant-level feature flags stored in MongoDB:
 Flag evaluation is cached per-request (no flag caching across requests
 to ensure immediate effect on toggle).
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any

@@ -49,6 +49,7 @@ Usage:
     python backend/scripts/check_api_import_closure.py --target api-runtime
     python backend/scripts/check_api_import_closure.py --target api-conservative --verbose
 """
+
 from __future__ import annotations
 
 import argparse
@@ -303,9 +304,9 @@ def main() -> int:
     mod2dist = build_module_to_dist_map()
     target_dists = resolve_target_set(args.target)
 
-    covered: dict[str, str] = {}        # mod -> dist
+    covered: dict[str, str] = {}  # mod -> dist
     missing_dists: dict[str, str] = {}  # mod -> dist (dist NOT in subset)
-    unmapped: set[str] = set()          # mod -> no dist resolution
+    unmapped: set[str] = set()  # mod -> no dist resolution
 
     for mod in sorted(third_party_modules):
         if mod in IGNORE_MODULES:
@@ -362,18 +363,15 @@ def main() -> int:
     print()
 
     if missing_dists:
-        print(f"VERDICT: INSUFFICIENT — subset '{args.target}' is missing "
-              f"{len(missing_dists)} third-party module(s).")
+        print(f"VERDICT: INSUFFICIENT — subset '{args.target}' is missing {len(missing_dists)} third-party module(s).")
         return 1
 
     if unmapped:
-        print(f"VERDICT: REVIEW NEEDED — {len(unmapped)} unmapped module(s); "
-              f"manually confirm each is stdlib/internal/declared.")
+        print(f"VERDICT: REVIEW NEEDED — {len(unmapped)} unmapped module(s); manually confirm each is stdlib/internal/declared.")
         # Treat as warning (exit 0). Caller should still inspect.
         return 0
 
-    print(f"VERDICT: OK — subset '{args.target}' covers all "
-          f"statically-detected api imports.")
+    print(f"VERDICT: OK — subset '{args.target}' covers all statically-detected api imports.")
     return 0
 
 

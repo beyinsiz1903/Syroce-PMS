@@ -4,6 +4,7 @@ Domain Router: Guest Profile Management
 Extracted from legacy_routes.py — VIP protocols, blacklist, celebrations,
 enhanced preferences, complete profile, VIP list.
 """
+
 import uuid
 from datetime import UTC, date, datetime
 
@@ -22,11 +23,20 @@ router = APIRouter(prefix="/api", tags=["guest-profile-domain"])
 # Without this filter, a caller can smuggle `guest_id` to attribute their
 # action to a different guest (audit trail spoofing), choose a deterministic
 # `id` to pre-collide / pre-leak doc identity, or reset `active`/`created_at`.
-_RESERVED_DOC_FIELDS = frozenset({
-    "id", "_id", "guest_id", "tenant_id",
-    "approved_by", "approved_at", "reported_by",
-    "active", "created_at", "updated_at",
-})
+_RESERVED_DOC_FIELDS = frozenset(
+    {
+        "id",
+        "_id",
+        "guest_id",
+        "tenant_id",
+        "approved_by",
+        "approved_at",
+        "reported_by",
+        "active",
+        "created_at",
+        "updated_at",
+    }
+)
 
 
 def _strip_reserved(payload: dict | None) -> dict:
@@ -44,15 +54,11 @@ async def create_vip_protocol(
 ):
     """VIP protokol olustur veya guncelle"""
     protocol_data = _strip_reserved(protocol_data)
-    guest = await db.guests.find_one(
-        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    guest = await db.guests.find_one({"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not guest:
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
 
-    existing = await db.vip_protocols.find_one(
-        {"guest_id": guest_id, "tenant_id": current_user.tenant_id}
-    )
+    existing = await db.vip_protocols.find_one({"guest_id": guest_id, "tenant_id": current_user.tenant_id})
 
     if existing:
         await db.vip_protocols.update_one(
@@ -77,17 +83,13 @@ async def create_vip_protocol(
     current_tags = guest.get("tags", [])
     if "vip" not in current_tags:
         current_tags.append("vip")
-        await db.guests.update_one(
-            {"id": guest_id}, {"$set": {"tags": current_tags, "vip_status": True}}
-        )
+        await db.guests.update_one({"id": guest_id}, {"$set": {"tags": current_tags, "vip_status": True}})
 
     return {"success": True, "message": message, "guest_id": guest_id}
 
 
 @router.get("/guests/{guest_id}/vip-protocol")
-async def get_vip_protocol(
-    guest_id: str, current_user: User = Depends(get_current_user)
-):
+async def get_vip_protocol(guest_id: str, current_user: User = Depends(get_current_user)):
     """VIP protokol detaylarini getir"""
     protocol = await db.vip_protocols.find_one(
         {"guest_id": guest_id, "tenant_id": current_user.tenant_id, "active": True},
@@ -107,9 +109,7 @@ async def add_to_blacklist(
 ):
     """Misafiri blacklist'e ekle"""
     entry_data = _strip_reserved(entry_data)  # Bug AR — defense in depth (manual extract today, but harden against future ** spread refactors)
-    guest = await db.guests.find_one(
-        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    guest = await db.guests.find_one({"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not guest:
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
 
@@ -146,13 +146,9 @@ async def add_to_blacklist(
 
 
 @router.get("/guests/{guest_id}/blacklist")
-async def get_blacklist_history(
-    guest_id: str, current_user: User = Depends(get_current_user)
-):
+async def get_blacklist_history(guest_id: str, current_user: User = Depends(get_current_user)):
     """Misafirin blacklist gecmisi"""
-    entries = await db.blacklist_entries.find(
-        {"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).sort("created_at", -1).to_list(100)
+    entries = await db.blacklist_entries.find({"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
 
     return {
         "guest_id": guest_id,
@@ -171,15 +167,11 @@ async def update_celebration_tracking(
 ):
     """Kutlama bilgilerini guncelle"""
     celebration_data = _strip_reserved(celebration_data)  # Bug AR (architect follow-up)
-    guest = await db.guests.find_one(
-        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    guest = await db.guests.find_one({"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not guest:
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
 
-    existing = await db.celebration_tracking.find_one(
-        {"guest_id": guest_id, "tenant_id": current_user.tenant_id}
-    )
+    existing = await db.celebration_tracking.find_one({"guest_id": guest_id, "tenant_id": current_user.tenant_id})
 
     if existing:
         await db.celebration_tracking.update_one(
@@ -200,13 +192,9 @@ async def update_celebration_tracking(
 
 
 @router.get("/guests/{guest_id}/celebration")
-async def get_celebration_info(
-    guest_id: str, current_user: User = Depends(get_current_user)
-):
+async def get_celebration_info(guest_id: str, current_user: User = Depends(get_current_user)):
     """Kutlama bilgilerini getir"""
-    celebration = await db.celebration_tracking.find_one(
-        {"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    celebration = await db.celebration_tracking.find_one({"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
 
     if not celebration:
         return {"has_celebration": False, "guest_id": guest_id}
@@ -244,15 +232,11 @@ async def update_enhanced_preferences(
 ):
     """Gelismis tercihleri guncelle"""
     preferences = _strip_reserved(preferences)  # Bug AR
-    guest = await db.guests.find_one(
-        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    guest = await db.guests.find_one({"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not guest:
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
 
-    existing = await db.enhanced_guest_preferences.find_one(
-        {"guest_id": guest_id, "tenant_id": current_user.tenant_id}
-    )
+    existing = await db.enhanced_guest_preferences.find_one({"guest_id": guest_id, "tenant_id": current_user.tenant_id})
 
     if existing:
         await db.enhanced_guest_preferences.update_one(
@@ -273,42 +257,26 @@ async def update_enhanced_preferences(
 
 
 @router.get("/guests/{guest_id}/complete-profile")
-async def get_complete_guest_profile(
-    guest_id: str, current_user: User = Depends(get_current_user)
-):
+async def get_complete_guest_profile(guest_id: str, current_user: User = Depends(get_current_user)):
     """Misafirin tam profili - tum detaylar"""
-    guest = await db.guests.find_one(
-        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    guest = await db.guests.find_one({"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not guest:
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
 
-    stays = await db.bookings.find(
-        {"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).sort("check_in", -1).to_list(100)
+    stays = await db.bookings.find({"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).sort("check_in", -1).to_list(100)
 
-    vip_protocol = await db.vip_protocols.find_one(
-        {"guest_id": guest_id, "tenant_id": current_user.tenant_id, "active": True}, {"_id": 0}
-    )
+    vip_protocol = await db.vip_protocols.find_one({"guest_id": guest_id, "tenant_id": current_user.tenant_id, "active": True}, {"_id": 0})
 
-    preferences = await db.enhanced_guest_preferences.find_one(
-        {"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    preferences = await db.enhanced_guest_preferences.find_one({"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
 
-    celebration = await db.celebration_tracking.find_one(
-        {"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    celebration = await db.celebration_tracking.find_one({"guest_id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
 
-    blacklist = await db.blacklist_entries.find(
-        {"guest_id": guest_id, "tenant_id": current_user.tenant_id, "active": True}, {"_id": 0}
-    ).to_list(10)
+    blacklist = await db.blacklist_entries.find({"guest_id": guest_id, "tenant_id": current_user.tenant_id, "active": True}, {"_id": 0}).to_list(10)
 
     total_spent = sum([s.get("total_amount", 0) for s in stays])
-    total_nights = sum([
-        (datetime.fromisoformat(s["check_out"].replace("Z", "+00:00")) -
-         datetime.fromisoformat(s["check_in"].replace("Z", "+00:00"))).days
-        for s in stays if s.get("check_in") and s.get("check_out")
-    ])
+    total_nights = sum(
+        [(datetime.fromisoformat(s["check_out"].replace("Z", "+00:00")) - datetime.fromisoformat(s["check_in"].replace("Z", "+00:00"))).days for s in stays if s.get("check_in") and s.get("check_out")]
+    )
 
     spending_profile = {
         "total_stays": len(stays),

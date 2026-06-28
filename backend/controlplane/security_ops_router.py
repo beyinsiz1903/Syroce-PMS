@@ -16,6 +16,7 @@ SEC-002 Endpoints:
   POST /api/ops/crypto/migrate-check   — Dry-run migration check
   GET  /api/ops/crypto/key-info        — Key versioning details
 """
+
 import logging
 import os
 from datetime import UTC, datetime, timedelta
@@ -28,11 +29,11 @@ from security.ops_guard import require_ops_access
 
 logger = logging.getLogger("controlplane.security_ops")
 
-router = APIRouter(prefix="/api/ops", tags=["Security Operations"],
-                   dependencies=[Depends(require_ops_access)])
+router = APIRouter(prefix="/api/ops", tags=["Security Operations"], dependencies=[Depends(require_ops_access)])
 
 
 # ── Request/Response Models ────────────────────────────────────────
+
 
 class RotateRequest(BaseModel):
     tenant_id: str
@@ -52,11 +53,13 @@ class RollbackRequest(BaseModel):
 # SEC-001: Secrets Management
 # ═══════════════════════════════════════════════════════════════════
 
+
 @router.get("/secrets/status")
 async def secrets_status():
     """Comprehensive secrets subsystem health status."""
     try:
         from core.secrets import get_secrets_manager
+
         sm = get_secrets_manager()
         health = await sm.health_check()
     except Exception as e:
@@ -67,17 +70,23 @@ async def secrets_status():
     try:
         pipeline = [
             {"$match": {"path": {"$exists": True}}},
-            {"$project": {
-                "parts": {"$split": ["$path", "/"]},
-            }},
-            {"$addFields": {
-                "provider": {"$arrayElemAt": ["$parts", 4]},
-                "tenant": {"$arrayElemAt": ["$parts", 3]},
-            }},
-            {"$group": {
-                "_id": {"provider": "$provider", "tenant": "$tenant"},
-                "count": {"$sum": 1},
-            }},
+            {
+                "$project": {
+                    "parts": {"$split": ["$path", "/"]},
+                }
+            },
+            {
+                "$addFields": {
+                    "provider": {"$arrayElemAt": ["$parts", 4]},
+                    "tenant": {"$arrayElemAt": ["$parts", 3]},
+                }
+            },
+            {
+                "$group": {
+                    "_id": {"provider": "$provider", "tenant": "$tenant"},
+                    "count": {"$sum": 1},
+                }
+            },
         ]
         async for doc in db["_dev_secrets"].aggregate(pipeline):
             key = doc["_id"]
@@ -109,9 +118,7 @@ async def secrets_status():
     # Anomaly count
     anomaly_count = 0
     try:
-        anomaly_count = await db["secret_access_audit"].count_documents(
-            {"result": {"$in": ["failure", "denied", "not_found"]}, "timestamp": {"$gte": cutoff}}
-        )
+        anomaly_count = await db["secret_access_audit"].count_documents({"result": {"$in": ["failure", "denied", "not_found"]}, "timestamp": {"$gte": cutoff}})
     except Exception:
         pass
 
@@ -145,15 +152,13 @@ async def secrets_rotation_plan(
     plan_items = []
     try:
         from security.query_safety import safe_search_term
+
         query = {}
         if tenant_id and (s := safe_search_term(tenant_id)):
             # Filter by tenant in path
             query["path"] = {"$regex": f"/{s}/"}
 
-        secrets = await db["_dev_secrets"].find(
-            query, {"_id": 0, "path": 1, "created_at": 1, "updated_at": 1,
-                     "rotation_count": 1, "previous_version": 1}
-        ).to_list(500)
+        secrets = await db["_dev_secrets"].find(query, {"_id": 0, "path": 1, "created_at": 1, "updated_at": 1, "rotation_count": 1, "previous_version": 1}).to_list(500)
 
         now = datetime.now(UTC)
         for sec in secrets:
@@ -185,17 +190,19 @@ async def secrets_rotation_plan(
                 recommendation = "OK"
                 severity = "info"
 
-            plan_items.append({
-                "tenant_id": parts[3] if len(parts) > 3 else "",
-                "provider": parts[4] if len(parts) > 4 else "",
-                "property_id": parts[5] if len(parts) > 5 else "",
-                "last_updated": updated,
-                "age_days": age_days,
-                "rotation_count": rotation_count,
-                "has_rollback": has_previous,
-                "recommendation": recommendation,
-                "severity": severity,
-            })
+            plan_items.append(
+                {
+                    "tenant_id": parts[3] if len(parts) > 3 else "",
+                    "provider": parts[4] if len(parts) > 4 else "",
+                    "property_id": parts[5] if len(parts) > 5 else "",
+                    "last_updated": updated,
+                    "age_days": age_days,
+                    "rotation_count": rotation_count,
+                    "has_rollback": has_previous,
+                    "recommendation": recommendation,
+                    "severity": severity,
+                }
+            )
     except Exception as e:
         logger.error("Rotation plan generation failed: %s", e)
 
@@ -228,11 +235,15 @@ async def rotate_secret(body: RotateRequest):
     """
     try:
         from core.secrets import get_secrets_manager
+
         sm = get_secrets_manager()
 
         # Get current credentials first
         current = await sm.get_provider_credentials(
-            body.tenant_id, body.provider, body.property_id, actor=body.actor,
+            body.tenant_id,
+            body.provider,
+            body.property_id,
+            actor=body.actor,
         )
         if not current:
             raise HTTPException(status_code=404, detail="No credentials found for this connection")
@@ -270,20 +281,20 @@ async def rollback_secret(body: RollbackRequest):
     """
     try:
         from core.secrets import get_secrets_manager
+
         sm = get_secrets_manager()
 
         # Check if previous version exists
         meta = await sm.get_provider_credential_metadata(
-            body.tenant_id, body.provider, body.property_id,
+            body.tenant_id,
+            body.provider,
+            body.property_id,
         )
         if not meta:
             raise HTTPException(status_code=404, detail="No credential metadata found")
 
         if not meta.previous_version:
-            raise HTTPException(
-                status_code=409,
-                detail="No previous version available for rollback. Rotation must be performed first."
-            )
+            raise HTTPException(status_code=409, detail="No previous version available for rollback. Rotation must be performed first.")
 
         # Restore previous version
         await sm.store_provider_credentials(
@@ -319,13 +330,12 @@ async def secrets_scoping(
     scoping = []
     try:
         from security.query_safety import safe_search_term
+
         query = {}
         if tenant_id and (s := safe_search_term(tenant_id)):
             query["path"] = {"$regex": f"/{s}/"}
 
-        secrets = await db["_dev_secrets"].find(
-            query, {"_id": 0, "path": 1, "created_at": 1}
-        ).to_list(500)
+        secrets = await db["_dev_secrets"].find(query, {"_id": 0, "path": 1, "created_at": 1}).to_list(500)
 
         # Group by tenant → provider
         tenant_map = {}
@@ -341,19 +351,23 @@ async def secrets_scoping(
                 tenant_map[t] = {}
             if p not in tenant_map[t]:
                 tenant_map[t][p] = []
-            tenant_map[t][p].append({
-                "property_id": prop,
-                "created_at": sec.get("created_at", ""),
-            })
+            tenant_map[t][p].append(
+                {
+                    "property_id": prop,
+                    "created_at": sec.get("created_at", ""),
+                }
+            )
 
         for t, providers in tenant_map.items():
             for p, properties in providers.items():
-                scoping.append({
-                    "tenant_id": t,
-                    "provider": p,
-                    "property_count": len(properties),
-                    "properties": properties,
-                })
+                scoping.append(
+                    {
+                        "tenant_id": t,
+                        "provider": p,
+                        "property_count": len(properties),
+                        "properties": properties,
+                    }
+                )
     except Exception as e:
         logger.error("Scoping query failed: %s", e)
 
@@ -370,11 +384,13 @@ async def secrets_scoping(
 # SEC-002: Crypto Migration
 # ═══════════════════════════════════════════════════════════════════
 
+
 @router.get("/crypto/status")
 async def crypto_status():
     """Crypto subsystem health with key version info."""
     try:
         from core.crypto import get_crypto_service
+
         svc = get_crypto_service()
         health = svc.health()
     except Exception as e:
@@ -392,8 +408,7 @@ async def crypto_status():
         },
         "dual_read_write": {
             "status": "active",
-            "description": "Decrypt supports all formats (SYR1, aes256gcm, XOR, base64). "
-                          "Encrypt uses legacy format when CRYPTO_V2_ENABLED=false, SYR1 when true.",
+            "description": "Decrypt supports all formats (SYR1, aes256gcm, XOR, base64). Encrypt uses legacy format when CRYPTO_V2_ENABLED=false, SYR1 when true.",
             "write_format": "SYR1" if os.environ.get("CRYPTO_V2_ENABLED", "false").lower() == "true" else "aes256gcm",
             "read_formats": ["SYR1", "aes256gcm", "XOR", "base64"],
         },
@@ -411,6 +426,7 @@ async def crypto_cutover_metrics():
     """Migration cutover metrics — shows format distribution across all credential collections."""
     try:
         from core.crypto import get_crypto_service
+
         _svc = get_crypto_service()
     except Exception as e:
         return {"error": str(e)}
@@ -506,8 +522,7 @@ async def crypto_cutover_metrics():
         "cutover_ready": cutover_ready,
         "remaining_legacy": metrics["totals"]["aes_gcm_legacy"] + metrics["totals"]["other_legacy"],
         "recommended_action": (
-            "Ready for cutover — disable legacy fallback" if cutover_ready
-            else f"Migration needed: {metrics['totals']['aes_gcm_legacy'] + metrics['totals']['other_legacy']} legacy records remaining"
+            "Ready for cutover — disable legacy fallback" if cutover_ready else f"Migration needed: {metrics['totals']['aes_gcm_legacy'] + metrics['totals']['other_legacy']} legacy records remaining"
         ),
     }
     metrics["key_version"] = os.environ.get("CM_KEY_VERSION", "v1")
@@ -521,6 +536,7 @@ async def crypto_migrate_check():
     """Dry-run migration check — shows what would be migrated without writing."""
     try:
         from core.crypto import get_crypto_service
+
         crypto_svc = get_crypto_service()
     except Exception as e:
         return {"error": str(e)}
@@ -559,9 +575,7 @@ async def crypto_migrate_check():
         "already_current": check["already_current"],
         "total_scanned": check["would_migrate"] + check["already_current"],
         "action": (
-            "No migration needed — all records in current format"
-            if check["would_migrate"] == 0
-            else f"Run `python scripts/migrate_crypto.py --all` to migrate {check['would_migrate']} records"
+            "No migration needed — all records in current format" if check["would_migrate"] == 0 else f"Run `python scripts/migrate_crypto.py --all` to migrate {check['would_migrate']} records"
         ),
         "timestamp": datetime.now(UTC).isoformat(),
     }
@@ -580,7 +594,7 @@ async def crypto_key_info():
         "has_previous_key": has_previous,
         "rotation_ready": has_current,
         "rotation_steps": [
-            "1. Generate new key: python -c \"import secrets; print(secrets.token_urlsafe(32))\"",
+            '1. Generate new key: python -c "import secrets; print(secrets.token_urlsafe(32))"',
             "2. Set CM_MASTER_KEY_PREVIOUS to current CM_MASTER_KEY_CURRENT value",
             "3. Set CM_MASTER_KEY_CURRENT to the new key",
             "4. Increment CM_KEY_VERSION (e.g., v1 → v2)",

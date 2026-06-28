@@ -2,6 +2,7 @@
 Channel Manager — Sync Scheduler
 Manages scheduled and event-driven inventory synchronization.
 """
+
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
@@ -81,15 +82,15 @@ class SyncScheduler:
         channel = connection.get("channel", "unknown")
 
         # Get current PMS availability
-        rooms = await db.rooms.find(
-            {"tenant_id": tenant_id}, {"_id": 0, "id": 1, "room_type": 1, "status": 1}
-        ).to_list(1000)
+        rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0, "id": 1, "room_type": 1, "status": 1}).to_list(1000)
 
         # Get active bookings
-        active_bookings = await db.bookings.count_documents({
-            "tenant_id": tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-        })
+        active_bookings = await db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
+            }
+        )
 
         sync_result = {
             "connection_id": connection_id,
@@ -102,14 +103,16 @@ class SyncScheduler:
         }
 
         # Log sync
-        await db.channel_sync_logs.insert_one({
-            "tenant_id": tenant_id,
-            "connection_id": connection_id,
-            "channel": channel,
-            "type": "scheduled_sync",
-            "result": sync_result,
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        await db.channel_sync_logs.insert_one(
+            {
+                "tenant_id": tenant_id,
+                "connection_id": connection_id,
+                "channel": channel,
+                "type": "scheduled_sync",
+                "result": sync_result,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
 
         # Update last_sync (tenant_id filter included for defense-in-depth)
         await db.channel_connections.update_one(
@@ -140,15 +143,17 @@ class SyncScheduler:
 
     async def _log_sync_failure(self, connection: dict, error: str):
         """Log a sync failure."""
-        await db.channel_sync_logs.insert_one({
-            "tenant_id": connection.get("tenant_id"),
-            "connection_id": connection.get("id"),
-            "channel": connection.get("channel"),
-            "type": "scheduled_sync",
-            "status": "error",
-            "error": error,
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        await db.channel_sync_logs.insert_one(
+            {
+                "tenant_id": connection.get("tenant_id"),
+                "connection_id": connection.get("id"),
+                "channel": connection.get("channel"),
+                "type": "scheduled_sync",
+                "status": "error",
+                "error": error,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
 
 
 # Singleton

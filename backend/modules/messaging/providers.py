@@ -3,6 +3,7 @@ Messaging providers: Direct SMTP Email + Meta WhatsApp Business API.
 No third-party intermediaries (no SendGrid, no Twilio).
 Supports sandbox/test/live modes.
 """
+
 import logging
 import smtplib
 import time
@@ -25,8 +26,7 @@ class ProviderMode:
 class BaseProvider:
     provider_type: str = "base"
 
-    async def send(self, recipient: str, body: str, subject: str | None = None,
-                   credentials: dict = None, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
+    async def send(self, recipient: str, body: str, subject: str | None = None, credentials: dict = None, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
         raise NotImplementedError
 
     async def check_health(self, credentials: dict, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
@@ -52,8 +52,7 @@ class SMTPEmailProvider(BaseProvider):
 
     provider_type = ProviderType.SMTP_EMAIL.value
 
-    async def send(self, recipient: str, body: str, subject: str | None = None,
-                   credentials: dict = None, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
+    async def send(self, recipient: str, body: str, subject: str | None = None, credentials: dict = None, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
         creds = credentials or {}
         smtp_host = creds.get("smtp_host", "")
         smtp_port = int(creds.get("smtp_port", 587))
@@ -84,6 +83,7 @@ class SMTPEmailProvider(BaseProvider):
         # v109 round-7 follow-up: validate tenant-supplied SMTP host against
         # SSRF/DNS-rebinding policy. Connect to pinned IP, not the hostname.
         from integrations.xchange.safety import EgressDenied, assert_safe_host
+
         try:
             pinned_ip = assert_safe_host(smtp_host, smtp_port)
         except EgressDenied as eg:
@@ -143,6 +143,7 @@ class SMTPEmailProvider(BaseProvider):
             return {"status": "unhealthy", "error": "SMTP bilgileri eksik", "checked_at": datetime.now(UTC).isoformat()}
         # v109 round-7 follow-up: validate tenant SMTP host (rebinding-safe).
         from integrations.xchange.safety import EgressDenied, assert_safe_host
+
         try:
             pinned_ip = assert_safe_host(smtp_host, smtp_port)
         except EgressDenied as eg:
@@ -162,8 +163,7 @@ class WhatsAppProvider(BaseProvider):
 
     provider_type = ProviderType.WHATSAPP.value
 
-    async def send(self, recipient: str, body: str, subject: str | None = None,
-                   credentials: dict = None, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
+    async def send(self, recipient: str, body: str, subject: str | None = None, credentials: dict = None, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
         creds = credentials or {}
         access_token = creds.get("access_token", "")
         phone_number_id = creds.get("phone_number_id", "")
@@ -189,6 +189,7 @@ class WhatsAppProvider(BaseProvider):
         start = time.time()
         try:
             import httpx
+
             url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
             payload = {
                 "messaging_product": "whatsapp",
@@ -209,14 +210,11 @@ class WhatsAppProvider(BaseProvider):
                 return {"success": True, "provider_message_id": msg_id, "error": None, "latency_ms": latency_ms}
             else:
                 err = f"WhatsApp HTTP {resp.status_code}: {resp.text[:200]}"
-                return {"success": False, "error": err, "provider_message_id": None,
-                        "error_class": self.classify_error(err), "latency_ms": latency_ms}
+                return {"success": False, "error": err, "provider_message_id": None, "error_class": self.classify_error(err), "latency_ms": latency_ms}
         except Exception as e:
             logger.exception("WhatsApp send error")
             err_str = str(e)[:300]
-            return {"success": False, "error": err_str, "provider_message_id": None,
-                    "error_class": self.classify_error(err_str),
-                    "latency_ms": round((time.time() - start) * 1000, 2)}
+            return {"success": False, "error": err_str, "provider_message_id": None, "error_class": self.classify_error(err_str), "latency_ms": round((time.time() - start) * 1000, 2)}
 
     async def send_template(
         self,
@@ -259,6 +257,7 @@ class WhatsAppProvider(BaseProvider):
         start = time.time()
         try:
             import httpx
+
             url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
             template_payload: dict[str, Any] = {
                 "name": template_name,
@@ -284,14 +283,11 @@ class WhatsAppProvider(BaseProvider):
                 msg_id = data.get("messages", [{}])[0].get("id", "")
                 return {"success": True, "provider_message_id": msg_id, "error": None, "latency_ms": latency_ms}
             err = f"WhatsApp template HTTP {resp.status_code}: {resp.text[:200]}"
-            return {"success": False, "error": err, "provider_message_id": None,
-                    "error_class": self.classify_error(err), "latency_ms": latency_ms}
+            return {"success": False, "error": err, "provider_message_id": None, "error_class": self.classify_error(err), "latency_ms": latency_ms}
         except Exception as e:
             logger.exception("WhatsApp send_template error")
             err_str = str(e)[:300]
-            return {"success": False, "error": err_str, "provider_message_id": None,
-                    "error_class": self.classify_error(err_str),
-                    "latency_ms": round((time.time() - start) * 1000, 2)}
+            return {"success": False, "error": err_str, "provider_message_id": None, "error_class": self.classify_error(err_str), "latency_ms": round((time.time() - start) * 1000, 2)}
 
     async def check_health(self, credentials: dict, mode: str = ProviderMode.LIVE) -> dict[str, Any]:
         if mode in (ProviderMode.TEST, ProviderMode.SANDBOX):
@@ -302,11 +298,11 @@ class WhatsAppProvider(BaseProvider):
             return {"status": "unhealthy", "error": "WhatsApp API bilgileri eksik", "checked_at": datetime.now(UTC).isoformat()}
         try:
             import httpx
+
             url = f"https://graph.facebook.com/v21.0/{phone_number_id}"
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url, headers={"Authorization": f"Bearer {access_token}"})
-            return {"status": "healthy" if resp.status_code == 200 else "unhealthy",
-                    "checked_at": datetime.now(UTC).isoformat()}
+            return {"status": "healthy" if resp.status_code == 200 else "unhealthy", "checked_at": datetime.now(UTC).isoformat()}
         except Exception as e:
             return {"status": "unhealthy", "error": str(e)[:200], "checked_at": datetime.now(UTC).isoformat()}
 

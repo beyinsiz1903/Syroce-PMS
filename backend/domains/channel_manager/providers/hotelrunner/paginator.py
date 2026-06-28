@@ -5,6 +5,7 @@ HotelRunner Provider — Pagination Handler
 Centralizes pagination logic for the reservations endpoint.
 Includes safety limits, duplicate page detection, and infinite loop protection.
 """
+
 import logging
 from typing import Any, Awaitable, Callable
 
@@ -53,15 +54,12 @@ class HotelRunnerPaginator:
                 break
 
             # Duplicate page detection
-            first_id = str(
-                items[0].get("hr_number")
-                or items[0].get("reservation_id")
-                or items[0].get("message_uid", "")
-            )
+            first_id = str(items[0].get("hr_number") or items[0].get("reservation_id") or items[0].get("message_uid", ""))
             if first_id and first_id in seen_first_ids:
                 logger.warning(
                     "Duplicate page detected at page %d (first_id=%s), stopping",
-                    page, first_id,
+                    page,
+                    first_id,
                 )
                 break
             if first_id:
@@ -76,7 +74,8 @@ class HotelRunnerPaginator:
         if page > self.max_pages:
             logger.warning(
                 "Pagination safety limit reached: %d pages, %d items",
-                self.max_pages, len(all_items),
+                self.max_pages,
+                len(all_items),
             )
             raise HotelRunnerPaginationError(
                 max_pages=self.max_pages,
@@ -85,6 +84,7 @@ class HotelRunnerPaginator:
 
         logger.info(
             "Pagination complete: %d pages fetched, %d total items",
-            page, len(all_items),
+            page,
+            len(all_items),
         )
         return all_items

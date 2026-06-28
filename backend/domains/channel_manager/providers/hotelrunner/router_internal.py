@@ -12,6 +12,7 @@ Read-only diagnostic endpoints used by the Channel Manager UI:
 Mounted under the main `/api/channel-manager/hotelrunner` prefix by the
 parent router.
 """
+
 import time
 
 from fastapi import APIRouter, Depends
@@ -64,9 +65,7 @@ async def get_local_reservations(
     if pms_status:
         query["pms_status"] = pms_status
 
-    reservations = await db.hotelrunner_reservations.find(
-        query, {"_id": 0, "raw_data": 0}
-    ).sort("synced_at", -1).to_list(100)
+    reservations = await db.hotelrunner_reservations.find(query, {"_id": 0, "raw_data": 0}).sort("synced_at", -1).to_list(100)
 
     return {"reservations": reservations, "count": len(reservations)}
 
@@ -77,10 +76,14 @@ async def get_sync_logs(
     current_user: User = Depends(get_current_user),
 ):
     """Get HotelRunner sync logs."""
-    logs = await db.hotelrunner_sync_logs.find(
-        {"tenant_id": current_user.tenant_id},
-        {"_id": 0},
-    ).sort("timestamp", -1).to_list(limit)
+    logs = (
+        await db.hotelrunner_sync_logs.find(
+            {"tenant_id": current_user.tenant_id},
+            {"_id": 0},
+        )
+        .sort("timestamp", -1)
+        .to_list(limit)
+    )
     return {"logs": logs, "count": len(logs)}
 
 

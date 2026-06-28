@@ -12,6 +12,7 @@ Core metrics:
   - RevPAR Impact: How the scenario affects Revenue Per Available Room
   - Opportunity Cost: What the hotel gives up by accepting the block
 """
+
 from datetime import date, timedelta
 from typing import Any
 
@@ -19,27 +20,32 @@ from core.database import db
 
 
 class DisplacementEngine:
-
     async def _get_total_rooms(self, tenant_id: str) -> int:
-        count = await db.rooms.count_documents({
-            "tenant_id": tenant_id,
-            "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
-        })
+        count = await db.rooms.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
+            }
+        )
         return max(count, 1)
 
     async def _get_day_occupancy(self, tenant_id: str, day_str: str) -> dict[str, Any]:
-        booked = await db.bookings.count_documents({
-            "tenant_id": tenant_id,
-            "check_in": {"$lte": day_str},
-            "check_out": {"$gt": day_str},
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-        })
-        blocked = await db.room_blocks.count_documents({
-            "tenant_id": tenant_id,
-            "status": "active",
-            "start_date": {"$lte": day_str},
-            "$or": [{"end_date": None}, {"end_date": {"$gt": day_str}}],
-        })
+        booked = await db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "check_in": {"$lte": day_str},
+                "check_out": {"$gt": day_str},
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
+            }
+        )
+        blocked = await db.room_blocks.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "status": "active",
+                "start_date": {"$lte": day_str},
+                "$or": [{"end_date": None}, {"end_date": {"$gt": day_str}}],
+            }
+        )
         return {"booked": booked, "blocked": blocked}
 
     async def _get_historical_adr(self, tenant_id: str, days_back: int = 90) -> float:
@@ -104,15 +110,19 @@ class DisplacementEngine:
 
     async def _get_cancellation_rate(self, tenant_id: str, days_back: int = 90) -> float:
         cutoff = (date.today() - timedelta(days=days_back)).isoformat()
-        total = await db.bookings.count_documents({
-            "tenant_id": tenant_id,
-            "created_at": {"$gte": cutoff},
-        })
-        cancelled = await db.bookings.count_documents({
-            "tenant_id": tenant_id,
-            "created_at": {"$gte": cutoff},
-            "status": "cancelled",
-        })
+        total = await db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "created_at": {"$gte": cutoff},
+            }
+        )
+        cancelled = await db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "created_at": {"$gte": cutoff},
+                "status": "cancelled",
+            }
+        )
         if total == 0:
             return 0.05
         return round(cancelled / total, 4)
@@ -220,21 +230,23 @@ class DisplacementEngine:
             total_ancillary += ancillary
             total_opportunity_cost += max(opp_cost, 0)
 
-            daily_analysis.append({
-                "date": night_str,
-                "day_of_week": night.strftime("%A"),
-                "current_occupancy_pct": occ_pct,
-                "available_rooms": available,
-                "total_rooms": total_rooms,
-                "expected_transient_rate": expected_transient_rate,
-                "demand_multiplier": demand_mult,
-                "displaced_rooms": displaced_rooms,
-                "displaced_revenue": displaced_rev,
-                "proposed_revenue": net_proposed,
-                "ancillary_revenue": ancillary,
-                "net_displacement": net_displacement,
-                "recommendation": "accept" if net_displacement > 0 else "reject",
-            })
+            daily_analysis.append(
+                {
+                    "date": night_str,
+                    "day_of_week": night.strftime("%A"),
+                    "current_occupancy_pct": occ_pct,
+                    "available_rooms": available,
+                    "total_rooms": total_rooms,
+                    "expected_transient_rate": expected_transient_rate,
+                    "demand_multiplier": demand_mult,
+                    "displaced_rooms": displaced_rooms,
+                    "displaced_revenue": displaced_rev,
+                    "proposed_revenue": net_proposed,
+                    "ancillary_revenue": ancillary,
+                    "net_displacement": net_displacement,
+                    "recommendation": "accept" if net_displacement > 0 else "reject",
+                }
+            )
 
         total_net = round(total_proposed_revenue + total_ancillary - total_displaced_revenue, 2)
         total_room_nights = num_nights * rooms_requested
@@ -300,12 +312,11 @@ class DisplacementEngine:
         channel_mix = await self._get_channel_mix(tenant_id)
 
         import asyncio as _asyncio
+
         today = date.today()
         days = [today + timedelta(days=i) for i in range(days_forward)]
         # Run all per-day occupancy lookups in parallel.
-        occ_results = await _asyncio.gather(*[
-            self._get_day_occupancy(tenant_id, d.isoformat()) for d in days
-        ])
+        occ_results = await _asyncio.gather(*[self._get_day_occupancy(tenant_id, d.isoformat()) for d in days])
         forecast = []
         for d, occ in zip(days, occ_results, strict=True):
             booked = occ["booked"]
@@ -318,26 +329,30 @@ class DisplacementEngine:
                 displacement_risk = "medium"
             else:
                 displacement_risk = "low"
-            forecast.append({
-                "date": d.isoformat(),
-                "day_of_week": d.strftime("%A"),
-                "booked": booked,
-                "blocked": blocked,
-                "available": available,
-                "occupancy_pct": occ_pct,
-                "displacement_risk": displacement_risk,
-            })
+            forecast.append(
+                {
+                    "date": d.isoformat(),
+                    "day_of_week": d.strftime("%A"),
+                    "booked": booked,
+                    "blocked": blocked,
+                    "available": available,
+                    "occupancy_pct": occ_pct,
+                    "displacement_risk": displacement_risk,
+                }
+            )
 
         total_channel_bookings = sum(c["count"] for c in channel_mix.values())
         channel_summary = []
         for ch, data in channel_mix.items():
-            channel_summary.append({
-                "channel": ch,
-                "bookings": data["count"],
-                "share_pct": round((data["count"] / total_channel_bookings) * 100, 1) if total_channel_bookings else 0,
-                "avg_rate": data["avg_rate"],
-                "revenue": round(data["revenue"], 2),
-            })
+            channel_summary.append(
+                {
+                    "channel": ch,
+                    "bookings": data["count"],
+                    "share_pct": round((data["count"] / total_channel_bookings) * 100, 1) if total_channel_bookings else 0,
+                    "avg_rate": data["avg_rate"],
+                    "revenue": round(data["revenue"], 2),
+                }
+            )
         channel_summary.sort(key=lambda x: x["revenue"], reverse=True)
 
         return {
@@ -368,17 +383,19 @@ class DisplacementEngine:
                 ancillary_per_room=sc.get("ancillary", 0),
                 commission_pct=sc.get("commission", 0),
             )
-            results.append({
-                "scenario_name": sc.get("name", ""),
-                "proposed_rate": sc.get("rate", 100),
-                "net_displacement": analysis["summary"]["net_displacement"],
-                "roi_pct": analysis["summary"]["roi_pct"],
-                "recommendation": analysis["recommendation"]["action"],
-                "confidence": analysis["recommendation"]["confidence"],
-                "total_proposed": analysis["summary"]["total_proposed_revenue"],
-                "total_displaced": analysis["summary"]["total_displaced_revenue"],
-                "total_ancillary": analysis["summary"]["total_ancillary_revenue"],
-            })
+            results.append(
+                {
+                    "scenario_name": sc.get("name", ""),
+                    "proposed_rate": sc.get("rate", 100),
+                    "net_displacement": analysis["summary"]["net_displacement"],
+                    "roi_pct": analysis["summary"]["roi_pct"],
+                    "recommendation": analysis["recommendation"]["action"],
+                    "confidence": analysis["recommendation"]["confidence"],
+                    "total_proposed": analysis["summary"]["total_proposed_revenue"],
+                    "total_displaced": analysis["summary"]["total_displaced_revenue"],
+                    "total_ancillary": analysis["summary"]["total_ancillary_revenue"],
+                }
+            )
 
         results.sort(key=lambda x: x["net_displacement"], reverse=True)
         best = results[0] if results else None
@@ -392,15 +409,20 @@ class DisplacementEngine:
         }
 
     async def get_history(self, tenant_id: str, limit: int = 20) -> list[dict]:
-        analyses = await db.displacement_analyses.find(
-            {"tenant_id": tenant_id},
-            {"_id": 0},
-        ).sort("created_at", -1).to_list(limit)
+        analyses = (
+            await db.displacement_analyses.find(
+                {"tenant_id": tenant_id},
+                {"_id": 0},
+            )
+            .sort("created_at", -1)
+            .to_list(limit)
+        )
         return analyses
 
     async def save_analysis(self, tenant_id: str, analysis: dict, user_email: str) -> dict:
         import uuid
         from datetime import UTC, datetime
+
         doc = {
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,

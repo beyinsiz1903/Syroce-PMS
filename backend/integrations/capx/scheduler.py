@@ -4,6 +4,7 @@ Pattern: Exely pull worker / HR push queue worker ile aynı.
 Interval default 900s (15 dk). Aktif tenant için tüm room_type'ları tarar
 ve önümüzdeki 30 günü CapX'e snapshot olarak gönderir.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -29,11 +30,8 @@ class CapXAvailabilityScheduler:
             logger.info("CapX availability scheduler zaten çalışıyor")
             return
         self._stop.clear()
-        self._task = asyncio.create_task(
-            self._loop(interval_seconds, lookahead_days)
-        )
-        logger.info("✅ CapX Availability Scheduler started (%ds, lookahead=%dd)",
-                    interval_seconds, lookahead_days)
+        self._task = asyncio.create_task(self._loop(interval_seconds, lookahead_days))
+        logger.info("✅ CapX Availability Scheduler started (%ds, lookahead=%dd)", interval_seconds, lookahead_days)
 
     async def stop(self) -> None:
         self._stop.set()
@@ -61,7 +59,9 @@ class CapXAvailabilityScheduler:
                 _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
             except Exception as e:
                 _transient_tracker.log_exception(
-                    logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                    logger,
+                    e,
+                    TransientFailureTracker.OUTER_LOOP_KEY,
                     context="availability cycle",
                     non_transient_msg="%s availability cycle error: %s",
                 )
@@ -89,10 +89,7 @@ class CapXAvailabilityScheduler:
                 if t.get("id"):
                     tenants.append(t["id"])
         else:
-            tenants = [
-                tid for tid in await _raw_db["capx_tenant_credentials"].distinct("tenant_id")
-                if tid
-            ]
+            tenants = [tid for tid in await _raw_db["capx_tenant_credentials"].distinct("tenant_id") if tid]
 
         if not tenants:
             return
@@ -109,9 +106,7 @@ class CapXAvailabilityScheduler:
                 continue  # env de tenant da config yok — sessiz
             # room_types collection'dan tipleri çek
             room_types: list[str] = []
-            async for rt in _raw_db.room_types.find(
-                {"tenant_id": tid}, {"_id": 0, "code": 1, "name": 1}
-            ):
+            async for rt in _raw_db.room_types.find({"tenant_id": tid}, {"_id": 0, "code": 1, "name": 1}):
                 code = rt.get("code") or rt.get("name")
                 if code:
                     room_types.append(code)
@@ -121,18 +116,18 @@ class CapXAvailabilityScheduler:
 
             for rtype in room_types:
                 # Müsait oda sayısı: rooms - aktif booking
-                total = await _raw_db.rooms.count_documents(
-                    {"tenant_id": tid, "room_type": rtype, "is_active": True}
-                )
+                total = await _raw_db.rooms.count_documents({"tenant_id": tid, "room_type": rtype, "is_active": True})
                 if total == 0:
                     continue
                 # Önümüzdeki dönemde booked
-                booked = await _raw_db.bookings.count_documents({
-                    "tenant_id": tid,
-                    "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-                    "check_in": {"$lt": end.isoformat()},
-                    "check_out": {"$gt": today.isoformat()},
-                })
+                booked = await _raw_db.bookings.count_documents(
+                    {
+                        "tenant_id": tid,
+                        "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
+                        "check_in": {"$lt": end.isoformat()},
+                        "check_out": {"$gt": today.isoformat()},
+                    }
+                )
                 available = max(0, total - booked)
                 if available == 0:
                     continue
@@ -162,8 +157,7 @@ class CapXAvailabilityScheduler:
                     pushed += 1
                 except CapXError as exc:
                     errors += 1
-                    logger.warning("CapX availability push failed (tenant=%s rtype=%s): %s",
-                                   tid[:8], rtype, exc)
+                    logger.warning("CapX availability push failed (tenant=%s rtype=%s): %s", tid[:8], rtype, exc)
 
         if pushed or errors:
             logger.info("CapX availability cycle: pushed=%d errors=%d", pushed, errors)

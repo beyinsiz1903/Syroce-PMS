@@ -2,6 +2,7 @@
 MongoDB Persistence Repositories for enterprise modules.
 Migrates in-memory stores to MongoDB with TTL, retention, and tenant isolation.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -27,9 +28,7 @@ class EventReplayRepository:
 
     async def get_backlog_size(self, tenant_id: str) -> int:
         one_day_ago = (datetime.now(UTC) - timedelta(days=1)).isoformat()
-        return await db[self.COLLECTION].count_documents({
-            "tenant_id": tenant_id, "timestamp": {"$gte": one_day_ago}
-        })
+        return await db[self.COLLECTION].count_documents({"tenant_id": tenant_id, "timestamp": {"$gte": one_day_ago}})
 
 
 class MessagingDeliveryRepository:
@@ -48,18 +47,23 @@ class MessagingDeliveryRepository:
 
     async def get_retry_queue(self, tenant_id: str, limit: int = 50) -> list[dict]:
         now = datetime.now(UTC).isoformat()
-        return await db[self.COLLECTION].find(
-            {
-                "tenant_id": tenant_id,
-                "status": "failed",
-                "retry_count": {"$lt": 3},
-                "$or": [
-                    {"next_retry_at": {"$lte": now}},
-                    {"next_retry_at": None},
-                ],
-            },
-            {"_id": 0},
-        ).sort("created_at", 1).to_list(limit)
+        return (
+            await db[self.COLLECTION]
+            .find(
+                {
+                    "tenant_id": tenant_id,
+                    "status": "failed",
+                    "retry_count": {"$lt": 3},
+                    "$or": [
+                        {"next_retry_at": {"$lte": now}},
+                        {"next_retry_at": None},
+                    ],
+                },
+                {"_id": 0},
+            )
+            .sort("created_at", 1)
+            .to_list(limit)
+        )
 
 
 class AnalyticsExportRepository:
@@ -74,8 +78,7 @@ class AnalyticsExportRepository:
         await coll.create_index([("id", 1)], unique=True)
         await coll.create_index([("status", 1)])
 
-    async def save_export(self, tenant_id: str, export_type: str, format_type: str,
-                          file_path: str, status: str = "completed", metadata: dict = None) -> dict:
+    async def save_export(self, tenant_id: str, export_type: str, format_type: str, file_path: str, status: str = "completed", metadata: dict = None) -> dict:
         doc = {
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,
@@ -90,9 +93,7 @@ class AnalyticsExportRepository:
         return {k: v for k, v in doc.items() if k != "_id"}
 
     async def get_recent_exports(self, tenant_id: str, limit: int = 50) -> list[dict]:
-        return await db[self.COLLECTION].find(
-            {"tenant_id": tenant_id}, {"_id": 0}
-        ).sort("created_at", -1).to_list(limit)
+        return await db[self.COLLECTION].find({"tenant_id": tenant_id}, {"_id": 0}).sort("created_at", -1).to_list(limit)
 
 
 class ObservabilityTraceRepository:
@@ -150,8 +151,7 @@ class AlertHistoryRepository:
         await coll.create_index([("severity", 1)])
         await coll.create_index([("acknowledged", 1)])
 
-    async def save_alert(self, alert_type: str, severity: str, title: str,
-                         message: str, context: dict = None, runbook_hint: str = None) -> dict:
+    async def save_alert(self, alert_type: str, severity: str, title: str, message: str, context: dict = None, runbook_hint: str = None) -> dict:
         doc = {
             "id": str(uuid.uuid4()),
             "alert_type": alert_type,
@@ -168,8 +168,7 @@ class AlertHistoryRepository:
         await db[self.COLLECTION].insert_one(doc)
         return {k: v for k, v in doc.items() if k != "_id"}
 
-    async def get_recent_alerts(self, limit: int = 50, severity: str = None,
-                                unacknowledged_only: bool = False) -> list[dict]:
+    async def get_recent_alerts(self, limit: int = 50, severity: str = None, unacknowledged_only: bool = False) -> list[dict]:
         q: dict[str, Any] = {}
         if severity:
             q["severity"] = severity
@@ -180,11 +179,13 @@ class AlertHistoryRepository:
     async def acknowledge_alert(self, alert_id: str, user_id: str) -> dict:
         await db[self.COLLECTION].update_one(
             {"id": alert_id},
-            {"$set": {
-                "acknowledged": True,
-                "acknowledged_by": user_id,
-                "acknowledged_at": datetime.now(UTC).isoformat(),
-            }},
+            {
+                "$set": {
+                    "acknowledged": True,
+                    "acknowledged_by": user_id,
+                    "acknowledged_at": datetime.now(UTC).isoformat(),
+                }
+            },
         )
         return {"id": alert_id, "acknowledged": True}
 
@@ -202,6 +203,7 @@ class PipelineRunRepository:
 
 
 # ── Global initialization ──
+
 
 async def ensure_all_indexes():
     """Create all MongoDB indexes for persistence repositories."""

@@ -102,10 +102,7 @@ def validate_image_bytes(
     if width > MAX_IMAGE_DIMENSION or height > MAX_IMAGE_DIMENSION:
         raise HTTPException(
             status_code=400,
-            detail=(
-                f"{field_label} cozunurlugu cok yuksek "
-                f"(en fazla {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION} piksel)."
-            ),
+            detail=(f"{field_label} cozunurlugu cok yuksek (en fazla {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION} piksel)."),
         )
 
     # Animation frame-count cap (GIF/WEBP). Defends downstream renderers from
@@ -113,10 +110,7 @@ def validate_image_bytes(
     if n_frames > MAX_ANIMATION_FRAMES:
         raise HTTPException(
             status_code=400,
-            detail=(
-                f"{field_label} cok fazla kareye sahip "
-                f"(en fazla {MAX_ANIMATION_FRAMES} kare)."
-            ),
+            detail=(f"{field_label} cok fazla kareye sahip (en fazla {MAX_ANIMATION_FRAMES} kare)."),
         )
 
     return _FORMAT_MAP[fmt]
@@ -207,17 +201,12 @@ def validate_document_bytes(
 
     # Not a recognized document signature — try image validation (PNG/JPEG/etc).
     try:
-        content_type, _ext = validate_image_bytes(
-            content, max_bytes=max_bytes, field_label=field_label
-        )
+        content_type, _ext = validate_image_bytes(content, max_bytes=max_bytes, field_label=field_label)
         return content_type
     except HTTPException:
         # Neither a valid document nor a valid image → reject (covers polyglot
         # HTML-as-PDF, SVG, executables, and corrupt files).
         raise HTTPException(
             status_code=400,
-            detail=(
-                f"{field_label} icerigi gecerli bir belge degil "
-                f"(yalnizca gercek PDF, DOC, DOCX, JPG, PNG, WEBP, GIF)."
-            ),
+            detail=(f"{field_label} icerigi gecerli bir belge degil (yalnizca gercek PDF, DOC, DOCX, JPG, PNG, WEBP, GIF)."),
         )

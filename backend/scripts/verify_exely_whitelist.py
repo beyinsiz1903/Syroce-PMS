@@ -181,20 +181,11 @@ def verify(env: dict[str, str], *, environment: str, expect_ips: list[str]) -> F
     tokens = _parse_csv(raw)
     if not tokens:
         if is_prod:
-            f.block(
-                "EXELY_IP_WHITELIST is empty/unset. Production webhook will "
-                "503 every Exely delivery (see exely_webhook_router.py:391)."
-            )
+            f.block("EXELY_IP_WHITELIST is empty/unset. Production webhook will 503 every Exely delivery (see exely_webhook_router.py:391).")
         else:
-            f.note(
-                f"EXELY_IP_WHITELIST is empty (environment={environment}); "
-                "OK for non-production but webhook will reject all events."
-            )
+            f.note(f"EXELY_IP_WHITELIST is empty (environment={environment}); OK for non-production but webhook will reject all events.")
     else:
-        f.note(
-            f"EXELY_IP_WHITELIST has {len(tokens)} token(s) "
-            f"(redacted preview): {_redact_list(tokens)}"
-        )
+        f.note(f"EXELY_IP_WHITELIST has {len(tokens)} token(s) (redacted preview): {_redact_list(tokens)}")
         bad_tokens: list[str] = []
         cidr_tokens: list[str] = []
         for tok in tokens:
@@ -205,11 +196,7 @@ def verify(env: dict[str, str], *, environment: str, expect_ips: list[str]) -> F
             else:
                 bad_tokens.append(tok)
         if bad_tokens:
-            f.block(
-                f"EXELY_IP_WHITELIST contains {len(bad_tokens)} invalid IP token(s) "
-                f"(redacted): {_redact_list(bad_tokens)}. "
-                "Each entry must parse with ipaddress.ip_address()."
-            )
+            f.block(f"EXELY_IP_WHITELIST contains {len(bad_tokens)} invalid IP token(s) (redacted): {_redact_list(bad_tokens)}. Each entry must parse with ipaddress.ip_address().")
         if cidr_tokens:
             f.block(
                 f"EXELY_IP_WHITELIST contains {len(cidr_tokens)} CIDR range(s) "
@@ -222,15 +209,9 @@ def verify(env: dict[str, str], *, environment: str, expect_ips: list[str]) -> F
     bypass = (env.get("ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK") or "").strip()
     if bypass == "1":
         if is_prod:
-            f.block(
-                "ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK=1 in production. This is "
-                "the dev fail-open escape hatch and must NEVER be set in prod."
-            )
+            f.block("ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK=1 in production. This is the dev fail-open escape hatch and must NEVER be set in prod.")
         else:
-            f.warn(
-                f"ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK=1 (environment={environment}); "
-                "ensure this never leaks to production."
-            )
+            f.warn(f"ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK=1 (environment={environment}); ensure this never leaks to production.")
 
     # ── Check 4: EXELY_TRUST_FORWARDED ↔ EXELY_TRUSTED_PROXY_IPS pair ──
     trust_xff = (env.get("EXELY_TRUST_FORWARDED") or "").strip() == "1"
@@ -238,43 +219,25 @@ def verify(env: dict[str, str], *, environment: str, expect_ips: list[str]) -> F
     if trust_xff:
         proxy_tokens = _parse_csv(proxy_spec)
         if not proxy_tokens:
-            f.block(
-                "EXELY_TRUST_FORWARDED=1 but EXELY_TRUSTED_PROXY_IPS is empty. "
-                "X-Forwarded-For will be silently ignored — Exely deliveries "
-                "behind a proxy will be allowlist-rejected by peer IP."
-            )
+            f.block("EXELY_TRUST_FORWARDED=1 but EXELY_TRUSTED_PROXY_IPS is empty. X-Forwarded-For will be silently ignored — Exely deliveries behind a proxy will be allowlist-rejected by peer IP.")
         else:
             valid = [t for t in proxy_tokens if _is_ip_or_cidr(t)]
             invalid = [t for t in proxy_tokens if not _is_ip_or_cidr(t)]
             if invalid:
-                f.warn(
-                    f"EXELY_TRUSTED_PROXY_IPS has {len(invalid)} invalid token(s) "
-                    f"(skipped at runtime, redacted): {_redact_list(invalid)}"
-                )
+                f.warn(f"EXELY_TRUSTED_PROXY_IPS has {len(invalid)} invalid token(s) (skipped at runtime, redacted): {_redact_list(invalid)}")
             if not valid:
-                f.block(
-                    "EXELY_TRUSTED_PROXY_IPS has zero valid IP/CIDR entries — "
-                    "X-Forwarded-For will not be honored at runtime."
-                )
+                f.block("EXELY_TRUSTED_PROXY_IPS has zero valid IP/CIDR entries — X-Forwarded-For will not be honored at runtime.")
             else:
                 f.note(f"EXELY_TRUSTED_PROXY_IPS has {len(valid)} valid entry/entries.")
     else:
         if proxy_spec:
-            f.note(
-                "EXELY_TRUSTED_PROXY_IPS is set but EXELY_TRUST_FORWARDED is "
-                "not '1' — proxy list is ignored. Set EXELY_TRUST_FORWARDED=1 "
-                "if you intended to honor X-Forwarded-For."
-            )
+            f.note("EXELY_TRUSTED_PROXY_IPS is set but EXELY_TRUST_FORWARDED is not '1' — proxy list is ignored. Set EXELY_TRUST_FORWARDED=1 if you intended to honor X-Forwarded-For.")
 
     # ── Check 5: --expect-ips coverage ──────────────────────────────────
     if expect_ips:
         missing = [ip for ip in expect_ips if ip not in tokens]
         if missing:
-            f.block(
-                f"Expected IP(s) missing from EXELY_IP_WHITELIST: {len(missing)} "
-                f"entry/entries (redacted): {_redact_list(missing)}. "
-                "Pilot Exely outbound IPs must be added before go-live."
-            )
+            f.block(f"Expected IP(s) missing from EXELY_IP_WHITELIST: {len(missing)} entry/entries (redacted): {_redact_list(missing)}. Pilot Exely outbound IPs must be added before go-live.")
         else:
             f.note(f"All {len(expect_ips)} expected IP(s) present in whitelist.")
 
@@ -295,10 +258,7 @@ def _print_report(f: Findings, *, environment: str) -> None:
         print(f"\n[INFO] ({len(f.info)})")
         for i in f.info:
             print(f"  - {i}")
-    print(
-        f"\nSUMMARY blockers={len(f.blockers)} warnings={len(f.warnings)} "
-        f"info={len(f.info)} verdict={f.verdict}"
-    )
+    print(f"\nSUMMARY blockers={len(f.blockers)} warnings={len(f.warnings)} info={len(f.info)} verdict={f.verdict}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -306,20 +266,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--env",
         default=os.environ.get("ENVIRONMENT", "development"),
-        help="Environment label (production / staging / development). "
-        "Production triggers BLOCKER instead of WARNING for missing whitelist.",
+        help="Environment label (production / staging / development). Production triggers BLOCKER instead of WARNING for missing whitelist.",
     )
     parser.add_argument(
         "--expect-ips",
         default="",
-        help="Comma-separated list of IPs that MUST appear in EXELY_IP_WHITELIST. "
-        "Use to assert pilot Exely outbound IPs are present.",
+        help="Comma-separated list of IPs that MUST appear in EXELY_IP_WHITELIST. Use to assert pilot Exely outbound IPs are present.",
     )
     parser.add_argument(
         "--strict-warnings",
         action="store_true",
-        help="Treat REVIEW (warnings>0) as failure — exit 1 instead of 0. "
-        "Use in CI/deploy gates that require zero warnings.",
+        help="Treat REVIEW (warnings>0) as failure — exit 1 instead of 0. Use in CI/deploy gates that require zero warnings.",
     )
     args = parser.parse_args(argv)
 

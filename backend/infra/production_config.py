@@ -5,6 +5,7 @@ missing secrets detection, and masked configuration audit.
 Validates all required production environment variables at startup and
 provides a masked inspection endpoint for debugging without exposing secrets.
 """
+
 import base64
 import logging
 import os
@@ -64,9 +65,7 @@ def _b64url_decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(s_padded.encode("ascii"))
 
 
-def validate_vapid_key_format(
-    *, public_key: str | None, private_key: str | None
-) -> list[str]:
+def validate_vapid_key_format(*, public_key: str | None, private_key: str | None) -> list[str]:
     """Return a list of human-readable error messages for VAPID format
     violations. Empty list ⇒ both keys are well-formed (or both unset —
     "missing" is a separate gate handled in startup_check).
@@ -81,30 +80,18 @@ def validate_vapid_key_format(
         try:
             raw = _b64url_decode(public_key)
         except Exception as exc:
-            errors.append(
-                f"VAPID_PUBLIC_KEY: base64url decode failed ({exc.__class__.__name__})."
-            )
+            errors.append(f"VAPID_PUBLIC_KEY: base64url decode failed ({exc.__class__.__name__}).")
         else:
             if len(raw) != VAPID_PUBLIC_KEY_BYTES:
-                errors.append(
-                    f"VAPID_PUBLIC_KEY: expected {VAPID_PUBLIC_KEY_BYTES}-byte "
-                    f"uncompressed P-256 point (0x04 || X || Y), got "
-                    f"{len(raw)} bytes after base64url decode."
-                )
+                errors.append(f"VAPID_PUBLIC_KEY: expected {VAPID_PUBLIC_KEY_BYTES}-byte uncompressed P-256 point (0x04 || X || Y), got {len(raw)} bytes after base64url decode.")
             elif raw[0] != 0x04:
-                errors.append(
-                    "VAPID_PUBLIC_KEY: first byte must be 0x04 (uncompressed "
-                    f"point marker), got 0x{raw[0]:02x}. The key was likely "
-                    "exported in compressed or hex form by another tool."
-                )
+                errors.append(f"VAPID_PUBLIC_KEY: first byte must be 0x04 (uncompressed point marker), got 0x{raw[0]:02x}. The key was likely exported in compressed or hex form by another tool.")
 
     if private_key:
         try:
             raw = _b64url_decode(private_key)
         except Exception as exc:
-            errors.append(
-                f"VAPID_PRIVATE_KEY: base64url decode failed ({exc.__class__.__name__})."
-            )
+            errors.append(f"VAPID_PRIVATE_KEY: base64url decode failed ({exc.__class__.__name__}).")
         else:
             if len(raw) != VAPID_PRIVATE_KEY_BYTES:
                 errors.append(
@@ -167,17 +154,14 @@ PRODUCTION_VARIABLES = {
     "MONGO_URL": {"category": "database", "critical": True, "description": "MongoDB connection URI"},
     "JWT_SECRET": {"category": "auth", "critical": True, "description": "JWT signing secret"},
     "CORS_ORIGINS": {"category": "security", "critical": True, "description": "Allowed CORS origins"},
-
     # Redis
     "REDIS_URL": {"category": "redis", "critical": False, "description": "Redis connection URL"},
     "REDIS_MODE": {"category": "redis", "critical": False, "description": "Redis mode: standalone|sentinel|cluster"},
     "REDIS_MAX_CONNECTIONS": {"category": "redis", "critical": False, "description": "Redis pool size"},
-
     # Observability
     "SENTRY_DSN": {"category": "observability", "critical": False, "description": "Sentry error tracking DSN"},
     "OTEL_EXPORTER_ENDPOINT": {"category": "observability", "critical": False, "description": "OpenTelemetry collector endpoint"},
     "OTEL_SERVICE_NAME": {"category": "observability", "critical": False, "description": "OTel service name"},
-
     # Messaging Providers
     "TWILIO_ACCOUNT_SID": {"category": "messaging", "critical": False, "description": "Twilio Account SID"},
     "TWILIO_AUTH_TOKEN": {"category": "messaging", "critical": False, "description": "Twilio Auth Token"},
@@ -185,7 +169,6 @@ PRODUCTION_VARIABLES = {
     "SENDGRID_API_KEY": {"category": "messaging", "critical": False, "description": "SendGrid API key"},
     "SENDGRID_FROM_EMAIL": {"category": "messaging", "critical": False, "description": "SendGrid sender email"},
     "WHATSAPP_PROVIDER_KEY": {"category": "messaging", "critical": False, "description": "WhatsApp provider key"},
-
     # Web Push (PWA) — VAPID keypair shared by every backend instance.
     # Required in production: web_push.get_vapid_keys() refuses to fall back to
     # a per-process keypair (which would invalidate every browser
@@ -194,24 +177,19 @@ PRODUCTION_VARIABLES = {
     # readiness report; the explicit boot-time gate lives in startup_check().
     "VAPID_PUBLIC_KEY": {"category": "messaging", "critical": True, "description": "Web Push VAPID public key (P-256 raw, base64url)"},
     "VAPID_PRIVATE_KEY": {"category": "messaging", "critical": True, "description": "Web Push VAPID private key (32-byte scalar, base64url)"},
-
     # Secrets Management
     "SECRETS_PROVIDER": {"category": "secrets", "critical": False, "description": "Secrets provider: aws|vault|env"},
     "AWS_REGION": {"category": "secrets", "critical": False, "description": "AWS region for Secrets Manager"},
     "VAULT_ADDR": {"category": "secrets", "critical": False, "description": "HashiCorp Vault address"},
-
     # Backup
     "BACKUP_ENABLED": {"category": "backup", "critical": False, "description": "Enable automated backups"},
     "BACKUP_RETENTION_DAYS": {"category": "backup", "critical": False, "description": "Backup retention days"},
-
     # Scaling
     "INSTANCE_ID": {"category": "scaling", "critical": False, "description": "Instance identifier"},
     "SCALING_MODE": {"category": "scaling", "critical": False, "description": "Scaling mode: single|multi"},
 }
 
-SENSITIVE_PATTERNS = re.compile(
-    r"(token|secret|key|password|dsn|auth|sid|credential)", re.IGNORECASE
-)
+SENSITIVE_PATTERNS = re.compile(r"(token|secret|key|password|dsn|auth|sid|credential)", re.IGNORECASE)
 
 
 def _mask_value(key: str, value: str) -> str:
@@ -308,6 +286,7 @@ class ProductionConfigValidator:
     def startup_check(self) -> dict[str, Any]:
         """Lightweight startup validation — fails fast on missing critical vars."""
         import hashlib
+
         missing = []
         for var_name, meta in PRODUCTION_VARIABLES.items():
             if meta["critical"] and not os.environ.get(var_name, ""):
@@ -346,10 +325,7 @@ class ProductionConfigValidator:
         # to startup time so a misconfigured production deploy fails loud
         # immediately. Dev keeps the historical fallback (db-persisted
         # auto-generated keypair) and only logs a warning here.
-        vapid_missing = [
-            v for v in ("VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY")
-            if not os.environ.get(v, "")
-        ]
+        vapid_missing = [v for v in ("VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY") if not os.environ.get(v, "")]
         vapid_violation = is_prod and bool(vapid_missing)
 
         # Task #50: format validation. Even when both keys are present
@@ -369,14 +345,8 @@ class ProductionConfigValidator:
             level = logging.WARNING if not is_prod else logging.ERROR
             logger.log(level, "Startup check — missing critical vars: %s", missing)
         if tenant_guard_violation:
-            logger.error(
-                "Startup check FAILED — STRICT_TENANT_MODE must be 'true' in production "
-                "(defense-in-depth tenant isolation). Refusing to boot."
-            )
-            raise RuntimeError(
-                "STRICT_TENANT_MODE=true is required in production. "
-                "Remove the override or set ENVIRONMENT/NODE_ENV != 'production'."
-            )
+            logger.error("Startup check FAILED — STRICT_TENANT_MODE must be 'true' in production (defense-in-depth tenant isolation). Refusing to boot.")
+            raise RuntimeError("STRICT_TENANT_MODE=true is required in production. Remove the override or set ENVIRONMENT/NODE_ENV != 'production'.")
         if forbidden_present:
             logger.error(
                 "Startup check FAILED — production environment is using KNOWN DEV/LEAKED "
@@ -384,10 +354,7 @@ class ProductionConfigValidator:
                 "publishing and remove the plaintext from .replit. Refusing to boot.",
                 forbidden_present,
             )
-            raise RuntimeError(
-                f"Production refused to boot: forbidden dev secret values detected for "
-                f"{forbidden_present}. See replit.md → Round-8 production checklist."
-            )
+            raise RuntimeError(f"Production refused to boot: forbidden dev secret values detected for {forbidden_present}. See replit.md → Round-8 production checklist.")
         # Task #33: VAPID gate. In production, missing Web Push keys must
         # abort the boot so urgent push notifications never silently degrade.
         # In dev, log a single warning so the developer notices but local
@@ -401,10 +368,7 @@ class ProductionConfigValidator:
                     "written to MongoDB. Refusing to boot.",
                     vapid_missing,
                 )
-                raise RuntimeError(
-                    f"Production refused to boot: missing Web Push VAPID env vars "
-                    f"{vapid_missing}. Configure them in Replit Secrets before deploying."
-                )
+                raise RuntimeError(f"Production refused to boot: missing Web Push VAPID env vars {vapid_missing}. Configure them in Replit Secrets before deploying.")
             logger.warning(
                 "Startup check — Web Push VAPID keys are not set (%s). Development "
                 "fallback (db-persisted auto-generated keypair) will be used; production "
@@ -419,21 +383,12 @@ class ProductionConfigValidator:
                     "Startup check FAILED — VAPID key format errors:\n%s",
                     "\n".join(f"  - {e}" for e in vapid_format_errors),
                 )
-                raise RuntimeError(
-                    "Production refused to boot: malformed VAPID keys. "
-                    + " | ".join(vapid_format_errors)
-                )
+                raise RuntimeError("Production refused to boot: malformed VAPID keys. " + " | ".join(vapid_format_errors))
             logger.warning(
                 "Startup check — VAPID key format issues detected (dev only): %s",
                 vapid_format_errors,
             )
-        if (
-            not missing
-            and not tenant_guard_violation
-            and not forbidden_present
-            and not vapid_violation
-            and not vapid_format_violation
-        ):
+        if not missing and not tenant_guard_violation and not forbidden_present and not vapid_violation and not vapid_format_violation:
             logger.info("Startup check passed — all critical variables present")
 
         return {
@@ -458,11 +413,13 @@ class ProductionConfigValidator:
             if not value or len(value) < 16:
                 continue
             if SENSITIVE_PATTERNS.search(key):
-                suspicious.append({
-                    "variable": key,
-                    "reason": "Name matches sensitive pattern but not in managed config",
-                    "length": len(value),
-                })
+                suspicious.append(
+                    {
+                        "variable": key,
+                        "reason": "Name matches sensitive pattern but not in managed config",
+                        "length": len(value),
+                    }
+                )
 
         return {
             "scanned_at": datetime.now(UTC).isoformat(),

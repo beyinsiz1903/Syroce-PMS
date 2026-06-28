@@ -10,6 +10,7 @@ Security properties:
   - AAD binds ciphertext to tenant/provider/property/env context
   - GCM tag (128-bit) detects any tampering or context mismatch
 """
+
 import logging
 import secrets
 from dataclasses import dataclass
@@ -35,6 +36,7 @@ class AADContext:
 
     Format: tenant_id|provider|property_id|environment|context_type
     """
+
     tenant_id: str = ""
     provider: str = ""
     property_id: str = ""
@@ -43,10 +45,7 @@ class AADContext:
 
     def to_bytes(self) -> bytes:
         """Deterministic AAD byte representation."""
-        return (
-            f"{self.tenant_id}|{self.provider}|{self.property_id}"
-            f"|{self.environment}|{self.context_type}"
-        ).encode()
+        return (f"{self.tenant_id}|{self.provider}|{self.property_id}|{self.environment}|{self.context_type}").encode()
 
 
 class AESGCMEngine:
@@ -106,7 +105,9 @@ class AESGCMEngine:
         aesgcm = AESGCM(key)
         try:
             plaintext_bytes = aesgcm.decrypt(
-                envelope.nonce, envelope.ciphertext, aad_bytes,
+                envelope.nonce,
+                envelope.ciphertext,
+                aad_bytes,
             )
         except InvalidTag:
             raise TamperDetectedError(kid=envelope.kid)

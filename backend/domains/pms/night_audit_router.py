@@ -3,6 +3,7 @@ PMS / Night Audit Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 + Opera #8: Trial Balance / Daily Operations Resume — gece auditi sonrası tek özet rapor
 """
+
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
@@ -23,12 +24,16 @@ logger = logging.getLogger(__name__)
 try:
     from cache_manager import cached
 except ImportError:
+
     def cached(ttl=300, key_prefix=""):
-        def decorator(func): return func
+        def decorator(func):
+            return func
+
         return decorator
 
 
 router = APIRouter(prefix="/api", tags=["PMS / Night Audit"])
+
 
 @router.get("/audit-logs")
 @cached(ttl=600, key_prefix="audit_logs")
@@ -51,7 +56,6 @@ async def get_audit_logs(
     return result.data
 
 
-
 @router.get("/logs/errors")
 async def get_error_logs(
     start_date: str | None = None,
@@ -61,7 +65,7 @@ async def get_error_logs(
     resolved: bool | None = None,
     limit: int = 100,
     skip: int = 0,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Get error logs with filtering"""
     ctx = OperationContext.from_user(current_user)
@@ -84,17 +88,8 @@ async def resolve_error_log(
     return result.data
 
 
-
-
 @router.get("/logs/night-audit")
-async def get_night_audit_logs(
-    start_date: str | None = None,
-    end_date: str | None = None,
-    status: str | None = None,
-    limit: int = 100,
-    skip: int = 0,
-    current_user: User = Depends(get_current_user)
-):
+async def get_night_audit_logs(start_date: str | None = None, end_date: str | None = None, status: str | None = None, limit: int = 100, skip: int = 0, current_user: User = Depends(get_current_user)):
     """Get night audit logs"""
     ctx = OperationContext.from_user(current_user)
     result = await night_audit_service.get_night_audit_logs(ctx, start_date, end_date, status, limit, skip)
@@ -110,7 +105,7 @@ async def get_ota_sync_logs(
     status: str | None = None,
     limit: int = 100,
     skip: int = 0,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Get OTA sync logs"""
     ctx = OperationContext.from_user(current_user)
@@ -127,7 +122,7 @@ async def get_rms_publish_logs(
     status: str | None = None,
     limit: int = 100,
     skip: int = 0,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Get RMS publish logs"""
     ctx = OperationContext.from_user(current_user)
@@ -144,7 +139,7 @@ async def get_maintenance_prediction_logs(
     room_number: str | None = None,
     limit: int = 100,
     skip: int = 0,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Get maintenance prediction logs"""
     ctx = OperationContext.from_user(current_user)
@@ -158,16 +153,21 @@ async def get_maintenance_prediction_logs(
 # açık folio'lar — tek bir özet ekran.
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def _sum_payments(db, tid: str, start: str, end: str, by_method: bool = False):
     pipeline = [
         {"$match": {"tenant_id": tid, "payment_date": {"$gte": start, "$lt": end}}},
     ]
     if by_method:
-        pipeline.append({"$group": {
-            "_id": {"$ifNull": ["$payment_method", "other"]},
-            "total": {"$sum": "$amount"},
-            "count": {"$sum": 1},
-        }})
+        pipeline.append(
+            {
+                "$group": {
+                    "_id": {"$ifNull": ["$payment_method", "other"]},
+                    "total": {"$sum": "$amount"},
+                    "count": {"$sum": 1},
+                }
+            }
+        )
     else:
         pipeline.append({"$group": {"_id": None, "total": {"$sum": "$amount"}, "count": {"$sum": 1}}})
     return await db.payments.aggregate(pipeline).to_list(50)
@@ -175,14 +175,18 @@ async def _sum_payments(db, tid: str, start: str, end: str, by_method: bool = Fa
 
 async def _sum_charges(db, tid: str, start: str, end: str):
     """Folio_charges'dan kategori bazlı gelir."""
-    return await db.folio_charges.aggregate([
-        {"$match": {"tenant_id": tid, "posted_at": {"$gte": start, "$lt": end}}},
-        {"$group": {
-            "_id": {"$ifNull": ["$category", "other"]},
-            "total": {"$sum": "$amount"},
-            "count": {"$sum": 1},
-        }},
-    ]).to_list(50)
+    return await db.folio_charges.aggregate(
+        [
+            {"$match": {"tenant_id": tid, "posted_at": {"$gte": start, "$lt": end}}},
+            {
+                "$group": {
+                    "_id": {"$ifNull": ["$category", "other"]},
+                    "total": {"$sum": "$amount"},
+                    "count": {"$sum": 1},
+                }
+            },
+        ]
+    ).to_list(50)
 
 
 @router.get("/trial-balance")
@@ -240,31 +244,41 @@ async def trial_balance(
         db.rooms.count_documents({"tenant_id": tid, "status": "occupied"}),
         db.rooms.count_documents({"tenant_id": tid, "status": {"$in": ["ooo", "out_of_order", "maintenance"]}}),
         db.bookings.count_documents(in_house_q),
-        db.bookings.count_documents({
-            "tenant_id": tid,
-            "check_in": {"$gte": day_start, "$lt": day_end},
-            "status": {"$in": ["checked_in", "in_house"]},
-        }),
-        db.bookings.count_documents({
-            "tenant_id": tid,
-            "check_out": {"$gte": day_start, "$lt": day_end},
-            "status": "checked_out",
-        }),
-        db.bookings.count_documents({
-            "tenant_id": tid,
-            "check_in": {"$gte": day_start, "$lt": day_end},
-            "status": "no_show",
-        }),
+        db.bookings.count_documents(
+            {
+                "tenant_id": tid,
+                "check_in": {"$gte": day_start, "$lt": day_end},
+                "status": {"$in": ["checked_in", "in_house"]},
+            }
+        ),
+        db.bookings.count_documents(
+            {
+                "tenant_id": tid,
+                "check_out": {"$gte": day_start, "$lt": day_end},
+                "status": "checked_out",
+            }
+        ),
+        db.bookings.count_documents(
+            {
+                "tenant_id": tid,
+                "check_in": {"$gte": day_start, "$lt": day_end},
+                "status": "no_show",
+            }
+        ),
         _sum_payments(db, tid, day_start, day_end, by_method=True),
         _sum_charges(db, tid, day_start, day_end),
-        db.bookings.aggregate([
-            {"$match": {"tenant_id": tid, "status": "checked_out", "ar_balance": {"$gt": 0}}},
-            {"$group": {"_id": None, "total": {"$sum": "$ar_balance"}}},
-        ]).to_list(1),
-        db.deposits.aggregate([
-            {"$match": {"tenant_id": tid, "status": {"$ne": "applied"}}},
-            {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
-        ]).to_list(1),
+        db.bookings.aggregate(
+            [
+                {"$match": {"tenant_id": tid, "status": "checked_out", "ar_balance": {"$gt": 0}}},
+                {"$group": {"_id": None, "total": {"$sum": "$ar_balance"}}},
+            ]
+        ).to_list(1),
+        db.deposits.aggregate(
+            [
+                {"$match": {"tenant_id": tid, "status": {"$ne": "applied"}}},
+                {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
+            ]
+        ).to_list(1),
         db.folios.count_documents({"tenant_id": tid, "status": {"$ne": "closed"}}),
         db.night_audit_logs.find_one(
             {"tenant_id": tid},
@@ -355,5 +369,3 @@ async def trial_balance(
         },
         "last_night_audit": last_audit_info,
     }
-
-

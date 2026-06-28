@@ -18,6 +18,7 @@ The guard always re-reads the booking status from the database at the moment of
 the cut (a true last-second check) instead of trusting any cached/earlier
 snapshot.
 """
+
 from typing import Any
 
 from fastapi import HTTPException
@@ -33,9 +34,7 @@ def is_status_invoiceable(status: Any) -> bool:
     return normalized not in NON_INVOICEABLE_STATUSES
 
 
-async def resolve_booking_status(
-    db_handle, tenant_id: str, booking_id: str | None
-) -> str | None:
+async def resolve_booking_status(db_handle, tenant_id: str, booking_id: str | None) -> str | None:
     """Last-second fetch of a booking's current status (tenant-scoped).
 
     Returns ``None`` when there is no booking_id or the booking cannot be
@@ -53,9 +52,7 @@ async def resolve_booking_status(
     return status.lower() if isinstance(status, str) else None
 
 
-async def ensure_booking_invoiceable(
-    db_handle, tenant_id: str, booking_id: str | None
-) -> None:
+async def ensure_booking_invoiceable(db_handle, tenant_id: str, booking_id: str | None) -> None:
     """Raise HTTP 409 when the booking is positively cancelled; no-op otherwise.
 
     Used at HTTP invoice / e-Fatura creation endpoints. The Celery sweep uses

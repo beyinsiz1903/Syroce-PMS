@@ -3,6 +3,7 @@ Usage Metering Service
 Tracks per-tenant usage events: API calls, reservations, rooms, users, etc.
 Fire-and-forget recording with background aggregation.
 """
+
 import logging
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
@@ -133,11 +134,13 @@ async def get_tenant_usage_timeline(tenant_id: str, days: int = 30, event_type: 
 
     timeline = []
     for r in results:
-        timeline.append({
-            "date": r["_id"]["date"],
-            "event_type": r["_id"]["event_type"],
-            "count": r["count"],
-        })
+        timeline.append(
+            {
+                "date": r["_id"]["date"],
+                "event_type": r["_id"]["event_type"],
+                "count": r["count"],
+            }
+        )
     return timeline
 
 
@@ -188,12 +191,14 @@ async def get_system_usage_overview() -> dict[str, Any]:
     top_tenants = []
     for r in top_results:
         t = await _raw_db.tenants.find_one({"id": r["_id"]}, {"_id": 0, "property_name": 1, "subscription_tier": 1})
-        top_tenants.append({
-            "tenant_id": r["_id"],
-            "property_name": t.get("property_name", "?") if t else "?",
-            "tier": t.get("subscription_tier", "?") if t else "?",
-            "total_events": r["total"],
-        })
+        top_tenants.append(
+            {
+                "tenant_id": r["_id"],
+                "property_name": t.get("property_name", "?") if t else "?",
+                "tier": t.get("subscription_tier", "?") if t else "?",
+                "total_events": r["total"],
+            }
+        )
 
     return {
         "today": today_totals,

@@ -8,6 +8,7 @@ Safe to run multiple times.
 
 Usage: python -m backend.scripts.migrate_hotel_id_username
 """
+
 import asyncio
 import os
 import random
@@ -71,7 +72,7 @@ async def main():
         await db.tenants.update_one({"id": tid}, {"$set": {"hotel_id": new_hid}})
         used_ids.add(new_hid)
         tenant_updates += 1
-        print(f"  Tenant {tid[:8]}... → hotel_id={new_hid} ({t.get('property_name','?')})")
+        print(f"  Tenant {tid[:8]}... → hotel_id={new_hid} ({t.get('property_name', '?')})")
 
     # Ensure unique index on hotel_id (sparse to allow nulls)
     try:
@@ -84,6 +85,7 @@ async def main():
     try:
         from security.encrypted_lookup import decrypt_user_doc
     except Exception:
+
         def decrypt_user_doc(d):
             return d
 

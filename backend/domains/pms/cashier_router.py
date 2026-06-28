@@ -51,7 +51,8 @@ async def _ensure_shift_indexes() -> None:
         except Exception as exc:
             logger.warning(
                 "cashier_shifts: index creation failed (will retry in %ss): %s",
-                int(_SHIFT_INDEX_RETRY_BACKOFF_SEC), exc,
+                int(_SHIFT_INDEX_RETRY_BACKOFF_SEC),
+                exc,
             )
 
 
@@ -60,11 +61,14 @@ async def _find_active_booking_by_room(tenant_id: str, room_number: str) -> dict
     if not room_number:
         return None
     try:
-        return await db.bookings.find_one({
-            "tenant_id": tenant_id,
-            "room_number": str(room_number),
-            "status": {"$in": ["checked_in", "in_house"]},
-        }, {"_id": 0})
+        return await db.bookings.find_one(
+            {
+                "tenant_id": tenant_id,
+                "room_number": str(room_number),
+                "status": {"$in": ["checked_in", "in_house"]},
+            },
+            {"_id": 0},
+        )
     except Exception as e:
         logger.warning(f"active booking lookup failed: {e}")
         return None
@@ -110,10 +114,7 @@ async def get_current_shift(
     _perm=Depends(require_op("view_finance_reports")),
 ):
     await _ensure_shift_indexes()
-    shift = await db.cashier_shifts.find_one(
-        {"tenant_id": current_user.tenant_id, "status": "open"},
-        sort=[("opened_at", -1)]
-    )
+    shift = await db.cashier_shifts.find_one({"tenant_id": current_user.tenant_id, "status": "open"}, sort=[("opened_at", -1)])
     if shift:
         shift["id"] = str(shift.pop("_id"))
         # Embedded transactions array (Atlas 500-koleksiyon limiti pattern'i)
@@ -125,13 +126,13 @@ async def get_current_shift(
 
 
 @router.post("/cashier/open-shift")
-async def open_shift(body: dict = Body({}), current_user: User = Depends(get_current_user),
+async def open_shift(
+    body: dict = Body({}),
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
     await _ensure_shift_indexes()
-    existing = await db.cashier_shifts.find_one(
-        {"tenant_id": current_user.tenant_id, "status": "open"}
-    )
+    existing = await db.cashier_shifts.find_one({"tenant_id": current_user.tenant_id, "status": "open"})
     if existing:
         raise HTTPException(status_code=400, detail="Zaten açık bir vardiya var")
     now = datetime.utcnow()
@@ -139,7 +140,7 @@ async def open_shift(body: dict = Body({}), current_user: User = Depends(get_cur
     doc = {
         "_id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
-        "cashier_name": current_user.name if hasattr(current_user, 'name') else current_user.email,
+        "cashier_name": current_user.name if hasattr(current_user, "name") else current_user.email,
         "cashier_email": current_user.email,
         "opening_amount": opening_amount,
         "cash_in": 0,
@@ -147,7 +148,7 @@ async def open_shift(body: dict = Body({}), current_user: User = Depends(get_cur
         "status": "open",
         "opened_at": now.isoformat(),
         "opened_by": current_user.email,
-        "opened_by_name": current_user.name if hasattr(current_user, 'name') else current_user.email,
+        "opened_by_name": current_user.name if hasattr(current_user, "name") else current_user.email,
         "denominations": body.get("denomination_counts", body.get("denominations", {})),
     }
     try:
@@ -162,12 +163,12 @@ async def open_shift(body: dict = Body({}), current_user: User = Depends(get_cur
 
 
 @router.post("/cashier/close-shift")
-async def close_shift(body: dict = Body({}), current_user: User = Depends(get_current_user),
+async def close_shift(
+    body: dict = Body({}),
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
-    shift = await db.cashier_shifts.find_one(
-        {"tenant_id": current_user.tenant_id, "status": "open"}
-    )
+    shift = await db.cashier_shifts.find_one({"tenant_id": current_user.tenant_id, "status": "open"})
     if not shift:
         raise HTTPException(status_code=404, detail="Acik vardiya bulunamadi")
     now = datetime.utcnow()
@@ -176,16 +177,18 @@ async def close_shift(body: dict = Body({}), current_user: User = Depends(get_cu
     difference = counted_amount - expected
     await db.cashier_shifts.update_one(
         {"_id": shift["_id"], "tenant_id": current_user.tenant_id},
-        {"$set": {
-            "status": "closed",
-            "closed_at": now.isoformat(),
-            "closing_amount": counted_amount,
-            "expected_amount": expected,
-            "difference": difference,
-            "closing_denominations": body.get("denomination_counts", body.get("denominations", {})),
-            "closed_by": current_user.email,
-            "closed_by_name": current_user.name if hasattr(current_user, 'name') else current_user.email,
-        }}
+        {
+            "$set": {
+                "status": "closed",
+                "closed_at": now.isoformat(),
+                "closing_amount": counted_amount,
+                "expected_amount": expected,
+                "difference": difference,
+                "closing_denominations": body.get("denomination_counts", body.get("denominations", {})),
+                "closed_by": current_user.email,
+                "closed_by_name": current_user.name if hasattr(current_user, "name") else current_user.email,
+            }
+        },
     )
     return {
         "status": "closed",
@@ -194,7 +197,7 @@ async def close_shift(body: dict = Body({}), current_user: User = Depends(get_cu
         "difference": difference,
         "closed_at": now.isoformat(),
         "closed_by": current_user.email,
-        "closed_by_name": current_user.name if hasattr(current_user, 'name') else current_user.email,
+        "closed_by_name": current_user.name if hasattr(current_user, "name") else current_user.email,
     }
 
 
@@ -206,6 +209,7 @@ async def handover_shift(
     _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
     from core._pwd import BcryptContext
+
     pwd_ctx = BcryptContext()
 
     # Task-51 — brute-force throttle on the financial PIN-equivalent gate.
@@ -222,6 +226,7 @@ async def handover_shift(
         client_ip,
     )
     from security.auth_throttle import enforce as _throttle
+
     _ip = client_ip(request)
     await _throttle(
         CASHIER_HANDOVER_USER,
@@ -234,9 +239,7 @@ async def handover_shift(
         "vardiya devir denemesi",
     )
 
-    shift = await db.cashier_shifts.find_one(
-        {"tenant_id": current_user.tenant_id, "status": "open"}
-    )
+    shift = await db.cashier_shifts.find_one({"tenant_id": current_user.tenant_id, "status": "open"})
     if not shift:
         raise HTTPException(status_code=404, detail="Acik vardiya bulunamadi")
 
@@ -248,9 +251,7 @@ async def handover_shift(
     if target_email == current_user.email:
         raise HTTPException(status_code=400, detail="Vardiyayi kendinize devredemezsiniz")
 
-    target_user = await db.users.find_one(
-        {"email": target_email, "tenant_id": current_user.tenant_id}
-    )
+    target_user = await db.users.find_one({"email": target_email, "tenant_id": current_user.tenant_id})
     if not target_user:
         raise HTTPException(status_code=401, detail="Kullanici bulunamadi veya ayni otele ait degil")
 
@@ -275,19 +276,21 @@ async def handover_shift(
 
     await db.cashier_shifts.update_one(
         {"_id": shift["_id"], "tenant_id": current_user.tenant_id},
-        {"$set": {
-            "status": "handed_over",
-            "closed_at": now.isoformat(),
-            "closing_amount": expected,
-            "expected_amount": expected,
-            "difference": 0,
-            "closed_by": current_user.email,
-            "closed_by_name": current_user.name if hasattr(current_user, "name") else current_user.email,
-            "handover_to_email": target_email,
-            "handover_to_name": target_name,
-            "handover_at": now.isoformat(),
-            "handover_note": body.get("note", ""),
-        }}
+        {
+            "$set": {
+                "status": "handed_over",
+                "closed_at": now.isoformat(),
+                "closing_amount": expected,
+                "expected_amount": expected,
+                "difference": 0,
+                "closed_by": current_user.email,
+                "closed_by_name": current_user.name if hasattr(current_user, "name") else current_user.email,
+                "handover_to_email": target_email,
+                "handover_to_name": target_name,
+                "handover_at": now.isoformat(),
+                "handover_note": body.get("note", ""),
+            }
+        },
     )
     new_doc = {
         "_id": str(uuid.uuid4()),
@@ -368,9 +371,7 @@ async def peer_verify(
     pwd_ctx = BcryptContext()
     me = await db.users.find_one({"_id": current_user.id})
     if not me:
-        me = await db.users.find_one(
-            {"email": current_user.email, "tenant_id": current_user.tenant_id}
-        )
+        me = await db.users.find_one({"email": current_user.email, "tenant_id": current_user.tenant_id})
     if not me:
         raise HTTPException(status_code=401, detail="Kullanici dogrulanamadi")
 
@@ -404,6 +405,7 @@ async def manual_transaction(
     Body: { amount, direction: 'in'|'out', method: 'cash'|'card'..., description, type? }
     """
     from domains.pms.cashier_service import record_cash_transaction
+
     amount = _safe_float(body.get("amount", 0))
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Tutar 0'dan büyük olmalı")
@@ -427,9 +429,7 @@ async def manual_transaction(
         amount = round(original_amount * fx_rate, 2)
 
     # Aktif vardiya zorunlu (tüm manuel işlemler için)
-    shift = await db.cashier_shifts.find_one(
-        {"tenant_id": current_user.tenant_id, "status": "open"}
-    )
+    shift = await db.cashier_shifts.find_one({"tenant_id": current_user.tenant_id, "status": "open"})
     if not shift:
         raise HTTPException(status_code=409, detail="Aktif kasa vardiyası yok. Önce 'Vardiya Aç' işlemini yapın.")
 
@@ -468,6 +468,7 @@ async def bank_deposit(
     Header: X-Idempotency-Key (opsiyonel, retry güvenliği için önerilir)
     """
     from domains.pms.cashier_service import record_cash_transaction
+
     amount = _safe_float(body.get("amount", 0))
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Tutar 0'dan büyük olmalı")
@@ -595,14 +596,12 @@ async def period_report(
         # bu döneme yanlışlıkla eklenir.
         opening_in = float(s.get("opening_amount") or 0) if _in_range(s.get("opened_at")) else 0.0
         # cash_in/cash_out yalnız aralıktaki nakit tx'lerden hesapla
-        c_in = sum(float(t.get("amount") or 0) for t in txns_in_range
-                   if (t.get("method") == "cash") and (t.get("direction") == "in"))
-        c_out = sum(float(t.get("amount") or 0) for t in txns_in_range
-                    if (t.get("method") == "cash") and (t.get("direction") == "out"))
+        c_in = sum(float(t.get("amount") or 0) for t in txns_in_range if (t.get("method") == "cash") and (t.get("direction") == "in"))
+        c_out = sum(float(t.get("amount") or 0) for t in txns_in_range if (t.get("method") == "cash") and (t.get("direction") == "out"))
         totals["opening_total"] += opening_in
         totals["cash_in_total"] += c_in
         totals["cash_out_total"] += c_out
-        totals["expected_total"] += (opening_in + c_in - c_out)
+        totals["expected_total"] += opening_in + c_in - c_out
         # closing/difference yalnız closed_at aralıktaysa dahil
         if s.get("closing_amount") is not None and _in_range(s.get("closed_at")):
             totals["closing_total"] += float(s.get("closing_amount") or 0)
@@ -610,10 +609,16 @@ async def period_report(
             totals["difference_total"] += float(s.get("difference") or 0)
 
         cashier_key = s.get("cashier_email") or s.get("cashier_name") or "?"
-        by_cashier.setdefault(cashier_key, {
-            "name": s.get("cashier_name") or cashier_key,
-            "shift_count": 0, "cash_in": 0.0, "cash_out": 0.0, "transaction_count": 0,
-        })
+        by_cashier.setdefault(
+            cashier_key,
+            {
+                "name": s.get("cashier_name") or cashier_key,
+                "shift_count": 0,
+                "cash_in": 0.0,
+                "cash_out": 0.0,
+                "transaction_count": 0,
+            },
+        )
         by_cashier[cashier_key]["shift_count"] += 1
         by_cashier[cashier_key]["cash_in"] += c_in
         by_cashier[cashier_key]["cash_out"] += c_out
@@ -649,20 +654,22 @@ async def period_report(
                 by_currency[cur]["out_try"] += amt
                 by_currency[cur]["out_original"] += orig
 
-        shifts_summary.append({
-            "shift_id": str(s.get("_id") or s.get("id") or ""),
-            "cashier_name": s.get("cashier_name"),
-            "status": s.get("status"),
-            "opened_at": s.get("opened_at"),
-            "closed_at": s.get("closed_at"),
-            "opening_in_period": _in_range(s.get("opened_at")),
-            "opening_amount": float(s.get("opening_amount") or 0),
-            "cash_in_period": c_in,
-            "cash_out_period": c_out,
-            "transaction_count_period": len(txns_in_range),
-            "closing_amount": s.get("closing_amount"),
-            "difference": s.get("difference"),
-        })
+        shifts_summary.append(
+            {
+                "shift_id": str(s.get("_id") or s.get("id") or ""),
+                "cashier_name": s.get("cashier_name"),
+                "status": s.get("status"),
+                "opened_at": s.get("opened_at"),
+                "closed_at": s.get("closed_at"),
+                "opening_in_period": _in_range(s.get("opened_at")),
+                "opening_amount": float(s.get("opening_amount") or 0),
+                "cash_in_period": c_in,
+                "cash_out_period": c_out,
+                "transaction_count_period": len(txns_in_range),
+                "closing_amount": s.get("closing_amount"),
+                "difference": s.get("difference"),
+            }
+        )
 
     return {
         "start_date": start_date,
@@ -755,9 +762,7 @@ async def z_report(
     _perm=Depends(require_op("view_finance_reports")),
 ):
     """Kapalı/devredilmiş vardiya için kesin rapor (Z-Raporu)."""
-    shift = await db.cashier_shifts.find_one(
-        {"_id": shift_id, "tenant_id": current_user.tenant_id}
-    )
+    shift = await db.cashier_shifts.find_one({"_id": shift_id, "tenant_id": current_user.tenant_id})
     if not shift:
         raise HTTPException(status_code=404, detail="Vardiya bulunamadı")
     report = _build_shift_report(shift)
@@ -774,10 +779,7 @@ async def shift_transactions(
     _perm=Depends(require_op("view_finance_reports")),
 ):
     """Vardiya işlem listesini döner (geçmiş vardiya detay görünümü için)."""
-    shift = await db.cashier_shifts.find_one(
-        {"_id": shift_id, "tenant_id": current_user.tenant_id},
-        {"_id": 0, "transactions": 1, "cashier_name": 1, "opened_at": 1, "closed_at": 1, "status": 1}
-    )
+    shift = await db.cashier_shifts.find_one({"_id": shift_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "transactions": 1, "cashier_name": 1, "opened_at": 1, "closed_at": 1, "status": 1})
     if not shift:
         raise HTTPException(status_code=404, detail="Vardiya bulunamadı")
     txns = list(shift.get("transactions") or [])
@@ -800,10 +802,7 @@ async def shift_history(
     _perm=Depends(require_op("view_finance_reports")),
 ):
     # transactions array büyük olabilir → liste görünümünde dahil etme
-    cursor = db.cashier_shifts.find(
-        {"tenant_id": current_user.tenant_id},
-        {"transactions": 0}
-    ).sort("opened_at", -1).skip(skip).limit(limit)
+    cursor = db.cashier_shifts.find({"tenant_id": current_user.tenant_id}, {"transactions": 0}).sort("opened_at", -1).skip(skip).limit(limit)
     shifts = await cursor.to_list(limit)
     for s in shifts:
         s["id"] = str(s.pop("_id"))
@@ -814,11 +813,10 @@ async def shift_history(
 # Atlas 500 koleksiyon limitini aşmamak için laundry_orders'ı da
 # tenant_settings dokümanı içinde array olarak tutuyoruz.
 
+
 async def _get_laundry_orders_array(tenant_id: str) -> list[dict]:
-    settings = await db.tenant_settings.find_one(
-        {"tenant_id": tenant_id}, {"_id": 0, "laundry_orders": 1}
-    )
-    return ((settings or {}).get("laundry_orders") or [])
+    settings = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "laundry_orders": 1})
+    return (settings or {}).get("laundry_orders") or []
 
 
 @router.get("/laundry/orders")
@@ -828,11 +826,13 @@ async def get_laundry_orders(skip: int = 0, limit: int = 100, status: str = None
         orders = [o for o in orders if o.get("status") == status]
     # En yeni önce
     orders.sort(key=lambda o: o.get("created_at") or "", reverse=True)
-    return {"orders": orders[skip:skip + limit]}
+    return {"orders": orders[skip : skip + limit]}
 
 
 @router.post("/laundry/orders")
-async def create_laundry_order(body: dict = Body(...), current_user: User = Depends(get_current_user),
+async def create_laundry_order(
+    body: dict = Body(...),
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     if not body.get("room_number"):
@@ -883,7 +883,10 @@ async def create_laundry_order(body: dict = Body(...), current_user: User = Depe
 
 
 @router.patch("/laundry/orders/{order_id}")
-async def update_laundry_order(order_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user),
+async def update_laundry_order(
+    order_id: str,
+    body: dict = Body(...),
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     update_fields = {k: v for k, v in body.items() if k not in ("id", "tenant_id")}
@@ -916,9 +919,7 @@ async def update_laundry_order(order_id: str, body: dict = Body(...), current_us
             folio_id = order.get("folio_id") or ""
             # Eski siparişler için lookup
             if not booking_id:
-                active = await _find_active_booking_by_room(
-                    current_user.tenant_id, order.get("room_number", "")
-                )
+                active = await _find_active_booking_by_room(current_user.tenant_id, order.get("room_number", ""))
                 if active:
                     booking_id = active.get("id") or active.get("booking_id") or ""
             if booking_id and not folio_id:
@@ -928,10 +929,7 @@ async def update_laundry_order(order_id: str, body: dict = Body(...), current_us
 
             if folio_id and booking_id:
                 try:
-                    items_desc = ", ".join(
-                        f"{i.get('name', '?')} x{i.get('quantity', 1)}"
-                        for i in (order.get("items") or [])
-                    )
+                    items_desc = ", ".join(f"{i.get('name', '?')} x{i.get('quantity', 1)}" for i in (order.get("items") or []))
                     desc = f"Çamaşırhane - Oda {order.get('room_number', '?')}"
                     if items_desc:
                         desc += f" ({items_desc})"
@@ -954,11 +952,13 @@ async def update_laundry_order(order_id: str, body: dict = Body(...), current_us
                     # burada entry_id/folio_id/booking_id metadata'yı yansıt
                     await db.tenant_settings.update_one(
                         {"tenant_id": current_user.tenant_id, "laundry_orders.id": order_id},
-                        {"$set": {
-                            "laundry_orders.$.folio_entry_id": posted.get("entry_id"),
-                            "laundry_orders.$.folio_id": folio_id,
-                            "laundry_orders.$.booking_id": booking_id,
-                        }},
+                        {
+                            "$set": {
+                                "laundry_orders.$.folio_entry_id": posted.get("entry_id"),
+                                "laundry_orders.$.folio_id": folio_id,
+                                "laundry_orders.$.booking_id": booking_id,
+                            }
+                        },
                     )
                     folio_charge_result = {
                         "charged": True,
@@ -993,7 +993,9 @@ async def update_laundry_order(order_id: str, body: dict = Body(...), current_us
 
 
 @router.delete("/laundry/orders/{order_id}")
-async def delete_laundry_order(order_id: str, current_user: User = Depends(get_current_user),
+async def delete_laundry_order(
+    order_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     result = await db.tenant_settings.update_one(
@@ -1042,9 +1044,7 @@ def _seed_default_items() -> list[dict]:
 
 async def _get_laundry_items_array(tenant_id: str) -> list[dict]:
     """tenant_settings'ten laundry_items dizisini döner; yoksa default'ları seed eder."""
-    settings = await db.tenant_settings.find_one(
-        {"tenant_id": tenant_id}, {"_id": 0, "laundry_items": 1}
-    )
+    settings = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "laundry_items": 1})
     items = (settings or {}).get("laundry_items")
     if items is None:
         seeded = _seed_default_items()
@@ -1057,9 +1057,7 @@ async def _get_laundry_items_array(tenant_id: str) -> list[dict]:
                 upsert=True,
             )
             # Yeniden oku (başka bir istek seed etmiş olabilir)
-            settings2 = await db.tenant_settings.find_one(
-                {"tenant_id": tenant_id}, {"_id": 0, "laundry_items": 1}
-            )
+            settings2 = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "laundry_items": 1})
             return ((settings2 or {}).get("laundry_items")) or seeded
         except Exception as e:
             logger.warning(f"laundry_items seed failed: {e}; returning defaults in-memory")
@@ -1076,7 +1074,9 @@ async def get_laundry_items(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/laundry/items")
-async def create_laundry_item(body: dict = Body(...), current_user: User = Depends(get_current_user),
+async def create_laundry_item(
+    body: dict = Body(...),
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     code = (body.get("code") or "").strip().lower()
@@ -1109,7 +1109,10 @@ async def create_laundry_item(body: dict = Body(...), current_user: User = Depen
 
 
 @router.put("/laundry/items/{item_id}")
-async def update_laundry_item(item_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user),
+async def update_laundry_item(
+    item_id: str,
+    body: dict = Body(...),
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     set_fields = {}
@@ -1140,7 +1143,9 @@ async def update_laundry_item(item_id: str, body: dict = Body(...), current_user
 
 
 @router.delete("/laundry/items/{item_id}")
-async def delete_laundry_item(item_id: str, current_user: User = Depends(get_current_user),
+async def delete_laundry_item(
+    item_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     result = await db.tenant_settings.update_one(
@@ -1156,15 +1161,14 @@ async def delete_laundry_item(item_id: str, current_user: User = Depends(get_cur
 # Aktif misafir lookup (oda no → guest_name + booking_id)
 # ═══════════════════════════════════════════════════════════════
 
+
 @router.get("/bookings/active-by-room/{room_number}")
 async def get_active_booking_by_room(room_number: str, current_user: User = Depends(get_current_user)):
     """Verilen oda no için checked_in/in_house misafiri döner."""
     booking = await _find_active_booking_by_room(current_user.tenant_id, room_number)
     if not booking:
         return {"found": False}
-    folio = await _find_open_folio_for_booking(
-        current_user.tenant_id, booking.get("id") or booking.get("booking_id") or ""
-    )
+    folio = await _find_open_folio_for_booking(current_user.tenant_id, booking.get("id") or booking.get("booking_id") or "")
     return {
         "found": True,
         "booking_id": booking.get("id") or booking.get("booking_id") or "",
@@ -1175,4 +1179,3 @@ async def get_active_booking_by_room(room_number: str, current_user: User = Depe
         "status": booking.get("status"),
         "folio_id": (folio or {}).get("id") or "",
     }
-

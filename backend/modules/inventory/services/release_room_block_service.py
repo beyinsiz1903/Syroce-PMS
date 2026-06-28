@@ -93,11 +93,10 @@ class ReleaseRoomBlockService:
                 "out_of_service": "oos",
                 "maintenance": "maintenance",
             }
-            lock_block_type = block_type_map.get(
-                str(existing_block.get("type", "out_of_order")), "ooo"
-            )
+            lock_block_type = block_type_map.get(str(existing_block.get("type", "out_of_order")), "ooo")
             try:
                 from core.atomic_booking import release_room_block as release_lock
+
                 await release_lock(
                     tenant_id=tenant_context.tenant_id,
                     room_id=existing_block["room_id"],
@@ -108,9 +107,8 @@ class ReleaseRoomBlockService:
                 )
             except Exception as exc:
                 import logging
-                logging.getLogger("inventory.release_room_block").warning(
-                    "room_night_locks release failed for block %s: %s", block_id, exc
-                )
+
+                logging.getLogger("inventory.release_room_block").warning("room_night_locks release failed for block %s: %s", block_id, exc)
 
             released_block = {
                 **existing_block,

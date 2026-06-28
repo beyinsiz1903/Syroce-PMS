@@ -19,6 +19,7 @@ custom ``httpcore`` network backend that rewrites the connect-time
 hostname to the pinned IP. TLS SNI / cert verification still use
 the original hostname, so HTTPS targets keep working unchanged.
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -36,11 +37,7 @@ logger = logging.getLogger("integrations.xchange.safety")
 # Permit private targets only when explicitly enabled
 # (e.g. local dev / on-prem partner over VPN).
 _ALLOW_PRIVATE = os.getenv("XCHANGE_ALLOW_PRIVATE_EGRESS", "").lower() in {"1", "true", "yes"}
-_EXTRA_ALLOWED_HOSTS = {
-    h.strip().lower()
-    for h in os.getenv("XCHANGE_EGRESS_ALLOWED_HOSTS", "").split(",")
-    if h.strip()
-}
+_EXTRA_ALLOWED_HOSTS = {h.strip().lower() for h in os.getenv("XCHANGE_EGRESS_ALLOWED_HOSTS", "").split(",") if h.strip()}
 
 # Default outbound timeout for safe_post_async / safe_request_async.
 _DEFAULT_TIMEOUT = float(os.getenv("XCHANGE_EGRESS_TIMEOUT_SECONDS", "15") or "15")
@@ -55,14 +52,7 @@ def _is_private(ip: str) -> bool:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return True  # treat unparseable as unsafe
-    return (
-        addr.is_private
-        or addr.is_loopback
-        or addr.is_link_local
-        or addr.is_multicast
-        or addr.is_reserved
-        or addr.is_unspecified
-    )
+    return addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_multicast or addr.is_reserved or addr.is_unspecified
 
 
 def assert_safe_url(url: str) -> None:

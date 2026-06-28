@@ -8,6 +8,7 @@ Alert triggers: health_score drop, ack failures, sync failures, provider unavail
 Severity: info, warning, critical
 Actions: acknowledge, resolve, mute, snooze, dismiss
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -75,9 +76,7 @@ class AlertingService:
     async def update_rule(self, tenant_id: str, rule_id: str, updates: dict, actor_id: str | None = None) -> dict:
         updates["updated_at"] = datetime.now(UTC).isoformat()
         updates["updated_by"] = actor_id
-        await db[ALERT_RULES].update_one(
-            {"tenant_id": tenant_id, "id": rule_id}, {"$set": updates}
-        )
+        await db[ALERT_RULES].update_one({"tenant_id": tenant_id, "id": rule_id}, {"$set": updates})
         return await db[ALERT_RULES].find_one({"tenant_id": tenant_id, "id": rule_id}, _NO_ID) or {}
 
     async def delete_rule(self, tenant_id: str, rule_id: str) -> bool:
@@ -87,14 +86,16 @@ class AlertingService:
     async def _seed_default_rules(self, tenant_id: str):
         docs = []
         for r in DEFAULT_RULES:
-            docs.append({
-                "id": str(uuid.uuid4()),
-                "tenant_id": tenant_id,
-                **r,
-                "connector_id": None,
-                "created_at": datetime.now(UTC).isoformat(),
-                "created_by": "system",
-            })
+            docs.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    **r,
+                    "connector_id": None,
+                    "created_at": datetime.now(UTC).isoformat(),
+                    "created_by": "system",
+                }
+            )
         if docs:
             await db[ALERT_RULES].insert_many(docs)
 
@@ -114,10 +115,14 @@ class AlertingService:
                     continue
                 triggered = await self._check_rule(tenant_id, c, rule)
                 if triggered:
-                    existing = await db[ALERTS].find_one({
-                        "tenant_id": tenant_id, "connector_id": cid,
-                        "trigger": rule["trigger"], "status": {"$in": ["active", "acknowledged"]},
-                    })
+                    existing = await db[ALERTS].find_one(
+                        {
+                            "tenant_id": tenant_id,
+                            "connector_id": cid,
+                            "trigger": rule["trigger"],
+                            "status": {"$in": ["active", "acknowledged"]},
+                        }
+                    )
                     if not existing:
                         await self._create_alert(tenant_id, c, rule)
                         alerts_created += 1
@@ -131,6 +136,7 @@ class AlertingService:
 
         if trigger == "health_score_drop":
             from ..application.reconciliation_service import ReconciliationService
+
             recon = ReconciliationService(self._repo)
             health = await recon.get_health_score(tenant_id, cid)
             return health.get("health_score", 100) < threshold
@@ -139,9 +145,13 @@ class AlertingService:
             return connector.get("consecutive_failures", 0) >= threshold
 
         elif trigger == "ack_failure_spike":
-            count = await db.cm_imported_reservations.count_documents({
-                "tenant_id": tenant_id, "connector_id": cid, "ack_status": "ack_failed",
-            })
+            count = await db.cm_imported_reservations.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "connector_id": cid,
+                    "ack_status": "ack_failed",
+                }
+            )
             return count >= threshold
 
         elif trigger == "stale_sync":
@@ -175,9 +185,13 @@ class AlertingService:
             return connector.get("status") == "error"
 
         elif trigger == "import_failure_spike":
-            failed_imports = await db.cm_imported_reservations.count_documents({
-                "tenant_id": tenant_id, "connector_id": cid, "import_status": "failed",
-            })
+            failed_imports = await db.cm_imported_reservations.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "connector_id": cid,
+                    "import_status": "failed",
+                }
+            )
             return failed_imports >= threshold
 
         return False
@@ -185,6 +199,7 @@ class AlertingService:
     async def _create_alert(self, tenant_id: str, connector: dict, rule: dict) -> dict:
         cid = connector.get("id", "")
         from ..application.reconciliation_service import ReconciliationService
+
         recon = ReconciliationService(self._repo)
         health = await recon.get_health_score(tenant_id, cid)
 
@@ -211,7 +226,8 @@ class AlertingService:
         await db[ALERTS].insert_one(alert)
         alert.pop("_id", None)
         log = IntegrationAuditLog(
-            tenant_id=tenant_id, connector_id=cid,
+            tenant_id=tenant_id,
+            connector_id=cid,
             action=AuditAction.ALERT_CREATED,
             metadata={"trigger": rule["trigger"], "severity": rule["severity"], "alert_id": alert["id"]},
         )
@@ -220,6 +236,7 @@ class AlertingService:
         # Deliver alert to configured channels
         try:
             from .alert_delivery_service import AlertDeliveryService
+
             delivery_svc = AlertDeliveryService(repo=self._repo)
             await delivery_svc.deliver_alert(tenant_id, alert)
         except Exception as e:
@@ -228,10 +245,10 @@ class AlertingService:
         # Emit WebSocket event
         try:
             from .realtime_service import RealtimeEventService
+
             await RealtimeEventService.emit_alert_triggered(tenant_id, alert)
         except Exception as e:
             logger.debug("WS emit failed: %s", e)
-
 
         return alert
 
@@ -253,8 +270,11 @@ class AlertingService:
     # ─── Alert CRUD & Actions ──────────────────────────────────────────
 
     async def get_alerts(
-        self, tenant_id: str, status: str | None = None,
-        severity: str | None = None, connector_id: str | None = None,
+        self,
+        tenant_id: str,
+        status: str | None = None,
+        severity: str | None = None,
+        connector_id: str | None = None,
         limit: int = 100,
     ) -> list[dict]:
         q: dict[str, Any] = {"tenant_id": tenant_id}
@@ -281,8 +301,10 @@ class AlertingService:
             by_severity[doc["_id"]] = doc["count"]
 
         return {
-            "active": active, "acknowledged": acknowledged,
-            "resolved": resolved, "muted": muted,
+            "active": active,
+            "acknowledged": acknowledged,
+            "resolved": resolved,
+            "muted": muted,
             "total_open": active + acknowledged,
             "by_severity": by_severity,
         }
@@ -294,8 +316,10 @@ class AlertingService:
             {"$set": {"status": "acknowledged", "acknowledged_at": now, "acknowledged_by": actor_id}},
         )
         log = IntegrationAuditLog(
-            tenant_id=tenant_id, action=AuditAction.ALERT_ACKNOWLEDGED,
-            actor_id=actor_id, metadata={"alert_id": alert_id},
+            tenant_id=tenant_id,
+            action=AuditAction.ALERT_ACKNOWLEDGED,
+            actor_id=actor_id,
+            metadata={"alert_id": alert_id},
         )
         await self._repo.create_audit_log(log.to_doc())
         return {"success": True, "alert_id": alert_id, "action": "acknowledged"}
@@ -307,8 +331,10 @@ class AlertingService:
             {"$set": {"status": "resolved", "resolved_at": now, "resolved_by": actor_id, "resolve_reason": reason}},
         )
         log = IntegrationAuditLog(
-            tenant_id=tenant_id, action=AuditAction.ALERT_RESOLVED,
-            actor_id=actor_id, metadata={"alert_id": alert_id, "reason": reason},
+            tenant_id=tenant_id,
+            action=AuditAction.ALERT_RESOLVED,
+            actor_id=actor_id,
+            metadata={"alert_id": alert_id, "reason": reason},
         )
         await self._repo.create_audit_log(log.to_doc())
         return {"success": True, "alert_id": alert_id, "action": "resolved"}
@@ -320,8 +346,10 @@ class AlertingService:
             {"$set": {"status": "muted", "muted_until": muted_until, "muted_by": actor_id}},
         )
         log = IntegrationAuditLog(
-            tenant_id=tenant_id, action=AuditAction.ALERT_MUTED,
-            actor_id=actor_id, metadata={"alert_id": alert_id, "muted_hours": hours},
+            tenant_id=tenant_id,
+            action=AuditAction.ALERT_MUTED,
+            actor_id=actor_id,
+            metadata={"alert_id": alert_id, "muted_hours": hours},
         )
         await self._repo.create_audit_log(log.to_doc())
         return {"success": True, "alert_id": alert_id, "action": "muted", "muted_until": muted_until}
@@ -334,9 +362,10 @@ class AlertingService:
         )
         return {"success": True, "alert_id": alert_id, "action": "dismissed"}
 
-
     async def check_and_fire_alert(
-        self, tenant_id: str, trigger: str,
+        self,
+        tenant_id: str,
+        trigger: str,
         connector_id: str | None = None,
         metadata: dict | None = None,
     ) -> dict | None:
@@ -346,12 +375,14 @@ class AlertingService:
         Checks for duplicate active alerts before creating.
         """
         # Dedup: don't fire if same trigger is already active
-        existing = await db[ALERTS].find_one({
-            "tenant_id": tenant_id,
-            "trigger": trigger,
-            "connector_id": connector_id or "",
-            "status": {"$in": ["active", "acknowledged"]},
-        })
+        existing = await db[ALERTS].find_one(
+            {
+                "tenant_id": tenant_id,
+                "trigger": trigger,
+                "connector_id": connector_id or "",
+                "status": {"$in": ["active", "acknowledged"]},
+            }
+        )
         if existing:
             return None
 
@@ -383,6 +414,7 @@ class AlertingService:
         # Deliver alert to configured channels
         try:
             from .alert_delivery_service import AlertDeliveryService
+
             delivery_svc = AlertDeliveryService(repo=self._repo)
             await delivery_svc.deliver_alert(tenant_id, alert)
         except Exception as e:

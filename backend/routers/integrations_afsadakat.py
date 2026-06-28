@@ -5,6 +5,7 @@
 - /api/integrations/afsadakat/webhook (Af-sadakat → us, API key auth)
 - /api/integrations/afsadakat/admin/* (platform admin)
 """
+
 from __future__ import annotations
 
 import logging
@@ -36,6 +37,7 @@ def _is_platform_super(user: User) -> bool:
     """Süper-admin / platform admin tüm tenant'larda Af-sadakat'a
     erişebilir — entitlement gate'i bu rollerde uygulanmaz."""
     from core.security import _is_super_admin
+
     if _is_super_admin(user):
         return True
     role = (user.role or "").lower()
@@ -54,9 +56,7 @@ async def status(current_user: User = Depends(get_current_user)) -> dict:
     creds = await get_tenant_credentials(current_user.tenant_id)
     return {
         "entitled": bool(has or is_super),
-        "entitlement_source": "super_admin" if (is_super and not has) else (
-            "subscription" if has else "none"
-        ),
+        "entitlement_source": "super_admin" if (is_super and not has) else ("subscription" if has else "none"),
         "provisioned": bool(creds and creds.get("status") == "active"),
         "mode": (creds or {}).get("mode"),
         "ext_tenant_id": (creds or {}).get("ext_tenant_id"),
@@ -70,9 +70,7 @@ async def launch(current_user: User = Depends(get_current_user)) -> dict:
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")
     is_super = _is_platform_super(current_user)
-    if not is_super and not await tenant_has_module(
-        current_user.tenant_id, AFSADAKAT_PRODUCT_KEY
-    ):
+    if not is_super and not await tenant_has_module(current_user.tenant_id, AFSADAKAT_PRODUCT_KEY):
         raise HTTPException(
             status_code=403,
             detail="Sadakat & Inbox modülü için aktif abonelik bulunamadı",
@@ -119,14 +117,14 @@ async def webhook(
     payload = body.get("data") or body.get("payload") or body
 
     await record_inbound_event(creds["tenant_id"], event_type, payload)
-    logger.info("[afsadakat] webhook tenant=%s event=%s",
-                creds["tenant_id"], event_type)
+    logger.info("[afsadakat] webhook tenant=%s event=%s", creds["tenant_id"], event_type)
     return {"ok": True}
 
 
 # ── Platform admin ──────────────────────────────────────────────
 def _require_platform_admin(user: User) -> None:
     from core.security import _is_super_admin
+
     if _is_super_admin(user):
         return
     role = (user.role or "").lower()
@@ -152,9 +150,7 @@ async def admin_provision(
     was misconfigured at first activation)."""
     _require_platform_admin(current_user)
     creds = await provision_tenant(payload.tenant_id)
-    return {"ok": True, "credentials": {
-        k: v for k, v in creds.items() if k != "api_key"
-    }}
+    return {"ok": True, "credentials": {k: v for k, v in creds.items() if k != "api_key"}}
 
 
 @router.get("/admin/tenants/{tenant_id}")

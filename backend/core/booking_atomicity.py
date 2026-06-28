@@ -22,6 +22,7 @@ the conflict check + insert/update without explicit retry loops.
 Atlas (a replica set) supports multi-document transactions, so this
 pattern is production-safe for our deployment target.
 """
+
 from __future__ import annotations
 
 import os
@@ -43,7 +44,10 @@ def standalone_fallback_allowed() -> bool:
     explicitly opt in via env to accept that risk in dev environments.
     """
     return os.getenv("ALLOW_STANDALONE_BOOKING_FALLBACK", "").lower() in {
-        "1", "true", "yes", "on",
+        "1",
+        "true",
+        "yes",
+        "on",
     }
 
 
@@ -72,8 +76,7 @@ async def with_resource_locks(
                     continue
                 await db[locks_collection].update_one(
                     {"tenant_id": tenant_id, "kind": kind, "resource_id": rid},
-                    {"$set": {"touched_at": now_iso},
-                     "$setOnInsert": {"created_at": now_iso}},
+                    {"$set": {"touched_at": now_iso}, "$setOnInsert": {"created_at": now_iso}},
                     upsert=True,
                     session=s,
                 )

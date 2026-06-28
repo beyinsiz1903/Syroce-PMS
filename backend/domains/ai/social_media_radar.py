@@ -26,15 +26,15 @@ class SocialMediaRadar:
     async def get_sentiment_summary(self, tenant_id: str, days: int = 7) -> dict:
         """Sentiment özeti — gerçek mention akışı yoksa fail-closed."""
         return {
-            'period_days': days,
-            'data_available': False,
-            'total_mentions': 0,
-            'positive': 0,
-            'neutral': 0,
-            'negative': 0,
-            'sentiment_score': 0,
-            'trend': 'unknown',
-            'message': 'Sosyal medya entegrasyonu yapılandırılmamış. Veri yok.',
+            "period_days": days,
+            "data_available": False,
+            "total_mentions": 0,
+            "positive": 0,
+            "neutral": 0,
+            "negative": 0,
+            "sentiment_score": 0,
+            "trend": "unknown",
+            "message": "Sosyal medya entegrasyonu yapılandırılmamış. Veri yok.",
         }
 
     async def detect_crisis(self, tenant_id: str) -> list[dict]:
@@ -43,9 +43,9 @@ class SocialMediaRadar:
 
     async def suggest_response(self, mention_text: str, sentiment: str) -> str:
         """Yanıt önerisi şablonu (sabit metin; veri değildir)."""
-        if sentiment == 'positive':
+        if sentiment == "positive":
             return "Thank you for your kind words! We're delighted you enjoyed your stay. We look forward to welcoming you back!"
-        elif sentiment == 'negative':
+        elif sentiment == "negative":
             return "We sincerely apologize for your experience. We take all feedback seriously and would love the opportunity to make it right. Please DM us so we can address your concerns."
         else:
             return "Thank you for sharing your experience! We appreciate your feedback and hope to see you again soon."

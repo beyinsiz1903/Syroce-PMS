@@ -6,6 +6,7 @@ Integrates with metering to record usage events.
 Uses pure ASGI middleware (not BaseHTTPMiddleware) to avoid event-loop
 conflicts in async test runners and improve performance.
 """
+
 import logging
 import time
 from datetime import UTC, datetime
@@ -96,6 +97,7 @@ def _decode_tenant_from_token(token: str) -> str | None:
         import jwt
 
         from core.security import JWT_SECRET
+
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
         return payload.get("tenant_id")
     except Exception:
@@ -108,6 +110,7 @@ def _decode_token_payload(token: str) -> dict | None:
         import jwt
 
         from core.security import JWT_SECRET
+
         return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
     except Exception:
         return None
@@ -206,19 +209,19 @@ async def _check_module_access(tenant_id: str, module: str) -> bool:
        (tenant_subscriptions, status=active, end_date in the future).
     """
     try:
-        tenant_doc = await db.tenants.find_one(
-            {"id": tenant_id}, {"_id": 0, "modules": 1, "subscription_tier": 1}
-        )
+        tenant_doc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "modules": 1, "subscription_tier": 1})
         if not tenant_doc:
             return True
 
         from core.helpers import get_tenant_modules
+
         modules = get_tenant_modules(tenant_doc)
         if modules.get(module, False):
             return True
 
         # Fall back to marketplace subscription check.
         from core.subscriptions import tenant_has_module
+
         return await tenant_has_module(tenant_id, module)
     except Exception as e:
         # Fail CLOSED on errors so a transient DB outage cannot

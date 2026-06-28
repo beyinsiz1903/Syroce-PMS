@@ -39,6 +39,7 @@ index and never looks like a finalized run.
 Idempotency: a stable tagged doc is searched first; only created when
 missing. Re-running the endpoint always returns the same ids.
 """
+
 import logging
 import os
 import uuid
@@ -100,26 +101,28 @@ async def _ensure_room_block(pilot_tid: str) -> tuple[str, bool]:
     if existing and existing.get("id"):
         return existing["id"], False
     block_id = str(uuid.uuid4())
-    await db.room_blocks.insert_one({
-        "id": block_id,
-        "tenant_id": pilot_tid,
-        "agency_id": FIXTURE_AGENCY_ID,
-        "group_name": "PILOT_FIXTURE_BLOCK",
-        "contact_name": "pilot.fixture",
-        "contact_email": "",
-        "contact_phone": "",
-        "check_in": "2099-01-01",
-        "check_out": "2099-01-02",
-        "rooms_requested": 0,
-        "room_type": "",
-        "event_type": "fixture",
-        "estimated_revenue": 0,
-        "notes": "Read-only fixture for B2B IDOR matrix spec (41B). Do not mutate.",
-        "status": "fixture",
-        "pilot_fixture": True,
-        "_kind": "fixture",
-        "created_at": _now_iso(),
-    })
+    await db.room_blocks.insert_one(
+        {
+            "id": block_id,
+            "tenant_id": pilot_tid,
+            "agency_id": FIXTURE_AGENCY_ID,
+            "group_name": "PILOT_FIXTURE_BLOCK",
+            "contact_name": "pilot.fixture",
+            "contact_email": "",
+            "contact_phone": "",
+            "check_in": "2099-01-01",
+            "check_out": "2099-01-02",
+            "rooms_requested": 0,
+            "room_type": "",
+            "event_type": "fixture",
+            "estimated_revenue": 0,
+            "notes": "Read-only fixture for B2B IDOR matrix spec (41B). Do not mutate.",
+            "status": "fixture",
+            "pilot_fixture": True,
+            "_kind": "fixture",
+            "created_at": _now_iso(),
+        }
+    )
     return block_id, True
 
 
@@ -131,20 +134,22 @@ async def _ensure_kbs_report(pilot_tid: str) -> tuple[str, bool]:
     if existing and existing.get("id"):
         return existing["id"], False
     report_id = str(uuid.uuid4())
-    await db.kbs_reports.insert_one({
-        "id": report_id,
-        "tenant_id": pilot_tid,
-        "agency_id": FIXTURE_AGENCY_ID,
-        "date": "2099-01-01",
-        "status": "fixture",
-        "guest_count": 0,
-        "guest_ids": [],
-        "notes": "Read-only fixture for B2B IDOR matrix spec (41B). Do not mutate.",
-        "submitted_by": "pilot_fixture",
-        "pilot_fixture": True,
-        "_kind": "fixture",
-        "created_at": _now_iso(),
-    })
+    await db.kbs_reports.insert_one(
+        {
+            "id": report_id,
+            "tenant_id": pilot_tid,
+            "agency_id": FIXTURE_AGENCY_ID,
+            "date": "2099-01-01",
+            "status": "fixture",
+            "guest_count": 0,
+            "guest_ids": [],
+            "notes": "Read-only fixture for B2B IDOR matrix spec (41B). Do not mutate.",
+            "submitted_by": "pilot_fixture",
+            "pilot_fixture": True,
+            "_kind": "fixture",
+            "created_at": _now_iso(),
+        }
+    )
     return report_id, True
 
 
@@ -171,31 +176,29 @@ async def _ensure_sales_lead(pilot_tid: str) -> tuple[str, bool]:
         return existing["id"], False
     lead_id = str(uuid.uuid4())
     now = _now_iso()
-    await db.mice_opportunities.insert_one({
-        "_kind": "lead",
-        "id": lead_id,
-        "tenant_id": pilot_tid,
-        "company_name": SALES_LEAD_COMPANY,
-        "contact_name": SALES_LEAD_CONTACT,
-        "contact_email": SALES_LEAD_EMAIL,
-        "contact_phone": "",
-        "source": "pilot_fixture",
-        "status": "new",
-        "priority": "low",
-        "estimated_value": 0,
-        "estimated_rooms": 0,
-        "target_checkin": None,
-        "assigned_to": None,
-        "lead_score": 0,
-        "notes": (
-            "Read-only fixture for F9C § 98 sales-lifecycle step J "
-            "(cross-tenant IDOR probe). Do not mutate or delete — "
-            "the stress suite expects this id to remain reachable."
-        ),
-        "pilot_fixture": True,
-        "created_at": now,
-        "updated_at": now,
-    })
+    await db.mice_opportunities.insert_one(
+        {
+            "_kind": "lead",
+            "id": lead_id,
+            "tenant_id": pilot_tid,
+            "company_name": SALES_LEAD_COMPANY,
+            "contact_name": SALES_LEAD_CONTACT,
+            "contact_email": SALES_LEAD_EMAIL,
+            "contact_phone": "",
+            "source": "pilot_fixture",
+            "status": "new",
+            "priority": "low",
+            "estimated_value": 0,
+            "estimated_rooms": 0,
+            "target_checkin": None,
+            "assigned_to": None,
+            "lead_score": 0,
+            "notes": ("Read-only fixture for F9C § 98 sales-lifecycle step J (cross-tenant IDOR probe). Do not mutate or delete — the stress suite expects this id to remain reachable."),
+            "pilot_fixture": True,
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
     return lead_id, True
 
 
@@ -218,27 +221,25 @@ async def _ensure_payroll_run(pilot_tid: str) -> tuple[str, bool]:
         return existing["id"], False
     run_id = str(uuid.uuid4())
     now = _now_iso()
-    await db.payroll_runs.insert_one({
-        "id": run_id,
-        "tenant_id": pilot_tid,
-        "period_month": PAYROLL_FIXTURE_PERIOD,
-        "status": "fixture",
-        "rows": [],
-        "summary": {},
-        "extras": [],
-        "note": (
-            "Read-only fixture for export-artifact IDOR spec (91) "
-            "cross-tenant export probe. Do not mutate or delete — the "
-            "stress suite expects this id to remain reachable."
-        ),
-        "parent_run_id": None,
-        "finalized_at": None,
-        "finalized_by": None,
-        "created_at": now,
-        "updated_at": now,
-        "pilot_fixture": True,
-        "_kind": "fixture",
-    })
+    await db.payroll_runs.insert_one(
+        {
+            "id": run_id,
+            "tenant_id": pilot_tid,
+            "period_month": PAYROLL_FIXTURE_PERIOD,
+            "status": "fixture",
+            "rows": [],
+            "summary": {},
+            "extras": [],
+            "note": ("Read-only fixture for export-artifact IDOR spec (91) cross-tenant export probe. Do not mutate or delete — the stress suite expects this id to remain reachable."),
+            "parent_run_id": None,
+            "finalized_at": None,
+            "finalized_by": None,
+            "created_at": now,
+            "updated_at": now,
+            "pilot_fixture": True,
+            "_kind": "fixture",
+        }
+    )
     return run_id, True
 
 
@@ -253,10 +254,7 @@ async def ensure_pilot_fixtures(
     if req.pilot_tenant_id != pilot_tid:
         raise HTTPException(
             status_code=403,
-            detail=(
-                "pilot_tenant_id does not match PILOT_TENANT_ID env. "
-                "Pilot-fixture endpoint refuses to seed any other tenant."
-            ),
+            detail=("pilot_tenant_id does not match PILOT_TENANT_ID env. Pilot-fixture endpoint refuses to seed any other tenant."),
         )
 
     block_id, block_created = await _ensure_room_block(pilot_tid)
@@ -265,13 +263,16 @@ async def ensure_pilot_fixtures(
     payroll_run_id, payroll_created = await _ensure_payroll_run(pilot_tid)
 
     logger.info(
-        "pilot_fixtures.ensure tenant=%s block_id=%s (created=%s) "
-        "kbs_report_id=%s (created=%s) sales_lead_id=%s (created=%s) "
-        "payroll_run_id=%s (created=%s)",
-        pilot_tid, block_id, block_created,
-        kbs_report_id, kbs_created,
-        sales_lead_id, lead_created,
-        payroll_run_id, payroll_created,
+        "pilot_fixtures.ensure tenant=%s block_id=%s (created=%s) kbs_report_id=%s (created=%s) sales_lead_id=%s (created=%s) payroll_run_id=%s (created=%s)",
+        pilot_tid,
+        block_id,
+        block_created,
+        kbs_report_id,
+        kbs_created,
+        sales_lead_id,
+        lead_created,
+        payroll_run_id,
+        payroll_created,
     )
 
     return {

@@ -2,6 +2,7 @@
 Guest Domain — Guest Journey Service
 Business logic for guest profile and journey management. No FastAPI dependencies.
 """
+
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -14,11 +15,17 @@ class GuestJourneyService:
 
     @staticmethod
     async def get_guests(
-        tenant_id: str, *, search: str | None = None,
-        limit: int = 50, offset: int = 0,
+        tenant_id: str,
+        *,
+        search: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         return await GuestRepository.find_by_tenant(
-            tenant_id, search=search, limit=limit, offset=offset,
+            tenant_id,
+            search=search,
+            limit=limit,
+            offset=offset,
         )
 
     @staticmethod
@@ -70,13 +77,17 @@ class GuestJourneyService:
         elif new_stays >= 5 or new_revenue >= 5000:
             tier = "silver"
 
-        return await GuestRepository.update(tenant_id, guest_id, {
-            "total_stays": new_stays,
-            "total_revenue": new_revenue,
-            "loyalty_tier": tier,
-            "last_stay": datetime.now(UTC).isoformat(),
-            "updated_at": datetime.now(UTC).isoformat(),
-        })
+        return await GuestRepository.update(
+            tenant_id,
+            guest_id,
+            {
+                "total_stays": new_stays,
+                "total_revenue": new_revenue,
+                "loyalty_tier": tier,
+                "last_stay": datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        )
 
     @staticmethod
     async def get_vip_guests(tenant_id: str) -> list[dict[str, Any]]:

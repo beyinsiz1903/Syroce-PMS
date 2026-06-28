@@ -21,10 +21,12 @@ router = APIRouter(prefix="/api/frontdesk/v2", tags=["Front Desk v2"])
 
 # ── Schemas ──────────────────────────────────────────────────────────
 
+
 class CheckinRequest(BaseModel):
     booking_id: str
     create_folio: bool = True
     idempotency_key: str | None = None
+
 
 class CheckoutRequest(BaseModel):
     booking_id: str
@@ -32,11 +34,13 @@ class CheckoutRequest(BaseModel):
     auto_close_folios: bool = True
     reason: str | None = None
 
+
 class RoomMoveRequest(BaseModel):
     booking_id: str
     new_room_id: str
     reason: str
     transfer_keycards: bool = True
+
 
 class LateCheckoutRequest(BaseModel):
     booking_id: str
@@ -44,10 +48,12 @@ class LateCheckoutRequest(BaseModel):
     charge_amount: float = 0.0
     reason: str
 
+
 class NoShowRequest(BaseModel):
     booking_id: str
     charge_first_night: bool = True
     release_room: bool = True
+
 
 class WalkInRequest(BaseModel):
     guest_name: str
@@ -59,6 +65,7 @@ class WalkInRequest(BaseModel):
     guest_phone: str | None = None
     id_number: str | None = None
 
+
 class PostChargeRequest(BaseModel):
     booking_id: str
     charge_type: str
@@ -67,6 +74,7 @@ class PostChargeRequest(BaseModel):
     charge_category: str = "misc"
     idempotency_key: str | None = None
 
+
 class VoidChargeRequest(BaseModel):
     charge_id: str
     reason: str
@@ -74,14 +82,15 @@ class VoidChargeRequest(BaseModel):
 
 # ── Endpoints ────────────────────────────────────────────────────────
 
+
 @router.post("/checkin")
-async def checkin(req: CheckinRequest, user=Depends(get_current_user),
+async def checkin(
+    req: CheckinRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     ctx = OperationContext.from_user(user)
-    result = await frontdesk_service_v2.checkin(
-        ctx, req.booking_id, req.create_folio, idempotency_key=req.idempotency_key
-    )
+    result = await frontdesk_service_v2.checkin(ctx, req.booking_id, req.create_folio, idempotency_key=req.idempotency_key)
     if not result.ok:
         # Çevrimdışı kuyruk replay'i hatayı çakışma şeridine çevirirken
         # makine-okunur `code`'a göre yerelleştirilmiş mesaj seçer (ör.
@@ -92,71 +101,79 @@ async def checkin(req: CheckinRequest, user=Depends(get_current_user),
         raise HTTPException(status_code=400, detail=detail)
     return from_service_result(result)
 
+
 @router.post("/checkout")
-async def checkout(req: CheckoutRequest, user=Depends(get_current_user),
+async def checkout(
+    req: CheckoutRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     ctx = OperationContext.from_user(user)
-    result = await frontdesk_service_v2.checkout(
-        ctx, req.booking_id, req.force, req.auto_close_folios, reason=req.reason
-    )
+    result = await frontdesk_service_v2.checkout(ctx, req.booking_id, req.force, req.auto_close_folios, reason=req.reason)
     if not result.ok:
         code = 402 if result.code == "OUTSTANDING_BALANCE" else 400
         raise HTTPException(status_code=code, detail=from_service_result(result))
     return from_service_result(result)
 
+
 @router.post("/room-move")
-async def room_move(req: RoomMoveRequest, user=Depends(get_current_user),
+async def room_move(
+    req: RoomMoveRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     ctx = OperationContext.from_user(user)
-    result = await frontdesk_service_v2.room_move(
-        ctx, req.booking_id, req.new_room_id, reason=req.reason, transfer_keycards=req.transfer_keycards
-    )
+    result = await frontdesk_service_v2.room_move(ctx, req.booking_id, req.new_room_id, reason=req.reason, transfer_keycards=req.transfer_keycards)
     if not result.ok:
         raise HTTPException(status_code=400, detail=from_service_result(result))
     return from_service_result(result)
+
 
 @router.post("/late-checkout")
-async def late_checkout(req: LateCheckoutRequest, user=Depends(get_current_user),
+async def late_checkout(
+    req: LateCheckoutRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     ctx = OperationContext.from_user(user)
-    result = await frontdesk_service_v2.late_checkout(
-        ctx, req.booking_id, req.new_checkout_time, req.charge_amount, reason=req.reason
-    )
+    result = await frontdesk_service_v2.late_checkout(ctx, req.booking_id, req.new_checkout_time, req.charge_amount, reason=req.reason)
     if not result.ok:
         raise HTTPException(status_code=400, detail=from_service_result(result))
     return from_service_result(result)
+
 
 @router.post("/no-show")
-async def process_no_show(req: NoShowRequest, user=Depends(get_current_user),
+async def process_no_show(
+    req: NoShowRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     ctx = OperationContext.from_user(user)
-    result = await frontdesk_service_v2.process_no_show(
-        ctx, req.booking_id, req.charge_first_night, req.release_room
-    )
+    result = await frontdesk_service_v2.process_no_show(ctx, req.booking_id, req.charge_first_night, req.release_room)
     if not result.ok:
         raise HTTPException(status_code=400, detail=from_service_result(result))
     return from_service_result(result)
 
+
 @router.post("/walk-in")
-async def walk_in(req: WalkInRequest, http_request: Request, user=Depends(get_current_user),
+async def walk_in(
+    req: WalkInRequest,
+    http_request: Request,
+    user=Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     ctx = OperationContext.from_user(user)
     # Idempotency-Key request-replay (additive: no-op without the header).
     guard, replay = await begin_idempotency(
-        db, http_request, tenant_id=user.tenant_id,
-        scope="frontdesk.v2.walk_in", payload=req.model_dump(),
+        db,
+        http_request,
+        tenant_id=user.tenant_id,
+        scope="frontdesk.v2.walk_in",
+        payload=req.model_dump(),
     )
     if replay is not None:
         return replay
-    result = await frontdesk_service_v2.walk_in(
-        ctx, req.guest_name, req.room_id, req.nights, req.rate_amount,
-        req.payment_method, req.guest_email, req.guest_phone, req.id_number
-    )
+    result = await frontdesk_service_v2.walk_in(ctx, req.guest_name, req.room_id, req.nights, req.rate_amount, req.payment_method, req.guest_email, req.guest_phone, req.id_number)
     if not result.ok:
         # Logical failure with no durable booking -> release so the same key
         # can be retried.
@@ -166,21 +183,24 @@ async def walk_in(req: WalkInRequest, http_request: Request, user=Depends(get_cu
     await guard.complete(response)
     return response
 
+
 @router.post("/post-charge")
-async def post_charge(req: PostChargeRequest, user=Depends(get_current_user),
+async def post_charge(
+    req: PostChargeRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_op("post_charge")),  # v97 DW
 ):
     ctx = OperationContext.from_user(user)
-    result = await frontdesk_service_v2.post_charge(
-        ctx, req.booking_id, req.charge_type, req.description,
-        req.amount, req.charge_category, req.idempotency_key
-    )
+    result = await frontdesk_service_v2.post_charge(ctx, req.booking_id, req.charge_type, req.description, req.amount, req.charge_category, req.idempotency_key)
     if not result.ok:
         raise HTTPException(status_code=400, detail=from_service_result(result))
     return from_service_result(result)
 
+
 @router.post("/void-charge")
-async def void_charge(req: VoidChargeRequest, user=Depends(get_current_user),
+async def void_charge(
+    req: VoidChargeRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_op("post_charge")),  # v97 DW
 ):
     ctx = OperationContext.from_user(user)

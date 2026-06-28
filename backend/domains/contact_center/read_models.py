@@ -4,6 +4,7 @@ Açık ALLOWLIST serileştiriciler. PII (telefon/gövde/görünen ad) YALNIZCA b
 okuma sınırında, yetkili rol için çözülür; varsayılan olarak maskelenir; ASLA
 yeniden persist edilmez. Ciphertext / blind-index / Mongo ``_id`` ASLA dönmez.
 """
+
 from __future__ import annotations
 
 

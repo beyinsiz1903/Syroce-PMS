@@ -2,6 +2,7 @@
 Bootstrap: Middleware Registry
 All middleware configuration in one place.
 """
+
 from fastapi import FastAPI
 from starlette.middleware.gzip import GZipMiddleware
 
@@ -25,6 +26,7 @@ def register_middleware(app: FastAPI) -> None:
     try:
         from core.security import JWT_ALGORITHM, JWT_SECRET
         from core.tenant_middleware import TenantContextMiddleware
+
         app.add_middleware(
             TenantContextMiddleware,
             jwt_secret=JWT_SECRET,
@@ -36,6 +38,7 @@ def register_middleware(app: FastAPI) -> None:
     # APM / request-timing middleware (imported lazily to avoid circular deps)
     try:
         from apm_middleware import APMMiddleware
+
         app.add_middleware(APMMiddleware)
     except ImportError:
         pass
@@ -43,6 +46,7 @@ def register_middleware(app: FastAPI) -> None:
     # CDN cache-control headers
     try:
         from infra.cdn_headers import CDNHeaderMiddleware
+
         app.add_middleware(CDNHeaderMiddleware)
     except ImportError:
         pass
@@ -50,6 +54,7 @@ def register_middleware(app: FastAPI) -> None:
     # Security headers
     try:
         from infra.security_headers import SecurityHeadersMiddleware
+
         app.add_middleware(SecurityHeadersMiddleware)
     except ImportError:
         pass

@@ -105,6 +105,7 @@ timestamp, mode, counts per root-cause class, and applied count. Any row with
 ``found_total > 0`` after the next sweep is an actionable signal that a
 compensation path is leaking locks.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -120,9 +121,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from core.database import db  # noqa: E402
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("cleanup_orphan_room_night_locks")
 
 # Terminal booking statuses whose nights should already be released. Mirrors
@@ -160,9 +159,7 @@ def _is_old_enough(lock: dict, cutoff: datetime, cutoff_iso: str) -> bool:
         return False
 
 
-async def _classify_owner(
-    tenant_id: str, booking_id: str | None, cache: dict
-) -> dict:
+async def _classify_owner(tenant_id: str, booking_id: str | None, cache: dict) -> dict:
     """Classify a lock's owner. Returns dict with ``orphan`` bool, a
     ``root_cause`` label, and the owning ``status`` when known."""
     if not booking_id:
@@ -180,7 +177,9 @@ async def _classify_owner(
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning(
             "owner lookup failed (tenant=%s booking=%s): %s",
-            tenant_id, booking_id, exc,
+            tenant_id,
+            booking_id,
+            exc,
         )
         # Unknown classification — never retire data we could not read.
         result = {"orphan": False, "root_cause": "lookup_error", "status": None}
@@ -231,25 +230,21 @@ async def scan(
             continue
         if not _is_old_enough(lock, cutoff, cutoff_iso):
             continue
-        cls = await _classify_owner(
-            lock.get("tenant_id"), lock.get("booking_id"), owner_cache
-        )
+        cls = await _classify_owner(lock.get("tenant_id"), lock.get("booking_id"), owner_cache)
         if not cls["orphan"]:
             continue
-        orphans.append({
-            "tenant_id": lock.get("tenant_id"),
-            "room_id": lock.get("room_id"),
-            "night_date": lock.get("night_date"),
-            "booking_id": lock.get("booking_id"),
-            "lock_type": lock.get("lock_type"),
-            "created_at": (
-                lock.get("created_at").isoformat()
-                if hasattr(lock.get("created_at"), "isoformat")
-                else lock.get("created_at")
-            ),
-            "root_cause": cls["root_cause"],
-            "owner_status": cls["status"],
-        })
+        orphans.append(
+            {
+                "tenant_id": lock.get("tenant_id"),
+                "room_id": lock.get("room_id"),
+                "night_date": lock.get("night_date"),
+                "booking_id": lock.get("booking_id"),
+                "lock_type": lock.get("lock_type"),
+                "created_at": (lock.get("created_at").isoformat() if hasattr(lock.get("created_at"), "isoformat") else lock.get("created_at")),
+                "root_cause": cls["root_cause"],
+                "owner_status": cls["status"],
+            }
+        )
 
     by_cause: dict = {}
     for o in orphans:
@@ -285,9 +280,7 @@ async def record_scan(summary: dict) -> None:
 
 
 async def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Orphan room-night-lock sweep (Task #435)."
-    )
+    parser = argparse.ArgumentParser(description="Orphan room-night-lock sweep (Task #435).")
     parser.add_argument(
         "--tenant",
         type=str,
@@ -314,9 +307,7 @@ async def main() -> int:
     args = parser.parse_args()
 
     if args.apply and os.environ.get("ALLOW_ORPHAN_LOCK_CLEANUP", "").lower() != "true":
-        logger.error(
-            "--apply icin ALLOW_ORPHAN_LOCK_CLEANUP=true gerekli — fail-closed."
-        )
+        logger.error("--apply icin ALLOW_ORPHAN_LOCK_CLEANUP=true gerekli — fail-closed.")
         return 2
 
     logger.info(
@@ -350,11 +341,7 @@ async def main() -> int:
     await record_scan(summary)
 
     print("=" * 60)
-    print(
-        f"Orphan room-night-lock sweep "
-        f"({'APPLY' if args.apply else 'DRY-RUN'}) "
-        f"tenant={args.tenant or 'ALL'}"
-    )
+    print(f"Orphan room-night-lock sweep ({'APPLY' if args.apply else 'DRY-RUN'}) tenant={args.tenant or 'ALL'}")
     print("=" * 60)
     if found["by_cause"]:
         for cause, n in sorted(found["by_cause"].items()):
@@ -362,15 +349,11 @@ async def main() -> int:
     print(f"  {'TOPLAM':20s} -> {total}")
     if args.apply:
         print(f"  {'silinen kilit':20s} -> {applied}")
-    print(
-        f"  metric row          -> orphan_room_night_lock_scans @ "
-        f"{summary['scanned_at']}"
-    )
+    print(f"  metric row          -> orphan_room_night_lock_scans @ {summary['scanned_at']}")
 
     if total > 0:
         logger.warning(
-            "[orphan-locks] %d orphan kilit bulundu (%s) — bos odalar 'dolu' "
-            "gorunuyor olabilir; compensation/release yolunu kontrol et.",
+            "[orphan-locks] %d orphan kilit bulundu (%s) — bos odalar 'dolu' gorunuyor olabilir; compensation/release yolunu kontrol et.",
             total,
             ", ".join(f"{k}={v}" for k, v in sorted(found["by_cause"].items())),
         )

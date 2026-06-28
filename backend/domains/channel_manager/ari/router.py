@@ -1,6 +1,7 @@
 """
 ARI Push Engine — API Router.
 """
+
 import logging
 
 from fastapi import (
@@ -64,8 +65,10 @@ def _resolve_scope(
 
 # ── Events ───────────────────────────────────────────────────────────
 
+
 @router.post("/events/publish")
-async def publish_event(req: PublishARIEventRequest,
+async def publish_event(
+    req: PublishARIEventRequest,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
@@ -120,7 +123,8 @@ async def list_change_sets(
 
 
 @router.post("/change-sets/{cs_id}/push")
-async def force_push_change_set(cs_id: str,
+async def force_push_change_set(
+    cs_id: str,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
@@ -132,8 +136,10 @@ async def force_push_change_set(cs_id: str,
     from core.database import db
 
     from .models import COLL_ARI_CHANGE_SETS
+
     cs = await db[COLL_ARI_CHANGE_SETS].find_one(
-        {"id": cs_id}, {"_id": 0, "tenant_id": 1},
+        {"id": cs_id},
+        {"_id": 0, "tenant_id": 1},
     )
     if not cs:
         raise HTTPException(status_code=404, detail="Change set not found")
@@ -143,26 +149,33 @@ async def force_push_change_set(cs_id: str,
 
 
 @router.post("/push")
-async def push_pending(req: PushChangeSetsRequest,
+async def push_pending(
+    req: PushChangeSetsRequest,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
     if not _is_super_admin(current_user):
         req.tenant_id = current_user.tenant_id
     return await outbound_service.push_pending_changes(
-        req.tenant_id, req.provider, req.limit,
+        req.tenant_id,
+        req.provider,
+        req.limit,
     )
 
 
 @router.post("/resync")
-async def resync(req: ResyncRequest,
+async def resync(
+    req: ResyncRequest,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
     if not _is_super_admin(current_user):
         req.tenant_id = current_user.tenant_id
     return await outbound_service.resync_property(
-        req.tenant_id, req.property_id, req.provider, req.scope,
+        req.tenant_id,
+        req.property_id,
+        req.provider,
+        req.scope,
     )
 
 
@@ -183,6 +196,7 @@ async def list_outbound_logs(
 
 # ── Drift ────────────────────────────────────────────────────────────
 
+
 @router.get("/drift")
 async def list_drift_states(
     tenant_id: str | None = None,
@@ -199,7 +213,8 @@ async def list_drift_states(
 
 
 @router.post("/drift/check")
-async def check_drift(req: DriftCheckRequest,
+async def check_drift(
+    req: DriftCheckRequest,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
@@ -215,23 +230,22 @@ async def check_drift(req: DriftCheckRequest,
         req.tenant_id = current_user.tenant_id
     raise HTTPException(
         status_code=501,
-        detail=(
-            "drift/check requires provider snapshot fetch which is not "
-            f"implemented for {req.provider}. Use /resync to push the PMS "
-            "truth and rely on the event-driven coalescer instead."
-        ),
+        detail=(f"drift/check requires provider snapshot fetch which is not implemented for {req.provider}. Use /resync to push the PMS truth and rely on the event-driven coalescer instead."),
     )
 
 
 @router.post("/drift/reconcile")
-async def reconcile(req: DriftCheckRequest,
+async def reconcile(
+    req: DriftCheckRequest,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
     if not _is_super_admin(current_user):
         req.tenant_id = current_user.tenant_id
     return await drift_worker.reconcile_drift(
-        req.tenant_id, req.property_id, req.provider,
+        req.tenant_id,
+        req.property_id,
+        req.provider,
     )
 
 
@@ -245,13 +259,16 @@ async def get_drift_worker_mode(
 
 
 @router.post("/drift/mode/{mode}")
-async def set_drift_worker_mode(mode: str,
+async def set_drift_worker_mode(
+    mode: str,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
     """Set TENANT-scoped drift worker mode."""
     result = await repo.set_tenant_drift_mode(
-        current_user.tenant_id, mode, getattr(current_user, "id", None),
+        current_user.tenant_id,
+        mode,
+        getattr(current_user, "id", None),
     )
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
@@ -259,6 +276,7 @@ async def set_drift_worker_mode(mode: str,
 
 
 # ── Stats (cached, scoped) ───────────────────────────────────────────
+
 
 @cached(ttl=60, key_prefix="ari_stats")
 async def _stats_cached(tenant_id: str, property_id: str, _nocache: bool = False) -> dict:
@@ -286,8 +304,10 @@ async def get_engine_stats(
 
 # ── Provider Test Harness ────────────────────────────────────────────
 
+
 @router.get("/test-harness/checklist/{provider}")
-async def get_provider_checklist(provider: str,
+async def get_provider_checklist(
+    provider: str,
     _perm=Depends(require_op("view_system_diagnostics")),
 ):
     checklist = get_checklist(provider)
@@ -297,7 +317,9 @@ async def get_provider_checklist(provider: str,
 
 
 @router.post("/test-harness/run/{provider}")
-async def run_provider_test(provider: str, step: str | None = None,
+async def run_provider_test(
+    provider: str,
+    step: str | None = None,
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
     """Run provider validation test(s)."""

@@ -1,6 +1,7 @@
 """Folio Routing Instructions — oda/ekstra ücretlerini farklı folio'ya
 veya master/şirket hesabına yönlendirme kuralları (Opera "routing").
 """
+
 from __future__ import annotations
 
 import uuid
@@ -47,9 +48,7 @@ async def _ensure_indexes() -> None:
             [("tenant_id", 1), ("source_folio_id", 1), ("active", 1)],
             name="folio_routing_src",
         )
-        await db.folio_routing.create_index(
-            [("tenant_id", 1), ("dest_folio_id", 1)], name="folio_routing_dest"
-        )
+        await db.folio_routing.create_index([("tenant_id", 1), ("dest_folio_id", 1)], name="folio_routing_dest")
         _INDEXES_INITIALIZED = True
     except Exception:
         # Index oluşturulamazsa flag set edilmez → bir sonraki çağrıda yeniden denenir.
@@ -73,23 +72,13 @@ async def list_routing(
 
 
 @router.post("", response_model=RoutingInstruction, status_code=201)
-async def create_routing(
-    body: RoutingInstructionCreate, user: User = Depends(get_current_user)
-):
+async def create_routing(body: RoutingInstructionCreate, user: User = Depends(get_current_user)):
     await _ensure_indexes()
     db = get_system_db()
     if body.source_folio_id == body.dest_folio_id:
         raise HTTPException(400, "Kaynak ve hedef folio aynı olamaz")
-    src = await db.folios.find_one(
-        {"_id": body.source_folio_id, "tenant_id": user.tenant_id}
-    ) or await db.folios.find_one(
-        {"id": body.source_folio_id, "tenant_id": user.tenant_id}
-    )
-    dst = await db.folios.find_one(
-        {"_id": body.dest_folio_id, "tenant_id": user.tenant_id}
-    ) or await db.folios.find_one(
-        {"id": body.dest_folio_id, "tenant_id": user.tenant_id}
-    )
+    src = await db.folios.find_one({"_id": body.source_folio_id, "tenant_id": user.tenant_id}) or await db.folios.find_one({"id": body.source_folio_id, "tenant_id": user.tenant_id})
+    dst = await db.folios.find_one({"_id": body.dest_folio_id, "tenant_id": user.tenant_id}) or await db.folios.find_one({"id": body.dest_folio_id, "tenant_id": user.tenant_id})
     if not src or not dst:
         raise HTTPException(404, "Folio bulunamadı")
     doc = {
@@ -123,9 +112,7 @@ async def apply_routing(folio_id: str, user: User = Depends(get_current_user)):
     Charges koleksiyonunu günceller; idempotent değil — manuel tetikleme.
     """
     db = get_system_db()
-    rules = await db.folio_routing.find(
-        {"tenant_id": user.tenant_id, "source_folio_id": folio_id, "active": True}
-    ).to_list(50)
+    rules = await db.folio_routing.find({"tenant_id": user.tenant_id, "source_folio_id": folio_id, "active": True}).to_list(50)
     if not rules:
         return {"moved": 0, "rules": 0}
     moved = 0

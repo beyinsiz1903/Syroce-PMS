@@ -2,6 +2,7 @@
 Credential Security Models — Data models for encrypted credential storage,
 secret rotation, and secure credential lifecycle management.
 """
+
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -11,6 +12,7 @@ from pydantic import BaseModel, Field
 
 class ConnectorCredential(BaseModel):
     """Encrypted credential record for a connector."""
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     connector_id: str
@@ -33,6 +35,7 @@ class ConnectorCredential(BaseModel):
 
 class EncryptedSecret(BaseModel):
     """Individual encrypted secret field."""
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     credential_id: str
     field_name: str
@@ -50,6 +53,7 @@ class EncryptedSecret(BaseModel):
 
 class SecretRotationLog(BaseModel):
     """Audit log for credential rotation events."""
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     connector_id: str

@@ -1,4 +1,5 @@
 """Auto-split from hotel_services.py — backward-compatible sub-router."""
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -18,6 +19,7 @@ from ._common import (
 
 logger = logging.getLogger(__name__)
 sub_router = APIRouter()
+
 
 @sub_router.post("/reservations/{booking_id}/cancel")
 async def cancel_reservation(
@@ -42,17 +44,19 @@ async def cancel_reservation(
 
     if body.apply_noshow and body.noshow_charge_amount and body.noshow_charge_amount > 0:
         charge_id = str(uuid.uuid4())
-        await db.folios.insert_one({
-            "id": charge_id,
-            "tenant_id": tid,
-            "booking_id": booking_id,
-            "type": "charge",
-            "category": "no_show",
-            "description": f"No-Show Ucreti ({body.noshow_charge_type or 'ozel'})",
-            "amount": body.noshow_charge_amount,
-            "created_at": datetime.now(UTC).isoformat(),
-            "created_by": current_user.name,
-        })
+        await db.folios.insert_one(
+            {
+                "id": charge_id,
+                "tenant_id": tid,
+                "booking_id": booking_id,
+                "type": "charge",
+                "category": "no_show",
+                "description": f"No-Show Ucreti ({body.noshow_charge_type or 'ozel'})",
+                "amount": body.noshow_charge_amount,
+                "created_at": datetime.now(UTC).isoformat(),
+                "created_by": current_user.name,
+            }
+        )
         update_data["noshow_charge"] = body.noshow_charge_amount
 
     await db.bookings.update_one({"id": booking_id, "tenant_id": tid}, {"$set": update_data})
@@ -62,6 +66,7 @@ async def cancel_reservation(
     # release_booking_nights audit timeline'ına 'lock_released' event'i de yazar (INV-6).
     try:
         from core.atomic_booking import release_booking_nights
+
         released_count = await release_booking_nights(
             tenant_id=tid,
             booking_id=booking_id,
@@ -69,7 +74,9 @@ async def cancel_reservation(
         )
         logger.info(
             "Released %s room-night locks after %s of booking %s",
-            released_count, update_data["status"], booking_id,
+            released_count,
+            update_data["status"],
+            booking_id,
         )
     except Exception as exc:
         logger.error("Lock release failed for booking %s: %s", booking_id, exc)
@@ -79,29 +86,34 @@ async def cancel_reservation(
         import asyncio
 
         from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
-        asyncio.create_task(sync_availability_after_booking(
-            tenant_id=tid,
-            room_id=booking.get("room_id", ""),
-            check_in=booking.get("check_in", ""),
-            check_out=booking.get("check_out", ""),
-        ))
+
+        asyncio.create_task(
+            sync_availability_after_booking(
+                tenant_id=tid,
+                room_id=booking.get("room_id", ""),
+                check_in=booking.get("check_in", ""),
+                check_out=booking.get("check_out", ""),
+            )
+        )
     except Exception:
         pass
 
-    await db.reservation_history.insert_one({
-        "id": str(uuid.uuid4()),
-        "tenant_id": tid,
-        "booking_id": booking_id,
-        "action": "cancelled" if not body.apply_noshow else "marked_noshow",
-        "actor": current_user.name,
-        "details": {
-            "reason": body.reason,
-            "cancel_type": body.cancel_type,
-            "noshow": body.apply_noshow,
-            "noshow_charge": body.noshow_charge_amount if body.apply_noshow else None,
-        },
-        "created_at": datetime.now(UTC).isoformat(),
-    })
+    await db.reservation_history.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tid,
+            "booking_id": booking_id,
+            "action": "cancelled" if not body.apply_noshow else "marked_noshow",
+            "actor": current_user.name,
+            "details": {
+                "reason": body.reason,
+                "cancel_type": body.cancel_type,
+                "noshow": body.apply_noshow,
+                "noshow_charge": body.noshow_charge_amount if body.apply_noshow else None,
+            },
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+    )
 
     return {"success": True, "status": update_data["status"], "message": "Rezervasyon iptal edildi"}
 
@@ -109,6 +121,7 @@ async def cancel_reservation(
 # ═══════════════════════════════════════════════════
 # 11. VOUCHER GENERATION
 # ═══════════════════════════════════════════════════
+
 
 @sub_router.get("/available-rooms-by-type")
 async def get_available_rooms_by_type(
@@ -119,6 +132,7 @@ async def get_available_rooms_by_type(
     # Tur 3: defaults — today / today+1 when omitted
     from datetime import date as _d
     from datetime import timedelta as _td
+
     if not check_in:
         check_in = _d.today().isoformat()
     if not check_out:
@@ -131,12 +145,15 @@ async def get_available_rooms_by_type(
         all_rooms.append(r)
 
     conflicting_room_ids = set()
-    async for b in db.bookings.find({
-        "tenant_id": tid,
-        "status": {"$nin": ["cancelled", "checked_out", "no_show"]},
-        "check_in": {"$lt": check_out},
-        "check_out": {"$gt": check_in},
-    }, {"_id": 0, "room_id": 1}):
+    async for b in db.bookings.find(
+        {
+            "tenant_id": tid,
+            "status": {"$nin": ["cancelled", "checked_out", "no_show"]},
+            "check_in": {"$lt": check_out},
+            "check_out": {"$gt": check_in},
+        },
+        {"_id": 0, "room_id": 1},
+    ):
         if b.get("room_id"):
             conflicting_room_ids.add(b["room_id"])
 
@@ -185,4 +202,3 @@ async def create_cari_account(
     account.pop("_id", None)
 
     return {"success": True, "account": account}
-

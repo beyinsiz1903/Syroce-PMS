@@ -2,6 +2,7 @@
 Simple In-Memory Cache System
 Ultra-fast caching without Redis dependency
 """
+
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import Any
@@ -16,10 +17,7 @@ class SimpleCache:
     def set(self, key: str, value: Any, ttl: int = 60):
         """Set cache with TTL in seconds"""
         expires_at = datetime.utcnow() + timedelta(seconds=ttl)
-        self._cache[key] = {
-            'value': value,
-            'expires_at': expires_at
-        }
+        self._cache[key] = {"value": value, "expires_at": expires_at}
 
     def get(self, key: str) -> Any | None:
         """Get cached value if not expired"""
@@ -27,12 +25,12 @@ class SimpleCache:
             return None
 
         cache_entry = self._cache[key]
-        if datetime.utcnow() > cache_entry['expires_at']:
+        if datetime.utcnow() > cache_entry["expires_at"]:
             # Expired, remove it
             del self._cache[key]
             return None
 
-        return cache_entry['value']
+        return cache_entry["value"]
 
     def delete(self, key: str):
         """Delete cache entry"""
@@ -46,18 +44,18 @@ class SimpleCache:
     def cleanup_expired(self):
         """Remove expired entries"""
         now = datetime.utcnow()
-        expired_keys = [
-            key for key, entry in self._cache.items()
-            if now > entry['expires_at']
-        ]
+        expired_keys = [key for key, entry in self._cache.items() if now > entry["expires_at"]]
         for key in expired_keys:
             del self._cache[key]
+
 
 # Global cache instance
 simple_cache = SimpleCache()
 
+
 def simple_cached(ttl: int = 60, key_prefix: str = ""):
     """Decorator for simple caching"""
+
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -76,5 +74,7 @@ def simple_cached(ttl: int = 60, key_prefix: str = ""):
             simple_cache.set(cache_key, result, ttl)
 
             return result
+
         return wrapper
+
     return decorator

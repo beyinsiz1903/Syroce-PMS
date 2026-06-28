@@ -29,6 +29,7 @@ References:
   docs/drill_reports/20260513_stress_f4_tenant_leak_audit.md
   docs/drill_reports/20260513_stress_f5_seed_cleanup_smoke.md
 """
+
 import asyncio
 import logging
 import os
@@ -113,21 +114,26 @@ async def _delete_many_with_retry(col, flt: dict, *, col_name: str, attempts: in
                 # Deterministic / unknown fault: surface it (with the collection
                 # that tripped) and let the 500 stand. No swallowing.
                 _stress_log.error(
-                    "stress.cleanup non-retryable db error (reraising -> 500): "
-                    "col=%s err=%s msg=%s",
-                    col_name, exc.__class__.__name__, str(exc)[:300],
+                    "stress.cleanup non-retryable db error (reraising -> 500): col=%s err=%s msg=%s",
+                    col_name,
+                    exc.__class__.__name__,
+                    str(exc)[:300],
                 )
                 raise
             last_exc = exc
             if attempt == attempts:
                 _stress_log.warning(
                     "stress.cleanup transient db error exhausted retries: col=%s attempt=%d err=%s",
-                    col_name, attempt, exc.__class__.__name__,
+                    col_name,
+                    attempt,
+                    exc.__class__.__name__,
                 )
                 raise
             _stress_log.info(
                 "stress.cleanup transient db error, retrying: col=%s attempt=%d err=%s",
-                col_name, attempt, exc.__class__.__name__,
+                col_name,
+                attempt,
+                exc.__class__.__name__,
             )
             await asyncio.sleep(delay)
             delay = min(delay * 2, 2.0)
@@ -141,9 +147,18 @@ async def _delete_many_with_retry(col, flt: dict, *, col_name: str, attempts: in
 # cleanup#2 idempotency-verify 500 AND the seed-time orphan_cleanup folio_charges
 # timeout. folio_charges is the confirmed choke point (largest stress collection).
 STRESS_CLEANUP_INDEXED_COLLECTIONS = (
-    "folio_charges", "payments", "folios", "bookings", "guests", "rooms",
-    "room_night_locks", "housekeeping_tasks", "room_qr_requests",
-    "service_complaints", "messages", "notifications",
+    "folio_charges",
+    "payments",
+    "folios",
+    "bookings",
+    "guests",
+    "rooms",
+    "room_night_locks",
+    "housekeeping_tasks",
+    "room_qr_requests",
+    "service_complaints",
+    "messages",
+    "notifications",
 )
 STRESS_CLEANUP_INDEX_NAME = "ix_stress_cleanup_prefix"
 
@@ -168,7 +183,8 @@ async def _ensure_stress_cleanup_indexes(db) -> None:
         except Exception as exc:  # noqa: BLE001
             _stress_log.warning(
                 "stress cleanup index ensure failed (continuing): col=%s err=%r",
-                col_name, exc,
+                col_name,
+                exc,
             )
 
 
@@ -190,11 +206,26 @@ INSERT_CHUNK_SIZE = 100
 
 # 20 oda tipi × 10 kat × 5 blok variety axis'leri
 ROOM_TYPES = [
-    "standard", "deluxe", "junior_suite", "executive_suite",
-    "presidential_suite", "family_room", "twin", "double",
-    "single", "triple", "quad", "studio",
-    "duplex", "loft", "penthouse", "garden_view",
-    "sea_view", "mountain_view", "city_view", "accessible",
+    "standard",
+    "deluxe",
+    "junior_suite",
+    "executive_suite",
+    "presidential_suite",
+    "family_room",
+    "twin",
+    "double",
+    "single",
+    "triple",
+    "quad",
+    "studio",
+    "duplex",
+    "loft",
+    "penthouse",
+    "garden_view",
+    "sea_view",
+    "mountain_view",
+    "city_view",
+    "accessible",
 ]
 BLOCKS = ["A", "B", "C", "D", "E"]
 FLOORS = list(range(1, 11))  # 1..10
@@ -472,10 +503,7 @@ def _gates(target_tenant_id: str) -> dict[str, Any]:
     if target_tenant_id != stress_tid:
         raise HTTPException(
             status_code=403,
-            detail=(
-                f"target_tenant_id does not match E2E_STRESS_TENANT_ID. "
-                f"Stress endpoints refuse to act on any other tenant."
-            ),
+            detail=(f"target_tenant_id does not match E2E_STRESS_TENANT_ID. Stress endpoints refuse to act on any other tenant."),
         )
     gates["target_matches_stress_tid"] = True
 
@@ -490,16 +518,11 @@ def _gates(target_tenant_id: str) -> dict[str, Any]:
     if os.environ.get("E2E_ALLOW_DESTRUCTIVE_STRESS", "false").lower() != "true":
         raise HTTPException(
             status_code=403,
-            detail=(
-                "E2E_ALLOW_DESTRUCTIVE_STRESS != 'true' (fail-closed). "
-                "Set this env var to enable stress seed/cleanup."
-            ),
+            detail=("E2E_ALLOW_DESTRUCTIVE_STRESS != 'true' (fail-closed). Set this env var to enable stress seed/cleanup."),
         )
     gates["destructive_stress_allowed"] = True
 
-    gates["external_dry_run"] = (
-        os.environ.get("E2E_EXTERNAL_DRY_RUN", "false").lower() == "true"
-    )
+    gates["external_dry_run"] = os.environ.get("E2E_EXTERNAL_DRY_RUN", "false").lower() == "true"
 
     return gates
 
@@ -563,7 +586,11 @@ class PosLoadCleanupRequest(BaseModel):
 
 
 def _build_pending_booking_docs(
-    count: int, stress_tid: str, prefix: str, now: datetime, tag: str = "",
+    count: int,
+    stress_tid: str,
+    prefix: str,
+    now: datetime,
+    tag: str = "",
 ) -> list[dict]:
     """F8L v2 (Task #25) — synthetic `pending_assignment` booking docs.
 
@@ -584,31 +611,37 @@ def _build_pending_booking_docs(
     future_in = (now + timedelta(days=180)).date().isoformat()
     future_out = (now + timedelta(days=181)).date().isoformat()
     for i in range(count):
-        docs.append({
-            "id": str(uuid.uuid4()),
-            "tenant_id": stress_tid,
-            "guest_id": str(uuid.uuid4()),
-            "guest_name": f"{prefix}PendingGuest{tag}_{i + 1:03d}",
-            "room_id": None,
-            "room_type": ROOM_TYPES[i % len(ROOM_TYPES)],
-            "check_in": future_in,
-            "check_out": future_out,
-            "nights": 1,
-            "adults": 2, "children": 0, "guests_count": 2,
-            "total_amount": 1000.0, "base_rate": 1000.0,
-            "paid_amount": 0.0,
-            "status": "confirmed",
-            "channel": "ota_stress_synth",
-            "source_channel": "ota_stress_synth",
-            "origin": "stress_pending_seed",
-            "allocation_source": "pending_assignment",
-            "hold_status": "none",
-            "currency": "TRY",
-            "external_confirmation": f"{prefix}EXT{tag}_{i + 1:04d}",
-            "special_requests": None,
-            "created_at": now,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "guest_id": str(uuid.uuid4()),
+                "guest_name": f"{prefix}PendingGuest{tag}_{i + 1:03d}",
+                "room_id": None,
+                "room_type": ROOM_TYPES[i % len(ROOM_TYPES)],
+                "check_in": future_in,
+                "check_out": future_out,
+                "nights": 1,
+                "adults": 2,
+                "children": 0,
+                "guests_count": 2,
+                "total_amount": 1000.0,
+                "base_rate": 1000.0,
+                "paid_amount": 0.0,
+                "status": "confirmed",
+                "channel": "ota_stress_synth",
+                "source_channel": "ota_stress_synth",
+                "origin": "stress_pending_seed",
+                "allocation_source": "pending_assignment",
+                "hold_status": "none",
+                "currency": "TRY",
+                "external_confirmation": f"{prefix}EXT{tag}_{i + 1:04d}",
+                "special_requests": None,
+                "created_at": now,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
     return docs
 
 
@@ -645,9 +678,9 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
         block = BLOCKS[i % len(BLOCKS)]
         floor = FLOORS[i % len(FLOORS)]
         stay_nights = (i % 4) + 1  # 1..4 nights
-        is_vip = (i % 7 == 0)
-        late_checkout = (i % 11 == 0)
-        has_allergy = (i % 13 == 0)
+        is_vip = i % 7 == 0
+        late_checkout = i % 11 == 0
+        has_allergy = i % 13 == 0
         accessibility_needed = (i % 17 == 0) or (room_type == "accessible")
 
         # Aged-booking generation (Task #178): a meaningful subset of in-house
@@ -664,7 +697,7 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
         # still in-house at `now`; non-aged keep the original today→+stay window
         # (offset 0 → nights == stay_nights → identical to prior behaviour).
         nights = aged_offset_days + stay_nights
-        check_out = (check_in + timedelta(days=nights))
+        check_out = check_in + timedelta(days=nights)
 
         # Pricing varies a bit so analytics surface non-trivial distributions
         base_price = 800.0 + (i % 20) * 50.0  # 800..1750
@@ -678,185 +711,260 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
         # aşıyordu. Her 8. booking'i (i % 8 == 0 → ~62 oda) baştan checked_out
         # + room vacant olarak seed et → setup loop'u zaten yeterli eligible
         # görür ve hiç force-checkout etmez (instant PASS).
-        pre_vacant = (i % 8 == 0)
+        pre_vacant = i % 8 == 0
         room_status = "available" if pre_vacant else "occupied"
         room_current_bid = None if pre_vacant else bid
         booking_status = "checked_out" if pre_vacant else "checked_in"
 
-        rooms_docs.append({
-            "id": rid, "tenant_id": stress_tid,
-            "room_number": f"{prefix}{block}{floor:02d}{(i + 1):03d}",
-            "room_type": room_type,
-            "block": block, "floor": floor,
-            "capacity": 2 + (i % 3),  # 2..4
-            "base_price": base_price, "price_per_night": base_price,
-            "status": room_status,
-            "amenities": ["wifi", "tv"] + (["jacuzzi"] if is_vip else []),
-            "is_active": True, "is_virtual": False,
-            "accessible": accessibility_needed,
-            "current_booking_id": room_current_bid,
-            "created_at": now,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        rooms_docs.append(
+            {
+                "id": rid,
+                "tenant_id": stress_tid,
+                "room_number": f"{prefix}{block}{floor:02d}{(i + 1):03d}",
+                "room_type": room_type,
+                "block": block,
+                "floor": floor,
+                "capacity": 2 + (i % 3),  # 2..4
+                "base_price": base_price,
+                "price_per_night": base_price,
+                "status": room_status,
+                "amenities": ["wifi", "tv"] + (["jacuzzi"] if is_vip else []),
+                "is_active": True,
+                "is_virtual": False,
+                "accessible": accessibility_needed,
+                "current_booking_id": room_current_bid,
+                "created_at": now,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
         guest_flags = []
-        if has_allergy: guest_flags.append("allergy")
-        if accessibility_needed: guest_flags.append("accessibility")
+        if has_allergy:
+            guest_flags.append("allergy")
+        if accessibility_needed:
+            guest_flags.append("accessibility")
 
-        guests_docs.append({
-            "id": gid, "tenant_id": stress_tid,
-            "name": f"{prefix}Guest_{i + 1:04d}",
-            "email": f"{prefix.lower()}g{i + 1}@e2e-stress.example.com",
-            "phone": f"+90555{i + 1:07d}",
-            "id_number": f"E2E{i + 1:08d}",
-            "vip_status": is_vip, "loyalty_points": 100 if is_vip else 0,
-            "total_stays": (i % 5), "total_spend": float((i % 5) * 1500),
-            "blacklisted": False,
-            "preferences": {
-                "late_checkout": late_checkout,
-                "allergy_notes": "nuts" if has_allergy else None,
-                "accessibility_needs": accessibility_needed,
-                "flags": guest_flags,
-            },
-            "created_at": now,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        guests_docs.append(
+            {
+                "id": gid,
+                "tenant_id": stress_tid,
+                "name": f"{prefix}Guest_{i + 1:04d}",
+                "email": f"{prefix.lower()}g{i + 1}@e2e-stress.example.com",
+                "phone": f"+90555{i + 1:07d}",
+                "id_number": f"E2E{i + 1:08d}",
+                "vip_status": is_vip,
+                "loyalty_points": 100 if is_vip else 0,
+                "total_stays": (i % 5),
+                "total_spend": float((i % 5) * 1500),
+                "blacklisted": False,
+                "preferences": {
+                    "late_checkout": late_checkout,
+                    "allergy_notes": "nuts" if has_allergy else None,
+                    "accessibility_needs": accessibility_needed,
+                    "flags": guest_flags,
+                },
+                "created_at": now,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
-        bookings_docs.append({
-            "id": bid, "tenant_id": stress_tid,
-            "guest_id": gid, "room_id": rid,
-            # F8A #163 fix (run #20 NO-GO): 03-room-move setup'ı bookings.room_type
-            # üzerinden _computeDemand çağırıyor; seed bookings'inde alan yoktu →
-            # tüm demand `__unknown__` bucket'ına düşüyor, rooms gerçek tipte
-            # gruplanıyor → eligible=0 (target_total=50 required_min=30). Booking
-            # listesi enrichment'i (pms_bookings.py:440-441) yalnız cache-warm
-            # branch'inde çalışıyor; fallback path room_type doldurmuyor. Seed'de
-            # direkt yazmak deterministik fix.
-            "room_type": room_type,
-            # F8A #161: bookings list responses must carry folio_id so stress
-            # specs that fall back through `/api/pms/bookings` can target the
-            # real folio. Without this, tests sent `folio_id=booking.id` and
-            # FolioHardeningService.post_charge returned `{success:false,
-            # error:"Folio not found"}` → 100% s400 (drill_reports/20260514_*).
-            "folio_id": fid,
-            "check_in": check_in.isoformat(),
-            "check_out": check_out.isoformat(),
-            "nights": nights,
-            # Task #178: marker so the seed handler can count aged bookings
-            # without re-parsing dates; harmless extra field (direct DB write).
-            "aged": is_aged,
-            "adults": 2, "children": (i % 3), "guests_count": 2 + (i % 3),
-            "total_amount": total_amount, "base_rate": base_price,
-            "paid_amount": aged_payment, "status": booking_status,
-            "channel": "direct", "rate_plan": "Standard",
-            "source_channel": "direct", "origin": "stress_seed",
-            "hold_status": "none", "allocation_source": "manual",
-            "vip": is_vip, "late_checkout_requested": late_checkout,
-            "children_ages": [],
-            "created_at": now,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        bookings_docs.append(
+            {
+                "id": bid,
+                "tenant_id": stress_tid,
+                "guest_id": gid,
+                "room_id": rid,
+                # F8A #163 fix (run #20 NO-GO): 03-room-move setup'ı bookings.room_type
+                # üzerinden _computeDemand çağırıyor; seed bookings'inde alan yoktu →
+                # tüm demand `__unknown__` bucket'ına düşüyor, rooms gerçek tipte
+                # gruplanıyor → eligible=0 (target_total=50 required_min=30). Booking
+                # listesi enrichment'i (pms_bookings.py:440-441) yalnız cache-warm
+                # branch'inde çalışıyor; fallback path room_type doldurmuyor. Seed'de
+                # direkt yazmak deterministik fix.
+                "room_type": room_type,
+                # F8A #161: bookings list responses must carry folio_id so stress
+                # specs that fall back through `/api/pms/bookings` can target the
+                # real folio. Without this, tests sent `folio_id=booking.id` and
+                # FolioHardeningService.post_charge returned `{success:false,
+                # error:"Folio not found"}` → 100% s400 (drill_reports/20260514_*).
+                "folio_id": fid,
+                "check_in": check_in.isoformat(),
+                "check_out": check_out.isoformat(),
+                "nights": nights,
+                # Task #178: marker so the seed handler can count aged bookings
+                # without re-parsing dates; harmless extra field (direct DB write).
+                "aged": is_aged,
+                "adults": 2,
+                "children": (i % 3),
+                "guests_count": 2 + (i % 3),
+                "total_amount": total_amount,
+                "base_rate": base_price,
+                "paid_amount": aged_payment,
+                "status": booking_status,
+                "channel": "direct",
+                "rate_plan": "Standard",
+                "source_channel": "direct",
+                "origin": "stress_seed",
+                "hold_status": "none",
+                "allocation_source": "manual",
+                "vip": is_vip,
+                "late_checkout_requested": late_checkout,
+                "children_ages": [],
+                "created_at": now,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
         # Architect tur-6 (round 2) fix: 04-folio-mass C2 (sum(charges)==total)
         # reconciliation testi `folio.total`'ı 0 olarak okuyup mismatch raporluyordu.
         # Seed'de gerçek charges toplamını folio'ya da yaz (room*nights + tax*nights).
         folio_total = (base_price * nights) + (7.50 * nights)
         folio_balance = round(folio_total - aged_payment, 2)
-        folios_docs.append({
-            "id": fid, "tenant_id": stress_tid,
-            "booking_id": bid, "guest_id": gid,
-            "folio_number": f"{prefix}F{i + 1:04d}",
-            "folio_type": "guest",
-            "status": "open",
-            # balance = charges − payments (gross-net invariant); aged folios
-            # carry a deposit so balance < total. 04-folio-mass C2 recomputes
-            # this from the live detail service so it stays self-consistent.
-            "balance": folio_balance,
-            "total": folio_total,
-            "total_amount": folio_total,
-            "balance_total": folio_balance,
-            "paid_amount": aged_payment,
-            "created_at": now,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        folios_docs.append(
+            {
+                "id": fid,
+                "tenant_id": stress_tid,
+                "booking_id": bid,
+                "guest_id": gid,
+                "folio_number": f"{prefix}F{i + 1:04d}",
+                "folio_type": "guest",
+                "status": "open",
+                # balance = charges − payments (gross-net invariant); aged folios
+                # carry a deposit so balance < total. 04-folio-mass C2 recomputes
+                # this from the live detail service so it stays self-consistent.
+                "balance": folio_balance,
+                "total": folio_total,
+                "total_amount": folio_total,
+                "balance_total": folio_balance,
+                "paid_amount": aged_payment,
+                "created_at": now,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
         # 2+ charges per folio: room (per-night) + service tax. Aged bookings
         # span `nights` (offset + base) nights so per-night charges + RNLs cover
         # the past→future window and the folio total stays charges-consistent.
         for night in range(nights):
             charge_date = datetime.combine(
-                check_in + timedelta(days=night), datetime.min.time(), tzinfo=UTC,
+                check_in + timedelta(days=night),
+                datetime.min.time(),
+                tzinfo=UTC,
             )
-            folio_charges_docs.append({
-                "id": str(uuid.uuid4()), "tenant_id": stress_tid,
-                "folio_id": fid, "booking_id": bid,
-                "charge_category": "room",
-                "description": f"{prefix}Room_{i + 1}_Night{night + 1}",
-                "unit_price": base_price, "quantity": 1.0,
-                "amount": base_price, "subtotal": base_price,
-                "discount_amount": 0.0, "vat_rate": 0.0,
-                "vat_amount": 0.0, "tax_amount": 0.0,
-                "total": base_price, "voided": False,
-                "date": charge_date,
-                "stress_seed": True, "stress_prefix": prefix,
-            })
+            folio_charges_docs.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": stress_tid,
+                    "folio_id": fid,
+                    "booking_id": bid,
+                    "charge_category": "room",
+                    "description": f"{prefix}Room_{i + 1}_Night{night + 1}",
+                    "unit_price": base_price,
+                    "quantity": 1.0,
+                    "amount": base_price,
+                    "subtotal": base_price,
+                    "discount_amount": 0.0,
+                    "vat_rate": 0.0,
+                    "vat_amount": 0.0,
+                    "tax_amount": 0.0,
+                    "total": base_price,
+                    "voided": False,
+                    "date": charge_date,
+                    "stress_seed": True,
+                    "stress_prefix": prefix,
+                }
+            )
         # service tax (always at least one extra → ≥2 charges per folio)
-        folio_charges_docs.append({
-            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
-            "folio_id": fid, "booking_id": bid,
-            "charge_category": "tax",
-            "description": f"{prefix}AccTax_{i + 1}",
-            "unit_price": 7.50, "quantity": float(nights),
-            "amount": 7.50 * nights, "subtotal": 7.50 * nights,
-            "discount_amount": 0.0, "vat_rate": 0.0,
-            "vat_amount": 0.0, "tax_amount": 7.50 * nights,
-            "total": 7.50 * nights, "voided": False,
-            "date": now,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        folio_charges_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "folio_id": fid,
+                "booking_id": bid,
+                "charge_category": "tax",
+                "description": f"{prefix}AccTax_{i + 1}",
+                "unit_price": 7.50,
+                "quantity": float(nights),
+                "amount": 7.50 * nights,
+                "subtotal": 7.50 * nights,
+                "discount_amount": 0.0,
+                "vat_rate": 0.0,
+                "vat_amount": 0.0,
+                "tax_amount": 7.50 * nights,
+                "total": 7.50 * nights,
+                "voided": False,
+                "date": now,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
         # Aged deposit payment → aged financial coverage in the `payments`
         # collection (empty before Task #178). Field names cover both readers:
         # folio-detail aggregates `amount`, night-audit reads `total`.
         if is_aged:
             pay_at = now - timedelta(days=aged_offset_days)
-            payments_docs.append({
-                "id": str(uuid.uuid4()), "tenant_id": stress_tid,
-                "folio_id": fid, "booking_id": bid, "guest_id": gid,
-                "amount": aged_payment, "total": aged_payment,
-                "payment_method": "cash", "payment_type": "deposit",
-                "reference": f"{prefix}DEP_{i + 1:04d}",
-                "status": "completed", "currency": "TRY",
-                "voided": False,
-                "created_at": pay_at, "date": pay_at,
-                "stress_seed": True, "stress_prefix": prefix,
-            })
+            payments_docs.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": stress_tid,
+                    "folio_id": fid,
+                    "booking_id": bid,
+                    "guest_id": gid,
+                    "amount": aged_payment,
+                    "total": aged_payment,
+                    "payment_method": "cash",
+                    "payment_type": "deposit",
+                    "reference": f"{prefix}DEP_{i + 1:04d}",
+                    "status": "completed",
+                    "currency": "TRY",
+                    "voided": False,
+                    "created_at": pay_at,
+                    "date": pay_at,
+                    "stress_seed": True,
+                    "stress_prefix": prefix,
+                }
+            )
 
         # RNL fan-out per stay night.
         # Atlas index: ux_room_night UNIQUE on (tenant_id, room_id, night_date).
         # Secondary index idx_rnl_tenant_date_room reads `date`. Set both.
         for night in range(nights):
             night_date = (check_in + timedelta(days=night)).isoformat()
-            rnl_docs.append({
-                "id": str(uuid.uuid4()), "tenant_id": stress_tid,
-                "room_id": rid, "booking_id": bid,
-                "night_date": night_date,
-                "date": night_date,
-                "stay_date": night_date,  # legacy field for any reader
-                "lock_type": "occupied",
-                "created_at": now,
-                "stress_seed": True, "stress_prefix": prefix,
-            })
+            rnl_docs.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": stress_tid,
+                    "room_id": rid,
+                    "booking_id": bid,
+                    "night_date": night_date,
+                    "date": night_date,
+                    "stay_date": night_date,  # legacy field for any reader
+                    "lock_type": "occupied",
+                    "created_at": now,
+                    "stress_seed": True,
+                    "stress_prefix": prefix,
+                }
+            )
 
-        hk_docs.append({
-            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
-            "room_id": rid, "task_type": "cleaning",
-            "status": "pending",
-            "priority": "high" if is_vip else "normal",
-            "accessibility_required": accessibility_needed,
-            "created_at": now,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        hk_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "room_id": rid,
+                "task_type": "cleaning",
+                "status": "pending",
+                "priority": "high" if is_vip else "normal",
+                "accessibility_required": accessibility_needed,
+                "created_at": now,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # F8A tur-10 fix (run #22 NO-GO): 03-room-move setup eligible<30 root cause
     # iki katmanlı: (1) fetchAllByPrefix offset bug → rooms snapshot ilk 200'e
@@ -880,26 +988,32 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
             extra_idx = base_rooms_count + type_idx * EXTRA_VACANT_PER_TYPE + k
             block = BLOCKS[extra_idx % len(BLOCKS)]
             floor = FLOORS[extra_idx % len(FLOORS)]
-            rooms_docs.append({
-                "id": extra_rid, "tenant_id": stress_tid,
-                "room_number": f"{prefix}MV{block}{floor:02d}{(extra_idx + 1):03d}",
-                "room_type": rtype,
-                "block": block, "floor": floor,
-                "capacity": 2,
-                "base_price": 900.0, "price_per_night": 900.0,
-                "status": "available",
-                "amenities": ["wifi", "tv"],
-                "is_active": True, "is_virtual": False,
-                "accessible": (rtype == "accessible"),
-                "current_booking_id": None,
-                "created_at": now,
-                "stress_seed": True, "stress_prefix": prefix,
-                # Marker: explicit vacant target for room-move setup (Kapsam B).
-                "room_move_target": True,
-            })
+            rooms_docs.append(
+                {
+                    "id": extra_rid,
+                    "tenant_id": stress_tid,
+                    "room_number": f"{prefix}MV{block}{floor:02d}{(extra_idx + 1):03d}",
+                    "room_type": rtype,
+                    "block": block,
+                    "floor": floor,
+                    "capacity": 2,
+                    "base_price": 900.0,
+                    "price_per_night": 900.0,
+                    "status": "available",
+                    "amenities": ["wifi", "tv"],
+                    "is_active": True,
+                    "is_virtual": False,
+                    "accessible": (rtype == "accessible"),
+                    "current_booking_id": None,
+                    "created_at": now,
+                    "stress_seed": True,
+                    "stress_prefix": prefix,
+                    # Marker: explicit vacant target for room-move setup (Kapsam B).
+                    "room_move_target": True,
+                }
+            )
 
-    return (rooms_docs, guests_docs, bookings_docs,
-            folios_docs, folio_charges_docs, payments_docs, rnl_docs, hk_docs)
+    return (rooms_docs, guests_docs, bookings_docs, folios_docs, folio_charges_docs, payments_docs, rnl_docs, hk_docs)
 
 
 # F8N (2026-05-30, Wave 7): B2B Acente seed — `agencies` koleksiyonu.
@@ -917,22 +1031,25 @@ def _build_agency_docs(stress_tid: str, prefix: str, now: datetime) -> list[dict
     now_iso = now.isoformat()
     docs: list[dict] = []
     for i in range(5):
-        docs.append({
-            "id": str(uuid.uuid4()),
-            "tenant_id": stress_tid,
-            "name": f"{prefix}Agency_{i + 1:02d}",
-            "contact_name": f"{prefix}AgencyContact{i + 1}",
-            "contact_email": f"{prefix.lower()}agency{i + 1}@e2e-stress.example.com",
-            "contact_phone": f"+90555{i + 1:07d}",
-            "commission_rate": 10.0 + i,
-            "notes": "E2E stress B2B agency seed (41B matrix). Do not mutate.",
-            "status": "active",
-            "published_content": False,
-            "published_at": None,
-            "created_at": now_iso,
-            "updated_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "name": f"{prefix}Agency_{i + 1:02d}",
+                "contact_name": f"{prefix}AgencyContact{i + 1}",
+                "contact_email": f"{prefix.lower()}agency{i + 1}@e2e-stress.example.com",
+                "contact_phone": f"+90555{i + 1:07d}",
+                "commission_rate": 10.0 + i,
+                "notes": "E2E stress B2B agency seed (41B matrix). Do not mutate.",
+                "status": "active",
+                "published_content": False,
+                "published_at": None,
+                "created_at": now_iso,
+                "updated_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
     return docs
 
 
@@ -971,15 +1088,27 @@ def _build_f8b_docs(
     delivery_log_docs: list[dict] = []
 
     QR_CATEGORIES = [
-        "cleaning", "towels", "amenities", "maintenance", "wifi",
-        "food_order", "minibar", "laundry", "transport",
+        "cleaning",
+        "towels",
+        "amenities",
+        "maintenance",
+        "wifi",
+        "food_order",
+        "minibar",
+        "laundry",
+        "transport",
     ]
     QR_PRIORITIES = ["low", "normal", "high", "urgent"]
     DEPT_BY_CAT = {
-        "cleaning": "rooms", "towels": "rooms", "amenities": "rooms",
-        "maintenance": "technical", "wifi": "technical",
-        "food_order": "fnb", "minibar": "minibar",
-        "laundry": "laundry", "transport": "transportation",
+        "cleaning": "rooms",
+        "towels": "rooms",
+        "amenities": "rooms",
+        "maintenance": "technical",
+        "wifi": "technical",
+        "food_order": "fnb",
+        "minibar": "minibar",
+        "laundry": "laundry",
+        "transport": "transportation",
     }
 
     bookings_by_room = {b["room_id"]: b for b in bookings_docs}
@@ -1006,33 +1135,35 @@ def _build_f8b_docs(
         prio = QR_PRIORITIES[i % len(QR_PRIORITIES)]
         age_minutes = 25 * 60 if (i % 4 == 0) else 10
         qr_created = now - timedelta(minutes=age_minutes)
-        qr_docs.append({
-            # router uses `_id` (string uuid) and serializes to `id` on read.
-            "_id": str(uuid.uuid4()),
-            "tenant_id": stress_tid,
-            "room_id": rid,
-            "room_number": rnumber,
-            "category": cat,
-            "department": DEPT_BY_CAT[cat],
-            "title": f"{prefix}QR_{cat}_{i + 1}",
-            "description": f"{prefix}QR seed request {i + 1}",
-            "priority": prio,
-            "status": "new",
-            "language": "tr",
-            "guest_name": None,
-            "guest_phone": None,
-            "booking_id": booking["id"] if booking else None,
-            "assigned_to": None,
-            "created_at": qr_created,
-            "updated_at": qr_created,
-            "completed_at": None,
-            "source": "qr",
-            "status_history": [
-                {"status": "new", "by": "guest", "at": qr_created, "note": "F8B seed"},
-            ],
-            "stress_seed": True,
-            "stress_prefix": prefix,
-        })
+        qr_docs.append(
+            {
+                # router uses `_id` (string uuid) and serializes to `id` on read.
+                "_id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "room_id": rid,
+                "room_number": rnumber,
+                "category": cat,
+                "department": DEPT_BY_CAT[cat],
+                "title": f"{prefix}QR_{cat}_{i + 1}",
+                "description": f"{prefix}QR seed request {i + 1}",
+                "priority": prio,
+                "status": "new",
+                "language": "tr",
+                "guest_name": None,
+                "guest_phone": None,
+                "booking_id": booking["id"] if booking else None,
+                "assigned_to": None,
+                "created_at": qr_created,
+                "updated_at": qr_created,
+                "completed_at": None,
+                "source": "qr",
+                "status_history": [
+                    {"status": "new", "by": "guest", "at": qr_created, "note": "F8B seed"},
+                ],
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
         # 2) SERVICE COMPLAINT — 1 per 5 rooms (100 for 500 base rooms).
         # Resolve test targets 30, escalate 10, leaves 60 for summary read.
@@ -1040,35 +1171,41 @@ def _build_f8b_docs(
             sev = severities[(i // 5) % len(severities)]
             age_hours = 30 if (i % 10 == 0) else 1
             c_created = (now - timedelta(hours=age_hours)).isoformat()
-            complaint_docs.append({
-                "id": str(uuid.uuid4()),
-                "tenant_id": stress_tid,
-                "source": "staff",
-                "category": "service_recovery",
-                "severity": sev,
-                "subject": f"{prefix}Complaint_{i + 1}",
-                "description": f"{prefix}F8B seeded complaint #{i + 1}",
-                "guest_name": None,
-                "guest_phone": None,
-                # CRITICAL — keeps resolve flow's _notify_guest_resolved silent.
-                "guest_id": None,
-                "room_id": rid,
-                "room_number": rnumber,
-                "booking_id": booking["id"] if booking else None,
-                "assigned_department": "front_office",
-                "status": "open",
-                "compensation_offered": None,
-                "compensation_amount": 0,
-                "created_by": None,
-                "created_at": c_created,
-                "updated_at": c_created,
-                "history": [{
-                    "action": "created", "actor_id": None,
-                    "actor_name": "F8B seed", "at": c_created,
-                }],
-                "stress_seed": True,
-                "stress_prefix": prefix,
-            })
+            complaint_docs.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": stress_tid,
+                    "source": "staff",
+                    "category": "service_recovery",
+                    "severity": sev,
+                    "subject": f"{prefix}Complaint_{i + 1}",
+                    "description": f"{prefix}F8B seeded complaint #{i + 1}",
+                    "guest_name": None,
+                    "guest_phone": None,
+                    # CRITICAL — keeps resolve flow's _notify_guest_resolved silent.
+                    "guest_id": None,
+                    "room_id": rid,
+                    "room_number": rnumber,
+                    "booking_id": booking["id"] if booking else None,
+                    "assigned_department": "front_office",
+                    "status": "open",
+                    "compensation_offered": None,
+                    "compensation_amount": 0,
+                    "created_by": None,
+                    "created_at": c_created,
+                    "updated_at": c_created,
+                    "history": [
+                        {
+                            "action": "created",
+                            "actor_id": None,
+                            "actor_name": "F8B seed",
+                            "at": c_created,
+                        }
+                    ],
+                    "stress_seed": True,
+                    "stress_prefix": prefix,
+                }
+            )
 
         # 3) MESSAGES — 1 inbound + 1 outbound per real room. Provides
         #    read-load surface for /api/messaging/conversations without
@@ -1081,42 +1218,46 @@ def _build_f8b_docs(
             contact = f"{prefix.lower()}m{i}@e2e-stress.example.com"
         sent_at = now.isoformat()
         for direction in ("inbound", "outbound"):
-            message_docs.append({
-                "id": str(uuid.uuid4()),
-                "tenant_id": stress_tid,
-                "channel": ch,
-                "direction": direction,
-                "to": contact if direction == "outbound" else f"{prefix}INBOX",
-                "from": f"{prefix}INBOX" if direction == "outbound" else contact,
-                "subject": f"{prefix}Subj_{i}_{direction}" if ch == "email" else None,
-                "message": f"{prefix} F8B seed {direction} #{i}",
-                "booking_id": booking["id"] if booking else None,
-                "status": "sent" if direction == "outbound" else "received",
-                "sent_at": sent_at,
-                "sent_by": None,
-                "stress_seed": True,
-                "stress_prefix": prefix,
-            })
+            message_docs.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": stress_tid,
+                    "channel": ch,
+                    "direction": direction,
+                    "to": contact if direction == "outbound" else f"{prefix}INBOX",
+                    "from": f"{prefix}INBOX" if direction == "outbound" else contact,
+                    "subject": f"{prefix}Subj_{i}_{direction}" if ch == "email" else None,
+                    "message": f"{prefix} F8B seed {direction} #{i}",
+                    "booking_id": booking["id"] if booking else None,
+                    "status": "sent" if direction == "outbound" else "received",
+                    "sent_at": sent_at,
+                    "sent_by": None,
+                    "stress_seed": True,
+                    "stress_prefix": prefix,
+                }
+            )
 
         # 4) NOTIFICATIONS — 1 per real room (broadcast: user_id=None). 1/7
         #    high-priority escalation type so unread-by-priority queries
         #    return a non-trivial distribution.
-        is_escalation = (i % 7 == 0)
-        notif_docs.append({
-            "id": str(uuid.uuid4()),
-            "tenant_id": stress_tid,
-            "user_id": None,
-            "type": "complaint_escalated" if is_escalation else "guest_request",
-            "title": f"{prefix}Notif_{i + 1}",
-            "message": f"{prefix} F8B seed notification {i + 1}",
-            "priority": "high" if is_escalation else "normal",
-            "read": (i % 3 == 0),
-            "action_url": f"/room-requests?room={rid}",
-            "context": {"room_id": rid, "seed": "f8b"},
-            "created_at": sent_at,
-            "stress_seed": True,
-            "stress_prefix": prefix,
-        })
+        is_escalation = i % 7 == 0
+        notif_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "user_id": None,
+                "type": "complaint_escalated" if is_escalation else "guest_request",
+                "title": f"{prefix}Notif_{i + 1}",
+                "message": f"{prefix} F8B seed notification {i + 1}",
+                "priority": "high" if is_escalation else "normal",
+                "read": (i % 3 == 0),
+                "action_url": f"/room-requests?room={rid}",
+                "context": {"room_id": rid, "seed": "f8b"},
+                "created_at": sent_at,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 5) MESSAGING ACTIVITY FEED surface (Task #172). The activity feed
     #    (/api/messaging-center/activity) reads notifications with
@@ -1134,36 +1275,36 @@ def _build_f8b_docs(
     dl_statuses = ["sent", "delivered", "failed"]
     for j in range(ACTIVITY_BATCH):
         a_created = (now - timedelta(minutes=j)).isoformat()
-        notif_docs.append({
-            "id": str(uuid.uuid4()),
-            "tenant_id": stress_tid,
-            "user_id": None,
-            "type": "messaging_automation",
-            "title": f"{prefix}Automation_{j + 1}",
-            "message": f"{prefix} F8B automation event #{j + 1}",
-            "priority": "normal",
-            "read": (j % 2 == 0),
-            "created_at": a_created,
-            "stress_seed": True,
-            "stress_prefix": prefix,
-        })
-        ch = dl_channels[j % len(dl_channels)]
-        recipient = (
-            f"{prefix.lower()}d{j}@e2e-stress.example.com"
-            if ch == "email"
-            else f"+9000000{j:05d}"
+        notif_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "user_id": None,
+                "type": "messaging_automation",
+                "title": f"{prefix}Automation_{j + 1}",
+                "message": f"{prefix} F8B automation event #{j + 1}",
+                "priority": "normal",
+                "read": (j % 2 == 0),
+                "created_at": a_created,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
         )
-        delivery_log_docs.append({
-            "id": str(uuid.uuid4()),
-            "tenant_id": stress_tid,
-            "channel": ch,
-            "status": dl_statuses[j % len(dl_statuses)],
-            "recipient": recipient,
-            "use_case": "checkin_reminder",
-            "created_at": a_created,
-            "stress_seed": True,
-            "stress_prefix": prefix,
-        })
+        ch = dl_channels[j % len(dl_channels)]
+        recipient = f"{prefix.lower()}d{j}@e2e-stress.example.com" if ch == "email" else f"+9000000{j:05d}"
+        delivery_log_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "channel": ch,
+                "status": dl_statuses[j % len(dl_statuses)],
+                "recipient": recipient,
+                "use_case": "checkin_reminder",
+                "created_at": a_created,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     return qr_docs, complaint_docs, message_docs, notif_docs, delivery_log_docs
 
@@ -1219,18 +1360,29 @@ def _build_f8c_docs(stress_tid: str, prefix: str, now: datetime):
     for i, (n, loc, area, th, cl, bq, ck, us, br, hr, dr) in enumerate(space_seeds):
         sid = str(uuid.uuid4())
         space_ids.append(sid)
-        spaces_docs.append({
-            "id": sid, "tenant_id": stress_tid,
-            "name": f"{prefix}Space_{n}", "location": loc, "area_m2": area,
-            "capacity_theatre": th, "capacity_classroom": cl,
-            "capacity_banquet": bq, "capacity_cocktail": ck,
-            "capacity_u_shape": us, "capacity_boardroom": br,
-            "hourly_rate": hr, "daily_rate": dr, "currency": "TRY",
-            "amenities": ["wifi", "projector", "ses-sistemi"],
-            "active": True,
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        spaces_docs.append(
+            {
+                "id": sid,
+                "tenant_id": stress_tid,
+                "name": f"{prefix}Space_{n}",
+                "location": loc,
+                "area_m2": area,
+                "capacity_theatre": th,
+                "capacity_classroom": cl,
+                "capacity_banquet": bq,
+                "capacity_cocktail": ck,
+                "capacity_u_shape": us,
+                "capacity_boardroom": br,
+                "hourly_rate": hr,
+                "daily_rate": dr,
+                "currency": "TRY",
+                "amenities": ["wifi", "projector", "ses-sistemi"],
+                "active": True,
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 2) MENUS (8) — F&B + AV/decor
     menu_seeds = [
@@ -1247,60 +1399,85 @@ def _build_f8c_docs(stress_tid: str, prefix: str, now: datetime):
     for i, (n, t, ppp, fp) in enumerate(menu_seeds):
         mid = str(uuid.uuid4())
         menu_ids.append(mid)
-        menus_docs.append({
-            "id": mid, "tenant_id": stress_tid,
-            "name": f"{prefix}Menu_{n}", "type": t,
-            "price_per_person": ppp, "flat_price": fp, "currency": "TRY",
-            "description": f"{prefix} F8C seed menu",
-            "active": True, "courses": [], "allergens": [],
-            "dietary_tags": [], "min_guests": 0, "prep_lead_minutes": 60,
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        menus_docs.append(
+            {
+                "id": mid,
+                "tenant_id": stress_tid,
+                "name": f"{prefix}Menu_{n}",
+                "type": t,
+                "price_per_person": ppp,
+                "flat_price": fp,
+                "currency": "TRY",
+                "description": f"{prefix} F8C seed menu",
+                "active": True,
+                "courses": [],
+                "allergens": [],
+                "dietary_tags": [],
+                "min_guests": 0,
+                "prep_lead_minutes": 60,
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 3) ACCOUNTS (10) + CONTACTS (1 per account)
     account_ids = []
     for i in range(10):
         aid = str(uuid.uuid4())
         account_ids.append(aid)
-        accounts_docs.append({
-            "id": aid, "tenant_id": stress_tid,
-            "name": f"{prefix}Account_Kurumsal_{i + 1:02d}",
-            # `/api/mice/accounts` filters on account_type=client (or missing).
-            # Use "client" to keep seeded rows visible in spec 14-A catalog read.
-            "account_type": "client",
-            "tax_no": f"{prefix}TAX{i + 1:08d}",
-            "email": f"{prefix.lower()}acct{i + 1}@e2e-stress.example.com",
-            "phone": f"+90555100{i + 1:04d}",
-            "industry": "tourism" if i % 2 == 0 else "finance",
-            "notes": f"{prefix} F8C seed account",
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        accounts_docs.append(
+            {
+                "id": aid,
+                "tenant_id": stress_tid,
+                "name": f"{prefix}Account_Kurumsal_{i + 1:02d}",
+                # `/api/mice/accounts` filters on account_type=client (or missing).
+                # Use "client" to keep seeded rows visible in spec 14-A catalog read.
+                "account_type": "client",
+                "tax_no": f"{prefix}TAX{i + 1:08d}",
+                "email": f"{prefix.lower()}acct{i + 1}@e2e-stress.example.com",
+                "phone": f"+90555100{i + 1:04d}",
+                "industry": "tourism" if i % 2 == 0 else "finance",
+                "notes": f"{prefix} F8C seed account",
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
         cid = str(uuid.uuid4())
-        contacts_docs.append({
-            "id": cid, "tenant_id": stress_tid, "account_id": aid,
-            "name": f"{prefix}Contact_{i + 1}",
-            "title": "Etkinlik Yöneticisi",
-            "email": f"{prefix.lower()}ctc{i + 1}@e2e-stress.example.com",
-            "phone": f"+90555200{i + 1:04d}",
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        contacts_docs.append(
+            {
+                "id": cid,
+                "tenant_id": stress_tid,
+                "account_id": aid,
+                "name": f"{prefix}Contact_{i + 1}",
+                "title": "Etkinlik Yöneticisi",
+                "email": f"{prefix.lower()}ctc{i + 1}@e2e-stress.example.com",
+                "phone": f"+90555200{i + 1:04d}",
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 4) RESOURCES (5) — AV/decor stocked inventory
     for i in range(5):
         rid = str(uuid.uuid4())
-        resources_docs.append({
-            "id": rid, "tenant_id": stress_tid,
-            "name": f"{prefix}Resource_AV_{i + 1}",
-            "type": "av", "unit": "unit",
-            "unit_price": 1500.0 + (i * 250),
-            "total_stock": 10 + (i * 5),
-            "active": True,
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        resources_docs.append(
+            {
+                "id": rid,
+                "tenant_id": stress_tid,
+                "name": f"{prefix}Resource_AV_{i + 1}",
+                "type": "av",
+                "unit": "unit",
+                "unit_price": 1500.0 + (i * 250),
+                "total_stock": 10 + (i * 5),
+                "active": True,
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 5) EVENTS (30) — UNIQUE (space, date) tuples → conflict-free transitions
     # Date offset: starts 30 days from now, each event +1 day later.
@@ -1315,38 +1492,44 @@ def _build_f8c_docs(stress_tid: str, prefix: str, now: datetime):
         # Single-day events; starts 10:00, ends 18:00 same day.
         starts_at = datetime(start_day.year, start_day.month, start_day.day, 10, 0, 0, tzinfo=UTC)
         ends_at = datetime(start_day.year, start_day.month, start_day.day, 18, 0, 0, tzinfo=UTC)
-        events_docs.append({
-            "id": eid, "tenant_id": stress_tid,
-            "name": f"{prefix}Event_{i + 1:02d}",
-            "client_name": f"{prefix}Client_{i + 1:02d}",
-            "client_email": f"{prefix.lower()}ev{i + 1}@e2e-stress.example.com",
-            "client_phone": f"+90555300{i + 1:04d}",
-            "client_account_id": account_ids[i % len(account_ids)],
-            "client_contact_id": None,
-            "organizer_user": None,
-            "event_type": ["meeting", "conference", "wedding", "gala", "training"][i % 5],
-            "status": "lead",  # safe — no folio impact, no conflict checks
-            "expected_pax": 50 + (i * 5),
-            "start_date": start_day.isoformat(),
-            "end_date": start_day.isoformat(),
-            "space_bookings": [{
-                "space_id": space_ids[i % len(space_ids)],
-                "starts_at": starts_at.isoformat(),
-                "ends_at": ends_at.isoformat(),
-                "setup_style": "theatre",
+        events_docs.append(
+            {
+                "id": eid,
+                "tenant_id": stress_tid,
+                "name": f"{prefix}Event_{i + 1:02d}",
+                "client_name": f"{prefix}Client_{i + 1:02d}",
+                "client_email": f"{prefix.lower()}ev{i + 1}@e2e-stress.example.com",
+                "client_phone": f"+90555300{i + 1:04d}",
+                "client_account_id": account_ids[i % len(account_ids)],
+                "client_contact_id": None,
+                "organizer_user": None,
+                "event_type": ["meeting", "conference", "wedding", "gala", "training"][i % 5],
+                "status": "lead",  # safe — no folio impact, no conflict checks
                 "expected_pax": 50 + (i * 5),
-            }],
-            "resources": [],
-            "agenda": [],
-            "payment_schedule": [],
-            "notes": f"{prefix} F8C seed event",
-            "reservation_id": None,  # CRITICAL — no folio posting on completed
-            "lost_reason": None,
-            "totals": {"grand_total": 0, "space_total": 0, "resource_total": 0},
-            "created_at": now_iso,
-            "created_by": "f8c-seed",
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+                "start_date": start_day.isoformat(),
+                "end_date": start_day.isoformat(),
+                "space_bookings": [
+                    {
+                        "space_id": space_ids[i % len(space_ids)],
+                        "starts_at": starts_at.isoformat(),
+                        "ends_at": ends_at.isoformat(),
+                        "setup_style": "theatre",
+                        "expected_pax": 50 + (i * 5),
+                    }
+                ],
+                "resources": [],
+                "agenda": [],
+                "payment_schedule": [],
+                "notes": f"{prefix} F8C seed event",
+                "reservation_id": None,  # CRITICAL — no folio posting on completed
+                "lost_reason": None,
+                "totals": {"grand_total": 0, "space_total": 0, "resource_total": 0},
+                "created_at": now_iso,
+                "created_by": "f8c-seed",
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 6) OPPORTUNITIES (30) — _kind=opportunity, stages lead/qualified/proposal/contract.
     # NEVER won/lost — keeps `closed_at` field unset so spec C can transition forward.
@@ -1355,64 +1538,78 @@ def _build_f8c_docs(stress_tid: str, prefix: str, now: datetime):
     for i in range(30):
         oid = str(uuid.uuid4())
         stage = open_stages[i % len(open_stages)]
-        opportunities_docs.append({
-            "_kind": "opportunity",
-            "id": oid, "tenant_id": stress_tid,
-            "title": f"{prefix}Opp_{i + 1:02d}",
-            "account_id": account_ids[i % len(account_ids)],
-            "contact_id": None,
-            "event_type": ["wedding", "conference", "corporate", "social", "incentive"][i % 5],
-            "pax": 80 + (i * 5),
-            "estimated_value": 25000.0 + (i * 1500),
-            "currency": "TRY",
-            "probability": stage_prob[stage],
-            "stage": stage,
-            "stage_history": [{"stage": stage, "at": now_iso, "by": "f8c-seed"}],
-            "source": "referral" if i % 2 == 0 else "website",
-            "owner": None,
-            "notes": f"{prefix} F8C seed opportunity",
-            "created_at": now_iso,
-            "updated_at": now_iso,
-            "created_by": "f8c-seed",
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        opportunities_docs.append(
+            {
+                "_kind": "opportunity",
+                "id": oid,
+                "tenant_id": stress_tid,
+                "title": f"{prefix}Opp_{i + 1:02d}",
+                "account_id": account_ids[i % len(account_ids)],
+                "contact_id": None,
+                "event_type": ["wedding", "conference", "corporate", "social", "incentive"][i % 5],
+                "pax": 80 + (i * 5),
+                "estimated_value": 25000.0 + (i * 1500),
+                "currency": "TRY",
+                "probability": stage_prob[stage],
+                "stage": stage,
+                "stage_history": [{"stage": stage, "at": now_iso, "by": "f8c-seed"}],
+                "source": "referral" if i % 2 == 0 else "website",
+                "owner": None,
+                "notes": f"{prefix} F8C seed opportunity",
+                "created_at": now_iso,
+                "updated_at": now_iso,
+                "created_by": "f8c-seed",
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
         # 1 activity per opportunity for read surface
-        opp_activities_docs.append({
-            "_kind": "opportunity_activity",
-            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
-            "opportunity_id": oid,
-            "type": "note",
-            "subject": f"{prefix}OppNote_{i + 1}",
-            "body": f"{prefix} F8C seeded note #{i + 1}",
-            "happened_at": now_iso, "duration_min": 15,
-            "outcome": "positive" if i % 3 == 0 else "neutral",
-            "created_at": now_iso, "created_by": "f8c-seed",
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        opp_activities_docs.append(
+            {
+                "_kind": "opportunity_activity",
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "opportunity_id": oid,
+                "type": "note",
+                "subject": f"{prefix}OppNote_{i + 1}",
+                "body": f"{prefix} F8C seeded note #{i + 1}",
+                "happened_at": now_iso,
+                "duration_min": 15,
+                "outcome": "positive" if i % 3 == 0 else "neutral",
+                "created_at": now_iso,
+                "created_by": "f8c-seed",
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 7) SALES LEADS (20) — _kind=lead, status=new (mice_opportunities collection).
     lead_status_seed = ["new", "contacted", "qualified", "proposal_sent"]
     for i in range(20):
-        leads_docs.append({
-            "_kind": "lead",
-            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
-            "company_name": f"{prefix}LeadCo_{i + 1:02d}",
-            "contact_name": f"{prefix}LeadContact_{i + 1}",
-            "contact_email": f"{prefix.lower()}lead{i + 1}@e2e-stress.example.com",
-            "contact_phone": f"+90555400{i + 1:04d}",
-            "source": "website" if i % 2 == 0 else "referral",
-            "status": lead_status_seed[i % len(lead_status_seed)],
-            "priority": "medium",
-            "estimated_value": 50000.0 + (i * 2000),
-            "estimated_rooms": 10 + (i % 20),
-            "target_checkin": (now + timedelta(days=60 + i)).date().isoformat(),
-            "assigned_to": None,
-            "lead_score": 50 + (i % 30),
-            "notes": f"{prefix} F8C seed lead",
-            "created_at": now_iso,
-            "updated_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        leads_docs.append(
+            {
+                "_kind": "lead",
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "company_name": f"{prefix}LeadCo_{i + 1:02d}",
+                "contact_name": f"{prefix}LeadContact_{i + 1}",
+                "contact_email": f"{prefix.lower()}lead{i + 1}@e2e-stress.example.com",
+                "contact_phone": f"+90555400{i + 1:04d}",
+                "source": "website" if i % 2 == 0 else "referral",
+                "status": lead_status_seed[i % len(lead_status_seed)],
+                "priority": "medium",
+                "estimated_value": 50000.0 + (i * 2000),
+                "estimated_rooms": 10 + (i % 20),
+                "target_checkin": (now + timedelta(days=60 + i)).date().isoformat(),
+                "assigned_to": None,
+                "lead_score": 50 + (i % 30),
+                "notes": f"{prefix} F8C seed lead",
+                "created_at": now_iso,
+                "updated_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 8) BANQUET COMPETITORS (10) — mice_accounts + account_type=banquet_competitor
     # Each pre-seeded with 5 rates embedded.
@@ -1420,56 +1617,65 @@ def _build_f8c_docs(stress_tid: str, prefix: str, now: datetime):
         cid = str(uuid.uuid4())
         rates_embedded = []
         for r in range(5):
-            rates_embedded.append({
-                "id": str(uuid.uuid4()),
-                "event_type": ["meeting", "conference", "wedding", "gala", "training"][r % 5],
-                "season": ["all", "high", "shoulder", "low", "high"][r % 5],
-                "per_pax_price": 800.0 + (i * 100) + (r * 50),
-                "currency": "TRY",
-                "min_pax": 30 + (r * 10),
-                "max_pax": 200 + (r * 50),
-                "package_includes": ["coffee", "lunch"],
-                "source": "web",
-                "note": f"{prefix} F8C seed rate {r + 1}",
-                "recorded_at": now_iso,
-                "recorded_by": "f8c-seed",
-            })
-        competitors_docs.append({
-            "id": cid, "tenant_id": stress_tid,
-            "account_type": "banquet_competitor",
-            "name": f"{prefix}Competitor_Hotel_{i + 1:02d}",
-            "hotel_class": 4 + (i % 2),
-            "capacity_max": 300 + (i * 50),
-            "venues": [f"{prefix}Venue_{i}_{v}" for v in range(2)],
-            "notes": f"{prefix} F8C seed competitor",
-            "active": True,
-            "competitor_rates": rates_embedded,
-            "created_at": now_iso, "created_by": "f8c-seed",
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+            rates_embedded.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "event_type": ["meeting", "conference", "wedding", "gala", "training"][r % 5],
+                    "season": ["all", "high", "shoulder", "low", "high"][r % 5],
+                    "per_pax_price": 800.0 + (i * 100) + (r * 50),
+                    "currency": "TRY",
+                    "min_pax": 30 + (r * 10),
+                    "max_pax": 200 + (r * 50),
+                    "package_includes": ["coffee", "lunch"],
+                    "source": "web",
+                    "note": f"{prefix} F8C seed rate {r + 1}",
+                    "recorded_at": now_iso,
+                    "recorded_by": "f8c-seed",
+                }
+            )
+        competitors_docs.append(
+            {
+                "id": cid,
+                "tenant_id": stress_tid,
+                "account_type": "banquet_competitor",
+                "name": f"{prefix}Competitor_Hotel_{i + 1:02d}",
+                "hotel_class": 4 + (i % 2),
+                "capacity_max": 300 + (i * 50),
+                "venues": [f"{prefix}Venue_{i}_{v}" for v in range(2)],
+                "notes": f"{prefix} F8C seed competitor",
+                "active": True,
+                "competitor_rates": rates_embedded,
+                "created_at": now_iso,
+                "created_by": "f8c-seed",
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 9) PACKAGES (3)
     pkg_types = ["wedding", "conference", "corporate"]
     for i, pt in enumerate(pkg_types):
-        packages_docs.append({
-            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
-            "name": f"{prefix}Package_{pt}_{i + 1}",
-            "type": pt,
-            "description": f"{prefix} F8C seed package",
-            "min_pax": 50, "max_pax": 300,
-            "base_price": 25000.0 + (i * 5000),
-            "per_pax_price": 450.0 + (i * 50),
-            "currency": "TRY",
-            "items": [],
-            "active": True,
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        packages_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "name": f"{prefix}Package_{pt}_{i + 1}",
+                "type": pt,
+                "description": f"{prefix} F8C seed package",
+                "min_pax": 50,
+                "max_pax": 300,
+                "base_price": 25000.0 + (i * 5000),
+                "per_pax_price": 450.0 + (i * 50),
+                "currency": "TRY",
+                "items": [],
+                "active": True,
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
-    return (spaces_docs, menus_docs, accounts_docs, contacts_docs,
-            resources_docs, events_docs, opportunities_docs,
-            opp_activities_docs, leads_docs, competitors_docs,
-            packages_docs)
+    return (spaces_docs, menus_docs, accounts_docs, contacts_docs, resources_docs, events_docs, opportunities_docs, opp_activities_docs, leads_docs, competitors_docs, packages_docs)
 
 
 # F8D (2026-05-18) — HR / Staff / Shift / Leave / Department surface.
@@ -1517,17 +1723,21 @@ def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
     for i, (name, code) in enumerate(dept_seeds):
         did = str(uuid.uuid4())
         dept_ids.append(did)
-        departments_docs.append({
-            "id": did, "tenant_id": stress_tid,
-            "name": f"{prefix}Dept_{name}",
-            "code": f"{prefix}DEPT_{code}",
-            "description": f"{prefix} F8D seed department",
-            "manager_user_id": None,
-            "parent_id": None,
-            "active": True,
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        departments_docs.append(
+            {
+                "id": did,
+                "tenant_id": stress_tid,
+                "name": f"{prefix}Dept_{name}",
+                "code": f"{prefix}DEPT_{code}",
+                "description": f"{prefix} F8D seed department",
+                "manager_user_id": None,
+                "parent_id": None,
+                "active": True,
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 2) POSITIONS (8) — bound to departments
     position_seeds = [
@@ -1544,83 +1754,95 @@ def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
     for i, (title, dept_idx, base) in enumerate(position_seeds):
         pid = str(uuid.uuid4())
         position_ids.append(pid)
-        positions_docs.append({
-            "id": pid, "tenant_id": stress_tid,
-            "title": f"{prefix}Position_{title}",
-            "code": f"{prefix}POS_{i + 1:02d}",
-            "department_id": dept_ids[dept_idx],
-            "base_salary": base,
-            "currency": "TRY",
-            "description": f"{prefix} F8D seed position",
-            "active": True,
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        positions_docs.append(
+            {
+                "id": pid,
+                "tenant_id": stress_tid,
+                "title": f"{prefix}Position_{title}",
+                "code": f"{prefix}POS_{i + 1:02d}",
+                "department_id": dept_ids[dept_idx],
+                "base_salary": base,
+                "currency": "TRY",
+                "description": f"{prefix} F8D seed position",
+                "active": True,
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 3) STAFF MEMBERS (30) — role distribution: 10 HK, 8 FO, 6 F&B, 4 MAINT, 2 ADMIN
     role_distribution = (
-        [(1, 2)] * 10 +   # HK dept, Housekeeper position
-        [(0, 0)] * 8 +    # FO dept, Front Desk Agent position
-        [(2, 4)] * 6 +    # F&B dept, Waiter position
-        [(3, 6)] * 4 +    # MAINT dept, Maintenance Tech position
-        [(4, 7)] * 2      # ADMIN dept, HR Officer position
+        [(1, 2)] * 10  # HK dept, Housekeeper position
+        + [(0, 0)] * 8  # FO dept, Front Desk Agent position
+        + [(2, 4)] * 6  # F&B dept, Waiter position
+        + [(3, 6)] * 4  # MAINT dept, Maintenance Tech position
+        + [(4, 7)] * 2  # ADMIN dept, HR Officer position
     )
     # Router fields (active filter + name/department/position strings) — these are
     # required by GET /hr/staff (filters on `active: True`) and downstream HR endpoints.
     # Extra fields (full_name/first_name/department_id/position_id) retained for
     # forward-compat with admin/UI surfaces; ignored by HR router.
     staff_ids: list[str] = []
-    dept_names = [d[0] for d in dept_seeds]   # "Front Office", "Housekeeping", ...
+    dept_names = [d[0] for d in dept_seeds]  # "Front Office", "Housekeeping", ...
     pos_titles = [p[0] for p in position_seeds]  # "Front Desk Agent", ...
     for i, (dept_idx, pos_idx) in enumerate(role_distribution):
         sid = str(uuid.uuid4())
         staff_ids.append(sid)
         full = f"{prefix}Staff{i + 1:02d} Test"
-        staff_docs.append({
-            "id": sid, "tenant_id": stress_tid,
-            "name": full,
-            "first_name": f"{prefix}Staff{i + 1:02d}",
-            "last_name": "Test",
-            "full_name": full,
-            "email": f"{prefix.lower()}staff{i + 1}@e2e-stress.example.com",
-            "phone": f"+90555500{i + 1:04d}",
-            "national_id": f"{prefix}NID{i + 1:08d}",
-            "department": dept_names[dept_idx],
-            "position": pos_titles[pos_idx],
-            "department_id": dept_ids[dept_idx],
-            "position_id": position_ids[pos_idx],
-            "employment_type": "full_time",
-            "hire_date": (now - timedelta(days=365 + (i * 7))).date().isoformat(),
-            "base_salary": positions_docs[pos_idx]["base_salary"],
-            "hourly_rate": round(positions_docs[pos_idx]["base_salary"] / 160, 2),
-            "monthly_hours": 160,
-            "annual_leave_entitlement": 14,
-            "currency": "TRY",
-            "active": True,
-            "status": "active",
-            "is_active": True,
-            "manager_id": None,
-            "skills": [],
-            "certifications": [],
-            "notes": f"{prefix} F8D seed staff",
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        staff_docs.append(
+            {
+                "id": sid,
+                "tenant_id": stress_tid,
+                "name": full,
+                "first_name": f"{prefix}Staff{i + 1:02d}",
+                "last_name": "Test",
+                "full_name": full,
+                "email": f"{prefix.lower()}staff{i + 1}@e2e-stress.example.com",
+                "phone": f"+90555500{i + 1:04d}",
+                "national_id": f"{prefix}NID{i + 1:08d}",
+                "department": dept_names[dept_idx],
+                "position": pos_titles[pos_idx],
+                "department_id": dept_ids[dept_idx],
+                "position_id": position_ids[pos_idx],
+                "employment_type": "full_time",
+                "hire_date": (now - timedelta(days=365 + (i * 7))).date().isoformat(),
+                "base_salary": positions_docs[pos_idx]["base_salary"],
+                "hourly_rate": round(positions_docs[pos_idx]["base_salary"] / 160, 2),
+                "monthly_hours": 160,
+                "annual_leave_entitlement": 14,
+                "currency": "TRY",
+                "active": True,
+                "status": "active",
+                "is_active": True,
+                "manager_id": None,
+                "skills": [],
+                "certifications": [],
+                "notes": f"{prefix} F8D seed staff",
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 4) LEAVE BALANCES (30) — default 14 days for each staff
     for i, sid in enumerate(staff_ids):
-        leave_balance_docs.append({
-            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
-            "staff_id": sid,
-            "year": now.year,
-            "annual_entitled_days": 14,
-            "used_days": 0,
-            "pending_days": 0,
-            "remaining_days": 14,
-            "carryover_days": 0,
-            "updated_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        leave_balance_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "staff_id": sid,
+                "year": now.year,
+                "annual_entitled_days": 14,
+                "used_days": 0,
+                "pending_days": 0,
+                "remaining_days": 14,
+                "carryover_days": 0,
+                "updated_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 5) ATTENDANCE RECORDS (60) — last 7 days × 10 staff sample
     # All records CLOSED (clock_out set) so spec clock-in can write OPEN rows.
@@ -1630,20 +1852,24 @@ def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
         for sid in sample_staff:
             clock_in_dt = datetime(record_date.year, record_date.month, record_date.day, 9, 0, 0, tzinfo=UTC)
             clock_out_dt = datetime(record_date.year, record_date.month, record_date.day, 17, 30, 0, tzinfo=UTC)
-            attendance_docs.append({
-                "id": str(uuid.uuid4()), "tenant_id": stress_tid,
-                "staff_id": sid,
-                "date": record_date.isoformat(),
-                "clock_in": clock_in_dt.isoformat(),
-                "clock_out": clock_out_dt.isoformat(),
-                "worked_minutes": 510,
-                "overtime_minutes": 0,
-                "break_minutes": 30,
-                "source": "manual",
-                "notes": f"{prefix} F8D seed attendance",
-                "created_at": now_iso,
-                "stress_seed": True, "stress_prefix": prefix,
-            })
+            attendance_docs.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": stress_tid,
+                    "staff_id": sid,
+                    "date": record_date.isoformat(),
+                    "clock_in": clock_in_dt.isoformat(),
+                    "clock_out": clock_out_dt.isoformat(),
+                    "worked_minutes": 510,
+                    "overtime_minutes": 0,
+                    "break_minutes": 30,
+                    "source": "manual",
+                    "notes": f"{prefix} F8D seed attendance",
+                    "created_at": now_iso,
+                    "stress_seed": True,
+                    "stress_prefix": prefix,
+                }
+            )
 
     # 6) SHIFT SCHEDULES (20) — next 7 days × 3 staff samples
     # Task #259: Reserve first 5 staff slots (Staff01..Staff05) for stress
@@ -1667,22 +1893,26 @@ def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
             sid = staff_ids[staff_idx]
             shift = shift_types[j % len(shift_types)]
             start_hour = {"morning": 8, "evening": 16, "night": 0}[shift]
-            shift_schedule_docs.append({
-                "id": str(uuid.uuid4()), "tenant_id": stress_tid,
-                "staff_id": sid,
-                "staff_name": staff_docs[staff_idx]["name"],
-                "shift_date": shift_date.isoformat(),
-                "date": shift_date.isoformat(),
-                "shift_type": shift,
-                "start_time": f"{start_hour:02d}:00",
-                "end_time": f"{(start_hour + 8) % 24:02d}:00",
-                "duration_minutes": 480,
-                "status": "scheduled",
-                "department_id": staff_docs[staff_idx]["department_id"],
-                "notes": f"{prefix} F8D seed shift",
-                "created_at": now_iso,
-                "stress_seed": True, "stress_prefix": prefix,
-            })
+            shift_schedule_docs.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": stress_tid,
+                    "staff_id": sid,
+                    "staff_name": staff_docs[staff_idx]["name"],
+                    "shift_date": shift_date.isoformat(),
+                    "date": shift_date.isoformat(),
+                    "shift_type": shift,
+                    "start_time": f"{start_hour:02d}:00",
+                    "end_time": f"{(start_hour + 8) % 24:02d}:00",
+                    "duration_minutes": 480,
+                    "status": "scheduled",
+                    "department_id": staff_docs[staff_idx]["department_id"],
+                    "notes": f"{prefix} F8D seed shift",
+                    "created_at": now_iso,
+                    "stress_seed": True,
+                    "stress_prefix": prefix,
+                }
+            )
             sched_count += 1
 
     # 7) LEAVE REQUESTS (5) — status=pending, ready for decision testing
@@ -1690,21 +1920,25 @@ def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
         sid = staff_ids[i]
         start_d = (now + timedelta(days=14 + i)).date()
         end_d = (now + timedelta(days=14 + i + 2)).date()
-        leave_request_docs.append({
-            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
-            "staff_id": sid,
-            "leave_type": "annual",
-            "start_date": start_d.isoformat(),
-            "end_date": end_d.isoformat(),
-            "days_requested": 3,
-            "reason": f"{prefix} F8D seed leave request",
-            "status": "pending",
-            "decision_by": None,
-            "decision_at": None,
-            "decision_note": None,
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        leave_request_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "staff_id": sid,
+                "leave_type": "annual",
+                "start_date": start_d.isoformat(),
+                "end_date": end_d.isoformat(),
+                "days_requested": 3,
+                "reason": f"{prefix} F8D seed leave request",
+                "status": "pending",
+                "decision_by": None,
+                "decision_at": None,
+                "decision_note": None,
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 8) SHIFT SWAP REQUESTS (5) — status=pending, ready for consent + decision
     for i in range(5):
@@ -1713,43 +1947,51 @@ def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
         swap_date = (now + timedelta(days=7 + i)).date()
         # Router writes target_consent_status (not target_consent); mirror that
         # shape for forward-compat with list endpoint enrichers.
-        shift_swap_docs.append({
-            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
-            "shift_id": None,
-            "shift_date": swap_date.isoformat(),
-            "shift_type": "morning",
-            "from_staff_id": requester,
-            "requester_staff_id": requester,
-            "target_staff_id": target,
-            "target_consent_status": "pending",
-            "target_consent_at": None,
-            "target_consent_note": None,
-            "reason": f"{prefix} F8D seed swap request",
-            "status": "pending",
-            "requested_by": None,
-            "requested_at": now_iso,
-            "decision_by": None,
-            "decision_at": None,
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        shift_swap_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "shift_id": None,
+                "shift_date": swap_date.isoformat(),
+                "shift_type": "morning",
+                "from_staff_id": requester,
+                "requester_staff_id": requester,
+                "target_staff_id": target,
+                "target_consent_status": "pending",
+                "target_consent_at": None,
+                "target_consent_note": None,
+                "reason": f"{prefix} F8D seed swap request",
+                "status": "pending",
+                "requested_by": None,
+                "requested_at": now_iso,
+                "decision_by": None,
+                "decision_at": None,
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 9a) PERFORMANCE REVIEWS — V1 BASELINE (3, PRESERVED).
     # Architect iter-6 directive: v1 seed count (3) korunmalı; v2 ek
     # bunun üzerine eklenir. Mevcut quarter, status=draft (spec 32 lifecycle
     # check-in append + summary read için ready).
     for i in range(3):
-        performance_docs.append({
-            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
-            "staff_id": staff_ids[i],
-            "period": f"{now.year}-Q{((now.month - 1) // 3) + 1}",
-            "rating": 4,
-            "comments": f"{prefix} F8D seed performance review",
-            "reviewer_user_id": None,
-            "status": "draft",
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        performance_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "staff_id": staff_ids[i],
+                "period": f"{now.year}-Q{((now.month - 1) // 3) + 1}",
+                "rating": 4,
+                "comments": f"{prefix} F8D seed performance review",
+                "reviewer_user_id": None,
+                "status": "draft",
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
     # 9b) PERFORMANCE REVIEWS — V2 EXPANSION (+30, additive).
     # Task #205 iter-5/6 directive: 30 staff için baseline review (prior
     # quarter — current quarter v1 ile çakışmaz; spec 32-F yeni period
@@ -1759,18 +2001,22 @@ def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
     prior_year = now.year if quarter > 1 else now.year - 1
     prior_period = f"{prior_year}-Q{prior_quarter}"
     for i in range(len(staff_ids)):
-        performance_docs.append({
-            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
-            "staff_id": staff_ids[i],
-            "period": prior_period,
-            "rating": 3 + (i % 3),  # 3..5 spread
-            "comments": f"{prefix} F8D-v2 seed performance review (baseline) staff#{i + 1:02d}",
-            "reviewer_user_id": None,
-            "status": "draft",
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-            "v2_expansion": True,
-        })
+        performance_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "staff_id": staff_ids[i],
+                "period": prior_period,
+                "rating": 3 + (i % 3),  # 3..5 spread
+                "comments": f"{prefix} F8D-v2 seed performance review (baseline) staff#{i + 1:02d}",
+                "reviewer_user_id": None,
+                "status": "draft",
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+                "v2_expansion": True,
+            }
+        )
 
     # 10) PERFORMANCE REVIEW TEMPLATES (3) — F8D-v2 extension (Task #205).
     # Spec 32 reads /hr/performance-templates; baseline templates ensure
@@ -1782,35 +2028,52 @@ def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
         ("probation_30day", "30 Gün Deneme Süresi", ["attendance", "learning_curve"]),
     ]
     for tpl_code, tpl_name, competencies in template_types:
-        perf_template_docs.append({
-            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
-            "code": f"{prefix}TPL_{tpl_code}",
-            "name": f"{prefix} {tpl_name}",
-            "competencies": competencies,
-            "active": True,
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        perf_template_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "code": f"{prefix}TPL_{tpl_code}",
+                "name": f"{prefix} {tpl_name}",
+                "competencies": competencies,
+                "active": True,
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 11) LEAVE ACCRUAL POLICIES (1) — F8D-v2 extension (Task #205).
     # İş K. m.53 default policy: 14 gün/yıl entitlement + max 7 gün carryover.
     # Spec 34 carryover dry-run bu policy üzerinden hesap doğrular.
-    leave_accrual_policy_docs = [{
-        "id": str(uuid.uuid4()), "tenant_id": stress_tid,
-        "code": f"{prefix}POL_DEFAULT",
-        "name": f"{prefix} İş K. m.53 Default Accrual",
-        "annual_entitlement_days": 14,
-        "max_carryover_days": 7,
-        "carryover_expires_after_months": 12,
-        "active": True,
-        "created_at": now_iso,
-        "stress_seed": True, "stress_prefix": prefix,
-    }]
+    leave_accrual_policy_docs = [
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": stress_tid,
+            "code": f"{prefix}POL_DEFAULT",
+            "name": f"{prefix} İş K. m.53 Default Accrual",
+            "annual_entitlement_days": 14,
+            "max_carryover_days": 7,
+            "carryover_expires_after_months": 12,
+            "active": True,
+            "created_at": now_iso,
+            "stress_seed": True,
+            "stress_prefix": prefix,
+        }
+    ]
 
-    return (departments_docs, positions_docs, staff_docs,
-            leave_balance_docs, attendance_docs, shift_schedule_docs,
-            leave_request_docs, shift_swap_docs, performance_docs,
-            perf_template_docs, leave_accrual_policy_docs)
+    return (
+        departments_docs,
+        positions_docs,
+        staff_docs,
+        leave_balance_docs,
+        attendance_docs,
+        shift_schedule_docs,
+        leave_request_docs,
+        shift_swap_docs,
+        performance_docs,
+        perf_template_docs,
+        leave_accrual_policy_docs,
+    )
 
 
 def _build_f8e_docs(stress_tid: str, prefix: str, now: datetime):
@@ -1849,27 +2112,30 @@ def _build_f8e_docs(stress_tid: str, prefix: str, now: datetime):
         sid = str(uuid.uuid4())
         shift_ids.append(sid)
         opening = 1000.0 + i * 100
-        cashier_shifts_docs.append({
-            "_id": sid,
-            "tenant_id": stress_tid,
-            "cashier_name": f"{prefix}Cashier{i + 1}",
-            "cashier_email": f"{prefix.lower()}cashier{i + 1}@e2e-stress.example.com",
-            "opening_amount": opening,
-            "cash_in": 250.0,
-            "cash_out": 50.0,
-            "status": status,
-            "opened_at": opened_dt.isoformat(),
-            "opened_by": f"{prefix.lower()}cashier{i + 1}@e2e-stress.example.com",
-            "opened_by_name": f"{prefix}Cashier{i + 1}",
-            "closed_at": closed_dt.isoformat(),
-            "closing_amount": opening + 200.0,
-            "expected_amount": opening + 200.0,
-            "difference": 0.0,
-            "denominations": {},
-            "transactions": [],
-            "created_at": opened_dt.isoformat(),
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        cashier_shifts_docs.append(
+            {
+                "_id": sid,
+                "tenant_id": stress_tid,
+                "cashier_name": f"{prefix}Cashier{i + 1}",
+                "cashier_email": f"{prefix.lower()}cashier{i + 1}@e2e-stress.example.com",
+                "opening_amount": opening,
+                "cash_in": 250.0,
+                "cash_out": 50.0,
+                "status": status,
+                "opened_at": opened_dt.isoformat(),
+                "opened_by": f"{prefix.lower()}cashier{i + 1}@e2e-stress.example.com",
+                "opened_by_name": f"{prefix}Cashier{i + 1}",
+                "closed_at": closed_dt.isoformat(),
+                "closing_amount": opening + 200.0,
+                "expected_amount": opening + 200.0,
+                "difference": 0.0,
+                "denominations": {},
+                "transactions": [],
+                "created_at": opened_dt.isoformat(),
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 2) CASHIER TRANSACTIONS (30) — varied direction/method, attached to
     # the 3 closed seed shifts (standalone docs, not embedded; spec 24
@@ -1881,56 +2147,60 @@ def _build_f8e_docs(stress_tid: str, prefix: str, now: datetime):
         direction = directions[i % 2]
         method = methods[i % len(methods)]
         amount = 50.0 + (i * 7.5)
-        cashier_txn_docs.append({
-            "id": str(uuid.uuid4()),
-            "tenant_id": stress_tid,
-            "shift_id": shift_id,
-            "amount": amount,
-            "original_amount": amount,
-            "currency": "TRY",
-            "fx_rate": 1.0,
-            "method": method,
-            "direction": direction,
-            "type": "manual_in" if direction == "in" else "paid_out",
-            "description": f"{prefix} F8E seed manual transaction {i + 1}",
-            "ref_type": "manual",
-            "ref_id": None,
-            "created_by": f"{prefix.lower()}cashier1@e2e-stress.example.com",
-            "created_by_name": f"{prefix}Cashier1",
-            "created_at": (now - timedelta(hours=24 - i)).isoformat(),
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        cashier_txn_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "shift_id": shift_id,
+                "amount": amount,
+                "original_amount": amount,
+                "currency": "TRY",
+                "fx_rate": 1.0,
+                "method": method,
+                "direction": direction,
+                "type": "manual_in" if direction == "in" else "paid_out",
+                "description": f"{prefix} F8E seed manual transaction {i + 1}",
+                "ref_type": "manual",
+                "ref_id": None,
+                "created_by": f"{prefix.lower()}cashier1@e2e-stress.example.com",
+                "created_by_name": f"{prefix}Cashier1",
+                "created_at": (now - timedelta(hours=24 - i)).isoformat(),
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 3) SUPPLIERS (10)
     supplier_ids: list[str] = []
-    supplier_categories = ["food", "beverage", "linen", "amenity", "maintenance",
-                            "stationery", "cleaning", "electronics", "general", "uniform"]
+    supplier_categories = ["food", "beverage", "linen", "amenity", "maintenance", "stationery", "cleaning", "electronics", "general", "uniform"]
     for i in range(10):
         sup_id = str(uuid.uuid4())
         supplier_ids.append(sup_id)
-        suppliers_docs.append({
-            "id": sup_id,
-            "tenant_id": stress_tid,
-            "name": f"{prefix}Supplier_{i + 1:02d}",
-            "tax_office": f"{prefix}TaxOff",
-            "tax_number": f"{prefix}TXN{i + 1:08d}",
-            "email": f"{prefix.lower()}supplier{i + 1}@e2e-stress.example.com",
-            "phone": f"+90555600{i + 1:04d}",
-            "address": f"{prefix} Address line {i + 1}",
-            "category": supplier_categories[i],
-            "account_balance": 0.0,
-            "active": True,
-            "is_active": True,
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        suppliers_docs.append(
+            {
+                "id": sup_id,
+                "tenant_id": stress_tid,
+                "name": f"{prefix}Supplier_{i + 1:02d}",
+                "tax_office": f"{prefix}TaxOff",
+                "tax_number": f"{prefix}TXN{i + 1:08d}",
+                "email": f"{prefix.lower()}supplier{i + 1}@e2e-stress.example.com",
+                "phone": f"+90555600{i + 1:04d}",
+                "address": f"{prefix} Address line {i + 1}",
+                "category": supplier_categories[i],
+                "account_balance": 0.0,
+                "active": True,
+                "is_active": True,
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 4) EXPENSES (20) — varied category & VAT rate.
     # Backend `ExpenseCategory` enum strict: salaries/utilities/supplies/
     # maintenance/marketing/rent/insurance/taxes/other. Stay enum-compliant
     # so re-seed never 422s if the seeder ever switches to the API path.
-    expense_categories = ["salaries", "utilities", "supplies", "maintenance",
-                           "marketing", "rent", "insurance", "taxes", "other"]
+    expense_categories = ["salaries", "utilities", "supplies", "maintenance", "marketing", "rent", "insurance", "taxes", "other"]
     vat_rates = [0.0, 8.0, 18.0, 20.0]
     for i in range(20):
         cat = expense_categories[i % len(expense_categories)]
@@ -1938,25 +2208,28 @@ def _build_f8e_docs(stress_tid: str, prefix: str, now: datetime):
         gross = 100.0 + (i * 12.5)
         vat_amount = round(gross * vat / (100.0 + vat), 2) if vat > 0 else 0.0
         net = round(gross - vat_amount, 2)
-        expenses_docs.append({
-            "id": str(uuid.uuid4()),
-            "tenant_id": stress_tid,
-            "expense_number": f"{prefix}EXP{i + 1:05d}",
-            "category": cat,
-            "description": f"{prefix} F8E seed expense {i + 1}",
-            "amount": net,
-            "vat_rate": vat,
-            "vat_amount": vat_amount,
-            "total_amount": gross,
-            "date": (now - timedelta(days=i)).date().isoformat(),
-            "supplier_id": supplier_ids[i % len(supplier_ids)],
-            "payment_method": methods[i % len(methods)],
-            "receipt_url": None,
-            "notes": f"{prefix} F8E seed",
-            "status": "recorded",
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        expenses_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "expense_number": f"{prefix}EXP{i + 1:05d}",
+                "category": cat,
+                "description": f"{prefix} F8E seed expense {i + 1}",
+                "amount": net,
+                "vat_rate": vat,
+                "vat_amount": vat_amount,
+                "total_amount": gross,
+                "date": (now - timedelta(days=i)).date().isoformat(),
+                "supplier_id": supplier_ids[i % len(supplier_ids)],
+                "payment_method": methods[i % len(methods)],
+                "receipt_url": None,
+                "notes": f"{prefix} F8E seed",
+                "status": "recorded",
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 5) ACCOUNTING INVOICES (10) — mix of sales / purchase types
     invoice_types = ["sales", "purchase", "proforma", "credit_note", "debit_note"]
@@ -1965,34 +2238,39 @@ def _build_f8e_docs(stress_tid: str, prefix: str, now: datetime):
         subtotal = 500.0 + (i * 75.0)
         total_vat = round(subtotal * 0.20, 2)
         total = round(subtotal + total_vat, 2)
-        invoices_docs.append({
-            "id": str(uuid.uuid4()),
-            "tenant_id": stress_tid,
-            "invoice_number": f"{prefix}INV{i + 1:05d}",
-            "invoice_type": itype,
-            "customer_name": f"{prefix}Customer_{i + 1:02d}",
-            "customer_email": f"{prefix.lower()}customer{i + 1}@e2e-stress.example.com",
-            "customer_tax_office": f"{prefix}TaxOff",
-            "customer_tax_number": f"{prefix}CTX{i + 1:08d}",
-            "customer_address": f"{prefix} Customer addr {i + 1}",
-            "items": [{
-                "description": f"{prefix} item {i + 1}",
-                "quantity": 1,
-                "unit_price": subtotal,
-                "vat_rate": 20.0,
+        invoices_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "invoice_number": f"{prefix}INV{i + 1:05d}",
+                "invoice_type": itype,
+                "customer_name": f"{prefix}Customer_{i + 1:02d}",
+                "customer_email": f"{prefix.lower()}customer{i + 1}@e2e-stress.example.com",
+                "customer_tax_office": f"{prefix}TaxOff",
+                "customer_tax_number": f"{prefix}CTX{i + 1:08d}",
+                "customer_address": f"{prefix} Customer addr {i + 1}",
+                "items": [
+                    {
+                        "description": f"{prefix} item {i + 1}",
+                        "quantity": 1,
+                        "unit_price": subtotal,
+                        "vat_rate": 20.0,
+                        "total": total,
+                    }
+                ],
+                "subtotal": subtotal,
+                "total_vat": total_vat,
                 "total": total,
-            }],
-            "subtotal": subtotal,
-            "total_vat": total_vat,
-            "total": total,
-            "issue_date": (now - timedelta(days=i)).date().isoformat(),
-            "due_date": (now + timedelta(days=30 - i)).date().isoformat(),
-            "booking_id": None,
-            "notes": f"{prefix} F8E seed invoice",
-            "status": "issued",
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+                "issue_date": (now - timedelta(days=i)).date().isoformat(),
+                "due_date": (now + timedelta(days=30 - i)).date().isoformat(),
+                "booking_id": None,
+                "notes": f"{prefix} F8E seed invoice",
+                "status": "issued",
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 6) BANK ACCOUNTS (5) — multi-currency
     bank_seeds = [
@@ -2003,20 +2281,23 @@ def _build_f8e_docs(stress_tid: str, prefix: str, now: datetime):
         ("Petty Cash", "Akbank", "TR0005", "TRY", 2000.0),
     ]
     for i, (name, bank, iban_suffix, ccy, bal) in enumerate(bank_seeds):
-        bank_accounts_docs.append({
-            "id": str(uuid.uuid4()),
-            "tenant_id": stress_tid,
-            "name": f"{prefix}{name}",
-            "bank_name": bank,
-            "account_number": f"{prefix}ACC{i + 1:08d}",
-            "iban": f"{prefix}TR99{iban_suffix}{i + 1:016d}",
-            "currency": ccy,
-            "balance": bal,
-            "is_active": True,
-            "active": True,
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        bank_accounts_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "name": f"{prefix}{name}",
+                "bank_name": bank,
+                "account_number": f"{prefix}ACC{i + 1:08d}",
+                "iban": f"{prefix}TR99{iban_suffix}{i + 1:016d}",
+                "currency": ccy,
+                "balance": bal,
+                "is_active": True,
+                "active": True,
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 7) INVENTORY ITEMS (15) — linked to suppliers.
     # Backend `InventoryItem` model uses `quantity` (NOT `stock_quantity`);
@@ -2028,41 +2309,47 @@ def _build_f8e_docs(stress_tid: str, prefix: str, now: datetime):
         iid = str(uuid.uuid4())
         item_ids.append(iid)
         unit_cost = 5.0 + (i * 2.5)
-        inventory_items_docs.append({
-            "id": iid,
-            "tenant_id": stress_tid,
-            "name": f"{prefix}Item_{i + 1:02d}",
-            "sku": f"{prefix}SKU{i + 1:05d}",
-            "category": item_categories[i % len(item_categories)],
-            "supplier_id": supplier_ids[i % len(supplier_ids)],
-            "unit": "piece",
-            "unit_cost": unit_cost,
-            "quantity": float(100 + (i * 10)),
-            "reorder_level": 20.0,
-            "is_consumable": True,
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        inventory_items_docs.append(
+            {
+                "id": iid,
+                "tenant_id": stress_tid,
+                "name": f"{prefix}Item_{i + 1:02d}",
+                "sku": f"{prefix}SKU{i + 1:05d}",
+                "category": item_categories[i % len(item_categories)],
+                "supplier_id": supplier_ids[i % len(supplier_ids)],
+                "unit": "piece",
+                "unit_cost": unit_cost,
+                "quantity": float(100 + (i * 10)),
+                "reorder_level": 20.0,
+                "is_consumable": True,
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 8) STOCK MOVEMENTS (10) — initial intake history
     for i in range(10):
         item_id = item_ids[i]
         qty = 50 + (i * 5)
         movements_unit_cost = inventory_items_docs[i]["unit_cost"]
-        stock_movements_docs.append({
-            "id": str(uuid.uuid4()),
-            "tenant_id": stress_tid,
-            "item_id": item_id,
-            "movement_type": "in",
-            "quantity": qty,
-            "unit_cost": movements_unit_cost,
-            "total_value": round(qty * movements_unit_cost, 2),
-            "reference": f"{prefix}MOV{i + 1:05d}",
-            "notes": f"{prefix} F8E seed stock movement",
-            "date": (now - timedelta(days=i)).date().isoformat(),
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        stock_movements_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "item_id": item_id,
+                "movement_type": "in",
+                "quantity": qty,
+                "unit_cost": movements_unit_cost,
+                "total_value": round(qty * movements_unit_cost, 2),
+                "reference": f"{prefix}MOV{i + 1:05d}",
+                "notes": f"{prefix} F8E seed stock movement",
+                "date": (now - timedelta(days=i)).date().isoformat(),
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 9) CASH FLOW (20) — synthetic audit trail entries.
     # tur-28 (2026-05-19) fix: GET /api/accounting/cash-flow handler reads
@@ -2076,46 +2363,60 @@ def _build_f8e_docs(stress_tid: str, prefix: str, now: datetime):
     # that still expect the old shape don't regress.
     for i in range(20):
         is_income = i % 2 == 0
-        cash_flow_docs.append({
-            "id": str(uuid.uuid4()),
-            "tenant_id": stress_tid,
-            "transaction_type": "income" if is_income else "expense",
-            "type": "inflow" if is_income else "outflow",  # legacy alias
-            "category": "operating",
-            "amount": 250.0 + (i * 15.0),
-            "currency": "TRY",
-            "description": f"{prefix} F8E seed cash_flow entry {i + 1}",
-            "reference_type": "expense" if not is_income else "invoice",
-            "reference_id": None,
-            "date": (now - timedelta(days=i)).date().isoformat(),
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        cash_flow_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "transaction_type": "income" if is_income else "expense",
+                "type": "inflow" if is_income else "outflow",  # legacy alias
+                "category": "operating",
+                "amount": 250.0 + (i * 15.0),
+                "currency": "TRY",
+                "description": f"{prefix} F8E seed cash_flow entry {i + 1}",
+                "reference_type": "expense" if not is_income else "invoice",
+                "reference_id": None,
+                "date": (now - timedelta(days=i)).date().isoformat(),
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
     # 10) CITY LEDGER ACCOUNTS (5) — corporate accounts with credit limits
     for i in range(5):
-        city_ledger_accounts_docs.append({
-            "id": str(uuid.uuid4()),
-            "tenant_id": stress_tid,
-            "account_name": f"{prefix}CityLedger_{i + 1:02d}",
-            "company_name": f"{prefix}Company {i + 1}",
-            "contact_person": f"{prefix}Contact {i + 1}",
-            "email": f"{prefix.lower()}cl{i + 1}@e2e-stress.example.com",
-            "phone": f"+90555700{i + 1:04d}",
-            "address": f"{prefix} City Ledger addr {i + 1}",
-            "credit_limit": 10000.0 + (i * 2500.0),
-            "current_balance": 0.0,
-            "payment_terms": 30,
-            "active": True,
-            "is_active": True,
-            "created_at": now_iso,
-            "stress_seed": True, "stress_prefix": prefix,
-        })
+        city_ledger_accounts_docs.append(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "account_name": f"{prefix}CityLedger_{i + 1:02d}",
+                "company_name": f"{prefix}Company {i + 1}",
+                "contact_person": f"{prefix}Contact {i + 1}",
+                "email": f"{prefix.lower()}cl{i + 1}@e2e-stress.example.com",
+                "phone": f"+90555700{i + 1:04d}",
+                "address": f"{prefix} City Ledger addr {i + 1}",
+                "credit_limit": 10000.0 + (i * 2500.0),
+                "current_balance": 0.0,
+                "payment_terms": 30,
+                "active": True,
+                "is_active": True,
+                "created_at": now_iso,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            }
+        )
 
-    return (cashier_shifts_docs, cashier_txn_docs, suppliers_docs,
-            expenses_docs, invoices_docs, bank_accounts_docs,
-            inventory_items_docs, stock_movements_docs,
-            cash_flow_docs, city_ledger_accounts_docs)
+    return (
+        cashier_shifts_docs,
+        cashier_txn_docs,
+        suppliers_docs,
+        expenses_docs,
+        invoices_docs,
+        bank_accounts_docs,
+        inventory_items_docs,
+        stock_movements_docs,
+        cash_flow_docs,
+        city_ledger_accounts_docs,
+    )
 
 
 async def _chunked_insert(collection, docs: list[dict], chunk_size: int) -> int:
@@ -2124,7 +2425,7 @@ async def _chunked_insert(collection, docs: list[dict], chunk_size: int) -> int:
         return 0
     total = 0
     for start in range(0, len(docs), chunk_size):
-        batch = docs[start:start + chunk_size]
+        batch = docs[start : start + chunk_size]
         await collection.insert_many(batch, ordered=False)
         total += len(batch)
     return total
@@ -2151,6 +2452,7 @@ async def stress_seed(
     # entitlement probe falls back to an honest REVIEW with remediation.
     try:
         from core.tenant_db import get_system_db
+
         _sysdb = get_system_db()
         await _sysdb.tenants.update_one(
             {"id": stress_tid},
@@ -2159,7 +2461,8 @@ async def stress_seed(
     except Exception as e:
         _stress_log.warning(
             "stress.seed hidden_marketplace entitlement set failed for %s: %s",
-            stress_tid, type(e).__name__,
+            stress_tid,
+            type(e).__name__,
         )
 
     rc = payload.room_count
@@ -2167,37 +2470,51 @@ async def stress_seed(
     now = datetime.now(UTC)
 
     t_factory_start = time.perf_counter()
-    (rooms_docs, guests_docs, bookings_docs,
-     folios_docs, folio_charges_docs, payments_docs, rnl_docs, hk_docs) = _build_factory_docs(
-        rc, stress_tid, prefix, now,
+    (rooms_docs, guests_docs, bookings_docs, folios_docs, folio_charges_docs, payments_docs, rnl_docs, hk_docs) = _build_factory_docs(
+        rc,
+        stress_tid,
+        prefix,
+        now,
     )
     # F8B: Guest Experience surface derived from baseline rooms/bookings/guests.
     qr_docs, complaint_docs, message_docs, notif_docs, delivery_log_docs = _build_f8b_docs(
-        rooms_docs, bookings_docs, guests_docs, stress_tid, prefix, now,
+        rooms_docs,
+        bookings_docs,
+        guests_docs,
+        stress_tid,
+        prefix,
+        now,
     )
     # F8C: MICE / Event / Banquet / Group Operations surface (standalone —
     # does not depend on rooms/bookings/guests; catalogs + events + opps).
-    (spaces_docs, menus_docs, accounts_docs, contacts_docs,
-     resources_docs, events_docs, opportunities_docs,
-     opp_activities_docs, leads_docs, competitors_docs,
-     packages_docs) = _build_f8c_docs(stress_tid, prefix, now)
+    (spaces_docs, menus_docs, accounts_docs, contacts_docs, resources_docs, events_docs, opportunities_docs, opp_activities_docs, leads_docs, competitors_docs, packages_docs) = _build_f8c_docs(
+        stress_tid, prefix, now
+    )
     # F8D: HR / Staff / Shift / Leave / Department surface (standalone —
     # self-contained org structure with attendance/leave/shift seed).
-    (hr_dept_docs, hr_pos_docs, hr_staff_docs,
-     hr_leave_balance_docs, hr_attendance_docs, hr_shift_sched_docs,
-     hr_leave_req_docs, hr_shift_swap_docs,
-     hr_perf_docs,
-     # F8D-v2 (Task #205) extension — perf templates + leave accrual policies.
-     hr_perf_template_docs, hr_leave_accrual_policy_docs
-     ) = _build_f8d_docs(stress_tid, prefix, now)
+    (
+        hr_dept_docs,
+        hr_pos_docs,
+        hr_staff_docs,
+        hr_leave_balance_docs,
+        hr_attendance_docs,
+        hr_shift_sched_docs,
+        hr_leave_req_docs,
+        hr_shift_swap_docs,
+        hr_perf_docs,
+        # F8D-v2 (Task #205) extension — perf templates + leave accrual policies.
+        hr_perf_template_docs,
+        hr_leave_accrual_policy_docs,
+    ) = _build_f8d_docs(stress_tid, prefix, now)
     # F8E: Finance / Cashier / Accounting surface (standalone —
     # cashier shift lifecycle + suppliers/expenses/invoices + bank
     # accounts + inventory + stock movements + cash_flow + city ledger).
-    (cashier_shifts_docs, cashier_txn_docs, suppliers_docs,
-     expenses_docs, invoices_docs, bank_accounts_docs,
-     inventory_items_docs, stock_movements_docs,
-     cash_flow_docs, city_ledger_accounts_docs) = _build_f8e_docs(
-        stress_tid, prefix, now,
+    (cashier_shifts_docs, cashier_txn_docs, suppliers_docs, expenses_docs, invoices_docs, bank_accounts_docs, inventory_items_docs, stock_movements_docs, cash_flow_docs, city_ledger_accounts_docs) = (
+        _build_f8e_docs(
+            stress_tid,
+            prefix,
+            now,
+        )
     )
     # F8N (Wave 7): B2B Acente surface (standalone — `agencies` koleksiyonu).
     agency_docs = _build_agency_docs(stress_tid, prefix, now)
@@ -2219,6 +2536,7 @@ async def stress_seed(
     orphan_cleanup: dict[str, int] = {}
     with tenant_context(stress_tid):
         from core.database import db
+
         # Covering index for the prefix-scoped scrub/cleanup filter so the
         # folio_charges orphan delete below (and teardown cleanup#2) stays an
         # index seek instead of tripping socketTimeoutMS on the deploy Atlas tier.
@@ -2235,47 +2553,76 @@ async def stress_seed(
         # across all stress collections BEFORE this round's inserts. Scoped
         # to the stress tenant + stress_seed marker → never touches real data.
         # Idempotent: also safe if no orphans exist (delete_count=0).
-        for col_name in ("rooms", "bookings", "guests", "folios", "folio_charges",
-                         # Task #178: aged-booking deposit payments — orphan scrub
-                         # mirror (end-of-round cleanup already covers payments via
-                         # STRESS_COLLECTIONS; this catches cross-prefix residue).
-                         "payments",
-                         # F8N (Wave 7): B2B agency surface — orphan scrub mirror.
-                         "agencies",
-                         "room_night_locks", "housekeeping_tasks",
-                         "room_qr_requests", "service_complaints",
-                         "messages", "notifications",
-                         # Task #172: messaging activity-feed delivery logs.
-                         "messaging_delivery_logs",
-                         # F8C MICE surface — orphan scrub mirror.
-                         "mice_spaces", "mice_menus", "mice_accounts",
-                         "mice_contacts", "mice_resources", "mice_events",
-                         "mice_opportunities", "mice_opportunity_activities",
-                         "mice_packages",
-                         # F8D HR surface — orphan scrub mirror.
-                         "staff_members", "hr_departments", "hr_positions",
-                         "attendance_records", "leave_requests",
-                         "leave_balances", "shift_schedules",
-                         "shift_swap_requests", "performance_reviews",
-                         # F8D-v2 (Task #205) orphan scrub mirror.
-                         "performance_checkins", "performance_review_checkins",
-                         "performance_templates",
-                         "leave_balance_adjustments", "shift_conflicts",
-                         "leave_accrual_policies",
-                         "payroll_records",
-                         # F8E Finance / Cashier / Accounting surface —
-                         # orphan scrub mirror.
-                         "cashier_shifts", "cashier_transactions",
-                         "expenses", "suppliers", "accounting_invoices",
-                         "bank_accounts", "inventory_items",
-                         "stock_movements", "cash_flow",
-                         "city_ledger_accounts", "city_ledger_transactions"):
+        for col_name in (
+            "rooms",
+            "bookings",
+            "guests",
+            "folios",
+            "folio_charges",
+            # Task #178: aged-booking deposit payments — orphan scrub
+            # mirror (end-of-round cleanup already covers payments via
+            # STRESS_COLLECTIONS; this catches cross-prefix residue).
+            "payments",
+            # F8N (Wave 7): B2B agency surface — orphan scrub mirror.
+            "agencies",
+            "room_night_locks",
+            "housekeeping_tasks",
+            "room_qr_requests",
+            "service_complaints",
+            "messages",
+            "notifications",
+            # Task #172: messaging activity-feed delivery logs.
+            "messaging_delivery_logs",
+            # F8C MICE surface — orphan scrub mirror.
+            "mice_spaces",
+            "mice_menus",
+            "mice_accounts",
+            "mice_contacts",
+            "mice_resources",
+            "mice_events",
+            "mice_opportunities",
+            "mice_opportunity_activities",
+            "mice_packages",
+            # F8D HR surface — orphan scrub mirror.
+            "staff_members",
+            "hr_departments",
+            "hr_positions",
+            "attendance_records",
+            "leave_requests",
+            "leave_balances",
+            "shift_schedules",
+            "shift_swap_requests",
+            "performance_reviews",
+            # F8D-v2 (Task #205) orphan scrub mirror.
+            "performance_checkins",
+            "performance_review_checkins",
+            "performance_templates",
+            "leave_balance_adjustments",
+            "shift_conflicts",
+            "leave_accrual_policies",
+            "payroll_records",
+            # F8E Finance / Cashier / Accounting surface —
+            # orphan scrub mirror.
+            "cashier_shifts",
+            "cashier_transactions",
+            "expenses",
+            "suppliers",
+            "accounting_invoices",
+            "bank_accounts",
+            "inventory_items",
+            "stock_movements",
+            "cash_flow",
+            "city_ledger_accounts",
+            "city_ledger_transactions",
+        ):
             try:
-                res = await db[col_name].delete_many({
-                    "tenant_id": stress_tid,
-                    "stress_seed": True,
-                    "stress_prefix": {"$ne": prefix},
-                })
+                res = await db[col_name].delete_many(
+                    {
+                        "tenant_id": stress_tid,
+                        "stress_seed": True,
+                        "stress_prefix": {"$ne": prefix},
+                    }
+                )
                 orphan_cleanup[col_name] = res.deleted_count
             except Exception as e:
                 orphan_cleanup[f"{col_name}_error"] = str(e)[:120]
@@ -2437,10 +2784,15 @@ async def stress_seed(
         # room_ids that are rotated every run (fresh UUIDs after each
         # cleanup), so any residue is harmless.
         pending_bookings_docs = _build_pending_booking_docs(
-            payload.seed_pending_bookings, stress_tid, prefix, now,
+            payload.seed_pending_bookings,
+            stress_tid,
+            prefix,
+            now,
         )
         counts["pending_bookings"] = await _chunked_insert(
-            db.bookings, pending_bookings_docs, INSERT_CHUNK_SIZE,
+            db.bookings,
+            pending_bookings_docs,
+            INSERT_CHUNK_SIZE,
         )
         # city_ledger_transactions is NOT seeded — specs write transactions
         # against the seeded city_ledger_accounts; cleanup loop still scrubs
@@ -2483,16 +2835,12 @@ async def stress_seed(
             # the same projection used by /api/pms/rooms.
             extras_sample = await db.rooms.find_one(
                 {"tenant_id": stress_tid, "room_move_target": True},
-                {"_id": 0, "id": 1, "room_number": 1, "stress_prefix": 1,
-                 "room_move_target": 1, "is_active": 1, "is_virtual": 1,
-                 "status": 1},
+                {"_id": 0, "id": 1, "room_number": 1, "stress_prefix": 1, "room_move_target": 1, "is_active": 1, "is_virtual": 1, "status": 1},
             )
             verification["extras_sample_keys"] = sorted(extras_sample.keys()) if extras_sample else None
             verification["extras_sample_prefix_match"] = (
-                isinstance(extras_sample, dict)
-                and isinstance(extras_sample.get("stress_prefix"), str)
-                and extras_sample["stress_prefix"].startswith(prefix)
-            ) if extras_sample else False
+                (isinstance(extras_sample, dict) and isinstance(extras_sample.get("stress_prefix"), str) and extras_sample["stress_prefix"].startswith(prefix)) if extras_sample else False
+            )
             # F8L v2 (Task #25) pending-booking ground-truth — mirrors the
             # tur-14 rooms diagnostic above for spec-52B's "no pending_assignment
             # booking" paradox: `_chunked_insert` returns N yet the conflict-queue
@@ -2515,13 +2863,11 @@ async def stress_seed(
                 {"tenant_id": stress_tid, "allocation_source": "pending_assignment"},
             )
             verification["actual_pending_queryable"] = await db.bookings.count_documents(
-                {"tenant_id": stress_tid, "allocation_source": "pending_assignment",
-                 "room_id": None, "status": {"$in": ["confirmed", "guaranteed", "pending"]}},
+                {"tenant_id": stress_tid, "allocation_source": "pending_assignment", "room_id": None, "status": {"$in": ["confirmed", "guaranteed", "pending"]}},
             )
             verification["pending_sample"] = await db.bookings.find_one(
                 {"tenant_id": stress_tid, "allocation_source": "pending_assignment"},
-                {"_id": 0, "id": 1, "room_id": 1, "status": 1,
-                 "allocation_source": 1, "tenant_id": 1},
+                {"_id": 0, "id": 1, "room_id": 1, "status": 1, "allocation_source": 1, "tenant_id": 1},
             )
             # F8L v2 (Task #25) — authoritative seeded-pending id list. The
             # conflict-queue list endpoint is paginated + sorts created_at DESC,
@@ -2534,9 +2880,7 @@ async def stress_seed(
             # id only, no PII; capped well above seed_pending_bookings.
             pending_ids: list[str] = []
             async for d in db.bookings.find(
-                {"tenant_id": stress_tid, "allocation_source": "pending_assignment",
-                 "room_id": None, "status": {"$in": ["confirmed", "guaranteed", "pending"]},
-                 "stress_prefix": prefix},
+                {"tenant_id": stress_tid, "allocation_source": "pending_assignment", "room_id": None, "status": {"$in": ["confirmed", "guaranteed", "pending"]}, "stress_prefix": prefix},
                 {"_id": 0, "id": 1},
             ).limit(10):
                 if d.get("id"):
@@ -2552,12 +2896,14 @@ async def stress_seed(
     # invalidate ederek temiz başla. cache_warmer pre-warm pattern'i de aynı prefix.
     try:
         from redis_cache import redis_cache
+
         if redis_cache:
             redis_cache.clear_pattern(f"rooms:{stress_tid}:*")
     except Exception:
         pass
     try:
         from cache_warmer import cache_warmer
+
         if cache_warmer:
             for k in [f"rooms:{stress_tid}", f"bookings:{stress_tid}", f"frontdesk:{stress_tid}"]:
                 cache_warmer.cache.pop(k, None)
@@ -2645,10 +2991,7 @@ async def stress_seed_pending(
     if not gates.get("external_dry_run"):
         raise HTTPException(
             status_code=403,
-            detail=(
-                "E2E_EXTERNAL_DRY_RUN != 'true' (fail-closed). On-demand stress "
-                "pending seed requires the dry-run stress posture."
-            ),
+            detail=("E2E_EXTERNAL_DRY_RUN != 'true' (fail-closed). On-demand stress pending seed requires the dry-run stress posture."),
         )
     stress_tid = _stress_tid()
     prefix = payload.data_prefix or f"E2E_STRESS_{int(time.time())}_"
@@ -2664,6 +3007,7 @@ async def stress_seed_pending(
     pending_ids: list[str] = []
     with tenant_context(stress_tid):
         from core.database import db
+
         inserted = await _chunked_insert(db.bookings, docs, INSERT_CHUNK_SIZE)
         # Read back the EXACT ids that match PENDING_QUERY + this call's ids.
         # Under healthy writes this is a tautology, but it also serves as a
@@ -2671,9 +3015,14 @@ async def stress_seed_pending(
         # drift silently broke the insert, `pending_queryable` < `inserted` and
         # the spec falls back to its existing candidates + hard-fail diagnostics.
         async for d in db.bookings.find(
-            {"tenant_id": stress_tid, "allocation_source": "pending_assignment",
-             "room_id": None, "status": {"$in": ["confirmed", "guaranteed", "pending"]},
-             "stress_prefix": prefix, "id": {"$in": seeded_ids}},
+            {
+                "tenant_id": stress_tid,
+                "allocation_source": "pending_assignment",
+                "room_id": None,
+                "status": {"$in": ["confirmed", "guaranteed", "pending"]},
+                "stress_prefix": prefix,
+                "id": {"$in": seeded_ids},
+            },
             {"_id": 0, "id": 1},
         ):
             if d.get("id"):
@@ -2714,6 +3063,7 @@ async def stress_external_calls_status(
       (b) `external_calls_made`: stress_tid-scoped outbox satırları (gerçek runtime).
     """
     import logging as _logging
+
     _log = _logging.getLogger("stress.external_calls")
     # tur-29b (architect-review fix): per-source collection. Each outbox
     # source has its own structural dry-run check, so a CM collapse can't
@@ -2731,6 +3081,7 @@ async def stress_external_calls_status(
     try:
         from core.database import db
         from core.tenant_db import get_system_db
+
         sysdb = get_system_db()
 
         stress_tid = _stress_tid()
@@ -2762,15 +3113,31 @@ async def stress_external_calls_status(
             ],
         }
         try:
-            cursor = sysdb.outbox_events.find(
-                dispatched_filter,
-                # tur-28: `id` added to projection so the helper has a stable
-                # unique identity for per-batch delta diffing. Previously
-                # event_type|created_at|source|attempts could collide across
-                # rows (millisecond timestamps + same event/source/attempt)
-                # → set-diff false-PASS risk.
-                projection={"_id": 0, "id": 1, "event_type": 1, "target": 1, "status": 1, "created_at": 1, "attempts": 1, "attempt_count": 1, "retry_count": 1, "delivery_message": 1, "last_error": 1},
-            ).sort("created_at", -1).limit(50)
+            cursor = (
+                sysdb.outbox_events.find(
+                    dispatched_filter,
+                    # tur-28: `id` added to projection so the helper has a stable
+                    # unique identity for per-batch delta diffing. Previously
+                    # event_type|created_at|source|attempts could collide across
+                    # rows (millisecond timestamps + same event/source/attempt)
+                    # → set-diff false-PASS risk.
+                    projection={
+                        "_id": 0,
+                        "id": 1,
+                        "event_type": 1,
+                        "target": 1,
+                        "status": 1,
+                        "created_at": 1,
+                        "attempts": 1,
+                        "attempt_count": 1,
+                        "retry_count": 1,
+                        "delivery_message": 1,
+                        "last_error": 1,
+                    },
+                )
+                .sort("created_at", -1)
+                .limit(50)
+            )
             async for doc in cursor:
                 # Architect tur-7 fix: outbox worker stress tenant'ında CM connector
                 # olmadığı için EventSyncService "No active connectors" döner ve
@@ -2851,11 +3218,15 @@ async def stress_external_calls_status(
         }
         try:
             with tenant_context(stress_tid):
-                cursor = db.integration_afsadakat_outbox.find(
-                    afsadakat_filter,
-                    # tur-28: `id` added to projection (see outbox_events note above).
-                    projection={"_id": 0, "id": 1, "event_type": 1, "status": 1, "created_at": 1, "attempts": 1, "attempt_count": 1, "retry_count": 1, "delivery_message": 1, "last_error": 1},
-                ).sort("created_at", -1).limit(50)
+                cursor = (
+                    db.integration_afsadakat_outbox.find(
+                        afsadakat_filter,
+                        # tur-28: `id` added to projection (see outbox_events note above).
+                        projection={"_id": 0, "id": 1, "event_type": 1, "status": 1, "created_at": 1, "attempts": 1, "attempt_count": 1, "retry_count": 1, "delivery_message": 1, "last_error": 1},
+                    )
+                    .sort("created_at", -1)
+                    .limit(50)
+                )
                 async for doc in cursor:
                     msg = (doc.get("delivery_message") or "") + " " + (doc.get("last_error") or "")
                     # tur-29e: CM bloğundaki ile aynı genişletilmiş inert pattern
@@ -2863,16 +3234,19 @@ async def stress_external_calls_status(
                     # senkron kalmalı). Afsadakat'a özel: "missing creds or
                     # afsadakat_base_url" `core/afsadakat_outbound.py:156`
                     # short-circuit'iyle eşleşir.
-                    if any(p in msg.lower() for p in (
-                        "no active connectors",
-                        "dispatched: 0",
-                        "no webhook url configured",
-                        "missing creds or afsadakat_base_url",
-                        "dry_run",
-                        "dry run",
-                        "unsupported event_type",
-                        "unsupported event:",
-                    )):
+                    if any(
+                        p in msg.lower()
+                        for p in (
+                            "no active connectors",
+                            "dispatched: 0",
+                            "no webhook url configured",
+                            "missing creds or afsadakat_base_url",
+                            "dry_run",
+                            "dry run",
+                            "unsupported event_type",
+                            "unsupported event:",
+                        )
+                    ):
                         continue
                     # tur-30: empty-msg worker-noop guard (outbox bloğundaki
                     # ile aynı semantik — bkz. line 1947-1957 yorumu).
@@ -2963,10 +3337,14 @@ async def stress_external_calls_status(
         # collapse gate can actually evaluate. Without this, the gate was
         # permanently disabled and structural defense-in-depth never fired.
         from core.tenant_db import get_system_db as _gsd_cm
+
         _sysdb_cm = _gsd_cm()
-        cm_active_connectors_count = await _sysdb_cm.cm_connectors.count_documents({
-            "tenant_id": stress_tid, "status": "active",
-        })
+        cm_active_connectors_count = await _sysdb_cm.cm_connectors.count_documents(
+            {
+                "tenant_id": stress_tid,
+                "status": "active",
+            }
+        )
         cm_connectors_lookup_ok = True
     except Exception as e:  # noqa: BLE001
         _log.exception("cm_connectors lookup failed for stress_tid=%s", stress_tid)
@@ -2978,11 +3356,7 @@ async def stress_external_calls_status(
     # masked by DB outages or env-read failures. Webhook env is a synchronous
     # `os.environ.get` (cannot throw under normal Python semantics), but the
     # connector count lookup is async DB-backed and can fail.
-    cm_dispatch_impossible = (
-        cm_connectors_lookup_ok
-        and cm_active_connectors_count == 0
-        and not cm_partner_webhook_url_env_set
-    )
+    cm_dispatch_impossible = cm_connectors_lookup_ok and cm_active_connectors_count == 0 and not cm_partner_webhook_url_env_set
 
     try:
         # Afsadakat tenant-cred lookup (tenant-scoped collection — same db
@@ -2992,10 +3366,14 @@ async def stress_external_calls_status(
         # tur-30 (CI #49 root-cause fix): same TenantAwareDBProxy issue as
         # cm_connectors above — use cross-tenant sysdb handle.
         from core.tenant_db import get_system_db as _gsd_af
+
         _sysdb_af = _gsd_af()
-        afsadakat_active_tenants_count = await _sysdb_af.integration_afsadakat_tenants.count_documents({
-            "tenant_id": stress_tid, "status": "active",
-        })
+        afsadakat_active_tenants_count = await _sysdb_af.integration_afsadakat_tenants.count_documents(
+            {
+                "tenant_id": stress_tid,
+                "status": "active",
+            }
+        )
         afsadakat_tenants_lookup_ok = True
     except Exception as e:  # noqa: BLE001
         _log.exception("integration_afsadakat_tenants lookup failed for stress_tid=%s", stress_tid)
@@ -3015,10 +3393,7 @@ async def stress_external_calls_status(
     # Env vars are retained in `structural_breakdown` for diagnostic only.
     # Lookup exception → afsadakat_tenants_lookup_ok=False → gate False
     # → real findings cannot be masked. Symmetric with CM gate.
-    afsadakat_dispatch_impossible = (
-        afsadakat_tenants_lookup_ok
-        and afsadakat_active_tenants_count == 0
-    )
+    afsadakat_dispatch_impossible = afsadakat_tenants_lookup_ok and afsadakat_active_tenants_count == 0
 
     structural_dry = cm_dispatch_impossible and afsadakat_dispatch_impossible
     env_dry = os.environ.get("E2E_EXTERNAL_DRY_RUN", "").lower() == "true"
@@ -3051,10 +3426,14 @@ async def stress_external_calls_status(
         },
         "dry_run_enforced": env_dry or structural_dry,
         "dry_run_source": (
-            "env_and_structural" if env_dry and structural_dry
-            else "env" if env_dry
-            else "structural_per_source" if structural_dry
-            else "partial_structural" if (cm_dispatch_impossible or afsadakat_dispatch_impossible)
+            "env_and_structural"
+            if env_dry and structural_dry
+            else "env"
+            if env_dry
+            else "structural_per_source"
+            if structural_dry
+            else "partial_structural"
+            if (cm_dispatch_impossible or afsadakat_dispatch_impossible)
             else "none"
         ),
         "dry_run_env_flag": env_dry,
@@ -3096,11 +3475,7 @@ async def stress_cleanup(
     if not payload.data_prefix and not payload.confirm_full_wipe:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "cleanup requires either `data_prefix` (recommended, "
-                "round-scoped) or `confirm_full_wipe=true` (deletes ALL "
-                "stress-seeded rows for the tenant across all rounds)."
-            ),
+            detail=("cleanup requires either `data_prefix` (recommended, round-scoped) or `confirm_full_wipe=true` (deletes ALL stress-seeded rows for the tenant across all rounds)."),
         )
 
     flt: dict = {"stress_seed": True, "tenant_id": stress_tid}
@@ -3151,12 +3526,17 @@ async def stress_cleanup(
     # mirrors the seed-time drain so teardown clears the residue and cleanup#2
     # stays idempotent (full collection already empty → deleted_count=0).
     CURRENCY_RATES_TENANT_SCOPED = {
-        "currency_rates", "performance_reviews", "reservation_waitlist",
-        "recipes", "inventory_items",
-        "hr_departments", "hr_positions",
+        "currency_rates",
+        "performance_reviews",
+        "reservation_waitlist",
+        "recipes",
+        "inventory_items",
+        "hr_departments",
+        "hr_positions",
     }
     with tenant_context(stress_tid):
         from core.database import db
+
         # Ensure the covering index exists even if cleanup runs without a
         # preceding seed (manual teardown); idempotent no-op when present so
         # cleanup#2's idempotency-verify scan stays index-seeked, not a full walk.
@@ -3171,7 +3551,9 @@ async def stress_cleanup(
                 # and only across F8E runs; full collection wipe is the
                 # intent (idempotent across runs, no real-data exposure).
                 res = await _delete_many_with_retry(
-                    col, {"tenant_id": stress_tid}, col_name=col_name,
+                    col,
+                    {"tenant_id": stress_tid},
+                    col_name=col_name,
                 )
             else:
                 res = await _delete_many_with_retry(col, flt, col_name=col_name)
@@ -3200,7 +3582,9 @@ async def stress_cleanup(
             "event_type": {"$in": list(DEAD_PENDING_EVENT_TYPES)},
         }
         res = await _delete_many_with_retry(
-            db.outbox_events, outbox_flt, col_name="outbox_events",
+            db.outbox_events,
+            outbox_flt,
+            col_name="outbox_events",
         )
         deleted_counts["outbox_events"] = res.deleted_count
     cleanup_ms = round((time.perf_counter() - t_start) * 1000, 1)
@@ -3261,11 +3645,7 @@ async def stress_pos_load_cleanup(
     if len(prefix) < 4:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "pos-load-cleanup requires a non-empty `data_prefix` of at "
-                "least 4 chars (the POS_LOAD_PREFIX used for the run). "
-                "Fail-closed: this endpoint never performs an unbounded delete."
-            ),
+            detail=("pos-load-cleanup requires a non-empty `data_prefix` of at least 4 chars (the POS_LOAD_PREFIX used for the run). Fail-closed: this endpoint never performs an unbounded delete."),
         )
 
     # Anchored prefix eslesme. re.escape -> prefix karakterleri regex meta
@@ -3285,13 +3665,18 @@ async def stress_pos_load_cleanup(
     t_start = time.perf_counter()
     with tenant_context(stress_tid):
         from core.database import db
+
         for col_name in ("pos_orders", "pos_transactions"):
             res = await _delete_many_with_retry(
-                getattr(db, col_name), order_txn_flt, col_name=col_name,
+                getattr(db, col_name),
+                order_txn_flt,
+                col_name=col_name,
             )
             deleted_counts[col_name] = res.deleted_count
         res = await _delete_many_with_retry(
-            db.kitchen_orders, kitchen_flt, col_name="kitchen_orders",
+            db.kitchen_orders,
+            kitchen_flt,
+            col_name="kitchen_orders",
         )
         deleted_counts["kitchen_orders"] = res.deleted_count
     cleanup_ms = round((time.perf_counter() - t_start) * 1000, 1)

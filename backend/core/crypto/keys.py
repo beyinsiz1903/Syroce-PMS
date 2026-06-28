@@ -10,6 +10,7 @@ Environment variables:
   CM_KEY_VERSION          — current key identifier (e.g. "v1", "v2")
   APP_ENV                 — production | staging | development
 """
+
 import logging
 import os
 from dataclasses import dataclass, field
@@ -52,6 +53,7 @@ class KeyRing:
     - Current key: used for all new encryptions.
     - Previous key: used only for decryption of data encrypted before rotation.
     """
+
     current_kid: str
     _current_key: bytes = field(repr=False)
     _previous_key: bytes | None = field(default=None, repr=False)
@@ -99,22 +101,19 @@ def load_keyring() -> KeyRing:
 
     if not current_master:
         if is_prod:
-            raise KeyDerivationError(
-                "CM_MASTER_KEY_CURRENT is required in production/staging. "
-                "Set it to a cryptographically strong secret (32+ characters)."
-            )
+            raise KeyDerivationError("CM_MASTER_KEY_CURRENT is required in production/staging. Set it to a cryptographically strong secret (32+ characters).")
         # Development fallback chain: CM_CREDENTIAL_KEY → hardcoded dev key
         current_master = os.environ.get("CM_CREDENTIAL_KEY", "") or _DEV_FALLBACK_KEY
-        logger.warning(
-            "CM_MASTER_KEY_CURRENT not set — using dev fallback. NOT SAFE FOR PRODUCTION."
-        )
+        logger.warning("CM_MASTER_KEY_CURRENT not set — using dev fallback. NOT SAFE FOR PRODUCTION.")
 
     current_key = derive_key(current_master)
     previous_key = derive_key(previous_master) if previous_master else None
 
     logger.info(
         "KeyRing loaded: kid=%s has_previous=%s env=%s",
-        key_version, previous_key is not None, app_env,
+        key_version,
+        previous_key is not None,
+        app_env,
     )
     return KeyRing(
         current_kid=key_version,

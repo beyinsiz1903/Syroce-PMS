@@ -19,6 +19,7 @@ Tasarım:
 
 Tüm uçlar tenant-scoped; mutasyonlar RBAC ile sınırlı. PII/secret loglanmaz.
 """
+
 import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
@@ -38,7 +39,12 @@ logger = logging.getLogger("domains.pms.transfer_parking")
 router = APIRouter(prefix="/api/transfer-parking", tags=["PMS / Transfer & Parking"])
 
 _BOOK_ROLES = {
-    "super_admin", "admin", "supervisor", "front_desk", "concierge", "staff",
+    "super_admin",
+    "admin",
+    "supervisor",
+    "front_desk",
+    "concierge",
+    "staff",
 }
 _CATALOG_ROLES = {"super_admin", "admin", "supervisor"}
 
@@ -111,16 +117,16 @@ async def _ensure_charge_index() -> None:
 async def _find_active_booking_by_room_number(tenant_id: str, room_number: str) -> dict | None:
     if not room_number:
         return None
-    room = await db.rooms.find_one(
-        {"tenant_id": tenant_id, "room_number": str(room_number).strip()}
-    )
+    room = await db.rooms.find_one({"tenant_id": tenant_id, "room_number": str(room_number).strip()})
     if not room:
         return None
-    return await db.bookings.find_one({
-        "tenant_id": tenant_id,
-        "room_id": room.get("id"),
-        "status": {"$in": ["checked_in", "in_house"]},
-    })
+    return await db.bookings.find_one(
+        {
+            "tenant_id": tenant_id,
+            "room_id": room.get("id"),
+            "status": {"$in": ["checked_in", "in_house"]},
+        }
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -199,14 +205,10 @@ async def update_resource(
     if not updates:
         raise HTTPException(status_code=400, detail="Güncellenecek alan yok")
     updates["updated_at"] = _now_iso()
-    res = await db.transport_resources.update_one(
-        {"id": resource_id, "tenant_id": tenant_id}, {"$set": updates}
-    )
+    res = await db.transport_resources.update_one({"id": resource_id, "tenant_id": tenant_id}, {"$set": updates})
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Kaynak bulunamadı")
-    doc = await db.transport_resources.find_one(
-        {"id": resource_id, "tenant_id": tenant_id}, {"_id": 0}
-    )
+    doc = await db.transport_resources.find_one({"id": resource_id, "tenant_id": tenant_id}, {"_id": 0})
     return {"resource": doc}
 
 
@@ -257,8 +259,7 @@ def _compute_slots(resource: dict, payload: BookingIn) -> tuple[list[str], float
             raise HTTPException(status_code=400, detail="Geçersiz tarih (YYYY-MM-DD)") from exc
         slots = [f"D:{(start + timedelta(days=i)).isoformat()}" for i in range(payload.num_days)]
         total = round(unit_price * payload.num_days, 2)
-        sched = {"start_date": start.isoformat(), "num_days": payload.num_days,
-                 "end_date": (start + timedelta(days=payload.num_days - 1)).isoformat()}
+        sched = {"start_date": start.isoformat(), "num_days": payload.num_days, "end_date": (start + timedelta(days=payload.num_days - 1)).isoformat()}
         return slots, total, sched
     if kind == _KIND_TRANSFER:
         if not payload.pickup_at:
@@ -296,46 +297,39 @@ async def _claim_slots(tenant_id: str, resource_id: str, booking_id: str, slots:
     now = _now_iso()
     for slot_key in slots:
         try:
-            await db.transport_slot_locks.insert_one({
-                "id": str(uuid.uuid4()),
-                "tenant_id": tenant_id,
-                "resource_id": resource_id,
-                "slot_key": slot_key,
-                "booking_id": booking_id,
-                "created_at": now,
-            })
+            await db.transport_slot_locks.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "resource_id": resource_id,
+                    "slot_key": slot_key,
+                    "booking_id": booking_id,
+                    "created_at": now,
+                }
+            )
             claimed.append(slot_key)
         except DuplicateKeyError:
             # Rollback: bu rezervasyonun şimdiye dek aldığı kilitleri serbest bırak.
             for done in claimed:
-                await db.transport_slot_locks.delete_one(
-                    {"tenant_id": tenant_id, "resource_id": resource_id,
-                     "slot_key": done, "booking_id": booking_id}
-                )
+                await db.transport_slot_locks.delete_one({"tenant_id": tenant_id, "resource_id": resource_id, "slot_key": done, "booking_id": booking_id})
             raise HTTPException(
                 status_code=409,
                 detail=f"Bu kaynak seçilen zaman diliminde dolu ({slot_key})",
             )
 
 
-async def _post_booking_to_folio(
-    tenant_id: str, actor: str, booking_doc: dict
-) -> dict:
+async def _post_booking_to_folio(tenant_id: str, actor: str, booking_doc: dict) -> dict:
     """Rezervasyonu açık guest folio'ya idempotent yazar (tek satır)."""
     booking_id = booking_doc.get("booking_id")
     pms_booking = None
     if not booking_id:
-        pms_booking = await _find_active_booking_by_room_number(
-            tenant_id, booking_doc.get("room_number", "")
-        )
+        pms_booking = await _find_active_booking_by_room_number(tenant_id, booking_doc.get("room_number", ""))
         booking_id = pms_booking.get("id") if pms_booking else None
 
     if not booking_id:
         return {"charged": False, "reason": "no_active_booking_or_folio"}
 
-    open_folio = await db.folios.find_one(
-        {"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": tenant_id}
-    )
+    open_folio = await db.folios.find_one({"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": tenant_id})
 
     # Sessiz degrade YOK: index kurulamazsa yükselt (çağıran rezervasyonu hiç
     # başlatmamış olur — pre-claim gate ile fail-closed).
@@ -412,9 +406,11 @@ async def _post_booking_to_folio(
         upsert=True,
     )
     logger.warning(
-        "Transport late-charge: booking=%s kaynak=%s folio açık değil → late-charge "
-        "(total=%s tenant=%s)",
-        booking_id, booking_doc.get("resource_id"), total, tenant_id,
+        "Transport late-charge: booking=%s kaynak=%s folio açık değil → late-charge (total=%s tenant=%s)",
+        booking_id,
+        booking_doc.get("resource_id"),
+        total,
+        tenant_id,
     )
     return {"charged": False, "reason": "no_active_booking_or_folio"}
 
@@ -431,16 +427,13 @@ async def create_booking(
     # Idempotency: aynı anahtarla önceki rezervasyonu dön.
     if payload.idempotency_key:
         prior = await db.transport_bookings.find_one(
-            {"tenant_id": tenant_id,
-             "id": _stable_booking_id(tenant_id, payload.idempotency_key)},
+            {"tenant_id": tenant_id, "id": _stable_booking_id(tenant_id, payload.idempotency_key)},
             {"_id": 0},
         )
         if prior:
             return {"booking": prior, "idempotent": True}
 
-    resource = await db.transport_resources.find_one(
-        {"id": payload.resource_id, "tenant_id": tenant_id}
-    )
+    resource = await db.transport_resources.find_one({"id": payload.resource_id, "tenant_id": tenant_id})
     if not resource:
         raise HTTPException(status_code=404, detail="Kaynak bulunamadı")
     if not resource.get("active", True):
@@ -448,11 +441,7 @@ async def create_booking(
 
     slots, total, sched = _compute_slots(resource, payload)
 
-    booking_id = (
-        _stable_booking_id(tenant_id, payload.idempotency_key)
-        if payload.idempotency_key
-        else str(uuid.uuid4())
-    )
+    booking_id = _stable_booking_id(tenant_id, payload.idempotency_key) if payload.idempotency_key else str(uuid.uuid4())
 
     # Slot kilidi index'i (fail-closed) — yoksa çift-rezervasyon riski.
     try:
@@ -522,21 +511,21 @@ async def cancel_booking(
     """Rezervasyonu iptal eder ve tuttuğu zaman dilimi kilitlerini serbest bırakır."""
     _require_role(current_user, _BOOK_ROLES)
     tenant_id = _tenant_of(current_user)
-    bk = await db.transport_bookings.find_one(
-        {"id": transport_booking_id, "tenant_id": tenant_id}
-    )
+    bk = await db.transport_bookings.find_one({"id": transport_booking_id, "tenant_id": tenant_id})
     if not bk:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
     if bk.get("status") == "cancelled":
         return {"ok": True, "status": "cancelled"}
     # Kilitleri serbest bırak.
     for slot_key in bk.get("slots", []):
-        await db.transport_slot_locks.delete_one({
-            "tenant_id": tenant_id,
-            "resource_id": bk.get("resource_id"),
-            "slot_key": slot_key,
-            "booking_id": transport_booking_id,
-        })
+        await db.transport_slot_locks.delete_one(
+            {
+                "tenant_id": tenant_id,
+                "resource_id": bk.get("resource_id"),
+                "slot_key": slot_key,
+                "booking_id": transport_booking_id,
+            }
+        )
     await db.transport_bookings.update_one(
         {"id": transport_booking_id, "tenant_id": tenant_id},
         {"$set": {"status": "cancelled", "updated_at": _now_iso()}},

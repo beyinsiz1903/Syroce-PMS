@@ -15,6 +15,7 @@ Score Components:
   - Drift backlog (10 pts)
   - Quarantine clear (5 pts)
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -96,7 +97,8 @@ async def compute_readiness_score(tenant_id: str, property_id: str = "default") 
             "severity": issue["severity"],
             "category": issue["category"],
         }
-        for i, issue in enumerate(issues) if issue["fix_impact"] > 0
+        for i, issue in enumerate(issues)
+        if issue["fix_impact"] > 0
     ]
 
     return {
@@ -120,12 +122,22 @@ async def _score_mapping(tenant_id: str, property_id: str):
     inactive_rates = 0
 
     for provider in ["exely", "hotelrunner"]:
-        rooms = await db[COLL_ROOM_MAPPINGS].find(
-            {"tenant_id": tenant_id, "provider": provider}, _NO_ID,
-        ).to_list(500)
-        rates = await db[COLL_RATE_PLAN_MAPPINGS].find(
-            {"tenant_id": tenant_id, "provider": provider}, _NO_ID,
-        ).to_list(500)
+        rooms = (
+            await db[COLL_ROOM_MAPPINGS]
+            .find(
+                {"tenant_id": tenant_id, "provider": provider},
+                _NO_ID,
+            )
+            .to_list(500)
+        )
+        rates = (
+            await db[COLL_RATE_PLAN_MAPPINGS]
+            .find(
+                {"tenant_id": tenant_id, "provider": provider},
+                _NO_ID,
+            )
+            .to_list(500)
+        )
 
         prov_broken_rooms = sum(1 for m in rooms if not m.get("pms_room_type_id"))
         prov_inactive_rooms = sum(1 for m in rooms if not m.get("is_active", True))
@@ -140,37 +152,43 @@ async def _score_mapping(tenant_id: str, property_id: str):
         inactive_rates += prov_inactive_rates
 
         if prov_broken_rooms > 0:
-            issues.append({
-                "severity": "blocker",
-                "category": "mapping",
-                "title": f"Kirik room mapping ({provider})",
-                "detail": f"{prov_broken_rooms} room mapping'de PMS baglantisi yok",
-                "count": prov_broken_rooms,
-                "fix_action": f"{provider} room mapping'lerini Data Model'den duzelt",
-                "fix_impact": _calc_mapping_impact(prov_broken_rooms, total_rooms, WEIGHT_MAPPING),
-            })
+            issues.append(
+                {
+                    "severity": "blocker",
+                    "category": "mapping",
+                    "title": f"Kirik room mapping ({provider})",
+                    "detail": f"{prov_broken_rooms} room mapping'de PMS baglantisi yok",
+                    "count": prov_broken_rooms,
+                    "fix_action": f"{provider} room mapping'lerini Data Model'den duzelt",
+                    "fix_impact": _calc_mapping_impact(prov_broken_rooms, total_rooms, WEIGHT_MAPPING),
+                }
+            )
 
         if prov_broken_rates > 0:
-            issues.append({
-                "severity": "blocker",
-                "category": "mapping",
-                "title": f"Kirik rate plan mapping ({provider})",
-                "detail": f"{prov_broken_rates} rate plan mapping'de PMS baglantisi yok",
-                "count": prov_broken_rates,
-                "fix_action": f"{provider} rate plan mapping'lerini Data Model'den duzelt",
-                "fix_impact": _calc_mapping_impact(prov_broken_rates, total_rates, WEIGHT_MAPPING),
-            })
+            issues.append(
+                {
+                    "severity": "blocker",
+                    "category": "mapping",
+                    "title": f"Kirik rate plan mapping ({provider})",
+                    "detail": f"{prov_broken_rates} rate plan mapping'de PMS baglantisi yok",
+                    "count": prov_broken_rates,
+                    "fix_action": f"{provider} rate plan mapping'lerini Data Model'den duzelt",
+                    "fix_impact": _calc_mapping_impact(prov_broken_rates, total_rates, WEIGHT_MAPPING),
+                }
+            )
 
         if prov_inactive_rooms > 0:
-            issues.append({
-                "severity": "warning",
-                "category": "mapping",
-                "title": f"Inaktif room mapping ({provider})",
-                "detail": f"{prov_inactive_rooms} room mapping inaktif durumda",
-                "count": prov_inactive_rooms,
-                "fix_action": f"{provider} inaktif room mapping'leri aktif et",
-                "fix_impact": _calc_mapping_impact(prov_inactive_rooms, total_rooms, WEIGHT_MAPPING),
-            })
+            issues.append(
+                {
+                    "severity": "warning",
+                    "category": "mapping",
+                    "title": f"Inaktif room mapping ({provider})",
+                    "detail": f"{prov_inactive_rooms} room mapping inaktif durumda",
+                    "count": prov_inactive_rooms,
+                    "fix_action": f"{provider} inaktif room mapping'leri aktif et",
+                    "fix_impact": _calc_mapping_impact(prov_inactive_rooms, total_rooms, WEIGHT_MAPPING),
+                }
+            )
 
     total_all = total_rooms + total_rates
     broken_all = broken_rooms + broken_rates + inactive_rooms + inactive_rates
@@ -201,26 +219,30 @@ async def _score_hard_fail(tenant_id: str):
     score = 0  # Any hard fail = 0 points
 
     if blocked > 0:
-        issues.append({
-            "severity": "critical",
-            "category": "hard_fail",
-            "title": "Hard fail bloklari aktif",
-            "detail": f"{blocked} change set hard fail ile bloklandi",
-            "count": blocked,
-            "fix_action": "Eksik mapping'leri tamamla, sonra quarantine'den serbest birak",
-            "fix_impact": WEIGHT_HARD_FAIL,
-        })
+        issues.append(
+            {
+                "severity": "critical",
+                "category": "hard_fail",
+                "title": "Hard fail bloklari aktif",
+                "detail": f"{blocked} change set hard fail ile bloklandi",
+                "count": blocked,
+                "fix_action": "Eksik mapping'leri tamamla, sonra quarantine'den serbest birak",
+                "fix_impact": WEIGHT_HARD_FAIL,
+            }
+        )
 
     if incidents > 0:
-        issues.append({
-            "severity": "critical",
-            "category": "hard_fail",
-            "title": "Acik hard fail incident'lari",
-            "detail": f"{incidents} acik hard fail incident'i var",
-            "count": incidents,
-            "fix_action": "Incident'lari incele ve mapping sorunlarini coz",
-            "fix_impact": round(WEIGHT_HARD_FAIL * 0.4),
-        })
+        issues.append(
+            {
+                "severity": "critical",
+                "category": "hard_fail",
+                "title": "Acik hard fail incident'lari",
+                "detail": f"{incidents} acik hard fail incident'i var",
+                "count": incidents,
+                "fix_action": "Incident'lari incele ve mapping sorunlarini coz",
+                "fix_impact": round(WEIGHT_HARD_FAIL * 0.4),
+            }
+        )
 
     return score, issues
 
@@ -235,30 +257,34 @@ def _score_verify():
 
     if total == 0:
         # No verifications yet — partial score
-        issues.append({
-            "severity": "info",
-            "category": "verify",
-            "title": "Henuz doğrulama yapilmadi",
-            "detail": "Push loop hic doğrulama cikisi uretmedi",
-            "count": 0,
-            "fix_action": "Push loop'u baslat ve ARI gonderimi yap",
-            "fix_impact": WEIGHT_VERIFY,
-        })
+        issues.append(
+            {
+                "severity": "info",
+                "category": "verify",
+                "title": "Henuz doğrulama yapilmadi",
+                "detail": "Push loop hic doğrulama cikisi uretmedi",
+                "count": 0,
+                "fix_action": "Push loop'u baslat ve ARI gonderimi yap",
+                "fix_impact": WEIGHT_VERIFY,
+            }
+        )
         return 0, issues
 
     score = round(ratio * WEIGHT_VERIFY, 1)
 
     if ratio < 0.95:
         severity = "critical" if ratio < 0.8 else "warning"
-        issues.append({
-            "severity": severity,
-            "category": "verify",
-            "title": f"Verify orani dusuk (%{round(ratio * 100, 1)})",
-            "detail": f"{metrics['verify_fail_count']} başarısız / {total} toplam doğrulama",
-            "count": metrics["verify_fail_count"],
-            "fix_action": "Provider baglanti ve mapping konfigurasyonunu kontrol et",
-            "fix_impact": round((0.95 - ratio) * WEIGHT_VERIFY) if ratio < 0.95 else 0,
-        })
+        issues.append(
+            {
+                "severity": severity,
+                "category": "verify",
+                "title": f"Verify orani dusuk (%{round(ratio * 100, 1)})",
+                "detail": f"{metrics['verify_fail_count']} başarısız / {total} toplam doğrulama",
+                "count": metrics["verify_fail_count"],
+                "fix_action": "Provider baglanti ve mapping konfigurasyonunu kontrol et",
+                "fix_impact": round((0.95 - ratio) * WEIGHT_VERIFY) if ratio < 0.95 else 0,
+            }
+        )
 
     return score, issues
 
@@ -266,11 +292,13 @@ def _score_verify():
 async def _score_drift(tenant_id: str):
     """Score based on active drift count."""
     issues = []
-    drift_count = await db[COLL_RECONCILIATION_CASES].count_documents({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["open", "investigating"]},
-        "drift_type": {"$exists": True, "$ne": None},
-    })
+    drift_count = await db[COLL_RECONCILIATION_CASES].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["open", "investigating"]},
+            "drift_type": {"$exists": True, "$ne": None},
+        }
+    )
 
     if drift_count == 0:
         return WEIGHT_DRIFT, issues
@@ -279,15 +307,17 @@ async def _score_drift(tenant_id: str):
     score = max(0, round(WEIGHT_DRIFT * (1 - min(drift_count / 10, 1)), 1))
 
     severity = "warning" if drift_count < 5 else "critical"
-    issues.append({
-        "severity": severity,
-        "category": "drift",
-        "title": f"Aktif drift backlog ({drift_count})",
-        "detail": f"{drift_count} acik drift/uyumsuzluk vakasi var",
-        "count": drift_count,
-        "fix_action": "Auto-heal calistir veya manuel inceleme yap",
-        "fix_impact": WEIGHT_DRIFT - score,
-    })
+    issues.append(
+        {
+            "severity": severity,
+            "category": "drift",
+            "title": f"Aktif drift backlog ({drift_count})",
+            "detail": f"{drift_count} acik drift/uyumsuzluk vakasi var",
+            "count": drift_count,
+            "fix_action": "Auto-heal calistir veya manuel inceleme yap",
+            "fix_impact": WEIGHT_DRIFT - score,
+        }
+    )
 
     return score, issues
 
@@ -303,15 +333,17 @@ async def _score_quarantine(tenant_id: str):
 
     score = 0
 
-    issues.append({
-        "severity": "warning",
-        "category": "quarantine",
-        "title": f"Karantina'da {total} item",
-        "detail": f"{total} change set karantina'da bekliyor",
-        "count": total,
-        "fix_action": "Mapping'leri duzelt, sonra safe release uygula",
-        "fix_impact": WEIGHT_QUARANTINE,
-    })
+    issues.append(
+        {
+            "severity": "warning",
+            "category": "quarantine",
+            "title": f"Karantina'da {total} item",
+            "detail": f"{total} change set karantina'da bekliyor",
+            "count": total,
+            "fix_action": "Mapping'leri duzelt, sonra safe release uygula",
+            "fix_impact": WEIGHT_QUARANTINE,
+        }
+    )
 
     return score, issues
 
@@ -363,7 +395,4 @@ async def log_ready_state_transition(
     await coll.insert_one(doc)
 
     if is_transition:
-        logger.info(
-            f"READY state transition: tenant={tenant_id} "
-            f"{prev_state} -> {new_state} (score={score})"
-        )
+        logger.info(f"READY state transition: tenant={tenant_id} {prev_state} -> {new_state} (score={score})")

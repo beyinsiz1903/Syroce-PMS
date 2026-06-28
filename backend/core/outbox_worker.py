@@ -12,6 +12,7 @@ Features:
   - Graceful shutdown
   - Health metrics
 """
+
 import asyncio
 import logging
 import os
@@ -49,10 +50,13 @@ def _timeline_append(**kwargs):
     """Fire-and-forget timeline write. Returns a coroutine."""
     try:
         from controlplane.timeline_writer import get_timeline_writer
+
         return get_timeline_writer().append(**kwargs)
     except Exception:
+
         async def _noop():
             return None
+
         return _noop()
 
 
@@ -60,10 +64,13 @@ def _failure_record(**kwargs):
     """Fire-and-forget failure recording. Returns a coroutine."""
     try:
         from controlplane.failure_tracker import get_failure_tracker
+
         return get_failure_tracker().record(**kwargs)
     except Exception:
+
         async def _noop():
             return None
+
         return _noop()
 
 
@@ -145,7 +152,9 @@ class OutboxWorker:
                     raise
                 except Exception as e:
                     _transient_tracker.log_exception(
-                        logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                        logger,
+                        e,
+                        TransientFailureTracker.OUTER_LOOP_KEY,
                         context="loop tick",
                         non_transient_msg="%s loop error: %s",
                     )
@@ -294,7 +303,9 @@ class OutboxWorker:
 
         logger.info(
             "Outbox event processed: %s type=%s msg=%s",
-            event.get("id"), event.get("event_type"), message[:100],
+            event.get("id"),
+            event.get("event_type"),
+            message[:100],
         )
 
     async def _handle_failure(self, event: dict[str, Any], message: str) -> None:
@@ -355,7 +366,10 @@ class OutboxWorker:
 
             logger.error(
                 "Outbox event FAILED (permanent): %s type=%s attempts=%d error=%s",
-                event.get("id"), event.get("event_type"), attempt_count, message[:200],
+                event.get("id"),
+                event.get("event_type"),
+                attempt_count,
+                message[:200],
             )
         else:
             # Schedule retry
@@ -375,8 +389,11 @@ class OutboxWorker:
             self._retry_count += 1
             logger.warning(
                 "Outbox event scheduled for retry: %s type=%s attempt=%d/%d next_at=%s",
-                event.get("id"), event.get("event_type"),
-                attempt_count, max_attempts, next_at,
+                event.get("id"),
+                event.get("event_type"),
+                attempt_count,
+                max_attempts,
+                next_at,
             )
 
 

@@ -2,6 +2,7 @@
 Shift Handover Router — Vardiya devir notları.
 Resepsiyon vardiya değişimlerinde önemli notların taşınması için.
 """
+
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -93,10 +94,12 @@ async def list_handovers(
 
 @router.get("/open-count")
 async def open_count(current_user: User = Depends(get_current_user)):
-    n = await db[_COL].count_documents({
-        "tenant_id": current_user.tenant_id,
-        "acknowledged": False,
-    })
+    n = await db[_COL].count_documents(
+        {
+            "tenant_id": current_user.tenant_id,
+            "acknowledged": False,
+        }
+    )
     return {"open": n}
 
 
@@ -104,13 +107,15 @@ async def open_count(current_user: User = Depends(get_current_user)):
 async def acknowledge(handover_id: str, payload: HandoverAck, current_user: User = Depends(get_current_user)):
     res = await db[_COL].find_one_and_update(
         {"id": handover_id, "tenant_id": current_user.tenant_id},
-        {"$set": {
-            "acknowledged": True,
-            "acknowledged_by_id": current_user.id,
-            "acknowledged_by_name": current_user.name or current_user.email,
-            "acknowledged_at": datetime.now(UTC).isoformat(),
-            "ack_note": payload.note,
-        }},
+        {
+            "$set": {
+                "acknowledged": True,
+                "acknowledged_by_id": current_user.id,
+                "acknowledged_by_name": current_user.name or current_user.email,
+                "acknowledged_at": datetime.now(UTC).isoformat(),
+                "ack_note": payload.note,
+            }
+        },
         return_document=True,
     )
     if not res:

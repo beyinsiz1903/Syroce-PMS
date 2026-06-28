@@ -5,6 +5,7 @@ Mevcut `loyalty_*` koleksiyonlarına dokunmaz; POS'a özel hesap defteri
 redeem `find_one_and_update` ile balance >= points koşulu altında atomik
 azaltır. Earn idempotency_key ile çift-yazımdan korunur.
 """
+
 from __future__ import annotations
 
 import math
@@ -66,9 +67,7 @@ async def _get_settings(tenant_id: str) -> dict:
 async def update_settings(body: LoyaltySettings, current_user: User = Depends(get_current_user)):
     doc = body.model_dump()
     doc.update({"tenant_id": current_user.tenant_id, "updated_at": _now(), "updated_by": current_user.id})
-    await db.loyalty_pos_settings.update_one(
-        {"tenant_id": current_user.tenant_id}, {"$set": doc}, upsert=True
-    )
+    await db.loyalty_pos_settings.update_one({"tenant_id": current_user.tenant_id}, {"$set": doc}, upsert=True)
     doc.pop("_id", None)
     return {"success": True, "settings": doc}
 
@@ -83,9 +82,7 @@ async def balance(
     guest_id: str = Query(..., min_length=1),
     current_user: User = Depends(get_current_user),
 ):
-    acc = await db.loyalty_pos_accounts.find_one(
-        {"tenant_id": current_user.tenant_id, "guest_id": guest_id}, {"_id": 0}
-    )
+    acc = await db.loyalty_pos_accounts.find_one({"tenant_id": current_user.tenant_id, "guest_id": guest_id}, {"_id": 0})
     return {
         "guest_id": guest_id,
         "balance": int(acc["balance"]) if acc else 0,
@@ -116,9 +113,7 @@ async def earn(body: EarnRequest, current_user: User = Depends(get_current_user)
         "created_at": _now(),
         "created_by": current_user.id,
     }
-    saved, replayed = await idempotent_insert(
-        db.loyalty_pos_ledger, current_user.tenant_id, body.idempotency_key, entry
-    )
+    saved, replayed = await idempotent_insert(db.loyalty_pos_ledger, current_user.tenant_id, body.idempotency_key, entry)
     if not replayed:
         # Only increment the account balance when the ledger row is freshly created.
         await db.loyalty_pos_accounts.update_one(
@@ -146,7 +141,9 @@ async def redeem(body: RedeemRequest, current_user: User = Depends(get_current_u
                 {"_id": 0, "balance": 1},
             )
             return {
-                "success": True, "entry": prior, "idempotent": True,
+                "success": True,
+                "entry": prior,
+                "idempotent": True,
                 "points_redeemed": -int(prior.get("points", 0)),
                 "discount_value": float(prior.get("discount_value", 0)),
                 "new_balance": int((new_bal_doc or {}).get("balance", 0)),
@@ -188,9 +185,7 @@ async def redeem(body: RedeemRequest, current_user: User = Depends(get_current_u
         "created_at": _now(),
         "created_by": current_user.id,
     }
-    saved, replayed = await idempotent_insert(
-        db.loyalty_pos_ledger, current_user.tenant_id, body.idempotency_key, entry
-    )
+    saved, replayed = await idempotent_insert(db.loyalty_pos_ledger, current_user.tenant_id, body.idempotency_key, entry)
     if replayed:
         # The atomic decrement above already happened on this duplicate request —
         # roll it back so the account stays consistent with the single ledger row.
@@ -224,9 +219,7 @@ async def ledger(
     limit: int = Query(default=100, ge=1, le=1000),
     current_user: User = Depends(get_current_user),
 ):
-    rows = await db.loyalty_pos_ledger.find(
-        {"tenant_id": current_user.tenant_id, "guest_id": guest_id}, {"_id": 0}
-    ).sort("created_at", -1).to_list(limit)
+    rows = await db.loyalty_pos_ledger.find({"tenant_id": current_user.tenant_id, "guest_id": guest_id}, {"_id": 0}).sort("created_at", -1).to_list(limit)
     return {"entries": rows, "count": len(rows)}
 
 
@@ -236,12 +229,8 @@ async def purge_account(
     current_user: User = Depends(get_current_user),
 ):
     """Remove account + ledger rows for a guest. Used by stress cleanup; staff-only via auth."""
-    acc = await db.loyalty_pos_accounts.delete_one(
-        {"tenant_id": current_user.tenant_id, "guest_id": guest_id}
-    )
-    led = await db.loyalty_pos_ledger.delete_many(
-        {"tenant_id": current_user.tenant_id, "guest_id": guest_id}
-    )
+    acc = await db.loyalty_pos_accounts.delete_one({"tenant_id": current_user.tenant_id, "guest_id": guest_id})
+    led = await db.loyalty_pos_ledger.delete_many({"tenant_id": current_user.tenant_id, "guest_id": guest_id})
     if acc.deleted_count == 0 and led.deleted_count == 0:
         raise HTTPException(status_code=404, detail="No loyalty data for guest")
     return {"success": True, "account_deleted": acc.deleted_count, "ledger_deleted": led.deleted_count}

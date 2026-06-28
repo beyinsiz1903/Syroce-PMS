@@ -1,4 +1,5 @@
 """Startup phases — her faz kendi modülünde, başlangıç sırası korunur."""
+
 from bootstrap.phases.a_security import phase_a_security_and_core_indexes
 from bootstrap.phases.audit_indexes import ensure_audit_indexes
 from bootstrap.phases.b_seed import phase_b_seed_and_exely_conn

@@ -20,6 +20,7 @@ Usage:
   doc = svc.decrypt_document(doc, collection="guests")
   hash_val = svc.compute_search_hash("user@example.com")
 """
+
 import hashlib
 import hmac
 import logging
@@ -78,11 +79,7 @@ def _get_field_names(collection: str) -> list[str]:
 
 def _get_searchable_fields(collection: str) -> set[str]:
     """Return set of searchable field names for a collection."""
-    return {
-        f["field"]
-        for f in ENCRYPTED_FIELDS.get(collection, [])
-        if f.get("searchable")
-    }
+    return {f["field"] for f in ENCRYPTED_FIELDS.get(collection, []) if f.get("searchable")}
 
 
 def hash_index_name(field: str) -> str:
@@ -109,9 +106,7 @@ def expected_hash_indexes() -> dict[str, dict[str, str]]:
         for fc in field_configs:
             if fc.get("searchable"):
                 field = fc["field"]
-                out.setdefault(collection_name, {})[hash_index_name(field)] = (
-                    hash_index_key(field)
-                )
+                out.setdefault(collection_name, {})[hash_index_name(field)] = hash_index_key(field)
     return out
 
 
@@ -143,14 +138,12 @@ try:  # pragma: no cover - prometheus is a hard dependency in prod
 
     _hash_index_missing_total = _Counter(
         "hotel_pms_encrypted_hash_index_missing_total",
-        "Searchable encrypted-PII `_hash_` blind-index expected but missing at "
-        "startup/health verification (fail-closed signal).",
+        "Searchable encrypted-PII `_hash_` blind-index expected but missing at startup/health verification (fail-closed signal).",
         ["collection", "field"],
     )
     _hash_index_search_fallback_total = _Counter(
         "hotel_pms_encrypted_search_index_missing_total",
-        "Encrypted-PII search executed while its `_hash_` index was known-missing "
-        "— request still served but degrades to a tenant-wide collection scan.",
+        "Encrypted-PII search executed while its `_hash_` index was known-missing — request still served but degrades to a tenant-wide collection scan.",
         ["collection", "field"],
     )
 except Exception:  # pragma: no cover
@@ -296,6 +289,7 @@ class FieldEncryptionService:
         # docs; escape here so PII regex metacharacters (the "." in emails) stay
         # literal and cannot inject/DoS the Mongo regex engine.
         import re as _re
+
         regex_value = _re.escape(search_value or "")
 
         for field_name in search_fields:
@@ -310,17 +304,13 @@ class FieldEncryptionService:
                 if (collection, field_name) in _KNOWN_MISSING_HASH_INDEXES:
                     if _hash_index_search_fallback_total is not None:
                         try:
-                            _hash_index_search_fallback_total.labels(
-                                collection=collection, field=field_name
-                            ).inc()
+                            _hash_index_search_fallback_total.labels(collection=collection, field=field_name).inc()
                         except Exception:
                             pass
                     if (collection, field_name) not in _SEARCH_FALLBACK_WARNED:
                         _SEARCH_FALLBACK_WARNED.add((collection, field_name))
                         logger.warning(
-                            "encrypted_search_hash_index_missing: collection=%s "
-                            "field=%s — search degraded to collection scan; run "
-                            "ensure_hash_indexes",
+                            "encrypted_search_hash_index_missing: collection=%s field=%s — search degraded to collection scan; run ensure_hash_indexes",
                             collection,
                             field_name,
                         )
@@ -366,12 +356,7 @@ class FieldEncryptionService:
                 if not doc:
                     continue
                 encrypted_doc = self.encrypt_document(doc, collection=collection_name)
-                update_fields = {
-                    k: v for k, v in encrypted_doc.items()
-                    if k != "_id" and k in (
-                        fields + [f"_hash_{f}" for f in fields] + ["_enc_version", "_encrypted_at"]
-                    )
-                }
+                update_fields = {k: v for k, v in encrypted_doc.items() if k != "_id" and k in (fields + [f"_hash_{f}" for f in fields] + ["_enc_version", "_encrypted_at"])}
                 # Only include fields that actually changed
                 final_update = {}
                 for k, v in update_fields.items():
@@ -484,15 +469,11 @@ class FieldEncryptionService:
                 )
 
             for index_name, indexed_key in idx_map.items():
-                field = indexed_key[len("_hash_"):]
+                field = indexed_key[len("_hash_") :]
                 if list_ok and indexed_key in indexed_keys:
-                    present.append(
-                        {"collection": collection_name, "field": field, "index": index_name}
-                    )
+                    present.append({"collection": collection_name, "field": field, "index": index_name})
                 else:
-                    missing.append(
-                        {"collection": collection_name, "field": field, "index": index_name}
-                    )
+                    missing.append({"collection": collection_name, "field": field, "index": index_name})
 
         # Update module-level health state + known-missing set atomically-ish.
         global _KNOWN_MISSING_HASH_INDEXES
@@ -510,14 +491,11 @@ class FieldEncryptionService:
             for m in missing:
                 if _hash_index_missing_total is not None:
                     try:
-                        _hash_index_missing_total.labels(
-                            collection=m["collection"], field=m["field"]
-                        ).inc()
+                        _hash_index_missing_total.labels(collection=m["collection"], field=m["field"]).inc()
                     except Exception:
                         pass
             logger.warning(
-                "encrypted_hash_index_missing: %d searchable `_hash_` index(es) "
-                "absent — encrypted-PII search degrades to collection scan: %s",
+                "encrypted_hash_index_missing: %d searchable `_hash_` index(es) absent — encrypted-PII search degrades to collection scan: %s",
                 len(missing),
                 ", ".join(f"{m['collection']}.{m['index']}" for m in missing),
             )
@@ -541,10 +519,7 @@ class FieldEncryptionService:
     def get_config(self) -> dict:
         """Return current encryption configuration."""
         return {
-            "collections": {
-                col: [f["field"] for f in fields]
-                for col, fields in ENCRYPTED_FIELDS.items()
-            },
+            "collections": {col: [f["field"] for f in fields] for col, fields in ENCRYPTED_FIELDS.items()},
             "crypto_health": self._crypto.health(),
         }
 

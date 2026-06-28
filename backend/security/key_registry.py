@@ -22,6 +22,7 @@ Usage:
   await registry.initiate_rotation(key_id, ...)
   await registry.emergency_revoke(key_id, reason, ...)
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -36,6 +37,7 @@ COLL_REENC_JOBS = "reencryption_jobs"
 
 class KeyState(str, Enum):
     """Encryption key lifecycle states."""
+
     ACTIVE = "active"
     PENDING_ROTATION = "pending_rotation"
     RETIRED = "retired"
@@ -44,11 +46,12 @@ class KeyState(str, Enum):
 
 class KeyType(str, Enum):
     """Types of encryption keys."""
-    MASTER = "master"          # Data encryption master key
-    CONNECTOR = "connector"    # Channel connector credentials
-    WEBHOOK = "webhook"        # Webhook signing secrets
-    API = "api"                # API authentication keys
-    PII = "pii"                # PII field encryption
+
+    MASTER = "master"  # Data encryption master key
+    CONNECTOR = "connector"  # Channel connector credentials
+    WEBHOOK = "webhook"  # Webhook signing secrets
+    API = "api"  # API authentication keys
+    PII = "pii"  # PII field encryption
 
 
 # Valid state transitions
@@ -69,6 +72,7 @@ class KeyRegistry:
     def _get_db(self):
         if self._db is None:
             from core.tenant_db import get_system_db
+
             self._db = get_system_db()
         return self._db
 
@@ -291,7 +295,10 @@ class KeyRegistry:
 
         logger.critical(
             "EMERGENCY KEY REVOKE: %s (was %s) by %s — reason: %s",
-            key_id, previous_state, actor, reason,
+            key_id,
+            previous_state,
+            actor,
+            reason,
         )
 
         return {
@@ -349,7 +356,11 @@ class KeyRegistry:
 
         logger.info(
             "Key state transition: %s %s -> %s by %s (%s)",
-            key_id, current_state.value, new_state.value, actor, reason,
+            key_id,
+            current_state.value,
+            new_state.value,
+            actor,
+            reason,
         )
 
         return {
@@ -539,9 +550,7 @@ class KeyRegistry:
             query["severity"] = severity
 
         total = await db[COLL_KEY_AUDIT].count_documents(query)
-        items = await db[COLL_KEY_AUDIT].find(
-            query, {"_id": 0}
-        ).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+        items = await db[COLL_KEY_AUDIT].find(query, {"_id": 0}).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
 
         return {"items": items, "total": total, "limit": limit, "skip": skip}
 
@@ -557,14 +566,16 @@ class KeyRegistry:
         """Write audit log entry."""
         db = self._get_db()
         try:
-            await db[COLL_KEY_AUDIT].insert_one({
-                "key_id": key_id,
-                "action": action,
-                "actor": actor,
-                "details": details or {},
-                "severity": severity,
-                "timestamp": datetime.now(UTC).isoformat(),
-            })
+            await db[COLL_KEY_AUDIT].insert_one(
+                {
+                    "key_id": key_id,
+                    "action": action,
+                    "actor": actor,
+                    "details": details or {},
+                    "severity": severity,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
         except Exception:
             logger.exception("Failed to write key audit log")
 

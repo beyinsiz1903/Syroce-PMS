@@ -2,6 +2,7 @@
 Exely Reservation Pull Worker
 Scheduled pull via OTA_ReadRQ → common ingest pipeline.
 """
+
 import asyncio
 import logging
 import time
@@ -35,9 +36,7 @@ _PLAINTEXT_WARN_CACHE: dict[tuple[str, str], float] = {}
 _PLAINTEXT_WARN_INTERVAL_SEC = 3600  # warn at most once per hour per connection
 
 
-async def _resolve_exely_credentials(
-    tenant_id: str, hotel_code: str, conn: dict[str, Any] | None = None
-) -> dict[str, str] | None:
+async def _resolve_exely_credentials(tenant_id: str, hotel_code: str, conn: dict[str, Any] | None = None) -> dict[str, str] | None:
     """
     Resolve Exely credentials with a 3-tier fallback chain (mirrors HotelRunner).
 
@@ -72,9 +71,7 @@ async def _resolve_exely_credentials(
 
     # Tier 3: Plaintext on connection doc (seed / pre-vault)
     if conn is None:
-        conn = await db.exely_connections.find_one(
-            {"tenant_id": tenant_id, "hotel_code": hotel_code}, {"_id": 0}
-        )
+        conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "hotel_code": hotel_code}, {"_id": 0})
     if conn and conn.get("username") and conn.get("password"):
         plaintext = {
             "username": conn["username"],
@@ -101,9 +98,9 @@ async def _resolve_exely_credentials(
                 last_warn = _PLAINTEXT_WARN_CACHE.get(cache_key, 0)
                 if now - last_warn >= _PLAINTEXT_WARN_INTERVAL_SEC:
                     logger.warning(
-                        "[EXELY-CREDS] Vault secret exists for %s/%s but Tier-1 lookup "
-                        "missed it; falling back to plaintext (transient).",
-                        tenant_id, hotel_code,
+                        "[EXELY-CREDS] Vault secret exists for %s/%s but Tier-1 lookup missed it; falling back to plaintext (transient).",
+                        tenant_id,
+                        hotel_code,
                     )
                     _PLAINTEXT_WARN_CACHE[cache_key] = now
             else:
@@ -116,16 +113,18 @@ async def _resolve_exely_credentials(
                 )
                 logger.info(
                     "[EXELY-CREDS] Auto-migrated plaintext creds → vault for %s/%s",
-                    tenant_id, hotel_code,
+                    tenant_id,
+                    hotel_code,
                 )
                 _PLAINTEXT_WARN_CACHE[cache_key] = now
         except Exception as me:
             last_warn = _PLAINTEXT_WARN_CACHE.get(cache_key, 0)
             if now - last_warn >= _PLAINTEXT_WARN_INTERVAL_SEC:
                 logger.warning(
-                    "[EXELY-CREDS] Using legacy plaintext for tenant %s, hotel %s "
-                    "(auto-migrate guard failed: %s). Re-save via /api/exely/connect.",
-                    tenant_id, hotel_code, me,
+                    "[EXELY-CREDS] Using legacy plaintext for tenant %s, hotel %s (auto-migrate guard failed: %s). Re-save via /api/exely/connect.",
+                    tenant_id,
+                    hotel_code,
+                    me,
                 )
                 _PLAINTEXT_WARN_CACHE[cache_key] = now
 
@@ -170,8 +169,11 @@ class ExelyPullScheduler:
                 break
             except Exception as e:
                 _transient_tracker.log_exception(
-                    logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
-                    context="loop tick", non_transient_msg="%s loop error: %s",
+                    logger,
+                    e,
+                    TransientFailureTracker.OUTER_LOOP_KEY,
+                    context="loop tick",
+                    non_transient_msg="%s loop error: %s",
                 )
             else:
                 _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
@@ -181,6 +183,7 @@ class ExelyPullScheduler:
         """Send a room discovery request to keep the connection alive in Exely."""
         try:
             from datetime import datetime, timedelta
+
             tomorrow = (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%d")
             week = (datetime.now(UTC) + timedelta(days=7)).strftime("%Y-%m-%d")
             result = await provider.discover_rooms(tomorrow, week)
@@ -207,8 +210,7 @@ class ExelyPullScheduler:
                 creds = await _resolve_exely_credentials(tenant_id, hotel_code, conn)
                 if not creds:
                     logger.warning(
-                        f"[EXELY-PULL] No credentials available for tenant {tenant_id}, hotel {hotel_code}. "
-                        f"Connect Exely from the UI (Channel Manager → Exely → Connect) to enable auto-pull."
+                        f"[EXELY-PULL] No credentials available for tenant {tenant_id}, hotel {hotel_code}. Connect Exely from the UI (Channel Manager → Exely → Connect) to enable auto-pull."
                     )
                     # Not a transient DB failure — clear any prior streak so a
                     # later genuine hiccup doesn't escalate early off stale state.
@@ -228,8 +230,11 @@ class ExelyPullScheduler:
                 # WARNING until a streak proves a sustained outage; real bugs →
                 # ERROR (with traceback) on first occurrence. See transient_db_guard.
                 _transient_tracker.log_exception(
-                    logger, e, key,
-                    context=f"tenant {key}", non_transient_msg="%s error: %s",
+                    logger,
+                    e,
+                    key,
+                    context=f"tenant {key}",
+                    non_transient_msg="%s error: %s",
                 )
             else:
                 _transient_tracker.reset(key)
@@ -260,7 +265,8 @@ class ExelyPullScheduler:
 
         # Cursor: last pull time - safety window
         cursor_doc = await db.exely_pull_cursors.find_one(
-            {"tenant_id": tenant_id}, {"_id": 0},
+            {"tenant_id": tenant_id},
+            {"_id": 0},
         )
 
         if cursor_doc and cursor_doc.get("last_pull_at"):
@@ -297,10 +303,8 @@ class ExelyPullScheduler:
                 event_type = "reservation"
                 if ext_id:
                     existing = await db.exely_reservations.find_one(
-                        {"tenant_id": tenant_id, "external_id": ext_id,
-                         "pms_status": {"$in": ["imported", "confirmed"]}},
-                        {"_id": 0, "provider_last_modified_at": 1,
-                         "guest_name": 1, "checkin_date": 1, "checkout_date": 1},
+                        {"tenant_id": tenant_id, "external_id": ext_id, "pms_status": {"$in": ["imported", "confirmed"]}},
+                        {"_id": 0, "provider_last_modified_at": 1, "guest_name": 1, "checkin_date": 1, "checkout_date": 1},
                     )
                     if existing:
                         # Compare last_modify timestamp or key fields
@@ -313,10 +317,12 @@ class ExelyPullScheduler:
                         new_co = (raw_res.get("checkout_date", "") or "")[:10]
                         old_co = (existing.get("checkout_date", "") or "")[:10]
 
-                        if ((new_lm and old_lm and new_lm != old_lm) or
-                            (new_name and old_name and new_name != old_name) or
-                            (new_ci and old_ci and new_ci != old_ci) or
-                            (new_co and old_co and new_co != old_co)):
+                        if (
+                            (new_lm and old_lm and new_lm != old_lm)
+                            or (new_name and old_name and new_name != old_name)
+                            or (new_ci and old_ci and new_ci != old_ci)
+                            or (new_co and old_co and new_co != old_co)
+                        ):
                             event_type = "modification"
                             logger.info(f"[EXELY-PULL] Detected modification for {ext_id} (status={status})")
 
@@ -334,13 +340,15 @@ class ExelyPullScheduler:
         # Update cursor
         await db.exely_pull_cursors.update_one(
             {"tenant_id": tenant_id},
-            {"$set": {
-                "tenant_id": tenant_id,
-                "last_pull_at": pull_start.isoformat(),
-                "last_fetch_from": from_date,
-                "reservations_fetched": len(reservations),
-                "reservations_processed": processed,
-            }},
+            {
+                "$set": {
+                    "tenant_id": tenant_id,
+                    "last_pull_at": pull_start.isoformat(),
+                    "last_fetch_from": from_date,
+                    "reservations_fetched": len(reservations),
+                    "reservations_processed": processed,
+                }
+            },
             upsert=True,
         )
 
@@ -360,8 +368,7 @@ class ExelyPullScheduler:
             if cancel_detected.get("cancelled", 0) > 0 or cancel_detected.get("modified", 0) > 0:
                 # Re-run auto_import to process any new changes
                 import_result2 = await auto_import_pending(tenant_id, provider=provider)
-                logger.info(f"[EXELY-PULL] Post-individual-check import: "
-                            f"{import_result2.get('updated', 0)} updated, {import_result2.get('cancelled', 0)} cancelled")
+                logger.info(f"[EXELY-PULL] Post-individual-check import: {import_result2.get('updated', 0)} updated, {import_result2.get('cancelled', 0)} cancelled")
         except Exception as e:
             logger.warning(f"[EXELY-PULL] Individual check error: {e}")
 
@@ -378,13 +385,8 @@ class ExelyPullScheduler:
         Only check reservations with check-in within the next 30 days for performance."""
         cutoff_date = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
         imported = await db.exely_reservations.find(
-            {"tenant_id": tenant_id,
-             "state": {"$in": ["confirmed", "modified", "pending"]},
-             "pms_status": "imported",
-             "checkin_date": {"$lte": cutoff_date}},
-            {"_id": 0, "external_id": 1, "provider_reservation_id": 1,
-             "guest_name": 1, "checkin_date": 1, "checkout_date": 1,
-             "rooms": 1, "provider_last_modified_at": 1},
+            {"tenant_id": tenant_id, "state": {"$in": ["confirmed", "modified", "pending"]}, "pms_status": "imported", "checkin_date": {"$lte": cutoff_date}},
+            {"_id": 0, "external_id": 1, "provider_reservation_id": 1, "guest_name": 1, "checkin_date": 1, "checkout_date": 1, "rooms": 1, "provider_last_modified_at": 1},
         ).to_list(20)  # Reduced from 50 to 20 for speed
 
         if not imported:
@@ -408,9 +410,12 @@ class ExelyPullScheduler:
 
                 if status in ("cancel", "cancelled"):
                     ingest_result = await ingest_reservation(
-                        provider=PROVIDER, tenant_id=tenant_id,
-                        raw_payload=raw_res, normalizer=normalize_reservation,
-                        event_type="cancellation", source="scheduled_cancel_check",
+                        provider=PROVIDER,
+                        tenant_id=tenant_id,
+                        raw_payload=raw_res,
+                        normalizer=normalize_reservation,
+                        event_type="cancellation",
+                        source="scheduled_cancel_check",
                     )
                     if ingest_result.get("action") == "cancelled":
                         cancel_count += 1
@@ -435,9 +440,12 @@ class ExelyPullScheduler:
 
                 if changed:
                     ingest_result = await ingest_reservation(
-                        provider=PROVIDER, tenant_id=tenant_id,
-                        raw_payload=raw_res, normalizer=normalize_reservation,
-                        event_type="modification", source="scheduled_mod_check",
+                        provider=PROVIDER,
+                        tenant_id=tenant_id,
+                        raw_payload=raw_res,
+                        normalizer=normalize_reservation,
+                        event_type="modification",
+                        source="scheduled_mod_check",
                     )
                     if ingest_result.get("action") in ("updated", "created"):
                         mod_count += 1
@@ -471,7 +479,8 @@ class ExelyPullScheduler:
                 modify_dt = res.get("provider_last_modified_at")
                 try:
                     result = await provider.confirm_delivery(
-                        ext_id, pms_id,
+                        ext_id,
+                        pms_id,
                         create_datetime=create_dt,
                         last_modify_datetime=modify_dt,
                         res_status="Reserved",

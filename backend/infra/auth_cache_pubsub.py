@@ -29,6 +29,7 @@ Reconnect:
     restarts and treat the routine 30 s socket idle timeout as DEBUG,
     not WARNING.
 """
+
 import asyncio
 import json
 import logging
@@ -38,6 +39,7 @@ from typing import Any
 try:
     from redis.exceptions import TimeoutError as RedisTimeoutError
 except Exception:  # pragma: no cover — defensive
+
     class RedisTimeoutError(Exception):
         """Shim used when redis.exceptions is unavailable."""
 
@@ -120,9 +122,7 @@ class AuthCachePubSub:
             await self._pubsub.subscribe(CHANNEL_USER, CHANNEL_TENANT)
             self._active = True
             self._listener_task = asyncio.create_task(self._listen())
-            logger.info(
-                f"Auth cache pub/sub initialized (instance={instance_id})"
-            )
+            logger.info(f"Auth cache pub/sub initialized (instance={instance_id})")
         except Exception as e:
             logger.warning(f"Auth cache pub/sub init failed: {e}")
             self._active = False
@@ -132,21 +132,19 @@ class AuthCachePubSub:
         if not self._active or self._redis is None:
             return
         try:
-            payload = json.dumps({
-                "id": user_id or "",
-                "instance": self._instance_id,
-                "ts": datetime.now(UTC).isoformat(),
-            })
+            payload = json.dumps(
+                {
+                    "id": user_id or "",
+                    "instance": self._instance_id,
+                    "ts": datetime.now(UTC).isoformat(),
+                }
+            )
             await self._redis.publish(CHANNEL_USER, payload)
             self._metrics["user_published"] += 1
         except Exception as e:
             self._metrics["publish_errors"] += 1
-            self._metrics["last_publish_error"] = (
-                f"{type(e).__name__}: {str(e)[:200]}"
-            )
-            self._metrics["last_publish_error_at"] = (
-                datetime.now(UTC).isoformat()
-            )
+            self._metrics["last_publish_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+            self._metrics["last_publish_error_at"] = datetime.now(UTC).isoformat()
             logger.debug(f"Auth cache pub/sub publish_user error: {e}")
 
     async def publish_tenant(self, tenant_id: str | None) -> None:
@@ -154,21 +152,19 @@ class AuthCachePubSub:
         if not self._active or self._redis is None:
             return
         try:
-            payload = json.dumps({
-                "id": tenant_id or "",
-                "instance": self._instance_id,
-                "ts": datetime.now(UTC).isoformat(),
-            })
+            payload = json.dumps(
+                {
+                    "id": tenant_id or "",
+                    "instance": self._instance_id,
+                    "ts": datetime.now(UTC).isoformat(),
+                }
+            )
             await self._redis.publish(CHANNEL_TENANT, payload)
             self._metrics["tenant_published"] += 1
         except Exception as e:
             self._metrics["publish_errors"] += 1
-            self._metrics["last_publish_error"] = (
-                f"{type(e).__name__}: {str(e)[:200]}"
-            )
-            self._metrics["last_publish_error_at"] = (
-                datetime.now(UTC).isoformat()
-            )
+            self._metrics["last_publish_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+            self._metrics["last_publish_error_at"] = datetime.now(UTC).isoformat()
             logger.debug(f"Auth cache pub/sub publish_tenant error: {e}")
 
     def schedule_publish_user(self, user_id: str | None) -> None:
@@ -215,30 +211,18 @@ class AuthCachePubSub:
                         if message.get("type") != "message":
                             continue
                         await self._handle_message(message)
-                    logger.warning(
-                        "Auth cache pubsub listener exited; reconnecting"
-                    )
+                    logger.warning("Auth cache pubsub listener exited; reconnecting")
                 except asyncio.CancelledError:
                     return
                 except (TimeoutError, RedisTimeoutError) as e:
-                    self._metrics["last_listen_error"] = (
-                        f"IdleTimeout: {str(e)[:120]}"
-                    )
-                    self._metrics["last_listen_error_at"] = (
-                        datetime.now(UTC).isoformat()
-                    )
+                    self._metrics["last_listen_error"] = f"IdleTimeout: {str(e)[:120]}"
+                    self._metrics["last_listen_error_at"] = datetime.now(UTC).isoformat()
                     logger.debug("Auth cache pubsub idle timeout; reconnecting")
                 except Exception as e:
                     self._metrics["listen_errors"] += 1
-                    self._metrics["last_listen_error"] = (
-                        f"{type(e).__name__}: {str(e)[:200]}"
-                    )
-                    self._metrics["last_listen_error_at"] = (
-                        datetime.now(UTC).isoformat()
-                    )
-                    logger.warning(
-                        f"Auth cache pubsub listener error: {e}; reconnecting"
-                    )
+                    self._metrics["last_listen_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+                    self._metrics["last_listen_error_at"] = datetime.now(UTC).isoformat()
+                    logger.warning(f"Auth cache pubsub listener error: {e}; reconnecting")
 
             if not self._active or self._redis is None:
                 return
@@ -272,6 +256,7 @@ class AuthCachePubSub:
             # this module at top-level (circular: startup imports both).
             if channel == CHANNEL_USER:
                 from core.security import _local_evict_user_doc
+
                 _local_evict_user_doc(target_id)
                 # A user-doc change (profile/password/role) is also a
                 # super-admin-cache change — evict that cache on this worker
@@ -279,22 +264,20 @@ class AuthCachePubSub:
                 # Evict-only (never re-publishes); DB stays authoritative.
                 try:
                     from core.entitlement import _local_evict_super_admin
+
                     _local_evict_super_admin(target_id)
                 except Exception:
                     pass
                 self._metrics["user_received"] += 1
             elif channel == CHANNEL_TENANT:
                 from core.helpers import _local_evict_tenant_doc
+
                 _local_evict_tenant_doc(target_id)
                 self._metrics["tenant_received"] += 1
         except Exception as e:
             self._metrics["listen_errors"] += 1
-            self._metrics["last_listen_error"] = (
-                f"handle: {type(e).__name__}: {str(e)[:200]}"
-            )
-            self._metrics["last_listen_error_at"] = (
-                datetime.now(UTC).isoformat()
-            )
+            self._metrics["last_listen_error"] = f"handle: {type(e).__name__}: {str(e)[:200]}"
+            self._metrics["last_listen_error_at"] = datetime.now(UTC).isoformat()
             logger.warning(f"Auth cache pubsub handle error: {e}")
 
     async def _reconnect(self) -> bool:

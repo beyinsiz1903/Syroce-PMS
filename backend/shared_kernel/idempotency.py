@@ -1,4 +1,3 @@
-
 import hashlib
 import json
 import logging
@@ -274,6 +273,7 @@ async def release_idempotency(db_handle, *, lock_id: str, error: str | None = No
 # `guard.active` is False, `complete`/`release` do nothing, and `replay` is None,
 # so the caller falls through to its existing, byte-identical behaviour.
 
+
 def build_request_hash(payload: Any) -> str:
     """Stable SHA-256 of a request payload for the payload-mismatch guard.
 
@@ -281,8 +281,7 @@ def build_request_hash(payload: Any) -> str:
     serialise) so semantically-equal bodies hash equal and a reused key with a
     different body is detected. Returns the empty-dict hash for ``None``.
     """
-    canonical = json.dumps(payload if payload is not None else {},
-                           sort_keys=True, default=str, ensure_ascii=False)
+    canonical = json.dumps(payload if payload is not None else {}, sort_keys=True, default=str, ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -427,10 +426,7 @@ async def claim_short_window_dedup(
     """
     from pymongo.errors import DuplicateKeyError  # type: ignore
 
-    window = (
-        window_seconds if window_seconds is not None
-        else payment_dedup_window_seconds()
-    )
+    window = window_seconds if window_seconds is not None else payment_dedup_window_seconds()
     lock_id = _lock_id(tenant_id, scope, fingerprint)
     now = datetime.now(UTC)
 
@@ -445,9 +441,7 @@ async def claim_short_window_dedup(
             "created_at": now.isoformat(),
             # Backstop TTL well past the logical window; window precision is
             # enforced by the created_at comparison below.
-            "expires_at": now + timedelta(
-                seconds=max(window, IDEMPOTENCY_PROCESSING_GRACE_SECONDS)
-            ),
+            "expires_at": now + timedelta(seconds=max(window, IDEMPOTENCY_PROCESSING_GRACE_SECONDS)),
         }
 
     try:
@@ -475,9 +469,7 @@ async def claim_short_window_dedup(
     # Stale lock from an earlier, distinct payment OUTSIDE the window. Reclaim
     # with a CAS delete keyed on the OBSERVED created_at, so only one of several
     # concurrent racers wins; the losers fall through to "duplicate".
-    deleted = await db_handle.idempotency_keys.delete_one(
-        {"_id": lock_id, "created_at": observed_created}
-    )
+    deleted = await db_handle.idempotency_keys.delete_one({"_id": lock_id, "created_at": observed_created})
     if deleted.deleted_count != 1:
         return {"status": "duplicate"}
     try:

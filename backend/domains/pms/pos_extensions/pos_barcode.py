@@ -4,6 +4,7 @@ Bu router pos_menu/pos_orders'a YAZMAZ. Sadece eşleme tablosu tutar
 (`pos_barcode_map`) ve `/lookup/{barcode}` endpoint'i ile menü item
 döner; frontend orderItem oluştururken bu sonucu kullanabilir.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -36,11 +37,13 @@ def _now() -> datetime:
 @router.post("/map")
 async def upsert_mapping(body: BarcodeMap, current_user: User = Depends(get_current_user)):
     doc = body.model_dump()
-    doc.update({
-        "tenant_id": current_user.tenant_id,
-        "updated_at": _now(),
-        "updated_by": current_user.id,
-    })
+    doc.update(
+        {
+            "tenant_id": current_user.tenant_id,
+            "updated_at": _now(),
+            "updated_by": current_user.id,
+        }
+    )
     res = await db.pos_barcode_map.update_one(
         {"tenant_id": current_user.tenant_id, "barcode": body.barcode},
         {
@@ -49,9 +52,7 @@ async def upsert_mapping(body: BarcodeMap, current_user: User = Depends(get_curr
         },
         upsert=True,
     )
-    saved = await db.pos_barcode_map.find_one(
-        {"tenant_id": current_user.tenant_id, "barcode": body.barcode}, {"_id": 0}
-    )
+    saved = await db.pos_barcode_map.find_one({"tenant_id": current_user.tenant_id, "barcode": body.barcode}, {"_id": 0})
     return {"success": True, "mapping": saved, "created": res.upserted_id is not None}
 
 
@@ -70,9 +71,7 @@ async def list_mappings(
 
 @router.delete("/map/{barcode}")
 async def delete_mapping(barcode: str, current_user: User = Depends(get_current_user)):
-    res = await db.pos_barcode_map.delete_one(
-        {"tenant_id": current_user.tenant_id, "barcode": barcode}
-    )
+    res = await db.pos_barcode_map.delete_one({"tenant_id": current_user.tenant_id, "barcode": barcode})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Mapping not found")
     return {"success": True, "deleted": barcode}
@@ -80,18 +79,18 @@ async def delete_mapping(barcode: str, current_user: User = Depends(get_current_
 
 @router.get("/lookup/{barcode}")
 async def lookup(barcode: str, current_user: User = Depends(get_current_user)):
-    doc = await db.pos_barcode_map.find_one(
-        {"tenant_id": current_user.tenant_id, "barcode": barcode}, {"_id": 0}
-    )
+    doc = await db.pos_barcode_map.find_one({"tenant_id": current_user.tenant_id, "barcode": barcode}, {"_id": 0})
     # Log every lookup for audit/fraud reasons.
-    await db.pos_barcode_scans.insert_one({
-        "id": str(uuid.uuid4()),
-        "tenant_id": current_user.tenant_id,
-        "barcode": barcode,
-        "found": bool(doc),
-        "user_id": current_user.id,
-        "scanned_at": _now(),
-    })
+    await db.pos_barcode_scans.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": current_user.tenant_id,
+            "barcode": barcode,
+            "found": bool(doc),
+            "user_id": current_user.id,
+            "scanned_at": _now(),
+        }
+    )
     if not doc:
         raise HTTPException(status_code=404, detail="Barcode not mapped")
     return {"barcode": barcode, "mapping": doc}
@@ -102,7 +101,5 @@ async def list_scans(
     limit: int = Query(default=100, ge=1, le=1000),
     current_user: User = Depends(get_current_user),
 ):
-    rows = await db.pos_barcode_scans.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).sort("scanned_at", -1).to_list(limit)
+    rows = await db.pos_barcode_scans.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("scanned_at", -1).to_list(limit)
     return {"scans": rows, "count": len(rows)}

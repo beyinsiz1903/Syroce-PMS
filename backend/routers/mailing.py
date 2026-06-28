@@ -6,6 +6,7 @@ helper (Resend). The hotelier's own email is set as Reply-To so guest
 replies go straight to them; the visible "From" remains the verified
 Syroce domain for deliverability.
 """
+
 from __future__ import annotations
 
 import logging
@@ -33,12 +34,9 @@ SEND_BATCH_LIMIT = 500  # max recipients per single campaign send
 
 # ── Kredi paketleri (TRY, KDV dahil) ────────────────────────────────────
 CREDIT_PACKAGES = [
-    {"code": "starter",  "name": "Başlangıç", "credits": 1000,  "price_try": 299,
-     "per_email": 0.299, "popular": False, "description": "Küçük kampanyalar için ideal"},
-    {"code": "growth",   "name": "Büyüme",    "credits": 5000,  "price_try": 999,
-     "per_email": 0.200, "popular": True,  "description": "En çok tercih edilen paket"},
-    {"code": "scale",    "name": "Profesyonel", "credits": 25000, "price_try": 3499,
-     "per_email": 0.140, "popular": False, "description": "Yoğun kullanım için en avantajlı"},
+    {"code": "starter", "name": "Başlangıç", "credits": 1000, "price_try": 299, "per_email": 0.299, "popular": False, "description": "Küçük kampanyalar için ideal"},
+    {"code": "growth", "name": "Büyüme", "credits": 5000, "price_try": 999, "per_email": 0.200, "popular": True, "description": "En çok tercih edilen paket"},
+    {"code": "scale", "name": "Profesyonel", "credits": 25000, "price_try": 3499, "per_email": 0.140, "popular": False, "description": "Yoğun kullanım için en avantajlı"},
 ]
 PACKAGE_BY_CODE = {p["code"]: p for p in CREDIT_PACKAGES}
 
@@ -69,6 +67,7 @@ AUTOMATION_TRIGGERS = {
 
 def _db():
     from server import db  # late import to avoid circulars
+
     return db
 
 
@@ -161,7 +160,9 @@ async def _ensure_purchase_indexes() -> None:
     try:
         await db.mailing_purchases.create_index("id", unique=True, name="uniq_purchase_id")
         await db.mailing_purchases.create_index(
-            "iyzico_payment_id", unique=True, sparse=True,
+            "iyzico_payment_id",
+            unique=True,
+            sparse=True,
             name="uniq_iyzico_payment_id",
         )
         await db.mailing_credits.create_index("tenant_id", unique=True, name="uniq_credits_tenant")
@@ -176,6 +177,7 @@ async def list_packages() -> dict:
     üzerinden satılıyor. Bu uç geriye dönük uyumluluk için kalıyor; yeni
     UI çağrı yapmamalı. Mevcut bakiye okuma `/api/mailing/credits` üzerinden."""
     from core.iyzico import is_configured
+
     await _ensure_purchase_indexes()
     return {
         "packages": CREDIT_PACKAGES,
@@ -196,10 +198,7 @@ async def purchase_package(
     başlatmıyor; çift satış kanalını önlemek için 410 Gone döndürüyor."""
     raise HTTPException(
         status_code=410,
-        detail=(
-            "Kredi paketi satışı artık Modül Pazarı üzerinden yapılıyor. "
-            "Lütfen /app/module-store sayfasından satın alın."
-        ),
+        detail=("Kredi paketi satışı artık Modül Pazarı üzerinden yapılıyor. Lütfen /app/module-store sayfasından satın alın."),
     )
 
     # Eski iyzico akışı — referans için bırakıldı, asla çalıştırılmaz.
@@ -271,29 +270,27 @@ async def purchase_package(
             "country": "Turkey",
             "address": (tenant or {}).get("address") or "Türkiye",
         },
-        "basketItems": [{
-            "id": pkg["code"],
-            "name": f"Mailing Kredisi - {pkg['name']} ({pkg['credits']} adet)",
-            "category1": "Dijital",
-            "itemType": "VIRTUAL",
-            "price": str(pkg["price_try"]),
-        }],
+        "basketItems": [
+            {
+                "id": pkg["code"],
+                "name": f"Mailing Kredisi - {pkg['name']} ({pkg['credits']} adet)",
+                "category1": "Dijital",
+                "itemType": "VIRTUAL",
+                "price": str(pkg["price_try"]),
+            }
+        ],
     }
     res = init_checkout_form(iyzico_payload)
     if res.get("status") != "success":
         await db.mailing_purchases.update_one(
             {"id": order_id},
-            {"$set": {"status": "init_failed", "error": res.get("errorMessage"),
-                      "updated_at": _now_iso()}},
+            {"$set": {"status": "init_failed", "error": res.get("errorMessage"), "updated_at": _now_iso()}},
         )
-        raise HTTPException(status_code=502,
-                            detail=res.get("errorMessage") or "Ödeme başlatılamadı")
+        raise HTTPException(status_code=502, detail=res.get("errorMessage") or "Ödeme başlatılamadı")
 
     await db.mailing_purchases.update_one(
         {"id": order_id},
-        {"$set": {"iyzico_token": res.get("token"),
-                  "payment_page_url": res.get("paymentPageUrl"),
-                  "updated_at": _now_iso()}},
+        {"$set": {"iyzico_token": res.get("token"), "payment_page_url": res.get("paymentPageUrl"), "updated_at": _now_iso()}},
     )
     return {
         "order_id": order_id,
@@ -309,6 +306,7 @@ async def purchase_callback(order_id: str) -> dict:
     (dış girdiyle override edilemez). Yanıt sıkı kontrollerden geçirilir,
     kredi yükleme atomik+idempotent şekilde yapılır."""
     from core.iyzico import retrieve_checkout_form
+
     db = _db()
     order = await db.mailing_purchases.find_one({"id": order_id}, {"_id": 0})
     if not order:
@@ -340,30 +338,22 @@ async def purchase_callback(order_id: str) -> dict:
         # Only ONE concurrent request can win; others see modified_count == 0.
         upd = await db.mailing_purchases.update_one(
             {"id": order_id, "status": "pending"},
-            {"$set": {"status": "completed",
-                      "iyzico_payment_id": res.get("paymentId"),
-                      "completed_at": _now_iso()}},
+            {"$set": {"status": "completed", "iyzico_payment_id": res.get("paymentId"), "completed_at": _now_iso()}},
         )
         if upd.modified_count == 1:
             await _get_or_init_credits(order["tenant_id"])
             await db.mailing_credits.update_one(
                 {"tenant_id": order["tenant_id"]},
-                {"$inc": {"balance": order["credits"],
-                          "lifetime_purchased": order["credits"]},
-                 "$set": {"updated_at": _now_iso()}},
+                {"$inc": {"balance": order["credits"], "lifetime_purchased": order["credits"]}, "$set": {"updated_at": _now_iso()}},
             )
-            logger.info("[mailing-purchase] tenant=%s package=%s credits=+%s OK",
-                        order["tenant_id"], order["package_code"], order["credits"])
+            logger.info("[mailing-purchase] tenant=%s package=%s credits=+%s OK", order["tenant_id"], order["package_code"], order["credits"])
         return {"status": "completed", "credits": order["credits"]}
 
     await db.mailing_purchases.update_one(
         {"id": order_id, "status": "pending"},
-        {"$set": {"status": "failed",
-                  "error": res.get("errorMessage") or "Doğrulama hatası",
-                  "updated_at": _now_iso()}},
+        {"$set": {"status": "failed", "error": res.get("errorMessage") or "Doğrulama hatası", "updated_at": _now_iso()}},
     )
-    logger.warning("[mailing-purchase] tenant=%s order=%s validation failed: %s",
-                   order.get("tenant_id"), order_id, res.get("errorMessage"))
+    logger.warning("[mailing-purchase] tenant=%s order=%s validation failed: %s", order.get("tenant_id"), order_id, res.get("errorMessage"))
     return {"status": "failed", "error": res.get("errorMessage", "Ödeme başarısız")}
 
 
@@ -371,9 +361,7 @@ async def purchase_callback(order_id: str) -> dict:
 async def list_purchases(current_user: User = Depends(get_current_user)) -> list[dict]:
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")
-    cursor = _db().mailing_purchases.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).sort("created_at", -1).limit(100)
+    cursor = _db().mailing_purchases.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("created_at", -1).limit(100)
     return await cursor.to_list(100)
 
 
@@ -388,13 +376,13 @@ async def get_credits(current_user: User = Depends(get_current_user)) -> dict:
     # actually "today since 00:00 UTC" (we slice the ISO string to a YYYY-MM-DD
     # date and use $gte). The response field is correctly named `sent_today`;
     # only the local var is renamed for clarity.
-    today_iso = datetime.now(UTC).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    ).isoformat()[:10]
-    sent_today = await db.mailing_sends.count_documents({
-        "tenant_id": current_user.tenant_id,
-        "sent_at": {"$gte": today_iso},
-    })
+    today_iso = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()[:10]
+    sent_today = await db.mailing_sends.count_documents(
+        {
+            "tenant_id": current_user.tenant_id,
+            "sent_at": {"$gte": today_iso},
+        }
+    )
     return {
         "balance": doc.get("balance", 0),
         "lifetime_used": doc.get("lifetime_used", 0),
@@ -409,10 +397,10 @@ from fastapi import Request
 # Map Resend webhook event types to our internal status fields
 _EVENT_MAP = {
     "email.delivered": ("delivered_at", "delivered"),
-    "email.opened":    ("opened_at",    "opened"),
-    "email.clicked":   ("clicked_at",   "clicked"),
-    "email.bounced":   ("bounced_at",   "bounced"),
-    "email.complained":("complained_at","complained"),
+    "email.opened": ("opened_at", "opened"),
+    "email.clicked": ("clicked_at", "clicked"),
+    "email.bounced": ("bounced_at", "bounced"),
+    "email.complained": ("complained_at", "complained"),
 }
 
 
@@ -443,6 +431,7 @@ async def resend_webhook(request: Request) -> dict:
         import base64 as _b64
         import hashlib as _hashlib
         import hmac as _hmac
+
         msg_id = request.headers.get("svix-id") or ""
         msg_ts = request.headers.get("svix-timestamp") or ""
         msg_sig = request.headers.get("svix-signature") or ""
@@ -451,6 +440,7 @@ async def resend_webhook(request: Request) -> dict:
         # Reject stale messages (>5 min skew) to block replay attacks
         try:
             import time as _time
+
             if abs(int(_time.time()) - int(msg_ts)) > 300:
                 raise HTTPException(status_code=401, detail="Timestamp out of tolerance")
         except (ValueError, TypeError):
@@ -478,6 +468,7 @@ async def resend_webhook(request: Request) -> dict:
             raise HTTPException(status_code=401, detail="Invalid signature")
     try:
         import json as _json
+
         payload = _json.loads(raw or b"{}")
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
@@ -492,21 +483,14 @@ async def resend_webhook(request: Request) -> dict:
 
     # ── Event-level dedup: ignore duplicate webhook deliveries ──
     # Use svix-id header if present, else synthesize a stable id from payload.
-    evt_id = (
-        request.headers.get("svix-id")
-        or data.get("created_at")
-        or payload.get("created_at")
-        or ""
-    )
+    evt_id = request.headers.get("svix-id") or data.get("created_at") or payload.get("created_at") or ""
     dedup_key = f"{email_id}:{evt_type}:{evt_id}"
     try:
         await db.mailing_webhook_events.create_index("dedup_key", unique=True, name="uniq_webhook_dedup")
     except Exception:
         pass
     try:
-        await db.mailing_webhook_events.insert_one(
-            {"dedup_key": dedup_key, "received_at": _now_iso(), "type": evt_type, "email_id": email_id}
-        )
+        await db.mailing_webhook_events.insert_one({"dedup_key": dedup_key, "received_at": _now_iso(), "type": evt_type, "email_id": email_id})
     except Exception:
         # Duplicate delivery — already processed
         return {"ok": True, "duplicate": True}
@@ -546,11 +530,11 @@ async def mailing_stats(current_user: User = Depends(get_current_user)) -> dict:
     db = _db()
     since = (datetime.now(UTC) - timedelta(days=90)).isoformat()
     base = {"tenant_id": current_user.tenant_id, "sent_at": {"$gte": since}}
-    sent     = await db.mailing_sends.count_documents({**base, "status": "sent"})
-    delivered= await db.mailing_sends.count_documents({**base, "delivered_at": {"$exists": True}})
-    opened   = await db.mailing_sends.count_documents({**base, "opened_at":    {"$exists": True}})
-    clicked  = await db.mailing_sends.count_documents({**base, "clicked_at":   {"$exists": True}})
-    bounced  = await db.mailing_sends.count_documents({**base, "bounced_at":   {"$exists": True}})
+    sent = await db.mailing_sends.count_documents({**base, "status": "sent"})
+    delivered = await db.mailing_sends.count_documents({**base, "delivered_at": {"$exists": True}})
+    opened = await db.mailing_sends.count_documents({**base, "opened_at": {"$exists": True}})
+    clicked = await db.mailing_sends.count_documents({**base, "clicked_at": {"$exists": True}})
+    bounced = await db.mailing_sends.count_documents({**base, "bounced_at": {"$exists": True}})
 
     def _rate(n: int, d: int) -> float:
         return round((n / d) * 100, 1) if d else 0.0
@@ -563,9 +547,9 @@ async def mailing_stats(current_user: User = Depends(get_current_user)) -> dict:
         "clicked": clicked,
         "bounced": bounced,
         "delivery_rate": _rate(delivered, sent),
-        "open_rate":     _rate(opened, delivered or sent),
-        "click_rate":    _rate(clicked, opened or delivered or sent),
-        "bounce_rate":   _rate(bounced, sent),
+        "open_rate": _rate(opened, delivered or sent),
+        "click_rate": _rate(clicked, opened or delivered or sent),
+        "bounce_rate": _rate(bounced, sent),
         "provider": (os.environ.get("MAIL_PROVIDER") or "resend").lower(),
     }
 
@@ -575,14 +559,14 @@ async def mailing_stats(current_user: User = Depends(get_current_user)) -> dict:
 async def list_templates(current_user: User = Depends(get_current_user)) -> list[dict]:
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")
-    cursor = _db().mailing_templates.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).sort("updated_at", -1).limit(200)
+    cursor = _db().mailing_templates.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("updated_at", -1).limit(200)
     return await cursor.to_list(200)
 
 
 @router.post("/templates")
-async def create_template(payload: TemplateIn, current_user: User = Depends(get_current_user),
+async def create_template(
+    payload: TemplateIn,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ) -> dict:
     if not current_user.tenant_id:
@@ -620,14 +604,14 @@ async def update_template(
 
 
 @router.delete("/templates/{template_id}")
-async def delete_template(template_id: str, current_user: User = Depends(get_current_user),
+async def delete_template(
+    template_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v96 DW
 ) -> dict:
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")
-    res = await _db().mailing_templates.delete_one(
-        {"id": template_id, "tenant_id": current_user.tenant_id}
-    )
+    res = await _db().mailing_templates.delete_one({"id": template_id, "tenant_id": current_user.tenant_id})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Şablon bulunamadı")
     return {"success": True}
@@ -679,11 +663,13 @@ async def _enumerate_recipients(tenant_id: str, search: str | None = None) -> li
         email = _extract_guest_email(g)
         if not email:
             continue
-        out.append({
-            "id": g.get("id") or g.get("guest_id") or email,
-            "name": _guest_display_name(g),
-            "email": email,
-        })
+        out.append(
+            {
+                "id": g.get("id") or g.get("guest_id") or email,
+                "name": _guest_display_name(g),
+                "email": email,
+            }
+        )
     return out
 
 
@@ -719,24 +705,18 @@ async def quick_recipients(
     today = datetime.now(UTC).date().isoformat()
 
     if filter_type == "today_in":
-        bq = {"tenant_id": current_user.tenant_id,
-              "check_in": {"$regex": f"^{today}"}}
+        bq = {"tenant_id": current_user.tenant_id, "check_in": {"$regex": f"^{today}"}}
     elif filter_type == "today_out":
-        bq = {"tenant_id": current_user.tenant_id,
-              "check_out": {"$regex": f"^{today}"}}
+        bq = {"tenant_id": current_user.tenant_id, "check_out": {"$regex": f"^{today}"}}
     else:  # in_house
-        bq = {"tenant_id": current_user.tenant_id,
-              "check_in": {"$lte": today + "T23:59:59"},
-              "check_out": {"$gt": today}}
+        bq = {"tenant_id": current_user.tenant_id, "check_in": {"$lte": today + "T23:59:59"}, "check_out": {"$gt": today}}
 
     bookings = await db.bookings.find(bq, {"_id": 0, "guest_id": 1, "guest_name": 1}).limit(RECIPIENT_FETCH_LIMIT).to_list(RECIPIENT_FETCH_LIMIT)
     guest_ids = list({b.get("guest_id") for b in bookings if b.get("guest_id")})
     if not guest_ids:
         return {"filter_type": filter_type, "count": 0, "recipients": []}
 
-    guests = await db.guests.find(
-        {"id": {"$in": guest_ids}, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).to_list(len(guest_ids))
+    guests = await db.guests.find({"id": {"$in": guest_ids}, "tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(len(guest_ids))
     by_id = {g["id"]: g for g in guests if g.get("id")}
 
     out: list[dict] = []
@@ -752,11 +732,13 @@ async def quick_recipients(
         if not email:
             continue
         seen.add(gid)
-        out.append({
-            "id": gid,
-            "name": _guest_display_name(g) or b.get("guest_name") or "Misafir",
-            "email": email,
-        })
+        out.append(
+            {
+                "id": gid,
+                "name": _guest_display_name(g) or b.get("guest_name") or "Misafir",
+                "email": email,
+            }
+        )
     return {"filter_type": filter_type, "count": len(out), "recipients": out}
 
 
@@ -766,24 +748,24 @@ async def list_automations(current_user: User = Depends(get_current_user)) -> di
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")
     db = _db()
-    docs = await db.mailing_automations.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).to_list(50)
+    docs = await db.mailing_automations.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(50)
     by_type = {d["trigger_type"]: d for d in docs}
     out = []
     for trig, meta in AUTOMATION_TRIGGERS.items():
         existing = by_type.get(trig, {})
-        out.append({
-            "trigger_type": trig,
-            "label": meta["label"],
-            "description": meta["description"],
-            "default_offset_days": meta["default_offset_days"],
-            "enabled": bool(existing.get("enabled", False)),
-            "template_id": existing.get("template_id"),
-            "offset_days": existing.get("offset_days", meta["default_offset_days"]),
-            "last_run_at": existing.get("last_run_at"),
-            "last_sent_count": existing.get("last_sent_count", 0),
-        })
+        out.append(
+            {
+                "trigger_type": trig,
+                "label": meta["label"],
+                "description": meta["description"],
+                "default_offset_days": meta["default_offset_days"],
+                "enabled": bool(existing.get("enabled", False)),
+                "template_id": existing.get("template_id"),
+                "offset_days": existing.get("offset_days", meta["default_offset_days"]),
+                "last_run_at": existing.get("last_run_at"),
+                "last_sent_count": existing.get("last_sent_count", 0),
+            }
+        )
     return {"automations": out}
 
 
@@ -802,9 +784,7 @@ async def update_automation(
     if payload.enabled and not payload.template_id:
         raise HTTPException(status_code=400, detail="Aktif etmek için bir şablon seçin")
     if payload.template_id:
-        tpl = await db.mailing_templates.find_one(
-            {"id": payload.template_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-        )
+        tpl = await db.mailing_templates.find_one({"id": payload.template_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
         if not tpl:
             raise HTTPException(status_code=404, detail="Şablon bulunamadı")
     update = {
@@ -812,13 +792,13 @@ async def update_automation(
         "trigger_type": trigger_type,
         "enabled": payload.enabled,
         "template_id": payload.template_id,
-        "offset_days": payload.offset_days if payload.offset_days is not None
-        else AUTOMATION_TRIGGERS[trigger_type]["default_offset_days"],
+        "offset_days": payload.offset_days if payload.offset_days is not None else AUTOMATION_TRIGGERS[trigger_type]["default_offset_days"],
         "updated_at": _now_iso(),
     }
     await db.mailing_automations.update_one(
         {"tenant_id": current_user.tenant_id, "trigger_type": trigger_type},
-        {"$set": update}, upsert=True,
+        {"$set": update},
+        upsert=True,
     )
     return {"success": True, **update}
 
@@ -828,9 +808,7 @@ async def update_automation(
 async def list_campaigns(current_user: User = Depends(get_current_user)) -> list[dict]:
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")
-    cursor = _db().mailing_campaigns.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).sort("created_at", -1).limit(200)
+    cursor = _db().mailing_campaigns.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("created_at", -1).limit(200)
     return await cursor.to_list(200)
 
 
@@ -847,14 +825,13 @@ def _personalize(html: str, subject: str, recipient_name: str, hotel_name: str) 
     # Body cells are HTML-escaped (link/script/img injection blocked).
     # Subject cells have CR/LF/NUL stripped (header-injection blocked).
     from core.mailing_safe import safe_html_value, safe_subject_value
+
     name_html = safe_html_value(recipient_name)
     hotel_html = safe_html_value(hotel_name)
     name_subj = safe_subject_value(recipient_name)
     hotel_subj = safe_subject_value(hotel_name)
-    body_repl = {"{{name}}": name_html, "{{hotel}}": hotel_html,
-                 "{{misafir}}": name_html, "{{otel}}": hotel_html}
-    subj_repl = {"{{name}}": name_subj, "{{hotel}}": hotel_subj,
-                 "{{misafir}}": name_subj, "{{otel}}": hotel_subj}
+    body_repl = {"{{name}}": name_html, "{{hotel}}": hotel_html, "{{misafir}}": name_html, "{{otel}}": hotel_html}
+    subj_repl = {"{{name}}": name_subj, "{{hotel}}": hotel_subj, "{{misafir}}": name_subj, "{{otel}}": hotel_subj}
     for k, v in body_repl.items():
         html = html.replace(k, v)
     for k, v in subj_repl.items():
@@ -877,9 +854,7 @@ async def create_and_send_campaign(
 
     template = None
     if payload.template_id:
-        template = await db.mailing_templates.find_one(
-            {"id": payload.template_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-        )
+        template = await db.mailing_templates.find_one({"id": payload.template_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
         if not template:
             raise HTTPException(status_code=404, detail="Şablon bulunamadı")
     subject, html = _resolve_campaign_content(payload, template)
@@ -930,25 +905,25 @@ async def create_and_send_campaign(
     failed = 0
     for r in recipients:
         psubj, phtml = _personalize(html, subject, r["name"], hotel_name)
-        result = await send_email(
-            to=r["email"], subject=psubj, html=phtml, reply_to=reply_to
-        )
+        result = await send_email(to=r["email"], subject=psubj, html=phtml, reply_to=reply_to)
         ok = bool(result.get("sent"))
         if ok:
             sent += 1
         else:
             failed += 1
-        await db.mailing_sends.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": current_user.tenant_id,
-            "campaign_id": campaign_id,
-            "recipient_email": r["email"],
-            "recipient_id": r["id"],
-            "status": "sent" if ok else "failed",
-            "provider_id": result.get("id"),
-            "error": result.get("error"),
-            "sent_at": _now_iso(),
-        })
+        await db.mailing_sends.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": current_user.tenant_id,
+                "campaign_id": campaign_id,
+                "recipient_email": r["email"],
+                "recipient_id": r["id"],
+                "status": "sent" if ok else "failed",
+                "provider_id": result.get("id"),
+                "error": result.get("error"),
+                "sent_at": _now_iso(),
+            }
+        )
 
     # ── Refund failed sends ─────────────────────────────────────────
     if failed:
@@ -959,12 +934,14 @@ async def create_and_send_campaign(
 
     await db.mailing_campaigns.update_one(
         {"id": campaign_id},
-        {"$set": {
-            "status": "completed",
-            "sent_count": sent,
-            "failed_count": failed,
-            "completed_at": _now_iso(),
-        }},
+        {
+            "$set": {
+                "status": "completed",
+                "sent_count": sent,
+                "failed_count": failed,
+                "completed_at": _now_iso(),
+            }
+        },
     )
 
     return {

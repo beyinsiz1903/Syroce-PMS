@@ -30,6 +30,7 @@ This module provides two narrow sanitizers:
 - `safe_subject_value(v)` — strips CR / LF / NUL / other C0 controls so
   the subject can never break the header line.
 """
+
 from __future__ import annotations
 
 import html as _html

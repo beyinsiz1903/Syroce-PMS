@@ -4,6 +4,7 @@ Domain Router: Online Check-in & Pre-Arrival
 Extracted from legacy_routes.py — online check-in submission,
 upsell acceptance, pre-arrival communications.
 """
+
 import base64
 import binascii
 import logging
@@ -35,9 +36,7 @@ router = APIRouter(prefix="/api", tags=["checkin-domain"])
 _SIG_SVG_MAX_BYTES = 256 * 1024  # 256 KiB is plenty for a stroke-only SVG
 _SIG_SCRIPT_RE = re.compile(r"<\s*script\b[^>]*>.*?<\s*/\s*script\s*>", re.IGNORECASE | re.DOTALL)
 _SIG_OPEN_SCRIPT_RE = re.compile(r"<\s*script\b[^>]*/?\s*>", re.IGNORECASE)
-_SIG_FOREIGN_OBJECT_RE = re.compile(
-    r"<\s*foreignObject\b[^>]*>.*?<\s*/\s*foreignObject\s*>", re.IGNORECASE | re.DOTALL
-)
+_SIG_FOREIGN_OBJECT_RE = re.compile(r"<\s*foreignObject\b[^>]*>.*?<\s*/\s*foreignObject\s*>", re.IGNORECASE | re.DOTALL)
 _SIG_EVENT_HANDLER_RE = re.compile(r"\son[a-z]+\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE)
 _SIG_JS_URI_RE = re.compile(r"(?:href|xlink:href)\s*=\s*([\"'])\s*javascript:[^\"']*\1", re.IGNORECASE)
 
@@ -76,24 +75,22 @@ def _allow_frontdesk_or_guest(current_user: User = Depends(get_current_user)) ->
     allowed.add("guest_app")
     if role not in allowed:
         from core.security import _is_super_admin
+
         if not _is_super_admin(current_user):
             raise HTTPException(status_code=403, detail="Online check-in yetkisi yok")
     return current_user
 
 
-async def _assert_booking_accessible(
-    booking_id: str, current_user: User
-) -> dict:
+async def _assert_booking_accessible(booking_id: str, current_user: User) -> dict:
     """Resolve a booking and enforce ownership (guest_app sees only own booking)."""
-    booking = await db.bookings.find_one(
-        {"id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
     role = getattr(current_user.role, "value", str(current_user.role))
     if role == "guest_app":
         from security.encrypted_lookup import build_guest_pii_query
+
         guest_doc = await db.guests.find_one(
             {"tenant_id": current_user.tenant_id, **build_guest_pii_query("email", current_user.email)},
             {"_id": 0, "id": 1},
@@ -204,6 +201,7 @@ async def submit_online_checkin(
         if ci_raw:
             try:
                 from zoneinfo import ZoneInfo
+
                 tz = ZoneInfo("Europe/Istanbul")
             except Exception:
                 tz = None
@@ -262,15 +260,17 @@ async def submit_online_checkin(
             image_bytes=raw,
             field_label="Kimlik fotografi",
         )
-        await db.online_checkin_id_photos.insert_one({
-            **stored.to_dict(),
-            "guest_id": booking.get("guest_id"),
-            "uploaded_by": current_user.id,
-            "uploaded_by_role": role,
-            "uploaded_at": datetime.now(UTC).isoformat(),
-            "claimed": True,
-            "source": "legacy_inline_base64",
-        })
+        await db.online_checkin_id_photos.insert_one(
+            {
+                **stored.to_dict(),
+                "guest_id": booking.get("guest_id"),
+                "uploaded_by": current_user.id,
+                "uploaded_by_role": role,
+                "uploaded_at": datetime.now(UTC).isoformat(),
+                "claimed": True,
+                "source": "legacy_inline_base64",
+            }
+        )
         id_photo_meta = {
             **stored.to_dict(),
             "source": "legacy_inline_base64",
@@ -309,10 +309,7 @@ async def submit_online_checkin(
         "id_photo_uploaded": id_photo_meta is not None,
         "signature_text": (request.signature_text or "").strip() or None,
         "signature_svg": sanitized_svg,
-        "signature_method": (
-            "drawn" if sanitized_svg
-            else ("typed" if (request.signature_text or "").strip() else None)
-        ),
+        "signature_method": ("drawn" if sanitized_svg else ("typed" if (request.signature_text or "").strip() else None)),
         "signature_consent": bool(request.signature_consent),
         "signed_at": datetime.now(UTC).isoformat() if request.signature_consent else None,
         "status": "pending",
@@ -342,33 +339,35 @@ async def submit_online_checkin(
     )
 
     upsell_offers = []
-    current_room = await db.rooms.find_one(
-        {"id": booking["room_id"], "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    current_room = await db.rooms.find_one({"id": booking["room_id"], "tenant_id": current_user.tenant_id}, {"_id": 0})
     if current_room and current_room["room_type"] == "Standard":
-        upsell_offers.append({
-            "id": str(uuid.uuid4()),
-            "type": "room_upgrade",
-            "title": "Deluxe Oda Upgrade",
-            "description": "Konaklama deneyiminizi Deluxe odamiza yukseltin! Daha genis alan, daha iyi manzara.",
-            "original_price": 100.0,
-            "discounted_price": 75.0,
-            "savings": 25.0,
-        })
+        upsell_offers.append(
+            {
+                "id": str(uuid.uuid4()),
+                "type": "room_upgrade",
+                "title": "Deluxe Oda Upgrade",
+                "description": "Konaklama deneyiminizi Deluxe odamiza yukseltin! Daha genis alan, daha iyi manzara.",
+                "original_price": 100.0,
+                "discounted_price": 75.0,
+                "savings": 25.0,
+            }
+        )
 
     if request.estimated_arrival_time:
         try:
             arrival_hour = int(request.estimated_arrival_time.split(":")[0])
             if arrival_hour < 14:
-                upsell_offers.append({
-                    "id": str(uuid.uuid4()),
-                    "type": "early_checkin",
-                    "title": "Erken Check-in Garantisi",
-                    "description": f"Odaniz {request.estimated_arrival_time} saatinde hazir olacak.",
-                    "original_price": 50.0,
-                    "discounted_price": 35.0,
-                    "savings": 15.0,
-                })
+                upsell_offers.append(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "type": "early_checkin",
+                        "title": "Erken Check-in Garantisi",
+                        "description": f"Odaniz {request.estimated_arrival_time} saatinde hazir olacak.",
+                        "original_price": 50.0,
+                        "discounted_price": 35.0,
+                        "savings": 15.0,
+                    }
+                )
         except Exception:
             pass
 
@@ -407,11 +406,7 @@ async def list_online_checkin_id_photos(
     guest_id: str | None = Query(default=None),
     claimed: bool | None = Query(
         default=None,
-        description=(
-            "true → yalnızca check-in formuna bağlanmış kayıtlar; "
-            "false → yetim (henüz claim edilmemiş) yüklemeler; "
-            "atlandığında her ikisi de döner."
-        ),
+        description=("true → yalnızca check-in formuna bağlanmış kayıtlar; false → yetim (henüz claim edilmemiş) yüklemeler; atlandığında her ikisi de döner."),
     ),
     uploaded_after: str | None = Query(
         default=None,
@@ -452,13 +447,7 @@ async def list_online_checkin_id_photos(
         query["uploaded_at"] = ts
 
     retention_days = await _id_photo_retention_days(current_user.tenant_id)
-    cursor = (
-        db.online_checkin_id_photos
-        .find(query, {"_id": 0})
-        .sort("uploaded_at", -1)
-        .skip(int(offset))
-        .limit(int(limit))
-    )
+    cursor = db.online_checkin_id_photos.find(query, {"_id": 0}).sort("uploaded_at", -1).skip(int(offset)).limit(int(limit))
     docs = await cursor.to_list(int(limit))
     total = await db.online_checkin_id_photos.count_documents(query)
 
@@ -478,14 +467,10 @@ async def list_online_checkin_id_photos(
 
 
 @router.get("/checkin/online/{booking_id}")
-async def get_online_checkin_status(
-    booking_id: str, current_user: User = Depends(get_current_user)
-):
+async def get_online_checkin_status(booking_id: str, current_user: User = Depends(get_current_user)):
     """Online check-in durumunu getir"""
     await _assert_booking_accessible(booking_id, current_user)
-    checkin = await db.online_checkins.find_one(
-        {"booking_id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    checkin = await db.online_checkins.find_one({"booking_id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not checkin:
         return {"completed": False, "checkin": None}
     # Defensive: even though new records do not persist inline photo bytes any
@@ -505,10 +490,7 @@ async def download_online_checkin_id_photo(
     checkin_id: str,
     reason: str = Query(
         default="",
-        description=(
-            "Görüntüleme gerekçesi (KVKK amaç sınırlandırması). "
-            "Önceden tanımlı seçenek veya serbest metin olabilir; boş gönderilemez."
-        ),
+        description=("Görüntüleme gerekçesi (KVKK amaç sınırlandırması). Önceden tanımlı seçenek veya serbest metin olabilir; boş gönderilemez."),
         max_length=500,
     ),
     current_user: User = Depends(get_current_user),
@@ -540,9 +522,7 @@ async def download_online_checkin_id_photo(
             detail="Gerekçe metni çok uzun (en fazla 500 karakter)",
         )
 
-    checkin = await db.online_checkins.find_one(
-        {"id": checkin_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    checkin = await db.online_checkins.find_one({"id": checkin_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not checkin:
         raise HTTPException(status_code=404, detail="Online check-in bulunamadi")
 
@@ -568,11 +548,7 @@ async def download_online_checkin_id_photo(
             action="view_online_checkin_id_photo",
             entity_type="online_checkin",
             entity_id=checkin_id,
-            details=(
-                f"Resepsiyon kimlik fotoğrafı görüntüleme: kullanıcı={current_user.id} "
-                f"booking_id={checkin['booking_id']} photo_id={meta.get('photo_id')} "
-                f"gerekçe={reason_clean}"
-            ),
+            details=(f"Resepsiyon kimlik fotoğrafı görüntüleme: kullanıcı={current_user.id} booking_id={checkin['booking_id']} photo_id={meta.get('photo_id')} gerekçe={reason_clean}"),
             after_value={
                 "booking_id": checkin["booking_id"],
                 "photo_id": meta.get("photo_id"),
@@ -587,8 +563,7 @@ async def download_online_checkin_id_photo(
         # ana akış (resepsiyon iş akışı) bozulmamalı. Yine de gözlemlenebilirlik
         # için yapısal log düşelim ki audit pipeline arızası farkedilebilsin.
         logger.warning(
-            "audit_log_failed for view_online_checkin_id_photo "
-            "tenant=%s user=%s checkin=%s error=%s",
+            "audit_log_failed for view_online_checkin_id_photo tenant=%s user=%s checkin=%s error=%s",
             current_user.tenant_id,
             current_user.id,
             checkin_id,
@@ -600,9 +575,7 @@ async def download_online_checkin_id_photo(
         media_type=meta.get("content_type") or "application/octet-stream",
         headers={
             "Cache-Control": "private, no-store, max-age=0",
-            "Content-Disposition": (
-                f'inline; filename="id_photo_{checkin_id}{meta.get("extension") or ""}"'
-            ),
+            "Content-Disposition": (f'inline; filename="id_photo_{checkin_id}{meta.get("extension") or ""}"'),
         },
     )
 
@@ -618,6 +591,7 @@ async def _id_photo_retention_days(tenant_id: str) -> int:
     from domains.guest.checkin_id_photo_cleanup import (
         resolve_tenant_retention_days,
     )
+
     return await resolve_tenant_retention_days(db, tenant_id)
 
 
@@ -627,6 +601,7 @@ def _expires_at_iso(uploaded_at: str | None, retention_days: int) -> str | None:
         return None
     try:
         from datetime import timedelta
+
         ts = uploaded_at if isinstance(uploaded_at, str) else uploaded_at.isoformat()
         dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
         return (dt + timedelta(days=retention_days)).isoformat()
@@ -661,10 +636,7 @@ async def manual_delete_online_checkin_id_photo(
     photo_id: str,
     reason: str = Query(
         default="",
-        description=(
-            "Manuel silme gerekçesi (KVKK / iç denetim). "
-            "Boş veya yalnızca boşluk olamaz; en fazla 500 karakter."
-        ),
+        description=("Manuel silme gerekçesi (KVKK / iç denetim). Boş veya yalnızca boşluk olamaz; en fazla 500 karakter."),
         max_length=500,
     ),
     current_user: User = Depends(get_current_user),
@@ -694,6 +666,7 @@ async def manual_delete_online_checkin_id_photo(
         )
 
     from domains.guest.checkin_id_photo_cleanup import _delete_one
+
     deleted = await _delete_one(
         db=db,
         doc=doc,
@@ -769,6 +742,7 @@ async def bulk_delete_online_checkin_id_photos(
     # bile bellek baskısı yaratmaz; yine de cursor üzerinden işlediğimiz
     # için tek seferde tüm dokümanlar belleğe yüklenmez.
     from domains.guest.checkin_id_photo_cleanup import _delete_one
+
     cursor = db.online_checkin_id_photos.find(query, {"_id": 0})
     matched = 0
     deleted_count = 0
@@ -912,10 +886,7 @@ async def update_id_photo_retention_setting(
         if value < MIN_RETENTION_DAYS or value > MAX_RETENTION_DAYS:
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    f"`retention_days` {MIN_RETENTION_DAYS}–{MAX_RETENTION_DAYS} "
-                    "gün aralığında olmalı."
-                ),
+                detail=(f"`retention_days` {MIN_RETENTION_DAYS}–{MAX_RETENTION_DAYS} gün aralığında olmalı."),
             )
         clamped = clamp_retention_days(value)
         await db.tenant_settings.update_one(
@@ -940,9 +911,7 @@ async def update_id_photo_retention_setting(
                 action="update_id_photo_retention",
                 entity_type="tenant_settings",
                 entity_id=current_user.tenant_id,
-                details=(
-                    f"id_photo_retention_days set to {clamped} (input={value})"
-                ),
+                details=(f"id_photo_retention_days set to {clamped} (input={value})"),
                 after_value={"id_photo_retention_days": clamped},
                 db=db,
             )
@@ -957,16 +926,15 @@ async def update_id_photo_retention_setting(
 
 @router.post("/upsell/accept")
 async def accept_upsell_offer(
-    data: dict, current_user: User = Depends(get_current_user),
+    data: dict,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Upsell teklifini kabul et"""
     offer_id = data.get("offer_id")
     action = data.get("action")
 
-    offer = await db.upsell_offers.find_one(
-        {"id": offer_id, "tenant_id": current_user.tenant_id}
-    )
+    offer = await db.upsell_offers.find_one({"id": offer_id, "tenant_id": current_user.tenant_id})
     if not offer:
         raise HTTPException(status_code=404, detail="Teklif bulunamadi")
 
@@ -988,16 +956,14 @@ async def accept_upsell_offer(
             "voided": False,
         }
 
-        folio = await db.folios.find_one(
-            {"booking_id": booking_id, "folio_type": "guest"}, {"_id": 0}
-        )
+        folio = await db.folios.find_one({"booking_id": booking_id, "folio_type": "guest"}, {"_id": 0})
         if folio:
             charge["folio_id"] = folio["id"]
             await db.folio_charges.insert_one(charge)
 
         return {
             "success": True,
-            "message": f'{offer.get("title")} basariyla eklendi!',
+            "message": f"{offer.get('title')} basariyla eklendi!",
             "charge_added": True,
             "amount": charge["amount"],
         }
@@ -1006,12 +972,8 @@ async def accept_upsell_offer(
 
 
 @router.get("/pre-arrival/communications/{booking_id}")
-async def get_pre_arrival_communications(
-    booking_id: str, current_user: User = Depends(get_current_user)
-):
+async def get_pre_arrival_communications(booking_id: str, current_user: User = Depends(get_current_user)):
     """Pre-arrival iletisim gecmisi"""
-    communications = await db.pre_arrival_communications.find(
-        {"booking_id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).to_list(100)
+    communications = await db.pre_arrival_communications.find({"booking_id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(100)
 
     return {"booking_id": booking_id, "communications": communications, "total": len(communications)}

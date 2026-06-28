@@ -18,6 +18,7 @@ Two cleanup surfaces share this classification and MUST never drift apart:
 Keep this module import-side-effect free (no logging config, no DB import) so it
 is safe to import from both a router and a standalone script.
 """
+
 from __future__ import annotations
 
 from datetime import datetime

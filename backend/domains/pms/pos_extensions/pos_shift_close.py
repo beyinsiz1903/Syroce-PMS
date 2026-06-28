@@ -5,6 +5,7 @@ Mevcut z-report endpoint'i bozulmaz. Bu modül kasiyer-bazlı vardiya
 ekler. Aynı kasiyer için aynı outlet'te aktif vardiya unique compound
 guard ile engellenir.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -137,9 +138,7 @@ async def get_open_shift(
 
 @router.post("/{shift_id}/close")
 async def close_shift(shift_id: str, body: ShiftClose, current_user: User = Depends(get_current_user)):
-    shift = await db.pos_shifts.find_one(
-        {"id": shift_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    shift = await db.pos_shifts.find_one({"id": shift_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not shift:
         raise HTTPException(status_code=404, detail="Shift not found")
     if shift.get("status") != "open":
@@ -150,9 +149,7 @@ async def close_shift(shift_id: str, body: ShiftClose, current_user: User = Depe
     counted = body.counted_cash_total
     breakdown_total: float | None = None
     if body.counted_breakdown:
-        breakdown_total = round(
-            sum(c.denomination * c.count for c in body.counted_breakdown), 2
-        )
+        breakdown_total = round(sum(c.denomination * c.count for c in body.counted_breakdown), 2)
         if counted is None:
             counted = breakdown_total
     if counted is None:
@@ -180,15 +177,17 @@ async def close_shift(shift_id: str, body: ShiftClose, current_user: User = Depe
     await db.pos_shifts.update_one({"id": shift_id, "tenant_id": current_user.tenant_id}, {"$set": update})
 
     if body.counted_breakdown:
-        await db.pos_shift_cash_counts.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": current_user.tenant_id,
-            "shift_id": shift_id,
-            "breakdown": [c.model_dump() for c in body.counted_breakdown],
-            "total": breakdown_total,
-            "created_at": _now(),
-            "created_by": current_user.id,
-        })
+        await db.pos_shift_cash_counts.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": current_user.tenant_id,
+                "shift_id": shift_id,
+                "breakdown": [c.model_dump() for c in body.counted_breakdown],
+                "total": breakdown_total,
+                "created_at": _now(),
+                "created_by": current_user.id,
+            }
+        )
 
     closed = {**shift, **update}
     closed.pop("_id", None)
@@ -213,12 +212,8 @@ async def list_shifts(
 
 @router.get("/{shift_id}")
 async def get_shift(shift_id: str, current_user: User = Depends(get_current_user)):
-    shift = await db.pos_shifts.find_one(
-        {"id": shift_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    shift = await db.pos_shifts.find_one({"id": shift_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not shift:
         raise HTTPException(status_code=404, detail="Shift not found")
-    breakdowns = await db.pos_shift_cash_counts.find(
-        {"tenant_id": current_user.tenant_id, "shift_id": shift_id}, {"_id": 0}
-    ).sort("created_at", -1).to_list(10)
+    breakdowns = await db.pos_shift_cash_counts.find({"tenant_id": current_user.tenant_id, "shift_id": shift_id}, {"_id": 0}).sort("created_at", -1).to_list(10)
     return {"shift": shift, "cash_counts": breakdowns}

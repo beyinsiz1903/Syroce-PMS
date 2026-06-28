@@ -47,6 +47,7 @@ Operasyonel metrik
 Her çalıştırma ``feedback_migration_runs`` koleksiyonuna PII'siz bir özet doc
 yazar (mod, kaynak başına bulunan/yazılan sayıları, tenant kapsamı).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -63,9 +64,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from core.tenant_db import get_system_db  # noqa: E402
 from modules.guest_journey import feedback_reporting_service as fr  # noqa: E402
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("migrate_feedback_unified")
 
 UNIFIED_COLLECTION = "feedback_entries"
@@ -141,9 +140,7 @@ async def _migrate_tenant(db, tenant_id: str, apply: bool) -> dict:
                 else:
                     skipped += 1
             else:
-                exists = await db[UNIFIED_COLLECTION].find_one(
-                    {"dedup_key": key}, {"_id": 1}
-                )
+                exists = await db[UNIFIED_COLLECTION].find_one({"dedup_key": key}, {"_id": 1})
                 if exists:
                     skipped += 1
                 else:
@@ -156,7 +153,11 @@ async def _migrate_tenant(db, tenant_id: str, apply: bool) -> dict:
         }
         logger.info(
             "tenant=%s source=%s found=%d written=%d skipped=%d (mode=%s)",
-            tenant_id, source, found, written, skipped,
+            tenant_id,
+            source,
+            found,
+            written,
+            skipped,
             "apply" if apply else "dry-run",
         )
 
@@ -173,7 +174,9 @@ async def _rollback_tenant(db, tenant_id: str, apply: bool) -> int:
         return res.deleted_count
     logger.info(
         "tenant=%s rollback candidate=%d (mode=%s)",
-        tenant_id, count, "apply" if apply else "dry-run",
+        tenant_id,
+        count,
+        "apply" if apply else "dry-run",
     )
     return count
 
@@ -190,13 +193,18 @@ async def _verify(db, tenant_ids: list[str], days: int) -> int:
         if res["match"]:
             logger.info(
                 "parity OK tenant=%s total=%d nps=%s",
-                tid, res["legacy"]["total_responses"], res["legacy"]["nps_score"],
+                tid,
+                res["legacy"]["total_responses"],
+                res["legacy"]["nps_score"],
             )
         else:
             mismatches += 1
             logger.error(
                 "parity MISMATCH tenant=%s diffs=%s legacy=%s unified=%s",
-                tid, res["diffs"], res["legacy"], res["unified"],
+                tid,
+                res["diffs"],
+                res["legacy"],
+                res["unified"],
             )
     if mismatches:
         logger.error("parity KIRMIZI: %d/%d tenant eşleşmedi", mismatches, len(tenant_ids))
@@ -251,9 +259,7 @@ async def run(args: argparse.Namespace) -> int:
 
     for tid in tenant_ids:
         if rollback:
-            summary["tenants"][tid] = {
-                "rollback": await _rollback_tenant(db, tid, apply)
-            }
+            summary["tenants"][tid] = {"rollback": await _rollback_tenant(db, tid, apply)}
         else:
             summary["tenants"][tid] = await _migrate_tenant(db, tid, apply)
 
@@ -269,20 +275,12 @@ async def run(args: argparse.Namespace) -> int:
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(
-        description="Birleşik geri bildirim modeli backfill migration (geri alınabilir, fail-closed)."
-    )
-    p.add_argument("--apply", action="store_true",
-                   help=f"Gerçek yazım/silme yap (varsayılan dry-run; {ALLOW_ENV}=true gerekir).")
-    p.add_argument("--rollback", action="store_true",
-                   help="Migrate edilen feedback_entries kayıtlarını sil (legacy'ye dokunmaz).")
-    p.add_argument("--tenant-id", default=None,
-                   help="Yalnız bu tenant'ı işle (verilmezse tüm tenant'lar).")
-    p.add_argument("--verify", action="store_true",
-                   help="Salt-okunur parity: legacy (nps_surveys) vs kanonik "
-                        "(feedback_entries) NPS skoru birebir mi? Yeşil=0, kırmızı=1.")
-    p.add_argument("--days", type=int, default=30,
-                   help="--verify için NPS penceresi (gün, varsayılan 30).")
+    p = argparse.ArgumentParser(description="Birleşik geri bildirim modeli backfill migration (geri alınabilir, fail-closed).")
+    p.add_argument("--apply", action="store_true", help=f"Gerçek yazım/silme yap (varsayılan dry-run; {ALLOW_ENV}=true gerekir).")
+    p.add_argument("--rollback", action="store_true", help="Migrate edilen feedback_entries kayıtlarını sil (legacy'ye dokunmaz).")
+    p.add_argument("--tenant-id", default=None, help="Yalnız bu tenant'ı işle (verilmezse tüm tenant'lar).")
+    p.add_argument("--verify", action="store_true", help="Salt-okunur parity: legacy (nps_surveys) vs kanonik (feedback_entries) NPS skoru birebir mi? Yeşil=0, kırmızı=1.")
+    p.add_argument("--days", type=int, default=30, help="--verify için NPS penceresi (gün, varsayılan 30).")
     return p.parse_args(argv)
 
 

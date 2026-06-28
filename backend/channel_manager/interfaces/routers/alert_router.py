@@ -1,4 +1,5 @@
 """Alerting system and reliability monitoring endpoints."""
+
 import logging
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -32,6 +33,7 @@ class AlertActionRequest(BaseModel):
 
 
 # ─── Alerts ───────────────────────────────────────────────────────
+
 
 @router.get("/alerts")
 async def list_alerts(
@@ -154,6 +156,7 @@ async def dismiss_alert(
 
 # ─── Reliability ──────────────────────────────────────────────────
 
+
 @router.get("/reliability")
 async def get_all_reliability(
     current_user: User = Depends(get_current_user),
@@ -187,6 +190,7 @@ async def get_property_reliability(
 
 
 # ─── Multi-Property Dashboard ────────────────────────────────────
+
 
 @router.get("/multi-property/dashboard")
 async def get_multi_property_dashboard(

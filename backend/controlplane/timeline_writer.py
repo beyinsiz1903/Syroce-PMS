@@ -7,6 +7,7 @@ the main flow.
 
 Idempotent: (entity_id, stage, source) deduplication via upsert.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -38,6 +39,7 @@ class TimelineWriter:
     def _get_db(self):
         if self._db is None:
             from core.database import db
+
             self._db = db
         return self._db
 
@@ -64,9 +66,7 @@ class TimelineWriter:
 
             # Compute sequence number for this correlation
             db = self._get_db()
-            seq = await db[COLL_TIMELINE].count_documents(
-                {"correlation_id": correlation_id}
-            )
+            seq = await db[COLL_TIMELINE].count_documents({"correlation_id": correlation_id})
 
             doc = {
                 "id": event_id,
@@ -91,7 +91,10 @@ class TimelineWriter:
 
             logger.debug(
                 "Timeline: corr=%s stage=%s status=%s src=%s entity=%s",
-                correlation_id[:8], stage, status, source,
+                correlation_id[:8],
+                stage,
+                status,
+                source,
                 entity_id or external_id or "?",
             )
             return event_id
@@ -99,7 +102,8 @@ class TimelineWriter:
         except Exception:
             logger.warning(
                 "Timeline write failed (non-blocking): stage=%s corr=%s",
-                stage, correlation_id[:8] if correlation_id else "?",
+                stage,
+                correlation_id[:8] if correlation_id else "?",
                 exc_info=True,
             )
             return None
@@ -108,6 +112,7 @@ class TimelineWriter:
 async def ensure_timeline_indexes():
     """Create indexes for the event_timeline collection."""
     from core.database import db
+
     coll = db[COLL_TIMELINE]
     try:
         await coll.create_index(

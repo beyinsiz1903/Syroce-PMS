@@ -6,6 +6,7 @@ Resolves the active HotelRunner connection for a tenant and constructs a
 `HotelRunnerProvider` instance with credentials from the secrets manager
 (falling back to legacy plaintext storage when present).
 """
+
 import logging
 
 from fastapi import HTTPException
@@ -37,9 +38,7 @@ async def get_provider(tenant_id: str):
         )
         if pc:
             pc_creds = pc.get("credentials", {})
-            legacy = await db.hotelrunner_connections.find_one(
-                {"tenant_id": tenant_id}, {"_id": 0, "cached_rooms": 1}
-            )
+            legacy = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id}, {"_id": 0, "cached_rooms": 1})
             conn = {
                 "tenant_id": tenant_id,
                 "hr_id": pc_creds.get("hr_id", ""),
@@ -74,16 +73,14 @@ async def get_provider(tenant_id: str):
             try:
                 existing = None
                 try:
-                    existing = await sm.get_provider_credentials(
-                        tenant_id, "hotelrunner", property_id
-                    )
+                    existing = await sm.get_provider_credentials(tenant_id, "hotelrunner", property_id)
                 except Exception:
                     existing = None
                 if existing and existing.get("token"):
                     logger.warning(
-                        "[HR-CREDS] Vault has token for tenant=%s property=%s but Tier-1 missed; "
-                        "using plaintext fallback transiently (no overwrite).",
-                        tenant_id, property_id,
+                        "[HR-CREDS] Vault has token for tenant=%s property=%s but Tier-1 missed; using plaintext fallback transiently (no overwrite).",
+                        tenant_id,
+                        property_id,
                     )
                 else:
                     await sm.store_provider_credentials(
@@ -95,12 +92,14 @@ async def get_provider(tenant_id: str):
                     )
                     logger.info(
                         "[HR-CREDS] Auto-migrated plaintext token → vault for tenant=%s property=%s",
-                        tenant_id, property_id,
+                        tenant_id,
+                        property_id,
                     )
             except Exception as me:
                 logger.warning(
                     "Using legacy plaintext credentials for HotelRunner tenant=%s — auto-migrate guard failed: %s",
-                    tenant_id, me,
+                    tenant_id,
+                    me,
                 )
         else:
             raise HTTPException(status_code=502, detail="HotelRunner kimlik bilgileri bulunamadi")

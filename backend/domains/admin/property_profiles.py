@@ -85,10 +85,22 @@ PROPERTY_PROFILES: dict[str, dict] = {
         },
         "hidden_nav_groups": ["advanced", "infrastructure", "channels"],
         "hidden_nav_items": [
-            "housekeeping_status", "wake_up_calls", "lost_found", "guest_journey",
-            "operational_events", "service_recovery", "group_bookings", "deposit_tracking",
-            "group_folio", "no_show_analytics", "night_audit", "invoices", "cost_management",
-            "displacement_analysis", "messaging_dashboard", "report_builder",
+            "housekeeping_status",
+            "wake_up_calls",
+            "lost_found",
+            "guest_journey",
+            "operational_events",
+            "service_recovery",
+            "group_bookings",
+            "deposit_tracking",
+            "group_folio",
+            "no_show_analytics",
+            "night_audit",
+            "invoices",
+            "cost_management",
+            "displacement_analysis",
+            "messaging_dashboard",
+            "report_builder",
         ],
         "special_settings": {
             "simplified_checkin": True,
@@ -103,7 +115,6 @@ PROPERTY_PROFILES: dict[str, dict] = {
             "show_kbs_police": False,
         },
     },
-
     PropertyType.VILLA: {
         "name_en": "Villa / Holiday Home",
         "name_tr": "Villa / Tatil Evi",
@@ -156,10 +167,21 @@ PROPERTY_PROFILES: dict[str, dict] = {
         },
         "hidden_nav_groups": ["advanced", "infrastructure", "channels"],
         "hidden_nav_items": [
-            "wake_up_calls", "lost_found", "guest_journey",
-            "operational_events", "service_recovery", "group_bookings", "deposit_tracking",
-            "group_folio", "no_show_analytics", "night_audit", "invoices", "cost_management",
-            "displacement_analysis", "messaging_dashboard", "report_builder",
+            "wake_up_calls",
+            "lost_found",
+            "guest_journey",
+            "operational_events",
+            "service_recovery",
+            "group_bookings",
+            "deposit_tracking",
+            "group_folio",
+            "no_show_analytics",
+            "night_audit",
+            "invoices",
+            "cost_management",
+            "displacement_analysis",
+            "messaging_dashboard",
+            "report_builder",
         ],
         "special_settings": {
             "simplified_checkin": True,
@@ -175,7 +197,6 @@ PROPERTY_PROFILES: dict[str, dict] = {
             "calendar_primary_view": True,
         },
     },
-
     PropertyType.HOSTEL: {
         "name_en": "Hostel / Backpacker",
         "name_tr": "Hostel",
@@ -228,9 +249,14 @@ PROPERTY_PROFILES: dict[str, dict] = {
         },
         "hidden_nav_groups": ["advanced", "infrastructure"],
         "hidden_nav_items": [
-            "guest_journey", "operational_events", "group_bookings",
-            "deposit_tracking", "group_folio", "displacement_analysis",
-            "messaging_dashboard", "report_builder",
+            "guest_journey",
+            "operational_events",
+            "group_bookings",
+            "deposit_tracking",
+            "group_folio",
+            "displacement_analysis",
+            "messaging_dashboard",
+            "report_builder",
         ],
         "special_settings": {
             "simplified_checkin": True,
@@ -246,7 +272,6 @@ PROPERTY_PROFILES: dict[str, dict] = {
             "bed_level_management": True,
         },
     },
-
     PropertyType.MOTEL: {
         "name_en": "Motel / Roadside Inn",
         "name_tr": "Motel",
@@ -299,9 +324,14 @@ PROPERTY_PROFILES: dict[str, dict] = {
         },
         "hidden_nav_groups": ["advanced", "infrastructure"],
         "hidden_nav_items": [
-            "guest_journey", "operational_events", "group_bookings",
-            "deposit_tracking", "group_folio", "displacement_analysis",
-            "messaging_dashboard", "report_builder",
+            "guest_journey",
+            "operational_events",
+            "group_bookings",
+            "deposit_tracking",
+            "group_folio",
+            "displacement_analysis",
+            "messaging_dashboard",
+            "report_builder",
         ],
         "special_settings": {
             "simplified_checkin": True,
@@ -317,7 +347,6 @@ PROPERTY_PROFILES: dict[str, dict] = {
             "hourly_pricing": True,
         },
     },
-
     PropertyType.APART_HOTEL: {
         "name_en": "Apart Hotel / Serviced Apartments",
         "name_tr": "Apart Otel",
@@ -370,8 +399,12 @@ PROPERTY_PROFILES: dict[str, dict] = {
         },
         "hidden_nav_groups": ["advanced", "infrastructure"],
         "hidden_nav_items": [
-            "wake_up_calls", "guest_journey", "operational_events",
-            "group_bookings", "group_folio", "displacement_analysis",
+            "wake_up_calls",
+            "guest_journey",
+            "operational_events",
+            "group_bookings",
+            "group_folio",
+            "displacement_analysis",
             "messaging_dashboard",
         ],
         "special_settings": {
@@ -389,7 +422,6 @@ PROPERTY_PROFILES: dict[str, dict] = {
             "weekly_housekeeping": True,
         },
     },
-
     PropertyType.BOUTIQUE_HOTEL: {
         "name_en": "Boutique Hotel",
         "name_tr": "Butik Otel",
@@ -442,7 +474,9 @@ PROPERTY_PROFILES: dict[str, dict] = {
         },
         "hidden_nav_groups": ["infrastructure"],
         "hidden_nav_items": [
-            "group_bookings", "group_folio", "displacement_analysis",
+            "group_bookings",
+            "group_folio",
+            "displacement_analysis",
         ],
         "special_settings": {
             "simplified_checkin": False,
@@ -458,7 +492,6 @@ PROPERTY_PROFILES: dict[str, dict] = {
             "personalized_welcome": True,
         },
     },
-
     PropertyType.CAMPING: {
         "name_en": "Camping / Glamping",
         "name_tr": "Kamp Alanı / Glamping",
@@ -511,10 +544,21 @@ PROPERTY_PROFILES: dict[str, dict] = {
         },
         "hidden_nav_groups": ["advanced", "infrastructure", "channels"],
         "hidden_nav_items": [
-            "wake_up_calls", "lost_found", "guest_journey",
-            "operational_events", "service_recovery", "group_bookings", "deposit_tracking",
-            "group_folio", "no_show_analytics", "night_audit", "invoices", "cost_management",
-            "displacement_analysis", "messaging_dashboard", "report_builder",
+            "wake_up_calls",
+            "lost_found",
+            "guest_journey",
+            "operational_events",
+            "service_recovery",
+            "group_bookings",
+            "deposit_tracking",
+            "group_folio",
+            "no_show_analytics",
+            "night_audit",
+            "invoices",
+            "cost_management",
+            "displacement_analysis",
+            "messaging_dashboard",
+            "report_builder",
         ],
         "special_settings": {
             "simplified_checkin": True,
@@ -530,7 +574,6 @@ PROPERTY_PROFILES: dict[str, dict] = {
             "seasonal_operation": True,
         },
     },
-
     PropertyType.CITY_HOTEL: {
         "name_en": "City Hotel",
         "name_tr": "Şehir Oteli",
@@ -596,7 +639,6 @@ PROPERTY_PROFILES: dict[str, dict] = {
             "show_kbs_police": True,
         },
     },
-
     PropertyType.BUSINESS_HOTEL: {
         "name_en": "Business / Conference Hotel",
         "name_tr": "İş / Kongre Oteli",
@@ -664,7 +706,6 @@ PROPERTY_PROFILES: dict[str, dict] = {
             "meeting_room_booking": True,
         },
     },
-
     PropertyType.RESORT_SUMMER: {
         "name_en": "Summer / Beach Resort",
         "name_tr": "Yaz / Sahil Oteli",
@@ -734,7 +775,6 @@ PROPERTY_PROFILES: dict[str, dict] = {
             "beach_management": True,
         },
     },
-
     PropertyType.RESORT_WINTER: {
         "name_en": "Winter / Ski Resort",
         "name_tr": "Kış / Kayak Oteli",
@@ -803,7 +843,6 @@ PROPERTY_PROFILES: dict[str, dict] = {
             "ski_pass_integration": True,
         },
     },
-
     PropertyType.RESORT_THERMAL: {
         "name_en": "Thermal / Wellness Resort",
         "name_tr": "Termal / Sağlık Oteli",
@@ -871,7 +910,6 @@ PROPERTY_PROFILES: dict[str, dict] = {
             "medical_tourism": True,
         },
     },
-
     PropertyType.HOTEL_3STAR: {
         "name_en": "3-Star Hotel",
         "name_tr": "3 Yıldızlı Otel",
@@ -924,7 +962,8 @@ PROPERTY_PROFILES: dict[str, dict] = {
         },
         "hidden_nav_groups": ["infrastructure"],
         "hidden_nav_items": [
-            "displacement_analysis", "messaging_dashboard",
+            "displacement_analysis",
+            "messaging_dashboard",
         ],
         "special_settings": {
             "simplified_checkin": False,
@@ -939,7 +978,6 @@ PROPERTY_PROFILES: dict[str, dict] = {
             "show_kbs_police": True,
         },
     },
-
     PropertyType.HOTEL_4STAR: {
         "name_en": "4-Star Hotel",
         "name_tr": "4 Yıldızlı Otel",
@@ -1005,7 +1043,6 @@ PROPERTY_PROFILES: dict[str, dict] = {
             "show_kbs_police": True,
         },
     },
-
     PropertyType.HOTEL_5STAR: {
         "name_en": "5-Star / Luxury Hotel",
         "name_tr": "5 Yıldızlı / Lüks Otel",
@@ -1083,18 +1120,20 @@ def get_property_profile(property_type: str) -> dict | None:
 def get_all_property_types() -> list[dict]:
     result = []
     for key, profile in PROPERTY_PROFILES.items():
-        result.append({
-            "key": key if isinstance(key, str) else key.value,
-            "name_en": profile["name_en"],
-            "name_tr": profile["name_tr"],
-            "icon": profile["icon"],
-            "description_en": profile["description_en"],
-            "description_tr": profile["description_tr"],
-            "room_range": profile["room_range"],
-            "recommended_tier": profile["recommended_tier"],
-            "dashboard_layout": profile["dashboard_layout"],
-            "typical_staff": profile["typical_staff"],
-        })
+        result.append(
+            {
+                "key": key if isinstance(key, str) else key.value,
+                "name_en": profile["name_en"],
+                "name_tr": profile["name_tr"],
+                "icon": profile["icon"],
+                "description_en": profile["description_en"],
+                "description_tr": profile["description_tr"],
+                "room_range": profile["room_range"],
+                "recommended_tier": profile["recommended_tier"],
+                "dashboard_layout": profile["dashboard_layout"],
+                "typical_staff": profile["typical_staff"],
+            }
+        )
     return result
 
 
@@ -1102,12 +1141,14 @@ def get_modules_for_property_type(property_type: str, subscription_tier: str = N
     profile = get_property_profile(property_type)
     if not profile:
         from domains.admin.subscription_models import get_plan_default_modules
+
         return get_plan_default_modules(subscription_tier or "basic")
 
     base_modules = profile["modules"].copy()
 
     if subscription_tier:
         from domains.admin.subscription_models import get_plan_default_modules
+
         tier_modules = get_plan_default_modules(subscription_tier)
         for key, tier_enabled in tier_modules.items():
             if not tier_enabled:

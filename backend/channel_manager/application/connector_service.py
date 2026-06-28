@@ -1,6 +1,7 @@
 """
 Connector Service - Manages connector account lifecycle (CRUD, activation, credential validation).
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -55,8 +56,11 @@ class ConnectorService:
             raise ValueError("A connector for this provider already exists on this property")
 
         await self._audit(
-            tenant_id, property_id, connector.id,
-            AuditAction.CONNECTOR_CREATED, actor_id=actor_id,
+            tenant_id,
+            property_id,
+            connector.id,
+            AuditAction.CONNECTOR_CREATED,
+            actor_id=actor_id,
             metadata={"provider": provider, "display_name": display_name},
         )
         return connector.to_doc()
@@ -145,8 +149,11 @@ class ConnectorService:
         doc["updated_by"] = actor_id
         await self._repo.upsert_connector(doc)
         await self._audit(
-            tenant_id, doc.get("property_id", ""), connector_id,
-            AuditAction.CONNECTOR_ACTIVATED, actor_id=actor_id,
+            tenant_id,
+            doc.get("property_id", ""),
+            connector_id,
+            AuditAction.CONNECTOR_ACTIVATED,
+            actor_id=actor_id,
         )
         return doc
 
@@ -160,8 +167,11 @@ class ConnectorService:
         doc["updated_by"] = actor_id
         await self._repo.upsert_connector(doc)
         await self._audit(
-            tenant_id, doc.get("property_id", ""), connector_id,
-            AuditAction.CONNECTOR_PAUSED, actor_id=actor_id,
+            tenant_id,
+            doc.get("property_id", ""),
+            connector_id,
+            AuditAction.CONNECTOR_PAUSED,
+            actor_id=actor_id,
         )
         return doc
 
@@ -173,7 +183,8 @@ class ConnectorService:
 
     async def update_credentials(
         self,
-        tenant_id: str, connector_id: str,
+        tenant_id: str,
+        connector_id: str,
         credentials: dict[str, Any],
         actor_id: str | None = None,
     ) -> dict[str, Any]:
@@ -184,8 +195,11 @@ class ConnectorService:
         doc["updated_by"] = actor_id
         await self._repo.upsert_connector(doc)
         await self._audit(
-            tenant_id, doc.get("property_id", ""), connector_id,
-            AuditAction.CREDENTIALS_UPDATED, actor_id=actor_id,
+            tenant_id,
+            doc.get("property_id", ""),
+            connector_id,
+            AuditAction.CREDENTIALS_UPDATED,
+            actor_id=actor_id,
         )
         return doc
 
@@ -193,8 +207,11 @@ class ConnectorService:
         doc = await self._repo.get_connector(tenant_id, connector_id)
         if doc:
             await self._audit(
-                tenant_id, doc.get("property_id", ""), connector_id,
-                AuditAction.CONNECTOR_DISABLED, actor_id=actor_id,
+                tenant_id,
+                doc.get("property_id", ""),
+                connector_id,
+                AuditAction.CONNECTOR_DISABLED,
+                actor_id=actor_id,
             )
         return await self._repo.delete_connector(tenant_id, connector_id)
 

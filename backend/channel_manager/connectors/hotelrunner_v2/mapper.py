@@ -10,6 +10,7 @@ Outbound: ARI delta → HR push payload
 
 No side effects. Pure transformations. Fully testable.
 """
+
 import hashlib
 import json
 from typing import Any
@@ -54,6 +55,7 @@ CANONICAL_STATUS_TO_EVENT = {
 # INBOUND: HR reservation → canonical dict
 # ══════════════════════════════════════════════════════════════════════
 
+
 def reservation_to_canonical(raw: dict[str, Any]) -> dict[str, Any]:
     """
     Convert HotelRunner REST reservation JSON to canonical format.
@@ -94,10 +96,8 @@ def reservation_to_canonical(raw: dict[str, Any]) -> dict[str, Any]:
     rooms = raw.get("rooms") or []
     first_room = rooms[0] if rooms and isinstance(rooms[0], dict) else {}
 
-    room_type_code = _s(first_room.get("inv_code") or first_room.get("code") or
-                        first_room.get("room_code") or raw.get("room_type", ""))
-    rate_plan_code = _s(first_room.get("rate_plan_code") or first_room.get("rate_code") or
-                        raw.get("rate_plan", ""))
+    room_type_code = _s(first_room.get("inv_code") or first_room.get("code") or first_room.get("room_code") or raw.get("room_type", ""))
+    rate_plan_code = _s(first_room.get("rate_plan_code") or first_room.get("rate_code") or raw.get("rate_plan", ""))
 
     # Occupancy
     adults = _i(first_room.get("total_adult") or raw.get("adults", 1)) or 1
@@ -128,8 +128,7 @@ def reservation_to_canonical(raw: dict[str, Any]) -> dict[str, Any]:
 
     # ── Timestamps ────────────────────────────────────────────────
     completed_at = _s(raw.get("completed_at", ""))
-    updated_at = _s(raw.get("updated_at") or raw.get("modified_at") or
-                     raw.get("last_modified", ""))
+    updated_at = _s(raw.get("updated_at") or raw.get("modified_at") or raw.get("last_modified", ""))
 
     # ── Channel / Source ──────────────────────────────────────────
     channel = _s(raw.get("channel", ""))
@@ -139,52 +138,58 @@ def reservation_to_canonical(raw: dict[str, Any]) -> dict[str, Any]:
 
     # ── Daily prices extraction ───────────────────────────────────
     daily_prices = []
-    for dp in (first_room.get("daily_prices") or []):
+    for dp in first_room.get("daily_prices") or []:
         if isinstance(dp, dict):
-            daily_prices.append({
-                "date": _s(dp.get("date", "")),
-                "price": _f(dp.get("price", 0)),
-                "original_price": _f(dp.get("original_price", 0)),
-                "discount": _f(dp.get("discount", 0)),
-            })
+            daily_prices.append(
+                {
+                    "date": _s(dp.get("date", "")),
+                    "price": _f(dp.get("price", 0)),
+                    "original_price": _f(dp.get("original_price", 0)),
+                    "discount": _f(dp.get("discount", 0)),
+                }
+            )
 
     # ── Rooms detail (multi-room support) ─────────────────────────
     rooms_detail = []
     for r in rooms:
         if not isinstance(r, dict):
             continue
-        rooms_detail.append({
-            "room_id": _i(r.get("id", 0)),
-            "inv_code": _s(r.get("inv_code", "")),
-            "rate_code": _s(r.get("rate_code", "")),
-            "rate_plan_code": _s(r.get("rate_plan_code", "")),
-            "name": _s(r.get("name", "")),
-            "state": _s(r.get("state", "")),
-            "adults": _i(r.get("total_adult", 1)),
-            "total_guest": _i(r.get("total_guest", 1)),
-            "child_ages": r.get("child_ages") or [],
-            "nights": _i(r.get("nights", 0)),
-            "meal_plan": _s(r.get("meal_plan", "")),
-            "price": _f(r.get("price", 0)),
-            "total": _f(r.get("total", 0)),
-            "non_refundable": bool(r.get("non_refundable", False)),
-            "checkin_date": _s(r.get("checkin_date", "")),
-            "checkout_date": _s(r.get("checkout_date", "")),
-        })
+        rooms_detail.append(
+            {
+                "room_id": _i(r.get("id", 0)),
+                "inv_code": _s(r.get("inv_code", "")),
+                "rate_code": _s(r.get("rate_code", "")),
+                "rate_plan_code": _s(r.get("rate_plan_code", "")),
+                "name": _s(r.get("name", "")),
+                "state": _s(r.get("state", "")),
+                "adults": _i(r.get("total_adult", 1)),
+                "total_guest": _i(r.get("total_guest", 1)),
+                "child_ages": r.get("child_ages") or [],
+                "nights": _i(r.get("nights", 0)),
+                "meal_plan": _s(r.get("meal_plan", "")),
+                "price": _f(r.get("price", 0)),
+                "total": _f(r.get("total", 0)),
+                "non_refundable": bool(r.get("non_refundable", False)),
+                "checkin_date": _s(r.get("checkin_date", "")),
+                "checkout_date": _s(r.get("checkout_date", "")),
+            }
+        )
 
     # ── Payments ──────────────────────────────────────────────────
     payments_detail = []
-    for p in (raw.get("payments") or []):
+    for p in raw.get("payments") or []:
         if not isinstance(p, dict):
             continue
-        payments_detail.append({
-            "id": _i(p.get("id", 0)),
-            "state": _s(p.get("state", "")),
-            "amount": _f(p.get("amount", 0)),
-            "currency": _s(p.get("currency", "")),
-            "payment_method": _s(p.get("payment_method", "")),
-            "paid_at": _s(p.get("paid_at", "")),
-        })
+        payments_detail.append(
+            {
+                "id": _i(p.get("id", 0)),
+                "state": _s(p.get("state", "")),
+                "amount": _f(p.get("amount", 0)),
+                "currency": _s(p.get("currency", "")),
+                "payment_method": _s(p.get("payment_method", "")),
+                "paid_at": _s(p.get("paid_at", "")),
+            }
+        )
 
     return {
         "external_reservation_id": hr_number,
@@ -284,6 +289,7 @@ def detect_event_type(canonical: dict[str, Any]) -> str:
 # OUTBOUND: ARI delta → HR push payload
 # ══════════════════════════════════════════════════════════════════════
 
+
 def ari_to_update_payload(
     inv_code: str,
     start_date: str,
@@ -347,9 +353,15 @@ def ari_to_daterange_payload(
     ctd: bool | None = None,
 ) -> dict[str, Any]:
     return ari_to_update_payload(
-        room_code, start_date, end_date,
-        availability=availability, price=price, stop_sale=stop_sale,
-        min_stay=min_stay, cta=cta, ctd=ctd,
+        room_code,
+        start_date,
+        end_date,
+        availability=availability,
+        price=price,
+        stop_sale=stop_sale,
+        min_stay=min_stay,
+        cta=cta,
+        ctd=ctd,
     )
 
 
@@ -366,7 +378,13 @@ def ari_to_daily_payload(
     ctd: bool | None = None,
 ) -> dict[str, Any]:
     return ari_to_update_payload(
-        room_code, date, date,
-        availability=availability, price=price, stop_sale=stop_sale,
-        min_stay=min_stay, cta=cta, ctd=ctd,
+        room_code,
+        date,
+        date,
+        availability=availability,
+        price=price,
+        stop_sale=stop_sale,
+        min_stay=min_stay,
+        cta=cta,
+        ctd=ctd,
     )

@@ -53,9 +53,7 @@ async def get_task_failures(
     limit: int = Query(50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
 ):
-    result = await worker_runtime_service.get_failure_summary(
-        _ctx(current_user), tenant_id=tenant_id, limit=limit
-    )
+    result = await worker_runtime_service.get_failure_summary(_ctx(current_user), tenant_id=tenant_id, limit=limit)
     return result.data
 
 

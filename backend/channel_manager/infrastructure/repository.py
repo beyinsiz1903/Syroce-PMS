@@ -2,6 +2,7 @@
 Channel Manager Repository - MongoDB persistence for all channel manager entities.
 Centralized data access layer with tenant isolation enforced at every query.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -36,7 +37,8 @@ class ChannelManagerRepository:
 
     async def get_connector(self, tenant_id: str, connector_id: str) -> dict | None:
         return await db[CONNECTORS].find_one(
-            {"tenant_id": tenant_id, "id": connector_id}, _NO_ID,
+            {"tenant_id": tenant_id, "id": connector_id},
+            _NO_ID,
         )
 
     async def get_connectors_by_tenant(self, tenant_id: str, status: str | None = None) -> list[dict]:
@@ -46,15 +48,21 @@ class ChannelManagerRepository:
         return await db[CONNECTORS].find(q, _NO_ID).to_list(100)
 
     async def get_active_connectors(self, tenant_id: str, property_id: str) -> list[dict]:
-        return await db[CONNECTORS].find(
-            {"tenant_id": tenant_id, "property_id": property_id, "status": "active"}, _NO_ID,
-        ).to_list(10)
+        return (
+            await db[CONNECTORS]
+            .find(
+                {"tenant_id": tenant_id, "property_id": property_id, "status": "active"},
+                _NO_ID,
+            )
+            .to_list(10)
+        )
 
     async def upsert_connector(self, doc: dict) -> None:
         doc["updated_at"] = datetime.now(UTC).isoformat()
         await db[CONNECTORS].replace_one(
             {"tenant_id": doc["tenant_id"], "id": doc["id"]},
-            doc, upsert=True,
+            doc,
+            upsert=True,
         )
 
     async def delete_connector(self, tenant_id: str, connector_id: str) -> bool:
@@ -70,10 +78,14 @@ class ChannelManagerRepository:
         return await db[MAPPINGS].find(q, _NO_ID).to_list(500)
 
     async def get_active_mappings(self, tenant_id: str, connector_id: str, entity_type: str) -> list[dict]:
-        return await db[MAPPINGS].find(
-            {"tenant_id": tenant_id, "connector_id": connector_id, "entity_type": entity_type, "status": "active"},
-            _NO_ID,
-        ).to_list(500)
+        return (
+            await db[MAPPINGS]
+            .find(
+                {"tenant_id": tenant_id, "connector_id": connector_id, "entity_type": entity_type, "status": "active"},
+                _NO_ID,
+            )
+            .to_list(500)
+        )
 
     async def get_mapping(self, tenant_id: str, mapping_id: str) -> dict | None:
         return await db[MAPPINGS].find_one({"tenant_id": tenant_id, "id": mapping_id}, _NO_ID)
@@ -82,7 +94,8 @@ class ChannelManagerRepository:
         doc["updated_at"] = datetime.now(UTC).isoformat()
         await db[MAPPINGS].replace_one(
             {"tenant_id": doc["tenant_id"], "id": doc["id"]},
-            doc, upsert=True,
+            doc,
+            upsert=True,
         )
 
     async def delete_mapping(self, tenant_id: str, mapping_id: str) -> bool:
@@ -90,8 +103,12 @@ class ChannelManagerRepository:
         return r.deleted_count > 0
 
     async def find_duplicate_mappings(
-        self, tenant_id: str, connector_id: str, entity_type: str,
-        pms_entity_id: str, external_entity_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
+        entity_type: str,
+        pms_entity_id: str,
+        external_entity_id: str,
         exclude_mapping_id: str | None = None,
     ) -> list[dict]:
         q: dict[str, Any] = {
@@ -108,14 +125,18 @@ class ChannelManagerRepository:
         return await db[MAPPINGS].find(q, _NO_ID).to_list(50)
 
     async def count_mappings_by_type(
-        self, tenant_id: str, connector_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
     ) -> dict[str, dict[str, int]]:
         pipeline = [
             {"$match": {"tenant_id": tenant_id, "connector_id": connector_id}},
-            {"$group": {
-                "_id": {"entity_type": "$entity_type", "status": "$status"},
-                "count": {"$sum": 1},
-            }},
+            {
+                "$group": {
+                    "_id": {"entity_type": "$entity_type", "status": "$status"},
+                    "count": {"$sum": 1},
+                }
+            },
         ]
         result: dict[str, dict[str, int]] = {}
         async for doc in db[MAPPINGS].aggregate(pipeline):
@@ -127,15 +148,25 @@ class ChannelManagerRepository:
         return result
 
     async def get_mappings_by_validation_status(
-        self, tenant_id: str, connector_id: str, validation_status: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
+        validation_status: str,
     ) -> list[dict]:
-        return await db[MAPPINGS].find(
-            {"tenant_id": tenant_id, "connector_id": connector_id, "validation_status": validation_status},
-            _NO_ID,
-        ).to_list(500)
+        return (
+            await db[MAPPINGS]
+            .find(
+                {"tenant_id": tenant_id, "connector_id": connector_id, "validation_status": validation_status},
+                _NO_ID,
+            )
+            .to_list(500)
+        )
 
     async def bulk_update_mapping_validation(
-        self, tenant_id: str, mapping_ids: list[str], updates: dict,
+        self,
+        tenant_id: str,
+        mapping_ids: list[str],
+        updates: dict,
     ) -> None:
         if mapping_ids:
             updates["updated_at"] = datetime.now(UTC).isoformat()
@@ -192,10 +223,15 @@ class ChannelManagerRepository:
             await db[CHANGE_RECORDS].insert_many(docs)
 
     async def get_pending_changes(self, tenant_id: str, connector_id: str, limit: int = 1000) -> list[dict]:
-        return await db[CHANGE_RECORDS].find(
-            {"tenant_id": tenant_id, "connector_id": connector_id, "is_coalesced": False},
-            _NO_ID,
-        ).sort("created_at", 1).to_list(limit)
+        return (
+            await db[CHANGE_RECORDS]
+            .find(
+                {"tenant_id": tenant_id, "connector_id": connector_id, "is_coalesced": False},
+                _NO_ID,
+            )
+            .sort("created_at", 1)
+            .to_list(limit)
+        )
 
     async def mark_changes_coalesced(self, change_ids: list[str], event_id: str) -> None:
         if change_ids:
@@ -214,9 +250,9 @@ class ChannelManagerRepository:
 
     async def upsert_sync_snapshot(self, doc: dict) -> None:
         await db[SYNC_SNAPSHOTS].replace_one(
-            {"tenant_id": doc["tenant_id"], "connector_id": doc["connector_id"],
-             "room_type_id": doc["room_type_id"], "date": doc["date"]},
-            doc, upsert=True,
+            {"tenant_id": doc["tenant_id"], "connector_id": doc["connector_id"], "room_type_id": doc["room_type_id"], "date": doc["date"]},
+            doc,
+            upsert=True,
         )
 
     async def upsert_sync_snapshots_batch(self, docs: list[dict]) -> None:
@@ -232,9 +268,14 @@ class ChannelManagerRepository:
         return await db[SYNC_JOBS].find(q, _NO_ID).sort("created_at", -1).to_list(limit)
 
     async def get_failed_events_for_job(self, job_id: str) -> list[dict]:
-        return await db[SYNC_EVENTS].find(
-            {"job_id": job_id, "status": {"$in": ["failed", "manual_review"]}}, _NO_ID,
-        ).to_list(200)
+        return (
+            await db[SYNC_EVENTS]
+            .find(
+                {"job_id": job_id, "status": {"$in": ["failed", "manual_review"]}},
+                _NO_ID,
+            )
+            .to_list(200)
+        )
 
     # ─── Push Receipts ─────────────────────────────────────────────────
 
@@ -261,28 +302,35 @@ class ChannelManagerRepository:
         doc["updated_at"] = datetime.now(UTC).isoformat()
         await db[IMPORTED_RESERVATIONS].replace_one(
             {"tenant_id": doc["tenant_id"], "connector_id": doc["connector_id"], "external_reservation_id": doc["external_reservation_id"]},
-            doc, upsert=True,
+            doc,
+            upsert=True,
         )
 
     async def update_imported_reservation(self, tenant_id: str, reservation_id: str, updates: dict) -> None:
         updates["updated_at"] = datetime.now(UTC).isoformat()
         await db[IMPORTED_RESERVATIONS].update_one(
-            {"tenant_id": tenant_id, "id": reservation_id}, {"$set": updates},
+            {"tenant_id": tenant_id, "id": reservation_id},
+            {"$set": updates},
         )
 
     async def get_imported_reservation_by_id(self, tenant_id: str, reservation_id: str) -> dict | None:
         return await db[IMPORTED_RESERVATIONS].find_one(
-            {"tenant_id": tenant_id, "id": reservation_id}, _NO_ID,
+            {"tenant_id": tenant_id, "id": reservation_id},
+            _NO_ID,
         )
 
     async def get_imported_reservation_by_external_id(self, tenant_id: str, connector_id: str, external_id: str) -> dict | None:
         return await db[IMPORTED_RESERVATIONS].find_one(
-            {"tenant_id": tenant_id, "connector_id": connector_id, "external_reservation_id": external_id}, _NO_ID,
+            {"tenant_id": tenant_id, "connector_id": connector_id, "external_reservation_id": external_id},
+            _NO_ID,
         )
 
     async def get_imported_reservations(
-        self, tenant_id: str, connector_id: str | None = None,
-        status: str | None = None, limit: int = 100,
+        self,
+        tenant_id: str,
+        connector_id: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
     ) -> list[dict]:
         q: dict[str, Any] = {"tenant_id": tenant_id}
         if connector_id:
@@ -292,7 +340,10 @@ class ChannelManagerRepository:
         return await db[IMPORTED_RESERVATIONS].find(q, _NO_ID).sort("created_at", -1).to_list(limit)
 
     async def get_reservation_review_queue(
-        self, tenant_id: str, connector_id: str | None = None, limit: int = 100,
+        self,
+        tenant_id: str,
+        connector_id: str | None = None,
+        limit: int = 100,
     ) -> list[dict]:
         q: dict[str, Any] = {"tenant_id": tenant_id, "import_status": {"$in": ["review", "conflict", "out_of_order"]}}
         if connector_id:
@@ -300,9 +351,15 @@ class ChannelManagerRepository:
         return await db[IMPORTED_RESERVATIONS].find(q, _NO_ID).sort("created_at", -1).to_list(limit)
 
     async def get_imported_reservations_by_batch(self, batch_id: str, limit: int = 500) -> list[dict]:
-        return await db[IMPORTED_RESERVATIONS].find(
-            {"batch_id": batch_id}, _NO_ID,
-        ).sort("created_at", -1).to_list(limit)
+        return (
+            await db[IMPORTED_RESERVATIONS]
+            .find(
+                {"batch_id": batch_id},
+                _NO_ID,
+            )
+            .sort("created_at", -1)
+            .to_list(limit)
+        )
 
     async def count_imported_reservations(self, tenant_id: str, connector_id: str, status: str | None = None) -> int:
         q: dict[str, Any] = {"tenant_id": tenant_id, "connector_id": connector_id}
@@ -312,7 +369,8 @@ class ChannelManagerRepository:
 
     async def get_import_batch_by_id(self, tenant_id: str, batch_id: str) -> dict | None:
         return await db[IMPORT_BATCHES].find_one(
-            {"tenant_id": tenant_id, "id": batch_id}, _NO_ID,
+            {"tenant_id": tenant_id, "id": batch_id},
+            _NO_ID,
         )
 
     # ─── Reconciliation Issues ─────────────────────────────────────────
@@ -321,8 +379,11 @@ class ChannelManagerRepository:
         await db[RECONCILIATION_ISSUES].insert_one(doc)
 
     async def get_reconciliation_issues(
-        self, tenant_id: str, connector_id: str | None = None,
-        status: str = "open", limit: int = 100,
+        self,
+        tenant_id: str,
+        connector_id: str | None = None,
+        status: str = "open",
+        limit: int = 100,
     ) -> list[dict]:
         q: dict[str, Any] = {"tenant_id": tenant_id, "status": status}
         if connector_id:
@@ -334,11 +395,14 @@ class ChannelManagerRepository:
 
     async def get_reconciliation_issue(self, tenant_id: str, issue_id: str) -> dict | None:
         return await db[RECONCILIATION_ISSUES].find_one(
-            {"tenant_id": tenant_id, "id": issue_id}, _NO_ID,
+            {"tenant_id": tenant_id, "id": issue_id},
+            _NO_ID,
         )
 
     async def get_reconciliation_summary(
-        self, tenant_id: str, connector_id: str | None = None,
+        self,
+        tenant_id: str,
+        connector_id: str | None = None,
     ) -> dict[str, Any]:
         """Aggregate issue counts by type and severity."""
         match = {"tenant_id": tenant_id, "status": {"$in": ["open", "investigating", "retrying"]}}
@@ -347,10 +411,12 @@ class ChannelManagerRepository:
 
         pipeline = [
             {"$match": match},
-            {"$group": {
-                "_id": {"issue_type": "$issue_type", "severity": "$severity"},
-                "count": {"$sum": 1},
-            }},
+            {
+                "$group": {
+                    "_id": {"issue_type": "$issue_type", "severity": "$severity"},
+                    "count": {"$sum": 1},
+                }
+            },
         ]
         by_type: dict[str, int] = {}
         by_severity: dict[str, int] = {}
@@ -370,7 +436,10 @@ class ChannelManagerRepository:
         await db[INTEGRATION_AUDIT].insert_one(doc)
 
     async def get_audit_logs(
-        self, tenant_id: str, connector_id: str | None = None, limit: int = 100,
+        self,
+        tenant_id: str,
+        connector_id: str | None = None,
+        limit: int = 100,
     ) -> list[dict]:
         q: dict[str, Any] = {"tenant_id": tenant_id}
         if connector_id:
@@ -382,35 +451,53 @@ class ChannelManagerRepository:
     async def upsert_external_property(self, doc: dict) -> None:
         await db[EXTERNAL_PROPERTIES].replace_one(
             {"tenant_id": doc["tenant_id"], "connector_id": doc["connector_id"], "external_id": doc["external_id"]},
-            doc, upsert=True,
+            doc,
+            upsert=True,
         )
 
     async def get_external_properties(self, tenant_id: str, connector_id: str) -> list[dict]:
-        return await db[EXTERNAL_PROPERTIES].find(
-            {"tenant_id": tenant_id, "connector_id": connector_id}, _NO_ID,
-        ).to_list(100)
+        return (
+            await db[EXTERNAL_PROPERTIES]
+            .find(
+                {"tenant_id": tenant_id, "connector_id": connector_id},
+                _NO_ID,
+            )
+            .to_list(100)
+        )
 
     async def upsert_external_room_type(self, doc: dict) -> None:
         await db[EXTERNAL_ROOM_TYPES].replace_one(
             {"tenant_id": doc["tenant_id"], "connector_id": doc["connector_id"], "external_id": doc["external_id"]},
-            doc, upsert=True,
+            doc,
+            upsert=True,
         )
 
     async def get_external_room_types(self, tenant_id: str, connector_id: str) -> list[dict]:
-        return await db[EXTERNAL_ROOM_TYPES].find(
-            {"tenant_id": tenant_id, "connector_id": connector_id}, _NO_ID,
-        ).to_list(500)
+        return (
+            await db[EXTERNAL_ROOM_TYPES]
+            .find(
+                {"tenant_id": tenant_id, "connector_id": connector_id},
+                _NO_ID,
+            )
+            .to_list(500)
+        )
 
     async def upsert_external_rate_plan(self, doc: dict) -> None:
         await db[EXTERNAL_RATE_PLANS].replace_one(
             {"tenant_id": doc["tenant_id"], "connector_id": doc["connector_id"], "external_id": doc["external_id"]},
-            doc, upsert=True,
+            doc,
+            upsert=True,
         )
 
     async def get_external_rate_plans(self, tenant_id: str, connector_id: str) -> list[dict]:
-        return await db[EXTERNAL_RATE_PLANS].find(
-            {"tenant_id": tenant_id, "connector_id": connector_id}, _NO_ID,
-        ).to_list(500)
+        return (
+            await db[EXTERNAL_RATE_PLANS]
+            .find(
+                {"tenant_id": tenant_id, "connector_id": connector_id},
+                _NO_ID,
+            )
+            .to_list(500)
+        )
 
     # ─── Observability Metrics ─────────────────────────────────────────
 
@@ -418,10 +505,12 @@ class ChannelManagerRepository:
         """Aggregate sync metrics for dashboard display."""
         pipeline = [
             {"$match": {"tenant_id": tenant_id, "connector_id": connector_id}},
-            {"$group": {
-                "_id": "$status",
-                "count": {"$sum": 1},
-            }},
+            {
+                "$group": {
+                    "_id": "$status",
+                    "count": {"$sum": 1},
+                }
+            },
         ]
         job_stats = {}
         async for doc in db[SYNC_JOBS].aggregate(pipeline):
@@ -429,10 +518,12 @@ class ChannelManagerRepository:
 
         event_pipeline = [
             {"$match": {"tenant_id": tenant_id, "connector_id": connector_id}},
-            {"$group": {
-                "_id": "$status",
-                "count": {"$sum": 1},
-            }},
+            {
+                "$group": {
+                    "_id": "$status",
+                    "count": {"$sum": 1},
+                }
+            },
         ]
         event_stats = {}
         async for doc in db[SYNC_EVENTS].aggregate(event_pipeline):
@@ -451,8 +542,11 @@ class ChannelManagerRepository:
     # ─── Error Queue ───────────────────────────────────────────────────
 
     async def get_error_queue(
-        self, tenant_id: str, connector_id: str | None = None,
-        error_type: str | None = None, limit: int = 100,
+        self,
+        tenant_id: str,
+        connector_id: str | None = None,
+        error_type: str | None = None,
+        limit: int = 100,
     ) -> list[dict]:
         """Get failed items across sync jobs, imports, and ACK failures."""
         items = []
@@ -484,7 +578,9 @@ class ChannelManagerRepository:
         return items[:limit]
 
     async def get_error_queue_summary(
-        self, tenant_id: str, connector_id: str | None = None,
+        self,
+        tenant_id: str,
+        connector_id: str | None = None,
     ) -> dict[str, int]:
         q_base: dict[str, Any] = {"tenant_id": tenant_id}
         if connector_id:
@@ -502,10 +598,13 @@ class ChannelManagerRepository:
     # ─── Sync Trend Data (24h) ─────────────────────────────────────────
 
     async def get_sync_trend_24h(
-        self, tenant_id: str, connector_id: str | None = None,
+        self,
+        tenant_id: str,
+        connector_id: str | None = None,
     ) -> list[dict]:
         """Get hourly sync job counts for last 24h."""
         from datetime import timedelta
+
         cutoff = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
         q: dict[str, Any] = {"tenant_id": tenant_id, "created_at": {"$gte": cutoff}}
         if connector_id:
@@ -513,10 +612,12 @@ class ChannelManagerRepository:
         pipeline = [
             {"$match": q},
             {"$addFields": {"hour": {"$substr": ["$created_at", 0, 13]}}},
-            {"$group": {
-                "_id": {"hour": "$hour", "status": "$status"},
-                "count": {"$sum": 1},
-            }},
+            {
+                "$group": {
+                    "_id": {"hour": "$hour", "status": "$status"},
+                    "count": {"$sum": 1},
+                }
+            },
             {"$sort": {"_id.hour": 1}},
         ]
         trend = {}
@@ -535,11 +636,19 @@ class ChannelManagerRepository:
         await db["cm_webhook_events"].insert_one(doc)
 
     async def get_webhook_events(
-        self, tenant_id: str, limit: int = 50,
+        self,
+        tenant_id: str,
+        limit: int = 50,
     ) -> list[dict]:
-        return await db["cm_webhook_events"].find(
-            {"tenant_id": tenant_id}, _NO_ID,
-        ).sort("received_at", -1).to_list(limit)
+        return (
+            await db["cm_webhook_events"]
+            .find(
+                {"tenant_id": tenant_id},
+                _NO_ID,
+            )
+            .sort("received_at", -1)
+            .to_list(limit)
+        )
 
     # ─── Bulk Operations ───────────────────────────────────────────────
 

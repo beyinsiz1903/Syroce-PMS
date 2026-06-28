@@ -1,4 +1,5 @@
 """CapX B2B Network integration package."""
+
 from .client import (
     CapXClient,
     CapXError,

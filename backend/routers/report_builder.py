@@ -18,6 +18,7 @@ sağlar. P0/P1 düzeltmeleri:
   - Excel TOPLAM yanlış sütuna düşmesi (col 1 numeric ise üzerine yazıyordu).
   - PDF sütun sayısı çok fazla ise font otomatik küçülür.
 """
+
 import io
 import logging
 import math
@@ -39,6 +40,7 @@ router = APIRouter(prefix="/api/reports/builder", tags=["report-builder"])
 
 
 # ─── Models ───────────────────────────────────────────────────────────────
+
 
 class ReportFilter(BaseModel):
     field: str
@@ -242,13 +244,14 @@ PDF_FIT_COLUMNS = 8
 
 # ─── PII helpers ─────────────────────────────────────────────────────────
 
+
 def _user_has_pii_access(user) -> bool:
-    role = getattr(user, 'role', None)
-    role_str = getattr(role, 'value', None) or str(role or '')
-    if role_str in ('admin', 'super_admin', 'manager', 'general_manager'):
+    role = getattr(user, "role", None)
+    role_str = getattr(role, "value", None) or str(role or "")
+    if role_str in ("admin", "super_admin", "manager", "general_manager"):
         return True
-    granted = getattr(user, 'granted_permissions', None) or []
-    return 'view_guest_pii' in granted
+    granted = getattr(user, "granted_permissions", None) or []
+    return "view_guest_pii" in granted
 
 
 def _mask_pii(value):
@@ -256,11 +259,12 @@ def _mask_pii(value):
         return value
     s = str(value)
     if len(s) <= 4:
-        return '*' * len(s)
-    return s[:2] + '*' * (len(s) - 4) + s[-2:]
+        return "*" * len(s)
+    return s[:2] + "*" * (len(s) - 4) + s[-2:]
 
 
 # ─── Type coercion for filter values ─────────────────────────────────────
+
 
 def _coerce_value(value, col_type: str | None):
     """Backend filter value tipi her zaman string gelir (HTML input). DB
@@ -291,6 +295,7 @@ def _coerce_value(value, col_type: str | None):
 
 
 # ─── Mongo filter / projection ───────────────────────────────────────────
+
 
 def _resolve_db_field(source_key: str, col_key: str) -> str:
     """API column key → birinci DB alan adı (legacy fallback için tüm
@@ -334,7 +339,7 @@ def build_mongo_filter(config: ReportConfig, tenant_id: str) -> dict:
         query[date_field] = date_q
 
     # Custom filters (allow-list field, type-aware value).
-    for f in (config.filters or []):
+    for f in config.filters or []:
         if f.field not in cols:
             # Sadece tanımlı sütunlar üzerinde filtre. Bilinmeyen alanları
             # sessizce düşür (silent drop yerine reddedilebilir; sızıntı
@@ -366,6 +371,7 @@ def build_mongo_filter(config: ReportConfig, tenant_id: str) -> dict:
             query[db_field] = {"$in": val if isinstance(val, list) else [val]}
         elif op == "contains":
             from security.query_safety import safe_search_term
+
             _v = safe_search_term(str(val))
             if _v:
                 query[db_field] = {"$regex": _v, "$options": "i"}
@@ -400,6 +406,7 @@ def build_projection(source_key: str, columns: list[str]) -> dict:
 
 
 # ─── Cleaning helpers ────────────────────────────────────────────────────
+
 
 def _clean_value(v):
     """Recursive ObjectId / datetime serialize-safe çevirme."""
@@ -447,6 +454,7 @@ def _compose_guest_name(doc: dict) -> str | None:
 
 
 # ─── Fetch ──────────────────────────────────────────────────────────────
+
 
 async def fetch_report_data(config: ReportConfig, tenant_id: str, has_pii: bool) -> list:
     db = get_db()
@@ -509,6 +517,7 @@ async def fetch_report_data(config: ReportConfig, tenant_id: str, has_pii: bool)
 
 # ─── Endpoints ────────────────────────────────────────────────────────────
 
+
 @router.get("/config")
 async def get_builder_config(
     credentials=Depends(HTTPBearer()),
@@ -535,7 +544,7 @@ async def generate_report(
 ):
     """Özel rapor verisini üretir."""
     current_user = await _get_current_user(credentials)
-    tenant_id = getattr(current_user, 'tenant_id', None)
+    tenant_id = getattr(current_user, "tenant_id", None)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant bilgisi bulunamadı")
     has_pii = _user_has_pii_access(current_user)
@@ -598,6 +607,7 @@ def _xlsx_sanitize_str(s: str) -> str:
     if not s:
         return s
     from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+
     cleaned = ILLEGAL_CHARACTERS_RE.sub("", s)
     if len(cleaned) > _XLSX_MAX_CELL_LEN:
         cleaned = cleaned[: _XLSX_MAX_CELL_LEN - 1] + "…"
@@ -685,7 +695,7 @@ async def export_report_excel(
 ):
     """Özel raporu Excel formatında dışa aktarır."""
     current_user = await _get_current_user(credentials)
-    tenant_id = getattr(current_user, 'tenant_id', None)
+    tenant_id = getattr(current_user, "tenant_id", None)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant bilgisi bulunamadı")
     has_pii = _user_has_pii_access(current_user)
@@ -697,7 +707,9 @@ async def export_report_excel(
     except Exception:
         logger.exception(
             "report_builder excel export failed tenant=%s data_source=%s cols=%s",
-            tenant_id, config.data_source, config.columns,
+            tenant_id,
+            config.data_source,
+            config.columns,
         )
         raise HTTPException(status_code=500, detail="report_export_failed")
 
@@ -744,10 +756,10 @@ async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii:
     header_fill = PatternFill(start_color="0284C7", end_color="0284C7", fill_type="solid")
     header_font = Font(bold=True, color="FFFFFF", size=11)
     border = Border(
-        left=Side(style='thin', color='D9D9D9'),
-        right=Side(style='thin', color='D9D9D9'),
-        top=Side(style='thin', color='D9D9D9'),
-        bottom=Side(style='thin', color='D9D9D9'),
+        left=Side(style="thin", color="D9D9D9"),
+        right=Side(style="thin", color="D9D9D9"),
+        top=Side(style="thin", color="D9D9D9"),
+        bottom=Side(style="thin", color="D9D9D9"),
     )
     for col_num, header in enumerate(headers, 1):
         cell = ws.cell(row=3, column=col_num)
@@ -762,6 +774,7 @@ async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii:
     # stress tenants would crash `str(val)` / `xlsx_safe()` / Cell.value
     # assignment silently in CI).
     from core.csv_safe import xlsx_safe
+
     light_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
     for row_num, row_data in enumerate(data, 4):
         for col_num, col_key in enumerate(config.columns, 1):
@@ -772,10 +785,10 @@ async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii:
 
             if col_type == "currency" and is_numeric:
                 cell.value = coerced
-                cell.number_format = '#,##0.00 ₺'
+                cell.number_format = "#,##0.00 ₺"
             elif col_type == "number" and is_numeric:
                 cell.value = coerced
-                cell.number_format = '#,##0'
+                cell.number_format = "#,##0"
             else:
                 # String path — apply xlsx_safe to defend against formula
                 # injection (Bug AN). xlsx_safe handles None internally.
@@ -800,7 +813,7 @@ async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii:
         if label_col is not None:
             cell = ws.cell(row=summary_row, column=label_col, value="TOPLAM")
             cell.font = Font(bold=True, size=11)
-            cell.border = Border(top=Side(style='double'))
+            cell.border = Border(top=Side(style="double"))
 
         for col_num, col_key in enumerate(config.columns, 1):
             col_type = source_def.get("columns", {}).get(col_key, {}).get("type")
@@ -816,9 +829,9 @@ async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii:
                     cell = ws.cell(row=summary_row, column=col_num)
                     cell.value = sum(numeric_values)
                     cell.font = Font(bold=True, size=11)
-                    cell.border = Border(top=Side(style='double'))
+                    cell.border = Border(top=Side(style="double"))
                     if col_type == "currency":
-                        cell.number_format = '#,##0.00 ₺'
+                        cell.number_format = "#,##0.00 ₺"
 
     # Task #253 (tur-2): belt-and-suspenders save retry. If, despite the
     # _coerce_excel_value sanitization, openpyxl still raises (future seed
@@ -827,13 +840,17 @@ async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii:
     # silently — the second exception propagates and the outer try/except
     # logs the traceback so the next stress run surfaces the true cause.
     from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+
     output = io.BytesIO()
     try:
         wb.save(output)
     except Exception:
         logger.exception(
             "report_builder excel save failed, retrying with full re-scrub tenant=%s data_source=%s rows=%s cols=%s",
-            tenant_id, config.data_source, len(data), len(config.columns),
+            tenant_id,
+            config.data_source,
+            len(data),
+            len(config.columns),
         )
         for row in ws.iter_rows():
             for cell in row:
@@ -859,7 +876,7 @@ async def export_report_pdf(
 ):
     """Özel raporu PDF formatında dışa aktarır."""
     current_user = await _get_current_user(credentials)
-    tenant_id = getattr(current_user, 'tenant_id', None)
+    tenant_id = getattr(current_user, "tenant_id", None)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant bilgisi bulunamadı")
     has_pii = _user_has_pii_access(current_user)
@@ -901,10 +918,7 @@ async def export_report_pdf(
             cells += f'<td style="padding:{cell_pad};border-bottom:1px solid #e2e8f0;font-size:{body_size}px;">{_e(display)}</td>'
         rows_html += f'<tr style="background:{bg}">{cells}</tr>'
 
-    header_cells = "".join(
-        f'<th style="padding:8px;background:#0F172A;color:white;font-size:{header_size}px;text-align:left;border-bottom:2px solid #0d2137;">{_e(h)}</th>'
-        for h in headers
-    )
+    header_cells = "".join(f'<th style="padding:8px;background:#0F172A;color:white;font-size:{header_size}px;text-align:left;border-bottom:2px solid #0d2137;">{_e(h)}</th>' for h in headers)
 
     date_info = ""
     if config.date_from or config.date_to or not has_pii:
@@ -917,7 +931,7 @@ async def export_report_pdf(
             parts.append("<i>PII alanları maskelenmiştir</i>")
         date_info = f'<p style="color:#64748b;font-size:11px;margin:4px 0 12px;">{" | ".join(parts)}</p>'
 
-    title_label = _e(source_def.get('label', 'Rapor'))
+    title_label = _e(source_def.get("label", "Rapor"))
     page_size = "A4 landscape" if n_cols <= PDF_FIT_COLUMNS else "A3 landscape"
 
     html = f"""<!DOCTYPE html>
@@ -933,7 +947,7 @@ async def export_report_pdf(
 </style></head><body>
 <div class="header">
   <h1>{title_label} - Özel Rapor</h1>
-  <p>Toplam {len(data)} kayıt | Oluşturma: {datetime.now(UTC).strftime('%d.%m.%Y %H:%M')}</p>
+  <p>Toplam {len(data)} kayıt | Oluşturma: {datetime.now(UTC).strftime("%d.%m.%Y %H:%M")}</p>
 </div>
 {date_info}
 <table><thead><tr>{header_cells}</tr></thead><tbody>{rows_html}</tbody></table>
@@ -954,11 +968,11 @@ async def export_report_pdf(
         logger.error(f"[PDF EXPORT] weasyprint renderer unavailable: {e}")
         raise HTTPException(
             status_code=503,
-            detail="PDF renderer (weasyprint) unavailable on this deployment. "
-                   "Install weasyprint + system deps (cairo, pango) or use Excel/CSV export.",
+            detail="PDF renderer (weasyprint) unavailable on this deployment. Install weasyprint + system deps (cairo, pango) or use Excel/CSV export.",
         )
 
     try:
+
         def _safe_fetcher(url: str, timeout=10, ssl_context=None):
             if not url.lower().startswith("https://"):
                 raise ValueError(f"blocked URL scheme: {url[:40]}")
@@ -982,6 +996,7 @@ async def export_report_pdf(
 
 # ─── Template CRUD ────────────────────────────────────────────────────────
 
+
 @router.get("/templates")
 async def list_templates(
     credentials=Depends(HTTPBearer()),
@@ -990,11 +1005,15 @@ async def list_templates(
     """Kayıtlı rapor şablonlarını listeler (tenant scoped)."""
     current_user = await _get_current_user(credentials)
     db = get_db()
-    tenant_id = getattr(current_user, 'tenant_id', None)
-    templates = await db.report_templates.find(
-        {"tenant_id": tenant_id},
-        {"_id": 0},
-    ).sort("created_at", -1).to_list(100)
+    tenant_id = getattr(current_user, "tenant_id", None)
+    templates = (
+        await db.report_templates.find(
+            {"tenant_id": tenant_id},
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .to_list(100)
+    )
     return {"templates": templates}
 
 
@@ -1007,8 +1026,8 @@ async def save_template(
     """Rapor şablonunu kaydeder."""
     current_user = await _get_current_user(credentials)
     db = get_db()
-    tenant_id = getattr(current_user, 'tenant_id', None)
-    user_id = getattr(current_user, 'id', None)
+    tenant_id = getattr(current_user, "tenant_id", None)
+    user_id = getattr(current_user, "id", None)
 
     # Sütun ve veri kaynağı doğrulaması.
     if template.config.data_source not in DATA_SOURCES:
@@ -1044,12 +1063,12 @@ async def delete_template(
     """
     current_user = await _get_current_user(credentials)
     db = get_db()
-    tenant_id = getattr(current_user, 'tenant_id', None)
-    user_id = getattr(current_user, 'id', None)
+    tenant_id = getattr(current_user, "tenant_id", None)
+    user_id = getattr(current_user, "id", None)
 
-    role = getattr(current_user, 'role', None)
-    role_str = getattr(role, 'value', None) or str(role or '')
-    is_admin = role_str in ('admin', 'super_admin', 'manager', 'general_manager')
+    role = getattr(current_user, "role", None)
+    role_str = getattr(role, "value", None) or str(role or "")
+    is_admin = role_str in ("admin", "super_admin", "manager", "general_manager")
 
     existing = await db.report_templates.find_one(
         {"id": template_id, "tenant_id": tenant_id},

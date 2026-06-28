@@ -28,6 +28,7 @@ Usage in system operations (startup, health):
     raw = get_system_db()
     await raw.rooms.create_index(...)
 """
+
 import logging
 import os
 from contextlib import contextmanager
@@ -44,35 +45,81 @@ STRICT_TENANT_MODE = os.environ.get("STRICT_TENANT_MODE", "false").lower() == "t
 
 # ── Collections where tenant_id filter is MANDATORY ─────────────
 TENANT_SCOPED_COLLECTIONS: set[str] = {
-    "rooms", "bookings", "guests", "folios", "tasks", "users",
-    "audit_logs", "reports", "rate_plans", "invoices", "payments",
-    "housekeeping_tasks", "maintenance_orders", "inventory_items",
-    "suppliers", "expenses", "bank_accounts", "staff",
-    "gdpr_consents", "ip_rules", "user_2fa", "notifications",
-    "pos_orders", "restaurant_tables", "menu_items",
-    "spa_services", "spa_bookings", "events",
-    "group_bookings", "crm_contacts", "crm_activities",
-    "loyalty_members", "loyalty_transactions",
-    "channel_mappings", "ota_connections",
-    "data_processing_agreements", "retention_policies",
-    "tenant_security_policies", "extra_charges",
-    "folio_charges", "pms_audit_trail", "outbox_events",
-    "pipeline_runs", "exely_auto_import_runs",
-    "rate_plans", "cancellation_policies",
-    "guest_journey_checkins", "guest_journey_feedback",
-    "night_audit_logs", "night_audit_records",
-    "night_audit_runs", "night_audit_run_items",
-    "tenant_access_logs", "tenant_isolation_policies",
-    "imported_reservations", "lineage",
-    "rate_periods", "rate_overrides", "packages",
-    "channel_connections", "channel_sync_logs", "rate_updates",
+    "rooms",
+    "bookings",
+    "guests",
+    "folios",
+    "tasks",
+    "users",
+    "audit_logs",
+    "reports",
+    "rate_plans",
+    "invoices",
+    "payments",
+    "housekeeping_tasks",
+    "maintenance_orders",
+    "inventory_items",
+    "suppliers",
+    "expenses",
+    "bank_accounts",
+    "staff",
+    "gdpr_consents",
+    "ip_rules",
+    "user_2fa",
+    "notifications",
+    "pos_orders",
+    "restaurant_tables",
+    "menu_items",
+    "spa_services",
+    "spa_bookings",
+    "events",
+    "group_bookings",
+    "crm_contacts",
+    "crm_activities",
+    "loyalty_members",
+    "loyalty_transactions",
+    "channel_mappings",
+    "ota_connections",
+    "data_processing_agreements",
+    "retention_policies",
+    "tenant_security_policies",
+    "extra_charges",
+    "folio_charges",
+    "pms_audit_trail",
+    "outbox_events",
+    "pipeline_runs",
+    "exely_auto_import_runs",
+    "rate_plans",
+    "cancellation_policies",
+    "guest_journey_checkins",
+    "guest_journey_feedback",
+    "night_audit_logs",
+    "night_audit_records",
+    "night_audit_runs",
+    "night_audit_run_items",
+    "tenant_access_logs",
+    "tenant_isolation_policies",
+    "imported_reservations",
+    "lineage",
+    "rate_periods",
+    "rate_overrides",
+    "packages",
+    "channel_connections",
+    "channel_sync_logs",
+    "rate_updates",
     "charges",
-    "room_blocks", "room_block_logs",
-    "hotel_services", "hotel_service_requests",
-    "departments", "department_tasks",
-    "budget_configs", "budget_actuals",
-    "survey_responses", "external_reviews",
-    "companies", "contracts",
+    "room_blocks",
+    "room_block_logs",
+    "hotel_services",
+    "hotel_service_requests",
+    "departments",
+    "department_tasks",
+    "budget_configs",
+    "budget_actuals",
+    "survey_responses",
+    "external_reviews",
+    "companies",
+    "contracts",
     "pos_late_charges",
 }
 
@@ -91,10 +138,16 @@ HOT_AUDIT_COLLECTION: str = "audit_logs"
 
 # ── Collections that are global (no tenant_id) ──────────────────
 GLOBAL_COLLECTIONS: set[str] = {
-    "tenants", "hotel_chains", "system_config", "system_logs",
-    "subscription_plans", "marketplace_extensions",
+    "tenants",
+    "hotel_chains",
+    "system_config",
+    "system_logs",
+    "subscription_plans",
+    "marketplace_extensions",
     # CapX integration — cross-tenant admin views (super_admin only)
-    "capx_tenant_credentials", "capx_counter_offers", "capx_events",
+    "capx_tenant_credentials",
+    "capx_counter_offers",
+    "capx_events",
 }
 
 
@@ -123,6 +176,7 @@ def audit_retention_context():
 
 
 # ── Context Management ──────────────────────────────────────────
+
 
 def set_tenant_context(tenant_id: str) -> None:
     """Set the current tenant context for this async task."""
@@ -178,9 +232,11 @@ def _invalidate_auth_caches_for(collection_name: str, filter_dict: Any) -> None:
     try:
         if collection_name in _AUTH_CACHE_USER_COLLECTIONS:
             from core.security import invalidate_user_doc_cache
+
             invalidate_user_doc_cache(_extract_doc_id(filter_dict))
         elif collection_name in _AUTH_CACHE_TENANT_COLLECTIONS:
             from core.helpers import invalidate_tenant_doc_cache
+
             invalidate_tenant_doc_cache(_extract_doc_id(filter_dict))
     except Exception:
         # Never let a cache-eviction error block the mutation result.
@@ -209,24 +265,22 @@ class TenantScopedCollection:
         elif existing != self._tenant_id:
             logger.critical(
                 "TENANT VIOLATION: collection=%s expected=%s got=%s",
-                self._name, self._tenant_id, existing,
+                self._name,
+                self._tenant_id,
+                existing,
             )
-            raise TenantViolationError(
-                f"Cross-tenant access blocked on {self._name}: "
-                f"expected {self._tenant_id}, got {existing}"
-            )
+            raise TenantViolationError(f"Cross-tenant access blocked on {self._name}: expected {self._tenant_id}, got {existing}")
         return filter_dict
 
     def _inject_doc(self, doc: dict[str, Any]) -> dict[str, Any]:
         if "tenant_id" in doc and doc["tenant_id"] != self._tenant_id:
             logger.critical(
                 "TENANT WRITE VIOLATION: collection=%s expected=%s got=%s",
-                self._name, self._tenant_id, doc["tenant_id"],
+                self._name,
+                self._tenant_id,
+                doc["tenant_id"],
             )
-            raise TenantViolationError(
-                f"Cannot insert document for tenant {doc['tenant_id']} "
-                f"into context {self._tenant_id}"
-            )
+            raise TenantViolationError(f"Cannot insert document for tenant {doc['tenant_id']} into context {self._tenant_id}")
         doc["tenant_id"] = self._tenant_id
         return doc
 
@@ -264,9 +318,7 @@ class TenantScopedCollection:
         return result
 
     async def insert_many(self, documents, *args, **kwargs):
-        result = await self._coll.insert_many(
-            [self._inject_doc(d) for d in documents], *args, **kwargs
-        )
+        result = await self._coll.insert_many([self._inject_doc(d) for d in documents], *args, **kwargs)
         if self._name in _AUTH_CACHE_USER_COLLECTIONS or self._name in _AUTH_CACHE_TENANT_COLLECTIONS:
             _invalidate_auth_caches_for(self._name, None)  # bulk → flush
         return result
@@ -292,23 +344,17 @@ class TenantScopedCollection:
         return result
 
     async def find_one_and_update(self, filter, update, *args, **kwargs):
-        result = await self._coll.find_one_and_update(
-            self._inject_filter(filter), update, *args, **kwargs
-        )
+        result = await self._coll.find_one_and_update(self._inject_filter(filter), update, *args, **kwargs)
         _invalidate_auth_caches_for(self._name, filter)
         return result
 
     async def find_one_and_delete(self, filter, *args, **kwargs):
-        result = await self._coll.find_one_and_delete(
-            self._inject_filter(filter), *args, **kwargs
-        )
+        result = await self._coll.find_one_and_delete(self._inject_filter(filter), *args, **kwargs)
         _invalidate_auth_caches_for(self._name, filter)
         return result
 
     async def find_one_and_replace(self, filter, replacement, *args, **kwargs):
-        result = await self._coll.find_one_and_replace(
-            self._inject_filter(filter), replacement, *args, **kwargs
-        )
+        result = await self._coll.find_one_and_replace(self._inject_filter(filter), replacement, *args, **kwargs)
         _invalidate_auth_caches_for(self._name, filter)
         return result
 
@@ -346,6 +392,7 @@ class TenantScopedCollection:
 
 
 # ── TenantScopedDB (explicit) ──────────────────────────────────
+
 
 class TenantScopedDB:
     """
@@ -398,13 +445,20 @@ class GlobalCachedCollection:
 
     __slots__ = ("_coll", "_name")
 
-    _MUTATION_OPS = frozenset({
-        "insert_one", "insert_many",
-        "update_one", "update_many",
-        "delete_one", "delete_many",
-        "find_one_and_update", "find_one_and_delete", "find_one_and_replace",
-        "replace_one",
-    })
+    _MUTATION_OPS = frozenset(
+        {
+            "insert_one",
+            "insert_many",
+            "update_one",
+            "update_many",
+            "delete_one",
+            "delete_many",
+            "find_one_and_update",
+            "find_one_and_delete",
+            "find_one_and_replace",
+            "replace_one",
+        }
+    )
 
     def __init__(self, collection, name: str):
         self._coll = collection
@@ -424,6 +478,7 @@ class GlobalCachedCollection:
             else:
                 _invalidate_auth_caches_for(self._name, payload)
             return result
+
         return _wrapped
 
 
@@ -448,12 +503,20 @@ class AppendOnlyCollection:
 
     __slots__ = ("_inner", "_name")
 
-    _BLOCKED_OPS = frozenset({
-        "update_one", "update_many",
-        "delete_one", "delete_many",
-        "find_one_and_update", "find_one_and_delete", "find_one_and_replace",
-        "replace_one", "drop", "rename",
-    })
+    _BLOCKED_OPS = frozenset(
+        {
+            "update_one",
+            "update_many",
+            "delete_one",
+            "delete_many",
+            "find_one_and_update",
+            "find_one_and_delete",
+            "find_one_and_replace",
+            "replace_one",
+            "drop",
+            "rename",
+        }
+    )
 
     def __init__(self, inner, name: str):
         self._inner = inner
@@ -477,16 +540,13 @@ class AppendOnlyCollection:
         No-op for the archive (records are copied verbatim during the retention
         move and must keep their original chain fields) and while inside
         audit_retention_context()."""
-        if (
-            self._name != HOT_AUDIT_COLLECTION
-            or _audit_retention_ctx.get()
-            or not isinstance(document, dict)
-        ):
+        if self._name != HOT_AUDIT_COLLECTION or _audit_retention_ctx.get() or not isinstance(document, dict):
             return document
 
         # Attribution: stamp client IP + user-agent when the caller omitted them.
         try:
             from common.request_context import get_client_ip, get_user_agent
+
             if not document.get("ip_address"):
                 ip = get_client_ip()
                 if ip:
@@ -506,6 +566,7 @@ class AppendOnlyCollection:
                 document.setdefault("tenant_id", tenant_id)
                 try:
                     from core.audit_chain import _link_chain
+
                     seq, prev_hash, record_hash = await _link_chain(tenant_id, document)
                     document["seq"] = seq
                     document["prev_hash"] = prev_hash
@@ -533,7 +594,8 @@ class AppendOnlyCollection:
         if attr in AppendOnlyCollection._BLOCKED_OPS and not _audit_retention_ctx.get():
             logger.critical(
                 "AUDIT IMMUTABILITY VIOLATION: blocked '%s' on append-only collection '%s'",
-                attr, self._name,
+                attr,
+                self._name,
             )
             raise AuditImmutabilityError(
                 f"Mutation '{attr}' on append-only audit collection '{self._name}' is "
@@ -556,10 +618,17 @@ class SchemaOnlyCollection:
 
     __slots__ = ("_coll", "_name")
 
-    _SCHEMA_OPS = frozenset({
-        "create_index", "create_indexes", "list_indexes", "drop_index",
-        "index_information", "name", "full_name",
-    })
+    _SCHEMA_OPS = frozenset(
+        {
+            "create_index",
+            "create_indexes",
+            "list_indexes",
+            "drop_index",
+            "index_information",
+            "name",
+            "full_name",
+        }
+    )
 
     def __init__(self, collection, name: str):
         self._coll = collection
@@ -577,6 +646,7 @@ class SchemaOnlyCollection:
 
 # ── TenantAwareDBProxy (transparent) ───────────────────────────
 
+
 class TenantAwareDBProxy:
     """
     Transparent proxy that replaces the raw `db` object in core.database.
@@ -588,13 +658,22 @@ class TenantAwareDBProxy:
     - If no context + soft mode → returns raw collection with warning
     """
 
-    _DB_PASSTHROUGH = frozenset({
-        "command", "list_collection_names", "list_collections",
-        "create_collection", "drop_collection",
-        "with_options", "get_collection",
-        "codec_options", "read_preference", "read_concern", "write_concern",
-        "dereference",
-    })
+    _DB_PASSTHROUGH = frozenset(
+        {
+            "command",
+            "list_collection_names",
+            "list_collections",
+            "create_collection",
+            "drop_collection",
+            "with_options",
+            "get_collection",
+            "codec_options",
+            "read_preference",
+            "read_concern",
+            "write_concern",
+            "dereference",
+        }
+    )
 
     def __init__(self, database):
         object.__setattr__(self, "_db", database)
@@ -650,6 +729,7 @@ class TenantAwareDBProxy:
 
 # ── Public API ──────────────────────────────────────────────────
 
+
 def get_db() -> TenantScopedDB:
     """
     Get a tenant-scoped DB from the current request context.
@@ -657,11 +737,9 @@ def get_db() -> TenantScopedDB:
     """
     tenant_id = _tenant_ctx.get()
     if not tenant_id:
-        raise TenantViolationError(
-            "get_db() called without tenant context. "
-            "Use get_db_for_tenant() in workers or get_system_db() for system ops."
-        )
+        raise TenantViolationError("get_db() called without tenant context. Use get_db_for_tenant() in workers or get_system_db() for system ops.")
     from core.database import _raw_db
+
     return TenantScopedDB(_raw_db, tenant_id)
 
 
@@ -673,6 +751,7 @@ def get_db_for_tenant(tenant_id: str) -> TenantScopedDB:
     if not tenant_id:
         raise ValueError("tenant_id is required")
     from core.database import _raw_db
+
     return TenantScopedDB(_raw_db, tenant_id)
 
 
@@ -713,10 +792,12 @@ def get_system_db():
     pass through to the raw Motor db unchanged.
     """
     from core.database import _raw_db
+
     return _SystemAuditGuardDB(_raw_db)
 
 
 # ── Descriptor for repository class-level collection access ────
+
 
 class LazyCollection:
     """
@@ -737,4 +818,5 @@ class LazyCollection:
 
     def __get__(self, obj, objtype=None):
         from core.database import db
+
         return getattr(db, self._name)

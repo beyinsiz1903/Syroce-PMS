@@ -10,6 +10,7 @@ Features:
 - Import failure spike -> alerting engine
 - Cron safety-net inventory sync
 """
+
 import asyncio
 import logging
 import uuid
@@ -113,7 +114,9 @@ class ScheduledImportService:
             _running_jobs.pop(connector_id, None)
 
     async def _execute_job(
-        self, job: ScheduledImportJob, actor_id: str | None = None,
+        self,
+        job: ScheduledImportJob,
+        actor_id: str | None = None,
     ) -> dict[str, Any]:
         """Execute job with retry logic and lifecycle tracking."""
         job.status = "running"
@@ -149,19 +152,29 @@ class ScheduledImportService:
                 if job.retry_count <= job.max_retries:
                     job.status = "retrying"
                     await self._store_job(job)
-                    await self._audit(job, AuditAction.IMPORT_JOB_RETRYING, actor_id, {
-                        "attempt": job.retry_count,
-                        "error": job.error,
-                    })
-                    await asyncio.sleep(min(2 ** job.retry_count, 30))
+                    await self._audit(
+                        job,
+                        AuditAction.IMPORT_JOB_RETRYING,
+                        actor_id,
+                        {
+                            "attempt": job.retry_count,
+                            "error": job.error,
+                        },
+                    )
+                    await asyncio.sleep(min(2**job.retry_count, 30))
                 else:
                     job.status = "failed"
                     job.completed_at = datetime.now(UTC).isoformat()
                     await self._store_job(job)
-                    await self._audit(job, AuditAction.IMPORT_JOB_FAILED, actor_id, {
-                        "error": job.error,
-                        "total_retries": job.retry_count - 1,
-                    })
+                    await self._audit(
+                        job,
+                        AuditAction.IMPORT_JOB_FAILED,
+                        actor_id,
+                        {
+                            "error": job.error,
+                            "total_retries": job.retry_count - 1,
+                        },
+                    )
                     # Alert on failure
                     await self._alert_on_failure(job)
                     return {"status": "failed", "job": job.to_doc()}
@@ -175,11 +188,13 @@ class ScheduledImportService:
         results = []
         for c in active:
             result = await self.run_scheduled_import(tenant_id, c["id"])
-            results.append({
-                "connector_id": c["id"],
-                "display_name": c.get("display_name", ""),
-                **result,
-            })
+            results.append(
+                {
+                    "connector_id": c["id"],
+                    "display_name": c.get("display_name", ""),
+                    **result,
+                }
+            )
         return {
             "total_connectors": len(active),
             "results": results,
@@ -187,39 +202,55 @@ class ScheduledImportService:
         }
 
     async def get_import_jobs(
-        self, tenant_id: str, connector_id: str | None = None,
-        status: str | None = None, limit: int = 50,
+        self,
+        tenant_id: str,
+        connector_id: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
     ) -> list[dict[str, Any]]:
         """List import jobs with optional filters."""
         from core.database import db
+
         query: dict[str, Any] = {"tenant_id": tenant_id}
         if connector_id:
             query["connector_id"] = connector_id
         if status:
             query["status"] = status
-        jobs = await db.cm_import_jobs.find(
-            query, {"_id": 0},
-        ).sort("created_at", -1).limit(limit).to_list(limit)
+        jobs = (
+            await db.cm_import_jobs.find(
+                query,
+                {"_id": 0},
+            )
+            .sort("created_at", -1)
+            .limit(limit)
+            .to_list(limit)
+        )
         return jobs
 
     async def get_job_detail(self, tenant_id: str, job_id: str) -> dict[str, Any] | None:
         """Get details of a specific import job."""
         from core.database import db
+
         return await db.cm_import_jobs.find_one(
-            {"tenant_id": tenant_id, "id": job_id}, {"_id": 0},
+            {"tenant_id": tenant_id, "id": job_id},
+            {"_id": 0},
         )
 
     async def retry_failed_job(self, tenant_id: str, job_id: str, actor_id: str) -> dict[str, Any]:
         """Retry a previously failed import job."""
         from core.database import db
+
         job_doc = await db.cm_import_jobs.find_one(
-            {"tenant_id": tenant_id, "id": job_id, "status": "failed"}, {"_id": 0},
+            {"tenant_id": tenant_id, "id": job_id, "status": "failed"},
+            {"_id": 0},
         )
         if not job_doc:
             return {"status": "error", "reason": "Job not found or not in failed state"}
 
         result = await self.run_scheduled_import(
-            tenant_id, job_doc["connector_id"], actor_id,
+            tenant_id,
+            job_doc["connector_id"],
+            actor_id,
         )
         return result
 
@@ -229,6 +260,7 @@ class ScheduledImportService:
         to catch any missed updates.
         """
         from .inventory_sync_service import InventorySyncService
+
         sync_svc = InventorySyncService(repo=self._repo)
         connectors = await self._repo.get_connectors_by_tenant(tenant_id)
         active = [c for c in connectors if c.get("status") == "active"]
@@ -246,17 +278,21 @@ class ScheduledImportService:
                     triggered_by="cron_safety_net",
                     trigger_reason="Safety-net periodic inventory sync",
                 )
-                results.append({
-                    "connector_id": c["id"],
-                    "status": "completed",
-                    "result": result,
-                })
+                results.append(
+                    {
+                        "connector_id": c["id"],
+                        "status": "completed",
+                        "result": result,
+                    }
+                )
             except Exception as e:
-                results.append({
-                    "connector_id": c["id"],
-                    "status": "failed",
-                    "error": str(e)[:200],
-                })
+                results.append(
+                    {
+                        "connector_id": c["id"],
+                        "status": "failed",
+                        "error": str(e)[:200],
+                    }
+                )
 
         return {
             "type": "safety_net_inventory_sync",
@@ -269,20 +305,26 @@ class ScheduledImportService:
 
     async def _store_job(self, job: ScheduledImportJob):
         from core.database import db
+
         doc = job.to_doc()
         await db.cm_import_jobs.replace_one(
-            {"id": job.id}, doc, upsert=True,
+            {"id": job.id},
+            doc,
+            upsert=True,
         )
 
     async def _alert_on_failure(self, job: ScheduledImportJob):
         """Check for repeated failures and trigger alert."""
         from core.database import db
-        recent_failures = await db.cm_import_jobs.count_documents({
-            "tenant_id": job.tenant_id,
-            "connector_id": job.connector_id,
-            "status": "failed",
-            "completed_at": {"$gte": (datetime.now(UTC) - timedelta(hours=1)).isoformat()},
-        })
+
+        recent_failures = await db.cm_import_jobs.count_documents(
+            {
+                "tenant_id": job.tenant_id,
+                "connector_id": job.connector_id,
+                "status": "failed",
+                "completed_at": {"$gte": (datetime.now(UTC) - timedelta(hours=1)).isoformat()},
+            }
+        )
         if recent_failures >= 3:
             await self._alert_svc.check_and_fire_alert(
                 tenant_id=job.tenant_id,
@@ -296,8 +338,11 @@ class ScheduledImportService:
             )
 
     async def _audit(
-        self, job: ScheduledImportJob, action: AuditAction,
-        actor_id: str | None = None, metadata: dict | None = None,
+        self,
+        job: ScheduledImportJob,
+        action: AuditAction,
+        actor_id: str | None = None,
+        metadata: dict | None = None,
     ):
         log = IntegrationAuditLog(
             tenant_id=job.tenant_id,

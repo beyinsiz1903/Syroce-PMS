@@ -5,6 +5,7 @@ Operational Monitoring — Data Models
 Alert model and monitoring constants.
 Collection: monitoring_alerts
 """
+
 import uuid
 from datetime import UTC, datetime
 from enum import Enum

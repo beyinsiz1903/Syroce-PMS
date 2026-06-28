@@ -19,6 +19,7 @@ Usage:
     app = create_mock_app()
     # Run with: uvicorn ... on port 9999
 """
+
 import asyncio
 import logging
 import random
@@ -38,8 +39,8 @@ VALID_HR_IDS = {"HR-HOTEL-001", "HR-HOTEL-002"}
 _mock_state = {
     "request_count": 0,
     "rate_limit_after": 0,  # 0 = disabled
-    "error_rate": 0.0,      # 0-1, probability of 500
-    "timeout_rate": 0.0,    # 0-1, probability of timeout
+    "error_rate": 0.0,  # 0-1, probability of 500
+    "timeout_rate": 0.0,  # 0-1, probability of timeout
     "delivered_uids": set(),
     "reservations": [],
     "rooms": [],
@@ -77,48 +78,52 @@ def _generate_mock_reservations() -> list:
         hr_number = f"HR-{2024000 + i}"
         msg_uid = f"msg-uid-{uuid.uuid4().hex[:8]}"
 
-        reservations.append({
-            "reservation_id": str(10000 + i),
-            "hr_number": hr_number,
-            "state": state,
-            "guest": f"Test Guest {i}",
-            "firstname": f"Guest{i}",
-            "lastname": f"Surname{i}",
-            "country": "TR",
-            "channel": channel,
-            "channel_display": channel.replace(".", " ").title(),
-            "checkin_date": checkin.strftime("%Y-%m-%d"),
-            "checkout_date": checkout.strftime("%Y-%m-%d"),
-            "total": round(random.uniform(500, 5000), 2),
-            "currency": "TRY",
-            "payment": "credit_card",
-            "total_rooms": 1,
-            "total_guests": random.randint(1, 4),
-            "note": f"Mock reservation {i}",
-            "message_uid": msg_uid,
-            "requires_response": random.choice([True, False]),
-            "address": {
-                "email": f"guest{i}@example.com",
-                "phone": f"+9053{random.randint(10000000, 99999999)}",
-                "address_line": f"Test Sokak No:{i}",
-                "city": random.choice(["Istanbul", "Ankara", "Izmir", "Antalya"]),
-                "zipcode": f"{random.randint(10000, 99999)}",
-                "country_code": "TR",
-            },
-            "rooms": [{
-                "room_code": random.choice(["STD", "DLX", "SUI", "FAM"]),
-                "rate_code": random.choice(["BAR", "PROMO", "RACK", "NONREF"]),
-                "room_name": random.choice(["Standard Oda", "Deluxe Oda", "Suite", "Aile Odasi"]),
-                "adults": random.randint(1, 3),
-                "children": random.randint(0, 2),
+        reservations.append(
+            {
+                "reservation_id": str(10000 + i),
+                "hr_number": hr_number,
+                "state": state,
+                "guest": f"Test Guest {i}",
+                "firstname": f"Guest{i}",
+                "lastname": f"Surname{i}",
+                "country": "TR",
+                "channel": channel,
+                "channel_display": channel.replace(".", " ").title(),
+                "checkin_date": checkin.strftime("%Y-%m-%d"),
+                "checkout_date": checkout.strftime("%Y-%m-%d"),
                 "total": round(random.uniform(500, 5000), 2),
-                "daily_rates": [],
-                "guest": f"Guest{i} Surname{i}",
-            }],
-            "created_at": (now - timedelta(days=random.randint(1, 10))).isoformat(),
-            "updated_at": now.isoformat(),
-            "modified_at": now.isoformat(),
-        })
+                "currency": "TRY",
+                "payment": "credit_card",
+                "total_rooms": 1,
+                "total_guests": random.randint(1, 4),
+                "note": f"Mock reservation {i}",
+                "message_uid": msg_uid,
+                "requires_response": random.choice([True, False]),
+                "address": {
+                    "email": f"guest{i}@example.com",
+                    "phone": f"+9053{random.randint(10000000, 99999999)}",
+                    "address_line": f"Test Sokak No:{i}",
+                    "city": random.choice(["Istanbul", "Ankara", "Izmir", "Antalya"]),
+                    "zipcode": f"{random.randint(10000, 99999)}",
+                    "country_code": "TR",
+                },
+                "rooms": [
+                    {
+                        "room_code": random.choice(["STD", "DLX", "SUI", "FAM"]),
+                        "rate_code": random.choice(["BAR", "PROMO", "RACK", "NONREF"]),
+                        "room_name": random.choice(["Standard Oda", "Deluxe Oda", "Suite", "Aile Odasi"]),
+                        "adults": random.randint(1, 3),
+                        "children": random.randint(0, 2),
+                        "total": round(random.uniform(500, 5000), 2),
+                        "daily_rates": [],
+                        "guest": f"Guest{i} Surname{i}",
+                    }
+                ],
+                "created_at": (now - timedelta(days=random.randint(1, 10))).isoformat(),
+                "updated_at": now.isoformat(),
+                "modified_at": now.isoformat(),
+            }
+        )
 
     return reservations
 
@@ -185,6 +190,7 @@ def _generate_mock_channels() -> list:
 
 # ── Auth Validation ───────────────────────────────────────────────────
 
+
 def _validate_auth(request: Request) -> str | None:
     """Validate token + hr_id. Returns error message or None."""
     token = request.query_params.get("token", "")
@@ -200,6 +206,7 @@ def _validate_auth(request: Request) -> str | None:
 
 
 # ── Chaos Engineering ─────────────────────────────────────────────────
+
 
 async def _maybe_inject_error(request: Request) -> JSONResponse | None:
     """Inject errors based on configured rates. Returns error response or None."""
@@ -230,6 +237,7 @@ async def _maybe_inject_error(request: Request) -> JSONResponse | None:
 
 
 # ── Create App ────────────────────────────────────────────────────────
+
 
 def create_mock_app() -> FastAPI:
     from contextlib import asynccontextmanager
@@ -262,11 +270,14 @@ def create_mock_app() -> FastAPI:
             _mock_state["error_rate"] = float(body["error_rate"])
         if "timeout_rate" in body:
             _mock_state["timeout_rate"] = float(body["timeout_rate"])
-        return {"status": "configured", "config": {
-            "rate_limit_after": _mock_state["rate_limit_after"],
-            "error_rate": _mock_state["error_rate"],
-            "timeout_rate": _mock_state["timeout_rate"],
-        }}
+        return {
+            "status": "configured",
+            "config": {
+                "rate_limit_after": _mock_state["rate_limit_after"],
+                "error_rate": _mock_state["error_rate"],
+                "timeout_rate": _mock_state["timeout_rate"],
+            },
+        }
 
     @app.get("/mock/state")
     async def mock_get_state():
@@ -341,10 +352,7 @@ def create_mock_app() -> FastAPI:
 
         # Filter: undelivered = not yet ACK'd
         if undelivered.lower() == "true":
-            all_res = [
-                r for r in all_res
-                if r.get("message_uid") not in _mock_state["delivered_uids"]
-            ]
+            all_res = [r for r in all_res if r.get("message_uid") not in _mock_state["delivered_uids"]]
 
         # Filter: modified only
         if modified and modified.lower() == "true":
@@ -441,6 +449,7 @@ def create_mock_app() -> FastAPI:
         body = await request.body()
         if request.headers.get("content-type", "").startswith("application/json"):
             import json
+
             form_data = json.loads(body)
         else:
             # Parse form-encoded data
@@ -464,10 +473,13 @@ def create_mock_app() -> FastAPI:
         # Validate room exists
         known_codes = {r["inv_code"] for r in _mock_state["rooms"]}
         if inv_code not in known_codes:
-            return JSONResponse(status_code=400, content={
-                "status": "error",
-                "error": f"Unknown inv_code: {inv_code}. Valid: {sorted(known_codes)}",
-            })
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "error": f"Unknown inv_code: {inv_code}. Valid: {sorted(known_codes)}",
+                },
+            )
 
         txn_id = f"txn-{uuid.uuid4().hex[:8]}"
         update_record = {
@@ -501,17 +513,20 @@ def create_mock_app() -> FastAPI:
         body = await request.body()
         if request.headers.get("content-type", "").startswith("application/json"):
             import json
+
             form_data = json.loads(body)
         else:
             form_data = dict(request.query_params)
 
         txn_id = f"txn-{uuid.uuid4().hex[:8]}"
-        _mock_state["ari_updates"].append({
-            "transaction_id": txn_id,
-            "type": "daily",
-            "data": form_data,
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        _mock_state["ari_updates"].append(
+            {
+                "transaction_id": txn_id,
+                "type": "daily",
+                "data": form_data,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
 
         return {"status": "success", "transaction_id": txn_id}
 
@@ -550,10 +565,13 @@ def create_mock_app() -> FastAPI:
                     "details": update,
                 }
 
-        return JSONResponse(status_code=404, content={
-            "status": "error",
-            "message": f"Transaction {transaction_id} not found",
-        })
+        return JSONResponse(
+            status_code=404,
+            content={
+                "status": "error",
+                "message": f"Transaction {transaction_id} not found",
+            },
+        )
 
     # ── Property Info (for connection test) ───────────────────────
 
@@ -565,13 +583,15 @@ def create_mock_app() -> FastAPI:
 
         hr_id = request.query_params.get("hr_id", "")
         return {
-            "properties": [{
-                "id": hr_id,
-                "name": "Mock Hotel",
-                "status": "active",
-                "timezone": "Europe/Istanbul",
-                "currency": "TRY",
-            }],
+            "properties": [
+                {
+                    "id": hr_id,
+                    "name": "Mock Hotel",
+                    "status": "active",
+                    "timezone": "Europe/Istanbul",
+                    "currency": "TRY",
+                }
+            ],
         }
 
     @app.get("/api/v2/apps/properties")
@@ -595,6 +615,7 @@ _mock_app = create_mock_app()
 async def start_mock_server(port: int = 9999):
     """Start the mock server as a background task."""
     import uvicorn
+
     config = uvicorn.Config(_mock_app, host="0.0.0.0", port=port, log_level="warning")
     server = uvicorn.Server(config)
     await server.serve()
@@ -603,6 +624,7 @@ async def start_mock_server(port: int = 9999):
 def run_mock_server_sync(port: int = 9999):
     """Start mock server synchronously (for subprocess/script use)."""
     import uvicorn
+
     uvicorn.run(_mock_app, host="0.0.0.0", port=port, log_level="info")
 
 

@@ -9,6 +9,7 @@ koşmalı. Bu kilit tek-belge bir advisory lock'tur:
     dolunca bir sonraki runner kilidi devralabilir (deadlock yok).
   - Yalnızca kilit sahibi (``owner`` token) kilidi serbest bırakabilir.
 """
+
 from __future__ import annotations
 
 import logging
@@ -56,20 +57,29 @@ async def acquire_lock(db, owner: str, lease_seconds: float) -> bool:
             "_id": LOCK_DOC_ID,
             "$or": [{"active": False}, {"expires_at": {"$lt": now}}],
         },
-        {"$set": {
-            "active": True, "owner": owner,
-            "acquired_at": now, "expires_at": expires,
-        }},
+        {
+            "$set": {
+                "active": True,
+                "owner": owner,
+                "acquired_at": now,
+                "expires_at": expires,
+            }
+        },
     )
     if res.modified_count == 1:
         return True
 
     # 2) Kilit belgesi hiç yoksa oluştur (sabit _id → race DuplicateKeyError ile çözülür).
     try:
-        await db[LOCK_COLLECTION].insert_one({
-            "_id": LOCK_DOC_ID, "active": True, "owner": owner,
-            "acquired_at": now, "expires_at": expires,
-        })
+        await db[LOCK_COLLECTION].insert_one(
+            {
+                "_id": LOCK_DOC_ID,
+                "active": True,
+                "owner": owner,
+                "acquired_at": now,
+                "expires_at": expires,
+            }
+        )
         return True
     except DuplicateKeyError:
         return False
@@ -99,8 +109,7 @@ async def lock_status(db) -> dict[str, Any]:
     """Ops görünürlüğü için kilit durumunu döndürür."""
     doc = await db[LOCK_COLLECTION].find_one({"_id": LOCK_DOC_ID})
     if not doc:
-        return {"held": False, "owner": None, "acquired_at": None,
-                "expires_at": None, "expired": None}
+        return {"held": False, "owner": None, "acquired_at": None, "expires_at": None, "expired": None}
     expires = _as_aware(doc.get("expires_at"))
     active = bool(doc.get("active"))
     expired = bool(expires and expires < _now())

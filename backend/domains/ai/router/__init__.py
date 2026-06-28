@@ -2,6 +2,7 @@
 Aggregator package — auto-split from router.py.
 Public API: from domains.ai.router import router
 """
+
 from fastapi import APIRouter
 
 from .autopilot_reco import router as _autopilot_reco_r

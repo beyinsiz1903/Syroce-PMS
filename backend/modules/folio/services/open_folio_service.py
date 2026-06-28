@@ -98,12 +98,7 @@ class OpenFolioService:
                 tenant_id=tenant_context.tenant_id,
                 correlation_id=correlation_id,
             ).timestamp
-            currency = (
-                tenant_doc.get("currency")
-                or tenant_doc.get("default_currency")
-                or booking.get("currency")
-                or "TRY"
-            )
+            currency = tenant_doc.get("currency") or tenant_doc.get("default_currency") or booking.get("currency") or "TRY"
 
             folio = Folio(
                 tenant_id=tenant_context.tenant_id,
@@ -168,7 +163,8 @@ class OpenFolioService:
             response_body = {
                 key: value
                 for key, value in folio_dict.items()
-                if key in {
+                if key
+                in {
                     "id",
                     "tenant_id",
                     "booking_id",

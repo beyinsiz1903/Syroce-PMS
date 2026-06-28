@@ -18,6 +18,7 @@ legitimate API call. ``defusedxml.ElementTree.ParseError`` is a
 subclass of stdlib's, so existing ``except ET.ParseError`` handlers
 keep working unchanged.
 """
+
 import hashlib
 import logging
 import uuid
@@ -96,9 +97,10 @@ def mask_sensitive_xml(xml_str: str) -> str:
     masked = xml_str
     for pattern in MASK_PATTERNS:
         import re
+
         masked = re.sub(
-            rf'(<{pattern}[^>]*>)([^<]+)(</{pattern}>)',
-            r'\1****\3',
+            rf"(<{pattern}[^>]*>)([^<]+)(</{pattern}>)",
+            r"\1****\3",
             masked,
         )
         masked = re.sub(
@@ -148,11 +150,13 @@ def parse_response_status(xml_str: str) -> dict[str, Any]:
     if errors_elem is not None:
         error_list = []
         for err in errors_elem.findall("Error") + errors_elem.findall("ota:Error", NS):
-            error_list.append({
-                "code": err.get("Code", ""),
-                "type": err.get("Type", ""),
-                "message": err.text.strip() if err.text else err.get("ShortText", ""),
-            })
+            error_list.append(
+                {
+                    "code": err.get("Code", ""),
+                    "type": err.get("Type", ""),
+                    "message": err.text.strip() if err.text else err.get("ShortText", ""),
+                }
+            )
         return {"success": False, "errors": error_list}
 
     # Check for warnings
@@ -178,10 +182,7 @@ def parse_reservations_response(xml_str: str) -> list[dict[str, Any]]:
     reservations = []
 
     # HotelRunner returns reservations in HotelReservations/HotelReservation
-    for hotel_res in (
-        root.findall(".//HotelReservation") +
-        root.findall(".//ota:HotelReservation", NS)
-    ):
+    for hotel_res in root.findall(".//HotelReservation") + root.findall(".//ota:HotelReservation", NS):
         res = _parse_single_reservation(hotel_res)
         if res:
             reservations.append(res)
@@ -271,12 +272,14 @@ def _parse_single_reservation(elem: _Element) -> dict[str, Any] | None:
                 elif age_code in ("8", "7"):
                     child_count += count
 
-            rooms.append({
-                "room_type_code": room_type_code,
-                "rate_plan_code": rate_plan_code,
-                "adult_count": adult_count or 1,
-                "child_count": child_count,
-            })
+            rooms.append(
+                {
+                    "room_type_code": room_type_code,
+                    "rate_plan_code": rate_plan_code,
+                    "adult_count": adult_count or 1,
+                    "child_count": child_count,
+                }
+            )
 
     # Special requests — tolerate missing
     special_requests = ""

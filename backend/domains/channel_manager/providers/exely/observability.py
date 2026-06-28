@@ -5,6 +5,7 @@ Exely Provider — Observability
 Records provider call metrics, logs, and health indicators.
 Mirrors the HotelRunner observability module for consistency.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -48,7 +49,11 @@ def record_provider_call(
 
     logger.info(
         "[EXELY-OBS] %s -> %dms success=%s conn=%s corr=%s",
-        soap_action, duration_ms, success, connection_id, correlation_id,
+        soap_action,
+        duration_ms,
+        success,
+        connection_id,
+        correlation_id,
     )
 
 
@@ -72,20 +77,17 @@ def record_provider_failure(
 
     logger.error(
         "[EXELY-OBS] FAILURE %s: %s (conn=%s action=%s)",
-        error_type, message, connection_id, soap_action,
+        error_type,
+        message,
+        connection_id,
+        soap_action,
     )
 
 
 def get_provider_health() -> dict[str, Any]:
     call_count = _metrics["call_count"]
-    avg_latency = (
-        round(_metrics["total_latency_ms"] / call_count)
-        if call_count > 0 else 0
-    )
-    success_rate = (
-        round((_metrics["success_count"] / call_count) * 100, 1)
-        if call_count > 0 else 100.0
-    )
+    avg_latency = round(_metrics["total_latency_ms"] / call_count) if call_count > 0 else 0
+    success_rate = round((_metrics["success_count"] / call_count) * 100, 1) if call_count > 0 else 100.0
     return {
         "provider": "exely",
         "call_count": call_count,

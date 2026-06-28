@@ -1,4 +1,5 @@
 """Auto-split from schemas.py — domain: revenue."""
+
 import uuid
 from datetime import UTC, datetime
 
@@ -23,6 +24,7 @@ class RateOverride(BaseModel):
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class RevenueForecast(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -36,6 +38,7 @@ class RevenueForecast(BaseModel):
     confidence_level: float = 0.0
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
 
 class DemandData(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -86,5 +89,3 @@ class PriceAnalysis(BaseModel):
     demand_score: float
     competitor_avg: float | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
-

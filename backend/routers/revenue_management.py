@@ -2,6 +2,7 @@
 Revenue Management Engine Router - Dynamic pricing, demand analysis, yield rules, channel strategy.
 All endpoints under /api/revenue-engine/
 """
+
 from datetime import UTC, datetime, timedelta
 from datetime import date as date_cls
 
@@ -24,6 +25,7 @@ class ApplyRateRequest(BaseModel):
 
 
 # ── DEMAND ANALYSIS ──
+
 
 @router.get("/booking-pace")
 @cached(ttl=300, key_prefix="revenue_booking_pace")
@@ -78,6 +80,7 @@ async def api_lead_time(days_back: int = 30, current_user: User = Depends(get_cu
 
 # ── RATE OPTIMIZATION ──
 
+
 @router.get("/ideal-adr")
 async def api_ideal_adr(
     target_date: str | None = None,
@@ -100,6 +103,7 @@ async def api_rate_suggestions(days: int = 7, current_user: User = Depends(get_c
 
 # ── YIELD RULES ──
 
+
 @router.get("/yield-recommendations")
 @cached(ttl=600, key_prefix="rev_yield_rec")  # 10dk cache (Tur 2 fix)
 async def api_yield_recommendations(current_user: User = Depends(get_current_user)):
@@ -109,6 +113,7 @@ async def api_yield_recommendations(current_user: User = Depends(get_current_use
 
 # ── CHANNEL STRATEGY ──
 
+
 @router.get("/channel-performance")
 async def api_channel_performance(days_back: int = 30, current_user: User = Depends(get_current_user)):
     """Get channel mix and performance analysis."""
@@ -116,6 +121,7 @@ async def api_channel_performance(days_back: int = 30, current_user: User = Depe
 
 
 # ── DASHBOARD ──
+
 
 @router.get("/dashboard")
 @cached(ttl=300, key_prefix="rev_dashboard")  # 5dk cache (Tur 2 fix)
@@ -126,8 +132,11 @@ async def api_revenue_dashboard(current_user: User = Depends(get_current_user)):
 
 # ── AUTOMATION ──
 
+
 @router.post("/apply-rate")
-async def api_apply_rate(req: ApplyRateRequest, current_user: User = Depends(get_current_user),
+async def api_apply_rate(
+    req: ApplyRateRequest,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """Apply a rate suggestion for a specific date."""

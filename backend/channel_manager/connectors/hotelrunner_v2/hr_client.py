@@ -3,6 +3,7 @@ HotelRunner HTTP Client — Production connector.
 
 Supports both XML/OTA endpoints (inventory, rates) and REST/JSON endpoints (reservations).
 """
+
 import logging
 import time
 import uuid as _uuid
@@ -132,17 +133,25 @@ class HotelRunnerClient:
         try:
             if method.upper() == "POST":
                 response = await self._client.post(
-                    url, content=xml_body, headers=headers, params=merged_params,
+                    url,
+                    content=xml_body,
+                    headers=headers,
+                    params=merged_params,
                 )
             else:
                 response = await self._client.get(
-                    url, headers=headers, params=merged_params,
+                    url,
+                    headers=headers,
+                    params=merged_params,
                 )
 
             duration_ms = int((time.monotonic() - start) * 1000)
             logger.info(
                 "HR XML %s %s -> %d (%dms)",
-                method, path, response.status_code, duration_ms,
+                method,
+                path,
+                response.status_code,
+                duration_ms,
             )
 
             if response.status_code == 401:
@@ -201,15 +210,21 @@ class HotelRunnerClient:
         try:
             if method.upper() == "PUT":
                 response = await self._client.put(
-                    url, params=merged_params, headers=headers,
+                    url,
+                    params=merged_params,
+                    headers=headers,
                 )
             elif method.upper() == "POST":
                 response = await self._client.post(
-                    url, params=merged_params, headers=headers,
+                    url,
+                    params=merged_params,
+                    headers=headers,
                 )
             else:
                 response = await self._client.get(
-                    url, params=merged_params, headers=headers,
+                    url,
+                    params=merged_params,
+                    headers=headers,
                 )
 
             duration_ms = int((time.monotonic() - start) * 1000)
@@ -219,7 +234,10 @@ class HotelRunnerClient:
 
             logger.info(
                 "HR REST %s %s -> %d (%dms)",
-                method, path, response.status_code, duration_ms,
+                method,
+                path,
+                response.status_code,
+                duration_ms,
             )
 
             if response.status_code == 401:
@@ -246,8 +264,7 @@ class HotelRunnerClient:
             self._audit_entries.append(audit)
             return data, audit
 
-        except (AuthenticationError, RateLimitError, ProviderUnavailableError,
-                ConnectorError, ResponseParseError):
+        except (AuthenticationError, RateLimitError, ProviderUnavailableError, ConnectorError, ResponseParseError):
             audit["latency_ms"] = int((time.monotonic() - start) * 1000)
             self._audit_entries.append(audit)
             raise
@@ -265,7 +282,9 @@ class HotelRunnerClient:
     # ─── Inventory / Rates (XML) ─────────────────────────────────────
 
     async def push_availability(
-        self, updates: list, correlation_id: str | None = None,
+        self,
+        updates: list,
+        correlation_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Push inventory availability to HotelRunner.
@@ -274,7 +293,8 @@ class HotelRunnerClient:
         """
         corr_id = correlation_id or str(_uuid.uuid4())
         xml_body = xml_builder.build_availability_notif(
-            hr_id=self._auth.hr_id, updates=updates,
+            hr_id=self._auth.hr_id,
+            updates=updates,
         )
 
         audit = {
@@ -316,7 +336,9 @@ class HotelRunnerClient:
             raise
 
     async def push_rates(
-        self, updates: list, correlation_id: str | None = None,
+        self,
+        updates: list,
+        correlation_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Push rate amounts to HotelRunner.
@@ -325,7 +347,8 @@ class HotelRunnerClient:
         """
         corr_id = correlation_id or str(_uuid.uuid4())
         xml_body = xml_builder.build_rate_amount_notif(
-            hr_id=self._auth.hr_id, updates=updates,
+            hr_id=self._auth.hr_id,
+            updates=updates,
         )
 
         audit = {
@@ -408,7 +431,8 @@ class HotelRunnerClient:
                 params["from_last_update_date"] = date_end
 
             data, _ = await self._request_json(
-                "GET", "/apps/reservations",
+                "GET",
+                "/apps/reservations",
                 params=params,
                 correlation_id=f"{corr_id}-page-{pg}",
             )
@@ -439,13 +463,16 @@ class HotelRunnerClient:
             if total_pages > MAX_PAGINATION_PAGES:
                 logger.warning(
                     "Pagination safety limit reached: %d/%d pages fetched",
-                    MAX_PAGINATION_PAGES, total_pages,
+                    MAX_PAGINATION_PAGES,
+                    total_pages,
                 )
                 raise PaginationExhaustedError(MAX_PAGINATION_PAGES, len(all_reservations))
 
         logger.info(
             "Pulled %d reservations across %d pages (corr=%s)",
-            len(all_reservations), min(total_pages, MAX_PAGINATION_PAGES), corr_id,
+            len(all_reservations),
+            min(total_pages, MAX_PAGINATION_PAGES),
+            corr_id,
         )
         return all_reservations
 
@@ -469,7 +496,8 @@ class HotelRunnerClient:
 
         async def _do():
             data, _ = await self._request_json(
-                "PUT", "/apps/reservations/~",
+                "PUT",
+                "/apps/reservations/~",
                 params=params,
                 correlation_id=corr_id,
             )
@@ -506,10 +534,12 @@ class HotelRunnerClient:
                 results["sent"] += 1
             except (ConnectorError, AcknowledgementError) as e:
                 results["failed"] += 1
-                results["errors"].append({
-                    "message_uid": msg_uid,
-                    "error": str(e),
-                })
+                results["errors"].append(
+                    {
+                        "message_uid": msg_uid,
+                        "error": str(e),
+                    }
+                )
                 logger.warning("ACK failed for uid=%s: %s", msg_uid, e)
 
         return results
@@ -538,7 +568,8 @@ class HotelRunnerClient:
 
         async def _do():
             data, _ = await self._request_json(
-                "PUT", "/apps/reservations/fire",
+                "PUT",
+                "/apps/reservations/fire",
                 params=params,
                 correlation_id=corr_id,
             )
@@ -602,27 +633,37 @@ class HotelRunnerClient:
 
         # Step 1: Authentication validity
         auth_result = await self._test_single_step(
-            "authentication", "GET", "/properties",
+            "authentication",
+            "GET",
+            "/properties",
         )
 
         # Step 2: Property / hotel access
         property_result = await self._test_single_step(
-            "property_access", "GET", f"/hotels/{self._auth.hr_id}",
+            "property_access",
+            "GET",
+            f"/hotels/{self._auth.hr_id}",
         )
 
         # Step 3: Room type fetch
         room_result = await self._test_single_step(
-            "room_type_fetch", "GET", f"/hotels/{self._auth.hr_id}/rooms",
+            "room_type_fetch",
+            "GET",
+            f"/hotels/{self._auth.hr_id}/rooms",
         )
 
         # Step 4: Rate plan fetch
         rate_result = await self._test_single_step(
-            "rate_plan_fetch", "GET", f"/hotels/{self._auth.hr_id}/rate_plans",
+            "rate_plan_fetch",
+            "GET",
+            f"/hotels/{self._auth.hr_id}/rate_plans",
         )
 
         # Step 5: REST reservation endpoint (JSON)
         rest_result = await self._test_single_step(
-            "rest_reservations", "GET", "/apps/reservations",
+            "rest_reservations",
+            "GET",
+            "/apps/reservations",
         )
 
         steps = [auth_result, property_result, room_result, rate_result, rest_result]

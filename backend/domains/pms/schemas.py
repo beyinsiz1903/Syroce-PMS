@@ -2,6 +2,7 @@
 PMS Domain — Schemas
 Request/response models extracted from PMS routers.
 """
+
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 # ── Front Desk ──
+
 
 class PassportScanData(BaseModel):
     passport_number: str | None = None
@@ -64,11 +66,13 @@ class KeycardIssueRequest(BaseModel):
 
 # ── Housekeeping ──
 
+
 class CleaningRequestStatusUpdate(BaseModel):
     status: str
 
 
 # ── Mobile ──
+
 
 class ProcessNoShowRequest(BaseModel):
     booking_id: str
@@ -114,6 +118,7 @@ class MenuPriceUpdateRequest(BaseModel):
 
 # ── Notifications ──
 
+
 class NotificationPreferenceRequest(BaseModel):
     channel: str
     enabled: bool
@@ -128,6 +133,7 @@ class SystemAlertRequest(BaseModel):
 
 
 # ── Approvals ──
+
 
 class CreateApprovalRequest(BaseModel):
     type: str
@@ -161,12 +167,14 @@ class BudgetConfig(BaseModel):
 
 # ── Calendar ──
 
+
 class ChannelMixRequest(BaseModel):
     date_from: str
     date_to: str
 
 
 # ── POS / F&B ──
+
 
 class POSMenuItem(BaseModel):
     name: str
@@ -203,6 +211,7 @@ class MenuItemCreate(BaseModel):
 
 
 # ── Misc ──
+
 
 class PingTestRequest(BaseModel):
     target: str

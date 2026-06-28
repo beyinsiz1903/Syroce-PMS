@@ -5,6 +5,7 @@ HotelRunner Provider — Observability
 Records provider call metrics, logs, and health indicators.
 Writes to monitoring_metrics and ari_outbound_logs collections.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -51,8 +52,13 @@ def record_provider_call(
 
     logger.info(
         "[HR-OBS] %s %s -> %d (%dms) success=%s conn=%s corr=%s",
-        method, path, status_code, duration_ms, success,
-        connection_id, correlation_id,
+        method,
+        path,
+        status_code,
+        duration_ms,
+        success,
+        connection_id,
+        correlation_id,
     )
 
 
@@ -75,7 +81,10 @@ def record_provider_failure(
 
     logger.error(
         "[HR-OBS] FAILURE %s: %s (conn=%s path=%s)",
-        error_type, message, connection_id, path,
+        error_type,
+        message,
+        connection_id,
+        path,
     )
 
 
@@ -88,14 +97,8 @@ def record_provider_latency(*, path: str, duration_ms: int) -> None:
 def get_provider_health() -> dict[str, Any]:
     """Get current provider health snapshot for monitoring."""
     call_count = _metrics["call_count"]
-    avg_latency = (
-        round(_metrics["total_latency_ms"] / call_count)
-        if call_count > 0 else 0
-    )
-    success_rate = (
-        round((_metrics["success_count"] / call_count) * 100, 1)
-        if call_count > 0 else 100.0
-    )
+    avg_latency = round(_metrics["total_latency_ms"] / call_count) if call_count > 0 else 0
+    success_rate = round((_metrics["success_count"] / call_count) * 100, 1) if call_count > 0 else 100.0
     return {
         "provider": "hotelrunner",
         "call_count": call_count,

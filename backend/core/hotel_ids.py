@@ -1,4 +1,5 @@
 """Shared utility for allocating unique 6-digit hotel_id values for tenants."""
+
 import random
 
 from fastapi import HTTPException

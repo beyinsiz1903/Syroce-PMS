@@ -4,6 +4,7 @@ Timeline Reader — Query and Analyze Event Timelines
 Provides read access for debugging, gap detection, and search.
 The primary debug entry point: "trace any reservation in seconds."
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -15,8 +16,15 @@ COLL_TIMELINE = "event_timeline"
 # Expected stage sequences for gap detection
 EXPECTED_SEQUENCES = {
     "reservation": [
-        "webhook_received", "deduplicated", "normalized", "validated",
-        "import_decided", "stored", "queued", "dispatched", "confirmed",
+        "webhook_received",
+        "deduplicated",
+        "normalized",
+        "validated",
+        "import_decided",
+        "stored",
+        "queued",
+        "dispatched",
+        "confirmed",
     ],
     "ari_update": ["queued", "dispatched", "pushed", "confirmed"],
     "night_audit": ["started", "validating", "posting", "reconciling", "rolling", "completed"],
@@ -32,6 +40,7 @@ class TimelineReader:
     def _get_db(self):
         if self._db is None:
             from core.database import db
+
             self._db = db
         return self._db
 
@@ -50,9 +59,7 @@ class TimelineReader:
         if tenant_id:
             query["tenant_id"] = tenant_id
 
-        events = await db[COLL_TIMELINE].find(
-            query, {"_id": 0}
-        ).sort("timestamp", 1).to_list(500)
+        events = await db[COLL_TIMELINE].find(query, {"_id": 0}).sort("timestamp", 1).to_list(500)
 
         total_duration = self._compute_total_duration(events)
         current_stage = events[-1]["stage"] if events else None
@@ -77,7 +84,9 @@ class TimelineReader:
         }
 
     async def get_by_correlation(
-        self, correlation_id: str, tenant_id: str | None = None,
+        self,
+        correlation_id: str,
+        tenant_id: str | None = None,
     ) -> dict[str, Any]:
         """All events sharing a correlation ID."""
         db = self._get_db()
@@ -85,9 +94,7 @@ class TimelineReader:
         if tenant_id:
             query["tenant_id"] = tenant_id
 
-        events = await db[COLL_TIMELINE].find(
-            query, {"_id": 0}
-        ).sort("timestamp", 1).to_list(500)
+        events = await db[COLL_TIMELINE].find(query, {"_id": 0}).sort("timestamp", 1).to_list(500)
 
         # Build entity map
         entity_map: dict[str, str] = {}
@@ -106,7 +113,9 @@ class TimelineReader:
         }
 
     async def get_by_external_id(
-        self, external_id: str, tenant_id: str | None = None,
+        self,
+        external_id: str,
+        tenant_id: str | None = None,
     ) -> dict[str, Any]:
         """Lookup by OTA reservation ID — the most common debug entry point."""
         db = self._get_db()
@@ -114,9 +123,7 @@ class TimelineReader:
         if tenant_id:
             query["tenant_id"] = tenant_id
 
-        events = await db[COLL_TIMELINE].find(
-            query, {"_id": 0}
-        ).sort("timestamp", 1).to_list(500)
+        events = await db[COLL_TIMELINE].find(query, {"_id": 0}).sort("timestamp", 1).to_list(500)
 
         if not events:
             return {
@@ -179,9 +186,7 @@ class TimelineReader:
             query["timestamp"] = ts_query
 
         total = await db[COLL_TIMELINE].count_documents(query)
-        events = await db[COLL_TIMELINE].find(
-            query, {"_id": 0}
-        ).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+        events = await db[COLL_TIMELINE].find(query, {"_id": 0}).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
 
         return {
             "events": events,
@@ -199,9 +204,7 @@ class TimelineReader:
     ) -> dict[str, Any]:
         """Find events stuck in intermediate stages."""
         db = self._get_db()
-        cutoff = (
-            datetime.now(UTC) - timedelta(minutes=max_age_minutes)
-        ).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(minutes=max_age_minutes)).isoformat()
 
         # Find the latest event per correlation_id
         match: dict[str, Any] = {"timestamp": {"$lte": cutoff}}
@@ -214,37 +217,43 @@ class TimelineReader:
         pipeline = [
             {"$match": match},
             {"$sort": {"timestamp": -1}},
-            {"$group": {
-                "_id": "$correlation_id",
-                "last_stage": {"$first": "$stage"},
-                "last_status": {"$first": "$status"},
-                "last_timestamp": {"$first": "$timestamp"},
-                "entity_type": {"$first": "$entity_type"},
-                "entity_id": {"$first": "$entity_id"},
-                "external_id": {"$first": "$external_id"},
-                "tenant_id": {"$first": "$tenant_id"},
-                "provider": {"$first": "$provider"},
-            }},
-            {"$match": {
-                "last_stage": {"$nin": list(terminal_stages)},
-                "last_status": {"$ne": "failure"},
-            }},
+            {
+                "$group": {
+                    "_id": "$correlation_id",
+                    "last_stage": {"$first": "$stage"},
+                    "last_status": {"$first": "$status"},
+                    "last_timestamp": {"$first": "$timestamp"},
+                    "entity_type": {"$first": "$entity_type"},
+                    "entity_id": {"$first": "$entity_id"},
+                    "external_id": {"$first": "$external_id"},
+                    "tenant_id": {"$first": "$tenant_id"},
+                    "provider": {"$first": "$provider"},
+                }
+            },
+            {
+                "$match": {
+                    "last_stage": {"$nin": list(terminal_stages)},
+                    "last_status": {"$ne": "failure"},
+                }
+            },
             {"$sort": {"last_timestamp": 1}},
             {"$limit": limit},
         ]
 
         stuck = []
         async for doc in db[COLL_TIMELINE].aggregate(pipeline):
-            stuck.append({
-                "correlation_id": doc["_id"],
-                "entity_type": doc["entity_type"],
-                "entity_id": doc.get("entity_id", ""),
-                "external_id": doc.get("external_id", ""),
-                "last_stage": doc["last_stage"],
-                "stuck_since": doc["last_timestamp"],
-                "tenant_id": doc["tenant_id"],
-                "provider": doc.get("provider", ""),
-            })
+            stuck.append(
+                {
+                    "correlation_id": doc["_id"],
+                    "entity_type": doc["entity_type"],
+                    "entity_id": doc.get("entity_id", ""),
+                    "external_id": doc.get("external_id", ""),
+                    "last_stage": doc["last_stage"],
+                    "stuck_since": doc["last_timestamp"],
+                    "tenant_id": doc["tenant_id"],
+                    "provider": doc.get("provider", ""),
+                }
+            )
 
         return {
             "stuck_events": stuck,
@@ -264,22 +273,20 @@ class TimelineReader:
             return None
 
     def _detect_gaps(
-        self, events: list[dict[str, Any]], entity_type: str,
+        self,
+        events: list[dict[str, Any]],
+        entity_type: str,
     ) -> list[str]:
         """Detect missing stages in a timeline."""
         expected = EXPECTED_SEQUENCES.get(entity_type)
         if not expected:
             return []
 
-        actual_stages = {
-            e["stage"] for e in events if e.get("status") == "success"
-        }
+        actual_stages = {e["stage"] for e in events if e.get("status") == "success"}
         gaps = []
         for i, expected_stage in enumerate(expected):
             if expected_stage not in actual_stages:
-                gaps.append(
-                    f"Missing stage: {expected_stage} (expected at position {i})"
-                )
+                gaps.append(f"Missing stage: {expected_stage} (expected at position {i})")
         return gaps
 
 

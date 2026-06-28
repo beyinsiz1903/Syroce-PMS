@@ -3,6 +3,7 @@ PMS / Front Desk — Service Layer
 Orchestrates check-in, check-out, walk-in bookings, guest alerts,
 keycard management, and unified arrivals/departures. No FastAPI dependencies.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -21,6 +22,7 @@ class FrontdeskService:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     # ------------------------------------------------------------------
@@ -31,39 +33,50 @@ class FrontdeskService:
         today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=UTC)
         today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
 
-        arrivals = await self._db.bookings.find({
-            "tenant_id": ctx.tenant_id,
-            "check_in": {"$gte": today_start.isoformat(), "$lte": today_end.isoformat()},
-            "status": {"$in": ["confirmed", "guaranteed"]},
-        }, {"_id": 0}).to_list(100)
+        arrivals = await self._db.bookings.find(
+            {
+                "tenant_id": ctx.tenant_id,
+                "check_in": {"$gte": today_start.isoformat(), "$lte": today_end.isoformat()},
+                "status": {"$in": ["confirmed", "guaranteed"]},
+            },
+            {"_id": 0},
+        ).to_list(100)
 
         from core.guest_name_utils import display_guest_name
+
         enriched = []
         for b in arrivals:
             guest = await self._db.guests.find_one({"id": b["guest_id"]}, {"_id": 0})
             room = await self._db.rooms.find_one({"id": b.get("room_id")}, {"_id": 0}) if b.get("room_id") else None
             # Walk-in placeholder ("C4", "V4 Refund") tespit edilirse "Misafir <ID8>" fallback.
             raw_name = guest.get("name") if guest else None
-            enriched.append({
-                **b,
-                "guest_name": display_guest_name(raw_name, b.get("guest_id")),
-                "guest_email": guest.get("email") if guest else None,
-                "room_number": room.get("room_number") if room else None,
-                "vip_status": guest.get("vip_status", False) if guest else False,
-            })
+            enriched.append(
+                {
+                    **b,
+                    "guest_name": display_guest_name(raw_name, b.get("guest_id")),
+                    "guest_email": guest.get("email") if guest else None,
+                    "room_number": room.get("room_number") if room else None,
+                    "vip_status": guest.get("vip_status", False) if guest else False,
+                }
+            )
 
-        enriched.sort(key=lambda x: (
-            -1 if x.get("vip_status") else 0,
-            -1 if x.get("group_block_id") else 0,
-        ), reverse=True)
+        enriched.sort(
+            key=lambda x: (
+                -1 if x.get("vip_status") else 0,
+                -1 if x.get("group_block_id") else 0,
+            ),
+            reverse=True,
+        )
 
-        return ServiceResult.success({
-            "arrivals": enriched,
-            "total": len(enriched),
-            "vip_count": len([a for a in enriched if a.get("vip_status")]),
-            "group_count": len([a for a in enriched if a.get("group_block_id")]),
-            "online_checkin_count": len([a for a in enriched if a.get("online_checkin_completed")]),
-        })
+        return ServiceResult.success(
+            {
+                "arrivals": enriched,
+                "total": len(enriched),
+                "vip_count": len([a for a in enriched if a.get("vip_status")]),
+                "group_count": len([a for a in enriched if a.get("group_block_id")]),
+                "online_checkin_count": len([a for a in enriched if a.get("online_checkin_completed")]),
+            }
+        )
 
     # ------------------------------------------------------------------
     # Check-in
@@ -90,10 +103,12 @@ class FrontdeskService:
             # Use room's own current_booking_id for authoritative occupancy check
             blocker_id = room.get("current_booking_id")
             if blocker_id and blocker_id != booking_id:
-                blocker = await self._db.bookings.find_one({
-                    "id": blocker_id,
-                    "status": "checked_in",
-                })
+                blocker = await self._db.bookings.find_one(
+                    {
+                        "id": blocker_id,
+                        "status": "checked_in",
+                    }
+                )
                 if blocker:
                     return ServiceResult.fail("Room is occupied by another guest", "ROOM_NOT_READY")
             # Stale occupied status or no active blocker — allow check-in
@@ -129,19 +144,24 @@ class FrontdeskService:
         )
         await self._db.guests.update_one({"id": booking["guest_id"]}, {"$inc": {"total_stays": 1}})
 
-        return ServiceResult.success({
-            "message": "Check-in completed successfully",
-            "checked_in_at": checked_in_time.isoformat(),
-            "room_number": room["room_number"],
-        })
+        return ServiceResult.success(
+            {
+                "message": "Check-in completed successfully",
+                "checked_in_at": checked_in_time.isoformat(),
+                "room_number": room["room_number"],
+            }
+        )
 
     # ------------------------------------------------------------------
     # Check-out
     # ------------------------------------------------------------------
     @audited("frontdesk.checkout", "booking", severity=SEVERITY_INFO, capture_before=True)
     async def checkout(
-        self, ctx: OperationContext, booking_id: str,
-        force: bool = False, auto_close_folios: bool = True,
+        self,
+        ctx: OperationContext,
+        booking_id: str,
+        force: bool = False,
+        auto_close_folios: bool = True,
     ) -> ServiceResult:
         booking = await self._db.bookings.find_one({"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not booking:
@@ -149,9 +169,13 @@ class FrontdeskService:
         if booking["status"] == "checked_out":
             return ServiceResult.fail("Guest already checked out", "ALREADY_CHECKED_OUT")
 
-        folios = await self._db.folios.find({
-            "booking_id": booking_id, "tenant_id": ctx.tenant_id, "status": "open",
-        }).to_list(100)
+        folios = await self._db.folios.find(
+            {
+                "booking_id": booking_id,
+                "tenant_id": ctx.tenant_id,
+                "status": "open",
+            }
+        ).to_list(100)
 
         # v95.7: KVB auto_post — config'te aktifse, balance hesabı yapılmadan
         # ÖNCE konaklama vergisi satırı folio'ya idempotent eklensin; aksi
@@ -161,19 +185,24 @@ class FrontdeskService:
                 load_tax_config,
                 post_konaklama_vergisi_to_folio,
             )
+
             cfg = await load_tax_config(ctx.tenant_id)
             if cfg.get("active", True) and cfg.get("auto_post"):
                 for f in folios:
                     await post_konaklama_vergisi_to_folio(
-                        tenant_id=ctx.tenant_id, folio_id=f["id"],
+                        tenant_id=ctx.tenant_id,
+                        folio_id=f["id"],
                         posted_by=f"system:checkout:{ctx.actor_id}",
                         raise_on_error=False,
                     )
                 # Balance değişmiş olabilir — folio doc'larını yenile.
-                folios = await self._db.folios.find({
-                    "booking_id": booking_id, "tenant_id": ctx.tenant_id,
-                    "status": "open",
-                }).to_list(100)
+                folios = await self._db.folios.find(
+                    {
+                        "booking_id": booking_id,
+                        "tenant_id": ctx.tenant_id,
+                        "status": "open",
+                    }
+                ).to_list(100)
         except Exception as exc:  # pragma: no cover
             logger.warning("KVB auto_post (checkout) failed: %s", exc)
 
@@ -182,11 +211,13 @@ class FrontdeskService:
         for folio in folios:
             balance = folio.get("balance", 0.0)
             total_balance += balance
-            folio_details.append({
-                "folio_number": folio.get("folio_number"),
-                "folio_type": folio.get("folio_type"),
-                "balance": balance,
-            })
+            folio_details.append(
+                {
+                    "folio_number": folio.get("folio_number"),
+                    "folio_type": folio.get("folio_type"),
+                    "balance": balance,
+                }
+            )
 
         # Also check booking-level balance (total_amount - paid_amount)
         booking_total = booking.get("total_amount", 0) or 0
@@ -231,13 +262,15 @@ class FrontdeskService:
         }
         await self._db.housekeeping_tasks.insert_one(hk_task)
 
-        return ServiceResult.success({
-            "message": "Check-out completed successfully",
-            "checked_out_at": checked_out_time.isoformat(),
-            "total_balance": total_balance,
-            "folios_closed": len(folios) if auto_close_folios else 0,
-            "folio_details": folio_details,
-        })
+        return ServiceResult.success(
+            {
+                "message": "Check-out completed successfully",
+                "checked_out_at": checked_out_time.isoformat(),
+                "total_balance": total_balance,
+                "folios_closed": len(folios) if auto_close_folios else 0,
+                "folio_details": folio_details,
+            }
+        )
 
     # ------------------------------------------------------------------
     # Express / Kiosk Check-in
@@ -245,7 +278,8 @@ class FrontdeskService:
     @audited("frontdesk.express_checkin", "booking", severity=SEVERITY_INFO)
     async def express_checkin(self, ctx: OperationContext, qr_code: str) -> ServiceResult:
         booking = await self._db.bookings.find_one(
-            {"express_checkin_code": qr_code, "tenant_id": ctx.tenant_id}, {"_id": 0},
+            {"express_checkin_code": qr_code, "tenant_id": ctx.tenant_id},
+            {"_id": 0},
         )
         if not booking:
             return ServiceResult.fail("QR code gecersiz", "INVALID_QR")
@@ -264,27 +298,33 @@ class FrontdeskService:
         today_end = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
 
         unchecked = []
-        async for b in self._db.bookings.find({
-            "tenant_id": ctx.tenant_id,
-            "check_in": {"$gte": today_start.isoformat(), "$lte": today_end.isoformat()},
-            "status": {"$in": ["confirmed", "guaranteed"]},
-        }, {"_id": 0}):
+        async for b in self._db.bookings.find(
+            {
+                "tenant_id": ctx.tenant_id,
+                "check_in": {"$gte": today_start.isoformat(), "$lte": today_end.isoformat()},
+                "status": {"$in": ["confirmed", "guaranteed"]},
+            },
+            {"_id": 0},
+        ):
             if b.get("checked_in_at"):
                 continue
             guest = await self._db.guests.find_one({"id": b.get("guest_id")}, {"_id": 0})
             room = await self._db.rooms.find_one({"id": b.get("room_id")}, {"_id": 0}) if b.get("room_id") else None
             from core.guest_name_utils import display_guest_name
+
             raw_name = guest.get("name") if guest else None
-            unchecked.append({
-                "booking_id": b.get("id"),
-                "reservation_number": b.get("reservation_number"),
-                "guest_name": display_guest_name(raw_name, b.get("guest_id")),
-                "guest_email": guest.get("email") if guest else None,
-                "room_number": room.get("room_number") if room else None,
-                "vip_status": guest.get("vip_status", False) if guest else False,
-                "check_in": b.get("check_in"),
-                "check_out": b.get("check_out"),
-            })
+            unchecked.append(
+                {
+                    "booking_id": b.get("id"),
+                    "reservation_number": b.get("reservation_number"),
+                    "guest_name": display_guest_name(raw_name, b.get("guest_id")),
+                    "guest_email": guest.get("email") if guest else None,
+                    "room_number": room.get("room_number") if room else None,
+                    "vip_status": guest.get("vip_status", False) if guest else False,
+                    "check_in": b.get("check_in"),
+                    "check_out": b.get("check_out"),
+                }
+            )
 
         open_folios = await self._db.folios.find({"tenant_id": ctx.tenant_id, "status": "open"}, {"_id": 0}).to_list(2000)
         open_with_balance = []
@@ -300,6 +340,7 @@ class FrontdeskService:
                 g = await self._db.guests.find_one({"id": folio["guest_id"]}, {"_id": 0})
                 if g:
                     from core.guest_name_utils import display_guest_name
+
                     owner_name = display_guest_name(g.get("name"), folio["guest_id"])
             item = {
                 "folio_id": folio.get("id"),
@@ -330,15 +371,17 @@ class FrontdeskService:
             "unbalanced_folio_count": len(unbalanced),
             "overdue_departures_count": len(overdue),
         }
-        return ServiceResult.success({
-            "date": today.isoformat(),
-            "tenant_id": ctx.tenant_id,
-            "unchecked_in_arrivals": unchecked,
-            "open_folios": open_with_balance,
-            "unbalanced_folios": unbalanced,
-            "overdue_departures": overdue,
-            "summary": summary,
-        })
+        return ServiceResult.success(
+            {
+                "date": today.isoformat(),
+                "tenant_id": ctx.tenant_id,
+                "unchecked_in_arrivals": unchecked,
+                "open_folios": open_with_balance,
+                "unbalanced_folios": unbalanced,
+                "overdue_departures": overdue,
+                "summary": summary,
+            }
+        )
 
     # ------------------------------------------------------------------
     # Guest Alerts
@@ -352,21 +395,37 @@ class FrontdeskService:
         if guest.get("vip_status"):
             alerts.append({"type": "vip", "priority": "high", "title": "VIP Guest", "description": f"{guest.get('name')} is a VIP guest.", "color": "gold"})
 
-        current_booking = await self._db.bookings.find_one({
-            "guest_id": guest_id, "tenant_id": ctx.tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-        }, sort=[("created_at", -1)])
+        current_booking = await self._db.bookings.find_one(
+            {
+                "guest_id": guest_id,
+                "tenant_id": ctx.tenant_id,
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
+            },
+            sort=[("created_at", -1)],
+        )
         if current_booking and current_booking.get("special_requests"):
             alerts.append({"type": "special_request", "priority": "high", "title": "Special Request", "description": current_booking["special_requests"], "color": "blue"})
 
         if guest.get("loyalty_points", 0) > 1000:
             tier = "Gold" if guest["loyalty_points"] > 5000 else "Silver"
-            alerts.append({"type": "loyalty", "priority": "normal", "title": f"{tier} Member", "description": f"Loyalty member with {guest['loyalty_points']} points", "color": "gold" if tier == "Gold" else "silver"})
+            alerts.append(
+                {
+                    "type": "loyalty",
+                    "priority": "normal",
+                    "title": f"{tier} Member",
+                    "description": f"Loyalty member with {guest['loyalty_points']} points",
+                    "color": "gold" if tier == "Gold" else "silver",
+                }
+            )
 
         custom = []
-        async for a in self._db.guest_alerts.find({
-            "guest_id": guest_id, "tenant_id": ctx.tenant_id, "is_active": True,
-        }):
+        async for a in self._db.guest_alerts.find(
+            {
+                "guest_id": guest_id,
+                "tenant_id": ctx.tenant_id,
+                "is_active": True,
+            }
+        ):
             custom.append({"type": a.get("alert_type"), "priority": a.get("priority"), "title": a.get("title"), "description": a.get("description"), "color": "orange"})
         alerts.extend(custom)
 
@@ -374,36 +433,53 @@ class FrontdeskService:
         alerts.sort(key=lambda x: priority_order.get(x.get("priority", "normal"), 2))
 
         from core.guest_name_utils import display_guest_name
-        return ServiceResult.success({
-            "guest_id": guest_id,
-            "guest_name": display_guest_name(guest.get("name"), guest_id),
-            "total_alerts": len(alerts),
-            "alerts": alerts,
-        })
+
+        return ServiceResult.success(
+            {
+                "guest_id": guest_id,
+                "guest_name": display_guest_name(guest.get("name"), guest_id),
+                "total_alerts": len(alerts),
+                "alerts": alerts,
+            }
+        )
 
     # ------------------------------------------------------------------
     # Unified Arrivals / Departures / In-House
     # ------------------------------------------------------------------
     async def get_unified_arrivals(self, ctx: OperationContext) -> ServiceResult:
         today = datetime.now(UTC).date().isoformat()
-        bookings = await self._db.bookings.find({
-            "check_in": today, "status": {"$in": ["confirmed", "guaranteed"]}, "tenant_id": ctx.tenant_id,
-        }, {"_id": 0}).to_list(100)
+        bookings = await self._db.bookings.find(
+            {
+                "check_in": today,
+                "status": {"$in": ["confirmed", "guaranteed"]},
+                "tenant_id": ctx.tenant_id,
+            },
+            {"_id": 0},
+        ).to_list(100)
         enriched = await self._enrich_bookings(bookings, ctx.tenant_id)
         return ServiceResult.success({"arrivals": enriched, "count": len(enriched), "date": today})
 
     async def get_unified_departures(self, ctx: OperationContext) -> ServiceResult:
         today = datetime.now(UTC).date().isoformat()
-        bookings = await self._db.bookings.find({
-            "check_out": today, "status": "checked_in", "tenant_id": ctx.tenant_id,
-        }, {"_id": 0}).to_list(100)
+        bookings = await self._db.bookings.find(
+            {
+                "check_out": today,
+                "status": "checked_in",
+                "tenant_id": ctx.tenant_id,
+            },
+            {"_id": 0},
+        ).to_list(100)
         enriched = await self._enrich_bookings(bookings, ctx.tenant_id)
         return ServiceResult.success({"departures": enriched, "count": len(enriched), "date": today})
 
     async def get_unified_inhouse(self, ctx: OperationContext) -> ServiceResult:
-        bookings = await self._db.bookings.find({
-            "status": "checked_in", "tenant_id": ctx.tenant_id,
-        }, {"_id": 0}).to_list(500)
+        bookings = await self._db.bookings.find(
+            {
+                "status": "checked_in",
+                "tenant_id": ctx.tenant_id,
+            },
+            {"_id": 0},
+        ).to_list(500)
         enriched = await self._enrich_bookings(bookings, ctx.tenant_id)
         return ServiceResult.success({"in_house": enriched, "count": len(enriched)})
 
@@ -412,7 +488,8 @@ class FrontdeskService:
     # ------------------------------------------------------------------
     async def get_folio(self, ctx: OperationContext, booking_id: str) -> ServiceResult:
         booking = await self._db.bookings.find_one(
-            {"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0, "id": 1},
+            {"id": booking_id, "tenant_id": ctx.tenant_id},
+            {"_id": 0, "id": 1},
         )
         if not booking:
             return ServiceResult.fail("Booking not found", "NOT_FOUND")
@@ -420,21 +497,28 @@ class FrontdeskService:
         payments = await self._db.payments.find({"booking_id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0}).to_list(1000)
         total_charges = sum(c["total"] for c in charges)
         total_paid = sum(p["amount"] for p in payments if p["status"] == "paid")
-        return ServiceResult.success({
-            "charges": charges, "payments": payments,
-            "total_charges": total_charges, "total_paid": total_paid,
-            "balance": total_charges - total_paid,
-        })
+        return ServiceResult.success(
+            {
+                "charges": charges,
+                "payments": payments,
+                "total_charges": total_charges,
+                "total_paid": total_paid,
+                "balance": total_charges - total_paid,
+            }
+        )
 
     async def get_arrivals(self, ctx: OperationContext, date_str: str | None = None) -> ServiceResult:
         target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(UTC).date()
         start = datetime.combine(target_date, datetime.min.time())
         end = datetime.combine(target_date, datetime.max.time())
-        bookings = await self._db.bookings.find({
-            "tenant_id": ctx.tenant_id,
-            "status": {"$in": ["confirmed", "checked_in"]},
-            "check_in": {"$gte": start.isoformat(), "$lte": end.isoformat()},
-        }, {"_id": 0}).to_list(1000)
+        bookings = await self._db.bookings.find(
+            {
+                "tenant_id": ctx.tenant_id,
+                "status": {"$in": ["confirmed", "checked_in"]},
+                "check_in": {"$gte": start.isoformat(), "$lte": end.isoformat()},
+            },
+            {"_id": 0},
+        ).to_list(1000)
         if not bookings:
             return ServiceResult.success([])
 
@@ -455,10 +539,14 @@ class FrontdeskService:
         target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(UTC).date()
         start = datetime.combine(target_date, datetime.min.time())
         end = datetime.combine(target_date, datetime.max.time())
-        bookings = await self._db.bookings.find({
-            "tenant_id": ctx.tenant_id, "status": "checked_in",
-            "check_out": {"$gte": start.isoformat(), "$lte": end.isoformat()},
-        }, {"_id": 0}).to_list(1000)
+        bookings = await self._db.bookings.find(
+            {
+                "tenant_id": ctx.tenant_id,
+                "status": "checked_in",
+                "check_out": {"$gte": start.isoformat(), "$lte": end.isoformat()},
+            },
+            {"_id": 0},
+        ).to_list(1000)
         if not bookings:
             return ServiceResult.success([])
 
@@ -486,12 +574,14 @@ class FrontdeskService:
             charges = charges_by_booking.get(b["id"], [])
             payments = payments_by_booking.get(b["id"], [])
             balance = sum(c.get("total", 0) for c in charges) - sum(p.get("amount", 0) for p in payments if p.get("status") == "paid")
-            enriched.append({
-                **b,
-                "guest": guest_map.get(b.get("guest_id")),
-                "room": room_map.get(b.get("room_id")),
-                "balance": balance,
-            })
+            enriched.append(
+                {
+                    **b,
+                    "guest": guest_map.get(b.get("guest_id")),
+                    "room": room_map.get(b.get("room_id")),
+                    "balance": balance,
+                }
+            )
         return ServiceResult.success(enriched)
 
     async def get_inhouse(self, ctx: OperationContext) -> ServiceResult:
@@ -566,15 +656,17 @@ class FrontdeskService:
                 valid_from=issue_time.isoformat(),
                 valid_until=expiry_time.isoformat(),
             )
-        return ServiceResult.success({
-            "message": f"{card_type.capitalize()} keycard issued successfully",
-            "keycard_id": keycard_id,
-            "card_type": card_type,
-            "room_number": room["room_number"],
-            "issued_at": issue_time.isoformat(),
-            "expires_at": expiry_time.isoformat(),
-            "validity_hours": validity_hours,
-        })
+        return ServiceResult.success(
+            {
+                "message": f"{card_type.capitalize()} keycard issued successfully",
+                "keycard_id": keycard_id,
+                "card_type": card_type,
+                "room_number": room["room_number"],
+                "issued_at": issue_time.isoformat(),
+                "expires_at": expiry_time.isoformat(),
+                "validity_hours": validity_hours,
+            }
+        )
 
     @audited("frontdesk.deactivate_keycard", "keycard", severity=SEVERITY_WARNING)
     async def deactivate_keycard(self, ctx: OperationContext, keycard_id: str, reason: str = "checkout") -> ServiceResult:
@@ -627,6 +719,7 @@ class FrontdeskService:
             ):
                 room_map[r["id"]] = r
         from core.guest_name_utils import display_guest_name
+
         for b in bookings:
             guest = guest_map.get(b.get("guest_id"))
             if guest:

@@ -6,6 +6,7 @@ ikisi de geçemez). Redeem log'u `pos_coupon_redemptions` tablosuna yazılır.
 Mevcut indirim akışı bozulmaz — bu router order'a YAZMAZ, sadece
 "discount_value" döner; frontend close_order'a manuel ekler.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -39,7 +40,7 @@ class CouponCreate(BaseModel):
     discount_value: float = Field(gt=0)
     min_amount: float = Field(default=0, ge=0)
     valid_from: str | None = None  # ISO
-    valid_to: str | None = None    # ISO
+    valid_to: str | None = None  # ISO
     max_uses: int = Field(default=1, ge=1)
     active: bool = True
     note: str | None = None
@@ -142,9 +143,7 @@ async def list_coupons(
 
 @router.delete("/{coupon_id}")
 async def delete_coupon(coupon_id: str, current_user: User = Depends(get_current_user)):
-    res = await db.pos_coupons.delete_one(
-        {"id": coupon_id, "tenant_id": current_user.tenant_id}
-    )
+    res = await db.pos_coupons.delete_one({"id": coupon_id, "tenant_id": current_user.tenant_id})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Coupon not found")
     return {"success": True, "deleted": coupon_id}
@@ -153,9 +152,7 @@ async def delete_coupon(coupon_id: str, current_user: User = Depends(get_current
 @router.post("/validate")
 async def validate(body: ValidateRequest, current_user: User = Depends(get_current_user)):
     code = body.code.strip().upper()
-    coupon = await db.pos_coupons.find_one(
-        {"tenant_id": current_user.tenant_id, "code": code}, {"_id": 0}
-    )
+    coupon = await db.pos_coupons.find_one({"tenant_id": current_user.tenant_id, "code": code}, {"_id": 0})
     if not coupon:
         return {"valid": False, "reason": "Unknown code"}
     ok, reason = _check_validity(coupon, body.amount, _now())
@@ -185,9 +182,7 @@ async def redeem(body: RedeemRequest, current_user: User = Depends(get_current_u
         if prior:
             return {"success": True, "redemption": prior, "idempotent": True}
 
-    coupon = await db.pos_coupons.find_one(
-        {"tenant_id": current_user.tenant_id, "code": code}, {"_id": 0}
-    )
+    coupon = await db.pos_coupons.find_one({"tenant_id": current_user.tenant_id, "code": code}, {"_id": 0})
     if not coupon:
         raise HTTPException(status_code=404, detail="Coupon not found")
     ok, reason = _check_validity(coupon, body.amount, _now())
@@ -222,9 +217,7 @@ async def redeem(body: RedeemRequest, current_user: User = Depends(get_current_u
         "created_at": _now(),
         "created_by": current_user.id,
     }
-    saved, replayed = await idempotent_insert(
-        db.pos_coupon_redemptions, current_user.tenant_id, body.idempotency_key, redemption
-    )
+    saved, replayed = await idempotent_insert(db.pos_coupon_redemptions, current_user.tenant_id, body.idempotency_key, redemption)
     if replayed:
         # The counter was already incremented for the same key on a concurrent
         # call — roll back this redundant increment to keep used_count accurate.

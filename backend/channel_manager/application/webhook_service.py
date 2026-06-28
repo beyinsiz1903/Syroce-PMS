@@ -10,6 +10,7 @@ Flow:
   receive -> verify signature -> validate timestamp -> parse payload
   -> create domain event -> trigger reservation import / inventory sync
 """
+
 import hashlib
 import hmac
 import logging
@@ -54,9 +55,16 @@ class WebhookService:
         rate_key = f"{tenant_id}:{provider}"
         if not self._check_rate_limit(rate_key):
             await self._store_webhook_event(tenant_id, event_id, provider, "rate_limited", received_at)
-            await self._audit(tenant_id, "", "", AuditAction.WEBHOOK_FAILED, metadata={
-                "event_id": event_id, "reason": "rate_limited",
-            })
+            await self._audit(
+                tenant_id,
+                "",
+                "",
+                AuditAction.WEBHOOK_FAILED,
+                metadata={
+                    "event_id": event_id,
+                    "reason": "rate_limited",
+                },
+            )
             return {"accepted": False, "event_id": event_id, "reason": "rate_limited"}
 
         # Find connector
@@ -87,16 +95,23 @@ class WebhookService:
         # Now FAIL-CLOSED — signing is mandatory unless explicitly disabled in
         # dev via ALLOW_UNSIGNED_CM_WEBHOOK=1.
         import os as _os
+
         unsigned_ok = _os.environ.get("ALLOW_UNSIGNED_CM_WEBHOOK") == "1"
 
         if not webhook_secret:
             if not unsigned_ok:
                 await self._store_webhook_event(
-                    tenant_id, event_id, provider, "secret_missing", received_at,
+                    tenant_id,
+                    event_id,
+                    provider,
+                    "secret_missing",
+                    received_at,
                     connector_id=connector_id,
                 )
                 await self._audit(
-                    tenant_id, property_id, connector_id,
+                    tenant_id,
+                    property_id,
+                    connector_id,
                     AuditAction.WEBHOOK_SIGNATURE_INVALID,
                     metadata={"event_id": event_id, "reason": "no_webhook_secret_configured"},
                 )
@@ -104,11 +119,17 @@ class WebhookService:
         else:
             if not signature or not timestamp:
                 await self._store_webhook_event(
-                    tenant_id, event_id, provider, "signature_missing", received_at,
+                    tenant_id,
+                    event_id,
+                    provider,
+                    "signature_missing",
+                    received_at,
                     connector_id=connector_id,
                 )
                 await self._audit(
-                    tenant_id, property_id, connector_id,
+                    tenant_id,
+                    property_id,
+                    connector_id,
                     AuditAction.WEBHOOK_SIGNATURE_INVALID,
                     metadata={"event_id": event_id, "reason": "missing_signature_or_timestamp"},
                 )
@@ -119,28 +140,44 @@ class WebhookService:
             # _verify_signature below).
             if not self._validate_timestamp(timestamp):
                 await self._store_webhook_event(
-                    tenant_id, event_id, provider, "timestamp_expired", received_at,
+                    tenant_id,
+                    event_id,
+                    provider,
+                    "timestamp_expired",
+                    received_at,
                     connector_id=connector_id,
                 )
                 return {"accepted": False, "event_id": event_id, "reason": "timestamp_expired"}
             if not self._verify_signature(raw_body, signature, webhook_secret, timestamp):
                 await self._store_webhook_event(
-                    tenant_id, event_id, provider, "signature_invalid", received_at,
+                    tenant_id,
+                    event_id,
+                    provider,
+                    "signature_invalid",
+                    received_at,
                     connector_id=connector_id,
                 )
                 await self._audit(
-                    tenant_id, property_id, connector_id,
-                    AuditAction.WEBHOOK_SIGNATURE_INVALID, metadata={"event_id": event_id},
+                    tenant_id,
+                    property_id,
+                    connector_id,
+                    AuditAction.WEBHOOK_SIGNATURE_INVALID,
+                    metadata={"event_id": event_id},
                 )
                 return {"accepted": False, "event_id": event_id, "reason": "invalid_signature"}
 
         # Parse payload
         import json
+
         try:
             payload = json.loads(raw_body)
         except (json.JSONDecodeError, ValueError):
             await self._store_webhook_event(
-                tenant_id, event_id, provider, "parse_error", received_at,
+                tenant_id,
+                event_id,
+                provider,
+                "parse_error",
+                received_at,
                 connector_id=connector_id,
             )
             return {"accepted": False, "event_id": event_id, "reason": "invalid_json"}
@@ -151,8 +188,14 @@ class WebhookService:
 
         # Store webhook event
         await self._store_webhook_event(
-            tenant_id, event_id, provider, "accepted", received_at,
-            connector_id=connector_id, event_type=event_type, payload=payload,
+            tenant_id,
+            event_id,
+            provider,
+            "accepted",
+            received_at,
+            connector_id=connector_id,
+            event_type=event_type,
+            payload=payload,
         )
 
         # Process based on event type
@@ -160,6 +203,7 @@ class WebhookService:
 
         if event_type in ("reservation_created", "reservation_modified", "reservation_cancelled", "booking"):
             from ..application.reservation_import_service import ReservationImportService
+
             svc = ReservationImportService(self._repo)
             try:
                 await svc.pull_and_import(
@@ -174,13 +218,18 @@ class WebhookService:
 
         if event_type in ("inventory_updated", "availability_changed", "room_status_changed"):
             from ..application.event_sync_service import EventSyncService
+
             svc = EventSyncService(self._repo)
             try:
-                await svc.handle_event(tenant_id, "room_unblocked", {
-                    "property_id": property_id,
-                    "date_start": webhook_data.get("date_start", datetime.now(UTC).strftime("%Y-%m-%d")),
-                    "date_end": webhook_data.get("date_end", (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%d")),
-                })
+                await svc.handle_event(
+                    tenant_id,
+                    "room_unblocked",
+                    {
+                        "property_id": property_id,
+                        "date_start": webhook_data.get("date_start", datetime.now(UTC).strftime("%Y-%m-%d")),
+                        "date_end": webhook_data.get("date_end", (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%d")),
+                    },
+                )
                 actions_taken.append({"action": "inventory_sync", "result": "success"})
             except Exception as e:
                 logger.error("Webhook inventory sync failed: %s", e)
@@ -188,8 +237,11 @@ class WebhookService:
 
         # Audit
         await self._audit(
-            tenant_id, property_id, connector_id,
-            AuditAction.WEBHOOK_RECEIVED, metadata={
+            tenant_id,
+            property_id,
+            connector_id,
+            AuditAction.WEBHOOK_RECEIVED,
+            metadata={
                 "event_id": event_id,
                 "event_type": event_type,
                 "actions_taken": len(actions_taken),
@@ -207,7 +259,10 @@ class WebhookService:
 
     @staticmethod
     def _verify_signature(
-        body: bytes, signature: str, secret: str, timestamp: str | None = None,
+        body: bytes,
+        signature: str,
+        secret: str,
+        timestamp: str | None = None,
     ) -> bool:
         """Verify HMAC-SHA256 signature.
 
@@ -222,10 +277,13 @@ class WebhookService:
         else:
             signed_payload = body
         expected = hmac.new(
-            secret.encode("utf-8"), signed_payload, hashlib.sha256,
+            secret.encode("utf-8"),
+            signed_payload,
+            hashlib.sha256,
         ).hexdigest()
         return hmac.compare_digest(
-            expected, signature.replace("sha256=", "").lower(),
+            expected,
+            signature.replace("sha256=", "").lower(),
         )
 
     @staticmethod
@@ -256,8 +314,15 @@ class WebhookService:
         return True
 
     async def _store_webhook_event(
-        self, tenant_id, event_id, provider, status, received_at,
-        connector_id=None, event_type=None, payload=None,
+        self,
+        tenant_id,
+        event_id,
+        provider,
+        status,
+        received_at,
+        connector_id=None,
+        event_type=None,
+        payload=None,
     ):
         doc = {
             "id": event_id,
@@ -276,7 +341,12 @@ class WebhookService:
 
     async def _audit(self, tenant_id, property_id, connector_id, action, actor_id=None, metadata=None):
         log = IntegrationAuditLog(
-            tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-            action=action, actor_id=actor_id, actor_type="webhook", metadata=metadata or {},
+            tenant_id=tenant_id,
+            property_id=property_id,
+            connector_id=connector_id,
+            action=action,
+            actor_id=actor_id,
+            actor_type="webhook",
+            metadata=metadata or {},
         )
         await self._repo.create_audit_log(log.to_doc())

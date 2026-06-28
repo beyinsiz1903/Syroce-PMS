@@ -23,6 +23,7 @@ Bu dosya legacy davranışla birebir aynı sayıları üretir; tek değişiklik
 hesaplamanın tek serviste toplanması ve kaynak ayrımının açıkça
 işaretlenmesidir.
 """
+
 from __future__ import annotations
 
 import logging
@@ -84,6 +85,7 @@ def dedup_key(tenant_id: str, source: str, source_id: str | None) -> str:
 
 # ── Ortak yardımcılar (legacy ile birebir kural) ────────────────
 
+
 def nps_category(score: int) -> str:
     """0-10 NPS skorunu kategoriye çevir (legacy ``_nps_category`` ile aynı)."""
     return "detractor" if score <= 6 else "passive" if score <= 8 else "promoter"
@@ -118,6 +120,7 @@ def _start_iso(days: int) -> str:
 # ── Normalizerlar: her kaynak → kanonik kayıt ───────────────────
 # Kanonik kayıt downstream/analitik için ``feedback_entries`` koleksiyonuna
 # yazılır. ``nps_eligible`` bayrağı NPS toplamına girip girmeyeceğini belirler.
+
 
 def normalize_nps_survey(doc: dict[str, Any]) -> dict[str, Any]:
     raw = doc.get("nps_score")
@@ -155,7 +158,7 @@ def normalize_guest_review(doc: dict[str, Any]) -> dict[str, Any]:
         "nps_score": star_to_nps(star),
         "star_rating": star,
         "overall_rating": None,
-        "category": None,        # NPS kategorisi YOK → NPS matematiğine girmez
+        "category": None,  # NPS kategorisi YOK → NPS matematiğine girmez
         "nps_eligible": False,
         "room_number": doc.get("room_number"),
         "guest_name": doc.get("guest_name"),
@@ -174,7 +177,7 @@ def normalize_survey_response(doc: dict[str, Any]) -> dict[str, Any]:
         "tenant_id": doc.get("tenant_id"),
         "source": SOURCE_SURVEY_RESPONSE,
         "source_id": doc.get("id"),
-        "nps_score": None,        # anket ölçeği belirsiz → NPS'e çevrilmez
+        "nps_score": None,  # anket ölçeği belirsiz → NPS'e çevrilmez
         "star_rating": None,
         "overall_rating": overall,
         "category": None,
@@ -208,6 +211,7 @@ def normalize(source: str, doc: dict[str, Any]) -> dict[str, Any]:
 # ── Kanonik → legacy biçim eşlemesi ─────────────────────────────
 # Birleşik okuma açıkken ``recent_feedback`` kanonik kaydı legacy
 # ``nps_surveys`` doküman biçimine geri çevirir (çıktı birebir kalsın).
+
 
 def _canonical_to_legacy_nps(c: dict[str, Any]) -> dict[str, Any]:
     """Kanonik ``feedback_entries`` kaydını legacy ``nps_surveys`` biçimine çevir.
@@ -266,6 +270,7 @@ def _score_from_categories(surveys: list[dict[str, Any]], days: int) -> dict[str
 # olmaz. Okuma kaynağı feature-flag'e bağlıdır: flag KAPALI iken authoritative
 # ``nps_surveys``; AÇIK iken kanonik ``feedback_entries`` (nps_eligible).
 
+
 async def compute_nps_score(tenant_id: str, days: int = 30) -> dict[str, Any]:
     """NPS skoru — legacy ``GET /nps/score`` ile birebir aynı çıktı."""
     days = bounded_days(days)
@@ -277,14 +282,10 @@ async def compute_nps_score(tenant_id: str, days: int = 30) -> dict[str, Any]:
             "nps_eligible": True,
             "responded_at": {"$gte": start},
         }
-        surveys = await db.feedback_entries.find(
-            query, {"_id": 0, "category": 1}
-        ).to_list(5000)
+        surveys = await db.feedback_entries.find(query, {"_id": 0, "category": 1}).to_list(5000)
     else:
         query = {"tenant_id": tenant_id, "responded_at": {"$gte": start}}
-        surveys = await db.nps_surveys.find(
-            query, {"_id": 0, "category": 1}
-        ).to_list(5000)
+        surveys = await db.nps_surveys.find(query, {"_id": 0, "category": 1}).to_list(5000)
 
     return _score_from_categories(surveys, days)
 
@@ -312,20 +313,12 @@ async def recent_feedback(
 
     if unified_read_enabled():
         query["nps_eligible"] = True
-        cursor = (
-            db.feedback_entries.find(query, {"_id": 0})
-            .sort("responded_at", -1)
-            .limit(min(limit, 200))
-        )
+        cursor = db.feedback_entries.find(query, {"_id": 0}).sort("responded_at", -1).limit(min(limit, 200))
         rows = await cursor.to_list(min(limit, 200))
         # Kanonik kaydı legacy biçime çevir → yanıt birebir kalır.
         items = [_canonical_to_legacy_nps(r) for r in rows]
     else:
-        cursor = (
-            db.nps_surveys.find(query, {"_id": 0})
-            .sort("responded_at", -1)
-            .limit(min(limit, 200))
-        )
+        cursor = db.nps_surveys.find(query, {"_id": 0}).sort("responded_at", -1).limit(min(limit, 200))
         items = await cursor.to_list(min(limit, 200))
 
     return {"items": items, "count": len(items)}
@@ -341,25 +334,29 @@ def _by_room_pipeline(tenant_id: str, start: str, eligible: bool) -> list[dict[s
         match["nps_eligible"] = True
     return [
         {"$match": match},
-        {"$group": {
-            "_id": "$room_number",
-            "avg_score": {"$avg": "$nps_score"},
-            "response_count": {"$sum": 1},
-            "promoters": {"$sum": {"$cond": [{"$eq": ["$category", "promoter"]}, 1, 0]}},
-            "passives": {"$sum": {"$cond": [{"$eq": ["$category", "passive"]}, 1, 0]}},
-            "detractors": {"$sum": {"$cond": [{"$eq": ["$category", "detractor"]}, 1, 0]}},
-            "last_responded_at": {"$max": "$responded_at"},
-        }},
-        {"$project": {
-            "_id": 0,
-            "room_number": "$_id",
-            "avg_score": {"$round": ["$avg_score", 2]},
-            "response_count": 1,
-            "promoters": 1,
-            "passives": 1,
-            "detractors": 1,
-            "last_responded_at": 1,
-        }},
+        {
+            "$group": {
+                "_id": "$room_number",
+                "avg_score": {"$avg": "$nps_score"},
+                "response_count": {"$sum": 1},
+                "promoters": {"$sum": {"$cond": [{"$eq": ["$category", "promoter"]}, 1, 0]}},
+                "passives": {"$sum": {"$cond": [{"$eq": ["$category", "passive"]}, 1, 0]}},
+                "detractors": {"$sum": {"$cond": [{"$eq": ["$category", "detractor"]}, 1, 0]}},
+                "last_responded_at": {"$max": "$responded_at"},
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "room_number": "$_id",
+                "avg_score": {"$round": ["$avg_score", 2]},
+                "response_count": 1,
+                "promoters": 1,
+                "passives": 1,
+                "detractors": 1,
+                "last_responded_at": 1,
+            }
+        },
         {"$sort": {"avg_score": 1, "response_count": -1}},
         {"$limit": 200},
     ]
@@ -388,6 +385,7 @@ async def by_room(tenant_id: str, days: int = 30) -> dict[str, Any]:
 # tutarlı hale getirebilir. dedup_key, backfill migration ile çakışmayı önler
 # ($setOnInsert: var olan kaydın üstüne yazmaz).
 
+
 async def upsert_canonical(source: str, doc: dict[str, Any]) -> bool:
     """Bir kaynak dokümanını kanonik koleksiyona idempotent upsert et.
 
@@ -402,9 +400,7 @@ async def upsert_canonical(source: str, doc: dict[str, Any]) -> bool:
     canonical["dedup_key"] = key
     canonical["written_by"] = "dualwrite"
     canonical["written_at"] = datetime.now(UTC).isoformat()
-    await db.feedback_entries.update_one(
-        {"dedup_key": key}, {"$setOnInsert": canonical}, upsert=True
-    )
+    await db.feedback_entries.update_one({"dedup_key": key}, {"$setOnInsert": canonical}, upsert=True)
     return True
 
 
@@ -418,14 +414,13 @@ async def dualwrite_canonical(source: str, doc: dict[str, Any]) -> bool:
     except Exception as exc:  # noqa: BLE001
         logger.error(
             "feedback dual-write başarısız (source=%s): %s",
-            source, type(exc).__name__,
+            source,
+            type(exc).__name__,
         )
         return False
 
 
-async def dualdelete_canonical(
-    tenant_id: str, source: str, source_id: str | None
-) -> int:
+async def dualdelete_canonical(tenant_id: str, source: str, source_id: str | None) -> int:
     """Kanonik kaydı dedup_key ile sil (legacy DELETE ile eşlik, en-iyi-çaba)."""
     if not tenant_id or not source_id:
         return 0
@@ -436,7 +431,8 @@ async def dualdelete_canonical(
     except Exception as exc:  # noqa: BLE001
         logger.error(
             "feedback dual-delete başarısız (source=%s): %s",
-            source, type(exc).__name__,
+            source,
+            type(exc).__name__,
         )
         return 0
 
@@ -445,6 +441,7 @@ async def dualdelete_canonical(
 # Cutover öncesi/sonrası güvence: aynı tenant+pencere için legacy
 # (nps_surveys) ve kanonik (feedback_entries, nps_eligible) okuma yolları
 # AYNI NPS skorunu üretmeli. Fark varsa flag AÇILMAMALI (fail-closed).
+
 
 async def verify_parity(tenant_id: str, days: int = 30) -> dict[str, Any]:
     """Legacy ve kanonik NPS skorlarını karşılaştır (flag'den bağımsız okur).

@@ -1,4 +1,5 @@
 """Auto-split from misc_router.py — backward-compatible sub-router."""
+
 import html as _html
 import logging
 import uuid
@@ -112,6 +113,7 @@ async def _notify_managers_of_escalation(complaint: dict, escalated_to: str, not
     # Channel 1: e-mail (best-effort; isolated from bell/push so import errors don't block them)
     try:
         from core.email import send_email
+
         for m in managers:
             if not m.get("email"):
                 continue
@@ -143,30 +145,33 @@ async def _notify_managers_of_escalation(complaint: dict, escalated_to: str, not
         _seen_uids.add(uid)
         manager_user_ids.append(uid)
         try:
-            await db.notifications.insert_one({
-                "id": str(uuid.uuid4()),
-                "tenant_id": actor.tenant_id,
-                "user_id": uid,
-                "type": "complaint_escalated",
-                "title": notif_title,
-                "message": notif_message,
-                "priority": notif_priority,
-                "read": False,
-                "action_url": action_url,
-                "context": {
-                    "complaint_id": complaint.get("id"),
-                    "escalated_to": escalated_to,
-                    "severity": severity,
-                    "actor_email": actor.email,
-                },
-                "created_at": now_iso,
-            })
+            await db.notifications.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": actor.tenant_id,
+                    "user_id": uid,
+                    "type": "complaint_escalated",
+                    "title": notif_title,
+                    "message": notif_message,
+                    "priority": notif_priority,
+                    "read": False,
+                    "action_url": action_url,
+                    "context": {
+                        "complaint_id": complaint.get("id"),
+                        "escalated_to": escalated_to,
+                        "severity": severity,
+                        "actor_email": actor.email,
+                    },
+                    "created_at": now_iso,
+                }
+            )
         except Exception as exc:
             logger.warning("[complaints] notification insert for %s failed: %s", uid, exc)
 
     if manager_user_ids:
         try:
             from services.expo_push import fire_and_forget_expo_push
+
             fire_and_forget_expo_push(
                 actor.tenant_id,
                 title=notif_title,
@@ -190,10 +195,13 @@ async def _notify_guest_resolved(complaint: dict, resolution_notes: str, actor: 
         return
     try:
         from core.email import send_email
-        guest = decrypt_guest_doc(await db.guests.find_one(
-            {"id": guest_id, "tenant_id": actor.tenant_id},
-            {"_id": 0, "name": 1, "email": 1},
-        ))
+
+        guest = decrypt_guest_doc(
+            await db.guests.find_one(
+                {"id": guest_id, "tenant_id": actor.tenant_id},
+                {"_id": 0, "name": 1, "email": 1},
+            )
+        )
     except Exception as exc:
         logger.warning("[complaints] guest lookup failed: %s", exc)
         return
@@ -280,6 +288,7 @@ async def _post_compensation_to_folio(complaint: dict, actor: User) -> dict:
 
     try:
         from core.folio_ledger_service import FolioLedgerService
+
         svc = FolioLedgerService()
         # Tenant-scope idempotency key: aynı şikayet 2 kez resolve edilirse
         # ledger'da ikinci entry oluşmaz; cross-tenant çakışma riski yok.
@@ -350,24 +359,18 @@ def _enrich_with_sla(complaint: dict) -> dict:
 
 
 @sub_router.get("/service/complaints")
-async def get_complaints(
-    status: str | None = None,
-    category: str | None = None,
-    severity: str | None = None,
-    room_number: str | None = None,
-    current_user: User = Depends(get_current_user)
-):
-    query = {'tenant_id': current_user.tenant_id}
+async def get_complaints(status: str | None = None, category: str | None = None, severity: str | None = None, room_number: str | None = None, current_user: User = Depends(get_current_user)):
+    query = {"tenant_id": current_user.tenant_id}
     if status:
-        query['status'] = status
+        query["status"] = status
     if category:
-        query['category'] = category
+        query["category"] = category
     if severity:
-        query['severity'] = severity
+        query["severity"] = severity
     if room_number:
-        query['room_number'] = room_number
+        query["room_number"] = room_number
 
-    raw = await db.service_complaints.find(query, {'_id': 0}).sort('created_at', -1).to_list(200)
+    raw = await db.service_complaints.find(query, {"_id": 0}).sort("created_at", -1).to_list(200)
     complaints = [_enrich_with_sla(c) for c in raw]
 
     stats = {
@@ -381,7 +384,7 @@ async def get_complaints(
         "overdue": sum(1 for c in complaints if c.get("is_overdue")),
     }
 
-    return {'complaints': complaints, 'total': len(complaints), 'stats': stats}
+    return {"complaints": complaints, "total": len(complaints), "stats": stats}
 
 
 @sub_router.get("/service/complaints/compensation-report")
@@ -390,16 +393,20 @@ async def complaint_compensation_report(
 ):
     """Tazminat raporu — çözülmüş şikayetlerde verilen tazminatların özeti."""
     pipeline = [
-        {"$match": {
-            "tenant_id": current_user.tenant_id,
-            "status": "resolved",
-            "compensation_offered": {"$nin": [None, "", "none"]},
-        }},
-        {"$group": {
-            "_id": "$compensation_offered",
-            "count": {"$sum": 1},
-            "total_amount": {"$sum": {"$ifNull": ["$compensation_amount", 0]}},
-        }},
+        {
+            "$match": {
+                "tenant_id": current_user.tenant_id,
+                "status": "resolved",
+                "compensation_offered": {"$nin": [None, "", "none"]},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$compensation_offered",
+                "count": {"$sum": 1},
+                "total_amount": {"$sum": {"$ifNull": ["$compensation_amount", 0]}},
+            }
+        },
     ]
     items = await db.service_complaints.aggregate(pipeline).to_list(50)
     breakdown = [
@@ -421,13 +428,8 @@ async def complaint_compensation_report(
 
 
 @sub_router.get("/service/complaints/{complaint_id}")
-async def get_complaint_detail(
-    complaint_id: str,
-    current_user: User = Depends(get_current_user)
-):
-    complaint = await db.service_complaints.find_one(
-        {"id": complaint_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+async def get_complaint_detail(complaint_id: str, current_user: User = Depends(get_current_user)):
+    complaint = await db.service_complaints.find_one({"id": complaint_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not complaint:
         raise HTTPException(status_code=404, detail="Şikayet bulunamadı")
 
@@ -463,18 +465,13 @@ async def update_complaint(
     update_data["updated_at"] = now
     update_data["updated_by"] = current_user.id
 
-    existing = await db.service_complaints.find_one(
-        {"id": complaint_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    existing = await db.service_complaints.find_one({"id": complaint_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Şikayet bulunamadı")
 
     changed = {k: v for k, v in update_data.items() if k in ("status", "severity", "category", "assigned_department", "subject", "description") and existing.get(k) != v}
 
-    await db.service_complaints.update_one(
-        {"id": complaint_id, "tenant_id": current_user.tenant_id},
-        {"$set": update_data}
-    )
+    await db.service_complaints.update_one({"id": complaint_id, "tenant_id": current_user.tenant_id}, {"$set": update_data})
     if changed:
         if "status" in changed and changed["status"] == "in_progress" and existing.get("status") == "escalated":
             await _push_history(complaint_id, current_user.tenant_id, _history_entry("de_escalated", current_user, to_status="in_progress"))
@@ -501,21 +498,18 @@ async def resolve_complaint(
         "resolved_by": current_user.id,
         "updated_at": now,
     }
-    existing = await db.service_complaints.find_one(
-        {"id": complaint_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    existing = await db.service_complaints.find_one({"id": complaint_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Şikayet bulunamadı")
 
-    await db.service_complaints.update_one(
-        {"id": complaint_id, "tenant_id": current_user.tenant_id},
-        {"$set": update}
-    )
+    await db.service_complaints.update_one({"id": complaint_id, "tenant_id": current_user.tenant_id}, {"$set": update})
     merged = {**existing, **update, "id": complaint_id}
     await _push_history(
-        complaint_id, current_user.tenant_id,
+        complaint_id,
+        current_user.tenant_id,
         _history_entry(
-            "resolved", current_user,
+            "resolved",
+            current_user,
             notes=resolution_notes,
             compensation=resolve_data.get("compensation_offered"),
             amount=resolve_data.get("compensation_amount", 0),
@@ -526,9 +520,11 @@ async def resolve_complaint(
     folio_result = await _post_compensation_to_folio(merged, current_user)
     if folio_result.get("folio_adjusted"):
         await _push_history(
-            complaint_id, current_user.tenant_id,
+            complaint_id,
+            current_user.tenant_id,
             _history_entry(
-                "folio_credited", current_user,
+                "folio_credited",
+                current_user,
                 folio_id=folio_result.get("folio_id"),
                 folio_number=folio_result.get("folio_number"),
                 amount=folio_result.get("amount_credited"),
@@ -538,9 +534,11 @@ async def resolve_complaint(
     elif resolve_data.get("compensation_offered") and resolve_data.get("compensation_amount", 0) > 0:
         # Tazminat seçilmiş ama folyoya işlenememiş — operasyonel iz bırak
         await _push_history(
-            complaint_id, current_user.tenant_id,
+            complaint_id,
+            current_user.tenant_id,
             _history_entry(
-                "folio_credit_failed", current_user,
+                "folio_credit_failed",
+                current_user,
                 reason=folio_result.get("reason"),
             ),
         )
@@ -571,18 +569,14 @@ async def escalate_complaint(
         "escalated_by": current_user.id,
         "updated_at": now,
     }
-    existing = await db.service_complaints.find_one(
-        {"id": complaint_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    existing = await db.service_complaints.find_one({"id": complaint_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Şikayet bulunamadı")
 
-    await db.service_complaints.update_one(
-        {"id": complaint_id, "tenant_id": current_user.tenant_id},
-        {"$set": update}
-    )
+    await db.service_complaints.update_one({"id": complaint_id, "tenant_id": current_user.tenant_id}, {"$set": update})
     await _push_history(
-        complaint_id, current_user.tenant_id,
+        complaint_id,
+        current_user.tenant_id,
         _history_entry("escalated", current_user, escalated_to=escalated_to, notes=notes),
     )
     await _notify_managers_of_escalation({**existing, **update}, escalated_to, notes, current_user)
@@ -611,9 +605,7 @@ async def deescalate_complaint(
         "de_escalation_notes": notes,
         "updated_at": now,
     }
-    existing = await db.service_complaints.find_one(
-        {"id": complaint_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    existing = await db.service_complaints.find_one({"id": complaint_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Şikayet bulunamadı")
     if existing.get("status") != "escalated":
@@ -624,7 +616,8 @@ async def deescalate_complaint(
         {"$set": update},
     )
     await _push_history(
-        complaint_id, current_user.tenant_id,
+        complaint_id,
+        current_user.tenant_id,
         _history_entry("de_escalated", current_user, notes=notes),
     )
     return {"success": True, "message": "Şikayet eskalasyondan geri alındı"}
@@ -663,9 +656,11 @@ async def auto_escalate_overdue(
             {"$set": update},
         )
         await _push_history(
-            c["id"], current_user.tenant_id,
+            c["id"],
+            current_user.tenant_id,
             _history_entry(
-                "escalated", current_user,
+                "escalated",
+                current_user,
                 escalated_to="management",
                 notes=update["escalation_notes"],
                 auto=True,
@@ -683,31 +678,26 @@ async def delete_complaint(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
-    result = await db.service_complaints.delete_one(
-        {"id": complaint_id, "tenant_id": current_user.tenant_id}
-    )
+    result = await db.service_complaints.delete_one({"id": complaint_id, "tenant_id": current_user.tenant_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Şikayet bulunamadı")
     return {"success": True, "message": "Şikayet silindi"}
 
 
 @sub_router.get("/service/complaints-rooms")
-async def get_rooms_for_complaints(
-    current_user: User = Depends(get_current_user)
-):
-    rooms = await db.rooms.find(
-        {"tenant_id": current_user.tenant_id, "is_active": True},
-        {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "floor": 1, "status": 1}
-    ).sort("room_number", 1).to_list(500)
+async def get_rooms_for_complaints(current_user: User = Depends(get_current_user)):
+    rooms = (
+        await db.rooms.find({"tenant_id": current_user.tenant_id, "is_active": True}, {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "floor": 1, "status": 1})
+        .sort("room_number", 1)
+        .to_list(500)
+    )
     return {"rooms": rooms}
 
 
 @sub_router.get("/service/complaints-guests")
-async def get_guests_for_complaints(
-    q: str | None = None,
-    current_user: User = Depends(get_current_user)
-):
+async def get_guests_for_complaints(q: str | None = None, current_user: User = Depends(get_current_user)):
     from security.search_normalize import prefix_condition
+
     query = {"tenant_id": current_user.tenant_id}
     # Index-serviceable anchored prefix RANGE on the `name_lower` companion field
     # (backed by the (tenant_id, name_lower) index), replacing the un-indexable
@@ -715,24 +705,21 @@ async def get_guests_for_complaints(
     # "starts typing a name" prefix.
     if q and (cond := prefix_condition("name", q)):
         query.update(cond)
-    guests = [decrypt_guest_doc(g) for g in await db.guests.find(
-        query,
-        {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "vip_status": 1}
-    ).sort("name", 1).to_list(100)]
+    guests = [decrypt_guest_doc(g) for g in await db.guests.find(query, {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "vip_status": 1}).sort("name", 1).to_list(100)]
     return {"guests": guests}
 
 
 @sub_router.get("/service/complaints-bookings")
-async def get_active_bookings_for_complaints(
-    current_user: User = Depends(get_current_user)
-):
-    bookings = await db.bookings.find(
-        {"tenant_id": current_user.tenant_id, "status": {"$in": ["checked_in", "confirmed"]}},
-        {"_id": 0, "id": 1, "guest_name": 1, "guest_id": 1, "room_number": 1, "room_id": 1,
-         "room_type": 1, "check_in": 1, "check_out": 1, "status": 1}
-    ).sort("check_in", -1).to_list(200)
+async def get_active_bookings_for_complaints(current_user: User = Depends(get_current_user)):
+    bookings = (
+        await db.bookings.find(
+            {"tenant_id": current_user.tenant_id, "status": {"$in": ["checked_in", "confirmed"]}},
+            {"_id": 0, "id": 1, "guest_name": 1, "guest_id": 1, "room_number": 1, "room_id": 1, "room_type": 1, "check_in": 1, "check_out": 1, "status": 1},
+        )
+        .sort("check_in", -1)
+        .to_list(200)
+    )
     return {"bookings": bookings}
 
 
 # ============= MULTI-PROPERTY MANAGEMENT =============
-

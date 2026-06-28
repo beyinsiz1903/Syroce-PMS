@@ -4,6 +4,7 @@ Control Plane — MongoDB Index Definitions
 All indexes required for control plane collections.
 Called during startup to ensure query performance.
 """
+
 import logging
 
 logger = logging.getLogger("controlplane.indexes")
@@ -41,7 +42,9 @@ async def ensure_controlplane_indexes(db) -> None:
         name="idx_cp_failures_correlation",
     )
     await failures.create_index(
-        "id", unique=True, name="idx_cp_failures_id",
+        "id",
+        unique=True,
+        name="idx_cp_failures_id",
     )
 
     # ── cp_sync_jobs ───────────────────────────────────────────────
@@ -56,7 +59,9 @@ async def ensure_controlplane_indexes(db) -> None:
         name="idx_cp_sync_provider_type",
     )
     await sync_jobs.create_index(
-        "id", unique=True, name="idx_cp_sync_id",
+        "id",
+        unique=True,
+        name="idx_cp_sync_id",
     )
 
     # ── secret_access_audit (extend existing) ──────────────────────

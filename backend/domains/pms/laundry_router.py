@@ -16,6 +16,7 @@ Minibar (core.pos_folio_consumer) deseni birebir izlenir:
 
 Tüm uçlar tenant-scoped; mutasyonlar RBAC ile sınırlı. PII/secret loglanmaz.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -36,7 +37,12 @@ router = APIRouter(prefix="/api/laundry", tags=["PMS / Laundry"])
 
 # Sipariş girebilen/durum güncelleyebilen roller (housekeeping çamaşırı işler).
 _ORDER_ROLES = {
-    "super_admin", "admin", "supervisor", "front_desk", "housekeeping", "staff",
+    "super_admin",
+    "admin",
+    "supervisor",
+    "front_desk",
+    "housekeeping",
+    "staff",
 }
 # Ürün fiyat kataloğu yönetimi yönetici seviyesi.
 _CATALOG_ROLES = {"super_admin", "admin", "supervisor"}
@@ -113,16 +119,16 @@ async def _find_active_booking_by_room_number(tenant_id: str, room_number: str) 
     """Oda numarasından aktif (check-in) rezervasyonu çözer."""
     if not room_number:
         return None
-    room = await db.rooms.find_one(
-        {"tenant_id": tenant_id, "room_number": str(room_number).strip()}
-    )
+    room = await db.rooms.find_one({"tenant_id": tenant_id, "room_number": str(room_number).strip()})
     if not room:
         return None
-    return await db.bookings.find_one({
-        "tenant_id": tenant_id,
-        "room_id": room.get("id"),
-        "status": {"$in": ["checked_in", "in_house"]},
-    })
+    return await db.bookings.find_one(
+        {
+            "tenant_id": tenant_id,
+            "room_id": room.get("id"),
+            "status": {"$in": ["checked_in", "in_house"]},
+        }
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -162,9 +168,7 @@ async def create_item(
     _require_role(current_user, _CATALOG_ROLES)
     tenant_id = _tenant_of(current_user)
     code = payload.code.strip().lower()
-    existing = await db.laundry_items.find_one(
-        {"tenant_id": tenant_id, "code": code}, {"_id": 0}
-    )
+    existing = await db.laundry_items.find_one({"tenant_id": tenant_id, "code": code}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=400, detail="Bu kod ile ürün zaten var")
     now = _now_iso()
@@ -245,9 +249,7 @@ class StatusUpdate(BaseModel):
     status: str = Field(..., min_length=1, max_length=30)
 
 
-def _build_order_lines(
-    items_by_code: dict, lines: list[OrderLine], multiplier: float
-) -> tuple[list[dict], float]:
+def _build_order_lines(items_by_code: dict, lines: list[OrderLine], multiplier: float) -> tuple[list[dict], float]:
     out: list[dict] = []
     grand_total = 0.0
     for idx, ln in enumerate(lines):
@@ -257,14 +259,16 @@ def _build_order_lines(
         unit_price = round(float(it.get("price", 0)), 2)
         line_total = round(unit_price * ln.quantity * multiplier, 2)
         grand_total += line_total
-        out.append({
-            "line_no": idx,
-            "code": it["code"],
-            "name": it.get("name", "Çamaşır"),
-            "quantity": ln.quantity,
-            "unit_price": unit_price,
-            "total": line_total,
-        })
+        out.append(
+            {
+                "line_no": idx,
+                "code": it["code"],
+                "name": it.get("name", "Çamaşır"),
+                "quantity": ln.quantity,
+                "unit_price": unit_price,
+                "total": line_total,
+            }
+        )
     return out, round(grand_total, 2)
 
 
@@ -294,9 +298,7 @@ async def create_order(
     multiplier = _SERVICE_MULTIPLIERS.get(payload.service_type, 1.0)
 
     codes = list({ln.code.strip().lower() for ln in payload.items})
-    items = await db.laundry_items.find(
-        {"code": {"$in": codes}, "tenant_id": tenant_id}, {"_id": 0}
-    ).to_list(1000)
+    items = await db.laundry_items.find({"code": {"$in": codes}, "tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
     items_by_code = {it["code"]: it for it in items}
     order_lines, grand_total = _build_order_lines(items_by_code, payload.items, multiplier)
 
@@ -332,17 +334,13 @@ async def _charge_order_to_folio(tenant_id: str, actor: str, order: dict) -> dic
     booking_id = order.get("booking_id")
     booking = None
     if not booking_id:
-        booking = await _find_active_booking_by_room_number(
-            tenant_id, order.get("room_number", "")
-        )
+        booking = await _find_active_booking_by_room_number(tenant_id, order.get("room_number", ""))
         booking_id = booking.get("id") if booking else None
 
     if not booking_id:
         return {"charged": False, "reason": "no_active_booking_or_folio"}
 
-    open_folio = await db.folios.find_one(
-        {"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": tenant_id}
-    )
+    open_folio = await db.folios.find_one({"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": tenant_id})
 
     # Idempotency index (fail-closed) — yoksa çift-post riski. Sessiz degrade
     # YOK: index kurulamazsa yükselt (çağıran teslimi geri sarar / 503 döner).
@@ -423,9 +421,11 @@ async def _charge_order_to_folio(tenant_id: str, actor: str, order: dict) -> dic
         upsert=True,
     )
     logger.warning(
-        "Çamaşır late-charge: booking=%s oda=%s folio açık değil → late-charge "
-        "(total=%s tenant=%s)",
-        booking_id, order.get("room_number"), order.get("total"), tenant_id,
+        "Çamaşır late-charge: booking=%s oda=%s folio açık değil → late-charge (total=%s tenant=%s)",
+        booking_id,
+        order.get("room_number"),
+        order.get("total"),
+        tenant_id,
     )
     return {"charged": False, "reason": "no_active_booking_or_folio"}
 
@@ -452,9 +452,7 @@ async def update_order_status(
     if new_status == cur_status:
         return {"ok": True, "status": cur_status, "folio_charge": None}
     if new_status not in _LAUNDRY_TRANSITIONS.get(cur_status, set()):
-        raise HTTPException(
-            status_code=409, detail=f"Geçersiz geçiş: {cur_status} → {new_status}"
-        )
+        raise HTTPException(status_code=409, detail=f"Geçersiz geçiş: {cur_status} → {new_status}")
 
     # Teslim → faturalama. Idempotency index'ini CAS'tan ÖNCE garanti et:
     # index kurulamazsa teslimi hiç başlatma (fail-closed; minibar ile hizalı,
@@ -478,9 +476,7 @@ async def update_order_status(
     )
     if res.modified_count == 0:
         # Yarışı kaybettik (başka istek geçişi yaptı) → mevcut durumu dön.
-        latest = await db.laundry_orders.find_one(
-            {"id": order_id, "tenant_id": tenant_id}, {"_id": 0}
-        )
+        latest = await db.laundry_orders.find_one({"id": order_id, "tenant_id": tenant_id}, {"_id": 0})
         return {"ok": True, "status": (latest or {}).get("status"), "folio_charge": None}
 
     folio_charge = None
@@ -493,11 +489,13 @@ async def update_order_status(
             folio_charge = {"charged": False, "error": str(exc)[:120]}
         await db.laundry_orders.update_one(
             {"id": order_id, "tenant_id": tenant_id},
-            {"$set": {
-                "folio_charged": bool(folio_charge and folio_charge.get("charged")),
-                "folio_id": folio_charge.get("folio_id") if folio_charge else order.get("folio_id"),
-                "delivered_at": _now_iso(),
-            }},
+            {
+                "$set": {
+                    "folio_charged": bool(folio_charge and folio_charge.get("charged")),
+                    "folio_id": folio_charge.get("folio_id") if folio_charge else order.get("folio_id"),
+                    "delivered_at": _now_iso(),
+                }
+            },
         )
 
     return {"ok": True, "status": new_status, "folio_charge": folio_charge}

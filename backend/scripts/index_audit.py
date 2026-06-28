@@ -1,4 +1,5 @@
 """R5: Index audit — en sık find edilen koleksiyonların index durumu."""
+
 import asyncio
 import os
 import sys
@@ -11,16 +12,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from motor.motor_asyncio import AsyncIOMotorClient  # noqa: E402
 
-MONGO_URL = (
-    os.environ.get("MONGO_URL")
-    or os.environ.get("MONGO_ATLAS_URI")
-    or "mongodb://localhost:27017"
-)
+MONGO_URL = os.environ.get("MONGO_URL") or os.environ.get("MONGO_ATLAS_URI") or "mongodb://localhost:27017"
 DB_NAME = os.environ.get("DB_NAME", "syroce-pms")
 
 TARGETS = [
-    ("bookings", [("tenant_id", "check_in"), ("tenant_id", "check_out"),
-                  ("tenant_id", "status"), ("tenant_id", "created_at")]),
+    ("bookings", [("tenant_id", "check_in"), ("tenant_id", "check_out"), ("tenant_id", "status"), ("tenant_id", "created_at")]),
     ("rooms", [("tenant_id", "status")]),
     ("guests", [("tenant_id", "id")]),
     ("payments", [("tenant_id", "payment_date")]),

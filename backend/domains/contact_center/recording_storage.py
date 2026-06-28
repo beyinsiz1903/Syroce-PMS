@@ -8,6 +8,7 @@ Doktrin:
 - Yapılandırma yoksa (S3 veya Twilio) boru hattı fail-closed: kayıt indirilmez,
   ``not_configured`` döner; çağrı kaydı yine de durum/metadata ile tutulur.
 """
+
 from __future__ import annotations
 
 import logging
@@ -49,9 +50,7 @@ def _aad(tenant_id: str, call_id: str, recording_id: str) -> AADContext:
     )
 
 
-def _encrypt_blob(
-    plaintext: bytes, *, tenant_id: str, call_id: str, recording_id: str
-) -> bytes:
+def _encrypt_blob(plaintext: bytes, *, tenant_id: str, call_id: str, recording_id: str) -> bytes:
     """AES-256-GCM, AAD-bağlı kayıt blob'u (file-swap tamper tespiti)."""
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -63,18 +62,10 @@ def _encrypt_blob(
     nonce = secrets.token_bytes(_NONCE_SIZE)
     aad = _aad(tenant_id, call_id, recording_id).to_bytes()
     ciphertext = AESGCM(key).encrypt(nonce, plaintext, aad)
-    return (
-        _BLOB_MAGIC
-        + len(kid_bytes).to_bytes(2, "big")
-        + kid_bytes
-        + nonce
-        + ciphertext
-    )
+    return _BLOB_MAGIC + len(kid_bytes).to_bytes(2, "big") + kid_bytes + nonce + ciphertext
 
 
-def _decrypt_blob(
-    blob: bytes, *, tenant_id: str, call_id: str, recording_id: str
-) -> bytes:
+def _decrypt_blob(blob: bytes, *, tenant_id: str, call_id: str, recording_id: str) -> bytes:
     from cryptography.exceptions import InvalidTag
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -146,13 +137,9 @@ async def fetch_twilio_recording(recording_url: str) -> bytes | None:
         # SSRF/DNS-rebind korumalı safe_request_async kullanılır (raw httpx YOK).
         # Kimlik: operatör Twilio Account SID/Auth Token (Basic Auth). EgressDenied
         # dâhil tüm hatalar yutulur → fail-closed None (URL/sır ASLA loglanmaz).
-        resp = await safe_request_async(
-            "GET", media_url, timeout=30.0, auth=(tw.account_sid, tw.auth_token)
-        )
+        resp = await safe_request_async("GET", media_url, timeout=30.0, auth=(tw.account_sid, tw.auth_token))
         if resp.status_code != 200:
-            logger.warning(
-                "[CC-VOICE] kayıt indirme başarısız status=%s", resp.status_code
-            )
+            logger.warning("[CC-VOICE] kayıt indirme başarısız status=%s", resp.status_code)
             return None
         return resp.content
     except Exception:
@@ -160,9 +147,7 @@ async def fetch_twilio_recording(recording_url: str) -> bytes | None:
         return None
 
 
-def store_recording_bytes(
-    audio: bytes, *, tenant_id: str, call_id: str
-) -> str | None:
+def store_recording_bytes(audio: bytes, *, tenant_id: str, call_id: str) -> str | None:
     """Kayıt baytlarını şifreleyip nesne deposuna yazar; ``recording_ref`` döner.
 
     Fail-closed: depo yapılandırılmamışsa None döner (kayıt saklanmaz).
@@ -173,9 +158,7 @@ def store_recording_bytes(
     cfg = get_recording_storage_config()
     recording_id = uuid.uuid4().hex
     key = _object_key(tenant_id, call_id, recording_id)
-    blob = _encrypt_blob(
-        audio, tenant_id=tenant_id, call_id=call_id, recording_id=recording_id
-    )
+    blob = _encrypt_blob(audio, tenant_id=tenant_id, call_id=call_id, recording_id=recording_id)
     try:
         client.put_object(
             Bucket=cfg.bucket,
@@ -189,9 +172,7 @@ def store_recording_bytes(
     return key
 
 
-def load_recording_bytes(
-    recording_ref: str, *, tenant_id: str, call_id: str
-) -> bytes | None:
+def load_recording_bytes(recording_ref: str, *, tenant_id: str, call_id: str) -> bytes | None:
     """Kaydı depodan çekip çözer (decrypt-at-read). Fail-closed: None.
 
     ``recording_id`` AAD bağlaması ref anahtarından türetilir (``.../<rec>.enc``).
@@ -208,9 +189,7 @@ def load_recording_bytes(
         logger.warning("[CC-VOICE] kayıt okuma hatası (PII'siz)")
         return None
     try:
-        return _decrypt_blob(
-            blob, tenant_id=tenant_id, call_id=call_id, recording_id=recording_id
-        )
+        return _decrypt_blob(blob, tenant_id=tenant_id, call_id=call_id, recording_id=recording_id)
     except (DecryptionError, TamperDetectedError):
         logger.error("[CC-VOICE] kayıt çözme/tamper hatası ref-only")
         return None

@@ -1,4 +1,5 @@
 """Auto-split from schemas.py — domain: companies."""
+
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -34,6 +35,7 @@ class CompanyCreate(BaseModel):
 
     payment_terms: str | None = None
     status: CompanyStatus = CompanyStatus.PENDING
+
 
 class Company(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -75,6 +77,7 @@ class BankAccount(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class CreditLimit(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -90,6 +93,7 @@ class CreditLimit(BaseModel):
     notes: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
 
 class Expense(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -109,6 +113,7 @@ class Expense(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class CashFlow(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -124,6 +129,7 @@ class CashFlow(BaseModel):
     description: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class CityLedgerTransaction(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -136,5 +142,3 @@ class CityLedgerTransaction(BaseModel):
     posted_by: str
     transaction_date: datetime = Field(default_factory=lambda: datetime.now(UTC))
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
-

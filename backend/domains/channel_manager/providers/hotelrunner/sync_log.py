@@ -6,6 +6,7 @@ UI-facing sync history writer. Persists to `hotelrunner_sync_logs` collection
 which the frontend Channel Manager page renders. Distinct from
 `observability.py` which records provider-call HTTP metrics for monitoring.
 """
+
 import uuid
 from datetime import UTC, datetime
 
@@ -22,14 +23,16 @@ async def log_sync(
     user_name: str = "system",
 ) -> None:
     """Log a sync event for UI display."""
-    await db.hotelrunner_sync_logs.insert_one({
-        "id": str(uuid.uuid4()),
-        "tenant_id": tenant_id,
-        "timestamp": datetime.now(UTC).isoformat(),
-        "sync_type": sync_type,
-        "status": status,
-        "duration_ms": duration_ms,
-        "records_synced": records,
-        "error_message": error,
-        "initiator": user_name,
-    })
+    await db.hotelrunner_sync_logs.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "sync_type": sync_type,
+            "status": status,
+            "duration_ms": duration_ms,
+            "records_synced": records,
+            "error_message": error,
+            "initiator": user_name,
+        }
+    )

@@ -3,6 +3,7 @@
 Translates canonical Posting / NightAuditClose messages into a SAP
 Journal Entry payload (`API_JOURNALENTRYITEMBULKCREATE`-compatible).
 """
+
 from __future__ import annotations
 
 import json
@@ -26,8 +27,7 @@ class SapS4HanaAdapter(BaseAdapter):
     @property
     def is_dry_run(self) -> bool:
         c = self.config
-        return not (c.get("base_url") and c.get("client_id")
-                    and c.get("client_secret") and c.get("token_url"))
+        return not (c.get("base_url") and c.get("client_id") and c.get("client_secret") and c.get("token_url"))
 
     async def _get_token(self) -> str:
         c = self.config
@@ -59,15 +59,17 @@ class SapS4HanaAdapter(BaseAdapter):
         if envelope.message_type == MessageType.NIGHT_AUDIT_CLOSE:
             lines = []
             for i, jl in enumerate(p.get("journal_lines", []), start=1):
-                lines.append({
-                    "GLAccount": jl.get("gl_account", "0000400000"),
-                    "AmountInTransactionCurrency": float(jl.get("amount", 0)),
-                    "TransactionCurrency": p.get("currency", "TRY"),
-                    "DebitCreditCode": jl.get("dc", "S"),  # S=Debit, H=Credit
-                    "DocumentItemText": jl.get("description", "")[:50],
-                    "PostingKey": jl.get("posting_key", "40"),
-                    "ItemNumber": i,
-                })
+                lines.append(
+                    {
+                        "GLAccount": jl.get("gl_account", "0000400000"),
+                        "AmountInTransactionCurrency": float(jl.get("amount", 0)),
+                        "TransactionCurrency": p.get("currency", "TRY"),
+                        "DebitCreditCode": jl.get("dc", "S"),  # S=Debit, H=Credit
+                        "DocumentItemText": jl.get("description", "")[:50],
+                        "PostingKey": jl.get("posting_key", "40"),
+                        "ItemNumber": i,
+                    }
+                )
             return {
                 "CompanyCode": company,
                 "Ledger": ledger,
@@ -88,15 +90,17 @@ class SapS4HanaAdapter(BaseAdapter):
             "DocumentReferenceID": p["posting_id"],
             "DocumentHeaderText": (p.get("description", ""))[:25],
             "TransactionCurrency": p.get("currency", "TRY"),
-            "JournalEntryItemBulk": [{
-                "GLAccount": "0000400000" if p["posting_type"] == "CHARGE" else "0000100000",
-                "AmountInTransactionCurrency": float(p["amount"]),
-                "TransactionCurrency": p.get("currency", "TRY"),
-                "DebitCreditCode": "S" if p["posting_type"] == "CHARGE" else "H",
-                "DocumentItemText": p.get("description", "")[:50],
-                "PostingKey": "40" if p["posting_type"] == "CHARGE" else "50",
-                "ItemNumber": 1,
-            }],
+            "JournalEntryItemBulk": [
+                {
+                    "GLAccount": "0000400000" if p["posting_type"] == "CHARGE" else "0000100000",
+                    "AmountInTransactionCurrency": float(p["amount"]),
+                    "TransactionCurrency": p.get("currency", "TRY"),
+                    "DebitCreditCode": "S" if p["posting_type"] == "CHARGE" else "H",
+                    "DocumentItemText": p.get("description", "")[:50],
+                    "PostingKey": "40" if p["posting_type"] == "CHARGE" else "50",
+                    "ItemNumber": 1,
+                }
+            ],
         }
 
     async def deliver(self, envelope: XchangeEnvelope) -> DeliveryResult:
@@ -104,8 +108,7 @@ class SapS4HanaAdapter(BaseAdapter):
         excerpt = json.dumps(body, indent=2, default=str)[:1024]
 
         if self.is_dry_run:
-            logger.info("[sap_s4hana] DRY-RUN %s tenant=%s",
-                        envelope.message_type.value, envelope.tenant_id)
+            logger.info("[sap_s4hana] DRY-RUN %s tenant=%s", envelope.message_type.value, envelope.tenant_id)
             return DeliveryResult(
                 ok=True,
                 dry_run=True,
@@ -121,11 +124,9 @@ class SapS4HanaAdapter(BaseAdapter):
         try:
             token = await self._get_token()
         except EgressDenied as e:
-            return DeliveryResult(ok=False, error=f"egress_denied: {e}",
-                                  request_payload_excerpt=excerpt)
+            return DeliveryResult(ok=False, error=f"egress_denied: {e}", request_payload_excerpt=excerpt)
         except Exception as e:
-            return DeliveryResult(ok=False, error=f"oauth_failed: {e!r}",
-                                  request_payload_excerpt=excerpt)
+            return DeliveryResult(ok=False, error=f"oauth_failed: {e!r}", request_payload_excerpt=excerpt)
 
         url = self.config["base_url"].rstrip("/") + "/API_JOURNALENTRYITEMBULKCREATE"
         try:
@@ -140,11 +141,9 @@ class SapS4HanaAdapter(BaseAdapter):
                 },
             )
         except EgressDenied as e:
-            return DeliveryResult(ok=False, error=f"egress_denied: {e}",
-                                  request_payload_excerpt=excerpt)
+            return DeliveryResult(ok=False, error=f"egress_denied: {e}", request_payload_excerpt=excerpt)
         except httpx.RequestError as e:
-            return DeliveryResult(ok=False, error=f"transport_error: {e!r}",
-                                  request_payload_excerpt=excerpt)
+            return DeliveryResult(ok=False, error=f"transport_error: {e!r}", request_payload_excerpt=excerpt)
         ok = 200 <= resp.status_code < 300
         return DeliveryResult(
             ok=ok,

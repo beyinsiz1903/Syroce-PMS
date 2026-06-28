@@ -57,7 +57,9 @@ class NeverAgainRuleRequest(BaseModel):
 
 
 @router.post("/incidents")
-async def create_incident(body: CreateIncidentRequest, current_user: User = Depends(get_current_user),
+async def create_incident(
+    body: CreateIncidentRequest,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Create incident with auto-classification."""
@@ -82,9 +84,7 @@ async def create_incident(body: CreateIncidentRequest, current_user: User = Depe
         "status": "open",
         "affected_service": body.affected_service,
         "classification": classification,
-        "timeline": [
-            {"action": "created", "actor": actor_id, "timestamp": now, "note": body.description}
-        ],
+        "timeline": [{"action": "created", "actor": actor_id, "timestamp": now, "note": body.description}],
         "metrics": {
             "detection_time_seconds": 0,
             "acknowledgement_time_seconds": None,
@@ -109,7 +109,8 @@ async def create_incident(body: CreateIncidentRequest, current_user: User = Depe
 
     # Auto-detect recurrence
     recurrence = await recurrence_detector.detect_recurrence(
-        tenant_id, incident_id,
+        tenant_id,
+        incident_id,
         classification["category"],
         classification["subcategory"],
         body.affected_service,
@@ -123,14 +124,20 @@ async def create_incident(body: CreateIncidentRequest, current_user: User = Depe
 
 
 @router.put("/incidents/{incident_id}/rca")
-async def add_rca(incident_id: str, body: RCARequest, current_user: User = Depends(get_current_user),
+async def add_rca(
+    incident_id: str,
+    body: RCARequest,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     try:
         result = await rca_engine.create_rca(
-            current_user.tenant_id, incident_id,
-            body.summary, body.contributing_factors,
-            body.five_whys, body.root_cause_type,
+            current_user.tenant_id,
+            incident_id,
+            body.summary,
+            body.contributing_factors,
+            body.five_whys,
+            body.root_cause_type,
             current_user.id,
         )
         return result
@@ -139,13 +146,18 @@ async def add_rca(incident_id: str, body: RCARequest, current_user: User = Depen
 
 
 @router.put("/incidents/{incident_id}/fix")
-async def track_fix(incident_id: str, body: TrackFixRequest, current_user: User = Depends(get_current_user),
+async def track_fix(
+    incident_id: str,
+    body: TrackFixRequest,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     try:
         result = await rca_engine.track_fix(
-            current_user.tenant_id, incident_id,
-            body.fix_applied, current_user.id,
+            current_user.tenant_id,
+            incident_id,
+            body.fix_applied,
+            current_user.id,
         )
         return result
     except ValueError as e:
@@ -153,15 +165,22 @@ async def track_fix(incident_id: str, body: TrackFixRequest, current_user: User 
 
 
 @router.post("/incidents/{incident_id}/never-again")
-async def add_never_again_rule(incident_id: str, body: NeverAgainRuleRequest, current_user: User = Depends(get_current_user),
+async def add_never_again_rule(
+    incident_id: str,
+    body: NeverAgainRuleRequest,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     try:
         result = await rca_engine.create_never_again_rule(
-            current_user.tenant_id, incident_id,
-            body.rule_type, body.description,
-            body.implementation, body.verification_type,
-            body.verification_detail, body.assigned_to,
+            current_user.tenant_id,
+            incident_id,
+            body.rule_type,
+            body.description,
+            body.implementation,
+            body.verification_type,
+            body.verification_detail,
+            body.assigned_to,
             body.due_date,
         )
         return result
@@ -172,6 +191,7 @@ async def add_never_again_rule(incident_id: str, body: NeverAgainRuleRequest, cu
 @router.get("/incidents/{incident_id}/recurrence")
 async def check_recurrence(incident_id: str, current_user: User = Depends(get_current_user)):
     from core.database import db
+
     incident = await db.incidents.find_one(
         {"id": incident_id, "tenant_id": current_user.tenant_id},
         {"_id": 0, "classification": 1, "affected_service": 1},
@@ -181,7 +201,8 @@ async def check_recurrence(incident_id: str, current_user: User = Depends(get_cu
 
     cls = incident.get("classification", {})
     return await recurrence_detector.detect_recurrence(
-        current_user.tenant_id, incident_id,
+        current_user.tenant_id,
+        incident_id,
         cls.get("category", "unknown"),
         cls.get("subcategory", "unknown"),
         incident.get("affected_service", ""),
@@ -189,7 +210,9 @@ async def check_recurrence(incident_id: str, current_user: User = Depends(get_cu
 
 
 @router.post("/incidents/{incident_id}/verify-prevention")
-async def verify_prevention(incident_id: str, current_user: User = Depends(get_current_user),
+async def verify_prevention(
+    incident_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     try:

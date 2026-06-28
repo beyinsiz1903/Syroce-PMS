@@ -6,6 +6,7 @@ HotelRunner v2 — Shadow Observation Module
 Collects daily snapshots, evaluates alert thresholds,
 checks reservation ingest consistency, generates reports.
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -58,6 +59,7 @@ def evaluate_threshold(metric_name: str, value: float) -> dict[str, Any]:
 
 # ── Daily Snapshot Collection ──────────────────────────────────────────
 
+
 async def collect_daily_snapshot(tenant_id: str) -> dict[str, Any]:
     """
     Collect a comprehensive daily snapshot of all shadow observation metrics.
@@ -70,14 +72,16 @@ async def collect_daily_snapshot(tenant_id: str) -> dict[str, Any]:
     # 1. Metrics summary from connector_metrics
     metrics_pipeline = [
         {"$match": {"tenant_id": tenant_id, "provider": "hotelrunner_v2", "recorded_at": {"$gte": since_24h}}},
-        {"$group": {
-            "_id": None,
-            "total_ops": {"$sum": 1},
-            "success_count": {"$sum": {"$cond": ["$success", 1, 0]}},
-            "fail_count": {"$sum": {"$cond": ["$success", 0, 1]}},
-            "avg_latency": {"$avg": "$duration_ms"},
-            "max_latency": {"$max": "$duration_ms"},
-        }},
+        {
+            "$group": {
+                "_id": None,
+                "total_ops": {"$sum": 1},
+                "success_count": {"$sum": {"$cond": ["$success", 1, 0]}},
+                "fail_count": {"$sum": {"$cond": ["$success", 0, 1]}},
+                "avg_latency": {"$avg": "$duration_ms"},
+                "max_latency": {"$max": "$duration_ms"},
+            }
+        },
     ]
     agg = await db[COLL_METRICS].aggregate(metrics_pipeline).to_list(1)
     m = agg[0] if agg else {"total_ops": 0, "success_count": 0, "fail_count": 0, "avg_latency": 0, "max_latency": 0}
@@ -87,22 +91,31 @@ async def collect_daily_snapshot(tenant_id: str) -> dict[str, Any]:
     avg_latency = round(m["avg_latency"] or 0, 1)
 
     # 2. Auth failure count
-    auth_failures = await db[COLL_METRICS].count_documents({
-        "tenant_id": tenant_id, "provider": "hotelrunner_v2",
-        "recorded_at": {"$gte": since_24h},
-        "error_category": "auth",
-    })
+    auth_failures = await db[COLL_METRICS].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "provider": "hotelrunner_v2",
+            "recorded_at": {"$gte": since_24h},
+            "error_category": "auth",
+        }
+    )
 
     # 3. Drift count (24h)
-    drift_count = await db[COLL_RECON_DRIFTS].count_documents({
-        "tenant_id": tenant_id, "provider": "hotelrunner_v2",
-        "created_at": {"$gte": since_24h},
-    })
+    drift_count = await db[COLL_RECON_DRIFTS].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "provider": "hotelrunner_v2",
+            "created_at": {"$gte": since_24h},
+        }
+    )
 
     # 4. DLQ count
-    dlq_count = await db[COLL_DLQ].count_documents({
-        "tenant_id": tenant_id, "provider": "hotelrunner",
-    })
+    dlq_count = await db[COLL_DLQ].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "provider": "hotelrunner",
+        }
+    )
 
     # 5. Retry count (failed ops = retries needed)
     retry_count = m["fail_count"]
@@ -112,8 +125,7 @@ async def collect_daily_snapshot(tenant_id: str) -> dict[str, Any]:
 
     # 7. Error taxonomy
     err_pipeline = [
-        {"$match": {"tenant_id": tenant_id, "provider": "hotelrunner_v2",
-                     "recorded_at": {"$gte": since_24h}, "success": False}},
+        {"$match": {"tenant_id": tenant_id, "provider": "hotelrunner_v2", "recorded_at": {"$gte": since_24h}, "success": False}},
         {"$group": {"_id": "$error_category", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}},
     ]
@@ -178,15 +190,19 @@ async def check_ingest_consistency(tenant_id: str, hours: int = 24) -> dict[str,
 
     # Duplicate check: group by external_reservation_id, count > 1
     dup_pipeline = [
-        {"$match": {
-            "tenant_id": tenant_id,
-            "provider": {"$in": ["hotelrunner", "hotelrunner_v2"]},
-            "received_at": {"$gte": since},
-        }},
-        {"$group": {
-            "_id": "$external_reservation_id",
-            "count": {"$sum": 1},
-        }},
+        {
+            "$match": {
+                "tenant_id": tenant_id,
+                "provider": {"$in": ["hotelrunner", "hotelrunner_v2"]},
+                "received_at": {"$gte": since},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$external_reservation_id",
+                "count": {"$sum": 1},
+            }
+        },
         {"$match": {"count": {"$gt": 1}}},
         {"$count": "duplicate_ids"},
     ]
@@ -195,11 +211,13 @@ async def check_ingest_consistency(tenant_id: str, hours: int = 24) -> dict[str,
 
     # Stale check: reservations with last_seen_at older than 48 hours
     stale_threshold = (datetime.now(UTC) - timedelta(hours=48)).isoformat()
-    stale_count = await db["reservation_lineage"].count_documents({
-        "tenant_id": tenant_id,
-        "provider": "hotelrunner",
-        "last_seen_at": {"$lt": stale_threshold, "$gte": (datetime.now(UTC) - timedelta(days=7)).isoformat()},
-    })
+    stale_count = await db["reservation_lineage"].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "provider": "hotelrunner",
+            "last_seen_at": {"$lt": stale_threshold, "$gte": (datetime.now(UTC) - timedelta(days=7)).isoformat()},
+        }
+    )
 
     return {
         "duplicate_count": duplicate_count,
@@ -212,12 +230,18 @@ async def check_ingest_consistency(tenant_id: str, hours: int = 24) -> dict[str,
 
 # ── Observation History ──────────────────────────────────────────────
 
+
 async def get_observation_history(tenant_id: str, days: int = 7) -> list[dict[str, Any]]:
     """Get observation snapshots for the last N days."""
-    return await db[COLL_OBSERVATION_SNAPSHOTS].find(
-        {"tenant_id": tenant_id},
-        _NO_ID,
-    ).sort("snapshot_date", -1).to_list(days)
+    return (
+        await db[COLL_OBSERVATION_SNAPSHOTS]
+        .find(
+            {"tenant_id": tenant_id},
+            _NO_ID,
+        )
+        .sort("snapshot_date", -1)
+        .to_list(days)
+    )
 
 
 async def get_alert_thresholds() -> dict[str, Any]:

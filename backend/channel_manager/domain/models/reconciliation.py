@@ -13,6 +13,7 @@ Indexes:
   - (tenant_id, connector_id, issue_type, status)
   - (tenant_id, severity, created_at)
 """
+
 import uuid
 from datetime import UTC, datetime
 from enum import Enum

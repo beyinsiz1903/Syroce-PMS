@@ -13,6 +13,7 @@ Tasarım:
      tüketim (fire/kayıp), negatif = beklenenden az.
   4. PII/secret loglanmaz.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -30,7 +31,12 @@ router = APIRouter(prefix="/api/fnb-cost", tags=["PMS / F&B Cost"])
 
 _RECIPE_ROLES = {"super_admin", "admin", "supervisor"}
 _READ_ROLES = {
-    "super_admin", "admin", "supervisor", "front_desk", "staff", "accountant",
+    "super_admin",
+    "admin",
+    "supervisor",
+    "front_desk",
+    "staff",
+    "accountant",
 }
 
 # inventory_movements'ta tüketim/çıkış sayılan tipler (sunucu otoritedir).
@@ -92,9 +98,7 @@ async def _unit_cost_map(tenant_id: str, item_ids: list[str]) -> dict[str, dict]
     """inventory_item_id -> {unit_cost, name, unit}. Tenant-scoped."""
     if not item_ids:
         return {}
-    rows = await db.inventory_items.find(
-        {"tenant_id": tenant_id, "id": {"$in": item_ids}}, {"_id": 0}
-    ).to_list(1000)
+    rows = await db.inventory_items.find({"tenant_id": tenant_id, "id": {"$in": item_ids}}, {"_id": 0}).to_list(1000)
     out: dict[str, dict] = {}
     for r in rows:
         out[r["id"]] = {
@@ -116,15 +120,17 @@ def _compute_recipe_cost(recipe: dict, cost_map: dict[str, dict]) -> dict:
         qty = float(ing.get("quantity", 0) or 0)
         line_cost = round(unit_cost * qty, 4)
         raw_total += line_cost
-        breakdown.append({
-            "inventory_item_id": iid,
-            "name": ing.get("name") or info.get("name") or iid,
-            "quantity": qty,
-            "unit": ing.get("unit") or info.get("unit") or "",
-            "unit_cost": round(unit_cost, 4),
-            "line_cost": line_cost,
-            "cost_known": iid in cost_map,
-        })
+        breakdown.append(
+            {
+                "inventory_item_id": iid,
+                "name": ing.get("name") or info.get("name") or iid,
+                "quantity": qty,
+                "unit": ing.get("unit") or info.get("unit") or "",
+                "unit_cost": round(unit_cost, 4),
+                "line_cost": line_cost,
+                "cost_known": iid in cost_map,
+            }
+        )
     portions = max(int(recipe.get("yield_portions", 1) or 1), 1)
     per_portion = round(raw_total / portions, 4)
     return {
@@ -145,22 +151,14 @@ async def list_recipes(
     current_user: User = Depends(get_current_user),
 ):
     tenant_id = _tenant_of(current_user)
-    rows = (
-        await db.fnb_recipes.find({"tenant_id": tenant_id}, {"_id": 0})
-        .sort("menu_item_name", 1)
-        .to_list(limit)
-    )
+    rows = await db.fnb_recipes.find({"tenant_id": tenant_id}, {"_id": 0}).sort("menu_item_name", 1).to_list(limit)
     return {"recipes": rows}
 
 
 @router.get("/recipes/{menu_item_id}")
-async def get_recipe(
-    menu_item_id: str, current_user: User = Depends(get_current_user)
-):
+async def get_recipe(menu_item_id: str, current_user: User = Depends(get_current_user)):
     tenant_id = _tenant_of(current_user)
-    doc = await db.fnb_recipes.find_one(
-        {"tenant_id": tenant_id, "menu_item_id": menu_item_id}, {"_id": 0}
-    )
+    doc = await db.fnb_recipes.find_one({"tenant_id": tenant_id, "menu_item_id": menu_item_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Reçete bulunamadı")
     return {"recipe": doc}
@@ -175,15 +173,8 @@ async def upsert_recipe(
     _require_role(current_user, _RECIPE_ROLES)
     tenant_id = _tenant_of(current_user)
 
-    menu_item = await db.pos_menu_items.find_one(
-        {"tenant_id": tenant_id, "id": menu_item_id}, {"_id": 0}
-    )
-    menu_name = (
-        payload.menu_item_name
-        or (menu_item.get("name") if menu_item else None)
-        or (menu_item.get("item_name") if menu_item else None)
-        or menu_item_id
-    )
+    menu_item = await db.pos_menu_items.find_one({"tenant_id": tenant_id, "id": menu_item_id}, {"_id": 0})
+    menu_name = payload.menu_item_name or (menu_item.get("name") if menu_item else None) or (menu_item.get("item_name") if menu_item else None) or menu_item_id
 
     now = _now_iso()
     ingredients = [
@@ -209,34 +200,24 @@ async def upsert_recipe(
         {"$set": doc_set, "$setOnInsert": {"id": str(uuid.uuid4()), "created_at": now}},
         upsert=True,
     )
-    doc = await db.fnb_recipes.find_one(
-        {"tenant_id": tenant_id, "menu_item_id": menu_item_id}, {"_id": 0}
-    )
+    doc = await db.fnb_recipes.find_one({"tenant_id": tenant_id, "menu_item_id": menu_item_id}, {"_id": 0})
     return {"recipe": doc}
 
 
 @router.delete("/recipes/{menu_item_id}")
-async def delete_recipe(
-    menu_item_id: str, current_user: User = Depends(get_current_user)
-):
+async def delete_recipe(menu_item_id: str, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _RECIPE_ROLES)
     tenant_id = _tenant_of(current_user)
-    res = await db.fnb_recipes.delete_one(
-        {"tenant_id": tenant_id, "menu_item_id": menu_item_id}
-    )
+    res = await db.fnb_recipes.delete_one({"tenant_id": tenant_id, "menu_item_id": menu_item_id})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Reçete bulunamadı")
     return {"ok": True, "menu_item_id": menu_item_id}
 
 
 @router.get("/recipes/{menu_item_id}/cost")
-async def recipe_cost(
-    menu_item_id: str, current_user: User = Depends(get_current_user)
-):
+async def recipe_cost(menu_item_id: str, current_user: User = Depends(get_current_user)):
     tenant_id = _tenant_of(current_user)
-    recipe = await db.fnb_recipes.find_one(
-        {"tenant_id": tenant_id, "menu_item_id": menu_item_id}, {"_id": 0}
-    )
+    recipe = await db.fnb_recipes.find_one({"tenant_id": tenant_id, "menu_item_id": menu_item_id}, {"_id": 0})
     if not recipe:
         raise HTTPException(status_code=404, detail="Reçete bulunamadı")
 
@@ -244,14 +225,9 @@ async def recipe_cost(
     cost_map = await _unit_cost_map(tenant_id, item_ids)
     cost = _compute_recipe_cost(recipe, cost_map)
 
-    menu_item = await db.pos_menu_items.find_one(
-        {"tenant_id": tenant_id, "id": menu_item_id}, {"_id": 0}
-    )
+    menu_item = await db.pos_menu_items.find_one({"tenant_id": tenant_id, "id": menu_item_id}, {"_id": 0})
     menu_price = float((menu_item or {}).get("price", 0) or 0)
-    food_cost_pct = (
-        round(cost["cost_per_portion"] / menu_price * 100, 2)
-        if menu_price > 0 else None
-    )
+    food_cost_pct = round(cost["cost_per_portion"] / menu_price * 100, 2) if menu_price > 0 else None
     return {
         "menu_item_id": menu_item_id,
         "menu_item_name": recipe.get("menu_item_name"),
@@ -274,14 +250,9 @@ async def yield_variance(
     _require_role(current_user, _READ_ROLES)
     tenant_id = _tenant_of(current_user)
 
-    recipes = await db.fnb_recipes.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).to_list(2000)
+    recipes = await db.fnb_recipes.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(2000)
     by_id = {r["menu_item_id"]: r for r in recipes}
-    by_name = {
-        (r.get("menu_item_name") or "").strip().lower(): r
-        for r in recipes if r.get("menu_item_name")
-    }
+    by_name = {(r.get("menu_item_name") or "").strip().lower(): r for r in recipes if r.get("menu_item_name")}
 
     order_filter: dict = {
         "tenant_id": tenant_id,
@@ -289,9 +260,7 @@ async def yield_variance(
     }
     if outlet_id:
         order_filter["outlet_id"] = outlet_id
-    orders = await db.pos_orders.find(
-        order_filter, {"_id": 0, "items": 1}
-    ).to_list(50000)
+    orders = await db.pos_orders.find(order_filter, {"_id": 0, "items": 1}).to_list(50000)
 
     # Teorik tüketim: satılan menü × reçete bileşeni.
     theoretical: dict[str, float] = {}
@@ -312,9 +281,7 @@ async def yield_variance(
             matched_lines += 1
             for ing in recipe.get("ingredients", []):
                 iid = ing.get("inventory_item_id")
-                theoretical[iid] = theoretical.get(iid, 0.0) + qty * float(
-                    ing.get("quantity", 0) or 0
-                )
+                theoretical[iid] = theoretical.get(iid, 0.0) + qty * float(ing.get("quantity", 0) or 0)
 
     # Fiili tüketim: inventory_movements çıkış hareketleri (product_id/item_id).
     mv_filter: dict = {
@@ -322,9 +289,7 @@ async def yield_variance(
         "movement_type": {"$in": list(_CONSUMPTION_TYPES)},
         "timestamp": {"$gte": start, "$lte": end},
     }
-    movements = await db.inventory_movements.find(
-        mv_filter, {"_id": 0}
-    ).to_list(100000)
+    movements = await db.inventory_movements.find(mv_filter, {"_id": 0}).to_list(100000)
     actual: dict[str, float] = {}
     for mv in movements:
         iid = mv.get("product_id") or mv.get("item_id")
@@ -347,19 +312,21 @@ async def yield_variance(
         act_cost = round(act_qty * unit_cost, 2)
         tot_theo_cost += theo_cost
         tot_act_cost += act_cost
-        rows.append({
-            "inventory_item_id": iid,
-            "name": info.get("name") or iid,
-            "unit": info.get("unit") or "",
-            "unit_cost": round(unit_cost, 4),
-            "theoretical_qty": theo_qty,
-            "actual_qty": act_qty,
-            "variance_qty": var_qty,
-            "theoretical_cost": theo_cost,
-            "actual_cost": act_cost,
-            "variance_cost": round(act_cost - theo_cost, 2),
-            "cost_known": iid in cost_map,
-        })
+        rows.append(
+            {
+                "inventory_item_id": iid,
+                "name": info.get("name") or iid,
+                "unit": info.get("unit") or "",
+                "unit_cost": round(unit_cost, 4),
+                "theoretical_qty": theo_qty,
+                "actual_qty": act_qty,
+                "variance_qty": var_qty,
+                "theoretical_cost": theo_cost,
+                "actual_cost": act_cost,
+                "variance_cost": round(act_cost - theo_cost, 2),
+                "cost_known": iid in cost_map,
+            }
+        )
 
     rows.sort(key=lambda r: abs(r["variance_cost"]), reverse=True)
     return {

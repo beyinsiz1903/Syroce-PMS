@@ -16,6 +16,7 @@ Phase C.1 is READ-ONLY:
 
 INV-7: room_type_inventory.sellable == physical_total - count(locks for that type+date)
 """
+
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
@@ -159,10 +160,12 @@ async def compute_room_type_inventory(
     # Step 2: Get all locks for this date using aggregation with lookup
     lock_pipeline = [
         {"$match": {"tenant_id": tenant_id, "night_date": date}},
-        {"$group": {
-            "_id": {"room_id": "$room_id", "lock_type": "$lock_type"},
-            "count": {"$sum": 1},
-        }},
+        {
+            "$group": {
+                "_id": {"room_id": "$room_id", "lock_type": "$lock_type"},
+                "count": {"$sum": 1},
+            }
+        },
     ]
     lock_groups = await db.room_night_locks.aggregate(lock_pipeline).to_list(5000)
 
@@ -189,19 +192,21 @@ async def compute_room_type_inventory(
         locked_oos = locks.get("oos", 0) + locks.get("maintenance", 0)
         sellable = max(0, total - locked_booking - locked_hold - locked_ooo - locked_oos)
 
-        results.append({
-            "tenant_id": tenant_id,
-            "room_type": rt,
-            "date": date,
-            "physical_total": total,
-            "locked_booking": locked_booking,
-            "locked_hold": locked_hold,
-            "locked_ooo": locked_ooo,
-            "locked_oos": locked_oos,
-            "sellable": sellable,
-            "last_computed_at": now,
-            "computation_source": "reconciliation",
-        })
+        results.append(
+            {
+                "tenant_id": tenant_id,
+                "room_type": rt,
+                "date": date,
+                "physical_total": total,
+                "locked_booking": locked_booking,
+                "locked_hold": locked_hold,
+                "locked_ooo": locked_ooo,
+                "locked_oos": locked_oos,
+                "sellable": sellable,
+                "last_computed_at": now,
+                "computation_source": "reconciliation",
+            }
+        )
 
     return results
 
@@ -237,12 +242,14 @@ async def reconcile_date_range(
             )
             if existing and existing.get("sellable") != item["sellable"]:
                 drift_count += 1
-                drifts.append({
-                    "room_type": item["room_type"],
-                    "date": date_str,
-                    "old_sellable": existing.get("sellable"),
-                    "new_sellable": item["sellable"],
-                })
+                drifts.append(
+                    {
+                        "room_type": item["room_type"],
+                        "date": date_str,
+                        "old_sellable": existing.get("sellable"),
+                        "new_sellable": item["sellable"],
+                    }
+                )
 
             # Upsert
             await db.room_type_inventory.update_one(
@@ -259,6 +266,7 @@ async def reconcile_date_range(
     if drift_count > 0:
         try:
             from controlplane.timeline_writer import get_timeline_writer
+
             writer = get_timeline_writer()
             await writer.append(
                 tenant_id=tenant_id,
@@ -298,9 +306,7 @@ async def get_room_type_inventory(
     if room_type:
         query["room_type"] = room_type
 
-    results = await db.room_type_inventory.find(
-        query, {"_id": 0}
-    ).to_list(200)
+    results = await db.room_type_inventory.find(query, {"_id": 0}).to_list(200)
 
     if not results:
         # Compute on-the-fly if materialized view is empty
@@ -359,15 +365,12 @@ async def get_inventory_summary(
         s = type_summary[rt]
         sellable = item.get("sellable", 0)
         physical = item.get("physical_total", 0) or 1
-        locked = (item.get("locked_booking", 0) + item.get("locked_hold", 0) +
-                  item.get("locked_ooo", 0) + item.get("locked_oos", 0))
+        locked = item.get("locked_booking", 0) + item.get("locked_hold", 0) + item.get("locked_ooo", 0) + item.get("locked_oos", 0)
         s["min_sellable"] = min(s["min_sellable"], sellable)
         s["max_sellable"] = max(s["max_sellable"], sellable)
         s["total_locked"] += locked
         s["dates_with_data"] += 1
-        s["avg_occupancy_pct"] = round(
-            (s["total_locked"] / (s["dates_with_data"] * physical)) * 100, 1
-        ) if s["dates_with_data"] > 0 else 0
+        s["avg_occupancy_pct"] = round((s["total_locked"] / (s["dates_with_data"] * physical)) * 100, 1) if s["dates_with_data"] > 0 else 0
 
     total_sellable = sum(i.get("sellable", 0) for i in all_items)
     total_physical = sum(i.get("physical_total", 0) for i in all_items)
@@ -383,6 +386,7 @@ async def get_inventory_summary(
 
 
 # ── Background Reconciliation Worker ────────────────────────────────
+
 
 class RoomTypeInventoryWorker:
     """Background worker that reconciles room_type_inventory every 5 minutes."""
@@ -420,12 +424,15 @@ class RoomTypeInventoryWorker:
                     if streak >= _TRANSIENT_ESCALATION_THRESHOLD:
                         logger.error(
                             "RoomTypeInventoryWorker sustained transient db error (streak=%d, ~%d min): %s",
-                            streak, streak * (self._interval // 60 or 1), e.__class__.__name__,
+                            streak,
+                            streak * (self._interval // 60 or 1),
+                            e.__class__.__name__,
                         )
                     else:
                         logger.warning(
                             "RoomTypeInventoryWorker transient db error (streak=%d, will retry next tick): %s",
-                            streak, e.__class__.__name__,
+                            streak,
+                            e.__class__.__name__,
                         )
                 else:
                     logger.error("RoomTypeInventoryWorker error: %s", e)
@@ -459,12 +466,15 @@ class RoomTypeInventoryWorker:
                 if result["drift_detected"] > 0:
                     logger.warning(
                         "Inventory drift detected for tenant %s: %d drifts",
-                        tid, result["drift_detected"],
+                        tid,
+                        result["drift_detected"],
                     )
                 else:
                     logger.debug(
                         "Reconciliation OK for tenant %s: %d dates, %d types",
-                        tid, result["dates_processed"], result["types_processed"],
+                        tid,
+                        result["dates_processed"],
+                        result["types_processed"],
                     )
             except Exception as e:
                 if _is_transient_db_error(e):
@@ -477,12 +487,16 @@ class RoomTypeInventoryWorker:
                     if streak >= _TRANSIENT_ESCALATION_THRESHOLD:
                         logger.error(
                             "Reconciliation sustained transient db error for tenant %s (streak=%d): %s",
-                            tid, streak, e.__class__.__name__,
+                            tid,
+                            streak,
+                            e.__class__.__name__,
                         )
                     else:
                         logger.warning(
                             "Reconciliation transient db error for tenant %s (streak=%d, will retry next tick): %s",
-                            tid, streak, e.__class__.__name__,
+                            tid,
+                            streak,
+                            e.__class__.__name__,
                         )
                 else:
                     logger.error("Reconciliation failed for tenant %s: %s", tid, e)

@@ -137,13 +137,13 @@ class _InMemoryTTLStore:
 
 def _json_serializer(obj):
     """Custom JSON serializer that handles Pydantic models, datetime, etc."""
-    if hasattr(obj, 'model_dump'):
+    if hasattr(obj, "model_dump"):
         return obj.model_dump()
-    if hasattr(obj, 'dict'):
+    if hasattr(obj, "dict"):
         return obj.dict()
     if isinstance(obj, (datetime, date)):
         return obj.isoformat()
-    if hasattr(obj, 'value'):
+    if hasattr(obj, "value"):
         return obj.value
     return str(obj)
 
@@ -152,9 +152,9 @@ def _make_serializable(value: Any) -> Any:
     """Recursively convert Pydantic models and other non-serializable types to dicts/primitives."""
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
-    if hasattr(value, 'model_dump'):
+    if hasattr(value, "model_dump"):
         return value.model_dump()
-    if hasattr(value, 'dict') and not isinstance(value, dict):
+    if hasattr(value, "dict") and not isinstance(value, dict):
         return value.dict()
     if isinstance(value, dict):
         return {k: _make_serializable(v) for k, v in value.items()}
@@ -162,7 +162,7 @@ def _make_serializable(value: Any) -> Any:
         return [_make_serializable(item) for item in value]
     if isinstance(value, (datetime, date)):
         return value.isoformat()
-    if hasattr(value, 'value'):
+    if hasattr(value, "value"):
         return value.value
     return value
 
@@ -171,17 +171,10 @@ class CacheManager:
     """Redis-based cache manager with async support"""
 
     def __init__(self):
-        self.redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+        self.redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
         self.backend = "none"
         try:
-            self.client = redis.from_url(
-                self.redis_url,
-                decode_responses=True,
-                max_connections=50,
-                socket_connect_timeout=2,
-                socket_timeout=2,
-                retry_on_timeout=True
-            )
+            self.client = redis.from_url(self.redis_url, decode_responses=True, max_connections=50, socket_connect_timeout=2, socket_timeout=2, retry_on_timeout=True)
             self.client.ping()
             self.enabled = True
             self.backend = "redis"
@@ -214,11 +207,7 @@ class CacheManager:
 
         try:
             serializable = _make_serializable(value)
-            self.client.setex(
-                key,
-                ttl,
-                json.dumps(serializable, default=_json_serializer)
-            )
+            self.client.setex(key, ttl, json.dumps(serializable, default=_json_serializer))
             return True
         except Exception as e:
             logger.error(f"Cache set error for key {key}: {e}")
@@ -290,9 +279,7 @@ class CacheManager:
             return False
         if pattern.startswith("cache:"):
             if not self._SAFE_PATTERN_RE.match(pattern):
-                logger.warning(
-                    "cache.delete_pattern REJECTED malformed/unsafe "
-                    "pattern=%r", pattern)
+                logger.warning("cache.delete_pattern REJECTED malformed/unsafe pattern=%r", pattern)
                 return False
         try:
             keys = self.client.keys(pattern)
@@ -309,14 +296,10 @@ class CacheManager:
         leaking into the pattern (defense-in-depth alongside the
         delete_pattern central guard)."""
         if not self._is_safe_tenant_id(tenant_id):
-            logger.warning(
-                "cache.invalidate_tenant_cache REJECTED unsafe tenant_id "
-                "(entity=%s, tenant_repr=%r)", entity_type, tenant_id)
+            logger.warning("cache.invalidate_tenant_cache REJECTED unsafe tenant_id (entity=%s, tenant_repr=%r)", entity_type, tenant_id)
             return False
         if entity_type and any(c in entity_type for c in "*?[]\\:"):
-            logger.warning(
-                "cache.invalidate_tenant_cache REJECTED unsafe entity=%r",
-                entity_type)
+            logger.warning("cache.invalidate_tenant_cache REJECTED unsafe entity=%r", entity_type)
             return False
         if entity_type:
             pattern = f"cache:{tenant_id}:{entity_type}:*"
@@ -359,16 +342,11 @@ class CacheManager:
         key = f"{entity_prefix}"
         if not self._is_safe_tenant_id(tenant_id):
             self._bump(self.invalidation_failures, key)
-            logger.warning(
-                "cache.safe_invalidate REJECTED unsafe tenant_id "
-                "(prefix=%s, tenant_repr=%r)", entity_prefix, tenant_id)
+            logger.warning("cache.safe_invalidate REJECTED unsafe tenant_id (prefix=%s, tenant_repr=%r)", entity_prefix, tenant_id)
             return False
-        if not entity_prefix or any(
-                c in entity_prefix for c in "*?[]\\:"):
+        if not entity_prefix or any(c in entity_prefix for c in "*?[]\\:"):
             self._bump(self.invalidation_failures, key)
-            logger.warning(
-                "cache.safe_invalidate REJECTED unsafe entity_prefix=%r",
-                entity_prefix)
+            logger.warning("cache.safe_invalidate REJECTED unsafe entity_prefix=%r", entity_prefix)
             return False
         pattern = f"cache:{tenant_id}:{entity_prefix}:*"
         ok = self.delete_pattern(pattern)
@@ -376,8 +354,7 @@ class CacheManager:
             self._bump(self.invalidation_success, key)
         else:
             self._bump(self.invalidation_failures, key)
-            logger.warning(
-                "cache.safe_invalidate FAILED pattern=%s", pattern)
+            logger.warning("cache.safe_invalidate FAILED pattern=%s", pattern)
         return bool(ok)
 
     def invalidation_metrics(self) -> dict:
@@ -389,44 +366,43 @@ class CacheManager:
         """
         with self._invalidation_metrics_lock:
             return {
-                'failures': dict(self.invalidation_failures),
-                'success': dict(self.invalidation_success),
-                'total_failures': sum(self.invalidation_failures.values()),
-                'total_success': sum(self.invalidation_success.values()),
+                "failures": dict(self.invalidation_failures),
+                "success": dict(self.invalidation_success),
+                "total_failures": sum(self.invalidation_failures.values()),
+                "total_success": sum(self.invalidation_success.values()),
             }
 
     def health_check(self) -> dict:
         """Check cache health"""
         if not self.enabled:
             return {
-                'status': 'disabled',
-                'message': 'Redis not available',
-                'invalidation': self.invalidation_metrics(),
+                "status": "disabled",
+                "message": "Redis not available",
+                "invalidation": self.invalidation_metrics(),
             }
 
         try:
-            info = self.client.info() if hasattr(self.client, 'info') else {}
-            dbsize = (self.client.dbsize()
-                      if hasattr(self.client, 'dbsize') else None)
+            info = self.client.info() if hasattr(self.client, "info") else {}
+            dbsize = self.client.dbsize() if hasattr(self.client, "dbsize") else None
             return {
-                'status': 'healthy',
-                'backend': self.backend,
-                'connected_clients': info.get('connected_clients', 0)
-                if isinstance(info, dict) else 0,
-                'used_memory_human': info.get('used_memory_human', 'N/A')
-                if isinstance(info, dict) else 'N/A',
-                'total_keys': dbsize,
-                'invalidation': self.invalidation_metrics(),
+                "status": "healthy",
+                "backend": self.backend,
+                "connected_clients": info.get("connected_clients", 0) if isinstance(info, dict) else 0,
+                "used_memory_human": info.get("used_memory_human", "N/A") if isinstance(info, dict) else "N/A",
+                "total_keys": dbsize,
+                "invalidation": self.invalidation_metrics(),
             }
         except Exception as e:
             return {
-                'status': 'unhealthy',
-                'error': str(e),
-                'invalidation': self.invalidation_metrics(),
+                "status": "unhealthy",
+                "error": str(e),
+                "invalidation": self.invalidation_metrics(),
             }
+
 
 # Global cache instance
 cache = CacheManager()
+
 
 @lru_cache(maxsize=1024)
 def _signature_param_names(func: Callable) -> tuple:
@@ -468,20 +444,20 @@ def _extract_tenant_id(args, kwargs, func: Callable | None = None) -> str:
     _, bound = _bind_args_to_kwargs(func, args, kwargs)
 
     # Check kwargs for any common tenant-bearing dependency
-    for key in ('current_user', 'user', 'tenant', 'tenant_ctx', 'ctx'):
+    for key in ("current_user", "user", "tenant", "tenant_ctx", "ctx"):
         obj = bound.get(key)
-        if obj and hasattr(obj, 'tenant_id') and getattr(obj, 'tenant_id', None):
+        if obj and hasattr(obj, "tenant_id") and getattr(obj, "tenant_id", None):
             return str(obj.tenant_id)
 
-    if 'tenant_id' in bound and bound['tenant_id']:
-        return str(bound['tenant_id'])
+    if "tenant_id" in bound and bound["tenant_id"]:
+        return str(bound["tenant_id"])
 
     # Check positional args for objects with tenant_id (objects that did not bind by name)
     for arg in args:
-        if hasattr(arg, 'tenant_id') and getattr(arg, 'tenant_id', None):
+        if hasattr(arg, "tenant_id") and getattr(arg, "tenant_id", None):
             return str(arg.tenant_id)
 
-    return 'global'
+    return "global"
 
 
 def _stable_str(value: Any) -> str:
@@ -490,9 +466,9 @@ def _stable_str(value: Any) -> str:
     """
     if value is None or isinstance(value, (str, int, float, bool)):
         return str(value)
-    if hasattr(value, 'tenant_id') and getattr(value, 'tenant_id', None):
+    if hasattr(value, "tenant_id") and getattr(value, "tenant_id", None):
         return f"tenant:{value.tenant_id}"
-    if hasattr(value, 'model_dump'):
+    if hasattr(value, "model_dump"):
         try:
             return json.dumps(value.model_dump(), sort_keys=True, default=str)
         except Exception:
@@ -510,22 +486,29 @@ def _build_cache_key(func: Callable, key_prefix: str, tenant_id: str, args, kwar
     in the namespace prefix) and `current_user`-style deps are de-duped from the hash.
     """
     skip_keys = {
-        'current_user', 'user', 'request', 'response', 'db',
-        'tenant', 'tenant_ctx', 'ctx', 'tenant_id',
+        "current_user",
+        "user",
+        "request",
+        "response",
+        "db",
+        "tenant",
+        "tenant_ctx",
+        "ctx",
+        "tenant_id",
     }
     remaining_args, bound = _bind_args_to_kwargs(func, args, kwargs)
 
     key_parts = []
     # Unbound positional args (e.g. *args overflow) — keep object filter for safety
     for arg in remaining_args:
-        if hasattr(arg, 'tenant_id'):
+        if hasattr(arg, "tenant_id"):
             continue
         key_parts.append(_stable_str(arg))
 
     for k, v in sorted(bound.items()):
         if k in skip_keys:
             continue
-        if hasattr(v, 'tenant_id'):  # User/Tenant objects bound by name
+        if hasattr(v, "tenant_id"):  # User/Tenant objects bound by name
             continue
         key_parts.append(f"{k}={_stable_str(v)}")
 
@@ -542,18 +525,19 @@ def _extract_role(args, kwargs, func: Callable | None = None) -> str:
     Same role passed as Enum vs str produced different cache keys → cache fragmentation.
     Normalize via `.value` when present, fallback to `str()`.
     """
+
     def _norm(role) -> str:
-        return str(getattr(role, 'value', None) or role)
+        return str(getattr(role, "value", None) or role)
 
     _, bound = _bind_args_to_kwargs(func, args, kwargs)
-    for key in ('current_user', 'user'):
+    for key in ("current_user", "user"):
         obj = bound.get(key)
-        if obj and getattr(obj, 'role', None):
+        if obj and getattr(obj, "role", None):
             return _norm(obj.role)
     for arg in args:
-        if hasattr(arg, 'role') and getattr(arg, 'role', None):
+        if hasattr(arg, "role") and getattr(arg, "role", None):
             return _norm(arg.role)
-    return 'anon'
+    return "anon"
 
 
 def cached(
@@ -573,13 +557,14 @@ def cached(
         role_aware: If True, include user role in cache key segment (Bug CX v63 —
             prevents role-segmented payloads from leaking across roles within tenant).
     """
+
     def decorator(func: Callable):
         @wraps(func)
         async def wrapper(*args, **kwargs):
             # Manuel "Yenile" akışları için cache atlama:
             # endpoint'e `?nocache=1` eklenirse `_nocache` kwarg'ı True gelir.
             # Kwarg'ı pop ederiz → cache key kararlı kalır + fresh fetch yapılır + sonuç tazelenir.
-            nocache = bool(kwargs.pop('_nocache', False))
+            nocache = bool(kwargs.pop("_nocache", False))
 
             if not cache.enabled:
                 return await func(*args, **kwargs)
@@ -608,10 +593,12 @@ def cached(
             return result
 
         return wrapper
+
     return decorator
 
 
 # Specific cache helpers for common patterns
+
 
 class DashboardCache:
     """Cache helpers for dashboard data"""
@@ -711,18 +698,19 @@ class ReportCache:
 
 # Cache warming functions (pre-populate cache)
 
+
 async def warm_dashboard_cache(tenant_id: str, db):
     """Pre-populate dashboard cache with frequently accessed data"""
     try:
         # Room status counts
-        rooms = await db.rooms.find({'tenant_id': tenant_id}, {'_id': 0, 'status': 1}).to_list(1000)
+        rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0, "status": 1}).to_list(1000)
         status_counts = {}
         for room in rooms:
-            status = room.get('status', 'available')
+            status = room.get("status", "available")
             status_counts[status] = status_counts.get(status, 0) + 1
 
         key = DashboardCache.get_stats_key(tenant_id)
-        cache.set(key, {'room_status_counts': status_counts}, ttl=300)
+        cache.set(key, {"room_status_counts": status_counts}, ttl=300)
 
         logger.info(f"✅ Warmed dashboard cache for tenant {tenant_id}")
     except Exception as e:
@@ -732,10 +720,7 @@ async def warm_dashboard_cache(tenant_id: str, db):
 async def warm_room_cache(tenant_id: str, db):
     """Pre-populate room cache"""
     try:
-        rooms = await db.rooms.find(
-            {'tenant_id': tenant_id},
-            {'_id': 0}
-        ).to_list(1000)
+        rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
 
         key = RoomCache.get_status_key(tenant_id)
         cache.set(key, rooms, ttl=60)  # Short TTL for real-time data

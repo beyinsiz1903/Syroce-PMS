@@ -10,6 +10,7 @@ Resolution sırası (`resolve_credentials(tenant_id)`):
   1) tenant_id verilmişse koleksiyondan oku
   2) yoksa env'den oku (fallback)
 """
+
 from __future__ import annotations
 
 import logging
@@ -74,9 +75,7 @@ async def resolve_credentials(tenant_id: str | None = None) -> CapXCreds:
     creds: CapXCreds
     if tenant_id:
         try:
-            doc = await get_system_db()[COLLECTION].find_one(
-                {"tenant_id": tenant_id}, {"_id": 0}
-            )
+            doc = await get_system_db()[COLLECTION].find_one({"tenant_id": tenant_id}, {"_id": 0})
         except Exception as exc:
             logger.warning("CapX tenant creds lookup failed (%s): %s", tenant_id, exc)
             doc = None
@@ -88,10 +87,7 @@ async def resolve_credentials(tenant_id: str | None = None) -> CapXCreds:
             except Exception:
                 api_key = ""
             try:
-                webhook_secret = (
-                    crypto.decrypt(doc["webhook_secret_encrypted"])
-                    if doc.get("webhook_secret_encrypted") else ""
-                )
+                webhook_secret = crypto.decrypt(doc["webhook_secret_encrypted"]) if doc.get("webhook_secret_encrypted") else ""
             except Exception:
                 webhook_secret = ""
             creds = CapXCreds(
@@ -110,8 +106,12 @@ async def resolve_credentials(tenant_id: str | None = None) -> CapXCreds:
 
 
 async def upsert_tenant_credentials(
-    *, tenant_id: str, base_url: str, api_key: str,
-    webhook_secret: str = "", actor_id: str = "system",
+    *,
+    tenant_id: str,
+    base_url: str,
+    api_key: str,
+    webhook_secret: str = "",
+    actor_id: str = "system",
 ) -> dict[str, Any]:
     """Super-admin / tenant admin tarafından çağrılır."""
     crypto = get_crypto_service()
@@ -143,8 +143,7 @@ async def delete_tenant_credentials(tenant_id: str) -> dict[str, Any]:
 async def get_tenant_status(tenant_id: str) -> dict[str, Any]:
     doc = await get_system_db()[COLLECTION].find_one(
         {"tenant_id": tenant_id},
-        {"_id": 0, "tenant_id": 1, "base_url": 1, "updated_at": 1, "updated_by": 1,
-         "api_key_encrypted": 1, "webhook_secret_encrypted": 1},
+        {"_id": 0, "tenant_id": 1, "base_url": 1, "updated_at": 1, "updated_by": 1, "api_key_encrypted": 1, "webhook_secret_encrypted": 1},
     )
     if not doc:
         return {"tenant_id": tenant_id, "configured": False, "source": "env"}
@@ -163,15 +162,16 @@ async def list_tenant_status() -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     async for doc in get_system_db()[COLLECTION].find(
         {},
-        {"_id": 0, "tenant_id": 1, "base_url": 1, "updated_at": 1, "updated_by": 1,
-         "api_key_encrypted": 1, "webhook_secret_encrypted": 1},
+        {"_id": 0, "tenant_id": 1, "base_url": 1, "updated_at": 1, "updated_by": 1, "api_key_encrypted": 1, "webhook_secret_encrypted": 1},
     ):
-        items.append({
-            "tenant_id": doc.get("tenant_id"),
-            "configured": bool(doc.get("api_key_encrypted")),
-            "base_url": doc.get("base_url"),
-            "has_webhook_secret": bool(doc.get("webhook_secret_encrypted")),
-            "updated_at": doc.get("updated_at"),
-            "updated_by": doc.get("updated_by"),
-        })
+        items.append(
+            {
+                "tenant_id": doc.get("tenant_id"),
+                "configured": bool(doc.get("api_key_encrypted")),
+                "base_url": doc.get("base_url"),
+                "has_webhook_secret": bool(doc.get("webhook_secret_encrypted")),
+                "updated_at": doc.get("updated_at"),
+                "updated_by": doc.get("updated_by"),
+            }
+        )
     return items

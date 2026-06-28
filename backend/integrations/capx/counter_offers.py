@@ -9,6 +9,7 @@ Outbound flow (admin endpoints):
   /api/capx/counter-offers/{id}/accept → status=accepted, CapX'e onay event push
   /api/capx/counter-offers/{id}/reject → status=rejected, CapX'e ret event push
 """
+
 from __future__ import annotations
 
 import logging
@@ -25,13 +26,14 @@ ALLOWED_STATUSES = ("pending", "accepted", "rejected", "expired")
 
 
 async def record_counter_offer(
-    *, event_id: str, payload: dict[str, Any], tenant_id: str | None,
+    *,
+    event_id: str,
+    payload: dict[str, Any],
+    tenant_id: str | None,
 ) -> dict[str, Any]:
     """Webhook handler tarafından çağrılır. Idempotent: aynı event_id ikinci kez
     geldiğinde mevcut kaydı geri döner."""
-    existing = await get_system_db()[COLLECTION].find_one(
-        {"event_id": event_id}, {"_id": 0}
-    )
+    existing = await get_system_db()[COLLECTION].find_one({"event_id": event_id}, {"_id": 0})
     if existing:
         return {"counter_offer": existing, "duplicate": True}
 
@@ -59,7 +61,10 @@ async def record_counter_offer(
 
 
 async def list_counter_offers(
-    *, tenant_id: str | None = None, status: str | None = None, limit: int = 100,
+    *,
+    tenant_id: str | None = None,
+    status: str | None = None,
+    limit: int = 100,
 ) -> list[dict[str, Any]]:
     query: dict[str, Any] = {}
     if tenant_id:
@@ -77,7 +82,11 @@ async def get_counter_offer(offer_id: str) -> dict[str, Any] | None:
 
 
 async def transition(
-    *, offer_id: str, new_status: str, actor_id: str, notes: str = "",
+    *,
+    offer_id: str,
+    new_status: str,
+    actor_id: str,
+    notes: str = "",
 ) -> dict[str, Any]:
     """Transition counter-offer between states. Returns updated doc.
 

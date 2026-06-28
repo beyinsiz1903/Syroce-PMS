@@ -9,6 +9,7 @@ Background worker running every 60 seconds:
   4. Update dashboard metrics
   5. Store metrics snapshot for trend analysis
 """
+
 import asyncio
 import logging
 import os as _os
@@ -102,10 +103,7 @@ async def monitoring_run_once() -> dict[str, Any]:
         _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
 
         logger.info(
-            f"Monitoring cycle #{state['runs_total']}: "
-            f"health={metrics.get('system_health')}, "
-            f"alerts_created={alert_result.get('created', 0)}, "
-            f"alerts_resolved={alert_result.get('resolved', 0)}"
+            f"Monitoring cycle #{state['runs_total']}: health={metrics.get('system_health')}, alerts_created={alert_result.get('created', 0)}, alerts_resolved={alert_result.get('resolved', 0)}"
         )
 
         return {

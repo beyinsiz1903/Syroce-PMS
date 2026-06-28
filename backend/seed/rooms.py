@@ -2,6 +2,7 @@
 
 Writes ctx['rooms'] (mutable list — bookings.py + housekeeping.py mutate status).
 """
+
 from seed._helpers import _now, _uuid
 
 
@@ -9,12 +10,12 @@ async def seed_rooms(db, ctx):
     tenant_id = ctx["tenant_id"]
     room_configs = [
         # (type, count, floor_start, base_price_TRY, capacity, view, bed_type)
-        ("Standard",  8, 1, 4500, 2, "city",     "twin"),
-        ("Deluxe",    8, 2, 6800, 2, "garden",   "queen"),
-        ("Superior",  6, 3, 9200, 3, "sea",      "king"),
-        ("Suite",     4, 4, 14000, 4, "sea",      "king"),
-        ("Junior Suite", 2, 5, 10500, 3, "pool",  "queen"),
-        ("Family",    2, 1, 7800, 5, "garden",   "twin"),
+        ("Standard", 8, 1, 4500, 2, "city", "twin"),
+        ("Deluxe", 8, 2, 6800, 2, "garden", "queen"),
+        ("Superior", 6, 3, 9200, 3, "sea", "king"),
+        ("Suite", 4, 4, 14000, 4, "sea", "king"),
+        ("Junior Suite", 2, 5, 10500, 3, "pool", "queen"),
+        ("Family", 2, 1, 7800, 5, "garden", "twin"),
     ]
     rooms = []
     room_num = 101

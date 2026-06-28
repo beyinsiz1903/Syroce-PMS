@@ -5,6 +5,7 @@ All endpoints are tenant-scoped and gated by the `academy` add-on module
 role guard. Curriculum (with correct answers) is system-owned content; the
 answer key never leaves the server and exam scores are computed server-side.
 """
+
 from __future__ import annotations
 
 import logging
@@ -46,6 +47,7 @@ class ExamSubmission(BaseModel):
 # Student endpoints                                                            #
 # --------------------------------------------------------------------------- #
 
+
 @router.get("/courses")
 async def list_courses(current_user: User = Depends(get_current_user)) -> dict:
     tenant_id = _require_tenant(current_user)
@@ -67,7 +69,9 @@ async def list_courses(current_user: User = Depends(get_current_user)) -> dict:
 
 
 async def _visible_course_or_404(
-    tenant_id: str, course_id: str, current_user: User,
+    tenant_id: str,
+    course_id: str,
+    current_user: User,
 ) -> dict:
     """Resolve a system OR tenant-custom course the caller's role may view.
 
@@ -84,7 +88,8 @@ async def _visible_course_or_404(
 
 @router.get("/courses/{course_id}")
 async def get_course(
-    course_id: str, current_user: User = Depends(get_current_user),
+    course_id: str,
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     tenant_id = _require_tenant(current_user)
     course = await _visible_course_or_404(tenant_id, course_id, current_user)
@@ -102,14 +107,18 @@ async def get_course(
 
 @router.post("/courses/{course_id}/lessons/{lesson_id}/complete")
 async def complete_lesson(
-    course_id: str, lesson_id: str,
+    course_id: str,
+    lesson_id: str,
     current_user: User = Depends(get_current_user),
 ) -> dict:
     tenant_id = _require_tenant(current_user)
     course = await _visible_course_or_404(tenant_id, course_id, current_user)
     try:
         progress = await academy.mark_lesson_complete(
-            tenant_id, current_user.id, course, lesson_id,
+            tenant_id,
+            current_user.id,
+            course,
+            lesson_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -123,7 +132,8 @@ async def complete_lesson(
 
 @router.get("/courses/{course_id}/exam")
 async def get_exam(
-    course_id: str, current_user: User = Depends(get_current_user),
+    course_id: str,
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     tenant_id = _require_tenant(current_user)
     course = await _visible_course_or_404(tenant_id, course_id, current_user)
@@ -133,7 +143,8 @@ async def get_exam(
 
 @router.post("/courses/{course_id}/exam/submit")
 async def submit_exam(
-    course_id: str, submission: ExamSubmission,
+    course_id: str,
+    submission: ExamSubmission,
     current_user: User = Depends(get_current_user),
 ) -> dict:
     tenant_id = _require_tenant(current_user)
@@ -141,7 +152,11 @@ async def submit_exam(
     # Scoring is server-side ONLY; submission carries answers, never a score.
     result = academy.score_exam(course, submission.answers)
     outcome = await academy.record_attempt(
-        tenant_id, current_user.id, current_user.name, course, result,
+        tenant_id,
+        current_user.id,
+        current_user.name,
+        course,
+        result,
     )
     return outcome
 
@@ -155,7 +170,8 @@ async def list_certificates(current_user: User = Depends(get_current_user)) -> d
 
 @router.get("/certificates/{cert_id}/pdf")
 async def download_certificate(
-    cert_id: str, current_user: User = Depends(get_current_user),
+    cert_id: str,
+    current_user: User = Depends(get_current_user),
 ):
     tenant_id = _require_tenant(current_user)
     cert = await academy.get_certificate(tenant_id, current_user.id, cert_id)
@@ -172,7 +188,8 @@ async def download_certificate(
     except Exception as exc:
         logger.exception("[Academy PDF] render failed: %s", exc)
         raise HTTPException(
-            status_code=500, detail=f"PDF olusturulamadi: {type(exc).__name__}",
+            status_code=500,
+            detail=f"PDF olusturulamadi: {type(exc).__name__}",
         ) from exc
     filename = f"sertifika-{cert.get('verification_code', cert_id)}.pdf"
     return Response(
@@ -185,6 +202,7 @@ async def download_certificate(
 # --------------------------------------------------------------------------- #
 # Manager report                                                               #
 # --------------------------------------------------------------------------- #
+
 
 @router.get("/admin/report")
 async def admin_report(current_user: User = Depends(get_current_user)) -> dict:
@@ -280,6 +298,7 @@ class SystemCourseContentInput(BaseModel):
     Mirrors ``CourseInput`` minus ``draft`` — built-in overrides are always live,
     so at least one lesson and one question are ALWAYS required (no draft state).
     """
+
     title: str = Field(min_length=1, max_length=200)
     department: str | None = Field(default=None, max_length=80)
     department_label: str | None = Field(default=None, max_length=120)
@@ -338,27 +357,28 @@ def _admin_course_detail(course: dict) -> dict:
 async def admin_list_courses(current_user: User = Depends(get_current_user)) -> dict:
     tenant_id = _require_author(current_user)
     # List view strips answers (summary only); the editor fetches full detail.
-    items = [
-        academy.public_course_summary(c)
-        for c in await academy.list_author_courses(tenant_id)
-    ]
+    items = [academy.public_course_summary(c) for c in await academy.list_author_courses(tenant_id)]
     return {"count": len(items), "items": items}
 
 
 @router.post("/admin/courses")
 async def admin_create_course(
-    payload: CourseInput, current_user: User = Depends(get_current_user),
+    payload: CourseInput,
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     tenant_id = _require_author(current_user)
     course = await academy.create_author_course(
-        tenant_id, current_user.id, payload.model_dump(),
+        tenant_id,
+        current_user.id,
+        payload.model_dump(),
     )
     return _admin_course_detail(course)
 
 
 @router.get("/admin/courses/{course_id}")
 async def admin_get_course(
-    course_id: str, current_user: User = Depends(get_current_user),
+    course_id: str,
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     tenant_id = _require_author(current_user)
     course = await academy.get_author_course(tenant_id, course_id)
@@ -369,12 +389,16 @@ async def admin_get_course(
 
 @router.put("/admin/courses/{course_id}")
 async def admin_update_course(
-    course_id: str, payload: CourseInput,
+    course_id: str,
+    payload: CourseInput,
     current_user: User = Depends(get_current_user),
 ) -> dict:
     tenant_id = _require_author(current_user)
     course = await academy.update_author_course(
-        tenant_id, current_user.id, course_id, payload.model_dump(),
+        tenant_id,
+        current_user.id,
+        course_id,
+        payload.model_dump(),
     )
     if not course:
         raise HTTPException(status_code=404, detail="Kurs bulunamadi")
@@ -383,7 +407,8 @@ async def admin_update_course(
 
 @router.delete("/admin/courses/{course_id}")
 async def admin_delete_course(
-    course_id: str, current_user: User = Depends(get_current_user),
+    course_id: str,
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     tenant_id = _require_author(current_user)
     if not await academy.delete_author_course(tenant_id, course_id):
@@ -402,12 +427,15 @@ async def admin_list_system_courses(
 
 @router.put("/admin/system-courses/{course_id}/visibility")
 async def admin_set_system_visibility(
-    course_id: str, payload: VisibilityInput,
+    course_id: str,
+    payload: VisibilityInput,
     current_user: User = Depends(get_current_user),
 ) -> dict:
     tenant_id = _require_author(current_user)
     if not await academy.set_system_course_hidden(
-        tenant_id, course_id, payload.hidden,
+        tenant_id,
+        course_id,
+        payload.hidden,
     ):
         raise HTTPException(status_code=404, detail="Kurs bulunamadi")
     return {"ok": True, "hidden": payload.hidden}
@@ -415,7 +443,8 @@ async def admin_set_system_visibility(
 
 @router.get("/admin/system-courses/{course_id}/content")
 async def admin_get_system_content(
-    course_id: str, current_user: User = Depends(get_current_user),
+    course_id: str,
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Editor view of a built-in course (default merged with any per-tenant
     override). Author-only — INCLUDES the answer key + inline lesson bodies."""
@@ -428,14 +457,18 @@ async def admin_get_system_content(
 
 @router.put("/admin/system-courses/{course_id}/content")
 async def admin_set_system_content(
-    course_id: str, payload: SystemCourseContentInput,
+    course_id: str,
+    payload: SystemCourseContentInput,
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """Store a per-tenant CONTENT override for a built-in course. The catalog
     file is never touched; the course id (and thus learner progress) is kept."""
     tenant_id = _require_author(current_user)
     course = await academy.set_system_course_content(
-        tenant_id, current_user.id, course_id, payload.model_dump(),
+        tenant_id,
+        current_user.id,
+        course_id,
+        payload.model_dump(),
     )
     if not course:
         raise HTTPException(status_code=404, detail="Kurs bulunamadi")
@@ -444,7 +477,8 @@ async def admin_set_system_content(
 
 @router.delete("/admin/system-courses/{course_id}/content")
 async def admin_reset_system_content(
-    course_id: str, current_user: User = Depends(get_current_user),
+    course_id: str,
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Reset a built-in course to its catalog default (remove the content
     override). Any per-tenant visibility (hidden) state is preserved."""

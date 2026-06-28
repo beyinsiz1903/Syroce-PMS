@@ -4,6 +4,7 @@ Tech Debt Aggregator — Quarantine burn-down tracking for Control Plane.
 Reads the quarantine manifest and provides categorized counts,
 weekly burn-down targets, and progress tracking.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -67,12 +68,14 @@ def compute_tech_debt() -> dict[str, Any]:
         category_counts[cat] = category_counts.get(cat, 0) + 1
         if cat not in category_tests:
             category_tests[cat] = []
-        category_tests[cat].append({
-            "test_id": test_id.split("::")[-1] if "::" in test_id else test_id,
-            "full_path": test_id,
-            "since": meta.get("since", ""),
-            "reason": meta.get("block_reason", ""),
-        })
+        category_tests[cat].append(
+            {
+                "test_id": test_id.split("::")[-1] if "::" in test_id else test_id,
+                "full_path": test_id,
+                "since": meta.get("since", ""),
+                "reason": meta.get("block_reason", ""),
+            }
+        )
 
     total_quarantined = sum(category_counts.values())
 
@@ -89,17 +92,19 @@ def compute_tech_debt() -> dict[str, Any]:
         total_weekly_target += weekly_target
         total_effort_hours += effort
 
-        categories.append({
-            "key": cat_key,
-            "label": cat_meta["label"],
-            "description": cat_meta["description"],
-            "priority": cat_meta["priority"],
-            "count": count,
-            "effort_hours": round(effort, 1),
-            "weekly_target": weekly_target,
-            "weeks_to_clear": weeks_to_clear,
-            "tests": category_tests.get(cat_key, []),
-        })
+        categories.append(
+            {
+                "key": cat_key,
+                "label": cat_meta["label"],
+                "description": cat_meta["description"],
+                "priority": cat_meta["priority"],
+                "count": count,
+                "effort_hours": round(effort, 1),
+                "weekly_target": weekly_target,
+                "weeks_to_clear": weeks_to_clear,
+                "tests": category_tests.get(cat_key, []),
+            }
+        )
 
     weeks_total = _weeks_to_clear(total_quarantined, total_weekly_target) if total_weekly_target > 0 else 0
 

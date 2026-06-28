@@ -4,6 +4,7 @@ Automatic task creation after checkout, VIP/early check-in priority,
 maintenance conflict check, floor attendant workload balancing,
 room readiness ETA, task assignment suggestion engine, manual override.
 """
+
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -27,9 +28,7 @@ class AutoHousekeepingService:
 
     async def auto_assign_after_checkout(self, tenant_id: str, booking_id: str, user_id: str) -> dict:
         """Automatically create and assign housekeeping task after checkout."""
-        booking = await db.bookings.find_one(
-            {"id": booking_id, "tenant_id": tenant_id}, {"_id": 0}
-        )
+        booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
         if not booking:
             return {"success": False, "error": "Booking not found"}
 
@@ -88,10 +87,7 @@ class AutoHousekeepingService:
         await db.housekeeping_tasks.insert_one(task)
 
         # Update room status to dirty
-        await db.rooms.update_one(
-            {"id": room_id, "tenant_id": tenant_id},
-            {"$set": {"status": "dirty", "updated_at": now.isoformat()}}
-        )
+        await db.rooms.update_one({"id": room_id, "tenant_id": tenant_id}, {"$set": {"status": "dirty", "updated_at": now.isoformat()}})
 
         task.pop("_id", None)
         return {
@@ -110,11 +106,7 @@ class AutoHousekeepingService:
         priority/assignee computation.
         """
         # Get all dirty rooms
-        dirty_rooms = await db.rooms.find(
-            {"tenant_id": tenant_id, "status": {"$in": ["dirty", "cleaning"]},
-             "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]},
-            {"_id": 0}
-        ).to_list(500)
+        dirty_rooms = await db.rooms.find({"tenant_id": tenant_id, "status": {"$in": ["dirty", "cleaning"]}, "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]}, {"_id": 0}).to_list(500)
 
         # Get staff workload (uses its own bulk aggregation)
         staff_workload = await self._get_staff_workload(tenant_id)
@@ -131,8 +123,7 @@ class AutoHousekeepingService:
         # 1) Bulk: which rooms already have a pending/in_progress task?
         existing_room_ids: set[str] = set()
         async for t in db.housekeeping_tasks.find(
-            {"room_id": {"$in": room_ids}, "tenant_id": tenant_id,
-             "status": {"$in": ["pending", "in_progress"]}},
+            {"room_id": {"$in": room_ids}, "tenant_id": tenant_id, "status": {"$in": ["pending", "in_progress"]}},
             {"_id": 0, "room_id": 1},
         ):
             existing_room_ids.add(t["room_id"])
@@ -152,9 +143,7 @@ class AutoHousekeepingService:
         target_room_ids = [r["id"] for r in rooms_to_process]
         next_bookings: dict[str, dict] = {}
         async for b in db.bookings.find(
-            {"tenant_id": tenant_id, "room_id": {"$in": target_room_ids},
-             "status": {"$in": ["confirmed", "guaranteed"]},
-             "check_in": {"$gte": today}},
+            {"tenant_id": tenant_id, "room_id": {"$in": target_room_ids}, "status": {"$in": ["confirmed", "guaranteed"]}, "check_in": {"$gte": today}},
             {"_id": 0, "room_id": 1, "check_in": 1, "guest_id": 1, "early_checkin": 1},
             sort=[("check_in", 1)],
         ):
@@ -174,8 +163,7 @@ class AutoHousekeepingService:
 
         # 4) Bulk: housekeeping staff
         staff = await db.users.find(
-            {"tenant_id": tenant_id, "role": {"$in": ["housekeeping", "staff"]},
-             "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]},
+            {"tenant_id": tenant_id, "role": {"$in": ["housekeeping", "staff"]}, "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]},
             {"_id": 0, "id": 1, "name": 1},
         ).to_list(100)
         staff_ids = [s["id"] for s in staff]
@@ -185,16 +173,14 @@ class AutoHousekeepingService:
         staff_floors: dict[str, set[str]] = {}
         if staff_ids:
             count_pipeline = [
-                {"$match": {"tenant_id": tenant_id, "assigned_to": {"$in": staff_ids},
-                            "status": {"$in": ["pending", "in_progress"]}}},
+                {"$match": {"tenant_id": tenant_id, "assigned_to": {"$in": staff_ids}, "status": {"$in": ["pending", "in_progress"]}}},
                 {"$group": {"_id": "$assigned_to", "count": {"$sum": 1}}},
             ]
             async for doc in db.housekeeping_tasks.aggregate(count_pipeline):
                 staff_pending_count[doc["_id"]] = doc.get("count") or 0
 
             floor_pipeline = [
-                {"$match": {"tenant_id": tenant_id, "assigned_to": {"$in": staff_ids},
-                            "status": {"$in": ["pending", "in_progress"]}}},
+                {"$match": {"tenant_id": tenant_id, "assigned_to": {"$in": staff_ids}, "status": {"$in": ["pending", "in_progress"]}}},
                 {"$group": {"_id": "$assigned_to", "floors": {"$addToSet": "$floor"}}},
             ]
             async for doc in db.housekeeping_tasks.aggregate(floor_pipeline):
@@ -219,16 +205,18 @@ class AutoHousekeepingService:
             room_type = room.get("room_type", "default")
             cleaning_time = self.CLEANING_TIMES.get(room_type, self.CLEANING_TIMES["default"])
 
-            suggestions.append({
-                "room_id": room["id"],
-                "room_number": room.get("room_number"),
-                "room_type": room_type,
-                "floor": room.get("floor", self._extract_floor(room.get("room_number", ""))),
-                "current_status": room["status"],
-                "priority": priority,
-                "suggested_assignee": assignee,
-                "estimated_minutes": cleaning_time,
-            })
+            suggestions.append(
+                {
+                    "room_id": room["id"],
+                    "room_number": room.get("room_number"),
+                    "room_type": room_type,
+                    "floor": room.get("floor", self._extract_floor(room.get("room_number", ""))),
+                    "current_status": room["status"],
+                    "priority": priority,
+                    "suggested_assignee": assignee,
+                    "estimated_minutes": cleaning_time,
+                }
+            )
 
         priority_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
         suggestions.sort(key=lambda s: priority_order.get(s["priority"]["level"], 99))
@@ -239,8 +227,7 @@ class AutoHousekeepingService:
             "staff_workload": staff_workload,
         }
 
-    def _priority_inline(self, room: dict, next_booking: dict | None,
-                          guest_map: dict, today: str, tomorrow: str) -> dict:
+    def _priority_inline(self, room: dict, next_booking: dict | None, guest_map: dict, today: str, tomorrow: str) -> dict:
         """Pure-Python priority calc using pre-fetched next_booking + guest_map."""
         if not next_booking:
             return {"level": "medium", "reason": "Standard cleaning"}
@@ -271,12 +258,10 @@ class AutoHousekeepingService:
 
         return {"level": base_priority, "reason": reason}
 
-    def _assignee_inline(self, room: dict, staff: list[dict],
-                          staff_pending_count: dict, staff_floors: dict) -> dict:
+    def _assignee_inline(self, room: dict, staff: list[dict], staff_pending_count: dict, staff_floors: dict) -> dict:
         """Pure-Python assignee selection using pre-fetched workload counts."""
         if not staff:
-            return {"staff_id": None, "staff_name": "Unassigned",
-                    "current_tasks": 0, "reason": "No staff available"}
+            return {"staff_id": None, "staff_name": "Unassigned", "current_tasks": 0, "reason": "No staff available"}
 
         floor = room.get("floor", self._extract_floor(room.get("room_number", "")))
         best = None
@@ -296,14 +281,11 @@ class AutoHousekeepingService:
                     "score": score,
                     "reason": f"Lowest workload ({pending} tasks)",
                 }
-        return best or {"staff_id": None, "staff_name": "Unassigned",
-                        "current_tasks": 0, "reason": "No staff available"}
+        return best or {"staff_id": None, "staff_name": "Unassigned", "current_tasks": 0, "reason": "No staff available"}
 
     async def manual_override_assignment(self, tenant_id: str, task_id: str, new_assignee_id: str, reason: str, overridden_by: str) -> dict:
         """Manually override a task assignment."""
-        task = await db.housekeeping_tasks.find_one(
-            {"id": task_id, "tenant_id": tenant_id}, {"_id": 0}
-        )
+        task = await db.housekeeping_tasks.find_one({"id": task_id, "tenant_id": tenant_id}, {"_id": 0})
         if not task:
             return {"success": False, "error": "Task not found"}
 
@@ -316,30 +298,34 @@ class AutoHousekeepingService:
 
         await db.housekeeping_tasks.update_one(
             {"id": task_id, "tenant_id": tenant_id},
-            {"$set": {
-                "assigned_to": new_assignee_id,
-                "assigned_to_name": staff_name,
-                "auto_assigned": False,
-                "override_reason": reason,
-                "overridden_by": overridden_by,
-                "overridden_at": now.isoformat(),
-            }}
+            {
+                "$set": {
+                    "assigned_to": new_assignee_id,
+                    "assigned_to_name": staff_name,
+                    "auto_assigned": False,
+                    "override_reason": reason,
+                    "overridden_by": overridden_by,
+                    "overridden_at": now.isoformat(),
+                }
+            },
         )
 
         # Audit trail
-        await db.pms_audit_trail.insert_one({
-            "tenant_id": tenant_id,
-            "entity_type": "housekeeping_task",
-            "entity_id": task_id,
-            "action": "task_override",
-            "performed_by": overridden_by,
-            "metadata": {
-                "old_assignee": old_assignee,
-                "new_assignee": new_assignee_id,
-                "reason": reason,
-            },
-            "timestamp": now.isoformat(),
-        })
+        await db.pms_audit_trail.insert_one(
+            {
+                "tenant_id": tenant_id,
+                "entity_type": "housekeeping_task",
+                "entity_id": task_id,
+                "action": "task_override",
+                "performed_by": overridden_by,
+                "metadata": {
+                    "old_assignee": old_assignee,
+                    "new_assignee": new_assignee_id,
+                    "reason": reason,
+                },
+                "timestamp": now.isoformat(),
+            }
+        )
 
         return {"success": True, "task_id": task_id, "new_assignee": staff_name}
 
@@ -353,11 +339,15 @@ class AutoHousekeepingService:
             return {"ready": True, "eta_minutes": 0, "reason": "Room is ready"}
 
         # Find active task
-        task = await db.housekeeping_tasks.find_one({
-            "room_id": room_id, "tenant_id": tenant_id,
-            "status": {"$in": ["pending", "in_progress"]},
-            "task_type": "cleaning",
-        }, {"_id": 0})
+        task = await db.housekeeping_tasks.find_one(
+            {
+                "room_id": room_id,
+                "tenant_id": tenant_id,
+                "status": {"$in": ["pending", "in_progress"]},
+                "task_type": "cleaning",
+            },
+            {"_id": 0},
+        )
 
         if not task:
             room_type = room.get("room_type", "default")
@@ -399,12 +389,16 @@ class AutoHousekeepingService:
         today = now.date().isoformat()
 
         # Check next booking for this room
-        next_booking = await db.bookings.find_one({
-            "tenant_id": tenant_id,
-            "room_id": room_id,
-            "status": {"$in": ["confirmed", "guaranteed"]},
-            "check_in": {"$gte": today},
-        }, {"_id": 0, "check_in": 1, "guest_id": 1}, sort=[("check_in", 1)])
+        next_booking = await db.bookings.find_one(
+            {
+                "tenant_id": tenant_id,
+                "room_id": room_id,
+                "status": {"$in": ["confirmed", "guaranteed"]},
+                "check_in": {"$gte": today},
+            },
+            {"_id": 0, "check_in": 1, "guest_id": 1},
+            sort=[("check_in", 1)],
+        )
 
         base_priority = "medium"
         reason = "Standard cleaning"
@@ -413,10 +407,7 @@ class AutoHousekeepingService:
             checkin_date = next_booking["check_in"][:10]
 
             # Check if VIP
-            guest = await db.guests.find_one(
-                {"id": next_booking.get("guest_id"), "tenant_id": tenant_id},
-                {"_id": 0, "vip_status": 1, "tags": 1}
-            )
+            guest = await db.guests.find_one({"id": next_booking.get("guest_id"), "tenant_id": tenant_id}, {"_id": 0, "vip_status": 1, "tags": 1})
             is_vip = False
             if guest:
                 is_vip = guest.get("vip_status") or "vip" in (guest.get("tags") or [])
@@ -454,9 +445,7 @@ class AutoHousekeepingService:
 
         # Get housekeeping staff
         staff = await db.users.find(
-            {"tenant_id": tenant_id, "role": {"$in": ["housekeeping", "staff"]},
-             "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]},
-            {"_id": 0, "id": 1, "name": 1}
+            {"tenant_id": tenant_id, "role": {"$in": ["housekeeping", "staff"]}, "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]}, {"_id": 0, "id": 1, "name": 1}
         ).to_list(100)
 
         if not staff:
@@ -467,20 +456,25 @@ class AutoHousekeepingService:
         best_score = float("inf")
 
         for s in staff:
-            pending = await db.housekeeping_tasks.count_documents({
-                "tenant_id": tenant_id,
-                "assigned_to": s["id"],
-                "status": {"$in": ["pending", "in_progress"]},
-            })
+            pending = await db.housekeeping_tasks.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "assigned_to": s["id"],
+                    "status": {"$in": ["pending", "in_progress"]},
+                }
+            )
 
             # Score: lower is better. Workload weight + floor mismatch penalty
             score = pending * 10
             # Floor proximity bonus (same floor = 0, different = 5)
-            assigned_floors = await db.housekeeping_tasks.distinct("floor", {
-                "tenant_id": tenant_id,
-                "assigned_to": s["id"],
-                "status": {"$in": ["pending", "in_progress"]},
-            })
+            assigned_floors = await db.housekeeping_tasks.distinct(
+                "floor",
+                {
+                    "tenant_id": tenant_id,
+                    "assigned_to": s["id"],
+                    "status": {"$in": ["pending", "in_progress"]},
+                },
+            )
             if floor and assigned_floors and floor not in assigned_floors:
                 score += 5
 
@@ -503,9 +497,7 @@ class AutoHousekeepingService:
         with a single grouped aggregate over all relevant tasks.
         """
         staff = await db.users.find(
-            {"tenant_id": tenant_id, "role": {"$in": ["housekeeping", "staff"]},
-             "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]},
-            {"_id": 0, "id": 1, "name": 1}
+            {"tenant_id": tenant_id, "role": {"$in": ["housekeeping", "staff"]}, "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]}, {"_id": 0, "id": 1, "name": 1}
         ).to_list(100)
 
         if not staff:
@@ -516,31 +508,37 @@ class AutoHousekeepingService:
 
         # Single aggregation: count by (assigned_to, bucketed status)
         pipeline = [
-            {"$match": {
-                "tenant_id": tenant_id,
-                "assigned_to": {"$in": staff_ids},
-                "$or": [
-                    {"status": {"$in": ["pending", "in_progress"]}},
-                    {"status": "completed", "completed_at": {"$gte": today_iso}},
-                ],
-            }},
-            {"$project": {
-                "assigned_to": 1,
-                "bucket": {
-                    "$switch": {
-                        "branches": [
-                            {"case": {"$eq": ["$status", "pending"]}, "then": "pending"},
-                            {"case": {"$eq": ["$status", "in_progress"]}, "then": "in_progress"},
-                            {"case": {"$eq": ["$status", "completed"]}, "then": "completed_today"},
-                        ],
-                        "default": "other",
-                    }
-                },
-            }},
-            {"$group": {
-                "_id": {"staff": "$assigned_to", "bucket": "$bucket"},
-                "count": {"$sum": 1},
-            }},
+            {
+                "$match": {
+                    "tenant_id": tenant_id,
+                    "assigned_to": {"$in": staff_ids},
+                    "$or": [
+                        {"status": {"$in": ["pending", "in_progress"]}},
+                        {"status": "completed", "completed_at": {"$gte": today_iso}},
+                    ],
+                }
+            },
+            {
+                "$project": {
+                    "assigned_to": 1,
+                    "bucket": {
+                        "$switch": {
+                            "branches": [
+                                {"case": {"$eq": ["$status", "pending"]}, "then": "pending"},
+                                {"case": {"$eq": ["$status", "in_progress"]}, "then": "in_progress"},
+                                {"case": {"$eq": ["$status", "completed"]}, "then": "completed_today"},
+                            ],
+                            "default": "other",
+                        }
+                    },
+                }
+            },
+            {
+                "$group": {
+                    "_id": {"staff": "$assigned_to", "bucket": "$bucket"},
+                    "count": {"$sum": 1},
+                }
+            },
         ]
 
         counts: dict[str, dict[str, int]] = {sid: {"pending": 0, "in_progress": 0, "completed_today": 0} for sid in staff_ids}
@@ -553,29 +551,40 @@ class AutoHousekeepingService:
         workload = []
         for s in staff:
             c = counts.get(s["id"], {"pending": 0, "in_progress": 0, "completed_today": 0})
-            workload.append({
-                "staff_id": s["id"],
-                "staff_name": s.get("name", "Unknown"),
-                "pending": c["pending"],
-                "in_progress": c["in_progress"],
-                "completed_today": c["completed_today"],
-                "total_active": c["pending"] + c["in_progress"],
-            })
+            workload.append(
+                {
+                    "staff_id": s["id"],
+                    "staff_name": s.get("name", "Unknown"),
+                    "pending": c["pending"],
+                    "in_progress": c["in_progress"],
+                    "completed_today": c["completed_today"],
+                    "total_active": c["pending"] + c["in_progress"],
+                }
+            )
 
         workload.sort(key=lambda w: w["total_active"])
         return workload
 
     async def _check_maintenance_conflict(self, tenant_id: str, room_id: str) -> dict:
         """Check if room has active maintenance blocking cleaning."""
-        active_blocks = await db.room_blocks.find({
-            "room_id": room_id, "tenant_id": tenant_id, "status": "active",
-        }, {"_id": 0}).to_list(10)
+        active_blocks = await db.room_blocks.find(
+            {
+                "room_id": room_id,
+                "tenant_id": tenant_id,
+                "status": "active",
+            },
+            {"_id": 0},
+        ).to_list(10)
 
-        maintenance = await db.housekeeping_tasks.find({
-            "room_id": room_id, "tenant_id": tenant_id,
-            "task_type": "maintenance",
-            "status": {"$in": ["pending", "in_progress"]},
-        }, {"_id": 0}).to_list(10)
+        maintenance = await db.housekeeping_tasks.find(
+            {
+                "room_id": room_id,
+                "tenant_id": tenant_id,
+                "task_type": "maintenance",
+                "status": {"$in": ["pending", "in_progress"]},
+            },
+            {"_id": 0},
+        ).to_list(10)
 
         has_conflict = len(active_blocks) > 0 or len(maintenance) > 0
         return {

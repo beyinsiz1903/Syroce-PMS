@@ -1,4 +1,5 @@
 """Generic HMAC-signed JSON webhook adapter (Zapier/Make/n8n compatible)."""
+
 from __future__ import annotations
 
 import hashlib
@@ -23,20 +24,24 @@ class GenericWebhookAdapter(BaseAdapter):
         return not self.config.get("url")
 
     async def deliver(self, envelope: XchangeEnvelope) -> DeliveryResult:
-        body = json.dumps({
-            "message_id": envelope.message_id,
-            "message_type": envelope.message_type.value,
-            "tenant_id": envelope.tenant_id,
-            "occurred_at": envelope.occurred_at.isoformat(),
-            "correlation_id": envelope.correlation_id,
-            "payload": envelope.payload,
-        }, default=str).encode("utf-8")
+        body = json.dumps(
+            {
+                "message_id": envelope.message_id,
+                "message_type": envelope.message_type.value,
+                "tenant_id": envelope.tenant_id,
+                "occurred_at": envelope.occurred_at.isoformat(),
+                "correlation_id": envelope.correlation_id,
+                "payload": envelope.payload,
+            },
+            default=str,
+        ).encode("utf-8")
         excerpt = body.decode("utf-8")[:1024]
 
         if self.is_dry_run:
             logger.info("[generic_webhook] DRY-RUN msg=%s", envelope.message_id)
             return DeliveryResult(
-                ok=True, dry_run=True,
+                ok=True,
+                dry_run=True,
                 request_payload_excerpt=excerpt,
                 response_excerpt="DRY-RUN: no webhook URL configured",
             )
@@ -59,11 +64,9 @@ class GenericWebhookAdapter(BaseAdapter):
                 },
             )
         except EgressDenied as e:
-            return DeliveryResult(ok=False, error=f"egress_denied: {e}",
-                                  request_payload_excerpt=excerpt)
+            return DeliveryResult(ok=False, error=f"egress_denied: {e}", request_payload_excerpt=excerpt)
         except httpx.RequestError as e:
-            return DeliveryResult(ok=False, error=f"transport_error: {e!r}",
-                                  request_payload_excerpt=excerpt)
+            return DeliveryResult(ok=False, error=f"transport_error: {e!r}", request_payload_excerpt=excerpt)
         ok = 200 <= resp.status_code < 300
         return DeliveryResult(
             ok=ok,

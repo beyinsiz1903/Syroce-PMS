@@ -3,6 +3,7 @@ Production Config Activation Workflow — Required/optional config validation,
 secret source inspection, invalid format detection, boot blocker/warning
 classification, and readiness validator integration.
 """
+
 import logging
 import os
 import re
@@ -169,9 +170,7 @@ CONFIG_DEFINITIONS = {
     },
 }
 
-SENSITIVE_PATTERNS = re.compile(
-    r"(token|secret|key|password|dsn|auth|sid|credential)", re.IGNORECASE
-)
+SENSITIVE_PATTERNS = re.compile(r"(token|secret|key|password|dsn|auth|sid|credential)", re.IGNORECASE)
 
 
 def _mask_value(key: str, value: str) -> str:
@@ -240,11 +239,13 @@ class ConfigActivationWorkflow:
             if is_set and cfg.get("format_regex"):
                 if not re.match(cfg["format_regex"], value):
                     entry["format_valid"] = False
-                    format_errors.append({
-                        "variable": var_name,
-                        "hint": cfg["format_hint"],
-                        "blocker": cfg["blocker"],
-                    })
+                    format_errors.append(
+                        {
+                            "variable": var_name,
+                            "hint": cfg["format_hint"],
+                            "blocker": cfg["blocker"],
+                        }
+                    )
 
             categories[cat]["variables"].append(entry)
 
@@ -316,12 +317,14 @@ class ConfigActivationWorkflow:
             if cfg["category"] != category:
                 continue
             value = os.environ.get(var_name, "")
-            entries.append({
-                "variable": var_name,
-                "configured": bool(value),
-                "source": _detect_source(var_name),
-                "masked_value": _mask_value(var_name, value) if value else None,
-            })
+            entries.append(
+                {
+                    "variable": var_name,
+                    "configured": bool(value),
+                    "source": _detect_source(var_name),
+                    "masked_value": _mask_value(var_name, value) if value else None,
+                }
+            )
         return {"category": category, "variables": entries}
 
 

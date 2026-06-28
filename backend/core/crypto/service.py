@@ -11,6 +11,7 @@ Feature flags:
 Break-glass:
   CRYPTO_BYPASS_ALLOWED=true — EMERGENCY ONLY: disables all encryption
 """
+
 import base64
 import hashlib
 import logging
@@ -47,31 +48,23 @@ class CredentialEncryptionService:
     """
 
     def __init__(self):
-        self._v2_enabled = (
-            os.environ.get("CRYPTO_V2_ENABLED", "false").lower() == "true"
-        )
-        self._bypass = (
-            os.environ.get("CRYPTO_BYPASS_ALLOWED", "false").lower() == "true"
-        )
+        self._v2_enabled = os.environ.get("CRYPTO_V2_ENABLED", "false").lower() == "true"
+        self._bypass = os.environ.get("CRYPTO_BYPASS_ALLOWED", "false").lower() == "true"
         self._keyring = load_keyring()
         self._engine = AESGCMEngine(self._keyring)
         self._legacy = LegacyDecryptor()
 
         # Legacy key for Phase 0 encryption (old aes256gcm: format)
-        legacy_key_material = (
-            os.environ.get("CM_CREDENTIAL_KEY", "")
-            or "syroce-pms-default-key-change-in-production"
-        )
+        legacy_key_material = os.environ.get("CM_CREDENTIAL_KEY", "") or "syroce-pms-default-key-change-in-production"
         self._legacy_aes_key = hashlib.sha256(legacy_key_material.encode()).digest()
 
         if self._bypass:
-            logger.critical(
-                "CRYPTO_BYPASS_ALLOWED=true — ENCRYPTION IS DISABLED. "
-                "This MUST only be used in break-glass emergencies."
-            )
+            logger.critical("CRYPTO_BYPASS_ALLOWED=true — ENCRYPTION IS DISABLED. This MUST only be used in break-glass emergencies.")
         logger.info(
             "CredentialEncryptionService initialized: v2=%s bypass=%s kid=%s",
-            self._v2_enabled, self._bypass, self._keyring.current_kid,
+            self._v2_enabled,
+            self._bypass,
+            self._keyring.current_kid,
         )
 
     # ── Core Encrypt/Decrypt ──────────────────────────────────────────
@@ -165,17 +158,11 @@ class CredentialEncryptionService:
 
     def decrypt_dict_xor(self, encrypted: dict[str, str]) -> dict[str, str]:
         """Decrypt all values assuming XOR legacy format."""
-        return {
-            k: self.decrypt_legacy_xor(v) if isinstance(v, str) and v else v
-            for k, v in encrypted.items()
-        }
+        return {k: self.decrypt_legacy_xor(v) if isinstance(v, str) and v else v for k, v in encrypted.items()}
 
     def decrypt_dict_base64(self, encrypted: dict[str, str]) -> dict[str, str]:
         """Decrypt all values assuming base64-only format."""
-        return {
-            k: self.decrypt_legacy_base64(v) if isinstance(v, str) and v else v
-            for k, v in encrypted.items()
-        }
+        return {k: self.decrypt_legacy_base64(v) if isinstance(v, str) and v else v for k, v in encrypted.items()}
 
     # ── Re-encryption (Rotation / Migration) ─────────────────────────
 

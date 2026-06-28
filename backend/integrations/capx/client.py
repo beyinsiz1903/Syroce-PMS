@@ -16,6 +16,7 @@ Faz 3 — tenant-aware:
   get_capx_client(tenant_id=None) → tenant_id verilirse koleksiyondan oku,
   yoksa env'den (backward-compatible). Cache: tenant_id → CapXClient.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -53,9 +54,7 @@ class CapXClient:
     PATH_RECENT = "/api/integrations/v1/pms/recent"
     PATH_CALLBACK = "/api/integrations/v1/pms/callback"
 
-    def __init__(self, *, base_url: str | None = None, api_key: str | None = None,
-                 webhook_secret: str | None = None, timeout: float = 15.0,
-                 tenant_id: str | None = None):
+    def __init__(self, *, base_url: str | None = None, api_key: str | None = None, webhook_secret: str | None = None, timeout: float = 15.0, tenant_id: str | None = None):
         self.base_url = (base_url or os.getenv("CAPX_BASE_URL", "")).rstrip("/")
         self.api_key = api_key or os.getenv("CAPX_API_KEY", "")
         self.webhook_secret = webhook_secret or os.getenv("CAPX_WEBHOOK_SECRET", "")
@@ -63,11 +62,13 @@ class CapXClient:
         self.tenant_id = tenant_id
 
     @classmethod
-    def from_creds(cls, creds: CapXCreds, *, tenant_id: str | None = None,
-                   timeout: float = 15.0) -> "CapXClient":
+    def from_creds(cls, creds: CapXCreds, *, tenant_id: str | None = None, timeout: float = 15.0) -> "CapXClient":
         return cls(
-            base_url=creds.base_url, api_key=creds.api_key,
-            webhook_secret=creds.webhook_secret, timeout=timeout, tenant_id=tenant_id,
+            base_url=creds.base_url,
+            api_key=creds.api_key,
+            webhook_secret=creds.webhook_secret,
+            timeout=timeout,
+            tenant_id=tenant_id,
         )
 
     @property
@@ -78,7 +79,9 @@ class CapXClient:
         if not self.webhook_secret:
             raise CapXError("CAPX_WEBHOOK_SECRET not set")
         digest = hmac.new(
-            self.webhook_secret.encode("utf-8"), body_bytes, hashlib.sha256,
+            self.webhook_secret.encode("utf-8"),
+            body_bytes,
+            hashlib.sha256,
         ).hexdigest()
         return f"sha256={digest}"
 
@@ -87,8 +90,7 @@ class CapXClient:
             raise CapXError("CAPX_API_KEY not set")
         return {"Authorization": f"Bearer {self.api_key}"}
 
-    async def _post(self, path: str, body: dict[str, Any], *, sign: bool = False,
-                    event_id: str | None = None, jwt_token: str | None = None) -> dict[str, Any]:
+    async def _post(self, path: str, body: dict[str, Any], *, sign: bool = False, event_id: str | None = None, jwt_token: str | None = None) -> dict[str, Any]:
         if not self.base_url:
             raise CapXError("CAPX_BASE_URL not set")
         url = f"{self.base_url}{path}"
@@ -123,8 +125,7 @@ class CapXClient:
         except Exception:
             return {"raw": resp.text, "status_code": resp.status_code}
 
-    async def _put(self, path: str, body: dict[str, Any], *,
-                   jwt_token: str | None = None) -> dict[str, Any]:
+    async def _put(self, path: str, body: dict[str, Any], *, jwt_token: str | None = None) -> dict[str, Any]:
         if not self.base_url:
             raise CapXError("CAPX_BASE_URL not set")
         url = f"{self.base_url}{path}"
@@ -234,13 +235,14 @@ class CapXClient:
         """Push PMS availability snapshot."""
         return await self._post(self.PATH_AVAILABILITY, self._to_capx_availability(snapshot))
 
-    async def push_reservation_event(self, event: dict[str, Any], *,
-                                      event_id: str | None = None) -> dict[str, Any]:
+    async def push_reservation_event(self, event: dict[str, Any], *, event_id: str | None = None) -> dict[str, Any]:
         """Push booking lifecycle event (created / cancelled / no_show /
         counter_offer_accepted / counter_offer_rejected)."""
         return await self._post(
-            self.PATH_RESERVATION, self._to_capx_reservation_event(event),
-            sign=True, event_id=event_id,
+            self.PATH_RESERVATION,
+            self._to_capx_reservation_event(event),
+            sign=True,
+            event_id=event_id,
         )
 
     async def push_rate_update(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -270,7 +272,10 @@ class CapXClient:
         return await self._get(self.PATH_RECENT, jwt_token=jwt_token)
 
     async def register_callback(
-        self, callback_url: str, *, jwt_token: str | None = None,
+        self,
+        callback_url: str,
+        *,
+        jwt_token: str | None = None,
     ) -> dict[str, Any]:
         """CapX'e PMS'in `callback_url`'ini bildirir.
 
@@ -279,7 +284,8 @@ class CapXClient:
         Bearer api_key fallback (CapX api_key'i de kabul ederse).
         """
         return await self._put(
-            self.PATH_CALLBACK, {"callback_url": callback_url},
+            self.PATH_CALLBACK,
+            {"callback_url": callback_url},
             jwt_token=jwt_token,
         )
 
@@ -313,7 +319,8 @@ def _evict_if_oversized() -> None:
 
 
 async def get_capx_client_async(
-    tenant_id: str | None = None, refresh: bool = False,
+    tenant_id: str | None = None,
+    refresh: bool = False,
 ) -> CapXClient:
     """Tenant-aware client factory.
 

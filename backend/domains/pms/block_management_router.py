@@ -12,6 +12,7 @@ Cache:
     bu router'ın cache key'lerinden haberi yoktur; en kötü 60s gecikme
     olur.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -104,11 +105,13 @@ async def cutoff_alerts(
     db = get_system_db()
     today = datetime.now(UTC)
     horizon = today + timedelta(days=days_ahead)
-    cur = db.group_blocks.find({
-        "tenant_id": user.tenant_id,
-        "status": {"$in": ["tentative", "definite"]},
-        "cutoff_date": {"$ne": None},
-    }).sort("cutoff_date", 1)
+    cur = db.group_blocks.find(
+        {
+            "tenant_id": user.tenant_id,
+            "status": {"$in": ["tentative", "definite"]},
+            "cutoff_date": {"$ne": None},
+        }
+    ).sort("cutoff_date", 1)
     out: list[dict[str, Any]] = []
     async for g in cur:
         g.pop("_id", None)
@@ -118,17 +121,19 @@ async def cutoff_alerts(
         days_left = (cd - today).days
         total = int(g.get("total_rooms", 0) or 0)
         picked = int(g.get("rooms_picked_up", 0) or 0)
-        out.append({
-            "id": g.get("id"),
-            "group_name": g.get("group_name"),
-            "organization": g.get("organization"),
-            "cutoff_date": g.get("cutoff_date"),
-            "days_left": days_left,
-            "total_rooms": total,
-            "rooms_picked_up": picked,
-            "remaining": max(total - picked, 0),
-            "status": g.get("status"),
-        })
+        out.append(
+            {
+                "id": g.get("id"),
+                "group_name": g.get("group_name"),
+                "organization": g.get("organization"),
+                "cutoff_date": g.get("cutoff_date"),
+                "days_left": days_left,
+                "total_rooms": total,
+                "rooms_picked_up": picked,
+                "remaining": max(total - picked, 0),
+                "status": g.get("status"),
+            }
+        )
     payload = {"count": len(out), "alerts": out}
     _cache.set(cache_key, payload, ttl=_BLOCK_CACHE_TTL)
     return payload
@@ -210,20 +215,17 @@ async def pickup_report(
     g = await db.group_blocks.find_one({"id": block_id, "tenant_id": user.tenant_id})
     if not g:
         raise HTTPException(404, "Grup bloğu bulunamadı")
-    cur = db.bookings.find({
-        "tenant_id": user.tenant_id,
-        "$or": [{"group_block_id": block_id}, {"group_id": block_id}],
-        "status": {"$ne": "cancelled"},
-    })
+    cur = db.bookings.find(
+        {
+            "tenant_id": user.tenant_id,
+            "$or": [{"group_block_id": block_id}, {"group_id": block_id}],
+            "status": {"$ne": "cancelled"},
+        }
+    )
     by_day: dict[str, int] = {}
     total_picked = 0
     async for b in cur:
-        anchor = (
-            b.get("checked_in_at")
-            or b.get("rooming_added_at")
-            or b.get("created_at")
-            or ""
-        )
+        anchor = b.get("checked_in_at") or b.get("rooming_added_at") or b.get("created_at") or ""
         d = str(anchor)[:10]
         if not d:
             continue
@@ -260,27 +262,31 @@ async def summary(
         if cached is not None:
             return cached
     db = get_system_db()
-    cur = db.group_blocks.find({
-        "tenant_id": user.tenant_id,
-        "status": {"$in": ["tentative", "definite"]},
-    }).sort("check_in", 1)
+    cur = db.group_blocks.find(
+        {
+            "tenant_id": user.tenant_id,
+            "status": {"$in": ["tentative", "definite"]},
+        }
+    ).sort("check_in", 1)
     out: list[dict[str, Any]] = []
     async for g in cur:
         g.pop("_id", None)
         total = int(g.get("total_rooms", 0) or 0)
         picked = int(g.get("rooms_picked_up", 0) or 0)
-        out.append({
-            "id": g.get("id"),
-            "group_name": g.get("group_name"),
-            "check_in": g.get("check_in"),
-            "check_out": g.get("check_out"),
-            "cutoff_date": g.get("cutoff_date"),
-            "total_rooms": total,
-            "rooms_picked_up": picked,
-            "washed_count": int(g.get("washed_count", 0) or 0),
-            "pickup_pct": round((picked / total * 100) if total else 0, 1),
-            "status": g.get("status"),
-        })
+        out.append(
+            {
+                "id": g.get("id"),
+                "group_name": g.get("group_name"),
+                "check_in": g.get("check_in"),
+                "check_out": g.get("check_out"),
+                "cutoff_date": g.get("cutoff_date"),
+                "total_rooms": total,
+                "rooms_picked_up": picked,
+                "washed_count": int(g.get("washed_count", 0) or 0),
+                "pickup_pct": round((picked / total * 100) if total else 0, 1),
+                "status": g.get("status"),
+            }
+        )
     payload = {"count": len(out), "blocks": out}
     _cache.set(cache_key, payload, ttl=_BLOCK_CACHE_TTL)
     return payload

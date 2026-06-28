@@ -13,6 +13,7 @@ Masking policy levels:
   HASH     — show SHA-256 prefix for correlation, e.g. "sha256:a1b2c3..."
   NONE     — no masking (non-PII or authorized viewer)
 """
+
 import hashlib
 import re
 from dataclasses import dataclass, field
@@ -28,29 +29,32 @@ class MaskLevel(str, Enum):
 
 class PIICategory(str, Enum):
     """PII field categories for classification and reporting."""
-    IDENTITY = "identity"           # TC kimlik, pasaport, vergi no
-    CONTACT = "contact"             # email, telefon, adres
-    FINANCIAL = "financial"         # kredi kartı, IBAN, ödeme bilgileri
+
+    IDENTITY = "identity"  # TC kimlik, pasaport, vergi no
+    CONTACT = "contact"  # email, telefon, adres
+    FINANCIAL = "financial"  # kredi kartı, IBAN, ödeme bilgileri
     AUTHENTICATION = "authentication"  # password, token, API key
-    HEALTH = "health"               # sağlık bilgileri
-    LOCATION = "location"           # adres, konum
-    PERSONAL = "personal"           # isim, doğum tarihi
+    HEALTH = "health"  # sağlık bilgileri
+    LOCATION = "location"  # adres, konum
+    PERSONAL = "personal"  # isim, doğum tarihi
 
 
 class SecretType(str, Enum):
     """Secret classification — each type has its own lifecycle."""
-    JWT_APP = "jwt_app"                 # JWT signing keys, app secrets
+
+    JWT_APP = "jwt_app"  # JWT signing keys, app secrets
     CONNECTOR_CREDENTIAL = "connector"  # Channel manager provider credentials
-    WEBHOOK_SECRET = "webhook"          # Webhook signing/verification secrets
-    ENCRYPTION_KEY = "encryption"       # Master encryption keys, key material
-    THIRD_PARTY_API = "third_party"     # External API keys (Stripe, etc.)
-    DATABASE = "database"               # DB connection strings, passwords
-    INTERNAL = "internal"               # Internal service-to-service tokens
+    WEBHOOK_SECRET = "webhook"  # Webhook signing/verification secrets
+    ENCRYPTION_KEY = "encryption"  # Master encryption keys, key material
+    THIRD_PARTY_API = "third_party"  # External API keys (Stripe, etc.)
+    DATABASE = "database"  # DB connection strings, passwords
+    INTERNAL = "internal"  # Internal service-to-service tokens
 
 
 @dataclass(frozen=True)
 class PIIFieldRule:
     """Masking rule for a single PII field."""
+
     field_name: str
     category: PIICategory
     default_mask: MaskLevel = MaskLevel.FULL
@@ -84,33 +88,43 @@ _register(
 
 # Contact — partial mask by default
 _register(
-    PIIFieldRule("email", PIICategory.CONTACT, default_mask=MaskLevel.PARTIAL,
-                 visible_prefix=2, visible_suffix=2,
-                 unmask_roles=frozenset({"super_admin", "admin", "front_desk"}),
-                 description="Email address"),
-    PIIFieldRule("phone", PIICategory.CONTACT, default_mask=MaskLevel.PARTIAL,
-                 visible_prefix=0, visible_suffix=4,
-                 unmask_roles=frozenset({"super_admin", "admin", "front_desk"}),
-                 description="Phone number"),
-    PIIFieldRule("phone_number", PIICategory.CONTACT, default_mask=MaskLevel.PARTIAL,
-                 visible_prefix=0, visible_suffix=4,
-                 unmask_roles=frozenset({"super_admin", "admin", "front_desk"}),
-                 description="Phone number"),
-    PIIFieldRule("mobile", PIICategory.CONTACT, default_mask=MaskLevel.PARTIAL,
-                 visible_prefix=0, visible_suffix=4,
-                 unmask_roles=frozenset({"super_admin", "admin", "front_desk"}),
-                 description="Mobile number"),
-    PIIFieldRule("address", PIICategory.CONTACT, default_mask=MaskLevel.FULL,
-                 unmask_roles=frozenset({"super_admin", "admin"}),
-                 description="Address"),
-    PIIFieldRule("guest_email", PIICategory.CONTACT, default_mask=MaskLevel.PARTIAL,
-                 visible_prefix=2, visible_suffix=2,
-                 unmask_roles=frozenset({"super_admin", "admin", "front_desk"}),
-                 description="Guest email"),
-    PIIFieldRule("guest_phone", PIICategory.CONTACT, default_mask=MaskLevel.PARTIAL,
-                 visible_prefix=0, visible_suffix=4,
-                 unmask_roles=frozenset({"super_admin", "admin", "front_desk"}),
-                 description="Guest phone"),
+    PIIFieldRule(
+        "email", PIICategory.CONTACT, default_mask=MaskLevel.PARTIAL, visible_prefix=2, visible_suffix=2, unmask_roles=frozenset({"super_admin", "admin", "front_desk"}), description="Email address"
+    ),
+    PIIFieldRule(
+        "phone", PIICategory.CONTACT, default_mask=MaskLevel.PARTIAL, visible_prefix=0, visible_suffix=4, unmask_roles=frozenset({"super_admin", "admin", "front_desk"}), description="Phone number"
+    ),
+    PIIFieldRule(
+        "phone_number",
+        PIICategory.CONTACT,
+        default_mask=MaskLevel.PARTIAL,
+        visible_prefix=0,
+        visible_suffix=4,
+        unmask_roles=frozenset({"super_admin", "admin", "front_desk"}),
+        description="Phone number",
+    ),
+    PIIFieldRule(
+        "mobile", PIICategory.CONTACT, default_mask=MaskLevel.PARTIAL, visible_prefix=0, visible_suffix=4, unmask_roles=frozenset({"super_admin", "admin", "front_desk"}), description="Mobile number"
+    ),
+    PIIFieldRule("address", PIICategory.CONTACT, default_mask=MaskLevel.FULL, unmask_roles=frozenset({"super_admin", "admin"}), description="Address"),
+    PIIFieldRule(
+        "guest_email",
+        PIICategory.CONTACT,
+        default_mask=MaskLevel.PARTIAL,
+        visible_prefix=2,
+        visible_suffix=2,
+        unmask_roles=frozenset({"super_admin", "admin", "front_desk"}),
+        description="Guest email",
+    ),
+    PIIFieldRule(
+        "guest_phone",
+        PIICategory.CONTACT,
+        default_mask=MaskLevel.PARTIAL,
+        visible_prefix=0,
+        visible_suffix=4,
+        unmask_roles=frozenset({"super_admin", "admin", "front_desk"}),
+        description="Guest phone",
+    ),
 )
 
 # Financial — always full mask
@@ -118,40 +132,29 @@ _register(
     PIIFieldRule("credit_card", PIICategory.FINANCIAL, description="Credit card number"),
     PIIFieldRule("card_number", PIICategory.FINANCIAL, description="Card number"),
     PIIFieldRule("cvv", PIICategory.FINANCIAL, description="CVV"),
-    PIIFieldRule("iban", PIICategory.FINANCIAL, default_mask=MaskLevel.PARTIAL,
-                 visible_suffix=4, description="IBAN"),
+    PIIFieldRule("iban", PIICategory.FINANCIAL, default_mask=MaskLevel.PARTIAL, visible_suffix=4, description="IBAN"),
     PIIFieldRule("account_number", PIICategory.FINANCIAL, description="Bank account"),
     PIIFieldRule("payment_token", PIICategory.FINANCIAL, description="Payment token"),
 )
 
 # Authentication — always full mask, never unmask via API
 _register(
-    PIIFieldRule("password", PIICategory.AUTHENTICATION,
-                 unmask_roles=frozenset(), description="Password"),
-    PIIFieldRule("hashed_password", PIICategory.AUTHENTICATION,
-                 unmask_roles=frozenset(), description="Hashed password"),
-    PIIFieldRule("api_key", PIICategory.AUTHENTICATION,
-                 unmask_roles=frozenset(), description="API key"),
-    PIIFieldRule("api_secret", PIICategory.AUTHENTICATION,
-                 unmask_roles=frozenset(), description="API secret"),
-    PIIFieldRule("secret_key", PIICategory.AUTHENTICATION,
-                 unmask_roles=frozenset(), description="Secret key"),
-    PIIFieldRule("token", PIICategory.AUTHENTICATION,
-                 unmask_roles=frozenset(), description="Auth token"),
-    PIIFieldRule("access_token", PIICategory.AUTHENTICATION,
-                 unmask_roles=frozenset(), description="Access token"),
-    PIIFieldRule("refresh_token", PIICategory.AUTHENTICATION,
-                 unmask_roles=frozenset(), description="Refresh token"),
-    PIIFieldRule("authorization", PIICategory.AUTHENTICATION,
-                 unmask_roles=frozenset(), description="Authorization header"),
-    PIIFieldRule("wsse_password", PIICategory.AUTHENTICATION,
-                 unmask_roles=frozenset(), description="WSSE password"),
-    PIIFieldRule("webhook_secret", PIICategory.AUTHENTICATION,
-                 unmask_roles=frozenset(), description="Webhook secret"),
+    PIIFieldRule("password", PIICategory.AUTHENTICATION, unmask_roles=frozenset(), description="Password"),
+    PIIFieldRule("hashed_password", PIICategory.AUTHENTICATION, unmask_roles=frozenset(), description="Hashed password"),
+    PIIFieldRule("api_key", PIICategory.AUTHENTICATION, unmask_roles=frozenset(), description="API key"),
+    PIIFieldRule("api_secret", PIICategory.AUTHENTICATION, unmask_roles=frozenset(), description="API secret"),
+    PIIFieldRule("secret_key", PIICategory.AUTHENTICATION, unmask_roles=frozenset(), description="Secret key"),
+    PIIFieldRule("token", PIICategory.AUTHENTICATION, unmask_roles=frozenset(), description="Auth token"),
+    PIIFieldRule("access_token", PIICategory.AUTHENTICATION, unmask_roles=frozenset(), description="Access token"),
+    PIIFieldRule("refresh_token", PIICategory.AUTHENTICATION, unmask_roles=frozenset(), description="Refresh token"),
+    PIIFieldRule("authorization", PIICategory.AUTHENTICATION, unmask_roles=frozenset(), description="Authorization header"),
+    PIIFieldRule("wsse_password", PIICategory.AUTHENTICATION, unmask_roles=frozenset(), description="WSSE password"),
+    PIIFieldRule("webhook_secret", PIICategory.AUTHENTICATION, unmask_roles=frozenset(), description="Webhook secret"),
 )
 
 
 # ── Masking Functions ──────────────────────────────────────────────
+
 
 def mask_value(value: str, rule: PIIFieldRule, *, user_role: str = "") -> str:
     """Apply masking to a value based on its PII rule and the viewer's role."""
@@ -237,11 +240,7 @@ def mask_dict(
         elif isinstance(value, dict):
             masked[key] = mask_dict(value, user_role=user_role, context=context, depth=depth + 1)
         elif isinstance(value, list):
-            masked[key] = [
-                mask_dict(item, user_role=user_role, context=context, depth=depth + 1)
-                if isinstance(item, dict) else item
-                for item in value
-            ]
+            masked[key] = [mask_dict(item, user_role=user_role, context=context, depth=depth + 1) if isinstance(item, dict) else item for item in value]
         else:
             masked[key] = value
 
@@ -251,16 +250,16 @@ def mask_dict(
 # ── PII Detection in Free Text ─────────────────────────────────────
 
 _PII_PATTERNS = [
-    (re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'), "***EMAIL***"),
-    (re.compile(r'\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b'), "***CARD***"),
-    (re.compile(r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b'), "***PHONE***"),
-    (re.compile(r'\b\d{11}\b'), "***IDENTITY***"),  # TC Kimlik
-    (re.compile(r'eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'), "***JWT***"),
-    (re.compile(r'AKIA[0-9A-Z]{16}'), "***AWS_KEY***"),
-    (re.compile(r'sk-[a-zA-Z0-9]{20,}'), "***API_KEY***"),
-    (re.compile(r'ghp_[A-Za-z0-9]{36}'), "***GITHUB_PAT***"),
-    (re.compile(r'sk_live_[A-Za-z0-9]+'), "***STRIPE_KEY***"),
-    (re.compile(r'-----BEGIN (RSA )?PRIVATE KEY-----'), "***PRIVATE_KEY***"),
+    (re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"), "***EMAIL***"),
+    (re.compile(r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b"), "***CARD***"),
+    (re.compile(r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b"), "***PHONE***"),
+    (re.compile(r"\b\d{11}\b"), "***IDENTITY***"),  # TC Kimlik
+    (re.compile(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"), "***JWT***"),
+    (re.compile(r"AKIA[0-9A-Z]{16}"), "***AWS_KEY***"),
+    (re.compile(r"sk-[a-zA-Z0-9]{20,}"), "***API_KEY***"),
+    (re.compile(r"ghp_[A-Za-z0-9]{36}"), "***GITHUB_PAT***"),
+    (re.compile(r"sk_live_[A-Za-z0-9]+"), "***STRIPE_KEY***"),
+    (re.compile(r"-----BEGIN (RSA )?PRIVATE KEY-----"), "***PRIVATE_KEY***"),
 ]
 
 
@@ -333,21 +332,20 @@ def get_pii_policy_summary() -> dict:
         cat = rule.category.value
         if cat not in categories:
             categories[cat] = []
-        categories[cat].append({
-            "field": rule.field_name,
-            "default_mask": rule.default_mask.value,
-            "log_mask": rule.log_mask.value,
-            "unmask_roles": sorted(rule.unmask_roles),
-            "description": rule.description,
-        })
+        categories[cat].append(
+            {
+                "field": rule.field_name,
+                "default_mask": rule.default_mask.value,
+                "log_mask": rule.log_mask.value,
+                "unmask_roles": sorted(rule.unmask_roles),
+                "description": rule.description,
+            }
+        )
 
     return {
         "total_pii_fields": len(PII_FIELDS),
         "categories": categories,
-        "secret_lifecycle": {
-            st.value: lifecycle
-            for st, lifecycle in SECRET_LIFECYCLE.items()
-        },
+        "secret_lifecycle": {st.value: lifecycle for st, lifecycle in SECRET_LIFECYCLE.items()},
         "masking_levels": {
             "full": "Completely redacted — ***REDACTED***",
             "partial": "Show first/last chars — jo***@e***om",

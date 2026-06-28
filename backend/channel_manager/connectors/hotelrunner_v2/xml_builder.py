@@ -7,6 +7,7 @@ Supported message types:
   - OTA_ReadRQ (reservation pull)
   - OTA_NotifReportRQ (acknowledgement)
 """
+
 from datetime import UTC, datetime
 from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring

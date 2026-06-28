@@ -2,6 +2,7 @@
 Aggregator package — auto-split from analytics_router.py.
 Public API: from domains.revenue.analytics_router import router
 """
+
 from fastapi import APIRouter
 
 from .approvals import router as _approvals_r

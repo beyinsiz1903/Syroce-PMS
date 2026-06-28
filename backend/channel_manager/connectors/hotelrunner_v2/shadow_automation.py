@@ -23,6 +23,7 @@ Retention:
   - Ham snapshotlar: 30 gun
   - Gunluk ozetler: 90 gun
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -83,6 +84,7 @@ ALERT_RULES = {
 
 # ── 6-Hourly Snapshot ─────────────────────────────────────────────────
 
+
 async def run_periodic_snapshot(tenant_id: str) -> dict[str, Any]:
     """
     6 saatte bir calisan tam snapshot:
@@ -98,16 +100,19 @@ async def run_periodic_snapshot(tenant_id: str) -> dict[str, Any]:
 
     # 1. Observation snapshot (metrics, drift, DLQ, retry, consistency)
     from .observation import collect_daily_snapshot
+
     observation = await collect_daily_snapshot(tenant_id)
 
     # 2. Readiness score
     from .readiness import calculate_readiness_score
+
     readiness = await calculate_readiness_score(tenant_id)
 
     # 3. Automatic dry-run chain test
     dry_run_chain_result = None
     try:
         from .dry_run import dry_run_chain
+
         dry_run_chain_result = await dry_run_chain(tenant_id, "default")
         logger.info("[Shadow Auto] Dry-run chain tamamlandi — success=%s", dry_run_chain_result.get("success"))
     except Exception as e:
@@ -116,6 +121,7 @@ async def run_periodic_snapshot(tenant_id: str) -> dict[str, Any]:
 
     # 4. Write criteria check
     from .dry_run import check_write_enable_criteria
+
     write_criteria = await check_write_enable_criteria(tenant_id)
 
     # Build combined snapshot
@@ -143,7 +149,9 @@ async def run_periodic_snapshot(tenant_id: str) -> dict[str, Any]:
             "failure_count": dry_run_chain_result.get("failure_count", 0) if dry_run_chain_result else 0,
             "duration_ms": dry_run_chain_result.get("duration_ms", 0) if dry_run_chain_result else 0,
             "correlation_id": dry_run_chain_result.get("correlation_id", "") if dry_run_chain_result else "",
-        } if dry_run_chain_result else None,
+        }
+        if dry_run_chain_result
+        else None,
         "write_criteria": {
             "all_met": write_criteria.get("all_criteria_met", False),
             "met_count": write_criteria.get("met_count", 0),
@@ -198,6 +206,7 @@ async def _evaluate_alerts(tenant_id: str, snapshot: dict[str, Any]) -> list[dic
 
 # ── Daily Summary ─────────────────────────────────────────────────────
 
+
 async def generate_daily_summary(tenant_id: str) -> dict[str, Any]:
     """
     Gunde 1 kez calisan ozet rapor:
@@ -214,16 +223,26 @@ async def generate_daily_summary(tenant_id: str) -> dict[str, Any]:
     logger.info("[Shadow Auto] Gunluk ozet uretiliyor — tenant=%s", tenant_id)
 
     # Get today's snapshots (last 24h)
-    today_snapshots = await db[COLL_AUTO_SNAPSHOTS].find(
-        {"tenant_id": tenant_id, "created_at": {"$gte": since_24h}},
-        _NO_ID,
-    ).sort("created_at", 1).to_list(10)
+    today_snapshots = (
+        await db[COLL_AUTO_SNAPSHOTS]
+        .find(
+            {"tenant_id": tenant_id, "created_at": {"$gte": since_24h}},
+            _NO_ID,
+        )
+        .sort("created_at", 1)
+        .to_list(10)
+    )
 
     # Get yesterday's snapshots (24-48h ago)
-    yesterday_snapshots = await db[COLL_AUTO_SNAPSHOTS].find(
-        {"tenant_id": tenant_id, "created_at": {"$gte": since_48h, "$lt": since_24h}},
-        _NO_ID,
-    ).sort("created_at", 1).to_list(10)
+    yesterday_snapshots = (
+        await db[COLL_AUTO_SNAPSHOTS]
+        .find(
+            {"tenant_id": tenant_id, "created_at": {"$gte": since_48h, "$lt": since_24h}},
+            _NO_ID,
+        )
+        .sort("created_at", 1)
+        .to_list(10)
+    )
 
     # Readiness trend
     readiness_trend = [
@@ -267,22 +286,22 @@ async def generate_daily_summary(tenant_id: str) -> dict[str, Any]:
     today_avg_score = 0
     yesterday_avg_score = 0
     if today_snapshots:
-        today_avg_score = round(
-            sum(s.get("readiness", {}).get("overall_score", 0) for s in today_snapshots) / len(today_snapshots), 1
-        )
+        today_avg_score = round(sum(s.get("readiness", {}).get("overall_score", 0) for s in today_snapshots) / len(today_snapshots), 1)
     if yesterday_snapshots:
-        yesterday_avg_score = round(
-            sum(s.get("readiness", {}).get("overall_score", 0) for s in yesterday_snapshots) / len(yesterday_snapshots), 1
-        )
+        yesterday_avg_score = round(sum(s.get("readiness", {}).get("overall_score", 0) for s in yesterday_snapshots) / len(yesterday_snapshots), 1)
 
     score_change = round(today_avg_score - yesterday_avg_score, 1)
     score_direction = "up" if score_change > 0 else "down" if score_change < 0 else "stable"
 
     # Alert summary (last 24h)
-    alerts_24h = await db[COLL_AUTO_ALERTS].find(
-        {"tenant_id": tenant_id, "created_at": {"$gte": since_24h}},
-        _NO_ID,
-    ).to_list(100)
+    alerts_24h = (
+        await db[COLL_AUTO_ALERTS]
+        .find(
+            {"tenant_id": tenant_id, "created_at": {"$gte": since_24h}},
+            _NO_ID,
+        )
+        .to_list(100)
+    )
     alert_summary = {
         "total": len(alerts_24h),
         "critical": sum(1 for a in alerts_24h if a.get("severity") == "critical"),
@@ -290,11 +309,7 @@ async def generate_daily_summary(tenant_id: str) -> dict[str, Any]:
     }
 
     # Chain test summary
-    chain_results = [
-        s.get("dry_run_chain", {})
-        for s in today_snapshots
-        if s.get("dry_run_chain")
-    ]
+    chain_results = [s.get("dry_run_chain", {}) for s in today_snapshots if s.get("dry_run_chain")]
     chain_summary = {
         "total_runs": len(chain_results),
         "success_count": sum(1 for c in chain_results if c.get("success")),
@@ -346,13 +361,16 @@ async def generate_daily_summary(tenant_id: str) -> dict[str, Any]:
 
     logger.info(
         "[Shadow Auto] Gunluk ozet tamamlandi — score=%s (change=%s), alerts=%d",
-        today_avg_score, score_change, alert_summary["total"],
+        today_avg_score,
+        score_change,
+        alert_summary["total"],
     )
 
     return summary
 
 
 # ── Retention Cleanup ─────────────────────────────────────────────────
+
 
 async def cleanup_old_data() -> dict[str, int]:
     """
@@ -365,26 +383,18 @@ async def cleanup_old_data() -> dict[str, int]:
 
     # Snapshots: 30 gun
     snapshot_cutoff = (now - timedelta(days=30)).isoformat()
-    snap_result = await db[COLL_AUTO_SNAPSHOTS].delete_many(
-        {"created_at": {"$lt": snapshot_cutoff}}
-    )
+    snap_result = await db[COLL_AUTO_SNAPSHOTS].delete_many({"created_at": {"$lt": snapshot_cutoff}})
 
     # Daily summaries: 90 gun
     summary_cutoff = (now - timedelta(days=90)).isoformat()
-    sum_result = await db[COLL_DAILY_SUMMARIES].delete_many(
-        {"created_at": {"$lt": summary_cutoff}}
-    )
+    sum_result = await db[COLL_DAILY_SUMMARIES].delete_many({"created_at": {"$lt": summary_cutoff}})
 
     # Old observation snapshots: 30 gun
-    obs_result = await db[COLL_OBSERVATION_SNAPSHOTS].delete_many(
-        {"snapshot_date": {"$lt": snapshot_cutoff}}
-    )
+    obs_result = await db[COLL_OBSERVATION_SNAPSHOTS].delete_many({"snapshot_date": {"$lt": snapshot_cutoff}})
 
     # Alerts: 60 gun
     alert_cutoff = (now - timedelta(days=60)).isoformat()
-    alert_result = await db[COLL_AUTO_ALERTS].delete_many(
-        {"created_at": {"$lt": alert_cutoff}}
-    )
+    alert_result = await db[COLL_AUTO_ALERTS].delete_many({"created_at": {"$lt": alert_cutoff}})
 
     result = {
         "snapshots_deleted": snap_result.deleted_count,
@@ -398,6 +408,7 @@ async def cleanup_old_data() -> dict[str, int]:
 
 
 # ── Automation Status ─────────────────────────────────────────────────
+
 
 async def get_automation_status(tenant_id: str) -> dict[str, Any]:
     """Get current automation status and recent activity."""
@@ -445,12 +456,16 @@ async def get_automation_status(tenant_id: str) -> dict[str, Any]:
             "created_at": last_snapshot.get("created_at") if last_snapshot else None,
             "readiness_score": last_snapshot.get("readiness", {}).get("overall_score") if last_snapshot else None,
             "chain_success": last_snapshot.get("dry_run_chain", {}).get("success") if last_snapshot and last_snapshot.get("dry_run_chain") else None,
-        } if last_snapshot else None,
+        }
+        if last_snapshot
+        else None,
         "last_daily_summary": {
             "date": last_summary.get("summary_date") if last_summary else None,
             "readiness_score": last_summary.get("readiness", {}).get("current_score") if last_summary else None,
             "score_change": last_summary.get("readiness", {}).get("change") if last_summary else None,
-        } if last_summary else None,
+        }
+        if last_summary
+        else None,
         "snapshots_24h": snapshot_count_24h,
         "active_alerts": active_alerts,
         "alerts_24h": alerts_24h,
@@ -459,6 +474,7 @@ async def get_automation_status(tenant_id: str) -> dict[str, Any]:
 
 
 # ── Trend Data for Dashboard ──────────────────────────────────────────
+
 
 async def get_trend_data(tenant_id: str, hours: int = 168) -> dict[str, Any]:
     """
@@ -470,10 +486,15 @@ async def get_trend_data(tenant_id: str, hours: int = 168) -> dict[str, Any]:
     """
     since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
 
-    snapshots = await db[COLL_AUTO_SNAPSHOTS].find(
-        {"tenant_id": tenant_id, "created_at": {"$gte": since}},
-        _NO_ID,
-    ).sort("created_at", 1).to_list(200)
+    snapshots = (
+        await db[COLL_AUTO_SNAPSHOTS]
+        .find(
+            {"tenant_id": tenant_id, "created_at": {"$gte": since}},
+            _NO_ID,
+        )
+        .sort("created_at", 1)
+        .to_list(200)
+    )
 
     readiness_trend = []
     drift_trend = []
@@ -484,23 +505,31 @@ async def get_trend_data(tenant_id: str, hours: int = 168) -> dict[str, Any]:
         time_label = s.get("timestamp_label", "")
         obs_metrics = s.get("observation", {}).get("metrics", {})
 
-        readiness_trend.append({
-            "time": time_label,
-            "score": s.get("readiness", {}).get("overall_score", 0),
-        })
-        drift_trend.append({
-            "time": time_label,
-            "count": obs_metrics.get("drift_count_24h", 0),
-        })
-        latency_trend.append({
-            "time": time_label,
-            "avg_ms": obs_metrics.get("avg_latency_ms", 0),
-        })
-        failure_trend.append({
-            "time": time_label,
-            "error_rate": obs_metrics.get("error_rate_pct", 0),
-            "fail_count": obs_metrics.get("fail_count", 0),
-        })
+        readiness_trend.append(
+            {
+                "time": time_label,
+                "score": s.get("readiness", {}).get("overall_score", 0),
+            }
+        )
+        drift_trend.append(
+            {
+                "time": time_label,
+                "count": obs_metrics.get("drift_count_24h", 0),
+            }
+        )
+        latency_trend.append(
+            {
+                "time": time_label,
+                "avg_ms": obs_metrics.get("avg_latency_ms", 0),
+            }
+        )
+        failure_trend.append(
+            {
+                "time": time_label,
+                "error_rate": obs_metrics.get("error_rate_pct", 0),
+                "fail_count": obs_metrics.get("fail_count", 0),
+            }
+        )
 
     return {
         "tenant_id": tenant_id,
@@ -515,15 +544,22 @@ async def get_trend_data(tenant_id: str, hours: int = 168) -> dict[str, Any]:
 
 # ── Alert History ─────────────────────────────────────────────────────
 
+
 async def get_alert_history(tenant_id: str, limit: int = 50, severity: str | None = None) -> list[dict[str, Any]]:
     """Get automation alert history."""
     query: dict[str, Any] = {"tenant_id": tenant_id}
     if severity:
         query["severity"] = severity
 
-    return await db[COLL_AUTO_ALERTS].find(
-        query, _NO_ID,
-    ).sort("created_at", -1).to_list(limit)
+    return (
+        await db[COLL_AUTO_ALERTS]
+        .find(
+            query,
+            _NO_ID,
+        )
+        .sort("created_at", -1)
+        .to_list(limit)
+    )
 
 
 async def acknowledge_alert(tenant_id: str, rule_id: str, snapshot_time: str) -> dict[str, Any]:
@@ -537,9 +573,15 @@ async def acknowledge_alert(tenant_id: str, rule_id: str, snapshot_time: str) ->
 
 # ── Daily Summary History ─────────────────────────────────────────────
 
+
 async def get_daily_summaries(tenant_id: str, limit: int = 30) -> list[dict[str, Any]]:
     """Get daily summary history."""
-    return await db[COLL_DAILY_SUMMARIES].find(
-        {"tenant_id": tenant_id},
-        _NO_ID,
-    ).sort("created_at", -1).to_list(limit)
+    return (
+        await db[COLL_DAILY_SUMMARIES]
+        .find(
+            {"tenant_id": tenant_id},
+            _NO_ID,
+        )
+        .sort("created_at", -1)
+        .to_list(limit)
+    )

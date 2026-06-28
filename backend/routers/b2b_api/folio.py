@@ -3,6 +3,7 @@ folio
 
 Auto-split sub-router (shared imports/classes inlined).
 """
+
 """
 Syroce Open API — Kapsamli Otel PMS Entegrasyon API'si
 ======================================================
@@ -101,8 +102,8 @@ from models.schemas import User
 logger = logging.getLogger(__name__)
 
 
-
 # ── Helpers ──────────────────────────────────────────────────────
+
 
 def _now_iso():
     return datetime.now(UTC).isoformat()
@@ -152,13 +153,16 @@ async def _agency_owns_block(tenant_id: str, agency_id: str, block_id: str) -> d
 
 # ── API Key Auth Dependency ──────────────────────────────────────
 
+
 async def get_b2b_agency(x_api_key: str | None = Header(None, alias="X-API-Key")):
     """API key ile acente kimlik dogrulamasi + per-subrouter scope kontrolu."""
     from ._scope import authenticate_b2b_agency
+
     return await authenticate_b2b_agency(x_api_key, required_scope="folio")
 
 
 # ── Request Models ───────────────────────────────────────────────
+
 
 class B2BReservationCreate(BaseModel):
     room_type: str
@@ -204,29 +208,9 @@ async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
 # ═════════════════════════════════════════════════════════════════
 
 
-
-
-
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # B2B ENDPOINTS — Syroce Acente Sistemi (API Key Auth)
 # ═════════════════════════════════════════════════════════════════
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -236,22 +220,9 @@ async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
 VALID_WEBHOOK_EVENTS = {"reservation.created", "reservation.cancelled", "reservation.updated", "rates.updated", "availability.updated"}
 
 
-
-
-
-
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # GUEST & LOYALTY — Misafir ve Sadakat Programi
 # ═════════════════════════════════════════════════════════════════
-
-
-
-
-
 
 
 class LoyaltyPointsUpdate(BaseModel):
@@ -260,14 +231,9 @@ class LoyaltyPointsUpdate(BaseModel):
     operation: str = "add"
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # HOUSEKEEPING — Kat Hizmetleri
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class HousekeepingStatusUpdate(BaseModel):
@@ -275,12 +241,9 @@ class HousekeepingStatusUpdate(BaseModel):
     notes: str = ""
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # KBS / POLICE NOTIFICATION — Emniyet Bildirim Sistemi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class KBSReportCreate(BaseModel):
@@ -289,13 +252,10 @@ class KBSReportCreate(BaseModel):
     notes: str = ""
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # PASSPORT / ID — Kimlik ve Pasaport Okuma
 # ═════════════════════════════════════════════════════════════════
+
 
 class IdentityScanData(BaseModel):
     guest_id: str
@@ -314,14 +274,9 @@ class IdentityScanData(BaseModel):
     raw_ocr_data: dict | None = None
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # LOST & FOUND — Kayip Esya
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class LostFoundCreate(BaseModel):
@@ -334,8 +289,6 @@ class LostFoundCreate(BaseModel):
     room_number: str = ""
 
 
-
-
 class LostFoundUpdate(BaseModel):
     status: str | None = None
     guest_name: str | None = None
@@ -343,12 +296,9 @@ class LostFoundUpdate(BaseModel):
     claimed_by: str | None = None
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # WAKE-UP CALLS — Uyandirma Servisi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class WakeUpCallCreate(BaseModel):
@@ -361,21 +311,16 @@ class WakeUpCallCreate(BaseModel):
     recurring_until: str = ""  # YYYY-MM-DD
 
 
-
-
 class WakeUpCallUpdate(BaseModel):
     wake_time: str | None = None
     status: str | None = None
     notes: str | None = None
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # GUEST JOURNEY — Misafir Yolculugu
 # ═════════════════════════════════════════════════════════════════
+
 
 class B2BOnlineCheckin(BaseModel):
     booking_id: str
@@ -387,10 +332,6 @@ class B2BOnlineCheckin(BaseModel):
     nationality: str | None = None
 
 
-
-
-
-
 class B2BGuestRequest(BaseModel):
     booking_id: str
     request_type: str  # concierge, spa, room_service, maintenance, transport, other
@@ -398,14 +339,9 @@ class B2BGuestRequest(BaseModel):
     priority: str = "normal"
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # CONCIERGE & SPA — Concierge ve Spa Hizmetleri
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class ConciergeRequest(BaseModel):
@@ -417,10 +353,6 @@ class ConciergeRequest(BaseModel):
     guest_count: int = 1
 
 
-
-
-
-
 class SpaBookingCreate(BaseModel):
     booking_id: str
     service_id: str
@@ -430,12 +362,9 @@ class SpaBookingCreate(BaseModel):
     notes: str = ""
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # MICE & GROUPS — Grup ve Toplanti Yonetimi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class GroupBlockCreate(BaseModel):
@@ -452,10 +381,6 @@ class GroupBlockCreate(BaseModel):
     notes: str = ""
 
 
-
-
-
-
 class RoomingListEntry(BaseModel):
     guest_name: str
     room_type: str = ""
@@ -468,12 +393,9 @@ class RoomingListUpload(BaseModel):
     guests: list[RoomingListEntry]
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # FOLIO & BILLING — Folio ve Fatura
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class FolioChargeCreate(BaseModel):
@@ -481,6 +403,7 @@ class FolioChargeCreate(BaseModel):
     description: str = Field(..., min_length=1)
     amount: float = Field(..., gt=0, le=1000000)
     quantity: int = Field(1, ge=1, le=9999)
+
 
 router = APIRouter(prefix="/api/b2b", tags=["B2B API - Syroce"])
 
@@ -496,22 +419,28 @@ async def b2b_get_folio(booking_id: str, agency: dict = Depends(get_b2b_agency))
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
     booking = await db.bookings.find_one(
         {"tenant_id": tenant_id, "id": booking_id},
-        {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "room_type": 1,
-         "check_in": 1, "check_out": 1, "total_amount": 1, "balance": 1,
-         "payment_status": 1, "status": 1},
+        {"_id": 0, "id": 1, "guest_name": 1, "room_number": 1, "room_type": 1, "check_in": 1, "check_out": 1, "total_amount": 1, "balance": 1, "payment_status": 1, "status": 1},
     )
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
-    charges = await db.folio_charges.find(
-        {"tenant_id": tenant_id, "booking_id": booking_id},
-        {"_id": 0, "tenant_id": 0},
-    ).sort("created_at", 1).to_list(500)
+    charges = (
+        await db.folio_charges.find(
+            {"tenant_id": tenant_id, "booking_id": booking_id},
+            {"_id": 0, "tenant_id": 0},
+        )
+        .sort("created_at", 1)
+        .to_list(500)
+    )
 
-    payments = await db.folio_payments.find(
-        {"tenant_id": tenant_id, "booking_id": booking_id},
-        {"_id": 0, "tenant_id": 0},
-    ).sort("created_at", 1).to_list(100)
+    payments = (
+        await db.folio_payments.find(
+            {"tenant_id": tenant_id, "booking_id": booking_id},
+            {"_id": 0, "tenant_id": 0},
+        )
+        .sort("created_at", 1)
+        .to_list(100)
+    )
 
     total_charges = sum(c.get("amount", 0) for c in charges)
     total_payments = sum(p.get("amount", 0) for p in payments)
@@ -524,6 +453,8 @@ async def b2b_get_folio(booking_id: str, agency: dict = Depends(get_b2b_agency))
         "total_payments": round(total_payments, 2),
         "balance": round(total_charges - total_payments, 2),
     }
+
+
 # ── POST /folio/{booking_id}/charge ──
 @router.post("/folio/{booking_id}/charge")
 async def b2b_add_folio_charge(
@@ -568,6 +499,8 @@ async def b2b_add_folio_charge(
     )
 
     return {"ok": True, "charge": charge}
+
+
 # ── GET /folio/{booking_id}/invoice ──
 @router.get("/folio/{booking_id}/invoice")
 async def b2b_get_invoice(booking_id: str, agency: dict = Depends(get_b2b_agency)):
@@ -584,20 +517,27 @@ async def b2b_get_invoice(booking_id: str, agency: dict = Depends(get_b2b_agency
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
-    charges = await db.folio_charges.find(
-        {"tenant_id": tenant_id, "booking_id": booking_id},
-        {"_id": 0, "tenant_id": 0},
-    ).sort("created_at", 1).to_list(500)
+    charges = (
+        await db.folio_charges.find(
+            {"tenant_id": tenant_id, "booking_id": booking_id},
+            {"_id": 0, "tenant_id": 0},
+        )
+        .sort("created_at", 1)
+        .to_list(500)
+    )
 
-    payments = await db.folio_payments.find(
-        {"tenant_id": tenant_id, "booking_id": booking_id},
-        {"_id": 0, "tenant_id": 0},
-    ).sort("created_at", 1).to_list(100)
+    payments = (
+        await db.folio_payments.find(
+            {"tenant_id": tenant_id, "booking_id": booking_id},
+            {"_id": 0, "tenant_id": 0},
+        )
+        .sort("created_at", 1)
+        .to_list(100)
+    )
 
     hotel_info = await db.hotel_settings.find_one(
         {"tenant_id": tenant_id},
-        {"_id": 0, "hotel_name": 1, "address": 1, "phone": 1, "email": 1,
-         "tax_number": 1, "tax_office": 1},
+        {"_id": 0, "hotel_name": 1, "address": 1, "phone": 1, "email": 1, "tax_number": 1, "tax_office": 1},
     )
 
     total_charges = sum(c.get("amount", 0) for c in charges)

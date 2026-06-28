@@ -7,6 +7,7 @@ Endpoints for managing operational incidents:
 - Update incident status (retry, review, resolve, suppress)
 - Audit trail per incident
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -37,12 +38,14 @@ COLL_INCIDENT_AUDIT = "incident_audit_trail"
 
 # ── Request Models ────────────────────────────────────────────
 
+
 class IncidentActionRequest(BaseModel):
     action: str  # retry | review | resolve | suppress
     note: str | None = None
 
 
 # ── 1. LIST INCIDENTS ─────────────────────────────────────────
+
 
 @router.get("/list")
 async def list_incidents(
@@ -67,9 +70,17 @@ async def list_incidents(
     if issue_type:
         query["$or"] = [{"drift_type": issue_type}, {"case_type": issue_type}]
 
-    incidents = await db[COLL_RECONCILIATION_CASES].find(
-        query, _NO_ID,
-    ).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    incidents = (
+        await db[COLL_RECONCILIATION_CASES]
+        .find(
+            query,
+            _NO_ID,
+        )
+        .sort("created_at", -1)
+        .skip(skip)
+        .limit(limit)
+        .to_list(limit)
+    )
 
     total = await db[COLL_RECONCILIATION_CASES].count_documents(query)
 
@@ -78,14 +89,16 @@ async def list_incidents(
     for inc in incidents:
         drift_type = inc.get("drift_type") or inc.get("case_type", "")
         rule = get_resolution_for_drift(drift_type)
-        enriched.append({
-            **inc,
-            "issue_type": drift_type,
-            "recommended_action": rule.resolution.value if rule else "manual_review",
-            "can_auto_heal": can_auto_heal(drift_type),
-            "gold_source": rule.gold_source.value if rule else "",
-            "auto_heal_description": rule.auto_heal_action if rule else "",
-        })
+        enriched.append(
+            {
+                **inc,
+                "issue_type": drift_type,
+                "recommended_action": rule.resolution.value if rule else "manual_review",
+                "can_auto_heal": can_auto_heal(drift_type),
+                "gold_source": rule.gold_source.value if rule else "",
+                "auto_heal_description": rule.auto_heal_action if rule else "",
+            }
+        )
 
     return {
         "incidents": enriched,
@@ -96,6 +109,7 @@ async def list_incidents(
 
 
 # ── 2. INCIDENT DETAIL ───────────────────────────────────────
+
 
 @router.get("/detail/{incident_id}")
 async def get_incident_detail(
@@ -113,10 +127,15 @@ async def get_incident_detail(
         raise HTTPException(status_code=404, detail="Incident not found")
 
     # Get audit trail
-    audit = await db[COLL_INCIDENT_AUDIT].find(
-        {"incident_id": incident_id},
-        _NO_ID,
-    ).sort("timestamp", -1).to_list(50)
+    audit = (
+        await db[COLL_INCIDENT_AUDIT]
+        .find(
+            {"incident_id": incident_id},
+            _NO_ID,
+        )
+        .sort("timestamp", -1)
+        .to_list(50)
+    )
 
     # Get related reservation lineage
     ext_res_id = incident.get("external_reservation_id")
@@ -133,15 +152,21 @@ async def get_incident_detail(
         room = incident.get("room_type_code")
         prov = incident.get("provider")
         if room and prov:
-            related_ari = await db[COLL_ARI_CHANGE_SETS].find(
-                {
-                    "tenant_id": tenant_id,
-                    "provider": prov,
-                    "room_type_code": room,
-                    "status": {"$in": ["failed_retryable", "manual_review"]},
-                },
-                _NO_ID,
-            ).sort("updated_at", -1).limit(10).to_list(10)
+            related_ari = (
+                await db[COLL_ARI_CHANGE_SETS]
+                .find(
+                    {
+                        "tenant_id": tenant_id,
+                        "provider": prov,
+                        "room_type_code": room,
+                        "status": {"$in": ["failed_retryable", "manual_review"]},
+                    },
+                    _NO_ID,
+                )
+                .sort("updated_at", -1)
+                .limit(10)
+                .to_list(10)
+            )
 
     drift_type = incident.get("drift_type", "")
     rule = get_resolution_for_drift(drift_type)
@@ -161,6 +186,7 @@ async def get_incident_detail(
 
 
 # ── 3. UPDATE INCIDENT STATUS ────────────────────────────────
+
 
 @router.post("/action/{incident_id}")
 async def incident_action(
@@ -215,16 +241,18 @@ async def incident_action(
     )
 
     # Create audit trail entry
-    await db[COLL_INCIDENT_AUDIT].insert_one({
-        "incident_id": incident_id,
-        "tenant_id": tenant_id,
-        "action": action,
-        "actor": actor,
-        "note": request.note or "",
-        "previous_status": incident.get("status"),
-        "new_status": new_status,
-        "timestamp": now,
-    })
+    await db[COLL_INCIDENT_AUDIT].insert_one(
+        {
+            "incident_id": incident_id,
+            "tenant_id": tenant_id,
+            "action": action,
+            "actor": actor,
+            "note": request.note or "",
+            "previous_status": incident.get("status"),
+            "new_status": new_status,
+            "timestamp": now,
+        }
+    )
 
     return {
         "success": True,
@@ -236,6 +264,7 @@ async def incident_action(
 
 # ── 4. INCIDENT SUMMARY STATS ────────────────────────────────
 
+
 @router.get("/summary")
 async def incident_summary(
     current_user: User = Depends(get_current_user),
@@ -245,10 +274,12 @@ async def incident_summary(
 
     pipeline = [
         {"$match": {"tenant_id": tenant_id}},
-        {"$group": {
-            "_id": {"status": "$status", "severity": {"$ifNull": ["$severity", "medium"]}},
-            "count": {"$sum": 1},
-        }},
+        {
+            "$group": {
+                "_id": {"status": "$status", "severity": {"$ifNull": ["$severity", "medium"]}},
+                "count": {"$sum": 1},
+            }
+        },
     ]
 
     by_status = {}
@@ -266,10 +297,12 @@ async def incident_summary(
     # Type breakdown
     type_pipeline = [
         {"$match": {"tenant_id": tenant_id, "status": {"$in": ["open", "investigating"]}}},
-        {"$group": {
-            "_id": {"$ifNull": ["$drift_type", {"$ifNull": ["$case_type", "unknown"]}]},
-            "count": {"$sum": 1},
-        }},
+        {
+            "$group": {
+                "_id": {"$ifNull": ["$drift_type", {"$ifNull": ["$case_type", "unknown"]}]},
+                "count": {"$sum": 1},
+            }
+        },
     ]
     by_type = {}
     async for doc in db[COLL_RECONCILIATION_CASES].aggregate(type_pipeline):

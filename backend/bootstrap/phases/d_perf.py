@@ -1,4 +1,5 @@
 """Phase D — Agency/Redis/Cache/Optim/CM/Tenant/DB-Optimizer/KBS-migration/Metering/Flag/Deploy."""
+
 import asyncio
 import logging
 import os
@@ -81,6 +82,7 @@ async def phase_d_perf_and_marketplace(app):
     try:
         logger.info("🚀 Initializing Redis ultra-fast cache...")
         from redis_cache import init_redis_cache
+
         init_redis_cache()
         logger.info("✅ Redis cache initialized!")
     except Exception as e:
@@ -90,6 +92,7 @@ async def phase_d_perf_and_marketplace(app):
     try:
         logger.info("🔥 Initializing ultra-fast cache warmer...")
         from cache_warmer import initialize_cache_warmer
+
         await initialize_cache_warmer(_raw_db)
         logger.info("✅ Cache warmer initialized - responses will be instant!")
     except Exception as e:
@@ -110,6 +113,7 @@ async def phase_d_perf_and_marketplace(app):
     # Channel Manager 9-collection indexes
     try:
         from domains.channel_manager.unified_repository import ensure_indexes
+
         await ensure_indexes()
         logger.info("✅ Channel Manager 9-collection indexes created")
     except Exception as e:
@@ -118,15 +122,14 @@ async def phase_d_perf_and_marketplace(app):
     # QR Rozet (Tur 15) index'leri
     try:
         from domains.guest.qr_badge.indexes import ensure_qr_badge_indexes
+
         await ensure_qr_badge_indexes()
     except Exception as e:
         logger.warning(f"QR badge index init error: {e}")
 
     # Tenant uniqueness indexes
     try:
-        await db.tenants.create_index(
-            "hotel_id", unique=True, sparse=True, name="hotel_id_unique"
-        )
+        await db.tenants.create_index("hotel_id", unique=True, sparse=True, name="hotel_id_unique")
         await db.users.create_index(
             [("tenant_id", 1), ("username", 1)],
             unique=True,
@@ -205,10 +208,7 @@ async def phase_d_perf_and_marketplace(app):
                 partialFilterExpression={"status": "draft"},
             )
         except Exception as e:
-            print(
-                "[phase-D] WARN: payroll_runs unique-partial draft index "
-                f"creation failed → idempotency/concurrency invariant NOT enforced: {e}"
-            )
+            print(f"[phase-D] WARN: payroll_runs unique-partial draft index creation failed → idempotency/concurrency invariant NOT enforced: {e}")
         # Task #264: payroll_revisions audit zinciri (parent_run_id desc).
         await db.payroll_revisions.create_index(
             [("tenant_id", 1), ("parent_run_id", 1), ("created_at", -1)],
@@ -287,6 +287,7 @@ async def phase_d_perf_and_marketplace(app):
     try:
         logger.info("🚀 Running comprehensive database optimization...")
         from infra.database_optimizer import DatabaseOptimizer
+
         db_optimizer = DatabaseOptimizer(_raw_db)
         opt_result = await db_optimizer.create_all_indexes()
         total_idx = sum(r.get("created", 0) for r in opt_result.values() if isinstance(r, dict) and "created" in r)
@@ -307,6 +308,7 @@ async def phase_d_perf_and_marketplace(app):
             PERF_INDEXES_DONE = True
 
     asyncio.create_task(_create_perf_indexes_bg())
+
 
 async def _create_perf_indexes_inner():
     global BOOT_READY  # must precede the two assignments below
@@ -340,28 +342,29 @@ async def _create_perf_indexes_inner():
         # tek satır kazanır. Bkz. routers/finance/konaklama_vergisi_core.py
         try:
             from routers.finance.konaklama_vergisi_core import ensure_posting_index
+
             await ensure_posting_index()
         except Exception as _kvb_idx_exc:  # pragma: no cover
             import logging as _lg
+
             _lg.getLogger(__name__).warning(
-                "KVB posting index ensure skipped: %s", _kvb_idx_exc,
+                "KVB posting index ensure skipped: %s",
+                _kvb_idx_exc,
             )
         # KBS v2 atomik tekillik
         try:
             r1 = await _raw_db.kbs_reports.update_many(
-                {"_kind": "queue_job",
-                 "_open_lock": {"$exists": True},
-                 "status": {"$in": ["done", "dead"]}},
+                {"_kind": "queue_job", "_open_lock": {"$exists": True}, "status": {"$in": ["done", "dead"]}},
                 {"$unset": {"_open_lock": ""}},
             )
-            agg = _raw_db.kbs_reports.aggregate([
-                {"$match": {"_kind": "queue_job",
-                            "_open_lock": {"$exists": True},
-                            "status": {"$in": ["pending", "in_progress"]}}},
-                {"$sort": {"created_at": -1}},
-                {"$group": {"_id": "$_open_lock", "ids": {"$push": "$id"}, "cnt": {"$sum": 1}}},
-                {"$match": {"cnt": {"$gt": 1}}},
-            ])
+            agg = _raw_db.kbs_reports.aggregate(
+                [
+                    {"$match": {"_kind": "queue_job", "_open_lock": {"$exists": True}, "status": {"$in": ["pending", "in_progress"]}}},
+                    {"$sort": {"created_at": -1}},
+                    {"$group": {"_id": "$_open_lock", "ids": {"$push": "$id"}, "cnt": {"$sum": 1}}},
+                    {"$match": {"cnt": {"$gt": 1}}},
+                ]
+            )
             cleaned = 0
             async for grp in agg:
                 drop_ids = grp["ids"][1:]
@@ -372,10 +375,7 @@ async def _create_perf_indexes_inner():
                     )
                     cleaned += r.modified_count
             if r1.modified_count or cleaned:
-                logger.info(
-                    f"KBS migration: closed-state lock cleared from {r1.modified_count}, "
-                    f"open-state duplicate lock cleared from {cleaned}"
-                )
+                logger.info(f"KBS migration: closed-state lock cleared from {r1.modified_count}, open-state duplicate lock cleared from {cleaned}")
             await _raw_db.kbs_reports.create_index(
                 [("_open_lock", 1)],
                 unique=True,
@@ -393,6 +393,7 @@ async def _create_perf_indexes_inner():
         logger.info("✅ Performance indexes created successfully!")
     except Exception as e:
         from pymongo.errors import OperationFailure
+
         if isinstance(e, OperationFailure) and getattr(e, "code", None) == 85:
             logger.debug(f"Performance index already exists with different name (cosmetic): {e}")
         else:
@@ -408,6 +409,7 @@ async def _create_perf_indexes_inner():
     # flip; only the purely cosmetic redundant-index cleanup runs after.
     try:
         from core.metering import ensure_metering_indexes
+
         await ensure_metering_indexes()
         logger.info("✅ Usage metering indexes ensured")
     except Exception as e:
@@ -415,6 +417,7 @@ async def _create_perf_indexes_inner():
 
     try:
         from core.feature_flags import ensure_feature_flag_indexes
+
         await ensure_feature_flag_indexes()
         logger.info("✅ Feature flag indexes ensured")
     except Exception as e:
@@ -500,10 +503,10 @@ async def _create_perf_indexes_inner():
             # (tenant_id, booking_id, status) → tam prefix, redundant. Create tarafı da
             # atomic_checkin_checkout.py'den kaldırıldı; bu drop kalıcı yapar.
             ("folios", "idx_folio_tenant_booking"),
-            ("folios", "idx_f_tid_status"),   # ⊂ idx_folio_status_balance
+            ("folios", "idx_f_tid_status"),  # ⊂ idx_folio_status_balance
             # housekeeping_tasks: tenant-prefixsiz duplikatlar + exact-dup'lar
             ("housekeeping_tasks", "idx_hk_tid_status"),  # ⊂ idx_hk_status_room
-            ("housekeeping_tasks", "idx_hk_tid_done"),    # = idx_hk_completed
+            ("housekeeping_tasks", "idx_hk_tid_done"),  # = idx_hk_completed
             ("housekeeping_tasks", "room_id_1"),
             ("housekeeping_tasks", "assigned_to_1"),
             ("housekeeping_tasks", "status_1"),
@@ -556,15 +559,15 @@ async def _backfill_shift_schedule_locks() -> None:
     """
     try:
         cursor = _raw_db.shift_schedules.find(
-            {'status': {'$nin': ['cancelled', 'completed', 'deleted']}},
+            {"status": {"$nin": ["cancelled", "completed", "deleted"]}},
             {
-                '_id': 0,
-                'id': 1,
-                'tenant_id': 1,
-                'staff_id': 1,
-                'shift_date': 1,
-                'start_time': 1,
-                'end_time': 1,
+                "_id": 0,
+                "id": 1,
+                "tenant_id": 1,
+                "staff_id": 1,
+                "shift_date": 1,
+                "start_time": 1,
+                "end_time": 1,
             },
         )
         scanned = 0
@@ -572,38 +575,37 @@ async def _backfill_shift_schedule_locks() -> None:
         async for row in cursor:
             scanned += 1
             if scanned > 200_000:
-                logger.warning(
-                    "Shift lock backfill: 200k row cap hit, aborting "
-                    "(re-run boot or use offline migration for remainder)"
-                )
+                logger.warning("Shift lock backfill: 200k row cap hit, aborting (re-run boot or use offline migration for remainder)")
                 break
-            sid = row.get('id')
-            tid = row.get('tenant_id')
-            stf = row.get('staff_id')
-            day = row.get('shift_date')
-            st = row.get('start_time')
-            en = row.get('end_time')
+            sid = row.get("id")
+            tid = row.get("tenant_id")
+            stf = row.get("staff_id")
+            day = row.get("shift_date")
+            st = row.get("start_time")
+            en = row.get("end_time")
             if not (sid and tid and stf and day and st and en):
                 continue
             try:
                 await _raw_db.shift_schedule_locks.update_one(
                     {
-                        'tenant_id': tid,
-                        'staff_id': stf,
-                        'shift_date': day,
+                        "tenant_id": tid,
+                        "staff_id": stf,
+                        "shift_date": day,
                     },
                     {
-                        '$setOnInsert': {
-                            'tenant_id': tid,
-                            'staff_id': stf,
-                            'shift_date': day,
-                            'created_at': datetime.now(UTC).isoformat(),
+                        "$setOnInsert": {
+                            "tenant_id": tid,
+                            "staff_id": stf,
+                            "shift_date": day,
+                            "created_at": datetime.now(UTC).isoformat(),
                         },
-                        '$addToSet': {'intervals': {
-                            'shift_id': sid,
-                            'start_time': st,
-                            'end_time': en,
-                        }},
+                        "$addToSet": {
+                            "intervals": {
+                                "shift_id": sid,
+                                "start_time": st,
+                                "end_time": en,
+                            }
+                        },
                     },
                     upsert=True,
                 )
@@ -612,11 +614,13 @@ async def _backfill_shift_schedule_locks() -> None:
                 # Tek bir satır hatası backfill'i durdurmasın.
                 logger.warning(
                     "Shift lock backfill row error (shift_id=%s): %s",
-                    sid, row_exc,
+                    sid,
+                    row_exc,
                 )
         logger.info(
             "✅ Shift lock backfill complete: scanned=%d upserted=%d",
-            scanned, upserted,
+            scanned,
+            upserted,
         )
     except Exception as e:
         logger.warning(f"Shift lock backfill error: {e}")

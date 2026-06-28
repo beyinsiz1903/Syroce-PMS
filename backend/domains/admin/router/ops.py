@@ -3,6 +3,7 @@ ops
 
 Auto-split sub-router (shared imports/classes inlined).
 """
+
 """
 Admin / Operations Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
@@ -26,9 +27,11 @@ try:
     from cache_manager import cached as _cm_cached
 except ImportError:
     _cache_mgr = None  # type: ignore
+
     def _cm_cached(ttl=300, key_prefix=""):
         def decorator(func):
             return func
+
         return decorator
 
 
@@ -41,6 +44,7 @@ def _invalidate_admin_tenants_cache(tenant_id: str | None) -> None:
         _cache_mgr.invalidate_tenant_cache(tenant_id, "admin_tenants_list")
     except Exception:
         pass
+
 
 require_super_admin = require_super_admin_guard()
 from models.enums import ROLE_PERMISSIONS, Permission, UserRole
@@ -56,15 +60,18 @@ def _has_permission(role: UserRole | str, perm: Permission) -> bool:
     perm_value = perm.value if isinstance(perm, Permission) else perm
     return any((p.value if isinstance(p, Permission) else p) == perm_value for p in perms)
 
+
 logger = logging.getLogger(__name__)
 
 
 def _svc_enc():
     try:
         from security.field_encryption import get_field_encryption_service
+
         return get_field_encryption_service()
     except Exception:
         return None
+
 
 ROLES_BY_TIER = {
     "mini": ["admin", "front_desk", "housekeeping"],
@@ -84,36 +91,7 @@ from core.audit import log_audit_event  # Task #28
 # ============= CHANNEL MANAGER & RMS =============
 
 
-
-
-
-
-
-
-
 # ============= MOBILE APP ENDPOINTS (STAFF & GUEST) =============
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ── Task #28: Kullanıcı bazlı operasyon izinleri ──────────────────────
@@ -130,7 +108,8 @@ GRANTABLE_PERMISSIONS: set[str] = {"send_urgent_message"}
 
 
 def _require_admin_for_target_user(
-    current_user: User, target_tenant_id: str | None,
+    current_user: User,
+    target_tenant_id: str | None,
 ):
     """ADMIN ve SUPER_ADMIN'e izin ver; ADMIN'in başka tenant'a yazmasını
     engelle. Diğer roller 403 alır."""
@@ -150,115 +129,22 @@ def _require_admin_for_target_user(
         )
 
 
-
-
-
-
-
-
 # ── Task #32: Web push gönderim metrikleri ────────────────────────────
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ============= ADMIN TENANT INFO & TEAM MANAGEMENT =============
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ============= BILLING HISTORY & PLAN MANAGEMENT =============
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ============= HOTEL TEAM MANAGEMENT ENDPOINTS =============
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ============= DEMO ENVIRONMENT ENDPOINTS =============
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # 6. GET /api/sales/follow-ups - Follow-up reminders
-
-
-
-
-
-
 
 
 # ============================================================================
@@ -277,14 +163,15 @@ def _require_admin_for_target_user(
 # ============================================================================
 
 
-
 # api_metrics is now provided by apm_store from apm_middleware.py
 # Backward compat: alias api_metrics to apm_store.requests
 try:
     from apm_middleware import apm_store as _apm_store_ref
+
     api_metrics = _apm_store_ref.requests
 except ImportError:
     from collections import deque
+
     api_metrics = deque(maxlen=1000)
 
 # Legacy APIMetricsMiddleware replaced by APMMiddleware in apm_middleware.py
@@ -292,41 +179,25 @@ except ImportError:
 # 1. SYSTEM PERFORMANCE MONITORING
 
 
-
-
 # 1b. APM DETAILED ENDPOINT STATS
-
-
 
 
 # 1c. RATE LIMIT STATUS
 
 
-
-
 # 1d. DATABASE OPTIMIZATION STATUS
-
-
 
 
 # 1e. RECENT ERRORS
 
 
-
-
 # 2. LOG VIEWER
-
-
 
 
 # 3. NETWORK PING TEST
 
 
-
-
 # 4. ENDPOINT HEALTH CHECK
-
-
 
 
 # ============================================================================
@@ -342,17 +213,6 @@ except ImportError:
 # ============= 3. QUEUE ROOMS MODULE (EARLY ARRIVAL MANAGEMENT) =============
 
 # ============= AUDIT TRAIL LOGGING (AUTO-TRACKING) =============
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -388,25 +248,25 @@ async def sync_room_status(
     # Aktif overlap booking'leri (date-only karşılaştırma — dashboard ile aynı)
     bookings = await db.bookings.find(
         {
-            'tenant_id': tenant_id,
-            'status': {'$in': ['checked_in', 'confirmed', 'guaranteed']},
+            "tenant_id": tenant_id,
+            "status": {"$in": ["checked_in", "confirmed", "guaranteed"]},
         },
-        {'_id': 0, 'room_id': 1, 'check_in': 1, 'check_out': 1, 'status': 1},
+        {"_id": 0, "room_id": 1, "check_in": 1, "check_out": 1, "status": 1},
     ).to_list(10000)
 
     occupied_room_ids: set[str] = set()
     for b in bookings:
-        rid = b.get('room_id')
+        rid = b.get("room_id")
         if not rid:
             continue
-        ci = str(b.get('check_in', ''))[:10]
-        co = str(b.get('check_out', ''))[:10]
+        ci = str(b.get("check_in", ""))[:10]
+        co = str(b.get("check_out", ""))[:10]
         if ci <= today and co > today:
             occupied_room_ids.add(rid)
 
     rooms = await db.rooms.find(
-        {'tenant_id': tenant_id},
-        {'_id': 0, 'id': 1, 'room_number': 1, 'status': 1},
+        {"tenant_id": tenant_id},
+        {"_id": 0, "id": 1, "room_number": 1, "status": 1},
     ).to_list(5000)
 
     # Hedef statüler:
@@ -420,38 +280,41 @@ async def sync_room_status(
     to_clear_occupied: list[dict[str, Any]] = []
 
     for r in rooms:
-        rid = r.get('id')
-        cur_status = r.get('status')
+        rid = r.get("id")
+        cur_status = r.get("status")
         if rid in occupied_room_ids:
-            if cur_status != 'occupied':
-                to_mark_occupied.append({
-                    'id': rid,
-                    'room_number': r.get('room_number'),
-                    'old_status': cur_status,
-                })
+            if cur_status != "occupied":
+                to_mark_occupied.append(
+                    {
+                        "id": rid,
+                        "room_number": r.get("room_number"),
+                        "old_status": cur_status,
+                    }
+                )
         else:
-            if cur_status == 'occupied':
-                to_clear_occupied.append({
-                    'id': rid,
-                    'room_number': r.get('room_number'),
-                    'old_status': cur_status,
-                })
+            if cur_status == "occupied":
+                to_clear_occupied.append(
+                    {
+                        "id": rid,
+                        "room_number": r.get("room_number"),
+                        "old_status": cur_status,
+                    }
+                )
 
     applied_occupied = 0
     applied_cleared = 0
     if not dry_run:
         for r in to_mark_occupied:
             res = await db.rooms.update_one(
-                {'id': r['id'], 'tenant_id': tenant_id},
-                {'$set': {'status': 'occupied', 'updated_at': datetime.now(UTC).isoformat()}},
+                {"id": r["id"], "tenant_id": tenant_id},
+                {"$set": {"status": "occupied", "updated_at": datetime.now(UTC).isoformat()}},
             )
             if res.modified_count:
                 applied_occupied += 1
         for r in to_clear_occupied:
             res = await db.rooms.update_one(
-                {'id': r['id'], 'tenant_id': tenant_id},
-                {'$set': {'status': 'dirty', 'current_booking_id': None,
-                          'updated_at': datetime.now(UTC).isoformat()}},
+                {"id": r["id"], "tenant_id": tenant_id},
+                {"$set": {"status": "dirty", "current_booking_id": None, "updated_at": datetime.now(UTC).isoformat()}},
             )
             if res.modified_count:
                 applied_cleared += 1
@@ -459,34 +322,37 @@ async def sync_room_status(
         await log_audit_event(
             tenant_id=tenant_id,
             user_id=current_user.id,
-            action='sync_room_status',
-            entity_type='maintenance',
-            entity_id='rooms',
+            action="sync_room_status",
+            entity_type="maintenance",
+            entity_id="rooms",
             details=f"Oda statüsü senkronu: +{applied_occupied} occupied, -{applied_cleared} cleared",
             db=db,
         )
 
     return {
-        'tenant_id': tenant_id,
-        'dry_run': dry_run,
-        'total_rooms': len(rooms),
-        'active_bookings_today': len(occupied_room_ids),
-        'drift_detected': {
-            'should_be_occupied': len(to_mark_occupied),
-            'should_be_freed': len(to_clear_occupied),
+        "tenant_id": tenant_id,
+        "dry_run": dry_run,
+        "total_rooms": len(rooms),
+        "active_bookings_today": len(occupied_room_ids),
+        "drift_detected": {
+            "should_be_occupied": len(to_mark_occupied),
+            "should_be_freed": len(to_clear_occupied),
         },
-        'preview': {
-            'mark_occupied': to_mark_occupied[:20],
-            'clear_occupied': to_clear_occupied[:20],
+        "preview": {
+            "mark_occupied": to_mark_occupied[:20],
+            "clear_occupied": to_clear_occupied[:20],
         },
-        'applied': {
-            'marked_occupied': applied_occupied,
-            'cleared_occupied': applied_cleared,
-        } if not dry_run else None,
-        'message': (
-            'Drift tespit edildi, dry_run=true. Uygulamak için ?dry_run=false gönderin.'
+        "applied": {
+            "marked_occupied": applied_occupied,
+            "cleared_occupied": applied_cleared,
+        }
+        if not dry_run
+        else None,
+        "message": (
+            "Drift tespit edildi, dry_run=true. Uygulamak için ?dry_run=false gönderin."
             if dry_run and (to_mark_occupied or to_clear_occupied)
-            else 'Drift yok, oda statüsü hizalı.' if dry_run
-            else f'Senkron tamamlandı: {applied_occupied} occupied + {applied_cleared} freed.'
+            else "Drift yok, oda statüsü hizalı."
+            if dry_run
+            else f"Senkron tamamlandı: {applied_occupied} occupied + {applied_cleared} freed."
         ),
     }

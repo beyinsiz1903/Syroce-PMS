@@ -10,6 +10,7 @@ Supported legacy formats:
 Each legacy format uses its own key derivation and must be decrypted
 with the original key material before re-encryption with the new system.
 """
+
 import base64
 import hashlib
 import logging
@@ -28,6 +29,7 @@ ENVELOPE_PREFIX = "SYR1:"
 
 class CiphertextFormat(Enum):
     """All known ciphertext formats in the system."""
+
     ENVELOPE_V1 = "envelope_v1"
     AES_GCM_LEGACY = "aes_gcm_legacy"
     XOR_LEGACY = "xor_legacy"
@@ -108,14 +110,11 @@ class LegacyDecryptor:
         if not ciphertext.startswith(AES_LEGACY_PREFIX):
             raise DecryptionError("not_aes_gcm_legacy_prefix")
 
-        key_material = (
-            self._cm_credential_key
-            or "syroce-pms-default-key-change-in-production"
-        )
+        key_material = self._cm_credential_key or "syroce-pms-default-key-change-in-production"
         key = hashlib.sha256(key_material.encode()).digest()
 
         try:
-            raw = base64.b64decode(ciphertext[len(AES_LEGACY_PREFIX):])
+            raw = base64.b64decode(ciphertext[len(AES_LEGACY_PREFIX) :])
             nonce = raw[:12]
             ct = raw[12:]
             aesgcm = AESGCM(key)

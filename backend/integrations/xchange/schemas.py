@@ -6,6 +6,7 @@ types. Adapters translate to/from HTNG 2024B XML, OTA, JSON, etc.
 Naming follows OTA / HTNG verbs so existing integration teams can
 map them 1:1 to their certified message catalogs.
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -41,7 +42,7 @@ class MessageType(str, Enum):
 
 class Direction(str, Enum):
     OUTBOUND = "outbound"  # Syroce → partner
-    INBOUND = "inbound"    # partner → Syroce
+    INBOUND = "inbound"  # partner → Syroce
 
 
 class DeliveryStatus(str, Enum):
@@ -93,6 +94,7 @@ class ReservationPayload(BaseModel):
 
 class PostingPayload(BaseModel):
     """Folio posting — a charge or payment line."""
+
     posting_id: str
     reservation_id: str | None = None
     folio_id: str
@@ -143,6 +145,7 @@ class NightAuditPayload(BaseModel):
 # ── Envelope ─────────────────────────────────────────────────────
 class XchangeEnvelope(BaseModel):
     """Universal envelope for every message on the bus."""
+
     message_id: str  # idempotency key (uuid4)
     message_type: MessageType
     tenant_id: str

@@ -12,6 +12,7 @@ Manual review required (DO NOT auto-resolve):
   - date_conflict
   - status_conflict
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -64,10 +65,7 @@ def attempt_auto_resolve(case: dict[str, Any]) -> dict[str, Any] | None:
     action, note = resolution
     now = datetime.now(UTC).isoformat()
 
-    logger.info(
-        f"Auto-resolving case {case.get('id','?')}: "
-        f"type={case_type}, action={action}"
-    )
+    logger.info(f"Auto-resolving case {case.get('id', '?')}: type={case_type}, action={action}")
 
     return {
         "status": "resolved",

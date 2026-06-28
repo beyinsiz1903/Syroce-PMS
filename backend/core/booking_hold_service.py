@@ -19,6 +19,7 @@ Design:
 INV-1: Releasing expired holds ensures sellable inventory is never falsely negative.
 INV-6: Every hold creation and expiry is logged to event_timeline.
 """
+
 import asyncio
 import logging
 import os
@@ -42,12 +43,11 @@ def _get_hold_ttl_minutes() -> int:
     return int(os.environ.get("BOOKING_HOLD_TTL_MINUTES", DEFAULT_HOLD_TTL_MINUTES))
 
 
-async def _timeline_event(tenant_id: str, stage: str, status: str,
-                          booking_id: str, room_id: str,
-                          metadata: dict[str, Any] | None = None):
+async def _timeline_event(tenant_id: str, stage: str, status: str, booking_id: str, room_id: str, metadata: dict[str, Any] | None = None):
     """Fire-and-forget timeline event for hold operations."""
     try:
         from controlplane.timeline_writer import get_timeline_writer
+
         writer = get_timeline_writer()
         await writer.append(
             tenant_id=tenant_id,
@@ -111,12 +111,14 @@ async def create_booking_hold(
         except DuplicateKeyError:
             # Conflict — rollback all claimed
             if claimed:
-                await db.room_night_locks.delete_many({
-                    "tenant_id": tenant_id,
-                    "room_id": room_id,
-                    "night_date": {"$in": claimed},
-                    "booking_id": booking_id,
-                })
+                await db.room_night_locks.delete_many(
+                    {
+                        "tenant_id": tenant_id,
+                        "room_id": room_id,
+                        "night_date": {"$in": claimed},
+                        "booking_id": booking_id,
+                    }
+                )
             return {
                 "success": False,
                 "error": f"Room {room_id} not available for {night}",
@@ -141,7 +143,10 @@ async def create_booking_hold(
 
     logger.info(
         "Hold created: booking=%s room=%s expires=%s (%d nights)",
-        booking_id, room_id, expires_at, len(claimed),
+        booking_id,
+        room_id,
+        expires_at,
+        len(claimed),
     )
 
     return {
@@ -196,11 +201,13 @@ async def release_hold(tenant_id: str, booking_id: str, reason: str = "manual") 
         {"_id": 0, "night_date": 1, "room_id": 1},
     ).to_list(365)
 
-    result = await db.room_night_locks.delete_many({
-        "tenant_id": tenant_id,
-        "booking_id": booking_id,
-        "lock_type": "hold",
-    })
+    result = await db.room_night_locks.delete_many(
+        {
+            "tenant_id": tenant_id,
+            "booking_id": booking_id,
+            "lock_type": "hold",
+        }
+    )
 
     if result.deleted_count > 0:
         room_id = locks[0]["room_id"] if locks else "unknown"
@@ -265,21 +272,25 @@ async def sweep_expired_holds() -> dict[str, Any]:
         nights = [l["night_date"] for l in locks]
 
         # Delete the expired locks
-        del_result = await db.room_night_locks.delete_many({
-            "tenant_id": tenant_id,
-            "booking_id": booking_id,
-            "lock_type": "hold",
-            "hold_expires_at": {"$lte": now},
-        })
+        del_result = await db.room_night_locks.delete_many(
+            {
+                "tenant_id": tenant_id,
+                "booking_id": booking_id,
+                "lock_type": "hold",
+                "hold_expires_at": {"$lte": now},
+            }
+        )
         total_released += del_result.deleted_count
 
         # Update booking status to hold_expired
         await db.bookings.update_one(
             {"id": booking_id, "tenant_id": tenant_id, "status": {"$in": ["pending", "hold"]}},
-            {"$set": {
-                "status": "hold_expired",
-                "hold_expired_at": now,
-            }},
+            {
+                "$set": {
+                    "status": "hold_expired",
+                    "hold_expired_at": now,
+                }
+            },
         )
 
         # INV-6: Audit
@@ -299,7 +310,9 @@ async def sweep_expired_holds() -> dict[str, Any]:
         bookings_expired.append(booking_id)
         logger.info(
             "Hold expired: booking=%s room=%s (%d nights released)",
-            booking_id, room_id, del_result.deleted_count,
+            booking_id,
+            room_id,
+            del_result.deleted_count,
         )
 
     return {
@@ -324,7 +337,8 @@ async def _sweeper_loop():
             if result["expired_count"] > 0:
                 logger.info(
                     "Sweeper: released %d expired holds (%d bookings)",
-                    result["expired_count"], result["bookings_affected"],
+                    result["expired_count"],
+                    result["bookings_affected"],
                 )
         except asyncio.CancelledError:
             logger.info("Booking hold sweeper stopped")

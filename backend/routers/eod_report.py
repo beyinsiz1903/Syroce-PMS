@@ -1,6 +1,7 @@
 """
 Tek-tik Gun Sonu Raporu — PDF + Email gonderimi.
 """
+
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 
@@ -34,41 +35,55 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
     # Whitelist: gercekte odayi isgal eden statuler. Gecmis is gunleri icin
     # checked_out da sayilmali (tarihsel rapor); confirmed/guaranteed ise
     # check-in yapilmamis ama o tarihte konaklamasi beklenen rezervasyon.
-    occupied = await db.bookings.count_documents({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house", "checked_out"]},
-        "check_in": {"$lte": business_date},
-        "check_out": {"$gt": business_date},
-    })
+    occupied = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house", "checked_out"]},
+            "check_in": {"$lte": business_date},
+            "check_out": {"$gt": business_date},
+        }
+    )
 
-    arrivals = await db.bookings.count_documents({
-        "tenant_id": tenant_id,
-        "check_in": business_date,
-    })
-    departures = await db.bookings.count_documents({
-        "tenant_id": tenant_id,
-        "check_out": business_date,
-    })
-    no_shows = await db.bookings.count_documents({
-        "tenant_id": tenant_id,
-        "status": "no_show",
-        "check_in": business_date,
-    })
-    cancels = await db.bookings.count_documents({
-        "tenant_id": tenant_id,
-        "status": "cancelled",
-        "check_in": business_date,
-    })
+    arrivals = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "check_in": business_date,
+        }
+    )
+    departures = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "check_out": business_date,
+        }
+    )
+    no_shows = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "no_show",
+            "check_in": business_date,
+        }
+    )
+    cancels = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "cancelled",
+            "check_in": business_date,
+        }
+    )
 
     # Gercek check-in / out (timestamp)
-    actual_checkins = await db.bookings.count_documents({
-        "tenant_id": tenant_id,
-        "checked_in_at": {"$gte": start.isoformat(), "$lt": end.isoformat()},
-    })
-    actual_checkouts = await db.bookings.count_documents({
-        "tenant_id": tenant_id,
-        "checked_out_at": {"$gte": start.isoformat(), "$lt": end.isoformat()},
-    })
+    actual_checkins = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "checked_in_at": {"$gte": start.isoformat(), "$lt": end.isoformat()},
+        }
+    )
+    actual_checkouts = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "checked_out_at": {"$gte": start.isoformat(), "$lt": end.isoformat()},
+        }
+    )
 
     # Gelir — odeme + extra_charges toplamlari
     pay_pipeline = [
@@ -86,17 +101,21 @@ async def _collect(tenant_id: str, business_date: str) -> dict:
     extras_total = float(ec[0]["total"]) if ec else 0.0
 
     # Acik folyolar (bakiye > 0)
-    open_folios = await db.folios.count_documents({
-        "tenant_id": tenant_id,
-        "status": {"$ne": "closed"},
-    })
+    open_folios = await db.folios.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$ne": "closed"},
+        }
+    )
 
     # Vardiya devir notlari (acik)
-    open_handovers = await db.shift_handovers.count_documents({
-        "tenant_id": tenant_id,
-        "business_date": business_date,
-        "acknowledged": False,
-    })
+    open_handovers = await db.shift_handovers.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "business_date": business_date,
+            "acknowledged": False,
+        }
+    )
 
     # Cap %100: overbooking veya seed verisindeki cakisma durumlarinda
     # raporda imkansiz oran (ornegin %127) gostermemek icin.
@@ -140,29 +159,29 @@ th {{ background:#f3f4f6; font-weight:600; }}
 .foot {{ margin-top:24px; font-size:11px; color:#9ca3af; text-align:center; }}
 </style></head><body>
 <h1>Gun Sonu Raporu</h1>
-<div class="sub">{hotel_name} · İş Günü: <b>{data['business_date']}</b> · Üretildi: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}</div>
+<div class="sub">{hotel_name} · İş Günü: <b>{data["business_date"]}</b> · Üretildi: {datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")}</div>
 
 <div class="grid">
-  <div class="card"><div class="label">Doluluk</div><div class="value">{data['occupancy_rate']}%</div>
-    <div style="font-size:12px;color:#6b7280;margin-top:4px;">{data['occupied']} / {data['rooms_total']} oda</div></div>
-  <div class="card"><div class="label">Toplam Gelir</div><div class="value">{data['revenue_total']:,.2f} TL</div>
-    <div style="font-size:12px;color:#6b7280;margin-top:4px;">Ödeme: {data['payments_total']:,.2f} · Ekstra: {data['extras_total']:,.2f}</div></div>
+  <div class="card"><div class="label">Doluluk</div><div class="value">{data["occupancy_rate"]}%</div>
+    <div style="font-size:12px;color:#6b7280;margin-top:4px;">{data["occupied"]} / {data["rooms_total"]} oda</div></div>
+  <div class="card"><div class="label">Toplam Gelir</div><div class="value">{data["revenue_total"]:,.2f} TL</div>
+    <div style="font-size:12px;color:#6b7280;margin-top:4px;">Ödeme: {data["payments_total"]:,.2f} · Ekstra: {data["extras_total"]:,.2f}</div></div>
 </div>
 
 <div class="section">
   <h3>Hareketler</h3>
   <table>
-    <tr><th>Beklenen Giris</th><td>{data['arrivals']}</td><th>Gerceklesen Giris</th><td>{data['actual_checkins']}</td></tr>
-    <tr><th>Beklenen Cikis</th><td>{data['departures']}</td><th>Gerceklesen Cikis</th><td>{data['actual_checkouts']}</td></tr>
-    <tr><th>No-Show</th><td class="{'warn' if data['no_shows'] else ''}">{data['no_shows']}</td><th>Iptal</th><td>{data['cancels']}</td></tr>
+    <tr><th>Beklenen Giris</th><td>{data["arrivals"]}</td><th>Gerceklesen Giris</th><td>{data["actual_checkins"]}</td></tr>
+    <tr><th>Beklenen Cikis</th><td>{data["departures"]}</td><th>Gerceklesen Cikis</th><td>{data["actual_checkouts"]}</td></tr>
+    <tr><th>No-Show</th><td class="{"warn" if data["no_shows"] else ""}">{data["no_shows"]}</td><th>Iptal</th><td>{data["cancels"]}</td></tr>
   </table>
 </div>
 
 <div class="section">
   <h3>Acik Kalan Isler</h3>
   <table>
-    <tr><th>Acik Folyo</th><td class="{'warn' if data['open_folios'] else ''}">{data['open_folios']}</td></tr>
-    <tr><th>Onaylanmamis Vardiya Devir Notu</th><td class="{'warn' if data['open_handovers'] else ''}">{data['open_handovers']}</td></tr>
+    <tr><th>Acik Folyo</th><td class="{"warn" if data["open_folios"] else ""}">{data["open_folios"]}</td></tr>
+    <tr><th>Onaylanmamis Vardiya Devir Notu</th><td class="{"warn" if data["open_handovers"] else ""}">{data["open_handovers"]}</td></tr>
   </table>
 </div>
 
@@ -174,6 +193,7 @@ def _html_to_pdf(html: str) -> bytes:
     """weasyprint ile PDF; kurulu degilse HTML bytes dondur."""
     try:
         from weasyprint import HTML  # type: ignore
+
         return HTML(string=html).write_pdf()
     except Exception:
         return html.encode("utf-8")
@@ -234,37 +254,37 @@ async def send_eod(
         results.append({"to": to_addr, **r})
     sent = sum(1 for r in results if r.get("sent"))
     # Audit kaydi
-    await db.eod_report_log.insert_one({
-        "tenant_id": current_user.tenant_id,
-        "business_date": bd,
-        "recipients": payload.recipients,
-        "sent_count": sent,
-        "results": results,
-        "sent_by_id": current_user.id,
-        "sent_by_name": current_user.name or current_user.email,
-        "sent_at": datetime.now(UTC).isoformat(),
-    })
+    await db.eod_report_log.insert_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "business_date": bd,
+            "recipients": payload.recipients,
+            "sent_count": sent,
+            "results": results,
+            "sent_by_id": current_user.id,
+            "sent_by_name": current_user.name or current_user.email,
+            "sent_at": datetime.now(UTC).isoformat(),
+        }
+    )
 
     # V3 — Syroce mobil: notify GMs / managers on their phones that the
     # gun sonu raporu is available. Tap routes them to the GM dashboard
     # (handled by mobile/src/notifications/push.ts).
     try:
         from services.expo_push import fire_and_forget_expo_push
+
         fire_and_forget_expo_push(
             current_user.tenant_id,
             title=f"Gun Sonu Raporu hazir — {bd}",
-            body=(
-                f"Doluluk %{data.get('occupancy_rate', 0)} · "
-                f"Gelir {data.get('revenue_total', 0):,.0f} TL"
-            ),
+            body=(f"Doluluk %{data.get('occupancy_rate', 0)} · Gelir {data.get('revenue_total', 0):,.0f} TL"),
             data={
-                'type': 'eod_ready',
-                'business_date': bd,
-                'occupancy_rate': data.get('occupancy_rate'),
-                'revenue_total': data.get('revenue_total'),
+                "type": "eod_ready",
+                "business_date": bd,
+                "occupancy_rate": data.get("occupancy_rate"),
+                "revenue_total": data.get("revenue_total"),
             },
-            departments=['gm', 'general_manager', 'admin', 'supervisor'],
-            priority='default',
+            departments=["gm", "general_manager", "admin", "supervisor"],
+            priority="default",
         )
     except Exception:
         # Best-effort — email send already succeeded above.

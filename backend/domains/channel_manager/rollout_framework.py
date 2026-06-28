@@ -31,6 +31,7 @@ Phase Gates:
     - all drift explainable
     - all incidents actionable
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -91,7 +92,8 @@ PHASE_CONFIG = {
 async def get_rollout_state(tenant_id: str) -> dict[str, Any]:
     """Get current rollout state for a tenant."""
     state = await db[COLL_ROLLOUT_STATE].find_one(
-        {"tenant_id": tenant_id}, _NO_ID,
+        {"tenant_id": tenant_id},
+        _NO_ID,
     )
     if not state:
         return _default_state(tenant_id)
@@ -107,11 +109,13 @@ async def initialize_rollout(tenant_id: str, operator_id: str = "system") -> dic
         "phase_started_at": now,
         "rollout_started_at": now,
         "initialized_by": operator_id,
-        "phase_history": [{
-            "phase": RolloutPhase.INTERNAL,
-            "started_at": now,
-            "gate_results": [],
-        }],
+        "phase_history": [
+            {
+                "phase": RolloutPhase.INTERNAL,
+                "started_at": now,
+                "gate_results": [],
+            }
+        ],
         "is_active": True,
         "updated_at": now,
     }
@@ -211,9 +215,7 @@ async def attempt_phase_transition(tenant_id: str, operator_id: str = "system") 
         },
     )
 
-    await _log_history(tenant_id, "phase_transition",
-                       new_phase, operator_id,
-                       {"from": gate_result["current_phase"], "gate_checks": len(gate_result["checks"])})
+    await _log_history(tenant_id, "phase_transition", new_phase, operator_id, {"from": gate_result["current_phase"], "gate_checks": len(gate_result["checks"])})
 
     logger.info(f"Rollout transition: {gate_result['current_phase']} -> {new_phase} tenant={tenant_id}")
 
@@ -265,11 +267,13 @@ async def get_rollout_dashboard(tenant_id: str) -> dict[str, Any]:
     phase_progress = []
     for i, p in enumerate(phases):
         cfg = PHASE_CONFIG.get(p, {})
-        phase_progress.append({
-            "phase": p,
-            "label": cfg.get("label", p),
-            "status": "completed" if i < current_idx else ("active" if i == current_idx else "pending"),
-        })
+        phase_progress.append(
+            {
+                "phase": p,
+                "label": cfg.get("label", p),
+                "status": "completed" if i < current_idx else ("active" if i == current_idx else "pending"),
+            }
+        )
 
     return {
         "tenant_id": tenant_id,
@@ -316,21 +320,25 @@ async def _evaluate_gate(
             if ps.tzinfo is None:
                 ps = ps.replace(tzinfo=UTC)
             elapsed_h = (datetime.now(UTC) - ps).total_seconds() / 3600
-            checks.append({
-                "name": "min_phase_duration",
-                "label": f"Minimum sure ({min_hours}h)",
-                "passed": elapsed_h >= min_hours,
-                "value": f"{round(elapsed_h, 1)}h / {min_hours}h",
-                "required": f">= {min_hours}h",
-            })
+            checks.append(
+                {
+                    "name": "min_phase_duration",
+                    "label": f"Minimum sure ({min_hours}h)",
+                    "passed": elapsed_h >= min_hours,
+                    "value": f"{round(elapsed_h, 1)}h / {min_hours}h",
+                    "required": f">= {min_hours}h",
+                }
+            )
         except (ValueError, TypeError):
-            checks.append({
-                "name": "min_phase_duration",
-                "label": f"Minimum sure ({min_hours}h)",
-                "passed": False,
-                "value": "Hesaplanamadi",
-                "required": f">= {min_hours}h",
-            })
+            checks.append(
+                {
+                    "name": "min_phase_duration",
+                    "label": f"Minimum sure ({min_hours}h)",
+                    "passed": False,
+                    "value": "Hesaplanamadi",
+                    "required": f">= {min_hours}h",
+                }
+            )
 
     # Gate-specific checks
     if next_phase == RolloutPhase.DUAL_PROVIDER:
@@ -343,18 +351,22 @@ async def _evaluate_gate(
         checks.extend(await _gate_proof_to_production(tenant_id, hf_stats, metrics, quarantine))
 
     # Universal: no BLOCKER incidents
-    blocker_count = await db["channel_reconciliation_cases"].count_documents({
-        "tenant_id": tenant_id,
-        "status": "open",
-        "severity": "critical",
-    })
-    checks.append({
-        "name": "no_blocker_incidents",
-        "label": "Blocker incident yok",
-        "passed": blocker_count == 0,
-        "value": str(blocker_count),
-        "required": "0",
-    })
+    blocker_count = await db["channel_reconciliation_cases"].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "open",
+            "severity": "critical",
+        }
+    )
+    checks.append(
+        {
+            "name": "no_blocker_incidents",
+            "label": "Blocker incident yok",
+            "passed": blocker_count == 0,
+            "value": str(blocker_count),
+            "required": "0",
+        }
+    )
 
     return checks
 
@@ -423,19 +435,23 @@ async def _gate_pilot_to_proof(tenant_id, hf_stats, metrics):
     since_24h = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
 
     # Silent failures in last 24h
-    silent_fails = await db["channel_reconciliation_cases"].count_documents({
-        "tenant_id": tenant_id,
-        "status": "open",
-        "created_at": {"$gte": since_24h},
-    })
+    silent_fails = await db["channel_reconciliation_cases"].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "open",
+            "created_at": {"$gte": since_24h},
+        }
+    )
 
     # Unexplained drifts
-    unexplained = await db["channel_reconciliation_cases"].count_documents({
-        "tenant_id": tenant_id,
-        "status": "open",
-        "drift_type": {"$exists": True, "$ne": None},
-        "resolution": {"$exists": False},
-    })
+    unexplained = await db["channel_reconciliation_cases"].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "open",
+            "drift_type": {"$exists": True, "$ne": None},
+            "resolution": {"$exists": False},
+        }
+    )
 
     verify_ratio = metrics.get("verify_success_ratio", 0)
 
@@ -468,17 +484,21 @@ async def _gate_proof_to_production(tenant_id, hf_stats, metrics, quarantine):
     """7DAY_PROOF -> PRODUCTION gates — strictest."""
     since_7d = (datetime.now(UTC) - timedelta(days=7)).isoformat()
 
-    data_loss = await db["channel_reconciliation_cases"].count_documents({
-        "tenant_id": tenant_id,
-        "case_type": {"$in": ["missing_locally", "missing_remotely"]},
-        "created_at": {"$gte": since_7d},
-    })
+    data_loss = await db["channel_reconciliation_cases"].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "case_type": {"$in": ["missing_locally", "missing_remotely"]},
+            "created_at": {"$gte": since_7d},
+        }
+    )
 
-    silent_fails = await db["channel_reconciliation_cases"].count_documents({
-        "tenant_id": tenant_id,
-        "status": "open",
-        "created_at": {"$gte": since_7d},
-    })
+    silent_fails = await db["channel_reconciliation_cases"].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "open",
+            "created_at": {"$gte": since_7d},
+        }
+    )
 
     verify_ratio = metrics.get("verify_success_ratio", 0)
 
@@ -533,14 +553,19 @@ def _default_state(tenant_id: str) -> dict[str, Any]:
 
 
 async def _log_history(
-    tenant_id: str, event_type: str, phase: str,
-    operator_id: str, details: dict = None,
+    tenant_id: str,
+    event_type: str,
+    phase: str,
+    operator_id: str,
+    details: dict = None,
 ) -> None:
-    await db[COLL_ROLLOUT_HISTORY].insert_one({
-        "tenant_id": tenant_id,
-        "event_type": event_type,
-        "phase": phase,
-        "operator_id": operator_id,
-        "details": details or {},
-        "timestamp": datetime.now(UTC).isoformat(),
-    })
+    await db[COLL_ROLLOUT_HISTORY].insert_one(
+        {
+            "tenant_id": tenant_id,
+            "event_type": event_type,
+            "phase": phase,
+            "operator_id": operator_id,
+            "details": details or {},
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    )

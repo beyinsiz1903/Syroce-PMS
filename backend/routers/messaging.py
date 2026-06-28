@@ -2,6 +2,7 @@
 Messaging Router — SMTP Email + WhatsApp Business API.
 Provider settings, template CRUD, sending, delivery logs, metrics.
 """
+
 import logging
 import random
 import re
@@ -85,6 +86,7 @@ def _merge_partial_creds(existing: dict, incoming: dict, secret_keys: set[str]) 
             merged[k] = v
     return merged
 
+
 _db = None
 _service = None
 
@@ -93,6 +95,7 @@ def _get_db():
     global _db
     if _db is None:
         from server import db
+
         _db = db
     return _db
 
@@ -101,6 +104,7 @@ def _get_service():
     global _service
     if _service is None:
         from modules.messaging.service import MessagingService
+
         _service = MessagingService(_get_db())
     return _service
 
@@ -108,6 +112,7 @@ def _get_service():
 # ════════════════════════════════════════════════════════
 # Provider Settings (SMTP + WhatsApp configuration)
 # ════════════════════════════════════════════════════════
+
 
 class SMTPSettingsReq(BaseModel):
     smtp_host: str
@@ -137,9 +142,7 @@ class WhatsAppSettingsReq(BaseModel):
 async def get_messaging_settings(current_user: User = Depends(get_current_user)):
     """Get current email and WhatsApp configuration (credentials masked)."""
     db = _get_db()
-    configs = await db.messaging_provider_configs.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).to_list(10)
+    configs = await db.messaging_provider_configs.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(10)
 
     result = {"email": None, "whatsapp": None}
     for cfg in configs:
@@ -201,7 +204,9 @@ def _mask(value: str, show: int = 4) -> str:
 
 
 @router.post("/settings/email")
-async def save_email_settings(req: SMTPSettingsReq, current_user: User = Depends(get_current_user),
+async def save_email_settings(
+    req: SMTPSettingsReq,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v95 DW
 ):
     """Save or update SMTP email configuration.
@@ -220,28 +225,27 @@ async def save_email_settings(req: SMTPSettingsReq, current_user: User = Depends
         "from_name": req.from_name,
         "use_tls": req.use_tls,
     }
-    existing = await db.messaging_provider_configs.find_one(
-        {"tenant_id": current_user.tenant_id, "provider_type": "smtp_email"}, {"_id": 0}
-    )
+    existing = await db.messaging_provider_configs.find_one({"tenant_id": current_user.tenant_id, "provider_type": "smtp_email"}, {"_id": 0})
     now = datetime.now(UTC).isoformat()
     if existing:
-        existing_creds_dec = _decrypt_secrets(
-            existing.get("credentials_encrypted", {}) or {}, _SMTP_SECRET_KEYS
-        )
+        existing_creds_dec = _decrypt_secrets(existing.get("credentials_encrypted", {}) or {}, _SMTP_SECRET_KEYS)
         merged = _merge_partial_creds(existing_creds_dec, incoming, _SMTP_SECRET_KEYS)
         creds_encrypted = _encrypt_secrets(merged, _SMTP_SECRET_KEYS)
         await db.messaging_provider_configs.update_one(
             {"id": existing["id"]},
-            {"$set": {
-                "credentials_encrypted": creds_encrypted,
-                "is_sandbox": req.is_sandbox,
-                "enabled": req.enabled,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "credentials_encrypted": creds_encrypted,
+                    "is_sandbox": req.is_sandbox,
+                    "enabled": req.enabled,
+                    "updated_at": now,
+                }
+            },
         )
         return {"success": True, "action": "updated", "id": existing["id"]}
     else:
         from modules.messaging.models import new_provider_config
+
         creds_encrypted = _encrypt_secrets(incoming, _SMTP_SECRET_KEYS)
         doc = new_provider_config(current_user.tenant_id, "smtp_email", creds_encrypted, req.is_sandbox, req.enabled)
         await db.messaging_provider_configs.insert_one(doc)
@@ -250,7 +254,9 @@ async def save_email_settings(req: SMTPSettingsReq, current_user: User = Depends
 
 
 @router.post("/settings/whatsapp")
-async def save_whatsapp_settings(req: WhatsAppSettingsReq, current_user: User = Depends(get_current_user),
+async def save_whatsapp_settings(
+    req: WhatsAppSettingsReq,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v95 DW
 ):
     """Save or update WhatsApp Business API configuration.
@@ -267,28 +273,27 @@ async def save_whatsapp_settings(req: WhatsAppSettingsReq, current_user: User = 
         "webhook_verify_token": req.webhook_verify_token,
         "app_secret": req.app_secret,
     }
-    existing = await db.messaging_provider_configs.find_one(
-        {"tenant_id": current_user.tenant_id, "provider_type": "whatsapp"}, {"_id": 0}
-    )
+    existing = await db.messaging_provider_configs.find_one({"tenant_id": current_user.tenant_id, "provider_type": "whatsapp"}, {"_id": 0})
     now = datetime.now(UTC).isoformat()
     if existing:
-        existing_creds_dec = _decrypt_secrets(
-            existing.get("credentials_encrypted", {}) or {}, _WHATSAPP_SECRET_KEYS
-        )
+        existing_creds_dec = _decrypt_secrets(existing.get("credentials_encrypted", {}) or {}, _WHATSAPP_SECRET_KEYS)
         merged = _merge_partial_creds(existing_creds_dec, incoming, _WHATSAPP_SECRET_KEYS)
         creds_encrypted = _encrypt_secrets(merged, _WHATSAPP_SECRET_KEYS)
         await db.messaging_provider_configs.update_one(
             {"id": existing["id"]},
-            {"$set": {
-                "credentials_encrypted": creds_encrypted,
-                "is_sandbox": req.is_sandbox,
-                "enabled": req.enabled,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "credentials_encrypted": creds_encrypted,
+                    "is_sandbox": req.is_sandbox,
+                    "enabled": req.enabled,
+                    "updated_at": now,
+                }
+            },
         )
         return {"success": True, "action": "updated", "id": existing["id"]}
     else:
         from modules.messaging.models import new_provider_config
+
         creds_encrypted = _encrypt_secrets(incoming, _WHATSAPP_SECRET_KEYS)
         doc = new_provider_config(current_user.tenant_id, "whatsapp", creds_encrypted, req.is_sandbox, req.enabled)
         await db.messaging_provider_configs.insert_one(doc)
@@ -297,7 +302,8 @@ async def save_whatsapp_settings(req: WhatsAppSettingsReq, current_user: User = 
 
 
 @router.post("/settings/test-connection")
-async def test_connection(current_user: User = Depends(get_current_user),
+async def test_connection(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v95 DW
 ):
     """Test all configured providers."""
@@ -310,17 +316,17 @@ async def test_connection(current_user: User = Depends(get_current_user),
 # Provider List (backward compat)
 # ════════════════════════════════════════════════════════
 
+
 @router.get("/providers")
 async def list_providers(current_user: User = Depends(get_current_user)):
     db = _get_db()
-    configs = await db.messaging_provider_configs.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0, "credentials_encrypted": 0}
-    ).to_list(20)
+    configs = await db.messaging_provider_configs.find({"tenant_id": current_user.tenant_id}, {"_id": 0, "credentials_encrypted": 0}).to_list(20)
     return {"providers": configs}
 
 
 @router.post("/providers/health-check")
-async def check_provider_health(current_user: User = Depends(get_current_user),
+async def check_provider_health(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     svc = _get_service()
@@ -331,6 +337,7 @@ async def check_provider_health(current_user: User = Depends(get_current_user),
 # ════════════════════════════════════════════════════════
 # Templates
 # ════════════════════════════════════════════════════════
+
 
 @router.get("/templates")
 async def list_templates(
@@ -358,13 +365,21 @@ class TemplateReq(BaseModel):
 
 
 @router.post("/templates")
-async def create_template(req: TemplateReq, current_user: User = Depends(get_current_user),
+async def create_template(
+    req: TemplateReq,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     from modules.messaging.models import new_message_template
+
     doc = new_message_template(
-        current_user.tenant_id, req.name, req.category, req.channel,
-        req.subject, req.body_template, req.variables,
+        current_user.tenant_id,
+        req.name,
+        req.category,
+        req.channel,
+        req.subject,
+        req.body_template,
+        req.variables,
     )
     db = _get_db()
     await db.messaging_templates.insert_one(doc)
@@ -373,29 +388,30 @@ async def create_template(req: TemplateReq, current_user: User = Depends(get_cur
 
 
 @router.put("/templates/{template_id}")
-async def update_template(template_id: str, req: dict, current_user: User = Depends(get_current_user),
+async def update_template(
+    template_id: str,
+    req: dict,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v96 DW
 ):
     db = _get_db()
     allowed = ["name", "subject", "body_template", "variables", "is_active", "category"]
     updates = {k: v for k, v in req.items() if k in allowed}
     updates["updated_at"] = datetime.now(UTC).isoformat()
-    result = await db.messaging_templates.update_one(
-        {"id": template_id, "tenant_id": current_user.tenant_id}, {"$set": updates}
-    )
+    result = await db.messaging_templates.update_one({"id": template_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Sablon bulunamadi")
     return {"success": True}
 
 
 @router.delete("/templates/{template_id}")
-async def delete_template(template_id: str, current_user: User = Depends(get_current_user),
+async def delete_template(
+    template_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v96 DW
 ):
     db = _get_db()
-    result = await db.messaging_templates.delete_one(
-        {"id": template_id, "tenant_id": current_user.tenant_id}
-    )
+    result = await db.messaging_templates.delete_one({"id": template_id, "tenant_id": current_user.tenant_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Sablon bulunamadi")
     return {"success": True}
@@ -404,6 +420,7 @@ async def delete_template(template_id: str, current_user: User = Depends(get_cur
 # ════════════════════════════════════════════════════════
 # Send Message
 # ════════════════════════════════════════════════════════
+
 
 class SendReq(BaseModel):
     channel: str
@@ -419,7 +436,9 @@ class SendReq(BaseModel):
 
 
 @router.post("/send")
-async def send_message(req: SendReq, current_user: User = Depends(get_current_user),
+async def send_message(
+    req: SendReq,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     svc = _get_service()
@@ -431,10 +450,17 @@ async def send_message(req: SendReq, current_user: User = Depends(get_current_us
     # sent) and log it so it stays observable. Intentional HTTPExceptions propagate.
     try:
         result = await svc.send_message(
-            tenant_id=current_user.tenant_id, channel=req.channel, recipient=req.recipient,
-            body=req.body, subject=req.subject, template_id=req.template_id,
-            variables=req.variables, booking_id=req.booking_id, guest_id=req.guest_id,
-            property_id=req.property_id, use_case=req.use_case,
+            tenant_id=current_user.tenant_id,
+            channel=req.channel,
+            recipient=req.recipient,
+            body=req.body,
+            subject=req.subject,
+            template_id=req.template_id,
+            variables=req.variables,
+            booking_id=req.booking_id,
+            guest_id=req.guest_id,
+            property_id=req.property_id,
+            use_case=req.use_case,
         )
     except HTTPException:
         raise
@@ -448,6 +474,7 @@ async def send_message(req: SendReq, current_user: User = Depends(get_current_us
 # WhatsApp Template (HSM) Send
 # ════════════════════════════════════════════════════════
 
+
 class WhatsAppTemplateReq(BaseModel):
     """Meta'nın onayladığı template ile mesaj gönderir.
 
@@ -459,6 +486,7 @@ class WhatsAppTemplateReq(BaseModel):
         "parameters": [{"type": "text", "text": "Ahmet"},
                        {"type": "text", "text": "16:00"}]}]
     """
+
     recipient: str
     template_name: str
     language_code: str = "tr"
@@ -532,7 +560,9 @@ async def send_whatsapp_template(
 
 
 @router.post("/retry/{delivery_id}")
-async def retry_delivery(delivery_id: str, current_user: User = Depends(get_current_user),
+async def retry_delivery(
+    delivery_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     svc = _get_service()
@@ -542,6 +572,7 @@ async def retry_delivery(delivery_id: str, current_user: User = Depends(get_curr
 # ════════════════════════════════════════════════════════
 # Delivery Logs
 # ════════════════════════════════════════════════════════
+
 
 @router.get("/delivery-logs")
 async def get_delivery_logs(
@@ -573,9 +604,9 @@ async def get_delivery_logs(
 # Metrics
 # ════════════════════════════════════════════════════════
 
+
 @router.get("/metrics")
-async def get_messaging_metrics(days: int = Query(7, ge=1, le=90),
-                                 current_user: User = Depends(get_current_user)):
+async def get_messaging_metrics(days: int = Query(7, ge=1, le=90), current_user: User = Depends(get_current_user)):
     svc = _get_service()
     return await svc.get_delivery_metrics(current_user.tenant_id, days)
 
@@ -583,6 +614,7 @@ async def get_messaging_metrics(days: int = Query(7, ge=1, le=90),
 # ════════════════════════════════════════════════════════
 # Automation Rules
 # ════════════════════════════════════════════════════════
+
 
 class AutomationRuleReq(BaseModel):
     trigger_event: str
@@ -597,29 +629,36 @@ class AutomationRuleReq(BaseModel):
 async def list_trigger_events(current_user: User = Depends(get_current_user)):
     """List available trigger events with defaults."""
     from modules.messaging.automation import TRIGGER_EVENTS
+
     return {"triggers": TRIGGER_EVENTS}
 
 
 @router.get("/automation/rules")
 async def list_automation_rules(current_user: User = Depends(get_current_user)):
     db = _get_db()
-    rules = await db.messaging_automation_rules.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).to_list(50)
+    rules = await db.messaging_automation_rules.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(50)
     return {"rules": rules}
 
 
 @router.post("/automation/rules")
-async def create_automation_rule(req: AutomationRuleReq, current_user: User = Depends(get_current_user),
+async def create_automation_rule(
+    req: AutomationRuleReq,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     from modules.messaging.automation import TRIGGER_EVENTS, new_automation_rule
+
     if req.trigger_event not in TRIGGER_EVENTS:
         raise HTTPException(status_code=400, detail=f"Gecersiz tetikleme olayi: {req.trigger_event}")
     db = _get_db()
     doc = new_automation_rule(
-        current_user.tenant_id, req.trigger_event, req.template_id,
-        req.channel, req.name, req.enabled, req.delay_minutes,
+        current_user.tenant_id,
+        req.trigger_event,
+        req.template_id,
+        req.channel,
+        req.name,
+        req.enabled,
+        req.delay_minutes,
     )
     await db.messaging_automation_rules.insert_one(doc)
     doc.pop("_id", None)
@@ -627,43 +666,44 @@ async def create_automation_rule(req: AutomationRuleReq, current_user: User = De
 
 
 @router.put("/automation/rules/{rule_id}")
-async def update_automation_rule(rule_id: str, req: dict, current_user: User = Depends(get_current_user),
+async def update_automation_rule(
+    rule_id: str,
+    req: dict,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     db = _get_db()
     allowed = ["name", "template_id", "channel", "enabled", "delay_minutes", "trigger_event"]
     updates = {k: v for k, v in req.items() if k in allowed}
     updates["updated_at"] = datetime.now(UTC).isoformat()
-    result = await db.messaging_automation_rules.update_one(
-        {"id": rule_id, "tenant_id": current_user.tenant_id}, {"$set": updates}
-    )
+    result = await db.messaging_automation_rules.update_one({"id": rule_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Kural bulunamadi")
     return {"success": True}
 
 
 @router.delete("/automation/rules/{rule_id}")
-async def delete_automation_rule(rule_id: str, current_user: User = Depends(get_current_user),
+async def delete_automation_rule(
+    rule_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     db = _get_db()
-    result = await db.messaging_automation_rules.delete_one(
-        {"id": rule_id, "tenant_id": current_user.tenant_id}
-    )
+    result = await db.messaging_automation_rules.delete_one({"id": rule_id, "tenant_id": current_user.tenant_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Kural bulunamadi")
     return {"success": True}
 
 
 @router.post("/automation/test/{rule_id}")
-async def test_automation_rule(rule_id: str, current_user: User = Depends(get_current_user),
+async def test_automation_rule(
+    rule_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """Simulate a rule trigger with a fake booking for testing."""
     db = _get_db()
-    rule = await db.messaging_automation_rules.find_one(
-        {"id": rule_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    rule = await db.messaging_automation_rules.find_one({"id": rule_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not rule:
         raise HTTPException(status_code=404, detail="Kural bulunamadi")
 
@@ -694,6 +734,7 @@ async def test_automation_rule(rule_id: str, current_user: User = Depends(get_cu
             "_test_mode": True,
         }
     from modules.messaging.automation import process_booking_event
+
     try:
         await process_booking_event(current_user.tenant_id, rule["trigger_event"], booking_for_test)
     except Exception as e:
@@ -705,8 +746,7 @@ async def test_automation_rule(rule_id: str, current_user: User = Depends(get_cu
         }
     return {
         "success": True,
-        "message": f"Test tetiklendi: {rule['name']}"
-                   + (" (gercek rezervasyon kullanildi)" if real else " (gercek rezervasyon yok, sahte booking ile)"),
+        "message": f"Test tetiklendi: {rule['name']}" + (" (gercek rezervasyon kullanildi)" if real else " (gercek rezervasyon yok, sahte booking ile)"),
         "used_real_booking": bool(real),
     }
 
@@ -715,8 +755,10 @@ async def test_automation_rule(rule_id: str, current_user: User = Depends(get_cu
 # Seed Demo Data (for sandbox mode)
 # ════════════════════════════════════════════════════════
 
+
 @router.post("/seed-demo")
-async def seed_demo_data(current_user: User = Depends(get_current_user),
+async def seed_demo_data(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     """Seed demo templates, delivery logs, and automation rules."""
@@ -738,21 +780,34 @@ async def seed_demo_data(current_user: User = Depends(get_current_user),
     providers_count = await db.messaging_provider_configs.count_documents({"tenant_id": tenant_id})
     if providers_count == 0:
         from modules.messaging.models import new_provider_config
-        email_cfg = new_provider_config(tenant_id, "smtp_email", {
-            "smtp_host": "sandbox.smtp.demo",
-            "smtp_port": 587,
-            "smtp_username": "demo",
-            "smtp_password": "demo",
-            "from_email": "info@demo-otel.com",
-            "from_name": "Demo Otel",
-            "use_tls": True,
-        }, is_sandbox=True, enabled=True)
+
+        email_cfg = new_provider_config(
+            tenant_id,
+            "smtp_email",
+            {
+                "smtp_host": "sandbox.smtp.demo",
+                "smtp_port": 587,
+                "smtp_username": "demo",
+                "smtp_password": "demo",
+                "from_email": "info@demo-otel.com",
+                "from_name": "Demo Otel",
+                "use_tls": True,
+            },
+            is_sandbox=True,
+            enabled=True,
+        )
         email_cfg["health_status"] = "healthy"
-        wa_cfg = new_provider_config(tenant_id, "whatsapp", {
-            "access_token": "demo_sandbox_token",
-            "phone_number_id": "000000000000",
-            "business_name": "Demo Otel WhatsApp",
-        }, is_sandbox=True, enabled=True)
+        wa_cfg = new_provider_config(
+            tenant_id,
+            "whatsapp",
+            {
+                "access_token": "demo_sandbox_token",
+                "phone_number_id": "000000000000",
+                "business_name": "Demo Otel WhatsApp",
+            },
+            is_sandbox=True,
+            enabled=True,
+        )
         wa_cfg["health_status"] = "healthy"
         await db.messaging_provider_configs.insert_many([email_cfg, wa_cfg])
 
@@ -768,6 +823,7 @@ async def seed_demo_data(current_user: User = Depends(get_current_user),
     rules_count = await db.messaging_automation_rules.count_documents({"tenant_id": tenant_id})
     if rules_count == 0:
         from modules.messaging.automation import new_automation_rule
+
         tmpl_list = await db.messaging_templates.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(50)
         tmpl_by_cat = {t["category"]: t for t in tmpl_list}
         default_rules = [
@@ -781,9 +837,16 @@ async def seed_demo_data(current_user: User = Depends(get_current_user),
         for trigger, category, channel, name in default_rules:
             tmpl = tmpl_by_cat.get(category)
             if tmpl:
-                auto_rules.append(new_automation_rule(
-                    tenant_id, trigger, tmpl["id"], channel, name, enabled=True,
-                ))
+                auto_rules.append(
+                    new_automation_rule(
+                        tenant_id,
+                        trigger,
+                        tmpl["id"],
+                        channel,
+                        name,
+                        enabled=True,
+                    )
+                )
         if auto_rules:
             await db.messaging_automation_rules.insert_many(auto_rules)
             rules_seeded = len(auto_rules)
@@ -793,6 +856,7 @@ async def seed_demo_data(current_user: User = Depends(get_current_user),
 
 def _get_demo_templates(tenant_id: str) -> list[dict]:
     from modules.messaging.models import new_message_template
+
     templates_data = [
         # ── WhatsApp Templates ──
         {
@@ -872,8 +936,13 @@ def _get_demo_templates(tenant_id: str) -> list[dict]:
 
     return [
         new_message_template(
-            tenant_id, t["name"], t["category"], t["channel"],
-            t["subject"], t["body_template"], t["variables"],
+            tenant_id,
+            t["name"],
+            t["category"],
+            t["channel"],
+            t["subject"],
+            t["body_template"],
+            t["variables"],
         )
         for t in templates_data
     ]
@@ -882,10 +951,10 @@ def _get_demo_templates(tenant_id: str) -> list[dict]:
 def _get_demo_delivery_logs(tenant_id: str) -> list[dict]:
     """Generate sample delivery logs for demo."""
     from modules.messaging.models import new_delivery_log
+
     logs = []
     now = datetime.now(UTC)
-    names = ["Ahmet Yilmaz", "Mehmet Demir", "Ayse Kaya", "Fatma Ozturk", "Ali Celik",
-             "Zeynep Arslan", "Mustafa Sahin", "Elif Dogan", "Hasan Kilic", "Merve Aydin"]
+    names = ["Ahmet Yilmaz", "Mehmet Demir", "Ayse Kaya", "Fatma Ozturk", "Ali Celik", "Zeynep Arslan", "Mustafa Sahin", "Elif Dogan", "Hasan Kilic", "Merve Aydin"]
     channels = ["email", "whatsapp"]
     statuses = ["sent", "sent", "sent", "sent", "delivered", "delivered", "failed", "queued"]
     use_cases_email = ["fatura", "rezervasyon_onay", "kampanya", "checkout"]
@@ -910,9 +979,13 @@ def _get_demo_delivery_logs(tenant_id: str) -> list[dict]:
             subject = None
 
         log = new_delivery_log(
-            tenant_id=tenant_id, property_id=None, channel=channel,
-            provider_type=provider_type, recipient=recipient,
-            template_id=None, subject=subject,
+            tenant_id=tenant_id,
+            property_id=None,
+            channel=channel,
+            provider_type=provider_type,
+            recipient=recipient,
+            template_id=None,
+            subject=subject,
             body=f"Demo mesaj - {use_case} - {name}",
             use_case=use_case,
         )
@@ -931,6 +1004,7 @@ def _get_demo_delivery_logs(tenant_id: str) -> list[dict]:
 # ════════════════════════════════════════════════════════
 # Consent & Runtime
 # ════════════════════════════════════════════════════════
+
 
 class ConsentReq(BaseModel):
     recipient: str
@@ -956,27 +1030,31 @@ async def update_consent(req: ConsentReq, current_user: User = Depends(get_curre
             "channel": req.channel,
             "$or": [{"recipient_hash": r_hash}, {"recipient": req.recipient}],
         },
-        {"$set": {
-            "status": req.status,
-            "updated_at": now_iso,
-            "updated_by": current_user.id,
-            "recipient_enc": sealed.get("recipient_enc"),
-            "recipient_hash": r_hash,
+        {
+            "$set": {
+                "status": req.status,
+                "updated_at": now_iso,
+                "updated_by": current_user.id,
+                "recipient_enc": sealed.get("recipient_enc"),
+                "recipient_hash": r_hash,
+            },
+            "$unset": {"recipient": ""},
         },
-         "$unset": {"recipient": ""}},
     )
     if res.matched_count == 0:
-        await db.messaging_consents.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": current_user.tenant_id,
-            "channel": req.channel,
-            "recipient_hash": r_hash,
-            "recipient_enc": sealed.get("recipient_enc"),
-            "status": req.status,
-            "created_at": now_iso,
-            "updated_at": now_iso,
-            "updated_by": current_user.id,
-        })
+        await db.messaging_consents.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": current_user.tenant_id,
+                "channel": req.channel,
+                "recipient_hash": r_hash,
+                "recipient_enc": sealed.get("recipient_enc"),
+                "status": req.status,
+                "created_at": now_iso,
+                "updated_at": now_iso,
+                "updated_by": current_user.id,
+            }
+        )
     return {"success": True}
 
 
@@ -990,20 +1068,24 @@ async def get_runtime_status(current_user: User = Depends(get_current_user)):
 # Pre-Arrival Scheduler
 # ════════════════════════════════════════════════════════
 
+
 @router.get("/scheduler/status")
 async def get_scheduler_status(current_user: User = Depends(get_current_user)):
     """Get pre-arrival scheduler status and metrics."""
     from modules.messaging.pre_arrival_scheduler import get_pre_arrival_scheduler
+
     scheduler = get_pre_arrival_scheduler()
     return scheduler.get_status()
 
 
 @router.post("/scheduler/start")
-async def start_scheduler(current_user: User = Depends(get_current_user),
+async def start_scheduler(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     """Start the pre-arrival scheduler background task."""
     from modules.messaging.pre_arrival_scheduler import get_pre_arrival_scheduler
+
     scheduler = get_pre_arrival_scheduler()
     if scheduler.status == "running":
         return {"success": True, "message": "Zamanlayici zaten calisiyor"}
@@ -1012,22 +1094,26 @@ async def start_scheduler(current_user: User = Depends(get_current_user),
 
 
 @router.post("/scheduler/stop")
-async def stop_scheduler(current_user: User = Depends(get_current_user),
+async def stop_scheduler(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     """Stop the pre-arrival scheduler."""
     from modules.messaging.pre_arrival_scheduler import get_pre_arrival_scheduler
+
     scheduler = get_pre_arrival_scheduler()
     await scheduler.stop()
     return {"success": True, "message": "Zamanlayici durduruldu"}
 
 
 @router.post("/scheduler/run-now")
-async def run_scheduler_now(current_user: User = Depends(get_current_user),
+async def run_scheduler_now(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     """Manually trigger a pre-arrival scan right now."""
     from modules.messaging.pre_arrival_scheduler import get_pre_arrival_scheduler
+
     scheduler = get_pre_arrival_scheduler()
     result = await scheduler.run_scan()
     return {"success": True, "result": result}
@@ -1036,6 +1122,7 @@ async def run_scheduler_now(current_user: User = Depends(get_current_user),
 # ════════════════════════════════════════════════════════
 # Activity Feed (Real-time notifications)
 # ════════════════════════════════════════════════════════
+
 
 def _mask_recipient(value) -> str:
     """KVKK/PII partial-mask for recipient shown in the activity feed to roles
@@ -1107,19 +1194,27 @@ async def get_messaging_activity(
         "view_guest_list",
         granted_permissions=getattr(current_user, "granted_permissions", None),
     )
-    notifications = await db.notifications.find(
-        {
-            "tenant_id": current_user.tenant_id,
-            "type": "messaging_automation",
-        },
-        {"_id": 0},
-    ).sort("created_at", -1).to_list(limit)
+    notifications = (
+        await db.notifications.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "type": "messaging_automation",
+            },
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .to_list(limit)
+    )
 
     # Also get recent delivery log events for channel push results
-    recent_logs = await db.messaging_delivery_logs.find(
-        {"tenant_id": current_user.tenant_id},
-        {"_id": 0},
-    ).sort("created_at", -1).to_list(limit)
+    recent_logs = (
+        await db.messaging_delivery_logs.find(
+            {"tenant_id": current_user.tenant_id},
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .to_list(limit)
+    )
 
     # Combine into a unified activity feed
     activities = []
@@ -1134,15 +1229,17 @@ async def get_messaging_activity(
             # delivery-log gate so the feed never leaks contact data.
             _title = _mask_freetext_pii(_title)
             _message = _mask_freetext_pii(_message)
-        activities.append({
-            "id": n.get("id", ""),
-            "type": "automation",
-            "title": _title,
-            "message": _message,
-            "priority": n.get("priority", "normal"),
-            "created_at": n.get("created_at", ""),
-            "read": n.get("read", False),
-        })
+        activities.append(
+            {
+                "id": n.get("id", ""),
+                "type": "automation",
+                "title": _title,
+                "message": _message,
+                "priority": n.get("priority", "normal"),
+                "created_at": n.get("created_at", ""),
+                "read": n.get("read", False),
+            }
+        )
 
     for log in recent_logs[:limit]:
         status = log.get("status", "")
@@ -1160,15 +1257,17 @@ async def get_messaging_activity(
         recipient = reveal_recipient(log)
         if not _can_view_pii:
             recipient = _mask_recipient(recipient)
-        activities.append({
-            "id": log.get("id", ""),
-            "type": "delivery",
-            "title": title,
-            "message": f"{recipient} — {log.get('use_case', '')}",
-            "priority": priority,
-            "created_at": log.get("created_at", ""),
-            "status": status,
-        })
+        activities.append(
+            {
+                "id": log.get("id", ""),
+                "type": "delivery",
+                "title": title,
+                "message": f"{recipient} — {log.get('use_case', '')}",
+                "priority": priority,
+                "created_at": log.get("created_at", ""),
+                "status": status,
+            }
+        )
 
     # Sort by created_at desc and limit
     activities.sort(key=lambda a: a.get("created_at", ""), reverse=True)

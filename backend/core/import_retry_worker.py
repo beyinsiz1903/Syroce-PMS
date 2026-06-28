@@ -11,6 +11,7 @@ Mirrors the OTA-002 outbox worker architecture:
   - Graceful shutdown
   - Health metrics
 """
+
 import asyncio
 import logging
 import os
@@ -201,9 +202,7 @@ class ImportRetryWorker:
         tenant_id = record.get("tenant_id", "")
 
         with tenant_context(tenant_id) if tenant_id else _nullcontext():
-            success, message = await auto_import_reservation_to_pms(
-                record_id, pre_claimed_record=record
-            )
+            success, message = await auto_import_reservation_to_pms(record_id, pre_claimed_record=record)
 
             if success:
                 self._processed_count += 1

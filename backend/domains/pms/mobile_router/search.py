@@ -21,6 +21,7 @@ Security:
 - The surface is gated by the `pms` module entitlement, mirroring the guest /
   booking / room search endpoints it federates.
 """
+
 import re as _re
 
 from fastapi import APIRouter, Depends
@@ -77,31 +78,18 @@ async def _search_guests(tenant_id: str, q: str) -> list[dict]:
         return []
 
     query = {"tenant_id": tenant_id, "$or": or_conditions}
-    raw = (
-        await db.guests.find(query, {"_id": 0})
-        .sort("name", 1)
-        .limit(_PER_ENTITY_LIMIT)
-        .to_list(_PER_ENTITY_LIMIT)
-    )
+    raw = await db.guests.find(query, {"_id": 0}).sort("name", 1).limit(_PER_ENTITY_LIMIT).to_list(_PER_ENTITY_LIMIT)
 
     # INFIX (substring) match on the plaintext-name trigram companion `_ng_name`
     # (>= 3 chars), re-verified with a contiguous substring check — mirrors the
     # guest-search endpoint so "type the middle of a name" works here too.
     from security.search_ngram import ngram_all_condition, ngram_match
+
     ng_cond = ngram_all_condition(q, collection=_GUEST_COLLECTION)
     if ng_cond:
         seen = {g.get("id") for g in raw}
-        ng_rows = (
-            await db.guests.find({"tenant_id": tenant_id, **ng_cond}, {"_id": 0})
-            .sort("name", 1)
-            .limit(_PER_ENTITY_LIMIT)
-            .to_list(_PER_ENTITY_LIMIT)
-        )
-        extras = [
-            r for r in ng_rows
-            if r.get("id") not in seen
-            and ngram_match(r, q, collection=_GUEST_COLLECTION)
-        ]
+        ng_rows = await db.guests.find({"tenant_id": tenant_id, **ng_cond}, {"_id": 0}).sort("name", 1).limit(_PER_ENTITY_LIMIT).to_list(_PER_ENTITY_LIMIT)
+        extras = [r for r in ng_rows if r.get("id") not in seen and ngram_match(r, q, collection=_GUEST_COLLECTION)]
         if extras:
             raw = raw + extras
             raw.sort(key=lambda g: (g.get("name") or "").lower())

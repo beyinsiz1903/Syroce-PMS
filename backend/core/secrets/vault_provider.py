@@ -7,6 +7,7 @@ with hvac client calls.
 
 Do NOT overbuild this. Wait until Vault is actually needed.
 """
+
 import logging
 from typing import Any
 

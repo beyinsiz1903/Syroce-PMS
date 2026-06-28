@@ -2,6 +2,7 @@
 Bootstrap: Observability Init
 Prometheus metrics, OpenTelemetry, Sentry, and structured logging setup.
 """
+
 import logging
 import os
 
@@ -31,6 +32,7 @@ def init_observability() -> None:
     # Prometheus metrics endpoint is handled by prometheus_metrics.py
     try:
         from infra.prometheus_metrics import setup_metrics  # noqa: F401
+
         logging.info("Prometheus metrics available")
     except ImportError:
         pass
@@ -42,6 +44,7 @@ def init_observability() -> None:
             from opentelemetry import trace
             from opentelemetry.sdk.resources import Resource
             from opentelemetry.sdk.trace import TracerProvider
+
             provider = TracerProvider(resource=Resource.create({"service.name": "hotel-pms-backend"}))
             trace.set_tracer_provider(provider)
             logging.info("OpenTelemetry tracer initialized")

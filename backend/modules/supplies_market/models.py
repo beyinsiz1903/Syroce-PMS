@@ -1,4 +1,5 @@
 """Pydantic models for the supplies marketplace."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -9,19 +10,19 @@ from pydantic import BaseModel, EmailStr, Field
 # ── Enums / literals ─────────────────────────────────────────────────────────
 VendorStatus = Literal["pending", "approved", "suspended"]
 ProductCategory = Literal[
-    "banyo",          # havlu, terlik, şampuan, sabun, dental kit
+    "banyo",  # havlu, terlik, şampuan, sabun, dental kit
     "yatak_tekstil",  # çarşaf, nevresim, yastık
-    "temizlik",       # deterjan, kimyasal
-    "mutfak_fb",      # F&B, mutfak ekipmanı
-    "kirtasiye",      # kalem, defter, ofis
+    "temizlik",  # deterjan, kimyasal
+    "mutfak_fb",  # F&B, mutfak ekipmanı
+    "kirtasiye",  # kalem, defter, ofis
     "diger",
 ]
 PaymentMethod = Literal["cash_on_delivery", "bank_transfer", "credit_card"]
 OrderStatus = Literal[
-    "pending",        # otel oluşturdu, toptancı onayı bekliyor
-    "confirmed",      # toptancı onayladı
-    "shipped",        # kargoya verildi
-    "delivered",      # otel teslim aldı
+    "pending",  # otel oluşturdu, toptancı onayı bekliyor
+    "confirmed",  # toptancı onayladı
+    "shipped",  # kargoya verildi
+    "delivered",  # otel teslim aldı
     "cancelled",
 ]
 

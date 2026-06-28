@@ -2,6 +2,7 @@
 
 Handles CCTV configurations, searchable access logs, and global lock-down protocols.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -48,7 +49,7 @@ async def register_cctv_camera(
         "name": payload.name,
         "room_number": payload.room_number,
         "stream_url": payload.stream_url,
-        "created_at": datetime.now(UTC).isoformat()
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.cctv_cameras.insert_one(camera)
 
@@ -59,7 +60,7 @@ async def register_cctv_camera(
         entity_type="cctv_camera",
         entity_id=camera["id"],
         details=f"CCTV camera registered: {payload.name} (Room: {payload.room_number})",
-        severity="info"
+        severity="info",
     )
     return {"success": True, "camera_id": camera["id"]}
 
@@ -129,25 +130,10 @@ async def activate_lockdown(
     tenant_id = current_user.tenant_id
 
     # 1. Update lockdown state to active
-    await db.lockdown_state.update_one(
-        {"tenant_id": tenant_id},
-        {"$set": {
-            "status": "active",
-            "activated_at": datetime.now(UTC).isoformat(),
-            "activated_by": current_user.id
-        }},
-        upsert=True
-    )
+    await db.lockdown_state.update_one({"tenant_id": tenant_id}, {"$set": {"status": "active", "activated_at": datetime.now(UTC).isoformat(), "activated_by": current_user.id}}, upsert=True)
 
     # 2. Revoke all active digital keys immediately (fail-closed)
-    res = await db.digital_keys.update_many(
-        {"tenant_id": tenant_id, "status": "active"},
-        {"$set": {
-            "status": "revoked",
-            "revoked_at": datetime.now(UTC).isoformat(),
-            "revocation_reason": "lockdown"
-        }}
-    )
+    res = await db.digital_keys.update_many({"tenant_id": tenant_id, "status": "active"}, {"$set": {"status": "revoked", "revoked_at": datetime.now(UTC).isoformat(), "revocation_reason": "lockdown"}})
 
     await log_audit_event(
         tenant_id=tenant_id,
@@ -156,14 +142,10 @@ async def activate_lockdown(
         entity_type="system",
         entity_id="global",
         details=f"GLOBAL LOCKDOWN ACTIVATED. Revoked {res.modified_count} active digital keys.",
-        severity="critical"
+        severity="critical",
     )
 
-    return {
-        "success": True,
-        "message": "Global lockdown activated. All keys revoked, doors locked.",
-        "keys_revoked_count": res.modified_count
-    }
+    return {"success": True, "message": "Global lockdown activated. All keys revoked, doors locked.", "keys_revoked_count": res.modified_count}
 
 
 @router.post("/lockdown/release")
@@ -179,14 +161,6 @@ async def release_lockdown(
     if res.deleted_count == 0:
         return {"success": True, "message": "Sistemde aktif lockdown bulunamadı"}
 
-    await log_audit_event(
-        tenant_id=tenant_id,
-        user_id=current_user.id,
-        action="lockdown.release",
-        entity_type="system",
-        entity_id="global",
-        details="GLOBAL LOCKDOWN RELEASED.",
-        severity="warning"
-    )
+    await log_audit_event(tenant_id=tenant_id, user_id=current_user.id, action="lockdown.release", entity_type="system", entity_id="global", details="GLOBAL LOCKDOWN RELEASED.", severity="warning")
 
     return {"success": True, "message": "Global lockdown released."}

@@ -2,6 +2,7 @@
 Common — Operation Context
 Carries tenant, property, actor, and audit info through service calls.
 """
+
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -30,6 +31,7 @@ class OperationContext:
         # Honor both `role` and `roles[]` representations of super_admin.
         try:
             from core.security import _is_super_admin
+
             is_sa = _is_super_admin(user)
         except Exception:
             is_sa = False
@@ -38,6 +40,7 @@ class OperationContext:
         if "ip_address" not in overrides or "user_agent" not in overrides:
             try:
                 from common.request_context import get_client_ip, get_user_agent
+
                 overrides.setdefault("ip_address", get_client_ip())
                 overrides.setdefault("user_agent", get_user_agent())
             except Exception:

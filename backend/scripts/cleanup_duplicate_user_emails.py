@@ -38,6 +38,7 @@ Usage
     # Uygula (ALLOW_USER_DEDUPE=true env zorunlu)
     ALLOW_USER_DEDUPE=true python -m scripts.cleanup_duplicate_user_emails --apply
 """
+
 from __future__ import annotations
 
 import argparse
@@ -109,15 +110,20 @@ def _report(groups: list[dict]) -> int:
         a = g["authority"]
         logger.info(
             "GRUP hash=...%s | toplam=%d | KORUNAN id=%s tenant=%s role=%s created=%s",
-            g["hash"][-8:], len(g["victims"]) + 1,
-            str(a.get("id"))[:12], str(a.get("tenant_id"))[:12], a.get("role"),
+            g["hash"][-8:],
+            len(g["victims"]) + 1,
+            str(a.get("id"))[:12],
+            str(a.get("tenant_id"))[:12],
+            a.get("role"),
             str(a.get("created_at"))[:19],
         )
         for v in g["victims"]:
             total_victims += 1
             logger.info(
                 "    SILINECEK id=%s tenant=%s role=%s created=%s",
-                str(v.get("id"))[:12], str(v.get("tenant_id"))[:12], v.get("role"),
+                str(v.get("id"))[:12],
+                str(v.get("tenant_id"))[:12],
+                v.get("role"),
                 str(v.get("created_at"))[:19],
             )
     return total_victims
@@ -162,7 +168,8 @@ async def main() -> int:
     if total_victims > args.max_deletes:
         logger.error(
             "BLAST-RADIUS: silinecek (%d) > --max-deletes (%d). Durduruldu (fail-closed).",
-            total_victims, args.max_deletes,
+            total_victims,
+            args.max_deletes,
         )
         return 3
 
@@ -176,7 +183,8 @@ async def main() -> int:
         mode = "apply"
         logger.info(
             "UYGULANDI: %d kullanici, %d ozluk kaydi silindi.",
-            applied["deleted_users"], applied["deleted_staff"],
+            applied["deleted_users"],
+            applied["deleted_staff"],
         )
         # Dogrulama: kalan mukerrer grup olmamali.
         remaining = await scan()
@@ -188,14 +196,16 @@ async def main() -> int:
         logger.info("DRY-RUN: hicbir yazma yapilmadi. Uygulamak icin: ALLOW_USER_DEDUPE=true ... --apply")
 
     try:
-        await db.user_dedupe_scans.insert_one({
-            "ts": datetime.now(UTC).isoformat(),
-            "mode": mode,
-            "groups": len(groups),
-            "victims_found": total_victims,
-            "deleted_users": applied["deleted_users"],
-            "deleted_staff": applied["deleted_staff"],
-        })
+        await db.user_dedupe_scans.insert_one(
+            {
+                "ts": datetime.now(UTC).isoformat(),
+                "mode": mode,
+                "groups": len(groups),
+                "victims_found": total_victims,
+                "deleted_users": applied["deleted_users"],
+                "deleted_staff": applied["deleted_staff"],
+            }
+        )
     except Exception as e:
         logger.warning("Metrik kaydi yazilamadi (kritik degil): %s", e)
 

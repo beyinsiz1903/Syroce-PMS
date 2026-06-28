@@ -4,6 +4,7 @@ HotelRunner Reservation Pull Scheduler
 Cursor-based background worker that manages scheduled pulling
 of reservations for all active tenants.
 """
+
 import asyncio
 import logging
 from datetime import UTC, datetime
@@ -59,11 +60,13 @@ class ReservationPullScheduler:
                 logger.error(f"[PULL] Loop error: {e}")
 
             if self._consecutive_rate_limits > 0:
-                backoff_multiplier = min(2 ** self._consecutive_rate_limits, 16)
+                backoff_multiplier = min(2**self._consecutive_rate_limits, 16)
                 actual_sleep = self._base_interval * backoff_multiplier
                 logger.warning(
                     "[PULL] Rate-limit backoff active: sleeping %ds (base=%ds, consecutive_429=%d)",
-                    actual_sleep, self._base_interval, self._consecutive_rate_limits,
+                    actual_sleep,
+                    self._base_interval,
+                    self._consecutive_rate_limits,
                 )
                 await asyncio.sleep(actual_sleep)
             else:
@@ -82,6 +85,7 @@ class ReservationPullScheduler:
                 hr_id = conn.get("hr_id", conn.get("property_id", "default"))
 
                 from core.secrets import get_secrets_manager
+
                 sm = get_secrets_manager()
                 creds = await sm.get_provider_credentials(tenant_id, "hotelrunner", hr_id)
 
@@ -110,6 +114,7 @@ class ReservationPullScheduler:
         is_manual: bool = False,
     ) -> dict[str, Any]:
         from core.tenant_db import set_tenant_context
+
         set_tenant_context(tenant_id)
 
         from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
@@ -151,7 +156,7 @@ class ReservationPullScheduler:
             run_b = False
             logger.info("[PULL] Skipping Phase B — rate limit backoff active (consecutive: %d)", self._consecutive_rate_limits)
         else:
-            run_b = (self._cycle_count % 10 == 0)
+            run_b = self._cycle_count % 10 == 0
         if not run_b:
             logger.debug(f"[PULL] Skipping Phase B (cycle {self._cycle_count}, runs every 10th)")
         else:
@@ -165,18 +170,20 @@ class ReservationPullScheduler:
 
         await db.hotelrunner_pull_cursors.update_one(
             {"tenant_id": tenant_id},
-            {"$set": {
-                "tenant_id": tenant_id,
-                "last_pull_at": pull_start.isoformat(),
-                "reservations_fetched": len(all_reservations),
-                "reservations_processed": processed,
-                "reservations_fired": fired,
-                "mod_processed": mod_processed,
-                "individual_updated": individual_updated,
-                "catchup_imported": catchup_imported,
-                "catchup_updated": catchup_updated,
-                "pages_fetched": total_pages,
-            }},
+            {
+                "$set": {
+                    "tenant_id": tenant_id,
+                    "last_pull_at": pull_start.isoformat(),
+                    "reservations_fetched": len(all_reservations),
+                    "reservations_processed": processed,
+                    "reservations_fired": fired,
+                    "mod_processed": mod_processed,
+                    "individual_updated": individual_updated,
+                    "catchup_imported": catchup_imported,
+                    "catchup_updated": catchup_updated,
+                    "pages_fetched": total_pages,
+                }
+            },
             upsert=True,
         )
 

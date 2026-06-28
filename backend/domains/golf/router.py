@@ -10,6 +10,7 @@ Mirrors the Spa module's resource-scheduling pattern:
 
 Atomic-by-design via spa-style per-resource lock.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -43,24 +44,16 @@ async def _ensure_indexes() -> None:
         return
     db = get_system_db()
     try:
-        await db.golf_tee_bookings.create_index(
-            [("tenant_id", 1), ("course_id", 1), ("tee_time", 1)],
-            name="golf_book_course_time")
-        await db.golf_tee_bookings.create_index(
-            [("tenant_id", 1), ("guest_id", 1), ("tee_time", -1)],
-            name="golf_book_guest_time")
-        await db.golf_tee_bookings.create_index(
-            [("tenant_id", 1), ("status", 1), ("tee_time", 1)],
-            name="golf_book_status_time")
+        await db.golf_tee_bookings.create_index([("tenant_id", 1), ("course_id", 1), ("tee_time", 1)], name="golf_book_course_time")
+        await db.golf_tee_bookings.create_index([("tenant_id", 1), ("guest_id", 1), ("tee_time", -1)], name="golf_book_guest_time")
+        await db.golf_tee_bookings.create_index([("tenant_id", 1), ("status", 1), ("tee_time", 1)], name="golf_book_status_time")
         await db.golf_courses.create_index([("tenant_id", 1), ("active", 1)])
-        await db.golf_players.create_index(
-            [("tenant_id", 1), ("guest_id", 1)], name="golf_player_guest")
-        await db.golf_locks.create_index(
-            [("tenant_id", 1), ("kind", 1), ("resource_id", 1)],
-            unique=True, name="uniq_golf_lock")
+        await db.golf_players.create_index([("tenant_id", 1), ("guest_id", 1)], name="golf_player_guest")
+        await db.golf_locks.create_index([("tenant_id", 1), ("kind", 1), ("resource_id", 1)], unique=True, name="uniq_golf_lock")
         _indexes_ready = True
     except Exception as exc:
         import logging
+
         logging.getLogger("golf").warning("Index creation deferred: %s", exc)
 
 
@@ -91,9 +84,7 @@ def _invalidate_courses_cache(tenant_id: str) -> None:
 async def list_courses(current_user: User = Depends(get_current_user)) -> dict:
     await _ensure_indexes()
     db = get_system_db()
-    cur = db.golf_courses.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).sort("name", 1)
+    cur = db.golf_courses.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("name", 1)
     items = [d async for d in cur]
     if not items:
         try:
@@ -110,11 +101,17 @@ async def _seed_default_course(tenant_id: str) -> list[dict]:
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
         "name": "Resort Championship Course",
-        "holes": 18, "par": 72,
-        "course_rating": 72.4, "slope_rating": 132,
-        "tee_interval_minutes": 10, "slot_capacity": 4,
-        "open_time": "07:00", "close_time": "18:00",
-        "green_fee": 1800, "cart_fee": 600, "currency": "TRY",
+        "holes": 18,
+        "par": 72,
+        "course_rating": 72.4,
+        "slope_rating": 132,
+        "tee_interval_minutes": 10,
+        "slot_capacity": 4,
+        "open_time": "07:00",
+        "close_time": "18:00",
+        "green_fee": 1800,
+        "cart_fee": 600,
+        "currency": "TRY",
         "description": "Resort üzerindeki şampiyona kursu",
         "active": True,
         "created_at": datetime.now(UTC).isoformat(),
@@ -125,8 +122,9 @@ async def _seed_default_course(tenant_id: str) -> list[dict]:
 
 
 @router.post("/courses")
-async def create_course(body: CourseIn,
-                        current_user: User = Depends(get_current_user),
+async def create_course(
+    body: CourseIn,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
 ) -> dict:
     require_catalog(current_user)
@@ -144,16 +142,17 @@ async def create_course(body: CourseIn,
 
 
 @router.put("/courses/{course_id}")
-async def update_course(course_id: str, body: CourseIn,
-                        current_user: User = Depends(get_current_user),
+async def update_course(
+    course_id: str,
+    body: CourseIn,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
     res = await db.golf_courses.update_one(
         {"id": course_id, "tenant_id": current_user.tenant_id},
-        {"$set": {**body.model_dump(),
-                  "updated_at": datetime.now(UTC).isoformat()}},
+        {"$set": {**body.model_dump(), "updated_at": datetime.now(UTC).isoformat()}},
     )
     if not res.matched_count:
         raise HTTPException(404, "Kurs bulunamadı")
@@ -162,14 +161,14 @@ async def update_course(course_id: str, body: CourseIn,
 
 
 @router.delete("/courses/{course_id}")
-async def delete_course(course_id: str,
-                        current_user: User = Depends(get_current_user),
+async def delete_course(
+    course_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
 ) -> dict:
     require_catalog(current_user)
     db = get_system_db()
-    res = await db.golf_courses.delete_one(
-        {"id": course_id, "tenant_id": current_user.tenant_id})
+    res = await db.golf_courses.delete_one({"id": course_id, "tenant_id": current_user.tenant_id})
     if not res.deleted_count:
         raise HTTPException(404, "Kurs bulunamadı")
     _invalidate_courses_cache(current_user.tenant_id)
@@ -195,6 +194,7 @@ async def list_players(
     filt: dict[str, Any] = {"tenant_id": current_user.tenant_id}
     if q and len(q) >= 2:
         import re as _re
+
         rx = {"$regex": _re.escape(q), "$options": "i"}
         filt["$or"] = [{"name": rx}, {"email": rx}, {"phone": rx}]
     cur = db.golf_players.find(filt, {"_id": 0}).sort("name", 1).limit(200)
@@ -202,8 +202,9 @@ async def list_players(
 
 
 @router.post("/players")
-async def create_player(body: PlayerIn,
-                        current_user: User = Depends(get_current_user),
+async def create_player(
+    body: PlayerIn,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
 ) -> dict:
     require_catalog(current_user)
@@ -220,8 +221,10 @@ async def create_player(body: PlayerIn,
 
 
 @router.put("/players/{player_id}")
-async def update_player(player_id: str, body: PlayerIn,
-                        current_user: User = Depends(get_current_user),
+async def update_player(
+    player_id: str,
+    body: PlayerIn,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
 ) -> dict:
     require_catalog(current_user)
@@ -248,8 +251,7 @@ async def tee_sheet(
     capacity is full. Front-end renders this as a grid (hour x slot).
     """
     db = get_system_db()
-    course = await db.golf_courses.find_one(
-        {"id": course_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    course = await db.golf_courses.find_one({"id": course_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not course:
         raise HTTPException(404, "Kurs bulunamadı")
 
@@ -263,54 +265,56 @@ async def tee_sheet(
     interval = int(course["tee_interval_minutes"])
     capacity = int(course["slot_capacity"])
 
-    slot_start = datetime.combine(day, datetime.min.time()).replace(
-        hour=open_h, minute=open_m, tzinfo=UTC)
-    slot_end_day = datetime.combine(day, datetime.min.time()).replace(
-        hour=close_h, minute=close_m, tzinfo=UTC)
+    slot_start = datetime.combine(day, datetime.min.time()).replace(hour=open_h, minute=open_m, tzinfo=UTC)
+    slot_end_day = datetime.combine(day, datetime.min.time()).replace(hour=close_h, minute=close_m, tzinfo=UTC)
 
     slots: list[dict[str, Any]] = []
     cur_t = slot_start
     while cur_t < slot_end_day:
-        slots.append({
-            "tee_time": cur_t.isoformat(),
-            "capacity": capacity,
-            "booked": 0,
-            "bookings": [],
-        })
+        slots.append(
+            {
+                "tee_time": cur_t.isoformat(),
+                "capacity": capacity,
+                "booked": 0,
+                "bookings": [],
+            }
+        )
         cur_t += timedelta(minutes=interval)
 
     by_time = {s["tee_time"]: s for s in slots}
 
-    cur = db.golf_tee_bookings.find({
-        "tenant_id": current_user.tenant_id,
-        "course_id": course_id,
-        "tee_time": {"$gte": slot_start.isoformat(),
-                     "$lt": slot_end_day.isoformat()},
-        "status": {"$in": ["confirmed", "checked_in", "completed"]},
-    }, {"_id": 0})
+    cur = db.golf_tee_bookings.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "course_id": course_id,
+            "tee_time": {"$gte": slot_start.isoformat(), "$lt": slot_end_day.isoformat()},
+            "status": {"$in": ["confirmed", "checked_in", "completed"]},
+        },
+        {"_id": 0},
+    )
     async for b in cur:
         slot = by_time.get(b.get("tee_time"))
         if slot:
             slot["booked"] += int(b.get("party_size", 1))
-            slot["bookings"].append({
-                "id": b.get("id"),
-                "lead_player": b.get("lead_player"),
-                "party_size": b.get("party_size", 1),
-                "status": b.get("status"),
-            })
+            slot["bookings"].append(
+                {
+                    "id": b.get("id"),
+                    "lead_player": b.get("lead_player"),
+                    "party_size": b.get("party_size", 1),
+                    "status": b.get("status"),
+                }
+            )
 
     full_count = sum(1 for s in slots if s["booked"] >= s["capacity"])
     return {
-        "course": {"id": course_id, "name": course["name"],
-                   "tee_interval": interval, "capacity": capacity},
+        "course": {"id": course_id, "name": course["name"], "tee_interval": interval, "capacity": capacity},
         "date": date,
         "slots": slots,
         "stats": {
             "total_slots": len(slots),
             "full_slots": full_count,
             "available_slots": len(slots) - full_count,
-            "utilization_pct": round(
-                full_count / len(slots) * 100, 1) if slots else 0,
+            "utilization_pct": round(full_count / len(slots) * 100, 1) if slots else 0,
         },
     }
 
@@ -362,10 +366,7 @@ async def list_bookings(
     return {"bookings": [d async for d in cur]}
 
 
-async def _slot_has_capacity(tenant_id: str, course_id: str,
-                              tee_time_iso: str, party_size: int,
-                              capacity: int, exclude_id: str | None = None,
-                              session=None) -> tuple[bool, int]:
+async def _slot_has_capacity(tenant_id: str, course_id: str, tee_time_iso: str, party_size: int, capacity: int, exclude_id: str | None = None, session=None) -> tuple[bool, int]:
     db = get_system_db()
     q: dict[str, Any] = {
         "tenant_id": tenant_id,
@@ -382,9 +383,12 @@ async def _slot_has_capacity(tenant_id: str, course_id: str,
 
 
 async def _player_double_booked(
-    tenant_id: str, tee_time_iso: str,
-    player_ids: list[str], guest_id: str | None,
-    exclude_id: str | None = None, session=None,
+    tenant_id: str,
+    tee_time_iso: str,
+    player_ids: list[str],
+    guest_id: str | None,
+    exclude_id: str | None = None,
+    session=None,
 ) -> str | None:
     """Aynı oyuncu / aynı PMS misafirinin aynı tee saatinde başka bir
     rezervasyonda olmadığından emin ol. Çakışma varsa açıklayıcı
@@ -409,16 +413,13 @@ async def _player_double_booked(
     doc = await db.golf_tee_bookings.find_one(q, session=session)
     if not doc:
         return None
-    return (
-        f"Oyuncu çakışması: {doc.get('lead_player') or guest_id} "
-        f"aynı tee saatinde başka bir rezervasyonda "
-        f"({doc.get('course_name')})"
-    )
+    return f"Oyuncu çakışması: {doc.get('lead_player') or guest_id} aynı tee saatinde başka bir rezervasyonda ({doc.get('course_name')})"
 
 
 @router.post("/bookings")
-async def create_booking(body: TeeBookingIn,
-                         current_user: User = Depends(get_current_user),
+async def create_booking(
+    body: TeeBookingIn,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
 ) -> dict:
     require_spa_ops(current_user)
@@ -426,8 +427,7 @@ async def create_booking(body: TeeBookingIn,
     db = get_system_db()
     tenant_id = current_user.tenant_id
 
-    course = await db.golf_courses.find_one(
-        {"id": body.course_id, "tenant_id": tenant_id})
+    course = await db.golf_courses.find_one({"id": body.course_id, "tenant_id": tenant_id})
     if not course:
         raise HTTPException(404, "Kurs bulunamadı")
 
@@ -451,9 +451,7 @@ async def create_booking(body: TeeBookingIn,
         "reservation_id": body.reservation_id,
         "notes": body.notes,
         "charge_to_room": body.charge_to_room,
-        "price": (body.price_override if body.price_override is not None
-                  else (course.get("green_fee", 0) * body.party_size
-                        + course.get("cart_fee", 0) * body.cart_count)),
+        "price": (body.price_override if body.price_override is not None else (course.get("green_fee", 0) * body.party_size + course.get("cart_fee", 0) * body.cart_count)),
         "currency": course.get("currency", "TRY"),
         "status": "confirmed",
         "created_at": datetime.now(UTC).isoformat(),
@@ -462,16 +460,21 @@ async def create_booking(body: TeeBookingIn,
 
     async def _do_insert(session) -> dict:
         ok, booked_now = await _slot_has_capacity(
-            tenant_id, body.course_id, tee_iso,
-            body.party_size, capacity, session=session,
+            tenant_id,
+            body.course_id,
+            tee_iso,
+            body.party_size,
+            capacity,
+            session=session,
         )
         if not ok:
-            raise HTTPException(
-                409,
-                f"Tee slot dolu ({booked_now}/{capacity} oyuncu kayıtlı)")
+            raise HTTPException(409, f"Tee slot dolu ({booked_now}/{capacity} oyuncu kayıtlı)")
         # Aynı oyuncu/misafir aynı saatte başka bir bookingda mı?
         clash = await _player_double_booked(
-            tenant_id, tee_iso, body.player_ids, body.guest_id,
+            tenant_id,
+            tee_iso,
+            body.player_ids,
+            body.guest_id,
             session=session,
         )
         if clash:
@@ -482,7 +485,8 @@ async def create_booking(body: TeeBookingIn,
     # Lock per (course, tee-time) to serialize concurrent bookings
     try:
         await with_resource_locks(
-            client=db.client, db=db,
+            client=db.client,
+            db=db,
             tenant_id=tenant_id,
             locks_collection="golf_locks",
             resources=[("tee_slot", f"{body.course_id}:{tee_iso}")],
@@ -496,18 +500,16 @@ async def create_booking(body: TeeBookingIn,
         if not standalone_fallback_allowed():
             raise HTTPException(
                 status_code=503,
-                detail=("Golf rezervasyon servisi şu anda atomik garanti "
-                        "sağlayamıyor (Mongo replica set gerekli)."),
+                detail=("Golf rezervasyon servisi şu anda atomik garanti sağlayamıyor (Mongo replica set gerekli)."),
             )
-        ok, booked_now = await _slot_has_capacity(
-            tenant_id, body.course_id, tee_iso,
-            body.party_size, capacity)
+        ok, booked_now = await _slot_has_capacity(tenant_id, body.course_id, tee_iso, body.party_size, capacity)
         if not ok:
-            raise HTTPException(
-                409,
-                f"Tee slot dolu ({booked_now}/{capacity} oyuncu kayıtlı)")
+            raise HTTPException(409, f"Tee slot dolu ({booked_now}/{capacity} oyuncu kayıtlı)")
         clash = await _player_double_booked(
-            tenant_id, tee_iso, body.player_ids, body.guest_id,
+            tenant_id,
+            tee_iso,
+            body.player_ids,
+            body.guest_id,
         )
         if clash:
             raise HTTPException(409, clash)
@@ -532,7 +534,8 @@ _GOLF_TRANSITIONS: dict[str, set[str]] = {
 
 @router.post("/bookings/{booking_id}/status")
 async def change_booking_status(
-    booking_id: str, body: GolfStatusUpdate,
+    booking_id: str,
+    body: GolfStatusUpdate,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
 ) -> dict:
@@ -540,17 +543,14 @@ async def change_booking_status(
     if body.status == "completed":
         require_finance(current_user)  # folio-impacting
     db = get_system_db()
-    bk = await db.golf_tee_bookings.find_one(
-        {"id": booking_id, "tenant_id": current_user.tenant_id})
+    bk = await db.golf_tee_bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id})
     if not bk:
         raise HTTPException(404, "Rezervasyon bulunamadı")
     cur_status = bk.get("status", "confirmed")
     if body.status not in _GOLF_TRANSITIONS.get(cur_status, set()):
-        raise HTTPException(
-            409, f"Geçersiz geçiş: {cur_status} → {body.status}")
+        raise HTTPException(409, f"Geçersiz geçiş: {cur_status} → {body.status}")
 
-    update = {"status": body.status,
-              "updated_at": datetime.now(UTC).isoformat()}
+    update = {"status": body.status, "updated_at": datetime.now(UTC).isoformat()}
     if body.status == "checked_in":
         update["checked_in_at"] = datetime.now(UTC).isoformat()
     if body.status == "completed":
@@ -560,44 +560,36 @@ async def change_booking_status(
     # observed value runs the folio side effect, so a concurrent transition
     # never leaves a charge attached to a non-completed record.
     res = await db.golf_tee_bookings.update_one(
-        {"id": booking_id, "tenant_id": current_user.tenant_id,
-         "status": cur_status},
+        {"id": booking_id, "tenant_id": current_user.tenant_id, "status": cur_status},
         {"$set": update},
     )
     if res.modified_count == 0:
-        latest = await db.golf_tee_bookings.find_one(
-            {"id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
-        return {"ok": True,
-                "status": latest.get("status") if latest else body.status,
-                "idempotent": True}
+        latest = await db.golf_tee_bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+        return {"ok": True, "status": latest.get("status") if latest else body.status, "idempotent": True}
     # We won the transition → run the folio side effect (idempotent via the
     # dedup index). If it fails, revert the completion so it cannot stand
     # without its charge (fail-closed).
-    if (body.status == "completed"
-            and bk.get("charge_to_room") and bk.get("reservation_id")):
+    if body.status == "completed" and bk.get("charge_to_room") and bk.get("reservation_id"):
         try:
             await _post_to_folio(current_user.tenant_id, bk)
         except Exception:
             await db.golf_tee_bookings.update_one(
-                {"id": booking_id, "tenant_id": current_user.tenant_id,
-                 "status": "completed"},
-                {"$set": {"status": cur_status,
-                          "updated_at": datetime.now(UTC).isoformat()},
-                 "$unset": {"completed_at": ""}},
+                {"id": booking_id, "tenant_id": current_user.tenant_id, "status": "completed"},
+                {"$set": {"status": cur_status, "updated_at": datetime.now(UTC).isoformat()}, "$unset": {"completed_at": ""}},
             )
             raise
     return {"ok": True, "status": body.status}
 
 
 @router.delete("/bookings/{booking_id}")
-async def delete_booking(booking_id: str,
-                         current_user: User = Depends(get_current_user),
+async def delete_booking(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
 ) -> dict:
     require_spa_ops(current_user)
     db = get_system_db()
-    res = await db.golf_tee_bookings.delete_one(
-        {"id": booking_id, "tenant_id": current_user.tenant_id})
+    res = await db.golf_tee_bookings.delete_one({"id": booking_id, "tenant_id": current_user.tenant_id})
     if not res.deleted_count:
         raise HTTPException(404, "Rezervasyon bulunamadı")
     return {"ok": True}
@@ -648,6 +640,7 @@ async def _post_to_folio(tenant_id: str, bk: dict) -> None:
     try:
         from integrations.xchange.bus import bus
         from integrations.xchange.schemas import MessageType
+
         await bus.publish(
             tenant_id=tenant_id,
             message_type=MessageType.POSTING_CHARGE,
@@ -666,8 +659,8 @@ async def _post_to_folio(tenant_id: str, bk: dict) -> None:
         )
     except Exception as exc:
         import logging
-        logging.getLogger("golf").warning(
-            "Xchange POSTING_CHARGE publish failed (best-effort): %s", exc)
+
+        logging.getLogger("golf").warning("Xchange POSTING_CHARGE publish failed (best-effort): %s", exc)
 
 
 # ─── Daily summary ──────────────────────────────────────────────
@@ -679,10 +672,13 @@ async def daily_summary(
     db = get_system_db()
     target = date or datetime.now(UTC).date().isoformat()
     next_day = (datetime.fromisoformat(target) + timedelta(days=1)).date().isoformat()
-    cur = db.golf_tee_bookings.find({
-        "tenant_id": current_user.tenant_id,
-        "tee_time": {"$gte": target, "$lt": next_day},
-    }, {"_id": 0})
+    cur = db.golf_tee_bookings.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "tee_time": {"$gte": target, "$lt": next_day},
+        },
+        {"_id": 0},
+    )
     items = [d async for d in cur]
     by_status: dict[str, int] = {}
     revenue = 0.0
@@ -719,22 +715,22 @@ async def post_booking_to_folio(
 ) -> dict:
     require_finance(current_user)  # folio-impacting
     db = get_system_db()
-    bk = await db.golf_tee_bookings.find_one(
-        {"id": booking_id, "tenant_id": current_user.tenant_id})
+    bk = await db.golf_tee_bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id})
     if not bk:
         raise HTTPException(404, "Rezervasyon bulunamadı")
     if not bk.get("reservation_id"):
         raise HTTPException(400, "Rezervasyon bir oda hesabına bağlı değil")
 
     # Idempotency — aynı booking için folyoda posting var mı?
-    existing = await db.folio_postings.find_one({
-        "tenant_id": current_user.tenant_id,
-        "reference": booking_id,
-        "transaction_code": "GOLF",
-    })
+    existing = await db.folio_postings.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "reference": booking_id,
+            "transaction_code": "GOLF",
+        }
+    )
     if existing:
-        raise HTTPException(
-            409, "Bu rezervasyon için folyo postingi zaten mevcut")
+        raise HTTPException(409, "Bu rezervasyon için folyo postingi zaten mevcut")
 
     if body.amount_override is not None:
         bk = {**bk, "price": body.amount_override}
@@ -743,5 +739,4 @@ async def post_booking_to_folio(
         {"id": booking_id, "tenant_id": current_user.tenant_id},
         {"$set": {"folio_posted_at": datetime.now(UTC).isoformat()}},
     )
-    return {"ok": True, "amount": float(bk.get("price", 0)),
-            "currency": bk.get("currency", "TRY")}
+    return {"ok": True, "amount": float(bk.get("price", 0)), "currency": bk.get("currency", "TRY")}

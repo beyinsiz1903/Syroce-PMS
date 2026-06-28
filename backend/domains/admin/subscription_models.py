@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 class SubscriptionTier(str, Enum):
     """Subscription tier levels — 4 segments (Mini → Enterprise)."""
+
     MINI = "mini"
     BASIC = "basic"
     PROFESSIONAL = "professional"
@@ -22,6 +23,7 @@ class SubscriptionTier(str, Enum):
 
 class FeatureFlag(str, Enum):
     """Feature flags for different subscription tiers"""
+
     # Core PMS (all plans)
     PMS = "pms"
     RESERVATION_CALENDAR = "reservation_calendar"
@@ -75,11 +77,11 @@ class FeatureFlag(str, Enum):
     AF_SADAKAT = "af_sadakat"  # Sadakat & misafir inbox entegrasyonu (Afsadakat)
 
     # Mini-tier ek modülleri (Elektraweb Mini muadili — pansiyon/butik baseline)
-    FOLIO_BASIC = "folio_basic"                  # basit folyo (split/route yok)
-    NIGHT_AUDIT_BASIC = "night_audit_basic"      # tek-tıkla gün sonu
+    FOLIO_BASIC = "folio_basic"  # basit folyo (split/route yok)
+    NIGHT_AUDIT_BASIC = "night_audit_basic"  # tek-tıkla gün sonu
     CHANNEL_MANAGER_LITE = "channel_manager_lite"  # 3 kanal limiti
-    PAYMENTS_LINK = "payments_link"              # sanal POS + ödeme linki
-    KBS_NOTIFY = "kbs_notify"                    # KBS polis kimlik bildirimi
+    PAYMENTS_LINK = "payments_link"  # sanal POS + ödeme linki
+    KBS_NOTIFY = "kbs_notify"  # KBS polis kimlik bildirimi
     # Basic-tier ek modülleri
     MAILING = "mailing"
     HOUSEKEEPING_ADVANCED = "housekeeping_advanced"
@@ -96,6 +98,7 @@ class FeatureFlag(str, Enum):
 
 class SubscriptionPlan(BaseModel):
     """Subscription plan definition"""
+
     tier: SubscriptionTier
     name: str
     name_tr: str
@@ -175,7 +178,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "ai_social_radar": False,
         # OPERATIONS ADD-ONS
         "room_qr_requests": True,
-        "quick_id": True,           # Mini'de açık (Quick-ID = KBS akışı için kritik)
+        "quick_id": True,  # Mini'de açık (Quick-ID = KBS akışı için kritik)
         "marketplace": False,
         "af_sadakat": False,
         # ADD-ON MODULES
@@ -241,7 +244,7 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         "ai_social_radar": False,
         # OPERATIONS ADD-ONS
         "room_qr_requests": True,
-        "quick_id": True,           # Basic'te de açık (KBS akışına bağlı)
+        "quick_id": True,  # Basic'te de açık (KBS akışına bağlı)
         "marketplace": False,
         "af_sadakat": False,
         # ADD-ON MODULES (sold separately, super-admin enables per-tenant)
@@ -421,7 +424,6 @@ SUBSCRIPTION_PLANS: dict[SubscriptionTier, SubscriptionPlan] = {
         support_level="email",
         support_level_tr="E-posta destek (iş saatleri)",
     ),
-
     SubscriptionTier.BASIC: SubscriptionPlan(
         tier=SubscriptionTier.BASIC,
         name="Basic",
@@ -461,7 +463,6 @@ SUBSCRIPTION_PLANS: dict[SubscriptionTier, SubscriptionPlan] = {
         support_level="email",
         support_level_tr="Email destek (iş saatleri)",
     ),
-
     SubscriptionTier.PROFESSIONAL: SubscriptionPlan(
         tier=SubscriptionTier.PROFESSIONAL,
         name="Professional",
@@ -509,7 +510,6 @@ SUBSCRIPTION_PLANS: dict[SubscriptionTier, SubscriptionPlan] = {
         support_level="priority",
         support_level_tr="Öncelikli email + telefon desteği",
     ),
-
     SubscriptionTier.ENTERPRISE: SubscriptionPlan(
         tier=SubscriptionTier.ENTERPRISE,
         name="Enterprise",
@@ -529,6 +529,7 @@ SUBSCRIPTION_PLANS: dict[SubscriptionTier, SubscriptionPlan] = {
 
 class SubscriptionStatus(str, Enum):
     """Subscription status"""
+
     TRIAL = "trial"
     ACTIVE = "active"
     PAST_DUE = "past_due"
@@ -554,10 +555,7 @@ def get_feature_comparison() -> dict[str, dict[str, bool]]:
     """Get feature comparison across all tiers"""
     comparison = {}
     for feature in FeatureFlag:
-        comparison[feature.value] = {
-            tier.value: has_feature_access(tier, feature)
-            for tier in SubscriptionTier
-        }
+        comparison[feature.value] = {tier.value: has_feature_access(tier, feature) for tier in SubscriptionTier}
     return comparison
 
 

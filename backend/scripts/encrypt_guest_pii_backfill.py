@@ -70,6 +70,7 @@ Exit codes
            so cron knows to re-run, else ``0``.
 * ``2`` on a fail-closed guard violation (``--apply`` without the env opt-in).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -89,9 +90,7 @@ from security.field_encryption import (  # noqa: E402
     get_field_encryption_service,
 )
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("encrypt_guest_pii_backfill")
 
 _GUESTS = "guests"
@@ -102,16 +101,12 @@ _GUESTS = "guests"
 # backfill).
 _GUEST_FIELD_CONFIGS = ENCRYPTED_FIELDS.get(_GUESTS, [])
 GUEST_PII_FIELDS: tuple[str, ...] = tuple(f["field"] for f in _GUEST_FIELD_CONFIGS)
-SEARCHABLE_FIELDS: frozenset[str] = frozenset(
-    f["field"] for f in _GUEST_FIELD_CONFIGS if f.get("searchable")
-)
+SEARCHABLE_FIELDS: frozenset[str] = frozenset(f["field"] for f in _GUEST_FIELD_CONFIGS if f.get("searchable"))
 
 
 def _looks_encrypted(value: object) -> bool:
     """True if a value is already an AES envelope (matches the crypto engine)."""
-    return isinstance(value, str) and (
-        value.startswith("SYR1:") or value.startswith("aes256gcm:")
-    )
+    return isinstance(value, str) and (value.startswith("SYR1:") or value.startswith("aes256gcm:"))
 
 
 def _plaintext_pii(doc: dict) -> dict[str, str]:
@@ -153,9 +148,7 @@ async def scan(tenant_id: str | None) -> dict:
             continue
         for field in pii:
             per_field[field] += 1
-        candidates.append(
-            {"_id": doc["_id"], "id": doc.get("id"), "pii": pii}
-        )
+        candidates.append({"_id": doc["_id"], "id": doc.get("id"), "pii": pii})
 
     return {
         "total_scanned": total_scanned,
@@ -203,9 +196,7 @@ async def apply(candidates: list[dict]) -> dict:
                 skipped += 1
         except Exception as e:
             errors += 1
-            logger.error(
-                "[guest-pii-backfill] update failed id=%s: %s", cand.get("id"), e
-            )
+            logger.error("[guest-pii-backfill] update failed id=%s: %s", cand.get("id"), e)
 
     return {"encrypted": encrypted, "skipped": skipped, "errors": errors}
 
@@ -219,9 +210,7 @@ async def record_scan(summary: dict) -> None:
 
 
 async def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Guest PII plaintext re-encryption backfill (KVKK at-rest)."
-    )
+    parser = argparse.ArgumentParser(description="Guest PII plaintext re-encryption backfill (KVKK at-rest).")
     parser.add_argument(
         "--tenant-id",
         type=str,
@@ -236,15 +225,11 @@ async def main() -> int:
     args = parser.parse_args()
 
     if not GUEST_PII_FIELDS:
-        logger.error(
-            "guests koleksiyonu için ENCRYPTED_FIELDS tanımlı değil — yapılacak iş yok."
-        )
+        logger.error("guests koleksiyonu için ENCRYPTED_FIELDS tanımlı değil — yapılacak iş yok.")
         return 2
 
     if args.apply and os.environ.get("ALLOW_GUEST_PII_BACKFILL", "").lower() != "true":
-        logger.error(
-            "--apply için ALLOW_GUEST_PII_BACKFILL=true gerekli — fail-closed."
-        )
+        logger.error("--apply için ALLOW_GUEST_PII_BACKFILL=true gerekli — fail-closed.")
         return 2
 
     scope = args.tenant_id or "ALL"
@@ -275,9 +260,7 @@ async def main() -> int:
     await record_scan(summary)
 
     print("=" * 60)
-    print(
-        f"Guest PII backfill ({'APPLY' if args.apply else 'DRY-RUN'}) tenant={scope}"
-    )
+    print(f"Guest PII backfill ({'APPLY' if args.apply else 'DRY-RUN'}) tenant={scope}")
     print("=" * 60)
     print(f"  {'guests scanned':22s} -> {found['total_scanned']}")
     print(f"  {'plaintext candidates':22s} -> {candidates_found}")
@@ -292,9 +275,7 @@ async def main() -> int:
     if not args.apply:
         if candidates_found > 0:
             logger.warning(
-                "[guest-pii-backfill] %d misafir kaydında plaintext PII bulundu "
-                "(per_field=%s) — şifrelemek için ALLOW_GUEST_PII_BACKFILL=true "
-                "ile --apply koştur.",
+                "[guest-pii-backfill] %d misafir kaydında plaintext PII bulundu (per_field=%s) — şifrelemek için ALLOW_GUEST_PII_BACKFILL=true ile --apply koştur.",
                 candidates_found,
                 found["per_field"],
             )
@@ -305,8 +286,7 @@ async def main() -> int:
     # apply mode
     if applied["skipped"] > 0 or applied["errors"] > 0:
         logger.warning(
-            "[guest-pii-backfill] apply tamamlandı ancak %d skip / %d hata kaldı — "
-            "tekrar koştur.",
+            "[guest-pii-backfill] apply tamamlandı ancak %d skip / %d hata kaldı — tekrar koştur.",
             applied["skipped"],
             applied["errors"],
         )

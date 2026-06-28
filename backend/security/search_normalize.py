@@ -30,6 +30,7 @@ that would re-expose the plaintext we encrypted. Those keep the existing
 deterministic ``_hash_<field>`` blind-index exact-match path. None of the
 fields configured here are encrypted.
 """
+
 from __future__ import annotations
 
 import unicodedata
@@ -145,6 +146,7 @@ def apply_collection_normalized_fields(doc: dict, *, collection: str) -> dict:
         apply_normalized_fields(doc, fields)
     # Trigram infix companion (plaintext names only; raw, un-hashed tokens).
     from security.search_ngram import apply_ngram_fields
+
     apply_ngram_fields(doc, collection=collection)
     return doc
 
@@ -162,6 +164,7 @@ def normalized_set_for_update(update_source: dict, *, collection: str) -> dict:
     if fields:
         out.update(build_normalized_updates(update_source, fields))
     from security.search_ngram import ngram_set_for_update
+
     out.update(ngram_set_for_update(update_source, collection=collection))
     return out
 
@@ -201,6 +204,4 @@ def prefix_conditions(fields: list[str], raw_value: str) -> list[dict]:
     if norm is None:
         return []
     upper = _prefix_upper_bound(norm)
-    return [
-        {companion_field(field): {"$gte": norm, "$lt": upper}} for field in fields
-    ]
+    return [{companion_field(field): {"$gte": norm, "$lt": upper}} for field in fields]

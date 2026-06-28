@@ -4,6 +4,7 @@ Her ``versions/v*.py`` modülü modül seviyesinde bir ``MIGRATION`` değişkeni
 tanımlar (bir ``Migration`` örneği). ``discover_migrations`` bu modülleri yükler,
 ``MIGRATION`` örneklerini toplar ve ``version`` alanına göre sıralı döndürür.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -31,16 +32,15 @@ def discover_migrations() -> list[Migration]:
             continue
         if not isinstance(migration, Migration):
             logger.warning(
-                "versions.%s.MIGRATION bir Migration örneği değil — atlandı", name,
+                "versions.%s.MIGRATION bir Migration örneği değil — atlandı",
+                name,
             )
             continue
         if not migration.version:
             logger.warning("versions.%s migration'ında version boş — atlandı", name)
             continue
         if migration.version in seen_versions:
-            raise ValueError(
-                f"Çift migration versiyonu: {migration.version} (versions.{name})"
-            )
+            raise ValueError(f"Çift migration versiyonu: {migration.version} (versions.{name})")
         seen_versions.add(migration.version)
         found.append(migration)
 

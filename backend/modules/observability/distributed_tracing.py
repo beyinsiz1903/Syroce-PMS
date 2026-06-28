@@ -3,6 +3,7 @@ Distributed Tracing Service — production-grade request tracing.
 Persists trace spans to MongoDB, provides real request-level analytics,
 slow endpoint detection, and correlation_id propagation.
 """
+
 import logging
 import time
 import uuid
@@ -25,14 +26,18 @@ class TracingService:
         self._total_requests = 0
         self._total_errors = 0
         self._total_slow = 0
-        self._path_stats: dict[str, dict] = defaultdict(lambda: {
-            "count": 0, "total_ms": 0.0, "errors": 0, "slow": 0, "max_ms": 0.0,
-        })
+        self._path_stats: dict[str, dict] = defaultdict(
+            lambda: {
+                "count": 0,
+                "total_ms": 0.0,
+                "errors": 0,
+                "slow": 0,
+                "max_ms": 0.0,
+            }
+        )
         self.SLOW_THRESHOLD_MS = 1000
 
-    def start_trace(self, request_path: str, method: str = "GET",
-                    tenant_id: str | None = None,
-                    correlation_id: str | None = None) -> str:
+    def start_trace(self, request_path: str, method: str = "GET", tenant_id: str | None = None, correlation_id: str | None = None) -> str:
         trace_id = str(uuid.uuid4())
         self._active_traces[trace_id] = {
             "trace_id": trace_id,
@@ -49,8 +54,7 @@ class TracingService:
         }
         return trace_id
 
-    def end_trace(self, trace_id: str, status_code: int = 200,
-                  error: str | None = None):
+    def end_trace(self, trace_id: str, status_code: int = 200, error: str | None = None):
         trace = self._active_traces.pop(trace_id, None)
         if not trace:
             return
@@ -58,13 +62,15 @@ class TracingService:
         duration_ms = round((time.time() - trace["started_at"]) * 1000, 2)
         is_slow = duration_ms > self.SLOW_THRESHOLD_MS
 
-        trace.update({
-            "status_code": status_code,
-            "error": error[:500] if error else None,
-            "duration_ms": duration_ms,
-            "is_slow": is_slow,
-            "completed_at": datetime.now(UTC).isoformat(),
-        })
+        trace.update(
+            {
+                "status_code": status_code,
+                "error": error[:500] if error else None,
+                "duration_ms": duration_ms,
+                "is_slow": is_slow,
+                "completed_at": datetime.now(UTC).isoformat(),
+            }
+        )
         del trace["started_at"]  # Remove raw timestamp
 
         # Update path stats
@@ -97,6 +103,7 @@ class TracingService:
         self._completed_traces.clear()
         try:
             from core.database import db
+
             # Insert without _id issues
             docs = [dict(t.items()) for t in to_flush]
             await db.observability_traces.insert_many(docs)
@@ -113,14 +120,16 @@ class TracingService:
         endpoints = []
         for path, stats in sorted(self._path_stats.items(), key=lambda x: -x[1]["count"]):
             avg_ms = round(stats["total_ms"] / max(stats["count"], 1), 2)
-            endpoints.append({
-                "path": path,
-                "count": stats["count"],
-                "avg_ms": avg_ms,
-                "max_ms": round(stats["max_ms"], 2),
-                "errors": stats["errors"],
-                "slow": stats["slow"],
-            })
+            endpoints.append(
+                {
+                    "path": path,
+                    "count": stats["count"],
+                    "avg_ms": avg_ms,
+                    "max_ms": round(stats["max_ms"], 2),
+                    "errors": stats["errors"],
+                    "slow": stats["slow"],
+                }
+            )
 
         error_rate = self._total_errors / max(self._total_requests, 1)
 
@@ -138,10 +147,9 @@ class TracingService:
         """Get recent traces from MongoDB."""
         try:
             from core.database import db
+
             q = {"is_slow": True} if slow_only else {}
-            traces = await db.observability_traces.find(
-                q, {"_id": 0}
-            ).sort("started_at_iso", -1).to_list(limit)
+            traces = await db.observability_traces.find(q, {"_id": 0}).sort("started_at_iso", -1).to_list(limit)
             return traces
         except Exception:
             # Fallback to in-memory buffer
@@ -156,12 +164,14 @@ class TracingService:
         for path, stats in self._path_stats.items():
             avg = stats["total_ms"] / max(stats["count"], 1)
             if avg > threshold_ms and stats["count"] >= min_count:
-                slow.append({
-                    "path": path,
-                    "avg_ms": round(avg, 2),
-                    "count": stats["count"],
-                    "slow_count": stats["slow"],
-                })
+                slow.append(
+                    {
+                        "path": path,
+                        "avg_ms": round(avg, 2),
+                        "count": stats["count"],
+                        "slow_count": stats["slow"],
+                    }
+                )
         return sorted(slow, key=lambda x: -x["avg_ms"])
 
     async def get_hot_paths(self, top_n: int = 10) -> list[dict]:

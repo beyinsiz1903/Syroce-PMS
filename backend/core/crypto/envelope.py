@@ -19,6 +19,7 @@ Design choices:
   - Compact JSON keys minimize storage overhead
   - AAD fingerprint is for debugging only — AAD is never stored, always reconstructed
 """
+
 import base64
 import hashlib
 import json
@@ -37,11 +38,12 @@ ALGORITHM = "AES-256-GCM"
 @dataclass(frozen=True)
 class EncryptionEnvelope:
     """Parsed encryption envelope."""
+
     version: int
     algorithm: str
     kid: str
     nonce: bytes
-    ciphertext: bytes   # includes appended GCM auth tag
+    ciphertext: bytes  # includes appended GCM auth tag
     aad_fingerprint: str
 
     def serialize(self) -> str:
@@ -64,7 +66,7 @@ class EncryptionEnvelope:
         if not data.startswith(ENVELOPE_PREFIX):
             raise EnvelopeParseError("missing_SYR1_prefix")
         try:
-            raw = base64.b64decode(data[len(ENVELOPE_PREFIX):])
+            raw = base64.b64decode(data[len(ENVELOPE_PREFIX) :])
             obj = json.loads(raw)
         except Exception:
             raise EnvelopeParseError("invalid_base64_or_json")

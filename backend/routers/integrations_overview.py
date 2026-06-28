@@ -20,6 +20,7 @@ Credential mevcudiyeti kontrolü:
 Bir env eksiği DB'den ya da Secrets'tan girilince bir sonraki refresh'te
 entegrasyon otomatik olarak `needs_credentials` → `ready` geçer.
 """
+
 from __future__ import annotations
 
 import logging
@@ -87,7 +88,6 @@ INTEGRATIONS: list[dict[str, Any]] = [
         "module_key": "ai_anthropic",
         "doc_url": "https://console.anthropic.com/settings/keys",
     },
-
     # ─── Messaging ──────────────────────────────────────────────
     {
         "key": "whatsapp",
@@ -125,15 +125,12 @@ INTEGRATIONS: list[dict[str, Any]] = [
         "key": "mailing",
         "name": "Syroce Mailing (Kredi Bazlı Kampanya)",
         "category": "messaging",
-        "description": "Otele kredi paketi olarak satılan toplu e-posta kampanya modülü "
-                       "(şablon + otomasyon + delivery tracking). Resend altyapısı + iyzico ödeme.",
+        "description": "Otele kredi paketi olarak satılan toplu e-posta kampanya modülü (şablon + otomasyon + delivery tracking). Resend altyapısı + iyzico ödeme.",
         "required_envs": ["RESEND_API_KEY", "RESEND_WEBHOOK_SECRET", "PUBLIC_APP_URL"],
         "code_status": "ready",
         "module_key": "mailing",
-        "pricing_note": "Otele paket satışı: 1.000 / 5.000 / 25.000 kredi (TRY). "
-                        "Ödeme tahsilatı için iyzico tamamlanmalı.",
+        "pricing_note": "Otele paket satışı: 1.000 / 5.000 / 25.000 kredi (TRY). Ödeme tahsilatı için iyzico tamamlanmalı.",
     },
-
     # ─── Channel Manager ────────────────────────────────────────
     {
         "key": "exely",
@@ -166,7 +163,6 @@ INTEGRATIONS: list[dict[str, Any]] = [
         "code_status": "in_development",
         "module_key": "channel_sabre",
     },
-
     # ─── Identity ───────────────────────────────────────────────
     {
         "key": "quickid",
@@ -178,7 +174,6 @@ INTEGRATIONS: list[dict[str, Any]] = [
         "module_key": "quickid",
         "pricing_note": "Tarama başına ücret.",
     },
-
     # ─── Loyalty ────────────────────────────────────────────────
     {
         "key": "afsadakat",
@@ -190,7 +185,6 @@ INTEGRATIONS: list[dict[str, Any]] = [
         "module_key": "loyalty_afsadakat",
         "pricing_note": "Aylık tenant lisansı.",
     },
-
     # ─── B2B Network ────────────────────────────────────────────
     {
         "key": "capx",
@@ -210,7 +204,6 @@ INTEGRATIONS: list[dict[str, Any]] = [
         "code_status": "ready",
         "module_key": "marketplace",
     },
-
     # ─── Payment ────────────────────────────────────────────────
     {
         "key": "iyzico",
@@ -231,7 +224,6 @@ INTEGRATIONS: list[dict[str, Any]] = [
         "code_status": "in_development",
         "module_key": "payment_stripe",
     },
-
     # ─── Monitoring / Observability ─────────────────────────────
     {
         "key": "sentry",
@@ -251,7 +243,6 @@ INTEGRATIONS: list[dict[str, Any]] = [
         "code_status": "ready",
         "module_key": "monitoring_alerts",
     },
-
     # ─── Infrastructure ─────────────────────────────────────────
     {
         "key": "aws_kms",

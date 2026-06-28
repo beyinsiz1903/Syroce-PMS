@@ -9,6 +9,7 @@ Endpoints:
   GET  /api/ops/sandbox/regressions    — Scenarios that regressed (previously passed, now failing)
   GET  /api/ops/sandbox/correlation    — Correlation with deploys and drift
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -19,8 +20,7 @@ from security.ops_guard import require_ops_access
 
 logger = logging.getLogger("controlplane.sandbox_dashboard")
 
-router = APIRouter(prefix="/api/ops/sandbox", tags=["Sandbox Dashboard"],
-                   dependencies=[Depends(require_ops_access)])
+router = APIRouter(prefix="/api/ops/sandbox", tags=["Sandbox Dashboard"], dependencies=[Depends(require_ops_access)])
 
 SANDBOX_RESULTS = "sandbox_simulation_results"
 
@@ -36,7 +36,8 @@ async def sandbox_dashboard(
 
     # Get last run
     last_run = await db[SANDBOX_RESULTS].find_one(
-        query, {"_id": 0, "_persist": 0},
+        query,
+        {"_id": 0, "_persist": 0},
         sort=[("started_at", -1)],
     )
 
@@ -99,9 +100,16 @@ async def sandbox_trends(
     if tenant_id:
         query["tenant_id"] = tenant_id
 
-    runs = await db[SANDBOX_RESULTS].find(
-        query, {"_id": 0, "_persist": 0},
-    ).sort("started_at", -1).limit(limit).to_list(limit)
+    runs = (
+        await db[SANDBOX_RESULTS]
+        .find(
+            query,
+            {"_id": 0, "_persist": 0},
+        )
+        .sort("started_at", -1)
+        .limit(limit)
+        .to_list(limit)
+    )
 
     runs.reverse()  # Chronological order
 
@@ -114,26 +122,30 @@ async def sandbox_trends(
 
     for run in runs:
         summary = run.get("summary", {})
-        overall_trend.append({
-            "run_id": run.get("run_id", ""),
-            "date": run.get("started_at", ""),
-            "pass_rate": _parse_rate(summary.get("pass_rate", "0%")),
-            "passed": summary.get("passed", 0),
-            "failed": summary.get("failed", 0),
-            "total": summary.get("total_scenarios", 0),
-        })
+        overall_trend.append(
+            {
+                "run_id": run.get("run_id", ""),
+                "date": run.get("started_at", ""),
+                "pass_rate": _parse_rate(summary.get("pass_rate", "0%")),
+                "passed": summary.get("passed", 0),
+                "failed": summary.get("failed", 0),
+                "total": summary.get("total_scenarios", 0),
+            }
+        )
 
         # Per provider
         for provider, data in run.get("provider_results", {}).items():
             if provider not in provider_trend:
                 provider_trend[provider] = []
-            provider_trend[provider].append({
-                "run_id": run.get("run_id", ""),
-                "date": run.get("started_at", ""),
-                "pass_rate": _parse_rate(data.get("pass_rate", "0%")),
-                "passed": data.get("passed", 0),
-                "failed": data.get("failed", 0),
-            })
+            provider_trend[provider].append(
+                {
+                    "run_id": run.get("run_id", ""),
+                    "date": run.get("started_at", ""),
+                    "pass_rate": _parse_rate(data.get("pass_rate", "0%")),
+                    "passed": data.get("passed", 0),
+                    "failed": data.get("failed", 0),
+                }
+            )
 
             # Per scenario
             for s in data.get("scenarios", []):
@@ -141,11 +153,13 @@ async def sandbox_trends(
                 key = f"{provider}:{sname}"
                 if key not in scenario_trend:
                     scenario_trend[key] = {"provider": provider, "scenario": sname, "history": []}
-                scenario_trend[key]["history"].append({
-                    "run_id": run.get("run_id", ""),
-                    "date": run.get("started_at", ""),
-                    "passed": s.get("passed", False),
-                })
+                scenario_trend[key]["history"].append(
+                    {
+                        "run_id": run.get("run_id", ""),
+                        "date": run.get("started_at", ""),
+                        "passed": s.get("passed", False),
+                    }
+                )
 
     # Find most-failing scenario
     failure_counts = {}
@@ -159,9 +173,7 @@ async def sandbox_trends(
         "overall_trend": overall_trend,
         "provider_trends": provider_trend,
         "scenario_trends": list(scenario_trend.values()),
-        "most_failing_scenarios": [
-            {"key": k, "failure_count": v} for k, v in most_failing
-        ],
+        "most_failing_scenarios": [{"key": k, "failure_count": v} for k, v in most_failing],
         "total_runs": len(runs),
         "timestamp": datetime.now(UTC).isoformat(),
     }
@@ -180,9 +192,16 @@ async def sandbox_regressions(
     if tenant_id:
         query["tenant_id"] = tenant_id
 
-    runs = await db[SANDBOX_RESULTS].find(
-        query, {"_id": 0, "_persist": 0},
-    ).sort("started_at", -1).limit(2).to_list(2)
+    runs = (
+        await db[SANDBOX_RESULTS]
+        .find(
+            query,
+            {"_id": 0, "_persist": 0},
+        )
+        .sort("started_at", -1)
+        .limit(2)
+        .to_list(2)
+    )
 
     if len(runs) < 2:
         return {
@@ -205,15 +224,17 @@ async def sandbox_regressions(
         for sname, curr_s in curr_scenarios.items():
             prev_s = prev_scenarios.get(sname)
             if prev_s and prev_s.get("passed") and not curr_s.get("passed"):
-                regressions.append({
-                    "provider": provider,
-                    "scenario": sname,
-                    "current_run": current.get("run_id", ""),
-                    "previous_run": previous.get("run_id", ""),
-                    "severity": "critical" if sname in ("duplicate_delivery", "retry_storm") else "warning",
-                    "runbook_link": f"/api/ops/runbooks/sandbox_{sname}",
-                    "alert_type": "sandbox_regression",
-                })
+                regressions.append(
+                    {
+                        "provider": provider,
+                        "scenario": sname,
+                        "current_run": current.get("run_id", ""),
+                        "previous_run": previous.get("run_id", ""),
+                        "severity": "critical" if sname in ("duplicate_delivery", "retry_storm") else "warning",
+                        "runbook_link": f"/api/ops/runbooks/sandbox_{sname}",
+                        "alert_type": "sandbox_regression",
+                    }
+                )
 
     return {
         "has_regression": len(regressions) > 0,
@@ -242,25 +263,37 @@ async def sandbox_correlation(
         query["tenant_id"] = tenant_id
 
     # Get recent sandbox runs
-    runs = await db[SANDBOX_RESULTS].find(
-        query, {"_id": 0, "run_id": 1, "started_at": 1, "summary": 1},
-    ).sort("started_at", -1).limit(limit).to_list(limit)
+    runs = (
+        await db[SANDBOX_RESULTS]
+        .find(
+            query,
+            {"_id": 0, "run_id": 1, "started_at": 1, "summary": 1},
+        )
+        .sort("started_at", -1)
+        .limit(limit)
+        .to_list(limit)
+    )
 
     # Get recent deploys
     deploys = []
     try:
-        deploys = await db["cp_deploy_events"].find(
-            {}, {"_id": 0, "deploy_id": 1, "started_at": 1, "status": 1, "environment": 1},
-        ).sort("started_at", -1).limit(limit).to_list(limit)
+        deploys = (
+            await db["cp_deploy_events"]
+            .find(
+                {},
+                {"_id": 0, "deploy_id": 1, "started_at": 1, "status": 1, "environment": 1},
+            )
+            .sort("started_at", -1)
+            .limit(limit)
+            .to_list(limit)
+        )
     except Exception:
         pass
 
     # Get recent drift snapshots
     drift_count = 0
     try:
-        drift_count = await db["drift_alert_events"].count_documents(
-            {"severity": {"$in": ["critical", "severe"]}}
-        )
+        drift_count = await db["drift_alert_events"].count_documents({"severity": {"$in": ["critical", "severe"]}})
     except Exception:
         pass
 
@@ -276,27 +309,27 @@ async def sandbox_correlation(
                 closest_deploy = d
                 break
 
-        correlations.append({
-            "run_id": run.get("run_id", ""),
-            "date": run_time,
-            "pass_rate": rate,
-            "closest_deploy": {
-                "deploy_id": closest_deploy.get("deploy_id", ""),
-                "status": closest_deploy.get("status", ""),
-                "environment": closest_deploy.get("environment", ""),
-            } if closest_deploy else None,
-            "pass_rate_dropped": (
-                i > 0 and rate < _parse_rate(runs[i-1].get("summary", {}).get("pass_rate", "100%"))
-            ),
-        })
+        correlations.append(
+            {
+                "run_id": run.get("run_id", ""),
+                "date": run_time,
+                "pass_rate": rate,
+                "closest_deploy": {
+                    "deploy_id": closest_deploy.get("deploy_id", ""),
+                    "status": closest_deploy.get("status", ""),
+                    "environment": closest_deploy.get("environment", ""),
+                }
+                if closest_deploy
+                else None,
+                "pass_rate_dropped": (i > 0 and rate < _parse_rate(runs[i - 1].get("summary", {}).get("pass_rate", "100%"))),
+            }
+        )
 
     return {
         "correlations": correlations,
         "drift_alerts_active": drift_count,
         "insight": (
-            "Sandbox pass rate stable — no correlation with recent deploys"
-            if all(not c["pass_rate_dropped"] for c in correlations)
-            else "Sandbox pass rate dropped — investigate recent deploy impact"
+            "Sandbox pass rate stable — no correlation with recent deploys" if all(not c["pass_rate_dropped"] for c in correlations) else "Sandbox pass rate dropped — investigate recent deploy impact"
         ),
         "label": "prod_health",
         "timestamp": datetime.now(UTC).isoformat(),

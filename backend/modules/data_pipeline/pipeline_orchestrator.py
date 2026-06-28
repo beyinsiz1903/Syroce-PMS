@@ -2,6 +2,7 @@
 Pipeline Orchestrator - Orchestrates the full ML data pipeline.
 feature extraction -> dataset generation -> model training -> deployment -> prediction
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -34,8 +35,7 @@ class PipelineOrchestrator:
         "guest_intelligence": "guest_intelligence",
     }
 
-    async def run_full_pipeline(self, tenant_id: str, model_type: str,
-                                triggered_by: str = "system") -> dict[str, Any]:
+    async def run_full_pipeline(self, tenant_id: str, model_type: str, triggered_by: str = "system") -> dict[str, Any]:
         """Execute the complete pipeline for a model type."""
         run_id = str(uuid.uuid4())
         now = datetime.now(UTC).isoformat()
@@ -76,7 +76,9 @@ class PipelineOrchestrator:
             # Step 2: Dataset Generation
             step_start = datetime.now(UTC).isoformat()
             dataset = await dataset_generator.generate_dataset(
-                tenant_id, model_type, feature_set,
+                tenant_id,
+                model_type,
+                feature_set,
                 description=f"Pipeline run {run_id}",
             )
             if "error" in dataset:
@@ -101,8 +103,11 @@ class PipelineOrchestrator:
                 "training_duration_sec": 12.5,
             }
             model = await model_registry.register_model(
-                tenant_id, model_type, dataset["id"],
-                training_metrics, f"Pipeline run {run_id}",
+                tenant_id,
+                model_type,
+                dataset["id"],
+                training_metrics,
+                f"Pipeline run {run_id}",
             )
             run_record["steps"]["model_training"] = {
                 "status": "completed",
@@ -152,14 +157,11 @@ class PipelineOrchestrator:
 
         return {k: v for k, v in run_record.items() if k != "_id"}
 
-    async def get_runs(self, tenant_id: str, model_type: str | None = None,
-                       limit: int = 20) -> list:
+    async def get_runs(self, tenant_id: str, model_type: str | None = None, limit: int = 20) -> list:
         q: dict[str, Any] = {"tenant_id": tenant_id}
         if model_type:
             q["model_type"] = model_type
-        return await db.pipeline_runs.find(
-            q, {"_id": 0}
-        ).sort("started_at", -1).to_list(limit)
+        return await db.pipeline_runs.find(q, {"_id": 0}).sort("started_at", -1).to_list(limit)
 
     async def get_pipeline_health(self, tenant_id: str) -> dict[str, Any]:
         """Get overall pipeline health for a tenant."""
@@ -169,10 +171,14 @@ class PipelineOrchestrator:
         stale_models = await model_registry.get_stale_models(tenant_id)
         stale_predictions = await prediction_service.get_stale_predictions(tenant_id)
 
-        recent_runs = await db.pipeline_runs.find(
-            {"tenant_id": tenant_id},
-            {"_id": 0, "id": 1, "model_type": 1, "status": 1, "started_at": 1},
-        ).sort("started_at", -1).to_list(5)
+        recent_runs = (
+            await db.pipeline_runs.find(
+                {"tenant_id": tenant_id},
+                {"_id": 0, "id": 1, "model_type": 1, "status": 1, "started_at": 1},
+            )
+            .sort("started_at", -1)
+            .to_list(5)
+        )
 
         return {
             "tenant_id": tenant_id,

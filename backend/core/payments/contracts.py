@@ -11,6 +11,7 @@ Para guvenligi doktrini:
 - Idempotency_key her mutasyonlu islemde zorunlu.
 - Yetkilendirme/tenant kapsami daima sunucu tarafi kimlikten gelir.
 """
+
 from __future__ import annotations
 
 import abc
@@ -152,9 +153,7 @@ class PaymentRequest:
 
         if op in (PaymentOperation.CHARGE, PaymentOperation.AUTHORIZE):
             if not self.vault_card_ref:
-                raise InvalidPaymentRequest(
-                    f"{op.value} icin vault_card_ref zorunlu"
-                )
+                raise InvalidPaymentRequest(f"{op.value} icin vault_card_ref zorunlu")
         if op in (
             PaymentOperation.CAPTURE,
             PaymentOperation.REFUND,

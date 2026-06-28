@@ -13,6 +13,7 @@ Flow:
   15 min -> all tenants -> each room type -> date range (today + 60 days) ->
   calculate real availability -> push to channels
 """
+
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
@@ -67,14 +68,10 @@ class AvailabilityReconciliationWorker:
         """Reconcile availability for all active tenants."""
         tenant_ids = set()
 
-        async for conn in db.exely_connections.find(
-            {"is_active": True}, {"_id": 0, "tenant_id": 1}
-        ):
+        async for conn in db.exely_connections.find({"is_active": True}, {"_id": 0, "tenant_id": 1}):
             tenant_ids.add(conn["tenant_id"])
 
-        async for conn in db.hotelrunner_connections.find(
-            {"is_active": True}, {"_id": 0, "tenant_id": 1}
-        ):
+        async for conn in db.hotelrunner_connections.find({"is_active": True}, {"_id": 0, "tenant_id": 1}):
             tenant_ids.add(conn["tenant_id"])
 
         if not tenant_ids:
@@ -146,19 +143,16 @@ class AvailabilityReconciliationWorker:
             availability_by_type[pms_type] = date_avail
 
         push_tasks = []
-        push_tasks.append(
-            _push_reconciliation_exely(tenant_id, availability_by_type)
-        )
-        push_tasks.append(
-            _push_reconciliation_hr(tenant_id, availability_by_type)
-        )
+        push_tasks.append(_push_reconciliation_exely(tenant_id, availability_by_type))
+        push_tasks.append(_push_reconciliation_hr(tenant_id, availability_by_type))
         results = await asyncio.gather(*push_tasks, return_exceptions=True)
 
         total_pushed = sum(r for r in results if isinstance(r, int))
         if total_pushed > 0:
             logger.info(
                 "[AVAIL-RECON] Tenant %s: %d pushes completed",
-                tenant_id[:8], total_pushed,
+                tenant_id[:8],
+                total_pushed,
             )
 
 
@@ -169,9 +163,7 @@ async def _push_reconciliation_exely(
     """Push reconciliation data to Exely."""
     push_count = 0
     try:
-        conn = await db.exely_connections.find_one(
-            {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-        )
+        conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
         if not conn:
             return 0
 
@@ -199,9 +191,7 @@ async def _push_reconciliation_exely(
         if not rate_plans:
             return 0
 
-        all_mappings = await db.exely_room_mappings.find(
-            {"tenant_id": tenant_id}, {"_id": 0}
-        ).to_list(100)
+        all_mappings = await db.exely_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(100)
 
         seen = set()
         unique_mappings = []
@@ -261,15 +251,11 @@ async def _push_reconciliation_hr(
     """Push reconciliation data to HotelRunner."""
     push_count = 0
     try:
-        conn = await db.hotelrunner_connections.find_one(
-            {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-        )
+        conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
         if not conn:
             return 0
 
-        all_mappings = await db.hotelrunner_room_mappings.find(
-            {"tenant_id": tenant_id}, {"_id": 0}
-        ).to_list(100)
+        all_mappings = await db.hotelrunner_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(100)
 
         seen = set()
         unique_mappings = []
@@ -284,6 +270,7 @@ async def _push_reconciliation_hr(
 
         try:
             from domains.channel_manager.providers.hotelrunner.factory import get_provider as _get_provider
+
             provider, _ = await _get_provider(tenant_id)
         except Exception as e:
             logger.warning("[AVAIL-RECON] Cannot get HR provider: %s", e)

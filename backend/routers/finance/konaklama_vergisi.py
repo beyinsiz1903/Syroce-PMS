@@ -11,6 +11,7 @@ Bu modül `db.city_tax_rules` (mevcut config koleksiyonu) ve
 `ChargeCategory.CITY_TAX` (mevcut enum) üzerine kuruludur.
 Posting izi `db.accommodation_tax_postings` koleksiyonunda tutulur.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -171,22 +172,16 @@ async def update_config(
     # zincirine before/after snapshot ile yaz. Oran veya aktiflik değişirse
     # severity yükseltilir (matrah/vergi tutarını doğrudan etkiler).
     try:
-        rate_or_active_changed = (
-            before_cfg.get("rate_percent") != cfg.rate_percent
-            or bool(before_cfg.get("active", True)) != bool(cfg.active)
-        )
+        rate_or_active_changed = before_cfg.get("rate_percent") != cfg.rate_percent or bool(before_cfg.get("active", True)) != bool(cfg.active)
         from core.audit import log_audit_event
+
         await log_audit_event(
             tenant_id=current_user.tenant_id,
             user_id=current_user.id,
             action="accommodation_tax_config_updated",
             entity_type="city_tax_rules",
             entity_id=current_user.tenant_id,
-            details=(
-                f"Konaklama vergisi config güncellendi (rate "
-                f"{before_cfg.get('rate_percent')} -> {cfg.rate_percent}, "
-                f"active {before_cfg.get('active', True)} -> {cfg.active})"
-            ),
+            details=(f"Konaklama vergisi config güncellendi (rate {before_cfg.get('rate_percent')} -> {cfg.rate_percent}, active {before_cfg.get('active', True)} -> {cfg.active})"),
             before_value={
                 "rate_percent": before_cfg.get("rate_percent"),
                 "active": before_cfg.get("active", True),
@@ -238,8 +233,7 @@ async def _tenant_tz(tenant_id: str):
         from zoneinfo import ZoneInfo
     except Exception:  # pragma: no cover
         return UTC
-    doc = await db.tenant_settings.find_one(
-        {"tenant_id": tenant_id}, {"_id": 0, "timezone": 1}) or {}
+    doc = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "timezone": 1}) or {}
     name = doc.get("timezone") or "Europe/Istanbul"
     try:
         return ZoneInfo(name)
@@ -248,7 +242,9 @@ async def _tenant_tz(tenant_id: str):
 
 
 async def _period_bounds(
-    tenant_id: str, year: int, month: int,
+    tenant_id: str,
+    year: int,
+    month: int,
 ) -> tuple[datetime, datetime]:
     """Aylık dönem sınırlarını tenant TZ'ye göre üret; UTC'ye çevir.
 
@@ -276,14 +272,15 @@ async def _tenant_summary(tenant_id: str) -> dict[str, Any]:
     DeclRow `tenant.hotel_name || '-'` formatıyla okuduğu için boş
     görünmesin diye burada normalize ediyoruz.
     """
-    doc = await db.tenants.find_one(
-        {"id": tenant_id},
-        {"_id": 0, "hotel_name": 1, "name": 1, "property_name": 1,
-         "tax_no": 1, "tax_number": 1, "hotel_id": 1},
-    ) or {}
+    doc = (
+        await db.tenants.find_one(
+            {"id": tenant_id},
+            {"_id": 0, "hotel_name": 1, "name": 1, "property_name": 1, "tax_no": 1, "tax_number": 1, "hotel_id": 1},
+        )
+        or {}
+    )
     return {
-        "hotel_name": (doc.get("hotel_name") or doc.get("name")
-                       or doc.get("property_name") or ""),
+        "hotel_name": (doc.get("hotel_name") or doc.get("name") or doc.get("property_name") or ""),
         "tax_no": doc.get("tax_no") or doc.get("tax_number") or "",
         "hotel_id": doc.get("hotel_id") or "",
     }
@@ -302,10 +299,14 @@ async def _aggregate_period(tenant_id: str, year: int, month: int) -> dict[str, 
     if effective_from:
         try:
             from datetime import date as _d
+
             tz = await _tenant_tz(tenant_id)
             ef_date = _d.fromisoformat(effective_from[:10])
             ef_dt = datetime(
-                ef_date.year, ef_date.month, ef_date.day, tzinfo=tz,
+                ef_date.year,
+                ef_date.month,
+                ef_date.day,
+                tzinfo=tz,
             ).astimezone(UTC)
             if ef_dt > start:
                 start = ef_dt
@@ -317,9 +318,15 @@ async def _aggregate_period(tenant_id: str, year: int, month: int) -> dict[str, 
         # v95.8: exempt_count/exempt_base alanları normal path ile aynı
         # şekilde döner; frontend her durumda alan bekleyebilsin.
         return {
-            "year": year, "month": month, "rate_percent": rate,
-            "folio_count": 0, "total_nights": 0, "total_base": 0.0,
-            "total_tax": 0.0, "exempt_count": 0, "exempt_base": 0.0,
+            "year": year,
+            "month": month,
+            "rate_percent": rate,
+            "folio_count": 0,
+            "total_nights": 0,
+            "total_base": 0.0,
+            "total_tax": 0.0,
+            "exempt_count": 0,
+            "exempt_base": 0.0,
             "rows": [],
         }
 
@@ -357,8 +364,7 @@ async def _aggregate_period(tenant_id: str, year: int, month: int) -> dict[str, 
         if booking_ids:
             exempt_ids = set()
             async for b in db.bookings.find(
-                {"tenant_id": tenant_id, "id": {"$in": booking_ids},
-                 "segment": {"$in": exempt}},
+                {"tenant_id": tenant_id, "id": {"$in": booking_ids}, "segment": {"$in": exempt}},
                 {"_id": 0, "id": 1},
             ):
                 exempt_ids.add(b["id"])
@@ -393,6 +399,7 @@ async def report(
 ) -> dict[str, Any]:
     # Tur 3: defaults — current year/month when omitted
     from datetime import date as _d
+
     today = _d.today()
     if year is None:
         year = today.year
@@ -410,6 +417,7 @@ async def declaration(
     """GİB beyanname özeti — aylık konaklama vergisi beyannamesi."""
     # Tur 3: defaults — current year/month when omitted
     from datetime import date as _d
+
     today = _d.today()
     if year is None:
         year = today.year
@@ -441,10 +449,8 @@ async def _ensure_declaration_indexes() -> None:
     global _DECL_INDEXES_READY
     if _DECL_INDEXES_READY:
         return
-    await db.tax_declarations.create_index(
-        [("tenant_id", 1), ("period", 1), ("kind", 1)], unique=True)
-    await db.tax_declarations.create_index(
-        [("tenant_id", 1), ("status", 1), ("period", -1)])
+    await db.tax_declarations.create_index([("tenant_id", 1), ("period", 1), ("kind", 1)], unique=True)
+    await db.tax_declarations.create_index([("tenant_id", 1), ("status", 1), ("period", -1)])
     _DECL_INDEXES_READY = True
 
 
@@ -464,28 +470,28 @@ def _gib_xml(decl: dict) -> str:
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<KonaklamaVergisiBeyannamesi xmlns="urn:syroce:kvb:v1">\n'
-        f'  <Donem>{_e(decl.get("period"))}</Donem>\n'
-        f'  <SonOdemeTarihi>{_e(decl.get("due_date"))}</SonOdemeTarihi>\n'
-        '  <Mukellef>\n'
-        f'    <UnvanAdi>{_e(t.get("hotel_name"))}</UnvanAdi>\n'
-        f'    <VergiNo>{_e(t.get("tax_no"))}</VergiNo>\n'
-        f'    <OtelKodu>{_e(t.get("hotel_id"))}</OtelKodu>\n'
-        '  </Mukellef>\n'
-        '  <Matrah>\n'
-        f'    <FolioSayisi>{int(decl.get("folio_count") or 0)}</FolioSayisi>\n'
-        f'    <ToplamGeceleme>{float(decl.get("total_nights") or 0):.2f}'
-        '</ToplamGeceleme>\n'
-        f'    <ToplamMatrah>{float(decl.get("total_base") or 0):.2f}'
-        '</ToplamMatrah>\n'
-        '    <ParaBirimi>TRY</ParaBirimi>\n'
-        '  </Matrah>\n'
-        '  <Vergi>\n'
-        f'    <Oran>{float(decl.get("rate_percent") or 0):.2f}</Oran>\n'
-        f'    <TahakkukEdenVergi>{float(decl.get("total_tax") or 0):.2f}'
-        '</TahakkukEdenVergi>\n'
-        '  </Vergi>\n'
-        f'  <KanunReferansi>{_e(decl.get("law_reference"))}</KanunReferansi>\n'
-        '</KonaklamaVergisiBeyannamesi>\n'
+        f"  <Donem>{_e(decl.get('period'))}</Donem>\n"
+        f"  <SonOdemeTarihi>{_e(decl.get('due_date'))}</SonOdemeTarihi>\n"
+        "  <Mukellef>\n"
+        f"    <UnvanAdi>{_e(t.get('hotel_name'))}</UnvanAdi>\n"
+        f"    <VergiNo>{_e(t.get('tax_no'))}</VergiNo>\n"
+        f"    <OtelKodu>{_e(t.get('hotel_id'))}</OtelKodu>\n"
+        "  </Mukellef>\n"
+        "  <Matrah>\n"
+        f"    <FolioSayisi>{int(decl.get('folio_count') or 0)}</FolioSayisi>\n"
+        f"    <ToplamGeceleme>{float(decl.get('total_nights') or 0):.2f}"
+        "</ToplamGeceleme>\n"
+        f"    <ToplamMatrah>{float(decl.get('total_base') or 0):.2f}"
+        "</ToplamMatrah>\n"
+        "    <ParaBirimi>TRY</ParaBirimi>\n"
+        "  </Matrah>\n"
+        "  <Vergi>\n"
+        f"    <Oran>{float(decl.get('rate_percent') or 0):.2f}</Oran>\n"
+        f"    <TahakkukEdenVergi>{float(decl.get('total_tax') or 0):.2f}"
+        "</TahakkukEdenVergi>\n"
+        "  </Vergi>\n"
+        f"  <KanunReferansi>{_e(decl.get('law_reference'))}</KanunReferansi>\n"
+        "</KonaklamaVergisiBeyannamesi>\n"
     )
 
 
@@ -519,14 +525,11 @@ async def finalize_declaration(
     """
     await _ensure_declaration_indexes()
     period = f"{body.year}-{body.month:02d}"
-    existing = await db.tax_declarations.find_one(
-        {"tenant_id": current_user.tenant_id, "period": period,
-         "kind": "konaklama_vergisi"}, {"_id": 0})
+    existing = await db.tax_declarations.find_one({"tenant_id": current_user.tenant_id, "period": period, "kind": "konaklama_vergisi"}, {"_id": 0})
     if existing and existing.get("status") not in (None, "draft"):
         return existing
 
-    agg = await _aggregate_period(current_user.tenant_id, body.year,
-                                  body.month)
+    agg = await _aggregate_period(current_user.tenant_id, body.year, body.month)
     tenant = await _tenant_summary(current_user.tenant_id)
     due_month = body.month + 1 if body.month < 12 else 1
     due_year = body.year if body.month < 12 else body.year + 1
@@ -562,22 +565,22 @@ async def finalize_declaration(
     # in draft. Prevents a concurrent/late finalize from regressing a
     # record that another request just promoted (submitted/paid).
     res = await db.tax_declarations.update_one(
-        {"tenant_id": current_user.tenant_id, "period": period,
-         "kind": "konaklama_vergisi",
-         "$or": [{"status": {"$in": [None, "draft"]}},
-                 {"status": {"$exists": False}}]},
-        {"$set": snapshot}, upsert=True)
+        {"tenant_id": current_user.tenant_id, "period": period, "kind": "konaklama_vergisi", "$or": [{"status": {"$in": [None, "draft"]}}, {"status": {"$exists": False}}]},
+        {"$set": snapshot},
+        upsert=True,
+    )
     if not (res.matched_count or res.upserted_id):
         # Lost the race — another caller already finalized; return latest.
-        latest = await db.tax_declarations.find_one(
-            {"tenant_id": current_user.tenant_id, "period": period,
-             "kind": "konaklama_vergisi"}, {"_id": 0})
+        latest = await db.tax_declarations.find_one({"tenant_id": current_user.tenant_id, "period": period, "kind": "konaklama_vergisi"}, {"_id": 0})
         return latest or snapshot
     await create_audit_log(
-        tenant_id=current_user.tenant_id, user=current_user,
+        tenant_id=current_user.tenant_id,
+        user=current_user,
         action="FINALIZE_KONAKLAMA_BEYANNAME",
-        entity_type="tax_declaration", entity_id=snapshot["id"],
-        changes={"period": period, "total_tax": snapshot["total_tax"]})
+        entity_type="tax_declaration",
+        entity_id=snapshot["id"],
+        changes={"period": period, "total_tax": snapshot["total_tax"]},
+    )
     return snapshot
 
 
@@ -586,18 +589,13 @@ async def list_declarations(
     limit: int = 24,
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
-    cursor = db.tax_declarations.find(
-        {"tenant_id": current_user.tenant_id,
-         "kind": "konaklama_vergisi"}, {"_id": 0, "rows": 0}
-    ).sort("period", -1).limit(max(1, min(limit, 120)))
+    cursor = db.tax_declarations.find({"tenant_id": current_user.tenant_id, "kind": "konaklama_vergisi"}, {"_id": 0, "rows": 0}).sort("period", -1).limit(max(1, min(limit, 120)))
     items = await cursor.to_list(length=None)
     return {"count": len(items), "items": items}
 
 
 async def _load_decl(tenant_id: str, decl_id: str) -> dict:
-    doc = await db.tax_declarations.find_one(
-        {"id": decl_id, "tenant_id": tenant_id,
-         "kind": "konaklama_vergisi"}, {"_id": 0})
+    doc = await db.tax_declarations.find_one({"id": decl_id, "tenant_id": tenant_id, "kind": "konaklama_vergisi"}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Beyanname bulunamadı")
     return doc
@@ -613,67 +611,50 @@ async def get_declaration(
 
 @router.post("/declarations/{decl_id}/submit")
 async def submit_declaration(
-    decl_id: str, body: SubmitRequest,
+    decl_id: str,
+    body: SubmitRequest,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v101 DW
 ) -> dict[str, Any]:
     decl = await _load_decl(current_user.tenant_id, decl_id)
     if decl.get("status") not in ("finalized",):
-        raise HTTPException(
-            409, f"Yalnızca onaylanmış (finalized) beyannameler gönderilebilir "
-                 f"(mevcut: {decl.get('status')})")
+        raise HTTPException(409, f"Yalnızca onaylanmış (finalized) beyannameler gönderilebilir (mevcut: {decl.get('status')})")
     upd = {
         "status": "submitted",
         "submission_ref": body.submission_ref.strip(),
-        "submitted_at": (body.submitted_at
-                         or datetime.now(UTC).isoformat()),
+        "submitted_at": (body.submitted_at or datetime.now(UTC).isoformat()),
         "submitted_by": current_user.id,
     }
     # Atomic transition: only flip if status is still 'finalized'.
-    res = await db.tax_declarations.update_one(
-        {"id": decl_id, "tenant_id": current_user.tenant_id,
-         "status": "finalized"},
-        {"$set": upd})
+    res = await db.tax_declarations.update_one({"id": decl_id, "tenant_id": current_user.tenant_id, "status": "finalized"}, {"$set": upd})
     if not res.matched_count:
         raise HTTPException(409, "Beyanname durumu bu arada değişti")
-    await create_audit_log(
-        tenant_id=current_user.tenant_id, user=current_user,
-        action="SUBMIT_KONAKLAMA_BEYANNAME",
-        entity_type="tax_declaration", entity_id=decl_id,
-        changes=upd)
+    await create_audit_log(tenant_id=current_user.tenant_id, user=current_user, action="SUBMIT_KONAKLAMA_BEYANNAME", entity_type="tax_declaration", entity_id=decl_id, changes=upd)
     return await _load_decl(current_user.tenant_id, decl_id)
 
 
 @router.post("/declarations/{decl_id}/pay")
 async def pay_declaration(
-    decl_id: str, body: PaymentRequest,
+    decl_id: str,
+    body: PaymentRequest,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v101 DW
 ) -> dict[str, Any]:
     decl = await _load_decl(current_user.tenant_id, decl_id)
     if decl.get("status") not in ("submitted", "finalized"):
-        raise HTTPException(
-            409, "Yalnızca onaylanmış/gönderilmiş beyanname için ödeme "
-                 "kaydedilebilir")
+        raise HTTPException(409, "Yalnızca onaylanmış/gönderilmiş beyanname için ödeme kaydedilebilir")
     upd = {
         "status": "paid",
         "payment_ref": body.payment_ref.strip(),
         "paid_at": body.paid_at or datetime.now(UTC).isoformat(),
         "paid_by": current_user.id,
-        "paid_amount": (body.amount if body.amount is not None
-                        else decl.get("total_tax")),
+        "paid_amount": (body.amount if body.amount is not None else decl.get("total_tax")),
     }
     # Atomic: never overwrite a record that's already paid.
-    res = await db.tax_declarations.update_one(
-        {"id": decl_id, "tenant_id": current_user.tenant_id,
-         "status": {"$in": ["finalized", "submitted"]}},
-        {"$set": upd})
+    res = await db.tax_declarations.update_one({"id": decl_id, "tenant_id": current_user.tenant_id, "status": {"$in": ["finalized", "submitted"]}}, {"$set": upd})
     if not res.matched_count:
         raise HTTPException(409, "Ödeme zaten kaydedilmiş veya durum uygun değil")
-    await create_audit_log(
-        tenant_id=current_user.tenant_id, user=current_user,
-        action="PAY_KONAKLAMA_BEYANNAME",
-        entity_type="tax_declaration", entity_id=decl_id, changes=upd)
+    await create_audit_log(tenant_id=current_user.tenant_id, user=current_user, action="PAY_KONAKLAMA_BEYANNAME", entity_type="tax_declaration", entity_id=decl_id, changes=upd)
     return await _load_decl(current_user.tenant_id, decl_id)
 
 
@@ -699,7 +680,7 @@ def _decl_html(decl: dict) -> str:
 
     return f"""<!DOCTYPE html>
 <html lang="tr"><head><meta charset="utf-8">
-<title>Konaklama Vergisi Beyannamesi {_e(decl.get('period'))}</title>
+<title>Konaklama Vergisi Beyannamesi {_e(decl.get("period"))}</title>
 <style>
   @page {{ size: A4; margin: 18mm; }}
   body {{ font-family: 'Helvetica', 'Arial', sans-serif; color:#0f172a; font-size: 11pt; }}
@@ -715,13 +696,13 @@ def _decl_html(decl: dict) -> str:
 </style></head>
 <body>
   <h1>KONAKLAMA VERGİSİ BEYANNAMESİ</h1>
-  <div class="sub">{_e(decl.get('law_reference'))}</div>
+  <div class="sub">{_e(decl.get("law_reference"))}</div>
 
   <table class="meta">
-    <tr><td class="k">İşletme</td><td>{_e(t.get('hotel_name'))}</td></tr>
-    <tr><td class="k">Vergi No / Otel ID</td><td>{_e(t.get('tax_no') or t.get('hotel_id'))}</td></tr>
-    <tr><td class="k">Dönem</td><td>{_e(decl.get('period'))}</td></tr>
-    <tr><td class="k">Son Beyan/Ödeme Tarihi</td><td>{_e(decl.get('due_date'))}</td></tr>
+    <tr><td class="k">İşletme</td><td>{_e(t.get("hotel_name"))}</td></tr>
+    <tr><td class="k">Vergi No / Otel ID</td><td>{_e(t.get("tax_no") or t.get("hotel_id"))}</td></tr>
+    <tr><td class="k">Dönem</td><td>{_e(decl.get("period"))}</td></tr>
+    <tr><td class="k">Son Beyan/Ödeme Tarihi</td><td>{_e(decl.get("due_date"))}</td></tr>
     <tr><td class="k">Vergi Oranı</td><td>%{rate:.2f}</td></tr>
   </table>
 
@@ -761,8 +742,7 @@ def _decl_pdf_bytes(decl: dict) -> bytes:
         logger.error("[KVB PDF] weasyprint renderer unavailable: %s", exc)
         raise HTTPException(
             status_code=503,
-            detail="PDF renderer (weasyprint) unavailable on this deployment. "
-                   "Install weasyprint + system deps (cairo, pango) or use XML/JSON export.",
+            detail="PDF renderer (weasyprint) unavailable on this deployment. Install weasyprint + system deps (cairo, pango) or use XML/JSON export.",
         ) from exc
     html = _decl_html(decl)
     try:
@@ -770,37 +750,32 @@ def _decl_pdf_bytes(decl: dict) -> bytes:
     except Exception as exc:
         logger.exception("[KVB PDF] render failed: %s", exc)
         raise HTTPException(
-            status_code=500, detail=f"PDF rendering failed: {type(exc).__name__}",
+            status_code=500,
+            detail=f"PDF rendering failed: {type(exc).__name__}",
         ) from exc
 
 
 @router.get("/declarations/{decl_id}/export")
 async def export_declaration(
-    decl_id: str, format: str = "xml",
+    decl_id: str,
+    format: str = "xml",
     current_user: User = Depends(get_current_user),
 ):
     from fastapi.responses import Response
+
     decl = await _load_decl(current_user.tenant_id, decl_id)
     fmt = (format or "xml").lower()
     if fmt == "xml":
         body = _gib_xml(decl)
-        return Response(
-            content=body, media_type="application/xml",
-            headers={"Content-Disposition":
-                     f'attachment; filename="kvb-{decl["period"]}.xml"'})
+        return Response(content=body, media_type="application/xml", headers={"Content-Disposition": f'attachment; filename="kvb-{decl["period"]}.xml"'})
     if fmt == "json":
         import json as _json
+
         body = _json.dumps(decl, ensure_ascii=False, indent=2)
-        return Response(
-            content=body, media_type="application/json",
-            headers={"Content-Disposition":
-                     f'attachment; filename="kvb-{decl["period"]}.json"'})
+        return Response(content=body, media_type="application/json", headers={"Content-Disposition": f'attachment; filename="kvb-{decl["period"]}.json"'})
     if fmt == "pdf":
         pdf = _decl_pdf_bytes(decl)
-        return Response(
-            content=pdf, media_type="application/pdf",
-            headers={"Content-Disposition":
-                     f'attachment; filename="kvb-{decl["period"]}.pdf"'})
+        return Response(content=pdf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="kvb-{decl["period"]}.pdf"'})
     raise HTTPException(400, "format yalnızca xml|json|pdf olabilir")
 
 
@@ -824,11 +799,11 @@ async def email_declaration(
     raporları için ayırıyoruz).
     """
     from core.email import _is_valid_email, send_email
+
     decl = await _load_decl(current_user.tenant_id, decl_id)
 
     cfg = await _load_config(current_user.tenant_id)
-    raw = body.recipients if body.recipients is not None else cfg.get(
-        "email_recipients") or []
+    raw = body.recipients if body.recipients is not None else cfg.get("email_recipients") or []
     seen: set[str] = set()
     targets: list[str] = []
     for r in raw:
@@ -843,10 +818,7 @@ async def email_declaration(
         seen.add(k)
         targets.append(rs)
     if not targets:
-        raise HTTPException(
-            400, "Alıcı bulunamadı — e-posta adresi ekleyin veya "
-                 "Yapılandırma → Alıcılar listesine en az bir geçerli "
-                 "adres girin.")
+        raise HTTPException(400, "Alıcı bulunamadı — e-posta adresi ekleyin veya Yapılandırma → Alıcılar listesine en az bir geçerli adres girin.")
 
     pdf_bytes = _decl_pdf_bytes(decl)
     period = decl.get("period") or ""
@@ -854,16 +826,14 @@ async def email_declaration(
     note_html = ""
     if body.note:
         from core.mailing_safe import safe_html_value
-        note_html = (
-            f"<p style='margin:0 0 12px;color:#0f172a;'>"
-            f"{safe_html_value(body.note)}</p>"
-        )
+
+        note_html = f"<p style='margin:0 0 12px;color:#0f172a;'>{safe_html_value(body.note)}</p>"
     html = (
         "<div style='font-family:Helvetica,Arial,sans-serif;max-width:600px;"
         "margin:0 auto;padding:18px;color:#0f172a;'>"
         f"<h2 style='margin:0 0 8px;'>Konaklama Vergisi Beyannamesi — {period}</h2>"
         f"<p style='color:#64748b;margin:0 0 16px;'>"
-        f"Son ödeme tarihi: <b>{decl.get('due_date','-')}</b> &middot; "
+        f"Son ödeme tarihi: <b>{decl.get('due_date', '-')}</b> &middot; "
         f"Tahakkuk eden vergi: <b>{float(decl.get('total_tax') or 0):.2f} TL</b>"
         "</p>"
         f"{note_html}"
@@ -873,17 +843,22 @@ async def email_declaration(
         "Syroce PMS · Otomatik üretilmiş bildirim"
         "</p></div>"
     )
-    attachments = [{
-        "filename": f"kvb-{period}.pdf",
-        "content": pdf_bytes,
-        "content_type": "application/pdf",
-    }]
+    attachments = [
+        {
+            "filename": f"kvb-{period}.pdf",
+            "content": pdf_bytes,
+            "content_type": "application/pdf",
+        }
+    ]
 
     sent_ok = 0
     failures: list[dict] = []
     for to in targets:
         res = await send_email(
-            to=to, subject=subject, html=html, attachments=attachments,
+            to=to,
+            subject=subject,
+            html=html,
+            attachments=attachments,
         )
         if res.get("sent"):
             sent_ok += 1
@@ -893,19 +868,24 @@ async def email_declaration(
     # Audit + decl meta — son gönderim izini decl üzerinde tut.
     await db.tax_declarations.update_one(
         {"id": decl_id, "tenant_id": current_user.tenant_id},
-        {"$set": {
-            "last_email_at": datetime.now(UTC).isoformat(),
-            "last_email_by": current_user.id,
-            "last_email_recipients": targets,
-            "last_email_ok": sent_ok,
-            "last_email_failures": failures,
-        }})
+        {
+            "$set": {
+                "last_email_at": datetime.now(UTC).isoformat(),
+                "last_email_by": current_user.id,
+                "last_email_recipients": targets,
+                "last_email_ok": sent_ok,
+                "last_email_failures": failures,
+            }
+        },
+    )
     await create_audit_log(
-        tenant_id=current_user.tenant_id, user=current_user,
+        tenant_id=current_user.tenant_id,
+        user=current_user,
         action="EMAIL_KONAKLAMA_BEYANNAME",
-        entity_type="tax_declaration", entity_id=decl_id,
-        changes={"recipients": targets, "ok": sent_ok,
-                 "failures": len(failures)})
+        entity_type="tax_declaration",
+        entity_id=decl_id,
+        changes={"recipients": targets, "ok": sent_ok, "failures": len(failures)},
+    )
     return {
         "sent": sent_ok,
         "total": len(targets),
@@ -972,8 +952,6 @@ async def list_postings(
     limit: int = 50,
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
-    cursor = db.accommodation_tax_postings.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).sort("posted_at", -1).limit(max(1, min(limit, 500)))
+    cursor = db.accommodation_tax_postings.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("posted_at", -1).limit(max(1, min(limit, 500)))
     items = await cursor.to_list(length=None)
     return {"count": len(items), "items": items}

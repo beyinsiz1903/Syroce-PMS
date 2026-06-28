@@ -10,6 +10,7 @@ Adapter seçimi `POS_PRINT_DRIVER` env değişkeniyle:
 Gerçek donanım entegrasyonu sertifikasyon gerektirir; adapter pattern
 ile pluggable.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -32,8 +33,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/pos/ext/print", tags=["pos-ext-print"])
 
 # ESC/POS control bytes
-_INIT = b"\x1b\x40"           # initialize
-_CUT = b"\x1d\x56\x00"        # full cut
+_INIT = b"\x1b\x40"  # initialize
+_CUT = b"\x1d\x56\x00"  # full cut
 _BOLD_ON = b"\x1b\x45\x01"
 _BOLD_OFF = b"\x1b\x45\x00"
 _ALIGN_CENTER = b"\x1b\x61\x01"
@@ -42,7 +43,7 @@ _NL = b"\n"
 
 # Real-time status request commands (DLE EOT n).
 _DLE_EOT_OFFLINE = b"\x10\x04\x02"  # offline cause status (cover/paper/error)
-_DLE_EOT_PAPER = b"\x10\x04\x04"    # paper sensor status (near-end / end)
+_DLE_EOT_PAPER = b"\x10\x04\x04"  # paper sensor status (near-end / end)
 
 # ── Character code pages (Turkish certification) ──────────────────────────
 # Real ESC/POS thermal printers do NOT consume UTF-8: each glyph is one byte
@@ -55,20 +56,38 @@ _DLE_EOT_PAPER = b"\x10\x04\x04"    # paper sensor status (near-end / end)
 _DEFAULT_CODEPAGE = (os.environ.get("POS_PRINT_CODEPAGE") or "cp857").lower()
 
 _CODEPAGE_TABLE_ID: dict[str, int] = {
-    "cp437": 0,    # PC437 USA / Standard Europe
-    "cp850": 2,    # PC850 Multilingual
-    "cp857": 13,   # PC857 Turkish (common Epson TM code table 13)
+    "cp437": 0,  # PC437 USA / Standard Europe
+    "cp850": 2,  # PC850 Multilingual
+    "cp857": 13,  # PC857 Turkish (common Epson TM code table 13)
     "cp1254": 47,  # WPC1254 Windows Turkish
 }
 
 # Last-resort transliteration for glyphs absent from the chosen code page, so an
 # unmappable character degrades to a readable ASCII approximation instead of a
 # replacement box.
-_TRANSLIT = str.maketrans({
-    "ı": "i", "İ": "I", "ş": "s", "Ş": "S", "ğ": "g", "Ğ": "G",
-    "ç": "c", "Ç": "C", "ö": "o", "Ö": "O", "ü": "u", "Ü": "U",
-    "₺": "TL", "“": '"', "”": '"', "’": "'", "‘": "'", "–": "-", "—": "-",
-})
+_TRANSLIT = str.maketrans(
+    {
+        "ı": "i",
+        "İ": "I",
+        "ş": "s",
+        "Ş": "S",
+        "ğ": "g",
+        "Ğ": "G",
+        "ç": "c",
+        "Ç": "C",
+        "ö": "o",
+        "Ö": "O",
+        "ü": "u",
+        "Ü": "U",
+        "₺": "TL",
+        "“": '"',
+        "”": '"',
+        "’": "'",
+        "‘": "'",
+        "–": "-",
+        "—": "-",
+    }
+)
 
 
 def _norm_codepage(codepage: str | None) -> str:
@@ -145,7 +164,7 @@ def _render_receipt(payload: dict, codepage: str = _DEFAULT_CODEPAGE, table_id: 
         out += _enc(str(payload["subheader"])[:42], cp) + _NL
     out += b"-" * 32 + _NL
     out += _ALIGN_LEFT
-    for item in (payload.get("items") or []):
+    for item in payload.get("items") or []:
         name = str(item.get("name", ""))[:24]
         qty = int(item.get("quantity") or 1)
         line_total = float(item.get("line_total") or (item.get("quantity", 1) * item.get("price", 0)))
@@ -173,7 +192,7 @@ def _render_kitchen(payload: dict, codepage: str = _DEFAULT_CODEPAGE, table_id: 
     if payload.get("table"):
         out += _enc(f"Masa: {payload['table']}", cp) + _NL
     out += b"-" * 32 + _NL + _ALIGN_LEFT
-    for item in (payload.get("items") or []):
+    for item in payload.get("items") or []:
         out += _enc(f"{int(item.get('quantity') or 1)}x {str(item.get('name', ''))[:28]}", cp) + _NL
         notes = item.get("special_instructions")
         if notes:
@@ -189,14 +208,7 @@ def _render(kind: str, payload: dict, codepage: str = _DEFAULT_CODEPAGE, table_i
     if kind == "test":
         # The test ticket doubles as a code-page certification aid: it prints the
         # full Turkish glyph set so an operator can confirm correct output live.
-        return (
-            _INIT
-            + _select_codepage_cmd(cp, table_id)
-            + _enc(f"PRINTER TEST OK\nKod sayfasi: {cp}\nTurkce: ", cp)
-            + _enc("ç ş ğ ü ö ı  İ Ş Ğ Ü Ö Ç", cp)
-            + _NL * 3
-            + _CUT
-        )
+        return _INIT + _select_codepage_cmd(cp, table_id) + _enc(f"PRINTER TEST OK\nKod sayfasi: {cp}\nTurkce: ", cp) + _enc("ç ş ğ ü ö ı  İ Ş Ğ Ü Ö Ç", cp) + _NL * 3 + _CUT
     return _render_receipt(payload, cp, table_id)
 
 
@@ -233,9 +245,7 @@ async def _send_tcp(
     Returns the decoded real-time status (paper/cover/error) when the printer
     answers, else None.
     """
-    reader, writer = await asyncio.wait_for(
-        asyncio.open_connection(host, port), timeout=timeout
-    )
+    reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=timeout)
     status: dict | None = None
     try:
         writer.write(data)
@@ -286,20 +296,14 @@ async def _dispatch(job: dict) -> dict:
     printer = None
     if tenant_id:
         try:
-            printer = await db.pos_printers.find_one(
-                {"tenant_id": tenant_id, "printer_id": printer_id}, {"_id": 0}
-            )
+            printer = await db.pos_printers.find_one({"tenant_id": tenant_id, "printer_id": printer_id}, {"_id": 0})
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("printer registry lookup failed: %s", exc)
 
     if printer and not printer.get("enabled", True):
         return {"driver": "disabled", "ok": False, "reason": "printer disabled"}
 
-    driver = (
-        (printer.get("driver") if printer else None)
-        or os.environ.get("POS_PRINT_DRIVER")
-        or "simulator"
-    ).lower()
+    driver = ((printer.get("driver") if printer else None) or os.environ.get("POS_PRINT_DRIVER") or "simulator").lower()
 
     if driver == "simulator":
         return {"driver": "simulator", "ok": True, "bytes_len": len(bytes_blob)}
@@ -311,9 +315,7 @@ async def _dispatch(job: dict) -> dict:
                 "reason": "printer not registered or host missing",
             }
         try:
-            status = await _send_tcp(
-                str(printer["host"]), int(printer.get("port") or 9100), bytes_blob
-            )
+            status = await _send_tcp(str(printer["host"]), int(printer.get("port") or 9100), bytes_blob)
             result = {
                 "driver": "escpos_tcp",
                 "ok": True,
@@ -326,18 +328,14 @@ async def _dispatch(job: dict) -> dict:
                     # Bytes left the host, but the printer is offline/out of paper
                     # so nothing actually printed — surface it as a failure.
                     result["ok"] = False
-                    result["reason"] = "yazici donanim hatasi: " + ", ".join(
-                        status.get("conditions") or ["unknown"]
-                    )
+                    result["reason"] = "yazici donanim hatasi: " + ", ".join(status.get("conditions") or ["unknown"])
             return result
         except Exception as exc:
             return {"driver": "escpos_tcp", "ok": False, "reason": f"tcp send failed: {exc}"}
     return {"driver": driver, "ok": False, "reason": "unknown driver"}
 
 
-async def resolve_kot_printer(
-    tenant_id: str, outlet_id: str | None, station: str
-) -> dict:
+async def resolve_kot_printer(tenant_id: str, outlet_id: str | None, station: str) -> dict:
     """Resolve the physical printer for a (outlet_id, station) pair from the
     `pos_printers` registry so the same kitchen station can target a different
     physical printer in each outlet/restaurant.
@@ -435,11 +433,13 @@ async def enqueue_print_job(
         try:
             await db.print_jobs.update_one(
                 {"id": saved["id"], "tenant_id": tenant_id},
-                {"$set": {
-                    "status": new_status,
-                    "dispatched_at": _now(),
-                    "dispatch_result": result,
-                }},
+                {
+                    "$set": {
+                        "status": new_status,
+                        "dispatched_at": _now(),
+                        "dispatch_result": result,
+                    }
+                },
             )
             saved["status"] = new_status
             saved["dispatch_result"] = result
@@ -477,17 +477,13 @@ async def list_jobs(
     q: dict = {"tenant_id": current_user.tenant_id}
     if status:
         q["status"] = status
-    rows = await db.print_jobs.find(
-        q, {"_id": 0, "rendered_bytes": 0}
-    ).sort("created_at", -1).to_list(limit)
+    rows = await db.print_jobs.find(q, {"_id": 0, "rendered_bytes": 0}).sort("created_at", -1).to_list(limit)
     return {"jobs": rows, "count": len(rows)}
 
 
 @router.post("/jobs/{job_id}/dispatch")
 async def dispatch_job(job_id: str, current_user: User = Depends(get_current_user)):
-    job = await db.print_jobs.find_one(
-        {"id": job_id, "tenant_id": current_user.tenant_id}
-    )
+    job = await db.print_jobs.find_one({"id": job_id, "tenant_id": current_user.tenant_id})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     if job["status"] in ("sent", "cancelled"):
@@ -497,11 +493,13 @@ async def dispatch_job(job_id: str, current_user: User = Depends(get_current_use
     new_status = "sent" if result.get("ok") else "failed"
     await db.print_jobs.update_one(
         {"id": job_id, "tenant_id": current_user.tenant_id},
-        {"$set": {
-            "status": new_status,
-            "dispatched_at": _now(),
-            "dispatch_result": result,
-        }},
+        {
+            "$set": {
+                "status": new_status,
+                "dispatched_at": _now(),
+                "dispatch_result": result,
+            }
+        },
     )
     return {"success": True, "status": new_status, "result": result}
 
@@ -522,6 +520,7 @@ async def cancel_job(job_id: str, current_user: User = Depends(get_current_user)
 # map each kitchen station / outlet to one. The KOT auto-print path targets a
 # printer_id == station, so a "hot_kitchen" printer here receives the hot KOT.
 
+
 class PrinterUpsert(BaseModel):
     model_config = ConfigDict(extra="ignore")
     printer_id: str = Field(min_length=1, max_length=64)
@@ -541,9 +540,7 @@ class PrinterUpsert(BaseModel):
 
 @router.get("/printers")
 async def list_printers(current_user: User = Depends(get_current_user)):
-    rows = await db.pos_printers.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0}
-    ).sort("printer_id", 1).to_list(200)
+    rows = await db.pos_printers.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("printer_id", 1).to_list(200)
     return {"printers": rows, "count": len(rows)}
 
 
@@ -599,9 +596,7 @@ async def printers_status(current_user: User = Depends(get_current_user)):
 @router.post("/printers")
 async def upsert_printer(body: PrinterUpsert, current_user: User = Depends(get_current_user)):
     if body.driver == "escpos_tcp" and not (body.host and body.host.strip()):
-        raise HTTPException(
-            status_code=400, detail="escpos_tcp yazıcı için host (IP) zorunludur"
-        )
+        raise HTTPException(status_code=400, detail="escpos_tcp yazıcı için host (IP) zorunludur")
     doc = body.model_dump()
     doc["tenant_id"] = current_user.tenant_id
     doc["updated_at"] = _now()
@@ -611,17 +606,13 @@ async def upsert_printer(body: PrinterUpsert, current_user: User = Depends(get_c
         {"$set": doc, "$setOnInsert": {"created_at": _now()}},
         upsert=True,
     )
-    saved = await db.pos_printers.find_one(
-        {"tenant_id": current_user.tenant_id, "printer_id": body.printer_id}, {"_id": 0}
-    )
+    saved = await db.pos_printers.find_one({"tenant_id": current_user.tenant_id, "printer_id": body.printer_id}, {"_id": 0})
     return {"success": True, "printer": saved}
 
 
 @router.delete("/printers/{printer_id}")
 async def delete_printer(printer_id: str, current_user: User = Depends(get_current_user)):
-    res = await db.pos_printers.delete_one(
-        {"tenant_id": current_user.tenant_id, "printer_id": printer_id}
-    )
+    res = await db.pos_printers.delete_one({"tenant_id": current_user.tenant_id, "printer_id": printer_id})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Printer not found")
     return {"success": True, "deleted": printer_id}

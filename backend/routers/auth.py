@@ -2,6 +2,7 @@
 Auth Router - Authentication, Registration, Email Verification, Password Reset
 Extracted from server.py for modularity.
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -49,10 +50,13 @@ from security.encrypted_lookup import (
 try:
     from cache_manager import cached
 except ImportError:
+
     def cached(ttl=300, key_prefix=""):
         def decorator(func):
             return func
+
         return decorator
+
 
 # Auth operations are system-level (no tenant context during login/register)
 db = get_system_db()
@@ -67,11 +71,13 @@ router = APIRouter(prefix="/api", tags=["auth"])
 # verification that a unique index on `jti` exists in the live collection.
 _consumed_jti_index_ready = False
 
+
 async def _ensure_consumed_jti_index():
     global _consumed_jti_index_ready
     if _consumed_jti_index_ready:
         return
     from core.database import db as _raw_db
+
     # Idempotent: create_index is a no-op if an identical index already exists.
     # Errors here (permissions, conflicting non-unique index, transient DB) are
     # propagated so the verify handler returns 500 rather than silently degrading
@@ -80,16 +86,11 @@ async def _ensure_consumed_jti_index():
     await _raw_db.consumed_jtis.create_index("expires_at", expireAfterSeconds=0)
     # Verify the unique constraint actually exists before declaring readiness.
     info = await _raw_db.consumed_jtis.index_information()
-    has_unique_jti = any(
-        spec.get("unique") and any(field == "jti" for field, _ in spec.get("key", []))
-        for spec in info.values()
-    )
+    has_unique_jti = any(spec.get("unique") and any(field == "jti" for field, _ in spec.get("key", [])) for spec in info.values())
     if not has_unique_jti:
-        raise RuntimeError(
-            "consumed_jtis: unique index on 'jti' missing — refusing to serve "
-            "2FA verify without atomic single-use enforcement (Bug AS guard)."
-        )
+        raise RuntimeError("consumed_jtis: unique index on 'jti' missing — refusing to serve 2FA verify without atomic single-use enforcement (Bug AS guard).")
     _consumed_jti_index_ready = True
+
 
 # Bug AI: timing-attack mitigation — precomputed bcrypt hash + dummy user doc
 # so verify_password and decrypt_user_doc burn equal CPU on ghost users,
@@ -119,10 +120,13 @@ def init_auth_router(apm_store=None, get_rate_limit_stats=None):
 
 # ============= AUTH ENDPOINTS =============
 
+
 class MakeSuperAdminRequest(BaseModel):
     """Request to make a user super admin"""
+
     email: str
     setup_password: str
+
 
 def _enforce_setup_enabled():
     """Bug CR (v57) — setup/admin/debug endpoints fail-closed by default.
@@ -131,6 +135,7 @@ def _enforce_setup_enabled():
     Even when enabled, the configured SETUP_SECRET must match (no hardcoded fallback).
     """
     import os
+
     if os.environ.get("ENABLE_SETUP_ENDPOINTS", "").strip() != "1":
         raise HTTPException(status_code=404, detail="Not Found")
 
@@ -138,6 +143,7 @@ def _enforce_setup_enabled():
 def _verify_setup_secret(provided: str | None):
     import os
     import secrets as _secrets
+
     expected = os.environ.get("SETUP_SECRET", "").strip()
     if not expected or not provided or not _secrets.compare_digest(provided, expected):
         # Generic 404 + constant-time compare (no timing oracle, no existence leak)
@@ -160,55 +166,33 @@ async def setup_make_super_admin(request: MakeSuperAdminRequest):
             status_code=409,
             detail="Multiple users match this email across tenants. Refusing to elevate all.",
         )
-    result = await db.users.update_many(
-        build_user_email_query(request.email),
-        {"$set": {"role": "super_admin"}}
-    )
+    result = await db.users.update_many(build_user_email_query(request.email), {"$set": {"role": "super_admin"}})
     invalidate_user_doc_cache()  # update_many → flush all (cheap, setup-gated path)
 
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail=f"No user found with email: {request.email}")
 
-    return {
-        "success": True,
-        "message": f"Updated {result.modified_count} user(s) to super_admin",
-        "email": request.email,
-        "updated_count": result.modified_count
-    }
+    return {"success": True, "message": f"Updated {result.modified_count} user(s) to super_admin", "email": request.email, "updated_count": result.modified_count}
 
 
 @router.post("/setup/make-me-super-admin")
-async def make_me_super_admin(
-    setup_password: str,
-    current_user: User = Depends(get_current_user)
-):
+async def make_me_super_admin(setup_password: str, current_user: User = Depends(get_current_user)):
     """Make YOURSELF super_admin (gated, disabled by default)."""
     _enforce_setup_enabled()
     _verify_setup_secret(setup_password)
 
     # Update current logged-in user to super_admin
-    result = await db.users.update_one(
-        {"id": current_user.id},
-        {"$set": {"role": "super_admin"}}
-    )
+    result = await db.users.update_one({"id": current_user.id}, {"$set": {"role": "super_admin"}})
     invalidate_user_doc_cache(current_user.id)
 
     if result.modified_count == 0:
         raise HTTPException(status_code=400, detail="Role güncellenemedi veya zaten super_admin")
 
-    return {
-        "success": True,
-        "message": "Artık super_admin'siniz! Lütfen logout yapıp tekrar giriş yapın.",
-        "email": current_user.email,
-        "user_id": current_user.id
-    }
+    return {"success": True, "message": "Artık super_admin'siniz! Lütfen logout yapıp tekrar giriş yapın.", "email": current_user.email, "user_id": current_user.id}
 
 
 @router.post("/admin/quick-super-admin")
-async def quick_make_super_admin(
-    email: str,
-    secret: str | None = None
-):
+async def quick_make_super_admin(email: str, secret: str | None = None):
     """Bug CR (v57) — was GET with hardcoded secret (CSRF/log/referrer leak).
     Now POST + env-gated + no-fallback secret."""
     _enforce_setup_enabled()
@@ -221,15 +205,13 @@ async def quick_make_super_admin(
             status_code=409,
             detail="Multiple users match this email across tenants. Refusing to elevate all.",
         )
-    result = await db.users.update_many(
-        build_user_email_query(email),
-        {"$set": {"role": "super_admin"}}
-    )
+    result = await db.users.update_many(build_user_email_query(email), {"$set": {"role": "super_admin"}})
     invalidate_user_doc_cache()  # update_many → flush all (cheap, setup-gated path)
 
     if result.matched_count == 0:
         # Bug CR-R3: case-insensitive fallback also enforces single-match guard
         import re as _re
+
         _safe_email = _re.escape(email.strip()) if isinstance(email, str) and email.strip() else "a^"
         ci_filter = {"email": {"$regex": f"^{_safe_email}$", "$options": "i"}}
         ci_matches = await db.users.count_documents(ci_filter)
@@ -246,7 +228,7 @@ async def quick_make_super_admin(
         "updated": result.modified_count,
         "matched": result.matched_count,
         "email": email,
-        "message": f"Updated {result.modified_count} user(s) to super_admin. Logout and login to see changes."
+        "message": f"Updated {result.modified_count} user(s) to super_admin. Logout and login to see changes.",
     }
 
 
@@ -258,29 +240,20 @@ async def list_all_users_for_debug(secret: str | None = None):
 
     users = await db.users.find({}, {"_id": 0, "hashed_password": 0, "password_hash": 0}).limit(20).to_list(20)
 
-    return {
-        "total": len(users),
-        "users": [
-            {
-                "email": u.get("email"),
-                "name": u.get("name"),
-                "role": u.get("role"),
-                "tenant_id": u.get("tenant_id", "")[:8] + "..."
-            }
-            for u in users
-        ]
-    }
+    return {"total": len(users), "users": [{"email": u.get("email"), "name": u.get("name"), "role": u.get("role"), "tenant_id": u.get("tenant_id", "")[:8] + "..."} for u in users]}
 
 
 async def _generate_unique_hotel_id() -> str:
     """Generate a 6-digit unique hotel_id, retrying on collision."""
     from core.hotel_ids import generate_unique_hotel_id
+
     return await generate_unique_hotel_id(db)
 
 
 def _derive_username(email: str, name: str | None = None) -> str:
     """Derive a default username from email local-part."""
     import re as _re
+
     base = (email or "").split("@", 1)[0].strip().lower()
     base = _re.sub(r"[^a-z0-9._-]+", "", base) or "user"
     return base
@@ -319,6 +292,7 @@ async def register_tenant(data: TenantRegister, request: Request):
     # tesis onboarding'i super_admin/seed uzerinden yapilir. (register-guest
     # bu kapidan etkilenmez.)
     import os as _os
+
     if (_os.environ.get("SELF_REGISTRATION_ENABLED") or "").strip().lower() not in ("1", "true", "yes", "on"):
         raise HTTPException(
             status_code=403,
@@ -334,6 +308,7 @@ async def register_tenant(data: TenantRegister, request: Request):
         enforce,
         normalize_identity,
     )
+
     await enforce(REGISTER_IP, f"ip:{client_ip(request)}", "kayıt isteği")
     await enforce(REGISTER_EMAIL, f"em:{normalize_identity(data.email)}", "kayıt isteği")
 
@@ -363,7 +338,7 @@ async def register_tenant(data: TenantRegister, request: Request):
         location=data.location,
     )
     tenant_dict = tenant.model_dump()
-    tenant_dict['created_at'] = tenant_dict['created_at'].isoformat()
+    tenant_dict["created_at"] = tenant_dict["created_at"].isoformat()
     await db.tenants.insert_one(tenant_dict)
 
     user = User(
@@ -375,12 +350,13 @@ async def register_tenant(data: TenantRegister, request: Request):
         phone=data.phone,
     )
     user_dict = user.model_dump()
-    user_dict['hashed_password'] = hash_password(data.password)
-    user_dict['created_at'] = user_dict['created_at'].isoformat()
+    user_dict["hashed_password"] = hash_password(data.password)
+    user_dict["created_at"] = user_dict["created_at"].isoformat()
     user_dict = encrypt_user_doc(user_dict)
     await db.users.insert_one(user_dict)
 
     return _build_token_response(user, tenant)
+
 
 @router.post("/auth/register-guest", response_model=TokenResponse)
 async def register_guest(data: GuestRegister, request: Request):
@@ -392,6 +368,7 @@ async def register_guest(data: GuestRegister, request: Request):
         enforce,
         normalize_identity,
     )
+
     await enforce(REGISTER_IP, f"ip:{client_ip(request)}", "kayıt isteği")
     await enforce(REGISTER_EMAIL, f"em:{normalize_identity(data.email)}", "kayıt isteği")
 
@@ -399,16 +376,10 @@ async def register_guest(data: GuestRegister, request: Request):
     if existing:
         raise HTTPException(status_code=400, detail="Bu bilgilerle kayıt yapılamadı")
 
-    user = User(
-        tenant_id=None,
-        email=data.email,
-        name=data.name,
-        role=UserRole.GUEST,
-        phone=data.phone
-    )
+    user = User(tenant_id=None, email=data.email, name=data.name, role=UserRole.GUEST, phone=data.phone)
     user_dict = user.model_dump()
-    user_dict['hashed_password'] = hash_password(data.password)
-    user_dict['created_at'] = user_dict['created_at'].isoformat()
+    user_dict["hashed_password"] = hash_password(data.password)
+    user_dict["created_at"] = user_dict["created_at"].isoformat()
     user_dict = encrypt_user_doc(user_dict)
     await db.users.insert_one(user_dict)
 
@@ -416,6 +387,7 @@ async def register_guest(data: GuestRegister, request: Request):
     await db.notification_preferences.insert_one(prefs.model_dump())
 
     return _build_token_response(user, None)
+
 
 @router.post("/auth/login", response_model=TokenResponse)
 async def login(data: UserLogin, request: Request):
@@ -450,11 +422,7 @@ async def login(data: UserLogin, request: Request):
     # drain semantics" for the doctrine.
     _ip = client_ip(request)
     _ip_key = f"ip:{_ip}"
-    _acct_key = (
-        f"acc:hid:{normalize_identity(data.hotel_id)}|u:{normalize_identity(data.username)}"
-        if data.hotel_id and data.username
-        else f"acc:em:{normalize_identity(data.email)}"
-    )
+    _acct_key = f"acc:hid:{normalize_identity(data.hotel_id)}|u:{normalize_identity(data.username)}" if data.hotel_id and data.username else f"acc:em:{normalize_identity(data.email)}"
 
     async def _record_failure_and_raise(status_code: int, detail: str):
         # Record the failed attempt on BOTH layers. `enforce` may raise 429
@@ -498,11 +466,7 @@ async def login(data: UserLogin, request: Request):
         # caller is forced through the challenge flow.
         try:
             cached_user = cached.get("user")
-            cached_uid = (
-                getattr(cached_user, "id", None)
-                if cached_user is not None
-                else None
-            )
+            cached_uid = getattr(cached_user, "id", None) if cached_user is not None else None
             # v47 (Bug CD architect Round-1): cache-hit path must also honor
             # the password-change watermark. The in-memory cache is per-process
             # and `_login_cache.clear()` is best-effort (other workers keep
@@ -567,35 +531,40 @@ async def login(data: UserLogin, request: Request):
         # Lookup tenant by hotel_id
         tenant_doc_for_lookup = await db.tenants.find_one({"hotel_id": str(data.hotel_id).strip()})
         if not tenant_doc_for_lookup:
-            await _safe_audit({
-                "id": str(__import__('uuid').uuid4()),
-                "tenant_id": None,
-                "user_email": identity_label,
-                "action": "login_failed",
-                "resource_type": "auth",
-                "details": "Hotel ID not found",
-                "timestamp": datetime.now(UTC).isoformat(),
-            })
+            await _safe_audit(
+                {
+                    "id": str(__import__("uuid").uuid4()),
+                    "tenant_id": None,
+                    "user_email": identity_label,
+                    "action": "login_failed",
+                    "resource_type": "auth",
+                    "details": "Hotel ID not found",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
             await _record_failure_and_raise(401, "Otel ID veya bilgiler hatalı")
         tid = tenant_doc_for_lookup.get("id")
-        user_doc = await db.users.find_one({
-            "tenant_id": tid,
-            "username": data.username.strip().lower(),
-        })
+        user_doc = await db.users.find_one(
+            {
+                "tenant_id": tid,
+                "username": data.username.strip().lower(),
+            }
+        )
     elif data.email:
         user_doc = await db.users.find_one(build_user_email_query(data.email))
 
     if user_doc:
-        user_doc.pop('_id', None)
+        user_doc.pop("_id", None)
         user_doc = decrypt_user_doc(user_doc)
-        if 'id' not in user_doc:
+        if "id" not in user_doc:
             import uuid
-            user_doc['id'] = str(uuid.uuid4())
+
+            user_doc["id"] = str(uuid.uuid4())
             await db.users.update_one(
                 {"tenant_id": user_doc.get("tenant_id"), "username": user_doc.get("username")} if user_doc.get("username") else build_user_email_query(data.email or ""),
-                {'$set': {'id': user_doc['id']}}
+                {"$set": {"id": user_doc["id"]}},
             )
-            invalidate_user_doc_cache(user_doc['id'])
+            invalidate_user_doc_cache(user_doc["id"])
     else:
         # Bug AI: keep ghost-user path as expensive as the real-user path
         # by running an equivalent dummy decrypt to prevent timing-based
@@ -605,25 +574,27 @@ async def login(data: UserLogin, request: Request):
         except Exception:
             pass
 
-    hashed_pwd = user_doc.get('hashed_password') or user_doc.get('password_hash') or user_doc.get('password', '') if user_doc else ''
+    hashed_pwd = user_doc.get("hashed_password") or user_doc.get("password_hash") or user_doc.get("password", "") if user_doc else ""
 
     # Bug AI: ALWAYS run verify_password to keep bcrypt cost constant
     # (avoid `not user_doc or ...` short-circuit which would skip bcrypt
     # on the ghost-user path and leak ~250ms timing difference).
     pw_ok = verify_password(data.password, hashed_pwd or _DUMMY_PWHASH)
     if not user_doc or not pw_ok:
-        await _safe_audit({
-            "id": str(__import__('uuid').uuid4()),
-            "tenant_id": user_doc.get('tenant_id') if user_doc else None,
-            "user_email": identity_label,
-            "action": "login_failed",
-            "resource_type": "auth",
-            "details": "Invalid credentials",
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        await _safe_audit(
+            {
+                "id": str(__import__("uuid").uuid4()),
+                "tenant_id": user_doc.get("tenant_id") if user_doc else None,
+                "user_email": identity_label,
+                "action": "login_failed",
+                "resource_type": "auth",
+                "details": "Invalid credentials",
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
         await _record_failure_and_raise(401, "Otel ID, kullanıcı adı veya şifre hatalı")
 
-    user_data = {k: v for k, v in user_doc.items() if k not in ['password', 'hashed_password', 'password_hash']}
+    user_data = {k: v for k, v in user_doc.items() if k not in ["password", "hashed_password", "password_hash"]}
     user = User(**user_data)
 
     tenant = None
@@ -635,16 +606,18 @@ async def login(data: UserLogin, request: Request):
             tenant_doc["features"] = resolve_tenant_features(tenant_doc)
             tenant = Tenant(**tenant_doc)
 
-    await _safe_audit({
-        "id": str(__import__('uuid').uuid4()),
-        "tenant_id": user.tenant_id,
-        "user_id": user.id,
-        "user_email": user.email,
-        "action": "login_success",
-        "resource_type": "auth",
-        "details": f"Login successful for {user.name}",
-        "timestamp": datetime.now(UTC).isoformat(),
-    })
+    await _safe_audit(
+        {
+            "id": str(__import__("uuid").uuid4()),
+            "tenant_id": user.tenant_id,
+            "user_id": user.id,
+            "user_email": user.email,
+            "action": "login_success",
+            "resource_type": "auth",
+            "details": f"Login successful for {user.name}",
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    )
 
     # ── 2FA challenge gate ──────────────────────────────────────
     # If the user has enabled TOTP, do NOT issue a real access token
@@ -656,6 +629,7 @@ async def login(data: UserLogin, request: Request):
         import jwt as _jwt
 
         from core.security import JWT_ALGORITHM, JWT_SECRET
+
         challenge_jti = str(_uuid.uuid4())
         # v47 (Bug CD): include `iat` so /auth/2fa/verify can reject
         # challenge tokens that were minted before a password change
@@ -674,15 +648,17 @@ async def login(data: UserLogin, request: Request):
             JWT_SECRET,
             algorithm=JWT_ALGORITHM,
         )
-        await _safe_audit({
-            "id": str(__import__('uuid').uuid4()),
-            "tenant_id": user.tenant_id,
-            "user_id": user.id,
-            "user_email": user.email,
-            "action": "login_2fa_required",
-            "resource_type": "auth",
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        await _safe_audit(
+            {
+                "id": str(__import__("uuid").uuid4()),
+                "tenant_id": user.tenant_id,
+                "user_id": user.id,
+                "user_email": user.email,
+                "action": "login_2fa_required",
+                "resource_type": "auth",
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
         # Do NOT cache challenge responses.
         return TokenResponse(
             access_token="",
@@ -698,6 +674,7 @@ async def login(data: UserLogin, request: Request):
     if user.tenant_id:
         try:
             from core.metering import UsageEventType, record_usage
+
             await record_usage(user.tenant_id, UsageEventType.LOGIN)
         except Exception:
             pass
@@ -706,12 +683,16 @@ async def login(data: UserLogin, request: Request):
     # v47 (Bug CD architect Round-1): record cached_at so the cache-hit
     # path can compare against `tokens_invalid_before` and refuse to honor
     # entries populated before a password change (multi-worker safe).
-    _login_cache.set(cache_key, {
-        "access_token": response.access_token,
-        "user": response.user,
-        "tenant": response.tenant,
-        "cached_at": int(datetime.now(UTC).timestamp()),
-    }, ttl=300)
+    _login_cache.set(
+        cache_key,
+        {
+            "access_token": response.access_token,
+            "user": response.user,
+            "tenant": response.tenant,
+            "cached_at": int(datetime.now(UTC).timestamp()),
+        },
+        ttl=300,
+    )
 
     # Task-137: Successful login drains BOTH per-IP and per-account
     # throttle layers so a legitimate user who mistyped recently isn't
@@ -749,6 +730,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
         client_ip,
         enforce,
     )
+
     _ip_key = f"ip:{client_ip(request)}"
 
     import jwt as _jwt
@@ -761,9 +743,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
     )
 
     try:
-        decoded = _jwt.decode(
-            payload.challenge_token, JWT_SECRET, algorithms=[JWT_ALGORITHM]
-        )
+        decoded = _jwt.decode(payload.challenge_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except _jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Doğrulama süresi doldu, tekrar giriş yapın")
     except _jwt.InvalidTokenError:
@@ -775,9 +755,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
         raise HTTPException(status_code=401, detail="Geçersiz doğrulama belirteci")
 
     _user_id_for_throttle = decoded.get("user_id")
-    _user_throttle_key = (
-        f"user:{_user_id_for_throttle}" if _user_id_for_throttle else None
-    )
+    _user_throttle_key = f"user:{_user_id_for_throttle}" if _user_id_for_throttle else None
 
     async def _record_failure_and_raise(status_code: int, detail: str):
         # Record the failed attempt on BOTH 2FA throttle layers. `enforce`
@@ -787,9 +765,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
         # rotation per F8AH P0 doctrine.
         await enforce(TWOFA_VERIFY_IP, _ip_key, "doğrulama denemesi")
         if _user_throttle_key:
-            await enforce(
-                TWOFA_VERIFY_USER, _user_throttle_key, "doğrulama denemesi"
-            )
+            await enforce(TWOFA_VERIFY_USER, _user_throttle_key, "doğrulama denemesi")
         raise HTTPException(status_code=status_code, detail=detail)
 
     # Bug AS (CRITICAL): Atomic single-use enforcement via DB unique index.
@@ -800,13 +776,16 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
     # a `consumed_jtis` collection (unique index on jti + TTL on expires_at),
     # which is atomic across asyncio coroutines AND multi-worker deployments.
     from pymongo.errors import DuplicateKeyError
+
     await _ensure_consumed_jti_index()
     try:
-        await db.consumed_jtis.insert_one({
-            "jti": jti,
-            "consumed_at": datetime.now(UTC),
-            "expires_at": datetime.now(UTC) + timedelta(minutes=10),
-        })
+        await db.consumed_jtis.insert_one(
+            {
+                "jti": jti,
+                "consumed_at": datetime.now(UTC),
+                "expires_at": datetime.now(UTC) + timedelta(minutes=10),
+            }
+        )
     except DuplicateKeyError:
         raise HTTPException(status_code=401, detail="Doğrulama belirteci zaten kullanıldı")
 
@@ -825,15 +804,17 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
     if invalid_before:
         ch_iat = decoded.get("iat")
         if not ch_iat or int(ch_iat) < int(invalid_before):
-            await db.audit_logs.insert_one({
-                "id": str(__import__('uuid').uuid4()),
-                "tenant_id": user_doc.get("tenant_id"),
-                "user_id": user_id,
-                "action": "login_2fa_failed",
-                "resource_type": "auth",
-                "details": "challenge_stale_password_changed",
-                "timestamp": datetime.now(UTC).isoformat(),
-            })
+            await db.audit_logs.insert_one(
+                {
+                    "id": str(__import__("uuid").uuid4()),
+                    "tenant_id": user_doc.get("tenant_id"),
+                    "user_id": user_id,
+                    "action": "login_2fa_failed",
+                    "resource_type": "auth",
+                    "details": "challenge_stale_password_changed",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
             raise HTTPException(
                 status_code=401,
                 detail="Şifre değişti - lütfen yeniden giriş yapın",
@@ -856,6 +837,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
         backup_hashes = user_doc.get("two_factor_backup_codes") or []
         # Identify which stored hash matches (no DB write yet).
         from core.twofa import _pwd as _bcrypt_ctx
+
         norm = code.upper().replace("-", "").replace(" ", "")
         for h in backup_hashes:
             try:
@@ -867,14 +849,16 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
                 continue
 
     if not (matched_totp or matched_backup):
-        await db.audit_logs.insert_one({
-            "id": str(__import__('uuid').uuid4()),
-            "tenant_id": user_doc.get("tenant_id"),
-            "user_id": user_id,
-            "action": "login_2fa_failed",
-            "resource_type": "auth",
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        await db.audit_logs.insert_one(
+            {
+                "id": str(__import__("uuid").uuid4()),
+                "tenant_id": user_doc.get("tenant_id"),
+                "user_id": user_id,
+                "action": "login_2fa_failed",
+                "resource_type": "auth",
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
         await _record_failure_and_raise(401, "2FA kodu hatalı")
 
     # Atomic single-use enforcement for backup codes:
@@ -889,6 +873,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
     # second use of the same code returns 401.
     if matched_totp and totp_counters:
         from core.database import db as _raw_db
+
         try:
             # Claim ALL matching counters atomically — closes adjacent-window
             # collision (~1e-6) where the same code is valid for two slots.
@@ -900,18 +885,18 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
                 detail="2FA doğrulama servisi geçici olarak kullanılamıyor",
             )
         if not won:
-            await db.audit_logs.insert_one({
-                "id": str(__import__('uuid').uuid4()),
-                "tenant_id": user_doc.get("tenant_id"),
-                "user_id": user_id,
-                "action": "login_2fa_failed",
-                "resource_type": "auth",
-                "details": "totp_replay_rejected",
-                "timestamp": datetime.now(UTC).isoformat(),
-            })
-            raise HTTPException(
-                status_code=401, detail="Bu doğrulama kodu zaten kullanıldı"
+            await db.audit_logs.insert_one(
+                {
+                    "id": str(__import__("uuid").uuid4()),
+                    "tenant_id": user_doc.get("tenant_id"),
+                    "user_id": user_id,
+                    "action": "login_2fa_failed",
+                    "resource_type": "auth",
+                    "details": "totp_replay_rejected",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
             )
+            raise HTTPException(status_code=401, detail="Bu doğrulama kodu zaten kullanıldı")
 
     if matched_backup and matched_hash is not None:
         pull_res = await db.users.update_one(
@@ -923,15 +908,17 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
         )
         invalidate_user_doc_cache(user_id)
         if pull_res.modified_count == 0:
-            await db.audit_logs.insert_one({
-                "id": str(__import__('uuid').uuid4()),
-                "tenant_id": user_doc.get("tenant_id"),
-                "user_id": user_id,
-                "action": "login_2fa_failed",
-                "resource_type": "auth",
-                "details": "backup_code_race_lost",
-                "timestamp": datetime.now(UTC).isoformat(),
-            })
+            await db.audit_logs.insert_one(
+                {
+                    "id": str(__import__("uuid").uuid4()),
+                    "tenant_id": user_doc.get("tenant_id"),
+                    "user_id": user_id,
+                    "action": "login_2fa_failed",
+                    "resource_type": "auth",
+                    "details": "backup_code_race_lost",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
             raise HTTPException(status_code=401, detail="Yedek kod zaten kullanıldı")
     else:
         await db.users.update_one(
@@ -943,7 +930,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
     # jti consumption already enforced atomically at top of handler via
     # DB unique index (Bug AS fix); no further marker write needed.
 
-    user = User(**{k: v for k, v in user_doc.items() if k not in ['password', 'hashed_password', 'password_hash']})
+    user = User(**{k: v for k, v in user_doc.items() if k not in ["password", "hashed_password", "password_hash"]})
     tenant = None
     if user.tenant_id:
         tenant_doc = await load_tenant_doc(user.tenant_id)
@@ -953,16 +940,18 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
             tenant_doc["features"] = resolve_tenant_features(tenant_doc)
             tenant = Tenant(**tenant_doc)
 
-    await db.audit_logs.insert_one({
-        "id": str(__import__('uuid').uuid4()),
-        "tenant_id": user.tenant_id,
-        "user_id": user.id,
-        "user_email": user.email,
-        "action": "login_2fa_success",
-        "resource_type": "auth",
-        "details": "backup_code" if matched_backup else "totp",
-        "timestamp": datetime.now(UTC).isoformat(),
-    })
+    await db.audit_logs.insert_one(
+        {
+            "id": str(__import__("uuid").uuid4()),
+            "tenant_id": user.tenant_id,
+            "user_id": user.id,
+            "user_email": user.email,
+            "action": "login_2fa_success",
+            "resource_type": "auth",
+            "details": "backup_code" if matched_backup else "totp",
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    )
 
     # Task-137: Successful 2FA verify drains BOTH per-IP and per-user
     # throttle layers so a legitimate user who mistyped a few codes isn't
@@ -980,7 +969,9 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
     # took the 2FA path or the direct path.
     return _build_token_response(user, tenant)
 
+
 _USER_RESPONSE_SAFE = set(User.model_fields.keys())
+
 
 @router.get("/auth/me", response_model=User, response_model_exclude={"password"})
 async def get_me(current_user: User = Depends(get_current_user)):
@@ -1016,15 +1007,17 @@ async def update_me(
     await db.users.update_one({"id": current_user.id}, {"$set": update_fields})
     invalidate_user_doc_cache(current_user.id)
 
-    await db.audit_logs.insert_one({
-        "id": str(__import__('uuid').uuid4()),
-        "tenant_id": current_user.tenant_id,
-        "user_id": current_user.id,
-        "action": "profile_updated",
-        "resource_type": "user",
-        "details": ",".join(update_fields.keys()),
-        "timestamp": datetime.now(UTC).isoformat(),
-    })
+    await db.audit_logs.insert_one(
+        {
+            "id": str(__import__("uuid").uuid4()),
+            "tenant_id": current_user.tenant_id,
+            "user_id": current_user.id,
+            "action": "profile_updated",
+            "resource_type": "user",
+            "details": ",".join(update_fields.keys()),
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    )
 
     refreshed = await db.users.find_one({"id": current_user.id})
     refreshed.pop("_id", None)
@@ -1050,24 +1043,27 @@ async def change_password(
     # then 429.
     from security.auth_throttle import SENSITIVE_AUTH_USER
     from security.auth_throttle import enforce as _throttle
+
     await _throttle(SENSITIVE_AUTH_USER, f"chgpw:{current_user.id}", "şifre değiştirme denemesi")
 
     user_doc = await db.users.find_one({"id": current_user.id})
     if not user_doc:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
-    user_doc.pop('_id', None)
+    user_doc.pop("_id", None)
     user_doc = decrypt_user_doc(user_doc)
-    hashed_pwd = user_doc.get('hashed_password') or user_doc.get('password_hash') or user_doc.get('password', '')
+    hashed_pwd = user_doc.get("hashed_password") or user_doc.get("password_hash") or user_doc.get("password", "")
     if not verify_password(data.current_password, hashed_pwd):
-        await db.audit_logs.insert_one({
-            "id": str(__import__('uuid').uuid4()),
-            "tenant_id": current_user.tenant_id,
-            "user_id": current_user.id,
-            "action": "password_change_failed",
-            "resource_type": "auth",
-            "details": "Mevcut şifre hatalı",
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        await db.audit_logs.insert_one(
+            {
+                "id": str(__import__("uuid").uuid4()),
+                "tenant_id": current_user.tenant_id,
+                "user_id": current_user.id,
+                "action": "password_change_failed",
+                "resource_type": "auth",
+                "details": "Mevcut şifre hatalı",
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
         raise HTTPException(status_code=401, detail="Mevcut şifre hatalı")
     # v48 (Bug CE): success → reset throttle so a legitimate user who
     # mistyped recently isn't penalised after the right password lands.
@@ -1097,20 +1093,23 @@ async def change_password(
     # Invalidate any cached login responses for this user (best-effort)
     try:
         from infra.simple_cache import simple_cache as _login_cache
+
         _login_cache.clear()
     except Exception:
         pass
 
-    await db.audit_logs.insert_one({
-        "id": str(__import__('uuid').uuid4()),
-        "tenant_id": current_user.tenant_id,
-        "user_id": current_user.id,
-        "user_email": getattr(current_user, "email", None),
-        "action": "password_change",
-        "resource_type": "auth",
-        "details": "Şifre güncellendi",
-        "timestamp": datetime.now(UTC).isoformat(),
-    })
+    await db.audit_logs.insert_one(
+        {
+            "id": str(__import__("uuid").uuid4()),
+            "tenant_id": current_user.tenant_id,
+            "user_id": current_user.id,
+            "user_email": getattr(current_user, "email", None),
+            "action": "password_change",
+            "resource_type": "auth",
+            "details": "Şifre güncellendi",
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    )
     return {"success": True, "message": "Şifre başarıyla güncellendi"}
 
 
@@ -1118,6 +1117,7 @@ def _decode_bearer_payload(request: Request) -> dict:
     """Decode the bearer token attached to the request, no exp check needed
     here (already validated upstream by get_current_user)."""
     import jwt as _jwt
+
     auth = request.headers.get("authorization") or ""
     if not auth.lower().startswith("bearer "):
         return {}
@@ -1167,7 +1167,10 @@ def _enforce_refresh_invariants(user_doc: dict, payload: dict, *, kind: str) -> 
     if jwt_tenant and doc_tenant and jwt_tenant != doc_tenant:
         logger.warning(
             "[%s] tenant mismatch on refresh: user=%s jwt=%s doc=%s",
-            kind, user_doc.get("id"), jwt_tenant, doc_tenant,
+            kind,
+            user_doc.get("id"),
+            jwt_tenant,
+            doc_tenant,
         )
         raise HTTPException(status_code=401, detail="Token-tenant uyuşmuyor")
 
@@ -1191,6 +1194,7 @@ async def refresh_token(request: Request, body: dict | None = Body(default=None)
     once used, they're revoked and cannot be replayed.
     """
     import jwt as _jwt
+
     body = body or {}
 
     submitted_refresh: str | None = None
@@ -1209,9 +1213,7 @@ async def refresh_token(request: Request, body: dict | None = Body(default=None)
     if submitted_refresh:
         # ── Path A: V3 mobile refresh-token flow ──
         try:
-            rt_payload = _jwt.decode(
-                submitted_refresh, JWT_SECRET, algorithms=[JWT_ALGORITHM]
-            )
+            rt_payload = _jwt.decode(submitted_refresh, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         except _jwt.ExpiredSignatureError:
             raise HTTPException(status_code=401, detail="Refresh token expired — please login again")
         except _jwt.InvalidTokenError:
@@ -1274,7 +1276,8 @@ async def refresh_token(request: Request, body: dict | None = Body(default=None)
     if old_jti and old_exp:
         try:
             won = await revoke_jti(
-                old_jti, int(old_exp),
+                old_jti,
+                int(old_exp),
                 user_id=user_id,
                 tenant_id=tenant_id,
                 reason=f"{rotation_kind}_rotation",
@@ -1291,17 +1294,19 @@ async def refresh_token(request: Request, body: dict | None = Body(default=None)
         new_refresh, _ = create_refresh_token(user_id, tenant_id)
 
     # Audit log
-    await db.audit_logs.insert_one({
-        "id": str(__import__('uuid').uuid4()),
-        "tenant_id": tenant_id,
-        "user_id": user_id,
-        "user_email": user_email,
-        "action": "token_refresh",
-        "resource_type": "auth",
-        "details": f"Token refreshed via {rotation_kind} (rotated jti={old_jti or 'legacy'})",
-        "ip_address": "",
-        "timestamp": datetime.now(UTC).isoformat(),
-    })
+    await db.audit_logs.insert_one(
+        {
+            "id": str(__import__("uuid").uuid4()),
+            "tenant_id": tenant_id,
+            "user_id": user_id,
+            "user_email": user_email,
+            "action": "token_refresh",
+            "resource_type": "auth",
+            "details": f"Token refreshed via {rotation_kind} (rotated jti={old_jti or 'legacy'})",
+            "ip_address": "",
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    )
 
     response: dict[str, object] = {
         "access_token": new_access,
@@ -1330,6 +1335,7 @@ async def logout(
     token revocation that this endpoint guarantees.
     """
     import jwt as _jwt
+
     payload = _decode_bearer_payload(request)
     jti = payload.get("jti")
     exp = payload.get("exp")
@@ -1340,7 +1346,8 @@ async def logout(
         # while the token still grants access.
         try:
             await revoke_jti(
-                jti, int(exp),
+                jti,
+                int(exp),
                 user_id=current_user.id,
                 tenant_id=current_user.tenant_id,
                 reason="logout",
@@ -1393,7 +1400,8 @@ async def logout(
                     if refresh_jti and refresh_exp:
                         try:
                             await revoke_jti(
-                                refresh_jti, int(refresh_exp),
+                                refresh_jti,
+                                int(refresh_exp),
                                 user_id=current_user.id,
                                 tenant_id=current_user.tenant_id,
                                 reason="logout_refresh",
@@ -1406,21 +1414,19 @@ async def logout(
                 # Submitted refresh token was not parsable — skip silently.
                 pass
 
-    await db.audit_logs.insert_one({
-        "id": str(__import__('uuid').uuid4()),
-        "tenant_id": current_user.tenant_id,
-        "user_id": current_user.id,
-        "user_email": current_user.email,
-        "action": "logout",
-        "resource_type": "auth",
-        "details": (
-            f"Logout (jti={jti or 'legacy'}"
-            + (f", refresh_jti={refresh_jti}" if refresh_jti else "")
-            + ")"
-        ),
-        "ip_address": "",
-        "timestamp": datetime.now(UTC).isoformat(),
-    })
+    await db.audit_logs.insert_one(
+        {
+            "id": str(__import__("uuid").uuid4()),
+            "tenant_id": current_user.tenant_id,
+            "user_id": current_user.id,
+            "user_email": current_user.email,
+            "action": "logout",
+            "resource_type": "auth",
+            "details": (f"Logout (jti={jti or 'legacy'}" + (f", refresh_jti={refresh_jti}" if refresh_jti else "") + ")"),
+            "ip_address": "",
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    )
 
     return {"success": True, "message": "Çıkış yapıldı"}
 
@@ -1437,18 +1443,22 @@ async def get_security_summary(
     last_7d = (now - timedelta(days=7)).isoformat()
 
     # Failed login attempts (last 24h)
-    failed_logins_24h = await db.audit_logs.count_documents({
-        "tenant_id": current_user.tenant_id,
-        "action": "login_failed",
-        "timestamp": {"$gte": last_24h},
-    })
+    failed_logins_24h = await db.audit_logs.count_documents(
+        {
+            "tenant_id": current_user.tenant_id,
+            "action": "login_failed",
+            "timestamp": {"$gte": last_24h},
+        }
+    )
 
     # Successful logins (last 24h)
-    successful_logins_24h = await db.audit_logs.count_documents({
-        "tenant_id": current_user.tenant_id,
-        "action": {"$in": ["login", "login_success"]},
-        "timestamp": {"$gte": last_24h},
-    })
+    successful_logins_24h = await db.audit_logs.count_documents(
+        {
+            "tenant_id": current_user.tenant_id,
+            "action": {"$in": ["login", "login_success"]},
+            "timestamp": {"$gte": last_24h},
+        }
+    )
 
     # Rate limit hits (from APM)
     rate_limit_stats = {}
@@ -1459,21 +1469,28 @@ async def get_security_summary(
         pass
 
     # Active sessions estimate (tokens refreshed in last 2h)
-    active_sessions = await db.audit_logs.count_documents({
-        "tenant_id": current_user.tenant_id,
-        "action": {"$in": ["login", "login_success", "token_refresh"]},
-        "timestamp": {"$gte": (now - timedelta(hours=2)).isoformat()},
-    })
-
-    # Recent security events (last 7 days)
-    security_events = await db.audit_logs.find(
+    active_sessions = await db.audit_logs.count_documents(
         {
             "tenant_id": current_user.tenant_id,
-            "action": {"$in": ["login_failed", "password_change", "user_created", "user_deleted", "role_change", "token_refresh"]},
-            "timestamp": {"$gte": last_7d},
-        },
-        {"_id": 0}
-    ).sort("timestamp", -1).limit(50).to_list(50)
+            "action": {"$in": ["login", "login_success", "token_refresh"]},
+            "timestamp": {"$gte": (now - timedelta(hours=2)).isoformat()},
+        }
+    )
+
+    # Recent security events (last 7 days)
+    security_events = (
+        await db.audit_logs.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "action": {"$in": ["login_failed", "password_change", "user_created", "user_deleted", "role_change", "token_refresh"]},
+                "timestamp": {"$gte": last_7d},
+            },
+            {"_id": 0},
+        )
+        .sort("timestamp", -1)
+        .limit(50)
+        .to_list(50)
+    )
 
     # User count
     total_users = await db.users.count_documents({"tenant_id": current_user.tenant_id})
@@ -1505,10 +1522,13 @@ async def get_security_summary(
         "timestamp": now.isoformat(),
     }
 
+
 # ============= NEW USER REGISTRATION WITH EMAIL VERIFICATION =============
+
 
 class EmailVerificationRequest(BaseModel):
     """E-posta doğrulama kodu talebi"""
+
     email: EmailStr
     name: str
     password: str
@@ -1516,25 +1536,32 @@ class EmailVerificationRequest(BaseModel):
     phone: str | None = None
     user_type: str = "hotel"  # "hotel" veya "guest"
 
+
 class VerifyCodeRequest(BaseModel):
     """Doğrulama kodu kontrolü"""
+
     email: EmailStr
     code: str
 
+
 class ForgotPasswordRequest(BaseModel):
     """Şifre sıfırlama talebi"""
+
     email: EmailStr
+
 
 class ResetPasswordRequest(BaseModel):
     """Yeni şifre belirleme"""
+
     email: EmailStr
     code: str
     new_password: str
 
+
 _REQUEST_VERIFICATION_GENERIC_RESPONSE = {
-    'success': True,
-    'message': 'Doğrulama kodu e-posta adresinize gönderildi',
-    'expires_in_minutes': 15,
+    "success": True,
+    "message": "Doğrulama kodu e-posta adresinize gönderildi",
+    "expires_in_minutes": 15,
 }
 
 
@@ -1564,6 +1591,7 @@ async def request_verification_code(data: EmailVerificationRequest, request: Req
         enforce,
         normalize_identity,
     )
+
     await enforce(REGISTER_IP, f"ip:{client_ip(request)}", "kayıt isteği")
     await enforce(REGISTER_EMAIL, f"em:{normalize_identity(data.email)}", "kayıt isteği")
 
@@ -1571,12 +1599,14 @@ async def request_verification_code(data: EmailVerificationRequest, request: Req
 
     import asyncio as _asyncio
     import logging as _logging
+
     _bg_log = _logging.getLogger(__name__)
 
     async def _bg_existing_notice():
         try:
             from core.email import send_email
             from core.mailing_safe import safe_html_value
+
             safe_email = safe_html_value(data.email)
             html = (
                 f"<p>Merhaba,</p>"
@@ -1592,21 +1622,22 @@ async def request_verification_code(data: EmailVerificationRequest, request: Req
     async def _bg_new_signup():
         try:
             from modules.messaging.email_service import email_service
+
             code = email_service.generate_verification_code()
             verification_doc = {
-                'email': data.email,
-                'code': code,
-                'name': data.name,
-                'password': hash_password(data.password),
-                'property_name': data.property_name,
-                'phone': data.phone,
-                'user_type': data.user_type,
-                'created_at': datetime.now(UTC),
-                'expires_at': datetime.now(UTC) + timedelta(minutes=15),
-                'verified': False,
-                'attempts': 0,  # v54 (Bug CO): brute-force counter
+                "email": data.email,
+                "code": code,
+                "name": data.name,
+                "password": hash_password(data.password),
+                "property_name": data.property_name,
+                "phone": data.phone,
+                "user_type": data.user_type,
+                "created_at": datetime.now(UTC),
+                "expires_at": datetime.now(UTC) + timedelta(minutes=15),
+                "verified": False,
+                "attempts": 0,  # v54 (Bug CO): brute-force counter
             }
-            await db.verification_codes.delete_many({'email': data.email})
+            await db.verification_codes.delete_many({"email": data.email})
             await db.verification_codes.insert_one(verification_doc)
             await email_service.send_verification_code(data.email, code, data.name)
         except Exception as e:
@@ -1617,6 +1648,7 @@ async def request_verification_code(data: EmailVerificationRequest, request: Req
     _t.add_done_callback(_FORGOT_BG_TASKS.discard)
 
     return _REQUEST_VERIFICATION_GENERIC_RESPONSE
+
 
 @router.post("/auth/verify-email", response_model=TokenResponse)
 async def verify_email_and_register(data: VerifyCodeRequest, request: Request):
@@ -1630,21 +1662,22 @@ async def verify_email_and_register(data: VerifyCodeRequest, request: Request):
     user must request a fresh one (which re-rate-limits).
     """
     from security.auth_throttle import VERIFY_CODE_EMAIL, enforce, normalize_identity
+
     await enforce(VERIFY_CODE_EMAIL, f"em:{normalize_identity(data.email)}", "doğrulama denemesi")
 
     # Look up by email FIRST (without code) so a wrong-code attempt still
     # increments the per-doc attempt counter — otherwise an attacker's
     # wrong guesses would never touch the doc.
-    pending = await db.verification_codes.find_one({'email': data.email})
+    pending = await db.verification_codes.find_one({"email": data.email})
     if not pending:
         raise HTTPException(status_code=400, detail="Geçersiz veya hatalı doğrulama kodu")
-    if pending.get('attempts', 0) >= 5:
-        await db.verification_codes.delete_one({'_id': pending['_id']})
+    if pending.get("attempts", 0) >= 5:
+        await db.verification_codes.delete_one({"_id": pending["_id"]})
         raise HTTPException(status_code=400, detail="Çok fazla hatalı deneme. Lütfen yeni kod isteyin")
-    if pending.get('code') != data.code:
+    if pending.get("code") != data.code:
         await db.verification_codes.update_one(
-            {'_id': pending['_id']},
-            {'$inc': {'attempts': 1}},
+            {"_id": pending["_id"]},
+            {"$inc": {"attempts": 1}},
         )
         raise HTTPException(status_code=400, detail="Geçersiz veya hatalı doğrulama kodu")
     verification = pending
@@ -1652,11 +1685,11 @@ async def verify_email_and_register(data: VerifyCodeRequest, request: Request):
         raise HTTPException(status_code=400, detail="Geçersiz veya hatalı doğrulama kodu")
 
     # Kod süresi dolmuş mu kontrol et
-    expires_at = verification['expires_at']
+    expires_at = verification["expires_at"]
     if not expires_at.tzinfo:
         expires_at = expires_at.replace(tzinfo=UTC)
     if datetime.now(UTC) > expires_at:
-        await db.verification_codes.delete_one({'_id': verification['_id']})
+        await db.verification_codes.delete_one({"_id": verification["_id"]})
         raise HTTPException(status_code=400, detail="Doğrulama kodu süresi dolmuş. Lütfen yeni kod isteyin")
 
     # E-posta zaten kullanılmış mı kontrol et (tekrar)
@@ -1665,65 +1698,51 @@ async def verify_email_and_register(data: VerifyCodeRequest, request: Request):
         raise HTTPException(status_code=400, detail="Bu e-posta adresi zaten kayıtlı")
 
     # Kullanıcı tipine göre kayıt
-    if verification['user_type'] == 'hotel':
+    if verification["user_type"] == "hotel":
         # Hotel admin kullanıcısı — must have hotel_id + username for new login flow
         new_hotel_id = await _generate_unique_hotel_id()
-        new_username = (verification.get('username') or _derive_username(data.email)).strip().lower()
+        new_username = (verification.get("username") or _derive_username(data.email)).strip().lower()
         tenant = Tenant(
             hotel_id=new_hotel_id,
-            name=verification['name'],
-            property_name=verification.get('property_name', f"{verification['name']} Hotel"),
+            name=verification["name"],
+            property_name=verification.get("property_name", f"{verification['name']} Hotel"),
             email=data.email,
-            phone=verification.get('phone'),
-            address='',
-            location='',
-            description=''
+            phone=verification.get("phone"),
+            address="",
+            location="",
+            description="",
         )
         tenant_dict = tenant.model_dump()
-        tenant_dict['created_at'] = tenant_dict['created_at'].isoformat()
+        tenant_dict["created_at"] = tenant_dict["created_at"].isoformat()
         await db.tenants.insert_one(tenant_dict)
 
-        user = User(
-            tenant_id=tenant.id,
-            email=data.email,
-            username=new_username,
-            name=verification['name'],
-            role=UserRole.ADMIN,
-            phone=verification.get('phone'),
-            is_active=True
-        )
+        user = User(tenant_id=tenant.id, email=data.email, username=new_username, name=verification["name"], role=UserRole.ADMIN, phone=verification.get("phone"), is_active=True)
         user_dict = user.model_dump()
-        user_dict['hashed_password'] = verification['password']
-        user_dict['created_at'] = user_dict['created_at'].isoformat()
-        user_dict['email_verified'] = True
-        user_dict['email_verified_at'] = datetime.now(UTC).isoformat()
+        user_dict["hashed_password"] = verification["password"]
+        user_dict["created_at"] = user_dict["created_at"].isoformat()
+        user_dict["email_verified"] = True
+        user_dict["email_verified_at"] = datetime.now(UTC).isoformat()
         user_dict = encrypt_user_doc(user_dict)
         await db.users.insert_one(user_dict)
 
         # Doğrulama kaydını sil
-        await db.verification_codes.delete_one({'_id': verification['_id']})
+        await db.verification_codes.delete_one({"_id": verification["_id"]})
 
         # Hoşgeldin e-postası gönder
         from modules.messaging.email_service import email_service
-        await email_service.send_welcome_email(data.email, verification['name'])
+
+        await email_service.send_welcome_email(data.email, verification["name"])
 
         return _build_token_response(user, tenant)
 
     else:
         # Guest kullanıcısı
-        user = User(
-            tenant_id=None,
-            email=data.email,
-            name=verification['name'],
-            role=UserRole.GUEST,
-            phone=verification.get('phone'),
-            is_active=True
-        )
+        user = User(tenant_id=None, email=data.email, name=verification["name"], role=UserRole.GUEST, phone=verification.get("phone"), is_active=True)
         user_dict = user.model_dump()
-        user_dict['hashed_password'] = verification['password']
-        user_dict['created_at'] = user_dict['created_at'].isoformat()
-        user_dict['email_verified'] = True
-        user_dict['email_verified_at'] = datetime.now(UTC).isoformat()
+        user_dict["hashed_password"] = verification["password"]
+        user_dict["created_at"] = user_dict["created_at"].isoformat()
+        user_dict["email_verified"] = True
+        user_dict["email_verified_at"] = datetime.now(UTC).isoformat()
         user_dict = encrypt_user_doc(user_dict)
         await db.users.insert_one(user_dict)
 
@@ -1731,18 +1750,20 @@ async def verify_email_and_register(data: VerifyCodeRequest, request: Request):
         await db.notification_preferences.insert_one(prefs.model_dump())
 
         # Doğrulama kaydını sil
-        await db.verification_codes.delete_one({'_id': verification['_id']})
+        await db.verification_codes.delete_one({"_id": verification["_id"]})
 
         # Hoşgeldin e-postası gönder
         from modules.messaging.email_service import email_service
-        await email_service.send_welcome_email(data.email, verification['name'])
+
+        await email_service.send_welcome_email(data.email, verification["name"])
 
         return _build_token_response(user, None)
 
+
 _FORGOT_GENERIC_RESPONSE = {
-    'success': True,
-    'message': 'Eğer bu e-posta kayıtlıysa, şifre sıfırlama bağlantısı gönderildi',
-    'expires_in_minutes': 30,
+    "success": True,
+    "message": "Eğer bu e-posta kayıtlıysa, şifre sıfırlama bağlantısı gönderildi",
+    "expires_in_minutes": 30,
 }
 
 # Strong references to in-flight forgot-password background tasks
@@ -1768,16 +1789,19 @@ async def forgot_password(data: ForgotPasswordRequest, request: Request):
         enforce,
         normalize_identity,
     )
+
     await enforce(FORGOT_PW_IP, f"ip:{client_ip(request)}", "sıfırlama isteği")
     await enforce(FORGOT_PW_EMAIL, f"em:{normalize_identity(data.email)}", "sıfırlama isteği")
 
-    await db.audit_logs.insert_one({
-        "id": str(__import__('uuid').uuid4()),
-        "user_email": data.email,
-        "action": "password_reset_requested",
-        "resource_type": "auth",
-        "timestamp": datetime.now(UTC).isoformat(),
-    })
+    await db.audit_logs.insert_one(
+        {
+            "id": str(__import__("uuid").uuid4()),
+            "user_email": data.email,
+            "action": "password_reset_requested",
+            "resource_type": "auth",
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    )
 
     user = await db.users.find_one(build_user_email_query(data.email))
 
@@ -1787,6 +1811,7 @@ async def forgot_password(data: ForgotPasswordRequest, request: Request):
     # ~800ms slower, giving an account-enumeration timing oracle.
     if user:
         import logging as _logging
+
         _bg_logger = _logging.getLogger(__name__)
 
         async def _bg_reset():
@@ -1798,18 +1823,20 @@ async def forgot_password(data: ForgotPasswordRequest, request: Request):
 
                 code = email_service.generate_verification_code()
                 token = _secrets.token_urlsafe(32)
-                await db.password_reset_codes.delete_many({'email': data.email})
-                await db.password_reset_codes.insert_one({
-                    'email': data.email,
-                    'code': code,
-                    'token': token,
-                    'created_at': datetime.now(UTC),
-                    'expires_at': datetime.now(UTC) + timedelta(minutes=30),
-                    'used': False,
-                })
+                await db.password_reset_codes.delete_many({"email": data.email})
+                await db.password_reset_codes.insert_one(
+                    {
+                        "email": data.email,
+                        "code": code,
+                        "token": token,
+                        "created_at": datetime.now(UTC),
+                        "expires_at": datetime.now(UTC) + timedelta(minutes=30),
+                        "used": False,
+                    }
+                )
                 reset_link = f"{_frontend_base_url()}/auth/reset-password?token={token}"
                 subject, html = render_password_reset_email(
-                    name=user.get('name'),
+                    name=user.get("name"),
                     reset_link=reset_link,
                     code=code,
                     expires_in_minutes=30,
@@ -1817,7 +1844,7 @@ async def forgot_password(data: ForgotPasswordRequest, request: Request):
                 send_result = await send_email(data.email, subject, html)
                 if not send_result.get("sent"):
                     try:
-                        await email_service.send_password_reset_code(data.email, code, user.get('name'))
+                        await email_service.send_password_reset_code(data.email, code, user.get("name"))
                     except Exception:
                         pass
             except Exception as e:
@@ -1826,6 +1853,7 @@ async def forgot_password(data: ForgotPasswordRequest, request: Request):
         # Track tasks in a module-level set so they aren't garbage-collected
         # mid-flight and can be observed/cancelled at shutdown if needed.
         import asyncio as _asyncio
+
         _t = _asyncio.create_task(_bg_reset())
         _FORGOT_BG_TASKS.add(_t)
         _t.add_done_callback(_FORGOT_BG_TASKS.discard)
@@ -1841,6 +1869,7 @@ async def reset_password_by_token(payload: dict, request: Request):
     # Bug AX fix — per-IP throttle on reset-token submissions to block
     # token brute-force. Legit users hit this exactly once per email link.
     from security.auth_throttle import RESET_TOKEN_IP, client_ip, enforce
+
     await enforce(RESET_TOKEN_IP, f"ip:{client_ip(request)}", "şifre sıfırlama denemesi")
 
     token = (payload.get("token") or "").strip()
@@ -1854,14 +1883,14 @@ async def reset_password_by_token(payload: dict, request: Request):
     if not reset:
         raise HTTPException(status_code=400, detail="Bağlantı geçersiz veya kullanılmış")
 
-    expires_at = reset['expires_at']
-    if not getattr(expires_at, 'tzinfo', None):
+    expires_at = reset["expires_at"]
+    if not getattr(expires_at, "tzinfo", None):
         expires_at = expires_at.replace(tzinfo=UTC)
     if datetime.now(UTC) > expires_at:
-        await db.password_reset_codes.delete_one({'_id': reset['_id']})
+        await db.password_reset_codes.delete_one({"_id": reset["_id"]})
         raise HTTPException(status_code=400, detail="Bağlantının süresi dolmuş. Lütfen yeniden talep edin.")
 
-    email = reset.get('email')
+    email = reset.get("email")
     user = await db.users.find_one(build_user_email_query(email))
     if not user:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
@@ -1871,18 +1900,21 @@ async def reset_password_by_token(payload: dict, request: Request):
     invalid_before_ts = int(datetime.now(UTC).timestamp()) + 1
     await db.users.update_one(
         build_user_email_query(email),
-        {"$set": {
-            "hashed_password": new_hash,
-            "password_reset_at": datetime.now(UTC).isoformat(),
-            "tokens_invalid_before": invalid_before_ts,
-            "requires_password_change": False,
-        }},
+        {
+            "$set": {
+                "hashed_password": new_hash,
+                "password_reset_at": datetime.now(UTC).isoformat(),
+                "tokens_invalid_before": invalid_before_ts,
+                "requires_password_change": False,
+            }
+        },
     )
-    invalidate_user_doc_cache(user.get('id'))
+    invalidate_user_doc_cache(user.get("id"))
 
     # Invalidate cached login responses
     try:
         from infra.simple_cache import simple_cache as _login_cache
+
         for k in list(_login_cache._cache.keys()):
             if k.startswith("login:"):
                 _login_cache.delete(k)
@@ -1890,10 +1922,11 @@ async def reset_password_by_token(payload: dict, request: Request):
         pass
 
     await db.password_reset_codes.update_one(
-        {"_id": reset['_id']},
+        {"_id": reset["_id"]},
         {"$set": {"used": True, "used_at": datetime.now(UTC)}},
     )
     return {"success": True, "message": "Şifreniz başarıyla güncellendi."}
+
 
 @router.post("/auth/reset-password")
 async def reset_password(data: ResetPasswordRequest, request: Request):
@@ -1909,6 +1942,7 @@ async def reset_password(data: ResetPasswordRequest, request: Request):
         enforce,
         normalize_identity,
     )
+
     await enforce(RESET_CODE_IP, f"ip:{client_ip(request)}", "sıfırlama denemesi")
     await enforce(RESET_CODE_EMAIL, f"rset:{normalize_identity(data.email)}", "sıfırlama denemesi")
 
@@ -1925,52 +1959,38 @@ async def reset_password(data: ResetPasswordRequest, request: Request):
     # most recently issued code — matching what was sent in the last email.
     _MAX_RESET_ATTEMPTS = 5
     reset = await db.password_reset_codes.find_one(
-        {'email': data.email, 'used': False},
-        sort=[('created_at', -1)],
+        {"email": data.email, "used": False},
+        sort=[("created_at", -1)],
     )
 
     if not reset:
         raise HTTPException(status_code=400, detail="Geçersiz veya kullanılmış sıfırlama kodu")
 
     # Kod süresi dolmuş mu kontrol et
-    expires_at = reset['expires_at']
+    expires_at = reset["expires_at"]
     if not expires_at.tzinfo:
         expires_at = expires_at.replace(tzinfo=UTC)
     if datetime.now(UTC) > expires_at:
-        await db.password_reset_codes.delete_one({'_id': reset['_id']})
+        await db.password_reset_codes.delete_one({"_id": reset["_id"]})
         raise HTTPException(status_code=400, detail="Sıfırlama kodu süresi dolmuş. Lütfen yeni kod isteyin")
 
     # Task-170 (Bug AY) — per-record attempt counter.  After _MAX_RESET_ATTEMPTS
     # wrong guesses the record is marked used so it cannot be retried even from
     # a fresh IP that has not yet hit the sliding-window throttle above.
-    failed_attempts = reset.get('failed_attempts', 0)
+    failed_attempts = reset.get("failed_attempts", 0)
     if failed_attempts >= _MAX_RESET_ATTEMPTS:
-        await db.password_reset_codes.update_one(
-            {'_id': reset['_id']},
-            {'$set': {'used': True, 'used_at': datetime.now(UTC)}}
-        )
-        raise HTTPException(
-            status_code=400,
-            detail="Çok fazla hatalı deneme. Lütfen yeni sıfırlama kodu isteyin."
-        )
+        await db.password_reset_codes.update_one({"_id": reset["_id"]}, {"$set": {"used": True, "used_at": datetime.now(UTC)}})
+        raise HTTPException(status_code=400, detail="Çok fazla hatalı deneme. Lütfen yeni sıfırlama kodu isteyin.")
 
     # Constant-time comparison to avoid timing oracle on the code value.
     import secrets as _secrets_mod
-    if not _secrets_mod.compare_digest(str(reset.get('code', '')), str(data.code)):
+
+    if not _secrets_mod.compare_digest(str(reset.get("code", "")), str(data.code)):
         new_count = failed_attempts + 1
         if new_count >= _MAX_RESET_ATTEMPTS:
-            await db.password_reset_codes.update_one(
-                {'_id': reset['_id']},
-                {'$set': {'used': True, 'used_at': datetime.now(UTC), 'failed_attempts': new_count}}
-            )
-            raise HTTPException(
-                status_code=400,
-                detail="Çok fazla hatalı deneme. Lütfen yeni sıfırlama kodu isteyin."
-            )
-        await db.password_reset_codes.update_one(
-            {'_id': reset['_id']},
-            {'$inc': {'failed_attempts': 1}}
-        )
+            await db.password_reset_codes.update_one({"_id": reset["_id"]}, {"$set": {"used": True, "used_at": datetime.now(UTC), "failed_attempts": new_count}})
+            raise HTTPException(status_code=400, detail="Çok fazla hatalı deneme. Lütfen yeni sıfırlama kodu isteyin.")
+        await db.password_reset_codes.update_one({"_id": reset["_id"]}, {"$inc": {"failed_attempts": 1}})
         raise HTTPException(status_code=400, detail="Geçersiz veya kullanılmış sıfırlama kodu")
 
     # Kullanıcıyı bul
@@ -1985,30 +2005,24 @@ async def reset_password(data: ResetPasswordRequest, request: Request):
     await db.users.update_one(
         build_user_email_query(data.email),
         {
-            '$set': {
-                'hashed_password': new_hashed_password,
-                'password_reset_at': datetime.now(UTC).isoformat(),
-                'tokens_invalid_before': invalid_before_ts,
+            "$set": {
+                "hashed_password": new_hashed_password,
+                "password_reset_at": datetime.now(UTC).isoformat(),
+                "tokens_invalid_before": invalid_before_ts,
             }
-        }
+        },
     )
-    invalidate_user_doc_cache(user.get('id'))
+    invalidate_user_doc_cache(user.get("id"))
 
     # Invalidate login cache for this user
     from infra.simple_cache import simple_cache as _login_cache
+
     _login_cache.cleanup_expired()
     for k in list(_login_cache._cache.keys()):
         if k.startswith("login:"):
             _login_cache.delete(k)
 
     # Kodu kullanıldı olarak işaretle
-    await db.password_reset_codes.update_one(
-        {'_id': reset['_id']},
-        {'$set': {'used': True, 'used_at': datetime.now(UTC)}}
-    )
+    await db.password_reset_codes.update_one({"_id": reset["_id"]}, {"$set": {"used": True, "used_at": datetime.now(UTC)}})
 
-    return {
-        'success': True,
-        'message': 'Şifreniz başarıyla güncellendi. Şimdi yeni şifrenizle giriş yapabilirsiniz'
-    }
-
+    return {"success": True, "message": "Şifreniz başarıyla güncellendi. Şimdi yeni şifrenizle giriş yapabilirsiniz"}

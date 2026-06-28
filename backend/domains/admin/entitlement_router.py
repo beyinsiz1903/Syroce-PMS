@@ -2,6 +2,7 @@
 Entitlement, Metering & Feature Flags — Admin API
 Super-admin endpoints for viewing/managing entitlements, usage, and feature flags.
 """
+
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -81,11 +82,13 @@ async def api_entitlements_overview(
             try:
                 end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
                 if now > end_dt:
-                    expired.append({
-                        "tenant_id": t["id"],
-                        "property_name": t.get("property_name", "?"),
-                        "expired_at": end_date,
-                    })
+                    expired.append(
+                        {
+                            "tenant_id": t["id"],
+                            "property_name": t.get("property_name", "?"),
+                            "expired_at": end_date,
+                        }
+                    )
             except Exception:
                 pass
 

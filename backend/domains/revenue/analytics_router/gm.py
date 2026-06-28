@@ -3,6 +3,7 @@ gm
 
 Auto-split sub-router (shared imports/classes inlined).
 """
+
 """
 Domain Router: Analytics
 
@@ -28,9 +29,9 @@ _FD_WRITE = Depends(_require_role("super_admin", "admin", "front_desk"))
 try:
     from routers.pms_availability import check_room_availability
 except Exception:  # pragma: no cover
+
     async def check_room_availability(*args, **kwargs):
         return {"available": False, "rooms": []}
-
 
 
 # --------------------------------------------------------------------------
@@ -38,55 +39,9 @@ except Exception:  # pragma: no cover
 # --------------------------------------------------------------------------
 
 
-
-
-
-
-
 # rbac-allow: cache-rbac — FO booking search operasyonel
 
 # rbac-allow: cache-rbac — FO available rooms operasyonel
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 _SYSTEM_HEALTH_CACHE: dict = {"ts": 0.0, "payload": None}
@@ -97,11 +52,7 @@ router = APIRouter(prefix="/api", tags=["analytics"])
 
 # ── GET /dashboard/gm/pickup-analysis ──
 @router.get("/dashboard/gm/pickup-analysis")
-async def get_pickup_analysis(
-    start_date: str | None = None,
-    end_date: str | None = None,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
+async def get_pickup_analysis(start_date: str | None = None, end_date: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get pickup analysis for revenue management"""
     current_user = await get_current_user(credentials)
 
@@ -121,68 +72,49 @@ async def get_pickup_analysis(
 
     # Group by booking date (created_at)
     pipeline = [
-        {
-            '$match': {
-                'tenant_id': current_user.tenant_id,
-                'check_in': {
-                    '$gte': start_date,
-                    '$lte': end_date
-                },
-                'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']}
-            }
-        },
-        {
-            '$group': {
-                '_id': {
-                    'stay_date': '$check_in',
-                    'booking_date': '$created_at'
-                },
-                'room_count': {'$sum': 1},
-                'total_revenue': {'$sum': '$total_amount'}
-            }
-        },
-        {
-            '$sort': {'_id.stay_date': 1}
-        }
+        {"$match": {"tenant_id": current_user.tenant_id, "check_in": {"$gte": start_date, "$lte": end_date}, "status": {"$in": ["confirmed", "guaranteed", "checked_in"]}}},
+        {"$group": {"_id": {"stay_date": "$check_in", "booking_date": "$created_at"}, "room_count": {"$sum": 1}, "total_revenue": {"$sum": "$total_amount"}}},
+        {"$sort": {"_id.stay_date": 1}},
     ]
 
     async for doc in db.bookings.aggregate(pipeline):
-        stay_date = doc['_id']['stay_date']
-        booking_date = doc['_id']['booking_date']
+        stay_date = doc["_id"]["stay_date"]
+        booking_date = doc["_id"]["booking_date"]
 
         # Calculate days before arrival
         days_before = (stay_date - booking_date).days if stay_date and booking_date else 0
 
-        pickup_data.append({
-            'stay_date': stay_date.date().isoformat() if stay_date else None,
-            'booking_date': booking_date.date().isoformat() if booking_date else None,
-            'days_before_arrival': days_before,
-            'rooms': doc['room_count'],
-            'revenue': doc['total_revenue']
-        })
+        pickup_data.append(
+            {
+                "stay_date": stay_date.date().isoformat() if stay_date else None,
+                "booking_date": booking_date.date().isoformat() if booking_date else None,
+                "days_before_arrival": days_before,
+                "rooms": doc["room_count"],
+                "revenue": doc["total_revenue"],
+            }
+        )
 
     # Calculate pickup velocity
-    sum(d['rooms'] for d in pickup_data)
-    sum(d['revenue'] for d in pickup_data)
+    sum(d["rooms"] for d in pickup_data)
+    sum(d["revenue"] for d in pickup_data)
 
     # Group by days_before_arrival for trend analysis
     pickup_trends = {}
     for data in pickup_data:
-        days_key = data['days_before_arrival']
+        days_key = data["days_before_arrival"]
         if days_key not in pickup_trends:
-            pickup_trends[days_key] = {'rooms': 0, 'revenue': 0}
-        pickup_trends[days_key]['rooms'] += data['rooms']
-        pickup_trends[days_key]['revenue'] += data['revenue']
+            pickup_trends[days_key] = {"rooms": 0, "revenue": 0}
+        pickup_trends[days_key]["rooms"] += data["rooms"]
+        pickup_trends[days_key]["revenue"] += data["revenue"]
 
-    return {
-        'pickup_data': pickup_data,
-        'pickup_trends': pickup_trends
-    }
+    return {"pickup_data": pickup_data, "pickup_trends": pickup_trends}
+
+
 # ── GET /gm/team-performance ──
 @router.get("/gm/team-performance")
 async def get_team_performance(
     department: str | None = None,
-    period: str = 'month',
+    period: str = "month",
     credentials: HTTPAuthorizationCredentials = Depends(security),
     _: None = Depends(require_module("gm_dashboards")),
     _perm=Depends(require_op("view_system_diagnostics")),  # v103 DX alias drift fix
@@ -198,47 +130,40 @@ async def get_team_performance(
     if department:
         return {}
 
-    return {
-        'departments': {},
-        'period': period,
-        'overall_performance': 0,
-        'data_available': False,
-        'message': 'Personel performans verisi mevcut degil. Performans takibi yapilandirilmamis.'
-    }
+    return {"departments": {}, "period": period, "overall_performance": 0, "data_available": False, "message": "Personel performans verisi mevcut degil. Performans takibi yapilandirilmamis."}
+
+
 # ── GET /gm/complaints ──
 @router.get("/gm/complaints")
-async def get_complaints(
-    status: str | None = None,
-    priority: str | None = None,
-    limit: int = 50,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
+async def get_complaints(status: str | None = None, priority: str | None = None, limit: int = 50, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get guest complaints"""
     current_user = await get_current_user(credentials)
 
-    query = {'tenant_id': current_user.tenant_id}
+    query = {"tenant_id": current_user.tenant_id}
 
     if status:
-        query['status'] = status
+        query["status"] = status
     if priority:
-        query['priority'] = priority
+        query["priority"] = priority
 
     complaints = []
-    async for complaint in db.complaints.find(query).sort('created_at', -1).limit(limit):
-        complaint.pop('_id', None)
+    async for complaint in db.complaints.find(query).sort("created_at", -1).limit(limit):
+        complaint.pop("_id", None)
         complaints.append(complaint)
 
     # Gercek sikayet kayitlarini doner; kayit yoksa bos liste (uydurma yok).
     return {
-        'complaints': complaints,
-        'count': len(complaints),
-        'data_available': len(complaints) > 0,
-        'by_status': {
-            'open': sum(1 for c in complaints if c.get('status') == 'open'),
-            'in_progress': sum(1 for c in complaints if c.get('status') == 'in_progress'),
-            'resolved': sum(1 for c in complaints if c.get('status') == 'resolved')
-        }
+        "complaints": complaints,
+        "count": len(complaints),
+        "data_available": len(complaints) > 0,
+        "by_status": {
+            "open": sum(1 for c in complaints if c.get("status") == "open"),
+            "in_progress": sum(1 for c in complaints if c.get("status") == "in_progress"),
+            "resolved": sum(1 for c in complaints if c.get("status") == "resolved"),
+        },
     }
+
+
 # ── POST /gm/complaint ──
 @router.post("/gm/complaint")
 async def create_complaint(
@@ -250,27 +175,26 @@ async def create_complaint(
     current_user = await get_current_user(credentials)
 
     complaint = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'guest_name': complaint_data.get('guest_name'),
-        'room_number': complaint_data.get('room_number'),
-        'category': complaint_data.get('category'),
-        'subject': complaint_data.get('subject'),
-        'description': complaint_data.get('description'),
-        'priority': complaint_data.get('priority', 'normal'),
-        'status': 'open',
-        'created_at': datetime.now(UTC).isoformat(),
-        'created_by': current_user.name,
-        'assigned_to': complaint_data.get('assigned_to'),
-        'resolution': None
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "guest_name": complaint_data.get("guest_name"),
+        "room_number": complaint_data.get("room_number"),
+        "category": complaint_data.get("category"),
+        "subject": complaint_data.get("subject"),
+        "description": complaint_data.get("description"),
+        "priority": complaint_data.get("priority", "normal"),
+        "status": "open",
+        "created_at": datetime.now(UTC).isoformat(),
+        "created_by": current_user.name,
+        "assigned_to": complaint_data.get("assigned_to"),
+        "resolution": None,
     }
 
     await db.complaints.insert_one(complaint)
 
-    return {
-        'message': 'Complaint created',
-        'complaint_id': complaint['id']
-    }
+    return {"message": "Complaint created", "complaint_id": complaint["id"]}
+
+
 # ── POST /gm/complaint/{complaint_id}/resolve ──
 @router.post("/gm/complaint/{complaint_id}/resolve")
 async def resolve_complaint(
@@ -283,18 +207,8 @@ async def resolve_complaint(
     current_user = await get_current_user(credentials)
 
     await db.complaints.update_one(
-        {'id': complaint_id, 'tenant_id': current_user.tenant_id},
-        {
-            '$set': {
-                'status': 'resolved',
-                'resolution': resolution_data.get('resolution'),
-                'resolved_by': current_user.name,
-                'resolved_at': datetime.now(UTC).isoformat()
-            }
-        }
+        {"id": complaint_id, "tenant_id": current_user.tenant_id},
+        {"$set": {"status": "resolved", "resolution": resolution_data.get("resolution"), "resolved_by": current_user.name, "resolved_at": datetime.now(UTC).isoformat()}},
     )
 
-    return {
-        'message': 'Complaint resolved',
-        'complaint_id': complaint_id
-    }
+    return {"message": "Complaint resolved", "complaint_id": complaint_id}

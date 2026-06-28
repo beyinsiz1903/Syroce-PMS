@@ -9,6 +9,7 @@ provider does and does not guarantee.
 Every provider difference should be encoded here, not scattered
 across ad-hoc if-else branches.
 """
+
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -34,8 +35,8 @@ class ModificationBehavior(str, Enum):
 
 
 class ARIPushBehavior(str, Enum):
-    SINGLE_MESSAGE = "single_message"       # rates + avail in one call
-    SPLIT_MESSAGES = "split_messages"       # rates and avail must be separate
+    SINGLE_MESSAGE = "single_message"  # rates + avail in one call
+    SPLIT_MESSAGES = "split_messages"  # rates and avail must be separate
     BATCH_ONLY = "batch_only"
 
 
@@ -225,5 +226,5 @@ def get_retry_delay(provider: str, attempt: int) -> float:
     """Calculate retry delay with exponential backoff."""
     cap = get_capability(provider)
     policy = cap.retry_policy
-    delay = policy.base_delay_seconds * (policy.exponential_factor ** attempt)
+    delay = policy.base_delay_seconds * (policy.exponential_factor**attempt)
     return min(delay, policy.max_delay_seconds)

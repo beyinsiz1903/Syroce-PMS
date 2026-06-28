@@ -2,6 +2,7 @@
 Revenue Domain — Pricing Repository
 Data access layer for pricing and rate management. No FastAPI dependencies.
 """
+
 from typing import Any
 
 from core.tenant_db import LazyCollection
@@ -16,15 +17,11 @@ class PricingRepository:
 
     @classmethod
     async def get_rate_plans(cls, tenant_id: str) -> list[dict[str, Any]]:
-        return await cls.rate_plans.find(
-            {"tenant_id": tenant_id}, {"_id": 0}
-        ).to_list(500)
+        return await cls.rate_plans.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(500)
 
     @classmethod
     async def get_rate_plan(cls, tenant_id: str, plan_id: str) -> dict[str, Any] | None:
-        return await cls.rate_plans.find_one(
-            {"tenant_id": tenant_id, "id": plan_id}, {"_id": 0}
-        )
+        return await cls.rate_plans.find_one({"tenant_id": tenant_id, "id": plan_id}, {"_id": 0})
 
     @classmethod
     async def upsert_rate_plan(cls, plan: dict[str, Any]) -> None:
@@ -36,8 +33,12 @@ class PricingRepository:
 
     @classmethod
     async def get_rate_periods(
-        cls, tenant_id: str, *, room_type: str | None = None,
-        date_from: str | None = None, date_to: str | None = None,
+        cls,
+        tenant_id: str,
+        *,
+        room_type: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
     ) -> list[dict[str, Any]]:
         query: dict[str, Any] = {"tenant_id": tenant_id}
         if room_type:
@@ -54,6 +55,4 @@ class PricingRepository:
 
     @classmethod
     async def get_rate_overrides(cls, tenant_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
-        return await cls.rate_overrides.find(
-            {"tenant_id": tenant_id}, {"_id": 0}
-        ).sort("created_at", -1).limit(limit).to_list(limit)
+        return await cls.rate_overrides.find({"tenant_id": tenant_id}, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)

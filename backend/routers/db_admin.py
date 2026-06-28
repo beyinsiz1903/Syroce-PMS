@@ -14,6 +14,7 @@ ikinci faktörü gerekir.
 GET    /api/admin/db/collections                              — liste + count
 DELETE /api/admin/db/collections/{name}?dry_run=true          — varsayılan
 """
+
 import asyncio
 import logging
 from typing import Any
@@ -41,14 +42,42 @@ router = APIRouter(prefix="/api/admin/db", tags=["admin-db"])
 # Bunların dışındaki sadece "_test" / "_tmp" / "_legacy_*" isimleri
 # silinebilir. Diğer her şey için 403 dönülür.
 PROTECTED_PREFIXES = (
-    "tenants", "system_", "users", "bookings", "rooms", "guests",
-    "folios", "folio_charges", "folio_payments", "audit_logs",
-    "outbox", "city_tax_rules", "tax_declarations",
-    "accommodation_tax_postings", "channel_", "rate_", "housekeeping",
-    "invoices", "payments", "agencies", "corporate_", "groups",
-    "session", "kbs_", "subscriptions", "subscription_", "tenant_",
-    "notifications", "ml_", "audit_", "loyalty_", "guest_",
-    "reservation_", "rooms_", "permissions", "roles",
+    "tenants",
+    "system_",
+    "users",
+    "bookings",
+    "rooms",
+    "guests",
+    "folios",
+    "folio_charges",
+    "folio_payments",
+    "audit_logs",
+    "outbox",
+    "city_tax_rules",
+    "tax_declarations",
+    "accommodation_tax_postings",
+    "channel_",
+    "rate_",
+    "housekeeping",
+    "invoices",
+    "payments",
+    "agencies",
+    "corporate_",
+    "groups",
+    "session",
+    "kbs_",
+    "subscriptions",
+    "subscription_",
+    "tenant_",
+    "notifications",
+    "ml_",
+    "audit_",
+    "loyalty_",
+    "guest_",
+    "reservation_",
+    "rooms_",
+    "permissions",
+    "roles",
 )
 
 
@@ -85,11 +114,13 @@ async def list_collections(
     # Bulk count via asyncio.gather (was 500 sequential round-trips → parallel)
     counts: dict[str, Any] = {}
     if include_stats:
+
         async def _count(n: str):
             try:
                 return n, await _raw_db[n].estimated_document_count(), None
             except Exception as e:
                 return n, None, str(e)[:120]
+
         results = await asyncio.gather(*[_count(n) for n in names])
         for n, c, err in results:
             counts[n] = (c, err)
@@ -139,14 +170,19 @@ async def drop_collection(
     tenant_id = getattr(current_user, "tenant_id", "?")
     logger.info(
         "db_admin.drop_collection.attempt actor=%s tenant=%s name=%s dry_run=%s",
-        actor_id, tenant_id, name, dry_run,
+        actor_id,
+        tenant_id,
+        name,
+        dry_run,
     )
 
     allowed, reason = _is_droppable(name)
     if not allowed:
         logger.warning(
             "db_admin.drop_collection.denied actor=%s name=%s reason=%s",
-            actor_id, name, reason,
+            actor_id,
+            name,
+            reason,
         )
         raise HTTPException(status_code=403, detail=f"Drop reddedildi: {reason}")
 
@@ -177,7 +213,10 @@ async def drop_collection(
 
     logger.warning(
         "db_admin.drop_collection.done actor=%s tenant=%s name=%s reason=%s",
-        actor_id, tenant_id, name, reason,
+        actor_id,
+        tenant_id,
+        name,
+        reason,
     )
     try:
         await create_audit_log(
@@ -210,6 +249,7 @@ async def drop_collection(
 # cannot delete rows. Only `auto_safe` / `auto_safe_all_inactive` groups
 # are touched — `manual_required` groups are reported back unchanged.
 
+
 class RnlResolveBody(BaseModel):
     confirm: bool = False
     limit: int = 100
@@ -223,14 +263,14 @@ async def list_rnl_duplicates(
     """List duplicate room-night-lock groups with auto-resolution
     recommendation. Read-only; never mutates."""
     groups = await list_room_night_lock_duplicate_groups(limit=limit)
-    auto = sum(
-        1 for g in groups
-        if g["recommendation"] in ("auto_safe", "auto_safe_all_inactive")
-    )
+    auto = sum(1 for g in groups if g["recommendation"] in ("auto_safe", "auto_safe_all_inactive"))
     manual = sum(1 for g in groups if g["recommendation"] == "manual_required")
     logger.info(
         "db_admin.rnl_duplicates.list actor=%s total=%d auto=%d manual=%d",
-        getattr(current_user, "id", "?"), len(groups), auto, manual,
+        getattr(current_user, "id", "?"),
+        len(groups),
+        auto,
+        manual,
     )
     return {
         "total": len(groups),
@@ -252,16 +292,12 @@ async def list_rnl_auto_resolve_runs(
     lets operators confirm the self-healing loop is running without having to
     grep worker logs.
     """
-    cursor = (
-        _raw_db["rnl_auto_resolve_runs"]
-        .find({}, {"_id": 0})
-        .sort("started_at", -1)
-        .limit(limit)
-    )
+    cursor = _raw_db["rnl_auto_resolve_runs"].find({}, {"_id": 0}).sort("started_at", -1).limit(limit)
     runs = await cursor.to_list(length=limit)
     logger.info(
         "db_admin.rnl_auto_resolve_runs.list actor=%s returned=%d",
-        getattr(current_user, "id", "?"), len(runs),
+        getattr(current_user, "id", "?"),
+        len(runs),
     )
     return {"total": len(runs), "runs": runs}
 
@@ -279,16 +315,12 @@ async def list_autonomous_collection_runs(
     gunluk tahsilat sonuclarini worker log'larini grep'lemeden dogrulamasini
     saglar. Cross-tenant ops gorunumu oldugundan `super_admin` sarttir.
     """
-    cursor = (
-        _raw_db["autonomous_collection_runs"]
-        .find({}, {"_id": 0})
-        .sort("last_auto_run", -1)
-        .limit(limit)
-    )
+    cursor = _raw_db["autonomous_collection_runs"].find({}, {"_id": 0}).sort("last_auto_run", -1).limit(limit)
     runs = await cursor.to_list(length=limit)
     logger.info(
         "db_admin.autonomous_collection_runs.list actor=%s returned=%d",
-        getattr(current_user, "id", "?"), len(runs),
+        getattr(current_user, "id", "?"),
+        len(runs),
     )
     return {"total": len(runs), "runs": runs}
 
@@ -314,12 +346,7 @@ async def list_autonomous_collection_jobs(
         query["status"] = status
     if unresolved_only:
         query["resolved"] = {"$ne": True}
-    cursor = (
-        _raw_db["autonomous_collection_jobs"]
-        .find(query, {"_id": 0})
-        .sort("updated_at", -1)
-        .limit(limit)
-    )
+    cursor = _raw_db["autonomous_collection_jobs"].find(query, {"_id": 0}).sort("updated_at", -1).limit(limit)
     jobs = await cursor.to_list(length=limit)
     status_counts: dict[str, int] = {}
     for j in jobs:
@@ -327,7 +354,9 @@ async def list_autonomous_collection_jobs(
         status_counts[st] = status_counts.get(st, 0) + 1
     logger.info(
         "db_admin.autonomous_collection_jobs.list actor=%s returned=%d status=%s",
-        getattr(current_user, "id", "?"), len(jobs), status or "all",
+        getattr(current_user, "id", "?"),
+        len(jobs),
+        status or "all",
     )
     return {"total": len(jobs), "jobs": jobs, "status_counts": status_counts}
 
@@ -347,13 +376,8 @@ async def rnl_duplicates_summary(
     from core.database import db
 
     groups = await list_room_night_lock_duplicate_groups(limit=500)
-    manual_required = sum(
-        1 for g in groups if g.get("recommendation") == "manual_required"
-    )
-    auto_resolvable = sum(
-        1 for g in groups
-        if g.get("recommendation") in ("auto_safe", "auto_safe_all_inactive")
-    )
+    manual_required = sum(1 for g in groups if g.get("recommendation") == "manual_required")
+    auto_resolvable = sum(1 for g in groups if g.get("recommendation") in ("auto_safe", "auto_safe_all_inactive"))
 
     # Task #244: per-tenant breakdown of manual_required groups so operators
     # can tell which property is bleeding the most before paging the GM.
@@ -366,9 +390,7 @@ async def rnl_duplicates_summary(
         if not tid:
             continue
         tenant_counts[tid] = tenant_counts.get(tid, 0) + 1
-    top_tenant_ids = sorted(
-        tenant_counts.items(), key=lambda kv: (-kv[1], kv[0])
-    )[:5]
+    top_tenant_ids = sorted(tenant_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
     name_by_tid: dict[str, str] = {}
     if top_tenant_ids:
         try:
@@ -380,12 +402,7 @@ async def rnl_duplicates_summary(
                 tid = doc.get("id")
                 if not tid:
                     continue
-                name_by_tid[tid] = (
-                    doc.get("property_name")
-                    or doc.get("name")
-                    or doc.get("hotel_id")
-                    or tid
-                )
+                name_by_tid[tid] = doc.get("property_name") or doc.get("name") or doc.get("hotel_id") or tid
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "db_admin.rnl_duplicates.summary tenant name lookup failed: %s",
@@ -403,7 +420,8 @@ async def rnl_duplicates_summary(
     state_doc: dict[str, Any] = {}
     try:
         raw = await db["rnl_duplicate_alert_state"].find_one(
-            {"state_key": "manual_required"}, {"_id": 0},
+            {"state_key": "manual_required"},
+            {"_id": 0},
         )
         state_doc = raw or {}
     except Exception as exc:  # noqa: BLE001
@@ -447,7 +465,9 @@ async def resolve_rnl_duplicates(
 
     logger.info(
         "db_admin.rnl_duplicates.resolve.attempt actor=%s dry_run=%s confirm=%s",
-        actor_id, dry_run, body.confirm,
+        actor_id,
+        dry_run,
+        body.confirm,
     )
 
     if not dry_run and not body.confirm:
@@ -475,7 +495,10 @@ async def resolve_rnl_duplicates(
 
     logger.warning(
         "db_admin.rnl_duplicates.resolve.done actor=%s applied=%s resolved=%d skipped=%d",
-        actor_id, result["applied"], result["resolved_count"], result["skipped_count"],
+        actor_id,
+        result["applied"],
+        result["resolved_count"],
+        result["skipped_count"],
     )
 
     if index_rebuild is not None:
@@ -512,10 +535,15 @@ async def manual_resolve_rnl_duplicate(
     actor_role = getattr(current_user, "role", "super_admin")
 
     logger.info(
-        "db_admin.rnl_duplicates.manual_resolve.attempt actor=%s "
-        "tenant=%s room=%s night=%s keep=%s retire=%s dry_run=%s confirm=%s",
-        actor_id, body.tenant_id, body.room_id, body.night_date,
-        body.keep_booking_id, body.retire_booking_ids, dry_run, body.confirm,
+        "db_admin.rnl_duplicates.manual_resolve.attempt actor=%s tenant=%s room=%s night=%s keep=%s retire=%s dry_run=%s confirm=%s",
+        actor_id,
+        body.tenant_id,
+        body.room_id,
+        body.night_date,
+        body.keep_booking_id,
+        body.retire_booking_ids,
+        dry_run,
+        body.confirm,
     )
 
     if not body.retire_booking_ids:
@@ -558,10 +586,13 @@ async def manual_resolve_rnl_duplicate(
     )
 
     logger.warning(
-        "db_admin.rnl_duplicates.manual_resolve.done actor=%s tenant=%s "
-        "room=%s night=%s applied=%s deleted=%s skip_reason=%s",
-        actor_id, body.tenant_id, body.room_id, body.night_date,
-        result.get("applied"), result.get("deleted_count"),
+        "db_admin.rnl_duplicates.manual_resolve.done actor=%s tenant=%s room=%s night=%s applied=%s deleted=%s skip_reason=%s",
+        actor_id,
+        body.tenant_id,
+        body.room_id,
+        body.night_date,
+        result.get("applied"),
+        result.get("deleted_count"),
         result.get("skip_reason"),
     )
     return result

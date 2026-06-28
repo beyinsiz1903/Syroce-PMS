@@ -5,6 +5,7 @@ Production-grade tenant isolation validation:
 cross-tenant access, cache isolation, queue scope,
 websocket room isolation, noisy tenant simulation.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -31,6 +32,7 @@ class TenantIsolationConfirmationService:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     async def run_full_validation(self, ctx: OperationContext) -> ServiceResult:
@@ -86,9 +88,7 @@ class TenantIsolationConfirmationService:
 
         if test_id == "queue_scope":
             # Verify queue tasks are scoped to tenant
-            await self._db.task_queue.find(
-                {"tenant_id": {"$ne": ctx.tenant_id}}, {"_id": 0, "tenant_id": 1}
-            ).limit(1).to_list(1)
+            await self._db.task_queue.find({"tenant_id": {"$ne": ctx.tenant_id}}, {"_id": 0, "tenant_id": 1}).limit(1).to_list(1)
             return {**base, "passed": True, "details": "Queue tasks are tenant-scoped"}
 
         if test_id == "websocket_room_isolation":

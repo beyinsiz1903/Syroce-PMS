@@ -1,4 +1,5 @@
 """Admin endpoints — vendor approval & oversight (super_admin only)."""
+
 from __future__ import annotations
 
 import logging
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/api/supplies-market/admin", tags=["Supplies Marketpl
 
 def _require_super_admin(current_user=Depends(get_current_user)):
     from core.security import _is_super_admin
+
     if _is_super_admin(current_user):
         return current_user
     raise HTTPException(403, "Super admin only")

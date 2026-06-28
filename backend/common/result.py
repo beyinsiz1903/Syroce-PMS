@@ -2,6 +2,7 @@
 Common — Service Result Object
 Standardized return type for all service methods.
 """
+
 from typing import Any
 
 

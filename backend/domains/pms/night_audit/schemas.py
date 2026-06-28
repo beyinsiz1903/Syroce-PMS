@@ -2,6 +2,7 @@
 Night Audit — Domain Schemas
 Pydantic models for night audit operations.
 """
+
 from enum import Enum
 from typing import Any
 
@@ -85,8 +86,8 @@ class AuditException(BaseModel):
 
 class NightAuditScheduleRequest(BaseModel):
     enabled: bool = False
-    scheduled_hour: int = 0       # 0-23
-    scheduled_minute: int = 0     # 0-59
+    scheduled_hour: int = 0  # 0-23
+    scheduled_minute: int = 0  # 0-59
     timezone: str = "Europe/Istanbul"
     skip_validations: bool = False
     auto_retry: bool = True

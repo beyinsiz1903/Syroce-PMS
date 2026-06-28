@@ -7,6 +7,7 @@ and normalizes them into the standard FastAPI error format: {"detail": "..."}.
 This ensures all API error responses follow a single consistent contract
 regardless of which internal pattern the route handler used.
 """
+
 import json
 import logging
 
@@ -20,11 +21,7 @@ class ErrorNormalizerMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         response: Response = await call_next(request)
 
-        if (
-            response.status_code == 200
-            and hasattr(response, "body_iterator")
-            and response.headers.get("content-type", "").startswith("application/json")
-        ):
+        if response.status_code == 200 and hasattr(response, "body_iterator") and response.headers.get("content-type", "").startswith("application/json"):
             body_bytes = b""
             async for chunk in response.body_iterator:
                 if isinstance(chunk, str):
@@ -45,12 +42,7 @@ class ErrorNormalizerMiddleware(BaseHTTPMiddleware):
                 )
 
             if isinstance(data, dict) and data.get("success") is False:
-                detail = (
-                    data.get("error")
-                    or data.get("message")
-                    or data.get("detail")
-                    or "Operation failed"
-                )
+                detail = data.get("error") or data.get("message") or data.get("detail") or "Operation failed"
                 normalized = {"detail": detail, "success": False}
                 return JSONResponse(
                     status_code=400,

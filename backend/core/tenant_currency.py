@@ -5,6 +5,7 @@ Reads the per-tenant currency preference from `hotel_settings.currency`
 (falls back to 'TRY'). Cached in-process for 60 seconds to avoid
 hammering Mongo on every dashboard request.
 """
+
 from __future__ import annotations
 
 import time

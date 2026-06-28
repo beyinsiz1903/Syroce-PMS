@@ -36,6 +36,7 @@ Exit codes:
     1 : duplicates detected
     2 : usage / file not found
 """
+
 from __future__ import annotations
 
 import argparse
@@ -81,13 +82,10 @@ def parse_direct(path: Path) -> set[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--verbose", "-v", action="store_true",
-                        help="Print full per-subset counts even on success.")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Print full per-subset counts even on success.")
     args = parser.parse_args()
 
-    direct_per_subset: dict[str, set[str]] = {
-        name: parse_direct(SPLIT_DIR / f"{name}.txt") for name in SUBSET_NAMES
-    }
+    direct_per_subset: dict[str, set[str]] = {name: parse_direct(SPLIT_DIR / f"{name}.txt") for name in SUBSET_NAMES}
 
     duplicates: dict[str, list[str]] = {}
     pkg_to_files: dict[str, list[str]] = {}

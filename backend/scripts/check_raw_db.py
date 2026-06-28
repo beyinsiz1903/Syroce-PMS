@@ -9,26 +9,27 @@ Usage:
     python scripts/check_raw_db.py          # Audit mode (print violations)
     python scripts/check_raw_db.py --strict  # CI mode (exit 1 on violation)
 """
+
 import os
 import re
 import sys
 
 # Files that legitimately need raw DB access
 WHITELISTED_FILES = {
-    "core/database.py",          # The source itself
-    "core/tenant_db.py",         # Wraps raw DB
-    "core/__init__.py",          # Re-exports
-    "core/security.py",          # Auth before tenant context
-    "startup.py",                # Index creation
-    "health_check.py",           # System monitoring
-    "server.py",                 # Bootstrap
-    "auto_seed.py",              # Seeding
-    "seed_data.py",              # Seeding
-    "seed_demo_data.py",         # Seeding
-    "seed_production_user.py",   # Seeding
-    "create_test_data.py",       # Seeding
-    "create_test_user.py",       # Seeding
-    "create_demo_users.py",      # Seeding
+    "core/database.py",  # The source itself
+    "core/tenant_db.py",  # Wraps raw DB
+    "core/__init__.py",  # Re-exports
+    "core/security.py",  # Auth before tenant context
+    "startup.py",  # Index creation
+    "health_check.py",  # System monitoring
+    "server.py",  # Bootstrap
+    "auto_seed.py",  # Seeding
+    "seed_data.py",  # Seeding
+    "seed_demo_data.py",  # Seeding
+    "seed_production_user.py",  # Seeding
+    "create_test_data.py",  # Seeding
+    "create_test_user.py",  # Seeding
+    "create_demo_users.py",  # Seeding
     "create_advanced_demo_data.py",
     "create_comprehensive_demo_data.py",
     "create_comprehensive_demo_all_modules.py",
@@ -90,16 +91,16 @@ def main():
             all_violations.extend(violations)
 
     if all_violations:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f" TI-003 RAW DB USAGE AUDIT: {len(all_violations)} violations found")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
         for rel_path, line_no, line in sorted(all_violations):
             print(f"  {rel_path}:{line_no}  →  {line}")
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("  FIX: Replace 'from core.database import db' with:")
         print("    from core.tenant_db import get_db")
         print("    db = get_db()  # inside function body")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
         if strict:
             print("CI CHECK FAILED: Raw DB usage detected in non-whitelisted files.")

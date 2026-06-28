@@ -13,6 +13,7 @@ this discriminator so the two concerns stay visually separate.
 
 All endpoints are tenant-scoped and require an authenticated user.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -67,10 +68,7 @@ async def list_competitors(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     db = get_system_db()
-    cur = db.mice_accounts.find(
-        {"tenant_id": current_user.tenant_id,
-         "account_type": ACCOUNT_TYPE},
-        {"_id": 0}).sort("name", 1)
+    cur = db.mice_accounts.find({"tenant_id": current_user.tenant_id, "account_type": ACCOUNT_TYPE}, {"_id": 0}).sort("name", 1)
     return {"competitors": [d async for d in cur]}
 
 
@@ -97,17 +95,16 @@ async def create_competitor(
 
 @router.put("/competitors/{competitor_id}")
 async def update_competitor(
-    competitor_id: str, body: CompetitorIn,
+    competitor_id: str,
+    body: CompetitorIn,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
 ) -> dict:
     require_mice_ops(current_user)
     db = get_system_db()
     res = await db.mice_accounts.update_one(
-        {"id": competitor_id, "tenant_id": current_user.tenant_id,
-         "account_type": ACCOUNT_TYPE},
-        {"$set": {**body.model_dump(),
-                  "updated_at": datetime.now(UTC).isoformat()}})
+        {"id": competitor_id, "tenant_id": current_user.tenant_id, "account_type": ACCOUNT_TYPE}, {"$set": {**body.model_dump(), "updated_at": datetime.now(UTC).isoformat()}}
+    )
     if not res.matched_count:
         raise HTTPException(404, "Rakip bulunamadı")
     return {"ok": True}
@@ -121,9 +118,7 @@ async def delete_competitor(
 ) -> dict:
     require_mice_ops(current_user)
     db = get_system_db()
-    res = await db.mice_accounts.delete_one(
-        {"id": competitor_id, "tenant_id": current_user.tenant_id,
-         "account_type": ACCOUNT_TYPE})
+    res = await db.mice_accounts.delete_one({"id": competitor_id, "tenant_id": current_user.tenant_id, "account_type": ACCOUNT_TYPE})
     if not res.deleted_count:
         raise HTTPException(404, "Rakip bulunamadı")
     return {"ok": True}
@@ -132,7 +127,8 @@ async def delete_competitor(
 # ── Rate snapshots (embedded in competitor doc) ─────────────────
 @router.post("/competitors/{competitor_id}/rates", status_code=201)
 async def add_rate(
-    competitor_id: str, body: CompetitorRateIn,
+    competitor_id: str,
+    body: CompetitorRateIn,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
 ) -> dict:
@@ -145,13 +141,16 @@ async def add_rate(
         "recorded_by": current_user.username,
     }
     res = await db.mice_accounts.update_one(
-        {"id": competitor_id, "tenant_id": current_user.tenant_id,
-         "account_type": ACCOUNT_TYPE},
-        {"$push": {"competitor_rates": {
-            "$each": [rate],
-            "$position": 0,  # newest first → cheap latest-N reads
-            "$slice": 200,   # cap history length
-        }}},
+        {"id": competitor_id, "tenant_id": current_user.tenant_id, "account_type": ACCOUNT_TYPE},
+        {
+            "$push": {
+                "competitor_rates": {
+                    "$each": [rate],
+                    "$position": 0,  # newest first → cheap latest-N reads
+                    "$slice": 200,  # cap history length
+                }
+            }
+        },
     )
     if not res.matched_count:
         raise HTTPException(404, "Rakip bulunamadı")
@@ -166,10 +165,7 @@ async def list_rates(
 ) -> dict:
     db = get_system_db()
     # Server-side slice → fewer bytes over wire when array is near cap.
-    doc = await db.mice_accounts.find_one(
-        {"id": competitor_id, "tenant_id": current_user.tenant_id,
-         "account_type": ACCOUNT_TYPE},
-        {"_id": 0, "competitor_rates": {"$slice": limit}})
+    doc = await db.mice_accounts.find_one({"id": competitor_id, "tenant_id": current_user.tenant_id, "account_type": ACCOUNT_TYPE}, {"_id": 0, "competitor_rates": {"$slice": limit}})
     if not doc:
         raise HTTPException(404, "Rakip bulunamadı")
     return {"rates": doc.get("competitor_rates") or []}
@@ -177,16 +173,14 @@ async def list_rates(
 
 @router.delete("/competitors/{competitor_id}/rates/{rate_id}")
 async def delete_rate(
-    competitor_id: str, rate_id: str,
+    competitor_id: str,
+    rate_id: str,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
 ) -> dict:
     require_mice_ops(current_user)
     db = get_system_db()
-    res = await db.mice_accounts.update_one(
-        {"id": competitor_id, "tenant_id": current_user.tenant_id,
-         "account_type": ACCOUNT_TYPE},
-        {"$pull": {"competitor_rates": {"id": rate_id}}})
+    res = await db.mice_accounts.update_one({"id": competitor_id, "tenant_id": current_user.tenant_id, "account_type": ACCOUNT_TYPE}, {"$pull": {"competitor_rates": {"id": rate_id}}})
     if not res.matched_count:
         raise HTTPException(404, "Rakip bulunamadı")
     return {"ok": True}
@@ -205,17 +199,17 @@ async def positioning(
 
     # Aggregate over embedded competitor_rates arrays.
     pipe = [
-        {"$match": {"tenant_id": tenant_id,
-                     "account_type": ACCOUNT_TYPE}},
-        {"$unwind": {"path": "$competitor_rates",
-                       "preserveNullAndEmptyArrays": False}},
-        {"$group": {
-            "_id": "$competitor_rates.event_type",
-            "competitor_min": {"$min": "$competitor_rates.per_pax_price"},
-            "competitor_max": {"$max": "$competitor_rates.per_pax_price"},
-            "competitor_avg": {"$avg": "$competitor_rates.per_pax_price"},
-            "competitor_count": {"$sum": 1},
-        }},
+        {"$match": {"tenant_id": tenant_id, "account_type": ACCOUNT_TYPE}},
+        {"$unwind": {"path": "$competitor_rates", "preserveNullAndEmptyArrays": False}},
+        {
+            "$group": {
+                "_id": "$competitor_rates.event_type",
+                "competitor_min": {"$min": "$competitor_rates.per_pax_price"},
+                "competitor_max": {"$max": "$competitor_rates.per_pax_price"},
+                "competitor_avg": {"$avg": "$competitor_rates.per_pax_price"},
+                "competitor_count": {"$sum": 1},
+            }
+        },
     ]
     competitor_summary: dict[str, dict] = {}
     async for r in db.mice_accounts.aggregate(pipe):
@@ -228,27 +222,31 @@ async def positioning(
 
     # Our own per-event-type avg per-pax revenue (events with pax > 0).
     our_pipe = [
-        {"$match": {"tenant_id": tenant_id,
-                     "status": {"$in": ["definite", "confirmed", "completed"]},
-                     "expected_pax": {"$gt": 0}}},
-        {"$project": {
-            "event_type": 1,
-            "per_pax": {
-                "$cond": [
-                    {"$gt": ["$expected_pax", 0]},
-                    {"$divide": [
-                        {"$ifNull": ["$totals.grand_total", 0]},
-                        "$expected_pax",
-                    ]},
-                    0,
-                ],
-            },
-        }},
-        {"$group": {
-            "_id": "$event_type",
-            "our_avg_per_pax": {"$avg": "$per_pax"},
-            "events_count": {"$sum": 1},
-        }},
+        {"$match": {"tenant_id": tenant_id, "status": {"$in": ["definite", "confirmed", "completed"]}, "expected_pax": {"$gt": 0}}},
+        {
+            "$project": {
+                "event_type": 1,
+                "per_pax": {
+                    "$cond": [
+                        {"$gt": ["$expected_pax", 0]},
+                        {
+                            "$divide": [
+                                {"$ifNull": ["$totals.grand_total", 0]},
+                                "$expected_pax",
+                            ]
+                        },
+                        0,
+                    ],
+                },
+            }
+        },
+        {
+            "$group": {
+                "_id": "$event_type",
+                "our_avg_per_pax": {"$avg": "$per_pax"},
+                "events_count": {"$sum": 1},
+            }
+        },
     ]
     our_summary: dict[str, dict] = {}
     async for r in db.mice_events.aggregate(our_pipe):
@@ -272,12 +270,14 @@ async def positioning(
                 position = "above_market"
             else:
                 position = "in_band"
-        rows.append({
-            "event_type": et,
-            **cs,
-            **os_,
-            "position": position,
-        })
+        rows.append(
+            {
+                "event_type": et,
+                **cs,
+                **os_,
+                "position": position,
+            }
+        )
     return {
         "rows": rows,
         "tenant_id": tenant_id,

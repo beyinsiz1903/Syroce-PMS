@@ -13,6 +13,7 @@ Provides:
   - POST /api/ops-events/early-warnings/engine/stop — Stop background engine
   - GET /api/ops-events/early-warnings/engine/status — Engine status
 """
+
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
@@ -49,6 +50,7 @@ def _get_tenant(user: User) -> str:
 # ══════════════════════════════════════════════════════════════════════
 # 1. Get All Early Warnings
 # ══════════════════════════════════════════════════════════════════════
+
 
 async def _build_warnings_payload(tenant_id: str, min_confidence: int, emit: bool) -> dict:
     """Inner builder; side-effect (event emission) gated by `emit`."""
@@ -104,6 +106,7 @@ async def get_early_warnings(
 # 2. Dashboard Summary (for UI card)
 # ══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/summary")
 @cached(ttl=30, key_prefix="early_warnings_summary")  # 2.4s → cache 30s; polling 30s ile uyumlu
 async def get_early_warnings_summary(
@@ -130,10 +133,7 @@ async def get_early_warnings_summary(
         warning_level = [w for w in actionable if w["severity"] == "warning"]
 
         # Get unique connectors at risk
-        connectors_at_risk = list({
-            w["provider"] for w in actionable
-            if w["provider"] and w["provider"] != "system"
-        })
+        connectors_at_risk = list({w["provider"] for w in actionable if w["provider"] and w["provider"] != "system"})
 
         # Calculate system health indicator
         if len(critical) > 0:
@@ -177,6 +177,7 @@ async def get_early_warnings_summary(
 # 3. Connector-Specific Warnings
 # ══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/connector/{connector_id}")
 async def get_connector_warnings(
     connector_id: str,
@@ -186,10 +187,7 @@ async def get_connector_warnings(
     tenant_id = _get_tenant(current_user)
 
     # Get connector info
-    connector = await db.cm_connectors.find_one(
-        {"tenant_id": tenant_id, "id": connector_id},
-        {"_id": 0}
-    )
+    connector = await db.cm_connectors.find_one({"tenant_id": tenant_id, "id": connector_id}, {"_id": 0})
 
     if not connector:
         raise HTTPException(status_code=404, detail="Connector not found")
@@ -219,9 +217,7 @@ async def get_connector_warnings(
             "throttle": throttle_trend,
         },
         "risk_assessment": {
-            "overall_risk": "high" if any(w.severity == "critical" for w in warnings) else (
-                "medium" if any(w.severity == "warning" for w in warnings) else "low"
-            ),
+            "overall_risk": "high" if any(w.severity == "critical" for w in warnings) else ("medium" if any(w.severity == "warning" for w in warnings) else "low"),
             "max_confidence": max([w.confidence for w in warnings], default=0),
         },
         "generated_at": datetime.now(UTC).isoformat(),
@@ -231,6 +227,7 @@ async def get_connector_warnings(
 # ══════════════════════════════════════════════════════════════════════
 # 4. Trend Data for Sparklines
 # ══════════════════════════════════════════════════════════════════════
+
 
 @router.get("/trends")
 @cached(ttl=60, key_prefix="early_warnings_trends")  # N+1 over connectors + 12 bucket queries
@@ -249,44 +246,44 @@ async def get_warning_trends(
     now = datetime.now(UTC)
 
     # Get connectors
-    connectors = await db.cm_connectors.find(
-        {"tenant_id": tenant_id},
-        {"_id": 0, "id": 1, "provider": 1}
-    ).to_list(50)
+    connectors = await db.cm_connectors.find({"tenant_id": tenant_id}, {"_id": 0, "id": 1, "provider": 1}).to_list(50)
 
     # Build time buckets (1 hour each)
     buckets = []
     for h in range(hours, 0, -1):
         bucket_start = (now - timedelta(hours=h)).isoformat()
-        bucket_end = (now - timedelta(hours=h-1)).isoformat()
-        buckets.append({
-            "start": bucket_start,
-            "end": bucket_end,
-            "label": f"{h}h ago",
-        })
+        bucket_end = (now - timedelta(hours=h - 1)).isoformat()
+        buckets.append(
+            {
+                "start": bucket_start,
+                "end": bucket_end,
+                "label": f"{h}h ago",
+            }
+        )
 
     # Perf: 6 bucket × 2 count + 10 connector health + 2 trend = 24 sıralı
     # Mongo çağrısı (~2.4 sn). asyncio.gather ile tek RTT'ye düşer.
     bucket_total_tasks = [
-        db.cm_rate_push_metrics.count_documents({
-            "tenant_id": tenant_id,
-            "recorded_at": {"$gte": b["start"], "$lt": b["end"]},
-        })
+        db.cm_rate_push_metrics.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "recorded_at": {"$gte": b["start"], "$lt": b["end"]},
+            }
+        )
         for b in buckets
     ]
     bucket_failed_tasks = [
-        db.cm_rate_push_metrics.count_documents({
-            "tenant_id": tenant_id,
-            "success": False,
-            "recorded_at": {"$gte": b["start"], "$lt": b["end"]},
-        })
+        db.cm_rate_push_metrics.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "success": False,
+                "recorded_at": {"$gte": b["start"], "$lt": b["end"]},
+            }
+        )
         for b in buckets
     ]
     top_connectors = connectors[:10]
-    health_tasks = [
-        get_health_score_trend(tenant_id, c["id"], c.get("provider", ""))
-        for c in top_connectors
-    ]
+    health_tasks = [get_health_score_trend(tenant_id, c["id"], c.get("provider", "")) for c in top_connectors]
 
     all_results = await asyncio.gather(
         get_dlq_trend(tenant_id),
@@ -298,29 +295,33 @@ async def get_warning_trends(
 
     dlq_trend = all_results[0]
     backlog_trend = all_results[1]
-    bucket_totals = all_results[2:2 + len(buckets)]
-    bucket_faileds = all_results[2 + len(buckets):2 + 2 * len(buckets)]
-    health_results = all_results[2 + 2 * len(buckets):]
+    bucket_totals = all_results[2 : 2 + len(buckets)]
+    bucket_faileds = all_results[2 + len(buckets) : 2 + 2 * len(buckets)]
+    health_results = all_results[2 + 2 * len(buckets) :]
 
     failure_rate_series = []
     for bucket, total, failed in zip(buckets, bucket_totals, bucket_faileds):
         rate = round(failed / max(total, 1) * 100, 1)
-        failure_rate_series.append({
-            "label": bucket["label"],
-            "value": rate,
-            "total": total,
-            "failed": failed,
-        })
+        failure_rate_series.append(
+            {
+                "label": bucket["label"],
+                "value": rate,
+                "total": total,
+                "failed": failed,
+            }
+        )
 
     connector_scores = []
     for conn, health in zip(top_connectors, health_results):
-        connector_scores.append({
-            "connector_id": conn["id"],
-            "provider": conn.get("provider", "unknown"),
-            "current_score": health["current_score"],
-            "trend_direction": health["trend_direction"],
-            "score_delta": health["score_delta"],
-        })
+        connector_scores.append(
+            {
+                "connector_id": conn["id"],
+                "provider": conn.get("provider", "unknown"),
+                "current_score": health["current_score"],
+                "trend_direction": health["trend_direction"],
+                "score_delta": health["score_delta"],
+            }
+        )
 
     return {
         "failure_rate_series": failure_rate_series,
@@ -337,6 +338,7 @@ async def get_warning_trends(
 # 5. Recent Warning Events (from ops_events)
 # ══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/recent-events")
 @cached(ttl=60, key_prefix="early_warnings_recent_events")  # regex scan over ops_events
 async def get_recent_warning_events(
@@ -347,14 +349,19 @@ async def get_recent_warning_events(
     tenant_id = _get_tenant(current_user)
     since_24h = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
 
-    events = await db.ops_events.find(
-        {
-            "tenant_id": tenant_id,
-            "event_type": {"$regex": "^predictive\\.warning\\."},
-            "created_at": {"$gte": since_24h},
-        },
-        {"_id": 0}
-    ).sort("created_at", -1).limit(limit).to_list(limit)
+    events = (
+        await db.ops_events.find(
+            {
+                "tenant_id": tenant_id,
+                "event_type": {"$regex": "^predictive\\.warning\\."},
+                "created_at": {"$gte": since_24h},
+            },
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .limit(limit)
+        .to_list(limit)
+    )
 
     # Group by warning type
     by_type: dict[str, int] = {}
@@ -373,6 +380,7 @@ async def get_recent_warning_events(
 # ══════════════════════════════════════════════════════════════════════
 # 6. Engine Control
 # ══════════════════════════════════════════════════════════════════════
+
 
 @router.get("/engine/status")
 async def get_engine_status(
@@ -423,6 +431,7 @@ async def stop_warning_engine(
 # ══════════════════════════════════════════════════════════════════════
 # 7. Diagnostic: Force Generate & Emit
 # ══════════════════════════════════════════════════════════════════════
+
 
 @router.post("/force-check")
 async def force_warning_check(

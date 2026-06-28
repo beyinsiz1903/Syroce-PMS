@@ -3,6 +3,7 @@ Workers — Celery Hooks
 Pre/post task hooks for audit logging, idempotency enforcement,
 and failure routing to dead-letter archive.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -31,14 +32,16 @@ async def pre_task_hook(
         return {"proceed": False, "reason": "duplicate", "dedup_key": dedup_key}
 
     # Log task start
-    await db.task_queue.insert_one({
-        "id": dedup_key[:16],
-        "task_type": task_type,
-        "tenant_id": tenant_id,
-        "status": "processing",
-        "started_at": datetime.now(UTC).isoformat(),
-        "task_data_summary": str(task_data)[:500],
-    })
+    await db.task_queue.insert_one(
+        {
+            "id": dedup_key[:16],
+            "task_type": task_type,
+            "tenant_id": tenant_id,
+            "status": "processing",
+            "started_at": datetime.now(UTC).isoformat(),
+            "task_data_summary": str(task_data)[:500],
+        }
+    )
 
     return {"proceed": True, "dedup_key": dedup_key}
 

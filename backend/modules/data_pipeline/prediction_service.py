@@ -1,6 +1,7 @@
 """
 Prediction Service - Serves predictions from deployed models with confidence monitoring.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -21,8 +22,7 @@ CONFIDENCE_THRESHOLDS = {
 class PredictionService:
     """Serves predictions from deployed models and monitors confidence."""
 
-    async def predict(self, tenant_id: str, model_type: str,
-                      input_data: dict[str, Any]) -> dict[str, Any]:
+    async def predict(self, tenant_id: str, model_type: str, input_data: dict[str, Any]) -> dict[str, Any]:
         """Generate a prediction using the deployed model.
 
         Fail-closed: eğitilmiş/yayınlanmış (deployed) gerçek bir model yoksa
@@ -110,27 +110,26 @@ class PredictionService:
             }
         return None
 
-    async def get_predictions(self, tenant_id: str, model_type: str | None = None,
-                              limit: int = 20) -> list[dict]:
+    async def get_predictions(self, tenant_id: str, model_type: str | None = None, limit: int = 20) -> list[dict]:
         q: dict[str, Any] = {"tenant_id": tenant_id}
         if model_type:
             q["model_type"] = model_type
-        return await db.ml_predictions.find(
-            q, {"_id": 0}
-        ).sort("created_at", -1).to_list(limit)
+        return await db.ml_predictions.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
 
     async def get_confidence_summary(self, tenant_id: str) -> dict[str, Any]:
         """Get prediction confidence summary by model type."""
         pipeline = [
             {"$match": {"tenant_id": tenant_id}},
-            {"$group": {
-                "_id": "$model_type",
-                "total_predictions": {"$sum": 1},
-                "avg_confidence": {"$avg": "$confidence"},
-                "min_confidence": {"$min": "$confidence"},
-                "max_confidence": {"$max": "$confidence"},
-                "latest": {"$max": "$created_at"},
-            }},
+            {
+                "$group": {
+                    "_id": "$model_type",
+                    "total_predictions": {"$sum": 1},
+                    "avg_confidence": {"$avg": "$confidence"},
+                    "min_confidence": {"$min": "$confidence"},
+                    "max_confidence": {"$max": "$confidence"},
+                    "latest": {"$max": "$created_at"},
+                }
+            },
         ]
         results = await db.ml_predictions.aggregate(pipeline).to_list(10)
         return {
@@ -159,11 +158,13 @@ class PredictionService:
                 sort=[("created_at", -1)],
             )
             if not latest or (latest.get("created_at", "") < cutoff):
-                stale.append({
-                    "model_type": mt,
-                    "last_prediction": latest.get("created_at") if latest else None,
-                    "stale_hours": stale_hours,
-                })
+                stale.append(
+                    {
+                        "model_type": mt,
+                        "last_prediction": latest.get("created_at") if latest else None,
+                        "stale_hours": stale_hours,
+                    }
+                )
         return stale
 
 

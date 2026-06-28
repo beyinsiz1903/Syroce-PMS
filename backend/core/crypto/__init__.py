@@ -24,6 +24,7 @@ Usage:
   encrypted = svc.encrypt("secret", aad=AADContext(tenant_id="t1", provider="exely"))
   decrypted = svc.decrypt(encrypted, aad=AADContext(tenant_id="t1", provider="exely"))
 """
+
 from .engine import AADContext
 from .errors import (
     CryptoError,

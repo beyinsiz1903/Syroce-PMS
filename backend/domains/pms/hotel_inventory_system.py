@@ -24,6 +24,7 @@ CRITICAL_STOCK_LEVELS = {
     "Bornoz": 15,
 }
 
+
 async def get_suggested_orders(db, tenant_id: str) -> list[dict]:
     """
     Get suggested orders for low stock items
@@ -31,30 +32,32 @@ async def get_suggested_orders(db, tenant_id: str) -> list[dict]:
     Returns:
         List of items that need to be ordered
     """
-    items = await db.inventory_items.find({'tenant_id': tenant_id}, {'_id': 0}).to_list(1000)
+    items = await db.inventory_items.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
 
     suggestions = []
     for item in items:
-        current_stock = item.get('quantity', 0)
-        reorder_level = item.get('reorder_level', 10)
-        critical_level = CRITICAL_STOCK_LEVELS.get(item['name'], reorder_level)
+        current_stock = item.get("quantity", 0)
+        reorder_level = item.get("reorder_level", 10)
+        critical_level = CRITICAL_STOCK_LEVELS.get(item["name"], reorder_level)
 
         if current_stock <= critical_level:
             # Calculate suggested order quantity
             suggested_qty = max(critical_level * 3, reorder_level * 2)
 
-            suggestions.append({
-                "item_id": item['id'],
-                "item_name": item['name'],
-                "current_stock": current_stock,
-                "critical_level": critical_level,
-                "suggested_order_quantity": suggested_qty,
-                "estimated_cost": suggested_qty * item.get('unit_cost', 0),
-                "priority": "URGENT" if current_stock == 0 else "HIGH" if current_stock < critical_level / 2 else "MEDIUM"
-            })
+            suggestions.append(
+                {
+                    "item_id": item["id"],
+                    "item_name": item["name"],
+                    "current_stock": current_stock,
+                    "critical_level": critical_level,
+                    "suggested_order_quantity": suggested_qty,
+                    "estimated_cost": suggested_qty * item.get("unit_cost", 0),
+                    "priority": "URGENT" if current_stock == 0 else "HIGH" if current_stock < critical_level / 2 else "MEDIUM",
+                }
+            )
 
     # Sort by priority
     priority_order = {"URGENT": 0, "HIGH": 1, "MEDIUM": 2}
-    suggestions.sort(key=lambda x: priority_order[x['priority']])
+    suggestions.sort(key=lambda x: priority_order[x["priority"]])
 
     return suggestions

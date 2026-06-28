@@ -13,6 +13,7 @@ Fail-open matches the existing ``pms_guests._encrypt_guest`` behaviour: if the
 field-encryption service is unavailable the document is written as-is rather
 than blocking guest creation. This adds no new weakness (same posture as today).
 """
+
 from __future__ import annotations
 
 import logging
@@ -76,16 +77,11 @@ def encrypt_guest_update(update: dict, existing: dict | None = None) -> dict:
     untouched name fields' trigrams (guest becomes unfindable by surname).
     """
     if existing is None and any(f in update for f in _NAME_FIELDS):
-        raise ValueError(
-            "encrypt_guest_update requires the existing guest doc when the "
-            "update changes a name field (to recompute the merged _ng_name)."
-        )
+        raise ValueError("encrypt_guest_update requires the existing guest doc when the update changes a name field (to recompute the merged _ng_name).")
 
     _norm = normalized_set_for_update(update, collection=_GUESTS)
     if existing is not None:
-        _norm.update(
-            ngram_set_for_update_merged(existing, update, collection=_GUESTS)
-        )
+        _norm.update(ngram_set_for_update_merged(existing, update, collection=_GUESTS))
 
     svc = _svc()
     if svc is not None:

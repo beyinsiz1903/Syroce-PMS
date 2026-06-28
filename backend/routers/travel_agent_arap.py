@@ -6,6 +6,7 @@ payment plans, aging reports, and transaction history.
 
 All endpoints under /api/agent-arap/
 """
+
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -31,6 +32,7 @@ async def _chain_tenant_ids(current_user: User) -> list[str]:
     Sonuçta her zaman kullanıcının kendi tenant'ı dahildir (tenants
     koleksiyonunda doc'u olmasa bile)."""
     from core.security import _is_super_admin
+
     own_tid = current_user.tenant_id
 
     def _dedupe(items: list[str]) -> list[str]:
@@ -72,13 +74,16 @@ async def _tenant_name_map(tenant_ids: list[str]) -> dict[str, str]:
             out[tid] = t.get("hotel_name") or t.get("property_name") or t.get("name") or tid
     return out
 
+
 try:
     from cache_manager import cache, cached
 except ImportError:  # pragma: no cover
     cache = None
+
     def cached(ttl=300, key_prefix=""):
         def decorator(func):
             return func
+
         return decorator
 
 
@@ -89,6 +94,7 @@ def _invalidate_arap(tenant_id: str):
             cache.safe_invalidate(tenant_id, "agent_arap_summary")
         except Exception:  # pragma: no cover
             pass
+
 
 router = APIRouter(prefix="/api/agent-arap", tags=["travel-agent-arap"])
 
@@ -147,38 +153,38 @@ async def _get_agency_ledger(
     import asyncio as _asyncio
 
     bookings_pipe = [
-        {"$match": {"tenant_id": tenant_id, "agency_id": {"$in": aids},
-                    "status": {"$nin": ["cancelled"]}}},
-        {"$group": {
-            "_id": "$agency_id",
-            "total_revenue": {"$sum": {"$ifNull": ["$total_amount", 0]}},
-            "count": {"$sum": 1},
-            # Oldest unpaid: bekleyen status'lardaki en eski created_at
-            "oldest_pending_created_at": {"$min": {
-                "$cond": [
-                    {"$in": ["$status", ["confirmed", "guaranteed", "checked_out"]]},
-                    "$created_at", None,
-                ]
-            }},
-        }},
+        {"$match": {"tenant_id": tenant_id, "agency_id": {"$in": aids}, "status": {"$nin": ["cancelled"]}}},
+        {
+            "$group": {
+                "_id": "$agency_id",
+                "total_revenue": {"$sum": {"$ifNull": ["$total_amount", 0]}},
+                "count": {"$sum": 1},
+                # Oldest unpaid: bekleyen status'lardaki en eski created_at
+                "oldest_pending_created_at": {
+                    "$min": {
+                        "$cond": [
+                            {"$in": ["$status", ["confirmed", "guaranteed", "checked_out"]]},
+                            "$created_at",
+                            None,
+                        ]
+                    }
+                },
+            }
+        },
     ]
     txns_pipe = [
         {"$match": {"tenant_id": tenant_id, "agency_id": {"$in": aids}}},
-        {"$group": {
-            "_id": "$agency_id",
-            "total_paid": {"$sum": {"$cond": [
-                {"$eq": ["$type", "payment"]},
-                {"$ifNull": ["$amount", 0]}, 0]}},
-            "total_adjustments": {"$sum": {"$cond": [
-                {"$eq": ["$type", "adjustment"]},
-                {"$ifNull": ["$amount", 0]}, 0]}},
-            "last_payment_date": {"$max": {"$cond": [
-                {"$eq": ["$type", "payment"]}, "$created_at", None]}},
-        }},
+        {
+            "$group": {
+                "_id": "$agency_id",
+                "total_paid": {"$sum": {"$cond": [{"$eq": ["$type", "payment"]}, {"$ifNull": ["$amount", 0]}, 0]}},
+                "total_adjustments": {"$sum": {"$cond": [{"$eq": ["$type", "adjustment"]}, {"$ifNull": ["$amount", 0]}, 0]}},
+                "last_payment_date": {"$max": {"$cond": [{"$eq": ["$type", "payment"]}, "$created_at", None]}},
+            }
+        },
     ]
     plans_pipe = [
-        {"$match": {"tenant_id": tenant_id, "agency_id": {"$in": aids},
-                    "status": "active"}},
+        {"$match": {"tenant_id": tenant_id, "agency_id": {"$in": aids}, "status": "active"}},
         {"$group": {"_id": "$agency_id", "active_plans": {"$sum": 1}}},
     ]
 
@@ -224,31 +230,28 @@ async def _get_agency_ledger(
 
         active_plans_count = pl.get("active_plans", 0) or 0
 
-        results.append({
-            "agency_id": aid,
-            "agency_name": agency.get("name", ""),
-            "contact_name": agency.get("contact_name", ""),
-            "contact_email": agency.get("contact_email", ""),
-            "contact_phone": agency.get("contact_phone", ""),
-            "commission_rate": agency.get("commission_rate", 10),
-            "status": agency.get("status", "active"),
-            "total_bookings": bk.get("count", 0) or 0,
-            "total_bookings_revenue": total_bookings_revenue,
-            "total_commission_owed": total_commission_owed,
-            "total_paid": round(total_paid, 2),
-            "total_adjustments": round(total_adjustments, 2),
-            "balance": balance,
-            "balance_type": "receivable" if balance >= 0 else "payable",
-            "days_outstanding": days_outstanding,
-            "oldest_unpaid_date": oldest_unpaid if isinstance(oldest_unpaid, str)
-                else (oldest_unpaid.isoformat() if oldest_unpaid else None),
-            "active_payment_plans": active_plans_count,
-            "last_payment_date": (
-                tx.get("last_payment_date").isoformat()
-                if hasattr(tx.get("last_payment_date"), "isoformat")
-                else tx.get("last_payment_date")
-            ),
-        })
+        results.append(
+            {
+                "agency_id": aid,
+                "agency_name": agency.get("name", ""),
+                "contact_name": agency.get("contact_name", ""),
+                "contact_email": agency.get("contact_email", ""),
+                "contact_phone": agency.get("contact_phone", ""),
+                "commission_rate": agency.get("commission_rate", 10),
+                "status": agency.get("status", "active"),
+                "total_bookings": bk.get("count", 0) or 0,
+                "total_bookings_revenue": total_bookings_revenue,
+                "total_commission_owed": total_commission_owed,
+                "total_paid": round(total_paid, 2),
+                "total_adjustments": round(total_adjustments, 2),
+                "balance": balance,
+                "balance_type": "receivable" if balance >= 0 else "payable",
+                "days_outstanding": days_outstanding,
+                "oldest_unpaid_date": oldest_unpaid if isinstance(oldest_unpaid, str) else (oldest_unpaid.isoformat() if oldest_unpaid else None),
+                "active_payment_plans": active_plans_count,
+                "last_payment_date": (tx.get("last_payment_date").isoformat() if hasattr(tx.get("last_payment_date"), "isoformat") else tx.get("last_payment_date")),
+            }
+        )
 
     return results
 
@@ -360,9 +363,8 @@ async def get_chain_summary(
     # ledger okuma izinli (chain üyeliği zaten _chain_tenant_ids ile kontrol
     # edildi)
     import asyncio as _asyncio
-    per_tenant_ledgers = await _asyncio.gather(
-        *[_get_agency_ledger(tid, db_handle=_sys_db) for tid in tenant_ids]
-    )
+
+    per_tenant_ledgers = await _asyncio.gather(*[_get_agency_ledger(tid, db_handle=_sys_db) for tid in tenant_ids])
 
     # Aynı acenteyi farklı tenant'larda birleştir.
     # Merge anahtarı önceliği (yüksek → düşük güven):
@@ -371,6 +373,7 @@ async def get_chain_summary(
     #   3) "name|tenant_id" — düşük güven; sadece aynı tenant içinde topla,
     #      farklı tenant'larda yanlış merge etmesin
     import re as _re
+
     by_agency_key: dict[str, dict] = {}
     property_breakdown: list[dict] = []
 
@@ -393,48 +396,53 @@ async def get_chain_summary(
         prop_name = name_map.get(tid, tid)
         prop_recv = sum(a["balance"] for a in ledger if a["balance"] > 0)
         prop_pay = abs(sum(a["balance"] for a in ledger if a["balance"] < 0))
-        property_breakdown.append({
-            "tenant_id": tid,
-            "property_name": prop_name,
-            "agency_count": len(ledger),
-            "total_receivable": round(prop_recv, 2),
-            "total_payable": round(prop_pay, 2),
-            "total_commission_owed": round(sum(a["total_commission_owed"] for a in ledger), 2),
-            "total_paid": round(sum(a["total_paid"] for a in ledger), 2),
-            "total_bookings_revenue": round(sum(a["total_bookings_revenue"] for a in ledger), 2),
-        })
+        property_breakdown.append(
+            {
+                "tenant_id": tid,
+                "property_name": prop_name,
+                "agency_count": len(ledger),
+                "total_receivable": round(prop_recv, 2),
+                "total_payable": round(prop_pay, 2),
+                "total_commission_owed": round(sum(a["total_commission_owed"] for a in ledger), 2),
+                "total_paid": round(sum(a["total_paid"] for a in ledger), 2),
+                "total_bookings_revenue": round(sum(a["total_bookings_revenue"] for a in ledger), 2),
+            }
+        )
         for ag in ledger:
             key = _merge_key(ag, tid)
             if not key:
                 continue
-            slot = by_agency_key.setdefault(key, {
-                "agency_name": ag.get("agency_name", ""),
-                "contact_email": ag.get("contact_email", ""),
-                "contact_phone": ag.get("contact_phone", ""),
-                "total_bookings": 0,
-                "total_bookings_revenue": 0.0,
-                "total_commission_owed": 0.0,
-                "total_paid": 0.0,
-                "total_adjustments": 0.0,
-                "balance": 0.0,
-                "max_days_outstanding": 0,
-                "properties": [],
-            })
+            slot = by_agency_key.setdefault(
+                key,
+                {
+                    "agency_name": ag.get("agency_name", ""),
+                    "contact_email": ag.get("contact_email", ""),
+                    "contact_phone": ag.get("contact_phone", ""),
+                    "total_bookings": 0,
+                    "total_bookings_revenue": 0.0,
+                    "total_commission_owed": 0.0,
+                    "total_paid": 0.0,
+                    "total_adjustments": 0.0,
+                    "balance": 0.0,
+                    "max_days_outstanding": 0,
+                    "properties": [],
+                },
+            )
             slot["total_bookings"] += ag["total_bookings"]
             slot["total_bookings_revenue"] += ag["total_bookings_revenue"]
             slot["total_commission_owed"] += ag["total_commission_owed"]
             slot["total_paid"] += ag["total_paid"]
             slot["total_adjustments"] += ag["total_adjustments"]
             slot["balance"] += ag["balance"]
-            slot["max_days_outstanding"] = max(
-                slot["max_days_outstanding"], ag.get("days_outstanding", 0)
+            slot["max_days_outstanding"] = max(slot["max_days_outstanding"], ag.get("days_outstanding", 0))
+            slot["properties"].append(
+                {
+                    "tenant_id": tid,
+                    "property_name": prop_name,
+                    "balance": ag["balance"],
+                    "days_outstanding": ag.get("days_outstanding", 0),
+                }
             )
-            slot["properties"].append({
-                "tenant_id": tid,
-                "property_name": prop_name,
-                "balance": ag["balance"],
-                "days_outstanding": ag.get("days_outstanding", 0),
-            })
 
     consolidated_agencies = []
     for slot in by_agency_key.values():
@@ -454,12 +462,9 @@ async def get_chain_summary(
     total_paid = sum(a["total_paid"] for a in consolidated_agencies)
     total_revenue = sum(a["total_bookings_revenue"] for a in consolidated_agencies)
 
-    overdue_30 = sum(1 for a in consolidated_agencies
-                     if a["max_days_outstanding"] > 30 and a["balance"] > 0)
-    overdue_60 = sum(1 for a in consolidated_agencies
-                     if a["max_days_outstanding"] > 60 and a["balance"] > 0)
-    overdue_90 = sum(1 for a in consolidated_agencies
-                     if a["max_days_outstanding"] > 90 and a["balance"] > 0)
+    overdue_30 = sum(1 for a in consolidated_agencies if a["max_days_outstanding"] > 30 and a["balance"] > 0)
+    overdue_60 = sum(1 for a in consolidated_agencies if a["max_days_outstanding"] > 60 and a["balance"] > 0)
+    overdue_90 = sum(1 for a in consolidated_agencies if a["max_days_outstanding"] > 90 and a["balance"] > 0)
 
     return {
         "scope": "chain" if len(tenant_ids) > 1 else "single_property",
@@ -471,8 +476,7 @@ async def get_chain_summary(
         "total_commission_earned": round(total_commission, 2),
         "total_paid": round(total_paid, 2),
         "total_bookings_revenue": round(total_revenue, 2),
-        "collection_rate": round((total_paid / total_commission * 100), 1)
-            if total_commission > 0 else 0,
+        "collection_rate": round((total_paid / total_commission * 100), 1) if total_commission > 0 else 0,
         "overdue_30_count": overdue_30,
         "overdue_60_count": overdue_60,
         "overdue_90_count": overdue_90,
@@ -493,9 +497,8 @@ async def get_chain_aging_report(
     name_map = await _tenant_name_map(tenant_ids)
 
     import asyncio as _asyncio
-    per_tenant_ledgers = await _asyncio.gather(
-        *[_get_agency_ledger(tid, db_handle=_sys_db) for tid in tenant_ids]
-    )
+
+    per_tenant_ledgers = await _asyncio.gather(*[_get_agency_ledger(tid, db_handle=_sys_db) for tid in tenant_ids])
 
     buckets = {"current": [], "30_days": [], "60_days": [], "90_days": [], "over_90": []}
     for tid, ledger in zip(tenant_ids, per_tenant_ledgers, strict=True):
@@ -546,32 +549,42 @@ async def get_agency_transactions(
     if not agency:
         raise HTTPException(status_code=404, detail="Agency not found")
 
-    txns = await db.agency_transactions.find(
-        {"tenant_id": current_user.tenant_id, "agency_id": agency_id},
-    ).sort("created_at", -1).to_list(500)
+    txns = (
+        await db.agency_transactions.find(
+            {"tenant_id": current_user.tenant_id, "agency_id": agency_id},
+        )
+        .sort("created_at", -1)
+        .to_list(500)
+    )
 
     for t in txns:
         t.pop("_id", None)
 
-    bookings = await db.bookings.find(
-        {"tenant_id": current_user.tenant_id, "agency_id": agency_id, "status": {"$nin": ["cancelled"]}},
-        {"_id": 0, "id": 1, "guest_name": 1, "check_in": 1, "check_out": 1, "total_amount": 1, "status": 1, "created_at": 1},
-    ).sort("created_at", -1).to_list(500)
+    bookings = (
+        await db.bookings.find(
+            {"tenant_id": current_user.tenant_id, "agency_id": agency_id, "status": {"$nin": ["cancelled"]}},
+            {"_id": 0, "id": 1, "guest_name": 1, "check_in": 1, "check_out": 1, "total_amount": 1, "status": 1, "created_at": 1},
+        )
+        .sort("created_at", -1)
+        .to_list(500)
+    )
 
     commission_rate = agency.get("commission_rate", 10) / 100
     commission_entries = []
     for b in bookings:
-        commission_entries.append({
-            "id": f"comm-{b['id']}",
-            "type": "commission",
-            "booking_id": b["id"],
-            "guest_name": b.get("guest_name", ""),
-            "check_in": b.get("check_in", ""),
-            "check_out": b.get("check_out", ""),
-            "booking_amount": b.get("total_amount", 0),
-            "amount": round(b.get("total_amount", 0) * commission_rate, 2),
-            "created_at": b.get("created_at", ""),
-        })
+        commission_entries.append(
+            {
+                "id": f"comm-{b['id']}",
+                "type": "commission",
+                "booking_id": b["id"],
+                "guest_name": b.get("guest_name", ""),
+                "check_in": b.get("check_in", ""),
+                "check_out": b.get("check_out", ""),
+                "booking_amount": b.get("total_amount", 0),
+                "amount": round(b.get("total_amount", 0) * commission_rate, 2),
+                "created_at": b.get("created_at", ""),
+            }
+        )
 
     return {
         "agency_id": agency_id,
@@ -646,14 +659,16 @@ async def create_payment_plan(
     for i in range(req.installments):
         due_date = start + timedelta(days=30 * i)
         amount = installment_amount if i < req.installments - 1 else round(req.total_amount - installment_amount * (req.installments - 1), 2)
-        installments.append({
-            "index": i,
-            "due_date": due_date.strftime("%Y-%m-%d"),
-            "amount": amount,
-            "paid": False,
-            "paid_date": None,
-            "payment_reference": "",
-        })
+        installments.append(
+            {
+                "index": i,
+                "due_date": due_date.strftime("%Y-%m-%d"),
+                "amount": amount,
+                "paid": False,
+                "paid_date": None,
+                "payment_reference": "",
+            }
+        )
 
     plan = {
         "id": str(uuid.uuid4()),
@@ -737,14 +752,22 @@ async def get_agency_statement(
 
     agency_data = ledger[0]
 
-    txns = await db.agency_transactions.find(
-        {"tenant_id": current_user.tenant_id, "agency_id": agency_id},
-    ).sort("created_at", 1).to_list(1000)
+    txns = (
+        await db.agency_transactions.find(
+            {"tenant_id": current_user.tenant_id, "agency_id": agency_id},
+        )
+        .sort("created_at", 1)
+        .to_list(1000)
+    )
 
-    bookings = await db.bookings.find(
-        {"tenant_id": current_user.tenant_id, "agency_id": agency_id, "status": {"$nin": ["cancelled"]}},
-        {"_id": 0, "id": 1, "guest_name": 1, "check_in": 1, "check_out": 1, "total_amount": 1, "created_at": 1},
-    ).sort("created_at", 1).to_list(1000)
+    bookings = (
+        await db.bookings.find(
+            {"tenant_id": current_user.tenant_id, "agency_id": agency_id, "status": {"$nin": ["cancelled"]}},
+            {"_id": 0, "id": 1, "guest_name": 1, "check_in": 1, "check_out": 1, "total_amount": 1, "created_at": 1},
+        )
+        .sort("created_at", 1)
+        .to_list(1000)
+    )
 
     commission_rate = agency_data["commission_rate"] / 100
 
@@ -752,37 +775,43 @@ async def get_agency_statement(
 
     for b in bookings:
         commission = round(b.get("total_amount", 0) * commission_rate, 2)
-        raw_lines.append({
-            "date": b.get("created_at", "")[:10],
-            "sort_key": b.get("created_at", ""),
-            "description": f"Commission: {b.get('guest_name', 'Guest')} ({b.get('check_in', '')} - {b.get('check_out', '')})",
-            "debit": commission,
-            "credit": 0,
-            "type": "commission",
-            "booking_id": b.get("id", ""),
-        })
+        raw_lines.append(
+            {
+                "date": b.get("created_at", "")[:10],
+                "sort_key": b.get("created_at", ""),
+                "description": f"Commission: {b.get('guest_name', 'Guest')} ({b.get('check_in', '')} - {b.get('check_out', '')})",
+                "debit": commission,
+                "credit": 0,
+                "type": "commission",
+                "booking_id": b.get("id", ""),
+            }
+        )
 
     for t in txns:
         t.pop("_id", None)
         if t.get("type") == "payment":
-            raw_lines.append({
-                "date": t.get("created_at", "")[:10],
-                "sort_key": t.get("created_at", ""),
-                "description": f"Payment: {t.get('payment_method', '')} - {t.get('reference', '')}",
-                "debit": 0,
-                "credit": t.get("amount", 0),
-                "type": "payment",
-                "reference": t.get("reference", ""),
-            })
+            raw_lines.append(
+                {
+                    "date": t.get("created_at", "")[:10],
+                    "sort_key": t.get("created_at", ""),
+                    "description": f"Payment: {t.get('payment_method', '')} - {t.get('reference', '')}",
+                    "debit": 0,
+                    "credit": t.get("amount", 0),
+                    "type": "payment",
+                    "reference": t.get("reference", ""),
+                }
+            )
         elif t.get("type") == "adjustment":
-            raw_lines.append({
-                "date": t.get("created_at", "")[:10],
-                "sort_key": t.get("created_at", ""),
-                "description": f"Adjustment: {t.get('notes', '')}",
-                "debit": t.get("amount", 0) if t.get("amount", 0) > 0 else 0,
-                "credit": abs(t.get("amount", 0)) if t.get("amount", 0) < 0 else 0,
-                "type": "adjustment",
-            })
+            raw_lines.append(
+                {
+                    "date": t.get("created_at", "")[:10],
+                    "sort_key": t.get("created_at", ""),
+                    "description": f"Adjustment: {t.get('notes', '')}",
+                    "debit": t.get("amount", 0) if t.get("amount", 0) > 0 else 0,
+                    "credit": abs(t.get("amount", 0)) if t.get("amount", 0) < 0 else 0,
+                    "type": "adjustment",
+                }
+            )
 
     raw_lines.sort(key=lambda x: x.get("sort_key", ""))
 

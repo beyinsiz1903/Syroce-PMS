@@ -7,6 +7,7 @@ mevcut indeks ``idx_audit_entity`` = (tenant_id, entity_id, timestamp)).
 
 İkinci açılışta tekrar koşmaz: runner ledger'da ``applied`` olanları atlar.
 """
+
 from __future__ import annotations
 
 from ..base import Migration
@@ -17,10 +18,7 @@ COLLECTION = "pms_audit_trail"
 
 class AddAuditActionIndex(Migration):
     version = "V001__add_audit_action_index"
-    description = (
-        "pms_audit_trail üzerinde (tenant_id, action, timestamp) bileşik "
-        "indeksi — action'a göre denetim sorgularını hızlandırır"
-    )
+    description = "pms_audit_trail üzerinde (tenant_id, action, timestamp) bileşik indeksi — action'a göre denetim sorgularını hızlandırır"
 
     async def up(self, db) -> None:
         await db[COLLECTION].create_index(

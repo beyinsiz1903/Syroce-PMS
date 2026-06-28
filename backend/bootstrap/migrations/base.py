@@ -10,6 +10,7 @@ migration'ı yalnızca ``up()`` tamamen başarılıysa ledger'da ``applied`` ola
 işaretler, ``up()`` hata/timeout verirse aynı migration'ın ``down()`` adımını
 çağırıp kısmi değişikliği geri alır ve fail-closed sinyali üretir.
 """
+
 from __future__ import annotations
 
 import hashlib

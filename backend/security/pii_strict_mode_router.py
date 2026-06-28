@@ -9,6 +9,7 @@ Endpoints:
   GET  /api/security/pii-strict-mode/violations — Violation log
   GET  /api/security/pii-strict-mode/encryption-status — Field encryption coverage
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -33,6 +34,7 @@ router = APIRouter(
 
 def _require_admin(user: User = Depends(get_current_user)) -> User:
     from core.security import _is_super_admin
+
     if _is_super_admin(user):
         return user
     if user.role not in ("super_admin", "admin"):

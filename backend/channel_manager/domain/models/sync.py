@@ -9,6 +9,7 @@ Indexes:
   SyncEvent: (job_id, status), (tenant_id, connector_id, created_at)
   PushReceipt: (tenant_id, connector_id, sync_event_id)
 """
+
 import uuid
 from datetime import UTC, datetime
 from enum import Enum
@@ -62,6 +63,7 @@ class ChangeType(str, Enum):
 
 class ChangeRecord(BaseModel):
     """Individual PMS change event before coalescing."""
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     property_id: str
@@ -71,7 +73,7 @@ class ChangeRecord(BaseModel):
     room_type_id: str
     rate_plan_id: str = ""
     date_start: str  # YYYY-MM-DD
-    date_end: str    # YYYY-MM-DD
+    date_end: str  # YYYY-MM-DD
 
     # Old & new values for delta detection
     old_value: Any | None = None

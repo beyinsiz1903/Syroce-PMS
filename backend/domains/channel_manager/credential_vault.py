@@ -6,6 +6,7 @@ Delegates all encryption to core.crypto.CredentialEncryptionService.
 
 provider_connections stores credentials_ref → provider_secrets stores encrypted payload.
 """
+
 import logging
 import os
 import uuid
@@ -67,6 +68,7 @@ def _mask_payload(credentials: dict[str, str]) -> dict[str, str]:
 
 # ── CRUD Operations ──────────────────────────────────────────────────
 
+
 async def store_secret(
     tenant_id: str,
     provider: str,
@@ -100,13 +102,15 @@ async def store_secret(
         secret_id = existing["id"]
         await db[COLL_PROVIDER_SECRETS].update_one(
             {"id": secret_id},
-            {"$set": {
-                "encrypted_payload": encrypted,
-                "key_version": get_crypto_service()._keyring.current_kid,
-                "field_names": list(credentials.keys()),
-                "updated_at": now,
-                "rotated_at": now,
-            }},
+            {
+                "$set": {
+                    "encrypted_payload": encrypted,
+                    "key_version": get_crypto_service()._keyring.current_kid,
+                    "field_names": list(credentials.keys()),
+                    "updated_at": now,
+                    "rotated_at": now,
+                }
+            },
         )
         logger.info("Rotated credentials for %s/%s", provider, property_id)
     else:
@@ -129,7 +133,10 @@ async def get_decrypted_credentials(
     if not doc:
         return None
     return _decrypt_payload(
-        doc.get("encrypted_payload", {}), tenant_id, provider, property_id,
+        doc.get("encrypted_payload", {}),
+        tenant_id,
+        provider,
+        property_id,
     )
 
 
@@ -147,7 +154,10 @@ async def get_masked_credentials(
         return None
 
     decrypted = _decrypt_payload(
-        doc.get("encrypted_payload", {}), tenant_id, provider, property_id,
+        doc.get("encrypted_payload", {}),
+        tenant_id,
+        provider,
+        property_id,
     )
     masked = _mask_payload(decrypted)
 
@@ -183,6 +193,7 @@ async def link_credentials_to_connection(
 ) -> None:
     """Update provider_connection with credentials_ref."""
     from .data_model import COLL_PROVIDER_CONNECTIONS
+
     await db[COLL_PROVIDER_CONNECTIONS].update_one(
         {"tenant_id": tenant_id, "provider": provider, "property_id": property_id},
         {"$set": {"credentials_ref": secret_id, "updated_at": _now()}},

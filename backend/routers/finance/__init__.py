@@ -1,4 +1,5 @@
 """Finance routers package — aggregates all split sub-routers."""
+
 from fastapi import APIRouter
 
 from . import (

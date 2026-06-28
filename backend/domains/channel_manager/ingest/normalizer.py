@@ -4,6 +4,7 @@ Reservation Ingest — Provider Normalizers
 
 Convert HotelRunner / Exely payloads into canonical reservation format.
 """
+
 import hashlib
 import json
 from typing import Any
@@ -16,6 +17,7 @@ def _safe_str(v: Any) -> str:
 # ══════════════════════════════════════════════════════════════════════
 # Canonical Reservation Schema
 # ══════════════════════════════════════════════════════════════════════
+
 
 def empty_canonical() -> dict[str, Any]:
     return {
@@ -43,6 +45,7 @@ def empty_canonical() -> dict[str, Any]:
 # HotelRunner Normalizer
 # ══════════════════════════════════════════════════════════════════════
 
+
 def normalize_hotelrunner(payload: dict[str, Any]) -> dict[str, Any]:
     """
     HotelRunner reservation payload → canonical format.
@@ -59,16 +62,8 @@ def normalize_hotelrunner(payload: dict[str, Any]) -> dict[str, Any]:
     first_room = rooms[0] if rooms and isinstance(rooms[0], dict) else {}
 
     # Name: try multiple field patterns
-    first = _safe_str(
-        payload.get("firstname")
-        or guest.get("first_name")
-        or guest.get("firstname", "")
-    )
-    last = _safe_str(
-        payload.get("lastname")
-        or guest.get("last_name")
-        or guest.get("lastname", "")
-    )
+    first = _safe_str(payload.get("firstname") or guest.get("first_name") or guest.get("firstname", ""))
+    last = _safe_str(payload.get("lastname") or guest.get("last_name") or guest.get("lastname", ""))
     # Fallback: if guest is a string, use it as full name
     if not first and not last and isinstance(guest_raw, str):
         parts = guest_raw.strip().split(" ", 1)
@@ -84,16 +79,8 @@ def normalize_hotelrunner(payload: dict[str, Any]) -> dict[str, Any]:
     check_out = _safe_str(payload.get("checkout_date") or payload.get("check_out", ""))
 
     # Room/rate: from rooms array or direct fields
-    room_type = _safe_str(
-        first_room.get("inv_code")
-        or first_room.get("room_code")
-        or payload.get("room_type", "")
-    )
-    rate_plan = _safe_str(
-        first_room.get("rate_code")
-        or first_room.get("rate_plan_code")
-        or payload.get("rate_plan", "")
-    )
+    room_type = _safe_str(first_room.get("inv_code") or first_room.get("room_code") or payload.get("room_type", ""))
+    rate_plan = _safe_str(first_room.get("rate_code") or first_room.get("rate_plan_code") or payload.get("rate_plan", ""))
 
     # Occupancy: from first room or direct fields
     adults = int(first_room.get("total_adult") or first_room.get("adults") or payload.get("adults", 1) or 1)
@@ -130,11 +117,7 @@ def normalize_hotelrunner(payload: dict[str, Any]) -> dict[str, Any]:
         canonical_status = status_map.get(hr_status, "confirmed")
 
     # Last modified
-    last_mod = _safe_str(
-        payload.get("updated_at")
-        or payload.get("modified_at")
-        or payload.get("last_modified", "")
-    )
+    last_mod = _safe_str(payload.get("updated_at") or payload.get("modified_at") or payload.get("last_modified", ""))
 
     return {
         "external_reservation_id": _safe_str(payload.get("hr_number", "")),
@@ -161,11 +144,7 @@ def extract_hotelrunner_identity(payload: dict[str, Any]) -> dict[str, str]:
     """Extract HotelRunner identity fields for raw event."""
     hr_number = _safe_str(payload.get("hr_number", ""))
     event_type = _safe_str(payload.get("event_type", "reservation_create"))
-    last_modified = _safe_str(
-        payload.get("updated_at")
-        or payload.get("modified_at")
-        or payload.get("last_modified", "")
-    )
+    last_modified = _safe_str(payload.get("updated_at") or payload.get("modified_at") or payload.get("last_modified", ""))
     return {
         "external_reservation_id": hr_number,
         "provider_event_id": f"{hr_number}_{event_type}_{last_modified}",
@@ -177,6 +156,7 @@ def extract_hotelrunner_identity(payload: dict[str, Any]) -> dict[str, str]:
 # ══════════════════════════════════════════════════════════════════════
 # Exely Normalizer
 # ══════════════════════════════════════════════════════════════════════
+
 
 def normalize_exely(payload: dict[str, Any]) -> dict[str, Any]:
     """

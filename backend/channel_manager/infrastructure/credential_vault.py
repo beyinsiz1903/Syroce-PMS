@@ -4,6 +4,7 @@ Credential Vault - REFACTORED to use core.crypto.
 Manages encrypted credential storage for connector accounts.
 All encryption delegates to CredentialEncryptionService.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -35,9 +36,7 @@ class CredentialVault:
     def mask_credentials(credentials: dict[str, Any]) -> dict[str, str]:
         """Mask credential values for UI display."""
         svc = get_crypto_service()
-        return svc.mask_credentials(
-            {k: str(v) for k, v in credentials.items()}
-        )
+        return svc.mask_credentials({k: str(v) for k, v in credentials.items()})
 
     async def store_credentials(
         self,
@@ -65,8 +64,11 @@ class CredentialVault:
 
         action = AuditAction.CREDENTIAL_ROTATED if is_rotation else AuditAction.CREDENTIAL_CHANGED
         await self._audit(
-            tenant_id, connector.get("property_id", ""), connector_id,
-            action, actor_id,
+            tenant_id,
+            connector.get("property_id", ""),
+            connector_id,
+            action,
+            actor_id,
             {
                 "keys_updated": list(credentials.keys()),
                 "encrypted": True,
@@ -76,7 +78,9 @@ class CredentialVault:
         )
 
     async def retrieve_credentials(
-        self, tenant_id: str, connector_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
     ) -> dict[str, str]:
         """Retrieve and decrypt credentials for a connector."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
@@ -96,8 +100,11 @@ class CredentialVault:
     ) -> None:
         """Rotate credentials with audit trail."""
         await self.store_credentials(
-            tenant_id, connector_id, new_credentials,
-            actor_id=actor_id, is_rotation=True,
+            tenant_id,
+            connector_id,
+            new_credentials,
+            actor_id=actor_id,
+            is_rotation=True,
         )
 
     async def migrate_legacy_credentials(
@@ -116,11 +123,7 @@ class CredentialVault:
             return {"migrated": False, "reason": "No credentials found"}
 
         # Check if already in current format
-        all_current = all(
-            self._svc.is_current_format(v)
-            for v in creds.values()
-            if isinstance(v, str) and v
-        )
+        all_current = all(self._svc.is_current_format(v) for v in creds.values() if isinstance(v, str) and v)
         if all_current:
             return {"migrated": False, "reason": "Already in current format"}
 
@@ -133,8 +136,11 @@ class CredentialVault:
         await self._repo.upsert_connector(connector)
 
         await self._audit(
-            tenant_id, connector.get("property_id", ""), connector_id,
-            AuditAction.CREDENTIAL_CHANGED, actor_id,
+            tenant_id,
+            connector.get("property_id", ""),
+            connector_id,
+            AuditAction.CREDENTIAL_CHANGED,
+            actor_id,
             {
                 "migration": "legacy->SYR1",
                 "keys_migrated": list(creds.keys()),
@@ -151,7 +157,11 @@ class CredentialVault:
 
     async def _audit(self, tenant_id, property_id, connector_id, action, actor_id=None, metadata=None):
         log = IntegrationAuditLog(
-            tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-            action=action, actor_id=actor_id, metadata=metadata or {},
+            tenant_id=tenant_id,
+            property_id=property_id,
+            connector_id=connector_id,
+            action=action,
+            actor_id=actor_id,
+            metadata=metadata or {},
         )
         await self._repo.create_audit_log(log.to_doc())

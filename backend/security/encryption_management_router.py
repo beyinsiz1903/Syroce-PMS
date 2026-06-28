@@ -10,6 +10,7 @@ Provides API endpoints for:
 
 All endpoints require admin or super_admin role.
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -31,9 +32,11 @@ router = APIRouter(
 
 # ── Access Control ─────────────────────────────────────────────────
 
+
 def _require_encryption_admin(user: User = Depends(get_current_user)) -> User:
     """Only super_admin or admin can manage encryption keys."""
     from core.security import _is_super_admin
+
     if _is_super_admin(user):
         return user
     if user.role not in ("super_admin", "admin"):
@@ -45,6 +48,7 @@ def _require_encryption_admin(user: User = Depends(get_current_user)) -> User:
 
 
 # ── Request Models ─────────────────────────────────────────────────
+
 
 class RegisterKeyRequest(BaseModel):
     key_id: str
@@ -90,6 +94,7 @@ class JobActionRequest(BaseModel):
 
 
 # ── Key Registry Endpoints ─────────────────────────────────────────
+
 
 @router.post("/keys/register")
 async def register_key(
@@ -204,6 +209,7 @@ async def get_active_key(
 
 # ── Key State Management ───────────────────────────────────────────
 
+
 @router.post("/keys/rotation/initiate")
 async def initiate_rotation(
     body: InitiateRotationRequest,
@@ -292,6 +298,7 @@ async def emergency_revoke(
 
 
 # ── Re-encryption Jobs ─────────────────────────────────────────────
+
 
 @router.post("/reencryption/create")
 async def create_reencryption_job(
@@ -392,6 +399,7 @@ async def get_reencryption_job(
 
 # ── Dashboards ─────────────────────────────────────────────────────
 
+
 @router.get("/dashboard")
 async def get_encryption_dashboard(
     user: User = Depends(_require_encryption_admin),
@@ -433,6 +441,7 @@ async def get_jobs_dashboard(
 
 # ── Audit Logs ─────────────────────────────────────────────────────
 
+
 @router.get("/audit/keys")
 async def get_key_audit_log(
     key_id: str | None = Query(None),
@@ -465,6 +474,7 @@ async def get_job_audit_log(
 
 
 # ── Index Setup (called on startup) ────────────────────────────────
+
 
 @router.post("/setup-indexes")
 async def setup_indexes(

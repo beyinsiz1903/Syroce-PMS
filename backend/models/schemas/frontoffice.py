@@ -1,4 +1,5 @@
 """Auto-split from schemas.py — domain: frontoffice."""
+
 import uuid
 from datetime import UTC, datetime
 
@@ -33,6 +34,7 @@ class GuestRequest(BaseModel):
     created_by: str
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class IDScanResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -48,6 +50,7 @@ class IDScanResult(BaseModel):
     scan_image: str | None = None  # Base64 image
     scanned_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     scanned_by: str
+
 
 class MobileCheckIn(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -77,6 +80,7 @@ class InspectionChecklistItem(BaseModel):
     status: str  # ok, missing, damaged, dirty
     notes: str | None = None
 
+
 class RoomInspection(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -97,6 +101,7 @@ class RoomInspection(BaseModel):
     duration_minutes: int | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
 
 class LostFoundItem(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -126,6 +131,7 @@ class LostFoundItem(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class HKTaskAssignment(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -141,6 +147,7 @@ class HKTaskAssignment(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class CleaningTimer(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -155,5 +162,3 @@ class CleaningTimer(BaseModel):
     duration_minutes: int | None = None
     status: str = "in_progress"  # in_progress, completed, paused
     notes: str | None = None
-
-

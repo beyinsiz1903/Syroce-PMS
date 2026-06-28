@@ -4,6 +4,7 @@ Dashboard Aggregator — Health Score + Metrics Computation
 Computes system and tenant health scores from live collection queries.
 Single API call returns everything needed for the control plane dashboard.
 """
+
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
@@ -76,11 +77,13 @@ class DashboardAggregator:
         # required, so use the raw system DB to bypass STRICT_TENANT_MODE.
         if self._db is None:
             from core.tenant_db import get_system_db
+
             self._db = get_system_db()
         return self._db
 
     async def compute_dashboard(
-        self, tenant_id: str | None = None,
+        self,
+        tenant_id: str | None = None,
     ) -> dict[str, Any]:
         """Compute full dashboard payload. Target: < 500ms p95."""
         db = self._get_db()
@@ -133,9 +136,12 @@ class DashboardAggregator:
         }
 
     async def _failure_metrics(
-        self, db, tenant_id: str | None,
+        self,
+        db,
+        tenant_id: str | None,
     ) -> dict[str, Any]:
         from controlplane.failure_tracker import get_failure_tracker
+
         tracker = get_failure_tracker()
         open_count = await tracker.count_open(tenant_id=tenant_id)
         by_severity = await tracker.count_by_severity(tenant_id=tenant_id)
@@ -145,12 +151,8 @@ class DashboardAggregator:
         now = datetime.now(UTC)
         cutoff_1h = (now - timedelta(hours=1)).isoformat()
         cutoff_24h = (now - timedelta(hours=24)).isoformat()
-        failures_1h = await db.cp_failures.count_documents(
-            {"created_at": {"$gte": cutoff_1h}}
-        )
-        failures_24h = await db.cp_failures.count_documents(
-            {"created_at": {"$gte": cutoff_24h}}
-        )
+        failures_1h = await db.cp_failures.count_documents({"created_at": {"$gte": cutoff_1h}})
+        failures_24h = await db.cp_failures.count_documents({"created_at": {"$gte": cutoff_24h}})
 
         return {
             "open_failures": open_count,
@@ -162,7 +164,11 @@ class DashboardAggregator:
         }
 
     async def _outbox_metrics(
-        self, db, tenant_id: str | None, cutoff_30m: str, cutoff_24h: str,
+        self,
+        db,
+        tenant_id: str | None,
+        cutoff_30m: str,
+        cutoff_24h: str,
     ) -> dict[str, Any]:
         base: dict[str, Any] = {}
         if tenant_id:
@@ -170,15 +176,9 @@ class DashboardAggregator:
 
         pending = await db.outbox_events.count_documents({**base, "status": "pending"})
         processing = await db.outbox_events.count_documents({**base, "status": "processing"})
-        failed = await db.outbox_events.count_documents(
-            {**base, "status": {"$in": ["failed", "parked"]}}
-        )
-        stuck = await db.outbox_events.count_documents(
-            {**base, "status": {"$in": ["pending", "retry"]}, "created_at": {"$lte": cutoff_30m}}
-        )
-        processed_24h = await db.outbox_events.count_documents(
-            {**base, "status": "processed", "processed_at": {"$gte": cutoff_24h}}
-        )
+        failed = await db.outbox_events.count_documents({**base, "status": {"$in": ["failed", "parked"]}})
+        stuck = await db.outbox_events.count_documents({**base, "status": {"$in": ["pending", "retry"]}, "created_at": {"$lte": cutoff_30m}})
+        processed_24h = await db.outbox_events.count_documents({**base, "status": "processed", "processed_at": {"$gte": cutoff_24h}})
 
         return {
             "outbox_pending": pending,
@@ -189,7 +189,10 @@ class DashboardAggregator:
         }
 
     async def _import_metrics(
-        self, db, tenant_id: str | None, cutoff_24h: str,
+        self,
+        db,
+        tenant_id: str | None,
+        cutoff_24h: str,
     ) -> dict[str, Any]:
         base: dict[str, Any] = {}
         if tenant_id:
@@ -197,13 +200,9 @@ class DashboardAggregator:
         coll = db.imported_reservations
 
         pending = await coll.count_documents({**base, "import_status": "pending_auto_import"})
-        failed = await coll.count_documents(
-            {**base, "import_status": "failed", "updated_at": {"$gte": cutoff_24h}}
-        )
+        failed = await coll.count_documents({**base, "import_status": "failed", "updated_at": {"$gte": cutoff_24h}})
         review = await coll.count_documents({**base, "import_status": "review_required"})
-        imported_24h = await coll.count_documents(
-            {**base, "import_status": "imported", "updated_at": {"$gte": cutoff_24h}}
-        )
+        imported_24h = await coll.count_documents({**base, "import_status": "imported", "updated_at": {"$gte": cutoff_24h}})
 
         total_24h = imported_24h + failed
         success_rate = (imported_24h / total_24h * 100) if total_24h > 0 else 100.0
@@ -216,7 +215,10 @@ class DashboardAggregator:
         }
 
     async def _sync_metrics(
-        self, db, tenant_id: str | None, cutoff_24h: str,
+        self,
+        db,
+        tenant_id: str | None,
+        cutoff_24h: str,
     ) -> dict[str, Any]:
         base: dict[str, Any] = {"started_at": {"$gte": cutoff_24h}}
         if tenant_id:
@@ -244,7 +246,9 @@ class DashboardAggregator:
         }
 
     async def _connector_status(
-        self, db, tenant_id: str | None,
+        self,
+        db,
+        tenant_id: str | None,
     ) -> list[dict[str, Any]]:
         connectors = []
         for coll_name, provider in [
@@ -256,20 +260,25 @@ class DashboardAggregator:
                 if tenant_id:
                     query["tenant_id"] = tenant_id
                 async for conn in db[coll_name].find(query, {"_id": 0}):
-                    connectors.append({
-                        "provider": provider,
-                        "connector_id": conn.get("id", ""),
-                        "status": "healthy" if conn.get("is_active") else "down",
-                        "last_successful_sync": conn.get("last_sync_at"),
-                        "last_error": conn.get("last_error"),
-                        "property_name": conn.get("property_name", ""),
-                    })
+                    connectors.append(
+                        {
+                            "provider": provider,
+                            "connector_id": conn.get("id", ""),
+                            "status": "healthy" if conn.get("is_active") else "down",
+                            "last_successful_sync": conn.get("last_sync_at"),
+                            "last_error": conn.get("last_error"),
+                            "property_name": conn.get("property_name", ""),
+                        }
+                    )
             except Exception:
                 pass
         return connectors
 
     async def _security_metrics(
-        self, db, tenant_id: str | None, cutoff_24h: str,
+        self,
+        db,
+        tenant_id: str | None,
+        cutoff_24h: str,
     ) -> dict[str, Any]:
         query: dict[str, Any] = {
             "result": {"$in": ["failure", "denied", "not_found"]},
@@ -282,14 +291,19 @@ class DashboardAggregator:
         return {"secret_anomalies_24h": anomalies}
 
     async def _recent_failures(
-        self, db, tenant_id: str | None,
+        self,
+        db,
+        tenant_id: str | None,
     ) -> list[dict[str, Any]]:
         from controlplane.failure_tracker import get_failure_tracker
+
         tracker = get_failure_tracker()
         return await tracker.recent_failures(hours=24, tenant_id=tenant_id, limit=5)
 
     async def _pipeline_depth(
-        self, db, tenant_id: str | None,
+        self,
+        db,
+        tenant_id: str | None,
     ) -> dict[str, Any]:
         """End-to-end reservation pipeline depth."""
         base: dict[str, Any] = {}
@@ -299,21 +313,15 @@ class DashboardAggregator:
         stages = []
 
         # Ingest pending
-        ingest_count = await db.reservation_lineage.count_documents(
-            {**base, "status": {"$in": ["received", "normalized", "pending"]}}
-        )
+        ingest_count = await db.reservation_lineage.count_documents({**base, "status": {"$in": ["received", "normalized", "pending"]}})
         stages.append({"name": "ingest_pending", "count": ingest_count})
 
         # Import pending
-        import_count = await db.imported_reservations.count_documents(
-            {**base, "import_status": {"$in": ["pending_auto_import", "processing", "retry"]}}
-        )
+        import_count = await db.imported_reservations.count_documents({**base, "import_status": {"$in": ["pending_auto_import", "processing", "retry"]}})
         stages.append({"name": "import_pending", "count": import_count})
 
         # Outbox pending
-        outbox_count = await db.outbox_events.count_documents(
-            {**base, "status": {"$in": ["pending", "processing", "retry"]}}
-        )
+        outbox_count = await db.outbox_events.count_documents({**base, "status": {"$in": ["pending", "processing", "retry"]}})
         stages.append({"name": "outbox_pending", "count": outbox_count})
 
         total = sum(s["count"] for s in stages)
@@ -359,6 +367,7 @@ class DashboardSnapshotWorker:
 
     async def _run(self):
         import uuid as _uuid
+
         try:
             while not self._stop.is_set():
                 try:
@@ -410,6 +419,7 @@ def get_snapshot_worker() -> DashboardSnapshotWorker:
 async def ensure_snapshot_indexes():
     """Create indexes for cp_health_snapshots."""
     from core.database import db
+
     coll = db[COLL_SNAPSHOTS]
     try:
         await coll.create_index(

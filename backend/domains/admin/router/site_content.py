@@ -15,6 +15,7 @@ All string fields are PLAIN TEXT only (no HTML/markup): the frontend renders
 them as text and the validator rejects any value containing angle brackets, so
 stored content can never carry markup even if the React escape boundary moves.
 """
+
 import logging
 from datetime import UTC, datetime
 

@@ -3,6 +3,7 @@ Dashboard Trends Service - Trend graphs data + date range filters.
 Arrivals, departures, occupancy, housekeeping readiness, folio issues,
 night audit exceptions, blocked check-ins trends.
 """
+
 from datetime import date, timedelta
 
 from core.database import db
@@ -65,31 +66,44 @@ class DashboardTrendsService:
         }
 
     async def _arrivals_trend(self, tenant_id: str, date_range: list[str]) -> list[dict]:
-        cmap = await _count_by_day(db.bookings, {
-            "tenant_id": tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-        }, "check_in", date_range)
+        cmap = await _count_by_day(
+            db.bookings,
+            {
+                "tenant_id": tenant_id,
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+            },
+            "check_in",
+            date_range,
+        )
         return [{"date": d, "count": cmap.get(d, 0)} for d in date_range]
 
     async def _departures_trend(self, tenant_id: str, date_range: list[str]) -> list[dict]:
-        cmap = await _count_by_day(db.bookings, {
-            "tenant_id": tenant_id,
-            "status": {"$in": ["checked_in", "checked_out"]},
-        }, "check_out", date_range)
+        cmap = await _count_by_day(
+            db.bookings,
+            {
+                "tenant_id": tenant_id,
+                "status": {"$in": ["checked_in", "checked_out"]},
+            },
+            "check_out",
+            date_range,
+        )
         return [{"date": d, "count": cmap.get(d, 0)} for d in date_range]
 
     async def _occupancy_trend(self, tenant_id: str, date_range: list[str]) -> list[dict]:
         """Calculate occupancy rate per day from daily snapshots or live data."""
-        total_rooms = await db.rooms.count_documents({
-            "tenant_id": tenant_id,
-            "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
-        })
+        total_rooms = await db.rooms.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
+            }
+        )
         if total_rooms == 0:
             return [{"date": d, "rate": 0, "occupied": 0, "total": 0} for d in date_range]
 
         # Tek sorguda tum snapshotlar
         snaps = await db.daily_audit_snapshots.find(
-            {"tenant_id": tenant_id, "business_date": {"$in": date_range}}, {"_id": 0},
+            {"tenant_id": tenant_id, "business_date": {"$in": date_range}},
+            {"_id": 0},
         ).to_list(len(date_range))
         snap_map = {s["business_date"]: s for s in snaps}
 
@@ -101,30 +115,34 @@ class DashboardTrendsService:
             facet = {}
             for d in missing_days:
                 facet[d] = [
-                    {"$match": {
-                        "tenant_id": tenant_id,
-                        "status": {"$in": ["checked_in"]},
-                        "check_in": {"$lte": d + "T23:59:59"},
-                        "check_out": {"$gt": d},
-                    }},
+                    {
+                        "$match": {
+                            "tenant_id": tenant_id,
+                            "status": {"$in": ["checked_in"]},
+                            "check_in": {"$lte": d + "T23:59:59"},
+                            "check_out": {"$gt": d},
+                        }
+                    },
                     {"$count": "n"},
                 ]
             agg = await db.bookings.aggregate([{"$facet": facet}]).to_list(1)
             row = agg[0] if agg else {}
             for d in missing_days:
                 arr = row.get(d, [])
-                live_map[d] = (arr[0]["n"] if arr else 0)
+                live_map[d] = arr[0]["n"] if arr else 0
 
         result = []
         for d in date_range:
             snap = snap_map.get(d)
             if snap:
-                result.append({
-                    "date": d,
-                    "rate": snap.get("occupancy_rate", 0),
-                    "occupied": snap.get("occupied_rooms", 0),
-                    "total": snap.get("total_rooms", total_rooms),
-                })
+                result.append(
+                    {
+                        "date": d,
+                        "rate": snap.get("occupancy_rate", 0),
+                        "occupied": snap.get("occupied_rooms", 0),
+                        "total": snap.get("total_rooms", total_rooms),
+                    }
+                )
             else:
                 occupied = live_map.get(d, 0)
                 rate = round(occupied / total_rooms * 100, 1)
@@ -133,26 +151,31 @@ class DashboardTrendsService:
 
     async def _housekeeping_readiness_trend(self, tenant_id: str, date_range: list[str]) -> list[dict]:
         """Housekeeping readiness: percentage of rooms in available/inspected state."""
-        total_rooms = await db.rooms.count_documents({
-            "tenant_id": tenant_id,
-            "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
-        })
+        total_rooms = await db.rooms.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
+            }
+        )
         if total_rooms == 0:
             return [{"date": d, "rate": 0} for d in date_range]
 
         snaps = await db.daily_audit_snapshots.find(
-            {"tenant_id": tenant_id, "business_date": {"$in": date_range}}, {"_id": 0},
+            {"tenant_id": tenant_id, "business_date": {"$in": date_range}},
+            {"_id": 0},
         ).to_list(len(date_range))
         snap_map = {s["business_date"]: s for s in snaps}
 
         # Geriye kalan gunler icin live ready count tek sefer hesaplanir (bugun durumu)
         ready_now = None
         if any(d not in snap_map for d in date_range):
-            ready_now = await db.rooms.count_documents({
-                "tenant_id": tenant_id,
-                "status": {"$in": ["available", "inspected"]},
-                "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
-            })
+            ready_now = await db.rooms.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "status": {"$in": ["available", "inspected"]},
+                    "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
+                }
+            )
 
         result = []
         for d in date_range:
@@ -167,11 +190,16 @@ class DashboardTrendsService:
         return result
 
     async def _folio_issue_trend(self, tenant_id: str, date_range: list[str]) -> list[dict]:
-        cmap = await _count_by_day(db.pms_audit_trail, {
-            "tenant_id": tenant_id,
-            "entity_type": {"$in": ["folio_charge", "payment", "refund", "folio"]},
-            "action": {"$in": ["charge_voided", "payment_voided", "refund_posted", "folio_split"]},
-        }, "timestamp", date_range)
+        cmap = await _count_by_day(
+            db.pms_audit_trail,
+            {
+                "tenant_id": tenant_id,
+                "entity_type": {"$in": ["folio_charge", "payment", "refund", "folio"]},
+                "action": {"$in": ["charge_voided", "payment_voided", "refund_posted", "folio_split"]},
+            },
+            "timestamp",
+            date_range,
+        )
         return [{"date": d, "count": cmap.get(d, 0)} for d in date_range]
 
     async def _audit_exception_trend(self, tenant_id: str, date_range: list[str]) -> list[dict]:
@@ -191,18 +219,22 @@ class DashboardTrendsService:
             return []
         lo, hi = date_range[0], date_range[-1]
         # Tum range icin arrivals'i tek sorguda al
-        arrivals = await db.bookings.find({
-            "tenant_id": tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed"]},
-            "check_in": {"$gte": lo + "T00:00:00", "$lte": hi + "T23:59:59"},
-        }, {"_id": 0, "room_id": 1, "check_in": 1}).to_list(5000)
+        arrivals = await db.bookings.find(
+            {
+                "tenant_id": tenant_id,
+                "status": {"$in": ["confirmed", "guaranteed"]},
+                "check_in": {"$gte": lo + "T00:00:00", "$lte": hi + "T23:59:59"},
+            },
+            {"_id": 0, "room_id": 1, "check_in": 1},
+        ).to_list(5000)
 
         # Tum room_id'leri tek sefer cek
         room_ids = list({a.get("room_id") for a in arrivals if a.get("room_id")})
         room_status_map: dict[str, str] = {}
         if room_ids:
             async for r in db.rooms.find(
-                {"tenant_id": tenant_id, "id": {"$in": room_ids}}, {"_id": 0, "id": 1, "status": 1},
+                {"tenant_id": tenant_id, "id": {"$in": room_ids}},
+                {"_id": 0, "id": 1, "status": 1},
             ):
                 room_status_map[r["id"]] = r.get("status", "")
 

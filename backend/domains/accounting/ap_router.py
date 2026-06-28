@@ -12,6 +12,7 @@ Değişmezler:
   * Fazla/aşan ödeme reddedilir; void faturaya ödeme yapılamaz; ödemesi olan
     fatura void edilemez. Fail-closed.
 """
+
 import logging
 import uuid
 from datetime import UTC, date, datetime
@@ -84,32 +85,28 @@ def _status_for(total: float, paid: float) -> str:
 
 async def _recalc_invoice(tenant_id: str, invoice_id: str) -> dict:
     """paid_amount'ı ödemelerden yeniden hesaplar, status'u günceller, faturayı döner."""
-    inv = await db.ap_invoices.find_one(
-        {"tenant_id": tenant_id, "id": invoice_id}, {"_id": 0}
-    )
+    inv = await db.ap_invoices.find_one({"tenant_id": tenant_id, "id": invoice_id}, {"_id": 0})
     if not inv:
         raise HTTPException(status_code=404, detail="Fatura bulunamadı")
     if inv.get("status") == "void":
         return inv
-    payments = await db.ap_payments.find(
-        {"tenant_id": tenant_id, "invoice_id": invoice_id}, {"_id": 0}
-    ).to_list(10000)
+    payments = await db.ap_payments.find({"tenant_id": tenant_id, "invoice_id": invoice_id}, {"_id": 0}).to_list(10000)
     paid = round(sum(float(p.get("amount", 0) or 0) for p in payments), 2)
     total = float(inv.get("total_amount", 0) or 0)
     status = _status_for(total, paid)
     await db.ap_invoices.update_one(
         {"tenant_id": tenant_id, "id": invoice_id},
-        {"$set": {
-            "paid_amount": paid,
-            "balance": round(total - paid, 2),
-            "overpaid": paid > total + _EPS,
-            "status": status,
-            "updated_at": _now_iso(),
-        }},
+        {
+            "$set": {
+                "paid_amount": paid,
+                "balance": round(total - paid, 2),
+                "overpaid": paid > total + _EPS,
+                "status": status,
+                "updated_at": _now_iso(),
+            }
+        },
     )
-    return await db.ap_invoices.find_one(
-        {"tenant_id": tenant_id, "id": invoice_id}, {"_id": 0}
-    )
+    return await db.ap_invoices.find_one({"tenant_id": tenant_id, "id": invoice_id}, {"_id": 0})
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -152,40 +149,29 @@ async def list_invoices(
         q["supplier_id"] = supplier_id
     if status:
         q["status"] = status
-    rows = (
-        await db.ap_invoices.find(q, {"_id": 0}).sort("due_date", 1).to_list(limit)
-    )
+    rows = await db.ap_invoices.find(q, {"_id": 0}).sort("due_date", 1).to_list(limit)
     return {"invoices": rows}
 
 
 @router.post("/invoices")
-async def create_invoice(
-    payload: InvoiceIn, current_user: User = Depends(get_current_user)
-):
+async def create_invoice(payload: InvoiceIn, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _AP_ROLES)
     tenant_id = _tenant_of(current_user)
 
-    supplier = await db.proc_suppliers.find_one(
-        {"tenant_id": tenant_id, "id": payload.supplier_id}, {"_id": 0}
-    )
+    supplier = await db.proc_suppliers.find_one({"tenant_id": tenant_id, "id": payload.supplier_id}, {"_id": 0})
     if not supplier:
         raise HTTPException(status_code=404, detail="Tedarikçi bulunamadı")
     if payload.po_id:
-        po = await db.proc_purchase_orders.find_one(
-            {"tenant_id": tenant_id, "id": payload.po_id}, {"_id": 0}
-        )
+        po = await db.proc_purchase_orders.find_one({"tenant_id": tenant_id, "id": payload.po_id}, {"_id": 0})
         if not po:
             raise HTTPException(status_code=404, detail="Satınalma siparişi bulunamadı")
 
     dup = await db.ap_invoices.find_one(
-        {"tenant_id": tenant_id, "supplier_id": payload.supplier_id,
-         "invoice_no": payload.invoice_no},
+        {"tenant_id": tenant_id, "supplier_id": payload.supplier_id, "invoice_no": payload.invoice_no},
         {"_id": 0},
     )
     if dup:
-        raise HTTPException(
-            status_code=400, detail="Bu tedarikçi için aynı fatura no zaten kayıtlı"
-        )
+        raise HTTPException(status_code=400, detail="Bu tedarikçi için aynı fatura no zaten kayıtlı")
 
     total = round(float(payload.subtotal) + float(payload.tax), 2)
     now = _now_iso()
@@ -219,14 +205,10 @@ async def create_invoice(
 @router.get("/invoices/{invoice_id}")
 async def get_invoice(invoice_id: str, current_user: User = Depends(get_current_user)):
     tenant_id = _tenant_of(current_user)
-    inv = await db.ap_invoices.find_one(
-        {"tenant_id": tenant_id, "id": invoice_id}, {"_id": 0}
-    )
+    inv = await db.ap_invoices.find_one({"tenant_id": tenant_id, "id": invoice_id}, {"_id": 0})
     if not inv:
         raise HTTPException(status_code=404, detail="Fatura bulunamadı")
-    payments = await db.ap_payments.find(
-        {"tenant_id": tenant_id, "invoice_id": invoice_id}, {"_id": 0}
-    ).to_list(10000)
+    payments = await db.ap_payments.find({"tenant_id": tenant_id, "invoice_id": invoice_id}, {"_id": 0}).to_list(10000)
     return {"invoice": inv, "payments": payments}
 
 
@@ -234,41 +216,28 @@ async def get_invoice(invoice_id: str, current_user: User = Depends(get_current_
 async def void_invoice(invoice_id: str, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _AP_ROLES)
     tenant_id = _tenant_of(current_user)
-    inv = await db.ap_invoices.find_one(
-        {"tenant_id": tenant_id, "id": invoice_id}, {"_id": 0}
-    )
+    inv = await db.ap_invoices.find_one({"tenant_id": tenant_id, "id": invoice_id}, {"_id": 0})
     if not inv:
         raise HTTPException(status_code=404, detail="Fatura bulunamadı")
     if inv.get("status") == "void":
         return {"invoice": inv}
-    payments = await db.ap_payments.find(
-        {"tenant_id": tenant_id, "invoice_id": invoice_id}, {"_id": 0}
-    ).to_list(1)
+    payments = await db.ap_payments.find({"tenant_id": tenant_id, "invoice_id": invoice_id}, {"_id": 0}).to_list(1)
     if payments:
-        raise HTTPException(
-            status_code=409, detail="Ödemesi olan fatura void edilemez"
-        )
+        raise HTTPException(status_code=409, detail="Ödemesi olan fatura void edilemez")
     await db.ap_invoices.update_one(
         {"tenant_id": tenant_id, "id": invoice_id},
-        {"$set": {"status": "void", "updated_at": _now_iso(),
-                  "voided_by": _actor_id(current_user)}},
+        {"$set": {"status": "void", "updated_at": _now_iso(), "voided_by": _actor_id(current_user)}},
     )
-    inv = await db.ap_invoices.find_one(
-        {"tenant_id": tenant_id, "id": invoice_id}, {"_id": 0}
-    )
+    inv = await db.ap_invoices.find_one({"tenant_id": tenant_id, "id": invoice_id}, {"_id": 0})
     return {"invoice": inv}
 
 
 @router.post("/invoices/{invoice_id}/payments")
-async def apply_payment(
-    invoice_id: str, payload: PaymentIn, current_user: User = Depends(get_current_user)
-):
+async def apply_payment(invoice_id: str, payload: PaymentIn, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _AP_ROLES)
     tenant_id = _tenant_of(current_user)
 
-    inv = await db.ap_invoices.find_one(
-        {"tenant_id": tenant_id, "id": invoice_id}, {"_id": 0}
-    )
+    inv = await db.ap_invoices.find_one({"tenant_id": tenant_id, "id": invoice_id}, {"_id": 0})
     if not inv:
         raise HTTPException(status_code=404, detail="Fatura bulunamadı")
     if inv.get("status") == "void":
@@ -305,9 +274,7 @@ async def apply_payment(
     try:
         await db.ap_payments.insert_one(dict(payment))
     except DuplicateKeyError:
-        existing = await db.ap_payments.find_one(
-            {"tenant_id": tenant_id, "idempotency_key": idem}, {"_id": 0}
-        )
+        existing = await db.ap_payments.find_one({"tenant_id": tenant_id, "idempotency_key": idem}, {"_id": 0})
         inv = await _recalc_invoice(tenant_id, invoice_id)
         return {"invoice": inv, "payment": existing, "idempotent_replay": True}
 
@@ -337,9 +304,7 @@ async def aging(
     tenant_id = _tenant_of(current_user)
     ref = (as_of or _today())[:10]
 
-    invoices = await db.ap_invoices.find(
-        {"tenant_id": tenant_id, "status": {"$in": ["open", "partial"]}}, {"_id": 0}
-    ).to_list(50000)
+    invoices = await db.ap_invoices.find({"tenant_id": tenant_id, "status": {"$in": ["open", "partial"]}}, {"_id": 0}).to_list(50000)
 
     buckets = {"current": 0.0, "d1_30": 0.0, "d31_60": 0.0, "d61_90": 0.0, "d90_plus": 0.0}
     by_supplier: dict[str, dict] = {}
@@ -365,10 +330,7 @@ async def aging(
         buckets[bk] += bal
         total_outstanding += bal
         sid = inv.get("supplier_id")
-        srow = by_supplier.setdefault(
-            sid, {"supplier_id": sid, "supplier_name": inv.get("supplier_name"),
-                  "outstanding": 0.0, "invoice_count": 0}
-        )
+        srow = by_supplier.setdefault(sid, {"supplier_id": sid, "supplier_name": inv.get("supplier_name"), "outstanding": 0.0, "invoice_count": 0})
         srow["outstanding"] += bal
         srow["invoice_count"] += 1
 
@@ -378,7 +340,5 @@ async def aging(
         "as_of": ref,
         "buckets": {k: round(v, 2) for k, v in buckets.items()},
         "total_outstanding": round(total_outstanding, 2),
-        "by_supplier": sorted(
-            by_supplier.values(), key=lambda r: r["outstanding"], reverse=True
-        ),
+        "by_supplier": sorted(by_supplier.values(), key=lambda r: r["outstanding"], reverse=True),
     }

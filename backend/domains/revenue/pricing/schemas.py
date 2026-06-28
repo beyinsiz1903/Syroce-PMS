@@ -2,6 +2,7 @@
 Revenue / Pricing Domain — Pydantic Schemas
 Extracted from pricing_router.py inline models.
 """
+
 from typing import Any
 
 from pydantic import BaseModel

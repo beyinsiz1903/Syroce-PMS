@@ -21,6 +21,7 @@ Tasarım kuralları (architect onaylı):
   - QR departmanı -> iç-sohbet departmanı AÇIK eşlenir; ``to_department``
     asla None değildir (front-office catch-all = Reception).
 """
+
 from __future__ import annotations
 
 import logging
@@ -53,16 +54,18 @@ ALWAYS_ALLOWED_ROLES: frozenset[str] = frozenset({"super_admin", "admin"})
 
 # Admin'in görünürlük ayarında seçebileceği geçerli personel rolleri.
 # super_admin (daima yetkili), guest ve agency_* (dış taraf) hariç tutulur.
-STAFF_ROLE_WHITELIST: frozenset[str] = frozenset({
-    "admin",
-    "supervisor",
-    "front_desk",
-    "housekeeping",
-    "sales",
-    "finance",
-    "procurement",
-    "staff",
-})
+STAFF_ROLE_WHITELIST: frozenset[str] = frozenset(
+    {
+        "admin",
+        "supervisor",
+        "front_desk",
+        "housekeeping",
+        "sales",
+        "finance",
+        "procurement",
+        "staff",
+    }
+)
 
 # Ayar ekranında gösterilecek rol etiketleri (TR).
 STAFF_ROLE_LABELS: dict[str, str] = {
@@ -160,10 +163,12 @@ async def set_visible_roles(tenant_id: str, roles: list[str]) -> list[str]:
             cleaned.append(rv)
     await raw_db[SETTINGS_COLL].update_one(
         {"tenant_id": tenant_id},
-        {"$set": {
-            VISIBLE_ROLES_FIELD: cleaned,
-            "tenant_id": tenant_id,
-        }},
+        {
+            "$set": {
+                VISIBLE_ROLES_FIELD: cleaned,
+                "tenant_id": tenant_id,
+            }
+        },
         upsert=True,
     )
     return cleaned
@@ -210,10 +215,7 @@ def _serialize(msg: dict, *, viewer_user_id: str | None = None) -> dict:
     }
     if viewer_user_id is not None:
         # Personel tarafı: misafir mesajını ben okudum mu?
-        out["read"] = (
-            msg.get("sender_type") == "staff"
-            or viewer_user_id in read_by
-        )
+        out["read"] = msg.get("sender_type") == "staff" or viewer_user_id in read_by
     return out
 
 
@@ -264,15 +266,17 @@ async def list_threads_for_staff(tenant_id: str, *, limit: int = 100) -> list[di
     pipeline = [
         {"$match": {"tenant_id": tenant_id}},
         {"$sort": {"created_at": 1}},
-        {"$group": {
-            "_id": "$room_id",
-            "room_number": {"$last": "$room_number"},
-            "last_body": {"$last": "$body"},
-            "last_sender_type": {"$last": "$sender_type"},
-            "last_created_at": {"$last": "$created_at"},
-            "last_category": {"$last": "$category"},
-            "total": {"$sum": 1},
-        }},
+        {
+            "$group": {
+                "_id": "$room_id",
+                "room_number": {"$last": "$room_number"},
+                "last_body": {"$last": "$body"},
+                "last_sender_type": {"$last": "$sender_type"},
+                "last_created_at": {"$last": "$created_at"},
+                "last_category": {"$last": "$category"},
+                "total": {"$sum": 1},
+            }
+        },
         {"$sort": {"last_created_at": -1}},
         {"$limit": int(limit)},
     ]
@@ -281,26 +285,30 @@ async def list_threads_for_staff(tenant_id: str, *, limit: int = 100) -> list[di
         last_created = row.get("last_created_at")
         if isinstance(last_created, datetime):
             last_created = last_created.astimezone(UTC).isoformat()
-        rooms.append({
-            "room_id": row.get("_id"),
-            "room_number": row.get("room_number"),
-            "last_body": row.get("last_body"),
-            "last_sender_type": row.get("last_sender_type"),
-            "last_category": row.get("last_category"),
-            "last_created_at": last_created,
-            "total": row.get("total", 0),
-        })
+        rooms.append(
+            {
+                "room_id": row.get("_id"),
+                "room_number": row.get("room_number"),
+                "last_body": row.get("last_body"),
+                "last_sender_type": row.get("last_sender_type"),
+                "last_category": row.get("last_category"),
+                "last_created_at": last_created,
+                "total": row.get("total", 0),
+            }
+        )
     return rooms
 
 
 async def count_unread_for_staff(tenant_id: str, user_id: str) -> dict[str, int]:
     """Oda başına okunmamış misafir mesajı sayısı (staff için)."""
     pipeline = [
-        {"$match": {
-            "tenant_id": tenant_id,
-            "sender_type": "guest",
-            "read_by": {"$ne": user_id},
-        }},
+        {
+            "$match": {
+                "tenant_id": tenant_id,
+                "sender_type": "guest",
+                "read_by": {"$ne": user_id},
+            }
+        },
         {"$group": {"_id": "$room_id", "unread": {"$sum": 1}}},
     ]
     out: dict[str, int] = {}

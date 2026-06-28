@@ -35,6 +35,7 @@ Ops endpoints:
   GET  /dry-run/stats        → dry-run success rate & failure breakdown
   GET  /dry-run/write-criteria → write enable criteria check
 """
+
 import asyncio
 import logging
 from typing import Any
@@ -63,9 +64,7 @@ async def _enforce_auth_and_tenant_match(
     # Default: kullanıcının kendi tenant'ı (super_admin dahil).
     if not tenant_id:
         tenant_id = current_user.tenant_id
-    is_super = current_user.role == UserRole.SUPER_ADMIN or "super_admin" in (
-        getattr(current_user, "roles", None) or []
-    )
+    is_super = current_user.role == UserRole.SUPER_ADMIN or "super_admin" in (getattr(current_user, "roles", None) or [])
     if not is_super and current_user.tenant_id != tenant_id:
         raise HTTPException(
             status_code=403,
@@ -93,6 +92,7 @@ router = APIRouter(
 
 # ── Status & Health ───────────────────────────────────────────────────
 
+
 @router.get("/status")
 async def get_connector_status(
     tenant_id: str = Depends(_resolved_tenant),
@@ -101,12 +101,14 @@ async def get_connector_status(
     """Get connector health status, flags, and metrics."""
     try:
         from channel_manager.connectors.hotelrunner_v2.service import HotelRunnerV2Service
+
         svc = await HotelRunnerV2Service.create(tenant_id, property_id)
         return await svc.get_status()
     except Exception as e:
         # Even if credentials fail, return flags + metrics
         from channel_manager.connectors.hotelrunner_v2.feature_flags import get_flags
         from channel_manager.connectors.hotelrunner_v2.metrics import get_summary
+
         flags = await get_flags(tenant_id)
         summary = await get_summary(tenant_id)
         return {
@@ -127,13 +129,19 @@ async def get_reservation_trace(
 ):
     """Get full timeline trace for a reservation."""
     from core.database import db
+
     _NO_ID = {"_id": 0}
 
     # Raw events
-    raw_events = await db["raw_channel_events"].find(
-        {"tenant_id": tenant_id, "external_reservation_id": reservation_id},
-        _NO_ID,
-    ).sort("received_at", 1).to_list(100)
+    raw_events = (
+        await db["raw_channel_events"]
+        .find(
+            {"tenant_id": tenant_id, "external_reservation_id": reservation_id},
+            _NO_ID,
+        )
+        .sort("received_at", 1)
+        .to_list(100)
+    )
 
     # Lineage
     lineage = await db["reservation_lineage"].find_one(
@@ -143,17 +151,27 @@ async def get_reservation_trace(
 
     # Outbox entries
     from security.query_safety import safe_search_term
+
     _rid = safe_search_term(reservation_id) or "a^"  # regex-impossible sentinel
-    outbox = await db["connector_outbox"].find(
-        {"tenant_id": tenant_id, "correlation_id": {"$regex": _rid}},
-        _NO_ID,
-    ).sort("created_at", 1).to_list(50)
+    outbox = (
+        await db["connector_outbox"]
+        .find(
+            {"tenant_id": tenant_id, "correlation_id": {"$regex": _rid}},
+            _NO_ID,
+        )
+        .sort("created_at", 1)
+        .to_list(50)
+    )
 
     # DLQ entries
-    dlq = await db["connector_dlq"].find(
-        {"tenant_id": tenant_id, "correlation_id": {"$regex": _rid}},
-        _NO_ID,
-    ).to_list(10)
+    dlq = (
+        await db["connector_dlq"]
+        .find(
+            {"tenant_id": tenant_id, "correlation_id": {"$regex": _rid}},
+            _NO_ID,
+        )
+        .to_list(10)
+    )
 
     return {
         "reservation_id": reservation_id,
@@ -166,6 +184,7 @@ async def get_reservation_trace(
 
 # ── Connection Test ───────────────────────────────────────────────────
 
+
 @router.post("/test-connection")
 async def test_connection(
     tenant_id: str = Depends(_resolved_tenant),
@@ -174,8 +193,10 @@ async def test_connection(
 ):
     """Test HotelRunner connection."""
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.service import HotelRunnerV2Service
+
     try:
         svc = await HotelRunnerV2Service.create(tenant_id, property_id)
         return await svc.test_connection()
@@ -184,6 +205,7 @@ async def test_connection(
 
 
 # ── Reservation Operations ────────────────────────────────────────────
+
 
 @router.post("/pull-reservations")
 async def pull_reservations(
@@ -198,15 +220,19 @@ async def pull_reservations(
 ):
     """Pull reservations from HotelRunner."""
     from channel_manager.connectors.hotelrunner_v2.feature_flags import is_enabled
+
     if not await is_enabled(tenant_id):
         raise HTTPException(status_code=403, detail="Connector not enabled for this tenant")
 
     from channel_manager.connectors.hotelrunner_v2.service import HotelRunnerV2Service
+
     svc = await HotelRunnerV2Service.create(tenant_id, property_id)
     return await svc.pull_reservations(
-        undelivered=undelivered, from_date=from_date,
+        undelivered=undelivered,
+        from_date=from_date,
         from_last_update_date=from_last_update_date,
-        modified=modified, booked=booked,
+        modified=modified,
+        booked=booked,
         reservation_number=reservation_number,
     )
 
@@ -220,6 +246,7 @@ async def confirm_delivery(
 ):
     """Confirm reservation delivery to HotelRunner."""
     from channel_manager.connectors.hotelrunner_v2.service import HotelRunnerV2Service
+
     svc = await HotelRunnerV2Service.create(tenant_id, property_id)
     return await svc.confirm_delivery(message_uid, pms_number=pms_number)
 
@@ -232,6 +259,7 @@ async def verify_transaction(
 ):
     """Check ARI push transaction status via HotelRunner."""
     from channel_manager.connectors.hotelrunner_v2.service import HotelRunnerV2Service
+
     svc = await HotelRunnerV2Service.create(tenant_id, property_id)
     return await svc.verify_transaction(transaction_id)
 
@@ -244,15 +272,18 @@ async def ingest_reservation(
 ):
     """Ingest a single reservation (webhook or manual)."""
     from channel_manager.connectors.hotelrunner_v2.feature_flags import is_enabled
+
     if not await is_enabled(tenant_id):
         raise HTTPException(status_code=403, detail="Connector not enabled for this tenant")
 
     from channel_manager.connectors.hotelrunner_v2.service import HotelRunnerV2Service
+
     svc = await HotelRunnerV2Service.create(tenant_id, property_id)
     return await svc.ingest_reservation(payload, received_via="api")
 
 
 # ── ARI Push ──────────────────────────────────────────────────────────
+
 
 @router.post("/push-ari")
 async def push_ari(
@@ -262,10 +293,12 @@ async def push_ari(
 ):
     """Push ARI update (availability/rate/restriction)."""
     from channel_manager.connectors.hotelrunner_v2.feature_flags import is_enabled
+
     if not await is_enabled(tenant_id):
         raise HTTPException(status_code=403, detail="Connector not enabled for this tenant")
 
     from channel_manager.connectors.hotelrunner_v2.service import HotelRunnerV2Service
+
     svc = await HotelRunnerV2Service.create(tenant_id, property_id)
     return await svc.push_ari(
         inv_code=body.get("inv_code") or body.get("room_code", ""),
@@ -285,6 +318,7 @@ async def push_ari(
 
 # ── Reconciliation ────────────────────────────────────────────────────
 
+
 @router.post("/reconcile")
 async def trigger_reconciliation(
     tenant_id: str = Depends(_resolved_tenant),
@@ -294,8 +328,10 @@ async def trigger_reconciliation(
 ):
     """Trigger reconciliation run."""
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.reconciliation import run_reconciliation
+
     return await run_reconciliation(tenant_id, property_id, since_hours=since_hours, auto_fix=auto_fix)
 
 
@@ -305,6 +341,7 @@ async def reconciliation_history(
     limit: int = Query(20),
 ):
     from channel_manager.connectors.hotelrunner_v2.reconciliation import get_reconciliation_history
+
     return await get_reconciliation_history(tenant_id, limit=limit)
 
 
@@ -314,14 +351,17 @@ async def reconciliation_drifts(
     limit: int = Query(50),
 ):
     from channel_manager.connectors.hotelrunner_v2.reconciliation import get_recent_drifts
+
     return await get_recent_drifts(tenant_id, limit=limit)
 
 
 # ── Feature Flags ─────────────────────────────────────────────────────
 
+
 @router.get("/flags")
 async def get_flags_endpoint(tenant_id: str = Depends(_resolved_tenant)):
     from channel_manager.connectors.hotelrunner_v2.feature_flags import get_flags
+
     return await get_flags(tenant_id)
 
 
@@ -331,10 +371,12 @@ async def update_flags(
     body: dict[str, Any] = Body(...),
 ):
     from channel_manager.connectors.hotelrunner_v2.feature_flags import set_flags
+
     return await set_flags(tenant_id, body)
 
 
 # ── Metrics ───────────────────────────────────────────────────────────
+
 
 @router.get("/metrics")
 async def get_metrics(
@@ -342,10 +384,12 @@ async def get_metrics(
     hours: int = Query(24),
 ):
     from channel_manager.connectors.hotelrunner_v2.metrics import get_summary
+
     return await get_summary(tenant_id, hours=hours)
 
 
 # ── Dead Letter Queue ─────────────────────────────────────────────────
+
 
 @router.get("/dlq")
 async def get_dlq(
@@ -353,10 +397,16 @@ async def get_dlq(
     limit: int = Query(50),
 ):
     from core.database import db
-    entries = await db["connector_dlq"].find(
-        {"tenant_id": tenant_id, "provider": "hotelrunner"},
-        {"_id": 0},
-    ).sort("created_at", -1).to_list(limit)
+
+    entries = (
+        await db["connector_dlq"]
+        .find(
+            {"tenant_id": tenant_id, "provider": "hotelrunner"},
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .to_list(limit)
+    )
     return {"entries": entries, "count": len(entries)}
 
 
@@ -368,11 +418,13 @@ async def retry_dlq_entry(
 ):
     """Retry a dead letter queue entry."""
     from core.database import db
+
     entry = await db["connector_dlq"].find_one({"id": dlq_id, "tenant_id": tenant_id}, {"_id": 0})
     if not entry:
         raise HTTPException(status_code=404, detail="DLQ entry not found")
 
     from channel_manager.connectors.hotelrunner_v2.service import HotelRunnerV2Service
+
     svc = await HotelRunnerV2Service.create(tenant_id, property_id)
 
     operation = entry.get("operation", "")
@@ -389,7 +441,8 @@ async def retry_dlq_entry(
         )
         if result.get("success"):
             await db["connector_dlq"].update_one(
-                {"id": dlq_id}, {"$set": {"status": "retried_success"}},
+                {"id": dlq_id},
+                {"$set": {"status": "retried_success"}},
             )
         return result
 
@@ -397,6 +450,7 @@ async def retry_dlq_entry(
 
 
 # ── Ops Dashboard (Aggregated) ────────────────────────────────────────
+
 
 @router.get("/ops-dashboard")
 async def get_ops_dashboard(
@@ -440,10 +494,15 @@ async def get_ops_dashboard(
     )
 
     async def _dlq_entries():
-        return await _db["connector_dlq"].find(
-            {"tenant_id": tenant_id, "provider": "hotelrunner"},
-            {"_id": 0},
-        ).sort("created_at", -1).to_list(10)
+        return (
+            await _db["connector_dlq"]
+            .find(
+                {"tenant_id": tenant_id, "provider": "hotelrunner"},
+                {"_id": 0},
+            )
+            .sort("created_at", -1)
+            .to_list(10)
+        )
 
     async def _dlq_count():
         return await _db["connector_dlq"].count_documents(
@@ -456,10 +515,15 @@ async def get_ops_dashboard(
         )
 
     async def _recent_events():
-        return await _db["connector_metrics"].find(
-            {"tenant_id": tenant_id, "provider": "hotelrunner_v2"},
-            {"_id": 0},
-        ).sort("recorded_at", -1).to_list(10)
+        return (
+            await _db["connector_metrics"]
+            .find(
+                {"tenant_id": tenant_id, "provider": "hotelrunner_v2"},
+                {"_id": 0},
+            )
+            .sort("recorded_at", -1)
+            .to_list(10)
+        )
 
     (
         flags,
@@ -500,16 +564,10 @@ async def get_ops_dashboard(
     retry_count = metrics.get("operations", {}).get("pull_reservations", {}).get("failed", 0)
     for op_data in metrics.get("operations", {}).values():
         retry_count = max(retry_count, op_data.get("failed", 0))
-    total_retry = sum(
-        op_data.get("failed", 0) for op_data in metrics.get("operations", {}).values()
-    )
+    total_retry = sum(op_data.get("failed", 0) for op_data in metrics.get("operations", {}).values())
 
     # 9. Latency (average across all ops)
-    latencies = [
-        op_data.get("avg_latency_ms", 0)
-        for op_data in metrics.get("operations", {}).values()
-        if op_data.get("avg_latency_ms", 0) > 0
-    ]
+    latencies = [op_data.get("avg_latency_ms", 0) for op_data in metrics.get("operations", {}).values() if op_data.get("avg_latency_ms", 0) > 0]
     avg_latency = round(sum(latencies) / len(latencies), 1) if latencies else 0
 
     # 10. Per-endpoint health from metrics
@@ -534,7 +592,6 @@ async def get_ops_dashboard(
         "generated_at": now_iso,
         "tenant_id": tenant_id,
         "property_id": property_id,
-
         # Provider Health
         "provider_health": {
             "provider": "HotelRunner",
@@ -547,10 +604,8 @@ async def get_ops_dashboard(
             "write_path": "enabled" if flags.get("write_enabled", False) and not flags.get("shadow_mode", True) else "disabled",
             "connector_enabled": flags.get("connector_enabled", False),
         },
-
         # Feature Flags
         "feature_flags": flags,
-
         # Sync Overview
         "sync_overview": {
             "last_pull_timestamp": last_sync.get("recorded_at") if last_sync else None,
@@ -564,37 +619,29 @@ async def get_ops_dashboard(
                 "duration_ms": last_recon.get("duration_ms", 0) if last_recon else 0,
             },
         },
-
         # Metrics
         "metrics_24h": metrics,
         "avg_latency_ms": avg_latency,
         "total_retry_count": total_retry,
-
         # DLQ
         "dlq": {
             "count": dlq_count,
             "recent_entries": dlq_entries,
         },
-
         # Failure Visibility
         "error_taxonomy": metrics.get("error_taxonomy", {}),
-
         # Recent Events
         "recent_events": recent_events,
-
         # Recent Drifts
         "recent_drifts": drifts,
-
         # Write Readiness Score
         "readiness": readiness,
-
         # Transition Phase
         "transition": {
             "current_phase": phase_state.get("current_phase", "shadow"),
             "phase_started_at": phase_state.get("phase_started_at"),
             "phase_day": phase_state.get("phase_day", 0),
         },
-
         # Dry-Run Stats
         "dry_run": {
             "total_runs": dry_run_stats.get("total_runs", 0),
@@ -606,7 +653,6 @@ async def get_ops_dashboard(
             "last_chain": dry_run_stats.get("last_chain"),
             "operations": dry_run_stats.get("operations", {}),
         },
-
         # Write Enable Criteria
         "write_criteria": {
             "all_met": write_criteria.get("all_criteria_met", False),
@@ -614,7 +660,6 @@ async def get_ops_dashboard(
             "total_criteria": write_criteria.get("total_criteria", 0),
             "criteria": write_criteria.get("criteria", []),
         },
-
         # Shadow Automation
         "automation": {
             "status": automation_status,
@@ -631,6 +676,7 @@ async def get_ops_dashboard(
 
 # ── Write Readiness Score ─────────────────────────────────────────────
 
+
 @router.get("/readiness-score")
 async def get_readiness_score(
     tenant_id: str = Depends(_resolved_tenant),
@@ -638,12 +684,15 @@ async def get_readiness_score(
 ):
     """Calculate the Write Readiness Score (0-100)."""
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.readiness import calculate_readiness_score
+
     return await calculate_readiness_score(tenant_id, hours=hours)
 
 
 # ── Shadow Observation ─────────────────────────────────────────────────
+
 
 @router.post("/observation/snapshot")
 async def collect_observation_snapshot(
@@ -651,8 +700,10 @@ async def collect_observation_snapshot(
 ):
     """Collect a daily observation snapshot (metrics, alerts, consistency)."""
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.observation import collect_daily_snapshot
+
     return await collect_daily_snapshot(tenant_id)
 
 
@@ -663,8 +714,10 @@ async def get_observation_history_endpoint(
 ):
     """Get observation snapshot history (last N days)."""
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.observation import get_observation_history
+
     return await get_observation_history(tenant_id, days=days)
 
 
@@ -674,8 +727,10 @@ async def get_observation_report(
 ):
     """Generate a daily observation report with trends."""
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.observation import generate_daily_report
+
     return await generate_daily_report(tenant_id)
 
 
@@ -683,15 +738,18 @@ async def get_observation_report(
 async def get_alert_thresholds_endpoint():
     """Return alert threshold definitions."""
     from channel_manager.connectors.hotelrunner_v2.observation import get_alert_thresholds
+
     return await get_alert_thresholds()
 
 
 # ── Transition Plan ─────────────────────────────────────────────────
 
+
 @router.get("/transition/plan")
 async def get_transition_plan_endpoint():
     """Get the full write path transition plan."""
     from channel_manager.connectors.hotelrunner_v2.transition import get_transition_plan
+
     return await get_transition_plan()
 
 
@@ -701,8 +759,10 @@ async def get_transition_status(
 ):
     """Get current transition phase + readiness for next phase."""
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.transition import get_phase_status
+
     return await get_phase_status(tenant_id)
 
 
@@ -713,12 +773,15 @@ async def get_transition_history_endpoint(
 ):
     """Get transition history log."""
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.transition import get_transition_history
+
     return await get_transition_history(tenant_id, limit=limit)
 
 
 # ── Dry-Run Write Path ────────────────────────────────────────────────
+
 
 @router.post("/dry-run/ari-push")
 async def dry_run_ari_push_endpoint(
@@ -731,10 +794,13 @@ async def dry_run_ari_push_endpoint(
     Payload, outbox, verification — hepsi calisir. Gercek HTTP yok.
     """
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.dry_run import dry_run_ari_push
+
     return await dry_run_ari_push(
-        tenant_id, property_id,
+        tenant_id,
+        property_id,
         inv_code=body.get("inv_code", ""),
         start_date=body.get("start_date", ""),
         end_date=body.get("end_date", ""),
@@ -759,10 +825,13 @@ async def dry_run_confirm_delivery_endpoint(
 ):
     """Dry-run confirm delivery: NO-OP PUT, payload captured."""
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.dry_run import dry_run_confirm_delivery
+
     return await dry_run_confirm_delivery(
-        tenant_id, property_id,
+        tenant_id,
+        property_id,
         message_uid=body.get("message_uid", ""),
         pms_number=body.get("pms_number"),
         simulate_failure=body.get("simulate_failure"),
@@ -780,10 +849,13 @@ async def dry_run_chain_endpoint(
     Her adim icin ayri failure simulation belirlenebilir.
     """
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.dry_run import dry_run_chain
+
     return await dry_run_chain(
-        tenant_id, property_id,
+        tenant_id,
+        property_id,
         simulate_failures=body.get("simulate_failures"),
     )
 
@@ -799,11 +871,14 @@ async def dry_run_simulate_failure_endpoint(
     - timeout, validation_error, rate_limit
     """
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.dry_run import dry_run_ari_push
+
     failure_type = body.get("failure_type", "timeout")
     return await dry_run_ari_push(
-        tenant_id, property_id,
+        tenant_id,
+        property_id,
         inv_code=body.get("inv_code", "HR:FAIL-TEST"),
         start_date=body.get("start_date", "2026-04-01"),
         end_date=body.get("end_date", "2026-04-05"),
@@ -821,8 +896,10 @@ async def get_dry_run_results_endpoint(
 ):
     """Dry-run execution history."""
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.dry_run import get_dry_run_results
+
     results = await get_dry_run_results(tenant_id, limit=limit, operation=operation)
     return {"results": results, "count": len(results)}
 
@@ -833,8 +910,10 @@ async def get_dry_run_stats_endpoint(
 ):
     """Dry-run success rate, failure breakdown, chain status."""
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.dry_run import get_dry_run_stats
+
     return await get_dry_run_stats(tenant_id)
 
 
@@ -844,13 +923,15 @@ async def get_write_criteria_endpoint(
 ):
     """Write enable criteria check — tum kriterler saglanmadan write acilmaz."""
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.dry_run import check_write_enable_criteria
+
     return await check_write_enable_criteria(tenant_id)
 
 
-
 # ── Shadow Automation ──────────────────────────────────────────────────
+
 
 @router.get("/automation/status")
 async def get_automation_status_endpoint(
@@ -858,8 +939,10 @@ async def get_automation_status_endpoint(
 ):
     """Shadow automation durumu ve son aktivite."""
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.shadow_automation import get_automation_status
+
     return await get_automation_status(tenant_id)
 
 
@@ -869,8 +952,10 @@ async def trigger_snapshot_endpoint(
 ):
     """Manuel olarak 6-saatlik snapshot tetikle."""
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.shadow_automation import run_periodic_snapshot
+
     return await run_periodic_snapshot(tenant_id)
 
 
@@ -881,8 +966,10 @@ async def get_trend_data_endpoint(
 ):
     """Dashboard trend paneli verisi (readiness, drift, latency, failure)."""
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.shadow_automation import get_trend_data
+
     return await get_trend_data(tenant_id, hours=hours)
 
 
@@ -894,8 +981,10 @@ async def get_automation_alerts_endpoint(
 ):
     """Otomasyon alert gecmisi."""
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.shadow_automation import get_alert_history
+
     alerts = await get_alert_history(tenant_id, limit=limit, severity=severity)
     return {"alerts": alerts, "count": len(alerts)}
 
@@ -907,8 +996,10 @@ async def acknowledge_alert_endpoint(
 ):
     """Alert'i onayla (acknowledge)."""
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.shadow_automation import acknowledge_alert
+
     return await acknowledge_alert(
         tenant_id,
         rule_id=body.get("rule_id", ""),
@@ -923,7 +1014,9 @@ async def get_daily_summaries_endpoint(
 ):
     """Gunluk ozet gecmisi."""
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
     from channel_manager.connectors.hotelrunner_v2.shadow_automation import get_daily_summaries
+
     summaries = await get_daily_summaries(tenant_id, limit=limit)
     return {"summaries": summaries, "count": len(summaries)}

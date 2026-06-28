@@ -2,6 +2,7 @@
 Group Sales Management Models
 Group bookings, blocks, rooming lists, master folios
 """
+
 import uuid
 from datetime import UTC, datetime
 from enum import Enum
@@ -11,20 +12,25 @@ from pydantic import BaseModel, Field
 
 class GroupBlockStatus(str, Enum):
     """Grup bloğu durumu"""
+
     TENTATIVE = "tentative"  # Opsiyonel
     DEFINITE = "definite"  # Kesinleşmiş
     RELEASED = "released"  # Serbest bırakılmış
     COMPLETED = "completed"  # Tamamlanmış
     CANCELLED = "cancelled"  # İptal
 
+
 class BillingType(str, Enum):
     """Fatura tipi"""
+
     MASTER_ACCOUNT = "master_account"  # Tümü master hesaba
     INDIVIDUAL = "individual"  # Her misafir kendi
     SPLIT = "split"  # Karma (oda master, ekstralar bireysel)
 
+
 class GroupBlock(BaseModel):
     """Grup rezervasyon bloğu"""
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
 
@@ -71,8 +77,10 @@ class GroupBlock(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class GroupBlockCreate(BaseModel):
     """Grup bloğu oluşturma"""
+
     group_name: str
     organization: str
     contact_name: str
@@ -88,8 +96,10 @@ class GroupBlockCreate(BaseModel):
     billing_type: BillingType
     special_requirements: str | None = None
 
+
 class RoomingListEntry(BaseModel):
     """Rooming list girdisi"""
+
     guest_name: str
     room_type: str
     check_in: str
@@ -99,8 +109,10 @@ class RoomingListEntry(BaseModel):
     phone: str | None = None
     passport_number: str | None = None
 
+
 class GroupMasterFolio(BaseModel):
     """Grup master folio"""
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     group_block_id: str

@@ -4,6 +4,7 @@ Surfaces the evaluator in `core/pci_dss.py` so admins (and procurement
 teams) can see which controls are in place. Also exports a JSON
 attestation packet (HMAC-SHA256 signed) and a multi-row CSV.
 """
+
 from __future__ import annotations
 
 import csv
@@ -113,10 +114,12 @@ async def attestation(
 
     issued_by: dict = {"role": current_user.role}
     if not anonymize:
-        issued_by.update({
-            "user_id": current_user.id,
-            "user_email": current_user.email,
-        })
+        issued_by.update(
+            {
+                "user_id": current_user.id,
+                "user_email": current_user.email,
+            }
+        )
 
     body = {
         "issuer": "Syroce Hotel PMS",
@@ -127,17 +130,11 @@ async def attestation(
         "anonymized": bool(anonymize),
         "summary": summary(controls),
         "controls": controls,
-        "disclaimer": (
-            "Bu rapor, kontrollerin teknik olarak uygulanmış olduğunu "
-            "gösteren bir öz-değerlendirmedir. Resmi PCI-DSS sertifikasyonu "
-            "için yetkili bir QSA değerlendirmesi gereklidir."
-        ),
+        "disclaimer": ("Bu rapor, kontrollerin teknik olarak uygulanmış olduğunu gösteren bir öz-değerlendirmedir. Resmi PCI-DSS sertifikasyonu için yetkili bir QSA değerlendirmesi gereklidir."),
     }
 
     # Deterministic serialization → kararlı imza (sort_keys + separators).
-    body_bytes = json.dumps(
-        body, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
+    body_bytes = json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     sha256 = hashlib.sha256(body_bytes).hexdigest()
     sig = _hmac_sha256(body_bytes) if _signing_key() else None
 
@@ -148,10 +145,7 @@ async def attestation(
             "sha256": sha256,
             "hmac_sha256": sig,
             "signed": bool(sig),
-            "verify_hint": (
-                "json.dumps(body, sort_keys=True, separators=(',',':')) → "
-                "HMAC-SHA256 with ATTESTATION_SIGNING_KEY"
-            ),
+            "verify_hint": ("json.dumps(body, sort_keys=True, separators=(',',':')) → HMAC-SHA256 with ATTESTATION_SIGNING_KEY"),
         },
     }
     fname = f"syroce_pci_attestation_{datetime.now(UTC).strftime('%Y%m%d')}.json"

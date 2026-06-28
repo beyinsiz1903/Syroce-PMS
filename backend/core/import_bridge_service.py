@@ -11,6 +11,7 @@ Key guarantees:
   - Classifies errors as retryable vs permanent
   - Links booking_id back to import record on success
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -33,10 +34,13 @@ def _timeline_append(**kwargs):
     """Fire-and-forget timeline write. Returns a coroutine."""
     try:
         from controlplane.timeline_writer import get_timeline_writer
+
         return get_timeline_writer().append(**kwargs)
     except Exception:
+
         async def _noop():
             return None
+
         return _noop()
 
 
@@ -44,10 +48,13 @@ def _failure_record(**kwargs):
     """Fire-and-forget failure recording. Returns a coroutine."""
     try:
         from controlplane.failure_tracker import get_failure_tracker
+
         return get_failure_tracker().record(**kwargs)
     except Exception:
+
         async def _noop():
             return None
+
         return _noop()
 
 
@@ -73,14 +80,25 @@ DEFAULT_MAX_RETRIES = 5
 
 # ── Retryable vs permanent errors ───────────────────────────────────
 RETRYABLE_KEYWORDS = [
-    "timeout", "timed out", "connection refused", "connection reset",
-    "temporary", "unavailable", "network", "write conflict",
-    "lock", "replica",
+    "timeout",
+    "timed out",
+    "connection refused",
+    "connection reset",
+    "temporary",
+    "unavailable",
+    "network",
+    "write conflict",
+    "lock",
+    "replica",
 ]
 
 PERMANENT_KEYWORDS = [
-    "mapping error", "invalid payload", "validation",
-    "business rule", "duplicate", "not found",
+    "mapping error",
+    "invalid payload",
+    "validation",
+    "business rule",
+    "duplicate",
+    "not found",
 ]
 
 
@@ -159,7 +177,9 @@ async def create_import_record(
         doc.pop("_id", None)
         logger.info(
             "Import record created: id=%s ext=%s status=%s",
-            record_id, doc["external_reservation_id"], import_status,
+            record_id,
+            doc["external_reservation_id"],
+            import_status,
         )
         return doc
     except DuplicateKeyError:
@@ -217,6 +237,7 @@ async def auto_import_reservation_to_pms(
 
     # Ensure tenant context is set for strict mode
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
 
     provider = record.get("provider", "")
@@ -238,7 +259,9 @@ async def auto_import_reservation_to_pms(
     try:
         # ── 2. Duplicate check (booking source) ─────────────────
         existing_booking_id = await check_booking_source_exists(
-            tenant_id, provider, ext_res_id,
+            tenant_id,
+            provider,
+            ext_res_id,
         )
         if existing_booking_id:
             await db[COLL_IMPORTED].update_one(
@@ -274,6 +297,7 @@ async def auto_import_reservation_to_pms(
             from domains.channel_manager.providers.unmatched_hold import (
                 create_unmatched_reservation_hold,
             )
+
             try:
                 hold = await create_unmatched_reservation_hold(
                     provider=provider,
@@ -294,15 +318,15 @@ async def auto_import_reservation_to_pms(
                 if hold.get("booking_id"):
                     await db[COLL_IMPORTED].update_one(
                         {"id": imported_reservation_id},
-                        {"$set": {
-                            "hold_booking_id": hold["booking_id"],
-                            "updated_at": _utc_now(),
-                        }},
+                        {
+                            "$set": {
+                                "hold_booking_id": hold["booking_id"],
+                                "updated_at": _utc_now(),
+                            }
+                        },
                     )
             except Exception as e:  # noqa: BLE001
-                logger.exception(
-                    f"[IMPORT-BRIDGE] unmatched hold olusturma hatasi {ext_res_id}: {e}"
-                )
+                logger.exception(f"[IMPORT-BRIDGE] unmatched hold olusturma hatasi {ext_res_id}: {e}")
 
         if room_type:
             room_mapping = await db.room_mappings.find_one(
@@ -353,6 +377,7 @@ async def auto_import_reservation_to_pms(
         from domains.channel_manager.providers.unmatched_hold import (
             release_unmatched_reservation_hold,
         )
+
         try:
             await release_unmatched_reservation_hold(
                 tenant_id=tenant_id,
@@ -361,9 +386,7 @@ async def auto_import_reservation_to_pms(
                 delete_hold=True,
             )
         except Exception as e:  # noqa: BLE001
-            logger.exception(
-                f"[IMPORT-BRIDGE] unmatched hold rebind hatasi {ext_res_id}: {e}"
-            )
+            logger.exception(f"[IMPORT-BRIDGE] unmatched hold rebind hatasi {ext_res_id}: {e}")
 
         booking_id = str(uuid.uuid4())
         # Use PMS room type name from mapping, not provider code
@@ -413,6 +436,7 @@ async def auto_import_reservation_to_pms(
             # lookup would never match an encrypted row → a duplicate guest record
             # on every repeated OTA sync. Match _hash_<field> OR legacy plaintext.
             from security.encrypted_lookup import build_guest_pii_query
+
             guest_query = {"tenant_id": tenant_id}
             if guest_email:
                 guest_query.update(build_guest_pii_query("email", guest_email))
@@ -445,11 +469,13 @@ async def auto_import_reservation_to_pms(
                 # Encrypt PII fields before persistence
                 try:
                     from security.field_encryption import get_field_encryption_service
+
                     guest_doc = get_field_encryption_service().encrypt_document(guest_doc, collection="guests")
                 except Exception:
                     pass
                 # Plaintext name companions for index-serviceable prefix search.
                 from security.search_normalize import apply_collection_normalized_fields
+
                 apply_collection_normalized_fields(guest_doc, collection="guests")
                 await db.guests.insert_one(guest_doc)
                 guest_doc.pop("_id", None)
@@ -510,20 +536,22 @@ async def auto_import_reservation_to_pms(
         )
 
         # ── 9. Audit log ─────────────────────────────────────────
-        await db.pms_audit_trail.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "entity_type": "booking",
-            "entity_id": booking_id,
-            "action": "ota_auto_import",
-            "details": {
-                "provider": provider,
-                "external_reservation_id": ext_res_id,
-                "import_record_id": imported_reservation_id,
-            },
-            "timestamp": imported_at,
-            "performed_by": "import_bridge_service",
-        })
+        await db.pms_audit_trail.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "entity_type": "booking",
+                "entity_id": booking_id,
+                "action": "ota_auto_import",
+                "details": {
+                    "provider": provider,
+                    "external_reservation_id": ext_res_id,
+                    "import_record_id": imported_reservation_id,
+                },
+                "timestamp": imported_at,
+                "performed_by": "import_bridge_service",
+            }
+        )
 
         # ── 9b. In-app notification for new OTA reservation ──────
         try:
@@ -536,32 +564,29 @@ async def auto_import_reservation_to_pms(
             currency = booking_doc.get("currency", "TRY")
 
             notif_title = f"Yeni Rezervasyon: {guest_name}"
-            notif_message = (
-                f"{channel} kanalından yeni rezervasyon geldi. "
-                f"Giriş: {check_in}, Çıkış: {check_out}, "
-                f"Oda Tipi: {room_type_label}, "
-                f"Tutar: {total} {currency}"
-            )
+            notif_message = f"{channel} kanalından yeni rezervasyon geldi. Giriş: {check_in}, Çıkış: {check_out}, Oda Tipi: {room_type_label}, Tutar: {total} {currency}"
 
-            await db.notifications.insert_one({
-                "id": str(uuid.uuid4()),
-                "tenant_id": tenant_id,
-                "user_id": None,  # System-wide — visible to all users
-                "type": "reservation",
-                "title": notif_title,
-                "message": notif_message,
-                "priority": "high",
-                "read": False,
-                "action_url": f"/reservations?booking_id={booking_id}",
-                "metadata": {
-                    "booking_id": booking_id,
-                    "provider": provider,
-                    "external_reservation_id": ext_res_id,
-                    "guest_name": guest_name,
-                    "channel": channel,
-                },
-                "created_at": imported_at,
-            })
+            await db.notifications.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "user_id": None,  # System-wide — visible to all users
+                    "type": "reservation",
+                    "title": notif_title,
+                    "message": notif_message,
+                    "priority": "high",
+                    "read": False,
+                    "action_url": f"/reservations?booking_id={booking_id}",
+                    "metadata": {
+                        "booking_id": booking_id,
+                        "provider": provider,
+                        "external_reservation_id": ext_res_id,
+                        "guest_name": guest_name,
+                        "channel": channel,
+                    },
+                    "created_at": imported_at,
+                }
+            )
             logger.info("Notification created for OTA import: booking=%s", booking_id)
         except Exception as e:
             logger.warning("Failed to create notification for import %s: %s", imported_reservation_id, e)
@@ -569,6 +594,7 @@ async def auto_import_reservation_to_pms(
         # ── 10. Enqueue outbox event for confirmation ────────────
         try:
             from core.outbox_service import BOOKING_CREATED, enqueue_outbox_event
+
             await enqueue_outbox_event(
                 db,
                 tenant_id=tenant_id,
@@ -603,14 +629,19 @@ async def auto_import_reservation_to_pms(
 
         logger.info(
             "OTA reservation imported: import=%s booking=%s ext=%s provider=%s",
-            imported_reservation_id, booking_id, ext_res_id, provider,
+            imported_reservation_id,
+            booking_id,
+            ext_res_id,
+            provider,
         )
         return True, f"Booking {booking_id} created successfully"
 
     except Exception as e:
         error_msg = str(e)[:1000]
         logger.exception(
-            "Import bridge error for %s: %s", imported_reservation_id, error_msg,
+            "Import bridge error for %s: %s",
+            imported_reservation_id,
+            error_msg,
         )
         await _handle_import_failure(record, error_msg)
 
@@ -684,7 +715,9 @@ async def _handle_import_failure(
         )
         logger.error(
             "Import FAILED (permanent): %s retries=%d error=%s",
-            record["id"], retry_count, error_msg[:200],
+            record["id"],
+            retry_count,
+            error_msg[:200],
         )
     else:
         next_retry = _compute_next_retry_at(retry_count)
@@ -702,7 +735,10 @@ async def _handle_import_failure(
         )
         logger.warning(
             "Import scheduled for retry: %s count=%d/%d next=%s",
-            record["id"], retry_count, max_retries, next_retry,
+            record["id"],
+            retry_count,
+            max_retries,
+            next_retry,
         )
 
 

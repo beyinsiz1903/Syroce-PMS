@@ -6,6 +6,7 @@ mizan (trial balance) raporu. Posting çekirdeği shared_kernel.gl_posting'tedir
 
 Tüm uçlar tenant-scoped; mutasyonlar muhasebe seviyesi RBAC. PII/secret loglanmaz.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -93,17 +94,13 @@ async def list_accounts(
 
 
 @router.post("/accounts")
-async def create_account(
-    payload: AccountIn, current_user: User = Depends(get_current_user)
-):
+async def create_account(payload: AccountIn, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _GL_ROLES)
     tenant_id = _tenant_of(current_user)
     if payload.type not in ACCOUNT_TYPES:
         raise HTTPException(status_code=400, detail="Geçersiz hesap tipi")
     code = payload.code.strip()
-    existing = await db.gl_accounts.find_one(
-        {"tenant_id": tenant_id, "code": code}, {"_id": 0}
-    )
+    existing = await db.gl_accounts.find_one({"tenant_id": tenant_id, "code": code}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=400, detail="Bu kod ile hesap zaten var")
     now = _now_iso()
@@ -126,9 +123,7 @@ async def create_account(
 
 
 @router.put("/accounts/{code}")
-async def update_account(
-    code: str, payload: AccountUpdate, current_user: User = Depends(get_current_user)
-):
+async def update_account(code: str, payload: AccountUpdate, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _GL_ROLES)
     tenant_id = _tenant_of(current_user)
     updates = dict(payload.model_dump(exclude_unset=True))
@@ -137,14 +132,10 @@ async def update_account(
     if not updates:
         raise HTTPException(status_code=400, detail="Güncellenecek alan yok")
     updates["updated_at"] = _now_iso()
-    res = await db.gl_accounts.update_one(
-        {"tenant_id": tenant_id, "code": code}, {"$set": updates}
-    )
+    res = await db.gl_accounts.update_one({"tenant_id": tenant_id, "code": code}, {"$set": updates})
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Hesap bulunamadı")
-    doc = await db.gl_accounts.find_one(
-        {"tenant_id": tenant_id, "code": code}, {"_id": 0}
-    )
+    doc = await db.gl_accounts.find_one({"tenant_id": tenant_id, "code": code}, {"_id": 0})
     return {"account": doc}
 
 
@@ -183,29 +174,21 @@ async def list_journal(
         if end:
             date_q["$lte"] = end
         q["date"] = date_q
-    rows = (
-        await db.gl_journal_entries.find(q, {"_id": 0})
-        .sort("date", -1)
-        .to_list(limit)
-    )
+    rows = await db.gl_journal_entries.find(q, {"_id": 0}).sort("date", -1).to_list(limit)
     return {"entries": rows}
 
 
 @router.get("/journal/{entry_id}")
 async def get_journal(entry_id: str, current_user: User = Depends(get_current_user)):
     tenant_id = _tenant_of(current_user)
-    doc = await db.gl_journal_entries.find_one(
-        {"tenant_id": tenant_id, "id": entry_id}, {"_id": 0}
-    )
+    doc = await db.gl_journal_entries.find_one({"tenant_id": tenant_id, "id": entry_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Fiş bulunamadı")
     return {"entry": doc}
 
 
 @router.post("/journal")
-async def create_journal(
-    payload: JournalIn, current_user: User = Depends(get_current_user)
-):
+async def create_journal(payload: JournalIn, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _GL_ROLES)
     tenant_id = _tenant_of(current_user)
     try:

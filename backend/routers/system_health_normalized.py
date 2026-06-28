@@ -3,6 +3,7 @@ System Health — Normalized API Contract (Enriched)
 Real runtime data from services; standard response envelope with data freshness,
 evidence summary, degraded reason, critical blockers, and trend delta.
 """
+
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
@@ -24,7 +25,10 @@ _EVENT_WINDOW_SECONDS_RS = 3600
 
 
 def _health_response(
-    status: str, severity: str, scope_type: str, scope_id: str,
+    status: str,
+    severity: str,
+    scope_type: str,
+    scope_id: str,
     detail: dict,
     action_available: bool = False,
     suggested_action: str = None,
@@ -57,6 +61,7 @@ async def normalized_channel_manager(current_user: User = Depends(get_current_us
     """Normalized channel manager health from real CM runtime."""
     try:
         from domains.channel_manager.cm_runtime_service import cm_runtime_service
+
         ctx = OperationContext.from_user(current_user)
         result = await cm_runtime_service.get_runtime_status(ctx)
         data = result.data or {}
@@ -92,10 +97,13 @@ async def normalized_channel_manager(current_user: User = Depends(get_current_us
         )
     except Exception:
         return _health_response(
-            status="healthy", severity="info", scope_type="tenant",
+            status="healthy",
+            severity="info",
+            scope_type="tenant",
             scope_id=current_user.tenant_id,
             detail={"providers_connected": 0, "last_sync": None, "drift_count": 0},
-            action_available=True, suggested_action="Run drift scan",
+            action_available=True,
+            suggested_action="Run drift scan",
         )
 
 
@@ -104,6 +112,7 @@ async def normalized_workers(current_user: User = Depends(get_current_user)):
     """Normalized worker/queue health from real worker runtime."""
     try:
         from core.worker_health import get_queue_health
+
         ctx = OperationContext.from_user(current_user)
         result = await get_queue_health(ctx)
         data = result.data or {}
@@ -140,7 +149,9 @@ async def normalized_workers(current_user: User = Depends(get_current_user)):
         )
     except Exception:
         return _health_response(
-            status="healthy", severity="info", scope_type="tenant",
+            status="healthy",
+            severity="info",
+            scope_type="tenant",
             scope_id=current_user.tenant_id,
             detail={"stuck_tasks": 0, "pending_tasks": 0, "active_workers": 4},
         )
@@ -151,6 +162,7 @@ async def normalized_security(current_user: User = Depends(get_current_user)):
     """Normalized security health from real security runtime."""
     try:
         from security.security_runtime_service import security_runtime_service
+
         ctx = OperationContext.from_user(current_user)
         result = await security_runtime_service.get_comprehensive_status(ctx)
         data = result.data or {}
@@ -179,15 +191,15 @@ async def normalized_security(current_user: User = Depends(get_current_user)):
                 "credential_scan": "passed",
             },
             action_available=violations > 0 or rl.get("burst_detected", False),
-            suggested_action="Review security violations" if violations > 0 else (
-                "Check rate limit burst" if rl.get("burst_detected") else None
-            ),
+            suggested_action="Review security violations" if violations > 0 else ("Check rate limit burst" if rl.get("burst_detected") else None),
             degraded_reason=f"{violations} guard violations detected" if status != "healthy" else None,
             evidence_summary=f"Audit score: {audit.get('completeness_score', 100)}%, {violations} violations",
         )
     except Exception:
         return _health_response(
-            status="healthy", severity="info", scope_type="tenant",
+            status="healthy",
+            severity="info",
+            scope_type="tenant",
             scope_id=current_user.tenant_id,
             detail={"violations_count": 0, "rate_limit_status": "active", "credential_scan": "passed"},
         )
@@ -197,14 +209,10 @@ async def normalized_security(current_user: User = Depends(get_current_user)):
 async def normalized_observability(current_user: User = Depends(get_current_user)):
     """Normalized observability health from real error/metric stores."""
     try:
-        error_count = await db.observability_errors.count_documents({
-            "tenant_id": current_user.tenant_id, "resolved": False
-        }) if "observability_errors" in await db.list_collection_names() else 0
+        error_count = await db.observability_errors.count_documents({"tenant_id": current_user.tenant_id, "resolved": False}) if "observability_errors" in await db.list_collection_names() else 0
 
         # Also check generic error_logs
-        error_log_count = await db.error_logs.count_documents({
-            "tenant_id": current_user.tenant_id, "resolved": False
-        }) if "error_logs" in await db.list_collection_names() else 0
+        error_log_count = await db.error_logs.count_documents({"tenant_id": current_user.tenant_id, "resolved": False}) if "error_logs" in await db.list_collection_names() else 0
 
         total_errors = error_count + error_log_count
         severity = "critical" if total_errors > 20 else ("warning" if total_errors > 5 else "info")
@@ -226,7 +234,9 @@ async def normalized_observability(current_user: User = Depends(get_current_user
         )
     except Exception:
         return _health_response(
-            status="healthy", severity="info", scope_type="tenant",
+            status="healthy",
+            severity="info",
+            scope_type="tenant",
             scope_id=current_user.tenant_id,
             detail={"unresolved_errors": 0, "audit_coverage": "active", "log_sanitization": "active"},
         )
@@ -236,13 +246,13 @@ async def normalized_observability(current_user: User = Depends(get_current_user
 async def normalized_alerts(current_user: User = Depends(get_current_user)):
     """Normalized alerts summary."""
     try:
-        alert_count = await db.alert_history.count_documents({
-            "tenant_id": current_user.tenant_id, "acknowledged": {"$ne": True}
-        }) if "alert_history" in await db.list_collection_names() else 0
+        alert_count = await db.alert_history.count_documents({"tenant_id": current_user.tenant_id, "acknowledged": {"$ne": True}}) if "alert_history" in await db.list_collection_names() else 0
 
-        critical_count = await db.alert_history.count_documents({
-            "tenant_id": current_user.tenant_id, "acknowledged": {"$ne": True}, "severity": "critical"
-        }) if "alert_history" in await db.list_collection_names() else 0
+        critical_count = (
+            await db.alert_history.count_documents({"tenant_id": current_user.tenant_id, "acknowledged": {"$ne": True}, "severity": "critical"})
+            if "alert_history" in await db.list_collection_names()
+            else 0
+        )
 
         severity = "critical" if critical_count > 0 else ("warning" if alert_count > 0 else "info")
 
@@ -261,7 +271,9 @@ async def normalized_alerts(current_user: User = Depends(get_current_user)):
         )
     except Exception:
         return _health_response(
-            status="healthy", severity="info", scope_type="tenant",
+            status="healthy",
+            severity="info",
+            scope_type="tenant",
             scope_id=current_user.tenant_id,
             detail={"total_active": 0, "critical_active": 0},
         )
@@ -279,8 +291,10 @@ async def normalized_ws_bridge(current_user: User = Depends(get_current_user)):
         from infra.ws_redis_adapter import ws_redis_adapter
     except Exception as e:
         return _health_response(
-            status="degraded", severity="warning",
-            scope_type="global", scope_id="ws-bridge",
+            status="degraded",
+            severity="warning",
+            scope_type="global",
+            scope_id="ws-bridge",
             detail={"active": False, "error": str(e)[:200]},
             degraded_reason="ws_redis_adapter not importable",
             evidence_summary="bridge module unavailable",
@@ -291,9 +305,8 @@ async def normalized_ws_bridge(current_user: User = Depends(get_current_user)):
             DEFAULT_THRESHOLDS,
             AlertType,
         )
-        threshold = int(
-            DEFAULT_THRESHOLDS.get(AlertType.WS_BRIDGE_PUBLISH_ERRORS, {}).get("count", 10)
-        )
+
+        threshold = int(DEFAULT_THRESHOLDS.get(AlertType.WS_BRIDGE_PUBLISH_ERRORS, {}).get("count", 10))
     except Exception:
         threshold = 10
 
@@ -322,9 +335,7 @@ async def normalized_ws_bridge(current_user: User = Depends(get_current_user)):
 
         # The single-instance fallback is intentional in dev / single-pod
         # deployments; surface it as informational rather than degraded.
-        single_instance = (not active) and (
-            not instance_id or instance_id == "single-instance"
-        )
+        single_instance = (not active) and (not instance_id or instance_id == "single-instance")
 
         if single_instance:
             status = "healthy"
@@ -333,24 +344,15 @@ async def normalized_ws_bridge(current_user: User = Depends(get_current_user)):
         elif not active:
             status = "degraded"
             severity = "warning"
-            degraded_reason = (
-                "Bridge inactive — Redis pub/sub unavailable; "
-                "cross-instance events will not be delivered."
-            )
+            degraded_reason = "Bridge inactive — Redis pub/sub unavailable; cross-instance events will not be delivered."
         elif publish_errors >= threshold * 5:
             status = "critical"
             severity = "critical"
-            degraded_reason = (
-                f"{publish_errors} publish errors observed "
-                f"(critical threshold {threshold * 5})"
-            )
+            degraded_reason = f"{publish_errors} publish errors observed (critical threshold {threshold * 5})"
         elif publish_errors >= threshold:
             status = "degraded"
             severity = "warning"
-            degraded_reason = (
-                f"{publish_errors} publish errors observed "
-                f"(threshold {threshold})"
-            )
+            degraded_reason = f"{publish_errors} publish errors observed (threshold {threshold})"
         else:
             status = "healthy"
             severity = "info"
@@ -394,12 +396,8 @@ async def normalized_ws_bridge(current_user: User = Depends(get_current_user)):
                 point["publish_errors_delta"] = 0
                 point["messages_published_delta"] = 0
             else:
-                point["publish_errors_delta"] = max(
-                    0, point["publish_errors"] - int(prev.get("publish_errors") or 0)
-                )
-                point["messages_published_delta"] = max(
-                    0, point["messages_published"] - int(prev.get("messages_published") or 0)
-                )
+                point["publish_errors_delta"] = max(0, point["publish_errors"] - int(prev.get("publish_errors") or 0))
+                point["messages_published_delta"] = max(0, point["messages_published"] - int(prev.get("messages_published") or 0))
             history_points.append(point)
             prev = point
 
@@ -458,8 +456,10 @@ async def normalized_ws_bridge(current_user: User = Depends(get_current_user)):
         )
     except Exception as e:
         return _health_response(
-            status="degraded", severity="warning",
-            scope_type="global", scope_id="ws-bridge",
+            status="degraded",
+            severity="warning",
+            scope_type="global",
+            scope_id="ws-bridge",
             detail={"active": False, "error": str(e)[:200]},
             degraded_reason="Failed to read ws_redis_adapter metrics",
             evidence_summary="metrics read failed",
@@ -490,8 +490,10 @@ async def normalized_room_service(current_user: User = Depends(get_current_user)
         )
     except Exception as e:
         return _health_response(
-            status="degraded", severity="warning",
-            scope_type="global", scope_id="room-service",
+            status="degraded",
+            severity="warning",
+            scope_type="global",
+            scope_id="room-service",
             detail={"error": str(e)[:200]},
             degraded_reason="room_service module not importable",
             evidence_summary="module unavailable",
@@ -505,8 +507,10 @@ async def normalized_room_service(current_user: User = Depends(get_current_user)
         recent_events = order_stream.recent_event_count(_EVENT_WINDOW_SECONDS_RS)
     except Exception as e:
         return _health_response(
-            status="degraded", severity="warning",
-            scope_type="global", scope_id="room-service",
+            status="degraded",
+            severity="warning",
+            scope_type="global",
+            scope_id="room-service",
             detail={"error": str(e)[:200]},
             degraded_reason="failed to read order_stream gauges",
             evidence_summary="gauge read failed",
@@ -519,6 +523,7 @@ async def normalized_room_service(current_user: User = Depends(get_current_user)
     bridge_active = False
     try:
         from infra.ws_redis_adapter import ws_redis_adapter
+
         m = ws_redis_adapter.get_metrics()
         bridge_active = bool(m.get("active"))
         channels = list(m.get("subscribed_channels") or [])
@@ -531,11 +536,7 @@ async def normalized_room_service(current_user: User = Depends(get_current_user)
 
     status = "healthy"
     severity = "info"
-    evidence = (
-        f"{local_rooms} bookings / {local_sockets} guest sockets, "
-        f"{staff_tenants} staff tenants / {staff_sockets} staff sockets, "
-        f"{recent_events} events delivered in last 60m"
-    )
+    evidence = f"{local_rooms} bookings / {local_sockets} guest sockets, {staff_tenants} staff tenants / {staff_sockets} staff sockets, {recent_events} events delivered in last 60m"
 
     return _health_response(
         status=status,
@@ -579,8 +580,13 @@ async def normalized_overview(current_user: User = Depends(get_current_user)):
     )
 
     scope_ids = (
-        "channel-manager", "workers", "security",
-        "observability", "alerts", "ws-bridge", "room-service",
+        "channel-manager",
+        "workers",
+        "security",
+        "observability",
+        "alerts",
+        "ws-bridge",
+        "room-service",
     )
     fallback_scope_id = getattr(current_user, "tenant_id", None) or "global"
 
@@ -592,7 +598,8 @@ async def normalized_overview(current_user: User = Depends(get_current_user)):
             raise value
         if isinstance(value, Exception):
             return _health_response(
-                status="degraded", severity="warning",
+                status="degraded",
+                severity="warning",
                 scope_type="tenant" if fallback_scope_id != "global" else "global",
                 scope_id=fallback_scope_id,
                 detail={"error": str(value)[:200], "subsystem": scope_id},
@@ -604,12 +611,8 @@ async def normalized_overview(current_user: User = Depends(get_current_user)):
     cm, wk, sec, obs, al, wsb, rs = (_coerce(sid, v) for sid, v in zip(scope_ids, results))
 
     subsystems = [cm, wk, sec, obs, al, wsb, rs]
-    overall_severity = "critical" if any(s["severity"] == "critical" for s in subsystems) else (
-        "warning" if any(s["severity"] == "warning" for s in subsystems) else "info"
-    )
-    overall_status = "critical" if any(s["status"] == "critical" for s in subsystems) else (
-        "degraded" if any(s["status"] in ("degraded", "warning") for s in subsystems) else "healthy"
-    )
+    overall_severity = "critical" if any(s["severity"] == "critical" for s in subsystems) else ("warning" if any(s["severity"] == "warning" for s in subsystems) else "info")
+    overall_status = "critical" if any(s["status"] == "critical" for s in subsystems) else ("degraded" if any(s["status"] in ("degraded", "warning") for s in subsystems) else "healthy")
 
     return {
         "overall_status": overall_status,

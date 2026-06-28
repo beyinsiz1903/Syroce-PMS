@@ -15,6 +15,7 @@ On hard fail:
 This is the runtime enforcement layer. Tests prove the logic;
 this module ensures it ACTUALLY blocks bad pushes in production.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -54,16 +55,22 @@ class HardFailVerdict:
         self.failures: list[dict[str, Any]] = []
 
     def add_failure(
-        self, entity_type: str, code: str,
-        failure_type: str, reason: str, operator_action: str,
+        self,
+        entity_type: str,
+        code: str,
+        failure_type: str,
+        reason: str,
+        operator_action: str,
     ):
-        self.failures.append({
-            "entity_type": entity_type,
-            "code": code,
-            "failure_type": failure_type,
-            "reason": reason,
-            "operator_action": operator_action,
-        })
+        self.failures.append(
+            {
+                "entity_type": entity_type,
+                "code": code,
+                "failure_type": failure_type,
+                "reason": reason,
+                "operator_action": operator_action,
+            }
+        )
         self.passed = False
 
     @property
@@ -178,46 +185,50 @@ async def enforce_hard_fail_gate(change_set: dict[str, Any]) -> HardFailVerdict:
 
     # Run mapping gate
     mapping_verdict = await check_mapping_gate(
-        tenant_id, property_id, provider,
-        room_type_code, rate_plan_code,
+        tenant_id,
+        property_id,
+        provider,
+        room_type_code,
+        rate_plan_code,
     )
 
     if not mapping_verdict.passed:
         await _quarantine_change_set(change_set, mapping_verdict)
         await _create_hard_fail_incident(change_set, mapping_verdict)
         await _log_hard_fail(change_set, mapping_verdict)
-        logger.warning(
-            f"HARD FAIL: cs={change_set.get('id')} "
-            f"room={room_type_code} rate={rate_plan_code} "
-            f"failures={len(mapping_verdict.failures)}"
-        )
+        logger.warning(f"HARD FAIL: cs={change_set.get('id')} room={room_type_code} rate={rate_plan_code} failures={len(mapping_verdict.failures)}")
         return mapping_verdict
 
     return mapping_verdict
 
 
 async def _quarantine_change_set(
-    cs: dict[str, Any], verdict: HardFailVerdict,
+    cs: dict[str, Any],
+    verdict: HardFailVerdict,
 ) -> None:
     """Move change set to hard_fail status."""
     now = datetime.now(UTC).isoformat()
     await db[COLL_ARI_CHANGE_SETS].update_one(
         {"id": cs["id"]},
-        {"$set": {
-            "status": "hard_fail",
-            "hard_fail_reason": verdict.summary(),
-            "hard_fail_failures": verdict.failures,
-            "hard_fail_at": now,
-            "updated_at": now,
-        }},
+        {
+            "$set": {
+                "status": "hard_fail",
+                "hard_fail_reason": verdict.summary(),
+                "hard_fail_failures": verdict.failures,
+                "hard_fail_at": now,
+                "updated_at": now,
+            }
+        },
     )
 
 
 async def _create_hard_fail_incident(
-    cs: dict[str, Any], verdict: HardFailVerdict,
+    cs: dict[str, Any],
+    verdict: HardFailVerdict,
 ) -> str:
     """Create a reconciliation case for the hard fail."""
     import uuid
+
     now = datetime.now(UTC).isoformat()
 
     # Determine the primary failure type for the case
@@ -249,14 +260,16 @@ async def _create_hard_fail_incident(
     }
 
     # Avoid duplicate incidents for same room/rate/provider
-    existing = await db[COLL_RECONCILIATION_CASES].find_one({
-        "tenant_id": cs["tenant_id"],
-        "provider": cs["provider"],
-        "case_type": case_type.value,
-        "status": {"$in": ["open", "investigating"]},
-        "details.room_type_code": cs.get("room_type_code"),
-        "details.rate_plan_code": cs.get("rate_plan_code"),
-    })
+    existing = await db[COLL_RECONCILIATION_CASES].find_one(
+        {
+            "tenant_id": cs["tenant_id"],
+            "provider": cs["provider"],
+            "case_type": case_type.value,
+            "status": {"$in": ["open", "investigating"]},
+            "details.room_type_code": cs.get("room_type_code"),
+            "details.rate_plan_code": cs.get("rate_plan_code"),
+        }
+    )
     if existing:
         return existing.get("id", "")
 
@@ -265,23 +278,27 @@ async def _create_hard_fail_incident(
 
 
 async def _log_hard_fail(
-    cs: dict[str, Any], verdict: HardFailVerdict,
+    cs: dict[str, Any],
+    verdict: HardFailVerdict,
 ) -> None:
     """Log hard fail for audit and metrics."""
     import uuid
+
     now = datetime.now(UTC).isoformat()
-    await db[COLL_HARD_FAIL_LOG].insert_one({
-        "id": str(uuid.uuid4()),
-        "tenant_id": cs["tenant_id"],
-        "property_id": cs["property_id"],
-        "provider": cs["provider"],
-        "change_set_id": cs.get("id"),
-        "room_type_code": cs.get("room_type_code"),
-        "rate_plan_code": cs.get("rate_plan_code"),
-        "failures": verdict.failures,
-        "summary": verdict.summary(),
-        "timestamp": now,
-    })
+    await db[COLL_HARD_FAIL_LOG].insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": cs["tenant_id"],
+            "property_id": cs["property_id"],
+            "provider": cs["provider"],
+            "change_set_id": cs.get("id"),
+            "room_type_code": cs.get("room_type_code"),
+            "rate_plan_code": cs.get("rate_plan_code"),
+            "failures": verdict.failures,
+            "summary": verdict.summary(),
+            "timestamp": now,
+        }
+    )
 
 
 async def get_hard_fail_stats(tenant_id: str) -> dict[str, Any]:
@@ -292,28 +309,35 @@ async def get_hard_fail_stats(tenant_id: str) -> dict[str, Any]:
     )
 
     # Hard fail incidents (open)
-    hf_incidents = await db[COLL_RECONCILIATION_CASES].count_documents({
-        "tenant_id": tenant_id,
-        "case_type": "missing_mapping",
-        "status": {"$in": ["open", "investigating"]},
-    })
+    hf_incidents = await db[COLL_RECONCILIATION_CASES].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "case_type": "missing_mapping",
+            "status": {"$in": ["open", "investigating"]},
+        }
+    )
 
     # Recent hard fail log entries (last 24h)
     from datetime import timedelta
+
     since = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
-    recent_hf = await db[COLL_HARD_FAIL_LOG].count_documents({
-        "tenant_id": tenant_id,
-        "timestamp": {"$gte": since},
-    })
+    recent_hf = await db[COLL_HARD_FAIL_LOG].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "timestamp": {"$gte": since},
+        }
+    )
 
     # Breakdown by failure type
     type_pipeline = [
         {"$match": {"tenant_id": tenant_id, "status": "hard_fail"}},
         {"$unwind": "$hard_fail_failures"},
-        {"$group": {
-            "_id": "$hard_fail_failures.failure_type",
-            "count": {"$sum": 1},
-        }},
+        {
+            "$group": {
+                "_id": "$hard_fail_failures.failure_type",
+                "count": {"$sum": 1},
+            }
+        },
     ]
     by_type = {}
     async for doc in db[COLL_ARI_CHANGE_SETS].aggregate(type_pipeline):
@@ -330,7 +354,8 @@ async def get_hard_fail_stats(tenant_id: str) -> dict[str, Any]:
 
 
 async def release_quarantine(
-    tenant_id: str, room_type_code: str,
+    tenant_id: str,
+    room_type_code: str,
     rate_plan_code: str | None = None,
     provider: str | None = None,
 ) -> int:
@@ -351,19 +376,18 @@ async def release_quarantine(
     now = datetime.now(UTC).isoformat()
     result = await db[COLL_ARI_CHANGE_SETS].update_many(
         query,
-        {"$set": {
-            "status": "pending",
-            "hard_fail_reason": None,
-            "hard_fail_failures": None,
-            "released_from_quarantine_at": now,
-            "updated_at": now,
-        }},
+        {
+            "$set": {
+                "status": "pending",
+                "hard_fail_reason": None,
+                "hard_fail_failures": None,
+                "released_from_quarantine_at": now,
+                "updated_at": now,
+            }
+        },
     )
 
     released = result.modified_count
     if released > 0:
-        logger.info(
-            f"Released {released} quarantined change sets: "
-            f"room={room_type_code} rate={rate_plan_code} provider={provider}"
-        )
+        logger.info(f"Released {released} quarantined change sets: room={room_type_code} rate={rate_plan_code} provider={provider}")
     return released

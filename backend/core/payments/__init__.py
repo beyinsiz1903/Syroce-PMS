@@ -5,6 +5,7 @@ kanonik DTO'lari, kart kasasi soyutlamasini ve tenant bazli fail-closed
 saglayici secimini sunar. Somut adaptorler (Iyzico/Stripe/...) ayri
 gorevlerde register_provider ile baglanir.
 """
+
 from .contracts import (
     InvalidPaymentRequest,
     PaymentError,

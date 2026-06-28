@@ -30,6 +30,7 @@ boot'ta kısa gecikme, sleep sırasında güvenli iptal. Çoklu sunucu durumunda
 tüm instance'lar worker çalıştırır; ``delete_one`` doğal olarak idempotent
 olduğu için bu sorun değil — pahalı bir sorgu da değil.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -68,7 +69,9 @@ def _env_int(name: str, default: int) -> int:
     except ValueError:
         logger.warning(
             "checkin_id_photo_cleanup: invalid %s=%r, using default %d",
-            name, raw, default,
+            name,
+            raw,
+            default,
         )
         return default
 
@@ -94,9 +97,7 @@ def env_default_retention_days() -> int:
     Task #124 öncesindeki davranış (tüm kiracılar için tek değer) bu
     fonksiyon üzerinden korunur.
     """
-    return clamp_retention_days(
-        _env_int("ID_PHOTO_RETENTION_DAYS", DEFAULT_RETENTION_DAYS)
-    )
+    return clamp_retention_days(_env_int("ID_PHOTO_RETENTION_DAYS", DEFAULT_RETENTION_DAYS))
 
 
 async def resolve_tenant_retention_days(db: Any, tenant_id: str) -> int:
@@ -133,9 +134,9 @@ async def resolve_tenant_retention_days(db: Any, tenant_id: str) -> int:
         return clamp_retention_days(int(raw))
     except (TypeError, ValueError):
         logger.warning(
-            "checkin_id_photo_cleanup: invalid tenant retention %r for tenant=%s, "
-            "falling back to env default",
-            raw, tenant_id,
+            "checkin_id_photo_cleanup: invalid tenant retention %r for tenant=%s, falling back to env default",
+            raw,
+            tenant_id,
         )
         return env_default_retention_days()
 
@@ -163,6 +164,7 @@ async def _audit_delete(
     """
     try:
         from shared_kernel.audit_helper import build_audit_entry
+
         entry = build_audit_entry(
             actor_id=actor_id,
             tenant_id=str(doc.get("tenant_id") or ""),
@@ -204,14 +206,13 @@ async def _delete_one(
     photo_id = doc.get("photo_id")
     tenant_id = doc.get("tenant_id")
     if not photo_id or not tenant_id:
-        logger.warning(
-            "checkin_id_photo_cleanup: skipping malformed metadata doc (missing photo_id/tenant_id)"
-        )
+        logger.warning("checkin_id_photo_cleanup: skipping malformed metadata doc (missing photo_id/tenant_id)")
         return False
 
     file_deleted = False
     try:
         from domains.guest.checkin_id_photo_storage import delete_id_photo
+
         file_deleted = bool(delete_id_photo(tenant_id=tenant_id, photo_id=photo_id))
     except Exception:
         logger.exception(
@@ -269,7 +270,8 @@ async def _iter_and_delete(
                 )
     except Exception:
         logger.exception(
-            "checkin_id_photo_cleanup: scan failed for reason=%s", reason,
+            "checkin_id_photo_cleanup: scan failed for reason=%s",
+            reason,
         )
     return deleted
 
@@ -324,7 +326,9 @@ async def prune_expired_id_photos(
             ],
         }
         counts["expired"] = await _iter_and_delete(
-            db=db, query=retention_query, reason="retention_expired",
+            db=db,
+            query=retention_query,
+            reason="retention_expired",
         )
     else:
         logger.warning(
@@ -345,7 +349,9 @@ async def prune_expired_id_photos(
             ],
         }
         counts["orphans"] = await _iter_and_delete(
-            db=db, query=orphan_query, reason="orphan_unclaimed",
+            db=db,
+            query=orphan_query,
+            reason="orphan_unclaimed",
         )
     else:
         logger.warning(
@@ -355,9 +361,11 @@ async def prune_expired_id_photos(
 
     if counts["expired"] or counts["orphans"]:
         logger.info(
-            "checkin_id_photo_cleanup: deleted %d expired + %d orphan ID photos "
-            "(retention=%dd, orphan_ttl=%dh, tenant=%s)",
-            counts["expired"], counts["orphans"], retention_days, orphan_ttl_hours,
+            "checkin_id_photo_cleanup: deleted %d expired + %d orphan ID photos (retention=%dd, orphan_ttl=%dh, tenant=%s)",
+            counts["expired"],
+            counts["orphans"],
+            retention_days,
+            orphan_ttl_hours,
             tenant_id or "*",
         )
     return counts
@@ -383,7 +391,8 @@ async def prune_expired_id_photos_per_tenant(
     """
     counts = {"expired": 0, "orphans": 0}
     orphan_ttl_hours = _env_int(
-        "ID_PHOTO_ORPHAN_TTL_HOURS", DEFAULT_ORPHAN_TTL_HOURS,
+        "ID_PHOTO_ORPHAN_TTL_HOURS",
+        DEFAULT_ORPHAN_TTL_HOURS,
     )
 
     try:
@@ -436,6 +445,7 @@ async def _worker_loop(interval_seconds: int) -> None:
     while True:
         try:
             from core.database import db  # late import: storage ile aynı kaynak
+
             # Task #124: per-tenant retention. Eski global cutoff yerine
             # her kiracının kendi ayarını uygulayan orchestrator kullanılır.
             await prune_expired_id_photos_per_tenant(db=db)
@@ -444,7 +454,9 @@ async def _worker_loop(interval_seconds: int) -> None:
             raise
         except Exception as e:  # pragma: no cover — worker hiç durmamalı
             _transient_tracker.log_exception(
-                logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                logger,
+                e,
+                TransientFailureTracker.OUTER_LOOP_KEY,
                 context="prune cycle",
                 non_transient_msg="%s prune cycle error: %s",
             )
@@ -459,14 +471,13 @@ def start_checkin_id_photo_cleanup_worker() -> None:
     """Background prune worker'ı başlatır. Tekrar çağrılırsa no-op."""
     global _worker_task
     if not _is_enabled():
-        logger.info(
-            "checkin_id_photo_cleanup: disabled by env, worker not started"
-        )
+        logger.info("checkin_id_photo_cleanup: disabled by env, worker not started")
         return
     if _worker_task and not _worker_task.done():
         return
     interval = _env_int(
-        "ID_PHOTO_CLEANUP_INTERVAL_SECONDS", DEFAULT_INTERVAL_SECONDS,
+        "ID_PHOTO_CLEANUP_INTERVAL_SECONDS",
+        DEFAULT_INTERVAL_SECONDS,
     )
     if interval < 60:
         logger.warning(

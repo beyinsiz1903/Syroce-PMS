@@ -9,6 +9,7 @@ Usage:
     python -m scripts.migrate_exely_vault          # dry-run by default
     python -m scripts.migrate_exely_vault --apply  # perform writes
 """
+
 import argparse
 import asyncio
 import logging
@@ -41,10 +42,12 @@ async def migrate(apply: bool) -> dict:
     skipped = 0
     failed = 0
 
-    cursor = db.exely_connections.find({
-        "username": {"$exists": True, "$nin": [None, ""]},
-        "password": {"$exists": True, "$nin": [None, ""]},
-    })
+    cursor = db.exely_connections.find(
+        {
+            "username": {"$exists": True, "$nin": [None, ""]},
+            "password": {"$exists": True, "$nin": [None, ""]},
+        }
+    )
     async for conn in cursor:
         tenant_id = conn.get("tenant_id")
         hotel_code = conn.get("hotel_code")
@@ -63,8 +66,7 @@ async def migrate(apply: bool) -> dict:
                 if apply:
                     await db.exely_connections.update_one(
                         {"_id": conn["_id"]},
-                        {"$unset": {"username": "", "password": ""},
-                         "$set": {"vault_migrated_at": __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat()}},
+                        {"$unset": {"username": "", "password": ""}, "$set": {"vault_migrated_at": __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat()}},
                     )
                 skipped += 1
                 continue
@@ -83,8 +85,7 @@ async def migrate(apply: bool) -> dict:
                 )
                 await db.exely_connections.update_one(
                     {"_id": conn["_id"]},
-                    {"$unset": {"username": "", "password": ""},
-                     "$set": {"vault_migrated_at": __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat()}},
+                    {"$unset": {"username": "", "password": ""}, "$set": {"vault_migrated_at": __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat()}},
                 )
             logger.info("[%s] %s/%s", "migrated" if apply else "would-migrate", tenant_id, hotel_code)
             migrated += 1

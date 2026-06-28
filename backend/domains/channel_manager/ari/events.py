@@ -2,6 +2,7 @@
 ARI Domain Events — Canonical event contract.
 All PMS services publish changes through this contract.
 """
+
 import uuid
 from datetime import UTC, date, datetime
 
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field
 
 class ARIChangeEvent(BaseModel):
     """Canonical ARI change event published by any PMS service."""
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     property_id: str
@@ -27,6 +29,7 @@ class ARIChangeEvent(BaseModel):
 
 class ARIDelta(BaseModel):
     """Compiled delta ready for provider push."""
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     provider: str
     tenant_id: str
@@ -42,6 +45,7 @@ class ARIDelta(BaseModel):
 
 class ProviderResult(BaseModel):
     """Result from provider push attempt."""
+
     success: bool
     provider: str
     status_code: int | None = None

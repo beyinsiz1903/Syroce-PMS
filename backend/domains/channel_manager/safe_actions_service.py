@@ -13,6 +13,7 @@ Available Actions:
   - revalidate_mapping: Full mapping validation with diff output
   - suppress_noise: Manual cooldown trigger for noisy notifications
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -52,46 +53,57 @@ async def retry_safe(tenant_id: str, operator_id: str = "system") -> dict[str, A
     now = datetime.now(UTC).isoformat()
 
     # Pre-check: find retryable change sets
-    retryable = await db[COLL_ARI_CHANGE_SETS].find(
-        {
-            "tenant_id": tenant_id,
-            "status": {"$in": list(RETRYABLE_STATUSES)},
-        },
-        _NO_ID,
-    ).to_list(100)
+    retryable = (
+        await db[COLL_ARI_CHANGE_SETS]
+        .find(
+            {
+                "tenant_id": tenant_id,
+                "status": {"$in": list(RETRYABLE_STATUSES)},
+            },
+            _NO_ID,
+        )
+        .to_list(100)
+    )
 
     if not retryable:
-        return _result(action_id, "retry_safe", "no_action",
-                       "Yeniden denenecek başarısız change set yok", 0,
-                       tenant_id, operator_id)
+        return _result(action_id, "retry_safe", "no_action", "Yeniden denenecek başarısız change set yok", 0, tenant_id, operator_id)
 
     # Execute: move to pending for re-processing
     ids = [cs.get("id") for cs in retryable if cs.get("id")]
     result = await db[COLL_ARI_CHANGE_SETS].update_many(
         {"tenant_id": tenant_id, "id": {"$in": ids}, "status": {"$in": list(RETRYABLE_STATUSES)}},
-        {"$set": {
-            "status": "pending",
-            "retry_requested_at": now,
-            "retry_requested_by": operator_id,
-            "updated_at": now,
-        }},
+        {
+            "$set": {
+                "status": "pending",
+                "retry_requested_at": now,
+                "retry_requested_by": operator_id,
+                "updated_at": now,
+            }
+        },
     )
     retried = result.modified_count
 
     # Post-verify: confirm status change
-    still_failed = await db[COLL_ARI_CHANGE_SETS].count_documents({
-        "tenant_id": tenant_id,
-        "id": {"$in": ids},
-        "status": {"$in": list(RETRYABLE_STATUSES)},
-    })
+    still_failed = await db[COLL_ARI_CHANGE_SETS].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "id": {"$in": ids},
+            "status": {"$in": list(RETRYABLE_STATUSES)},
+        }
+    )
 
-    await _log_action(action_id, "retry_safe", tenant_id, operator_id,
-                      retried, {"attempted": len(ids), "still_failed": still_failed})
+    await _log_action(action_id, "retry_safe", tenant_id, operator_id, retried, {"attempted": len(ids), "still_failed": still_failed})
 
-    return _result(action_id, "retry_safe", "completed",
-                   f"{retried} change set yeniden deneme icin kuyruga alindi",
-                   retried, tenant_id, operator_id,
-                   post_verify={"still_failed": still_failed, "retried": retried})
+    return _result(
+        action_id,
+        "retry_safe",
+        "completed",
+        f"{retried} change set yeniden deneme icin kuyruga alindi",
+        retried,
+        tenant_id,
+        operator_id,
+        post_verify={"still_failed": still_failed, "retried": retried},
+    )
 
 
 async def safe_release_quarantine(
@@ -114,30 +126,34 @@ async def safe_release_quarantine(
     # Pre-check
     guard = await check_safe_release(tenant_id, room_type_code, rate_plan_code, provider)
     if not guard["safe_to_release"]:
-        await _log_action(action_id, "release_quarantine", tenant_id, operator_id,
-                          0, {"guard": guard, "blocked": True})
-        return _result(action_id, "release_quarantine", "blocked",
-                       f"Release engellendi: {guard['recommendation']}",
-                       0, tenant_id, operator_id, pre_check=guard)
+        await _log_action(action_id, "release_quarantine", tenant_id, operator_id, 0, {"guard": guard, "blocked": True})
+        return _result(action_id, "release_quarantine", "blocked", f"Release engellendi: {guard['recommendation']}", 0, tenant_id, operator_id, pre_check=guard)
 
     # Execute
     released = await release_quarantine(tenant_id, room_type_code, rate_plan_code, provider)
 
     # Post-verify: check that items are now pending
-    still_quarantined = await db[COLL_ARI_CHANGE_SETS].count_documents({
-        "tenant_id": tenant_id,
-        "status": "hard_fail",
-        "room_type_code": room_type_code,
-    })
+    still_quarantined = await db[COLL_ARI_CHANGE_SETS].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "hard_fail",
+            "room_type_code": room_type_code,
+        }
+    )
 
-    await _log_action(action_id, "release_quarantine", tenant_id, operator_id,
-                      released, {"guard": guard, "still_quarantined": still_quarantined})
+    await _log_action(action_id, "release_quarantine", tenant_id, operator_id, released, {"guard": guard, "still_quarantined": still_quarantined})
 
-    return _result(action_id, "release_quarantine", "completed",
-                   f"{released} item karantinadan serbest birakildi",
-                   released, tenant_id, operator_id,
-                   pre_check=guard,
-                   post_verify={"released": released, "still_quarantined": still_quarantined})
+    return _result(
+        action_id,
+        "release_quarantine",
+        "completed",
+        f"{released} item karantinadan serbest birakildi",
+        released,
+        tenant_id,
+        operator_id,
+        pre_check=guard,
+        post_verify={"released": released, "still_quarantined": still_quarantined},
+    )
 
 
 async def revalidate_mapping(
@@ -157,36 +173,50 @@ async def revalidate_mapping(
     results = {}
 
     for prov in providers:
-        rooms = await db[COLL_ROOM_MAPPINGS].find(
-            {"tenant_id": tenant_id, "provider": prov}, _NO_ID,
-        ).to_list(500)
-        rates = await db[COLL_RATE_PLAN_MAPPINGS].find(
-            {"tenant_id": tenant_id, "provider": prov}, _NO_ID,
-        ).to_list(500)
+        rooms = (
+            await db[COLL_ROOM_MAPPINGS]
+            .find(
+                {"tenant_id": tenant_id, "provider": prov},
+                _NO_ID,
+            )
+            .to_list(500)
+        )
+        rates = (
+            await db[COLL_RATE_PLAN_MAPPINGS]
+            .find(
+                {"tenant_id": tenant_id, "provider": prov},
+                _NO_ID,
+            )
+            .to_list(500)
+        )
 
         room_issues = []
         for m in rooms:
             code = m.get("provider_room_code", "")
             err = validate_room_mapping(m, code)
             if err:
-                room_issues.append({
-                    "code": code,
-                    "failure_type": err.failure_type.value,
-                    "reason": err.reason,
-                    "action": err.operator_action,
-                })
+                room_issues.append(
+                    {
+                        "code": code,
+                        "failure_type": err.failure_type.value,
+                        "reason": err.reason,
+                        "action": err.operator_action,
+                    }
+                )
 
         rate_issues = []
         for m in rates:
             code = m.get("provider_rate_code", "")
             err = validate_rate_plan_mapping(m, code)
             if err:
-                rate_issues.append({
-                    "code": code,
-                    "failure_type": err.failure_type.value,
-                    "reason": err.reason,
-                    "action": err.operator_action,
-                })
+                rate_issues.append(
+                    {
+                        "code": code,
+                        "failure_type": err.failure_type.value,
+                        "reason": err.reason,
+                        "action": err.operator_action,
+                    }
+                )
 
         results[prov] = {
             "room_total": len(rooms),
@@ -201,14 +231,18 @@ async def revalidate_mapping(
     all_complete = all(r["is_complete"] for r in results.values())
     total_issues = sum(len(r["room_issues"]) + len(r["rate_issues"]) for r in results.values())
 
-    await _log_action(action_id, "revalidate_mapping", tenant_id, operator_id,
-                      total_issues, {"results": {k: {"issues": len(v["room_issues"]) + len(v["rate_issues"])} for k, v in results.items()}})
+    await _log_action(action_id, "revalidate_mapping", tenant_id, operator_id, total_issues, {"results": {k: {"issues": len(v["room_issues"]) + len(v["rate_issues"])} for k, v in results.items()}})
 
-    return _result(action_id, "revalidate_mapping",
-                   "completed" if all_complete else "issues_found",
-                   f"Mapping dogrulama tamamlandi: {'Tum mapping gecerli' if all_complete else f'{total_issues} sorun bulundu'}",
-                   total_issues, tenant_id, operator_id,
-                   post_verify={"by_provider": results, "all_complete": all_complete})
+    return _result(
+        action_id,
+        "revalidate_mapping",
+        "completed" if all_complete else "issues_found",
+        f"Mapping dogrulama tamamlandi: {'Tum mapping gecerli' if all_complete else f'{total_issues} sorun bulundu'}",
+        total_issues,
+        tenant_id,
+        operator_id,
+        post_verify={"by_provider": results, "all_complete": all_complete},
+    )
 
 
 async def suppress_noise(
@@ -245,20 +279,30 @@ async def suppress_noise(
         upsert=True,
     )
 
-    await _log_action(action_id, "suppress_noise", tenant_id, operator_id,
-                      1, {"event_type": event_type, "duration_minutes": duration_minutes})
+    await _log_action(action_id, "suppress_noise", tenant_id, operator_id, 1, {"event_type": event_type, "duration_minutes": duration_minutes})
 
-    return _result(action_id, "suppress_noise", "completed",
-                   f"Bildirimler {duration_minutes} dakika susturuldu"
-                   + (f" (tip: {event_type})" if event_type else " (tum tipler)"),
-                   1, tenant_id, operator_id,
-                   post_verify={"expires_at": expires_at})
+    return _result(
+        action_id,
+        "suppress_noise",
+        "completed",
+        f"Bildirimler {duration_minutes} dakika susturuldu" + (f" (tip: {event_type})" if event_type else " (tum tipler)"),
+        1,
+        tenant_id,
+        operator_id,
+        post_verify={"expires_at": expires_at},
+    )
 
 
 def _result(
-    action_id: str, action_type: str, status: str, message: str,
-    affected: int, tenant_id: str, operator_id: str,
-    pre_check: dict = None, post_verify: dict = None,
+    action_id: str,
+    action_type: str,
+    status: str,
+    message: str,
+    affected: int,
+    tenant_id: str,
+    operator_id: str,
+    pre_check: dict = None,
+    post_verify: dict = None,
 ) -> dict[str, Any]:
     return {
         "action_id": action_id,
@@ -275,15 +319,21 @@ def _result(
 
 
 async def _log_action(
-    action_id: str, action_type: str, tenant_id: str,
-    operator_id: str, affected: int, details: dict,
+    action_id: str,
+    action_type: str,
+    tenant_id: str,
+    operator_id: str,
+    affected: int,
+    details: dict,
 ) -> None:
-    await db[COLL_ACTION_LOG].insert_one({
-        "id": action_id,
-        "action_type": action_type,
-        "tenant_id": tenant_id,
-        "operator_id": operator_id,
-        "affected_count": affected,
-        "details": details,
-        "timestamp": datetime.now(UTC).isoformat(),
-    })
+    await db[COLL_ACTION_LOG].insert_one(
+        {
+            "id": action_id,
+            "action_type": action_type,
+            "tenant_id": tenant_id,
+            "operator_id": operator_id,
+            "affected_count": affected,
+            "details": details,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    )

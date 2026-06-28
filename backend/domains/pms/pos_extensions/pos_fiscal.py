@@ -13,6 +13,7 @@ Mevcut close_order/folio akışı bozulmaz; bu kuyruk POS bilgisini fiscal'a
 asenkron forward eder. Production'da gerçek sürücü olmadan job 'failed'
 döner ve operatör manuel mali fiş kesimi için uyarı alır.
 """
+
 from __future__ import annotations
 
 import os
@@ -39,18 +40,14 @@ router = APIRouter(prefix="/api/pos/ext/fiscal", tags=["pos-ext-fiscal"])
 def _resolve_driver() -> str:
     env = (os.environ.get("ENVIRONMENT") or os.environ.get("SENTRY_ENVIRONMENT") or "").lower()
     is_prod = env in ("production", "prod", "live")
-    allow_sim = (os.environ.get("ALLOW_POS_FISCAL_SIMULATOR", "").lower() in ("1", "true", "yes"))
+    allow_sim = os.environ.get("ALLOW_POS_FISCAL_SIMULATOR", "").lower() in ("1", "true", "yes")
     driver = (os.environ.get("POS_FISCAL_DRIVER") or "").strip().lower()
     if not driver:
         driver = "simulator"
     if driver == "simulator" and is_prod and not allow_sim:
         raise HTTPException(
             status_code=503,
-            detail=(
-                "Fiscal simulator driver disabled in production. "
-                "Configure certified ÖKC driver (POS_FISCAL_DRIVER) or set "
-                "ALLOW_POS_FISCAL_SIMULATOR=true (dev/test only)."
-            ),
+            detail=("Fiscal simulator driver disabled in production. Configure certified ÖKC driver (POS_FISCAL_DRIVER) or set ALLOW_POS_FISCAL_SIMULATOR=true (dev/test only)."),
         )
     return driver
 
@@ -114,9 +111,7 @@ async def _submit(job: dict) -> dict:
 @router.post("/jobs")
 async def enqueue(body: FiscalJobCreate, current_user: User = Depends(get_current_user)):
     # Verify referenced order belongs to this tenant (no mutation).
-    order = await db.pos_orders.find_one(
-        {"id": body.order_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1}
-    )
+    order = await db.pos_orders.find_one({"id": body.order_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found in this tenant")
 
@@ -133,9 +128,7 @@ async def enqueue(body: FiscalJobCreate, current_user: User = Depends(get_curren
         "created_at": _now(),
         "created_by": current_user.id,
     }
-    saved, replayed = await idempotent_insert(
-        db.fiscal_jobs, current_user.tenant_id, body.idempotency_key, job
-    )
+    saved, replayed = await idempotent_insert(db.fiscal_jobs, current_user.tenant_id, body.idempotency_key, job)
     return {"success": True, "job": saved, "idempotent": replayed}
 
 
@@ -157,9 +150,7 @@ async def list_jobs(
 
 @router.get("/jobs/{job_id}")
 async def get_job(job_id: str, current_user: User = Depends(get_current_user)):
-    job = await db.fiscal_jobs.find_one(
-        {"id": job_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    job = await db.fiscal_jobs.find_one({"id": job_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
@@ -167,9 +158,7 @@ async def get_job(job_id: str, current_user: User = Depends(get_current_user)):
 
 @router.post("/jobs/{job_id}/submit")
 async def submit_job(job_id: str, current_user: User = Depends(get_current_user)):
-    job = await db.fiscal_jobs.find_one(
-        {"id": job_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    job = await db.fiscal_jobs.find_one({"id": job_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     if job["status"] in ("submitted", "cancelled"):
@@ -187,9 +176,7 @@ async def submit_job(job_id: str, current_user: User = Depends(get_current_user)
         update["fiscal_no"] = result["fiscal_no"]
     if result.get("z_no"):
         update["z_no"] = result["z_no"]
-    await db.fiscal_jobs.update_one(
-        {"id": job_id, "tenant_id": current_user.tenant_id}, {"$set": update}
-    )
+    await db.fiscal_jobs.update_one({"id": job_id, "tenant_id": current_user.tenant_id}, {"$set": update})
     return {"success": result.get("ok", False), "status": new_status, "result": result}
 
 

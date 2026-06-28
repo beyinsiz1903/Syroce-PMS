@@ -24,6 +24,7 @@ Cift-charge guvenligi (MUTLAK):
   (eski no-show'lar otomatik tahsil edilmez).
 - PII/secret/PAN loglanmaz; yalnizca booking_id + maskeli kart + hata kodu kalir.
 """
+
 from __future__ import annotations
 
 import logging
@@ -96,9 +97,7 @@ def _date_minus(iso_date: str, days: int) -> str:
 async def _resolve_business_date(db, tenant_id: str, business_date: str | None) -> str:
     if business_date:
         return business_date
-    ts = await db.tenant_settings.find_one(
-        {"tenant_id": tenant_id}, {"_id": 0, "business_date": 1}
-    )
+    ts = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "business_date": 1})
     return (ts or {}).get("business_date") or datetime.now(UTC).date().isoformat()
 
 
@@ -142,9 +141,7 @@ async def _posted_no_show_fee(db, tenant_id: str, folio_id: str, booking_id: str
 
 async def _build_candidate(db, tenant_id: str, booking: dict, kind: str) -> dict | None:
     booking_id = booking["id"]
-    card = await db.vcc_cards.find_one(
-        {"booking_id": booking_id, "tenant_id": tenant_id}, {"_id": 0, "id": 1}
-    )
+    card = await db.vcc_cards.find_one({"booking_id": booking_id, "tenant_id": tenant_id}, {"_id": 0, "id": 1})
     if not card:
         # Kasa karti yok -> otonom tahsilat yapilamaz (manuel surece birakilir).
         return None
@@ -182,11 +179,7 @@ async def _build_candidate(db, tenant_id: str, booking: dict, kind: str) -> dict
         if amount_minor <= 0:
             return None  # borc zaten kapatilmis (manuel tahsilat / indirim) -> skip
 
-    currency = (
-        booking.get("currency")
-        or (folio.get("currency") if folio else None)
-        or "TRY"
-    )
+    currency = booking.get("currency") or (folio.get("currency") if folio else None) or "TRY"
     return {
         "kind": kind,
         "booking_id": booking_id,
@@ -240,8 +233,14 @@ async def _gather_candidates(db, tenant_id: str, bd: str) -> list[dict]:
 
 
 async def _mark_booking_done(
-    db, tenant_id: str, booking_id: str, kind: str, status: str,
-    *, payment_id: str | None = None, session=None,
+    db,
+    tenant_id: str,
+    booking_id: str,
+    kind: str,
+    status: str,
+    *,
+    payment_id: str | None = None,
+    session=None,
 ) -> None:
     now_iso = datetime.now(UTC).isoformat()
     setd = {
@@ -251,14 +250,17 @@ async def _mark_booking_done(
     }
     if payment_id:
         setd[f"autocollect_{kind}_payment_id"] = payment_id
-    await db.bookings.update_one(
-        {"id": booking_id, "tenant_id": tenant_id}, {"$set": setd}, session=session
-    )
+    await db.bookings.update_one({"id": booking_id, "tenant_id": tenant_id}, {"$set": setd}, session=session)
 
 
 async def _upsert_job(
-    db, tenant_id: str, cand: dict, fields: dict,
-    *, inc_attempts: bool = False, session=None,
+    db,
+    tenant_id: str,
+    cand: dict,
+    fields: dict,
+    *,
+    inc_attempts: bool = False,
+    session=None,
 ) -> dict:
     now_iso = datetime.now(UTC).isoformat()
     update = {
@@ -316,38 +318,61 @@ async def _process_candidate(db, tenant_id: str, provider, cand: dict, summary: 
         st = guard.get("status")
         if st == "completed":
             # Temiz basari (marker yazimi eski surumde kacmis olabilir): self-heal.
-            await _mark_booking_done(db, tenant_id, booking_id, kind, "collected",
-                                     payment_id=guard.get("payment_id"))
-            await _upsert_job(db, tenant_id, cand, {
-                "status": "succeeded", "resolved": True,
-                "payment_id": guard.get("payment_id"),
-                "last_error_code": None, "last_error_message": None,
-            })
+            await _mark_booking_done(db, tenant_id, booking_id, kind, "collected", payment_id=guard.get("payment_id"))
+            await _upsert_job(
+                db,
+                tenant_id,
+                cand,
+                {
+                    "status": "succeeded",
+                    "resolved": True,
+                    "payment_id": guard.get("payment_id"),
+                    "last_error_code": None,
+                    "last_error_message": None,
+                },
+            )
         else:
             # pending / requires_action / unknown / completed_unrecorded -> reconcile.
-            await _upsert_job(db, tenant_id, cand, {
-                "status": "reconcile", "resolved": False,
-                "last_error_code": st, "last_error_message": None,
-            })
+            await _upsert_job(
+                db,
+                tenant_id,
+                cand,
+                {
+                    "status": "reconcile",
+                    "resolved": False,
+                    "last_error_code": st,
+                    "last_error_message": None,
+                },
+            )
         summary["skipped"] += 1
         return
 
-    payment_type = (
-        PaymentType.PREPAYMENT.value
-        if kind == CHARGE_KIND_VCC_CHECKIN
-        else PaymentType.FINAL.value
-    )
+    payment_type = PaymentType.PREPAYMENT.value if kind == CHARGE_KIND_VCC_CHECKIN else PaymentType.FINAL.value
 
     async def _on_success(session, ctx):
         await _mark_booking_done(
-            db, tenant_id, booking_id, kind, "collected",
-            payment_id=ctx["payment_id"], session=session,
+            db,
+            tenant_id,
+            booking_id,
+            kind,
+            "collected",
+            payment_id=ctx["payment_id"],
+            session=session,
         )
-        await _upsert_job(db, tenant_id, cand, {
-            "status": "succeeded", "resolved": True,
-            "payment_id": ctx["payment_id"], "provider_ref": ctx["provider_ref"],
-            "last_error_code": None, "last_error_message": None,
-        }, session=session)
+        await _upsert_job(
+            db,
+            tenant_id,
+            cand,
+            {
+                "status": "succeeded",
+                "resolved": True,
+                "payment_id": ctx["payment_id"],
+                "provider_ref": ctx["provider_ref"],
+                "last_error_code": None,
+                "last_error_message": None,
+            },
+            session=session,
+        )
 
     outcome = await collect_booking_payment(
         db,
@@ -393,32 +418,53 @@ async def _apply_outcome(db, tenant_id: str, cand: dict, outcome, summary: dict)
 
     if st == "requires_action":
         # 3DS otonom tamamlanamaz: operator kuyruguna sur, marker SET ETME.
-        await _upsert_job(db, tenant_id, cand, {
-            "status": "requires_action", "resolved": False,
-            "last_error_code": "requires_action", "last_error_message": None,
-        })
+        await _upsert_job(
+            db,
+            tenant_id,
+            cand,
+            {
+                "status": "requires_action",
+                "resolved": False,
+                "last_error_code": "requires_action",
+                "last_error_message": None,
+            },
+        )
         summary["requires_action"] += 1
         return
 
     if st == "paid_unrecorded":
         # Para alindi, kayit yazilamadi -> booking'i charge edilmis say (re-charge YOK),
         # operator kuyruguna 'unrecorded' olarak sur (reconcile gerekir).
-        await _mark_booking_done(db, tenant_id, booking_id, kind, "unrecorded",
-                                 payment_id=outcome.payment_id)
-        await _upsert_job(db, tenant_id, cand, {
-            "status": "unrecorded", "resolved": False,
-            "payment_id": outcome.payment_id, "provider_ref": outcome.provider_ref,
-            "last_error_code": "record_failed", "last_error_message": None,
-        })
+        await _mark_booking_done(db, tenant_id, booking_id, kind, "unrecorded", payment_id=outcome.payment_id)
+        await _upsert_job(
+            db,
+            tenant_id,
+            cand,
+            {
+                "status": "unrecorded",
+                "resolved": False,
+                "payment_id": outcome.payment_id,
+                "provider_ref": outcome.provider_ref,
+                "last_error_code": "record_failed",
+                "last_error_message": None,
+            },
+        )
         summary["unrecorded"] += 1
         return
 
     # failed / unknown / not_configured -> operator kuyruguna (sahte basari YOK).
-    job = await _upsert_job(db, tenant_id, cand, {
-        "status": st, "resolved": False,
-        "last_error_code": outcome.error_code,
-        "last_error_message": _sanitize_error(outcome.error_message),
-    }, inc_attempts=True)
+    job = await _upsert_job(
+        db,
+        tenant_id,
+        cand,
+        {
+            "status": st,
+            "resolved": False,
+            "last_error_code": outcome.error_code,
+            "last_error_message": _sanitize_error(outcome.error_message),
+        },
+        inc_attempts=True,
+    )
     if int(job.get("attempts", 1)) >= _max_attempts():
         # Otomatik deneme spam'lemesin: marker=abandoned (scan'den dusur); job
         # operator icin acik kalir.
@@ -430,7 +476,10 @@ async def _apply_outcome(db, tenant_id: str, cand: dict, outcome, summary: dict)
 
 
 async def run_autonomous_collection(
-    db, tenant_id: str, *, business_date: str | None = None,
+    db,
+    tenant_id: str,
+    *,
+    business_date: str | None = None,
 ) -> dict:
     """Bir kiraci icin otonom tahsilat dongusunu kosar (idempotent, fail-closed).
 
@@ -440,9 +489,15 @@ async def run_autonomous_collection(
     """
     bd = await _resolve_business_date(db, tenant_id, business_date)
     summary = {
-        "tenant_id": tenant_id, "business_date": bd, "scanned": 0,
-        "charged": 0, "failed": 0, "skipped": 0,
-        "requires_action": 0, "unrecorded": 0, "not_configured": 0,
+        "tenant_id": tenant_id,
+        "business_date": bd,
+        "scanned": 0,
+        "charged": 0,
+        "failed": 0,
+        "skipped": 0,
+        "requires_action": 0,
+        "unrecorded": 0,
+        "not_configured": 0,
     }
 
     await _ensure_indexes(db)
@@ -457,10 +512,18 @@ async def run_autonomous_collection(
         provider = await get_provider_for_tenant(db, tenant_id)
     except PaymentError as pe:
         for cand in candidates:
-            await _upsert_job(db, tenant_id, cand, {
-                "status": "not_configured", "resolved": False,
-                "last_error_code": pe.error_code, "last_error_message": None,
-            }, inc_attempts=True)
+            await _upsert_job(
+                db,
+                tenant_id,
+                cand,
+                {
+                    "status": "not_configured",
+                    "resolved": False,
+                    "last_error_code": pe.error_code,
+                    "last_error_message": None,
+                },
+                inc_attempts=True,
+            )
             summary["not_configured"] += 1
         return summary
 

@@ -16,6 +16,7 @@ POS → folio deseni (core.pos_folio_consumer) birebir takip edilir; tek fark
 tüketici asenkron outbox yerine personel-tetikli senkron akış olmasıdır
 (personel anında "yazıldı / late-charge'a düştü" geri bildirimi alır).
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -36,7 +37,12 @@ router = APIRouter(prefix="/api/minibar", tags=["PMS / Minibar"])
 
 # Tüketim girebilen roller (housekeeping minibar tüketimini tipik olarak girer).
 _CONSUME_ROLES = {
-    "super_admin", "admin", "supervisor", "front_desk", "housekeeping", "staff",
+    "super_admin",
+    "admin",
+    "supervisor",
+    "front_desk",
+    "housekeeping",
+    "staff",
 }
 # Katalog (minibar ürünleri) yönetimi yönetici seviyesi.
 _CATALOG_ROLES = {"super_admin", "admin", "supervisor"}
@@ -110,11 +116,13 @@ async def _ensure_minibar_consumption_index() -> None:
 
 async def _find_active_booking(tenant_id: str, room_id: str) -> dict | None:
     """Odadaki aktif rezervasyonu bulur (check-in yapmış misafir)."""
-    return await db.bookings.find_one({
-        "tenant_id": tenant_id,
-        "room_id": room_id,
-        "status": {"$in": ["checked_in", "in_house"]},
-    })
+    return await db.bookings.find_one(
+        {
+            "tenant_id": tenant_id,
+            "room_id": room_id,
+            "status": {"$in": ["checked_in", "in_house"]},
+        }
+    )
 
 
 def _serialize(doc: dict | None) -> dict | None:
@@ -261,11 +269,13 @@ async def _deplete_stock_best_effort(
         return {"status": "skipped", "reason": "no_inventory_link"}
 
     # Idempotent guard: bu (log, satır) için hareket zaten yazıldıysa atla.
-    existing = await db.inventory_movements.find_one({
-        "tenant_id": tenant_id,
-        "source_minibar_log_id": source_log_id,
-        "line_no": line_no,
-    })
+    existing = await db.inventory_movements.find_one(
+        {
+            "tenant_id": tenant_id,
+            "source_minibar_log_id": source_log_id,
+            "line_no": line_no,
+        }
+    )
     if existing:
         return {"status": "already_applied"}
 
@@ -273,16 +283,19 @@ async def _deplete_stock_best_effort(
     if not product:
         logger.warning(
             "Minibar stok düşümü: envanter ürünü yok product=%s tenant=%s",
-            product_id, tenant_id,
+            product_id,
+            tenant_id,
         )
         return {"status": "product_not_found"}
 
     current_qty = product.get("quantity", 0)
     if current_qty < quantity:
         logger.warning(
-            "Minibar stok yetersiz product=%s mevcut=%s istenen=%s tenant=%s "
-            "(faturalama sürüyor)",
-            product_id, current_qty, quantity, tenant_id,
+            "Minibar stok yetersiz product=%s mevcut=%s istenen=%s tenant=%s (faturalama sürüyor)",
+            product_id,
+            current_qty,
+            quantity,
+            tenant_id,
         )
         return {"status": "insufficient_stock", "available": current_qty}
 
@@ -294,25 +307,28 @@ async def _deplete_stock_best_effort(
     if res.modified_count == 0:
         logger.warning(
             "Minibar stok eşzamanlı değişti product=%s tenant=%s (faturalama sürüyor)",
-            product_id, tenant_id,
+            product_id,
+            tenant_id,
         )
         return {"status": "concurrent_modification"}
 
-    await db.inventory_movements.insert_one({
-        "id": str(uuid.uuid4()),
-        "tenant_id": tenant_id,
-        "product_id": product_id,
-        "product_name": product.get("product_name", item.get("name", "Minibar")),
-        "movement_type": "out",
-        "quantity": -quantity,
-        "previous_quantity": current_qty,
-        "new_quantity": new_qty,
-        "reason": "minibar_consumption",
-        "source_minibar_log_id": source_log_id,
-        "line_no": line_no,
-        "performed_by": actor,
-        "timestamp": _now_iso(),
-    })
+    await db.inventory_movements.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "product_id": product_id,
+            "product_name": product.get("product_name", item.get("name", "Minibar")),
+            "movement_type": "out",
+            "quantity": -quantity,
+            "previous_quantity": current_qty,
+            "new_quantity": new_qty,
+            "reason": "minibar_consumption",
+            "source_minibar_log_id": source_log_id,
+            "line_no": line_no,
+            "performed_by": actor,
+            "timestamp": _now_iso(),
+        }
+    )
     return {"status": "depleted", "new_quantity": new_qty}
 
 
@@ -349,9 +365,7 @@ async def consume(
 
     # Ürünleri çöz + satır toplamlarını hesapla.
     item_ids = list({ln.item_id for ln in payload.lines})
-    items = await db.minibar_items.find(
-        {"id": {"$in": item_ids}, "tenant_id": tenant_id}, {"_id": 0}
-    ).to_list(1000)
+    items = await db.minibar_items.find({"id": {"$in": item_ids}, "tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
     items_by_id = {it["id"]: it for it in items}
     missing = [i for i in item_ids if i not in items_by_id]
     if missing:
@@ -361,11 +375,7 @@ async def consume(
     # Deterministik log_id: idempotency_key varsa (tenant,key) -> sabit log_id.
     # Retry/kısmi-başarı sonrasında aynı source_minibar_log_id yeniden kullanılır,
     # böylece folio_charges dedup index'i çift faturalamayı kesin kapatır.
-    log_id = (
-        _stable_log_id(tenant_id, payload.idempotency_key)
-        if payload.idempotency_key
-        else str(uuid.uuid4())
-    )
+    log_id = _stable_log_id(tenant_id, payload.idempotency_key) if payload.idempotency_key else str(uuid.uuid4())
 
     log_lines = []
     grand_total = 0.0
@@ -374,22 +384,22 @@ async def consume(
         unit_price = round(float(it.get("price", 0)), 2)
         line_total = round(unit_price * ln.quantity, 2)
         grand_total += line_total
-        log_lines.append({
-            "line_no": idx,
-            "item_id": it["id"],
-            "item_name": it.get("name", "Minibar"),
-            "category": it.get("category"),
-            "quantity": ln.quantity,
-            "unit_price": unit_price,
-            "total": line_total,
-            "inventory_product_id": it.get("inventory_product_id"),
-        })
+        log_lines.append(
+            {
+                "line_no": idx,
+                "item_id": it["id"],
+                "item_name": it.get("name", "Minibar"),
+                "category": it.get("category"),
+                "quantity": ln.quantity,
+                "unit_price": unit_price,
+                "total": line_total,
+                "inventory_product_id": it.get("inventory_product_id"),
+            }
+        )
     grand_total = round(grand_total, 2)
 
     # Folio çöz: açık guest folio → faturala; değilse late-charge.
-    open_folio = await db.folios.find_one(
-        {"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": tenant_id}
-    )
+    open_folio = await db.folios.find_one({"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": tenant_id})
 
     # Idempotency indeksleri (fail-closed) — yoksa çift-post riski.
     try:
@@ -454,12 +464,14 @@ async def consume(
                 continue
         balance = await _recalc_folio_balance(db, tenant_id, folio_id)
         posted_to_folio = True
-        consumption_doc.update({
-            "folio_id": folio_id,
-            "status": "posted",
-            "charge_ids": charge_ids,
-            "folio_balance": balance,
-        })
+        consumption_doc.update(
+            {
+                "folio_id": folio_id,
+                "status": "posted",
+                "charge_ids": charge_ids,
+                "folio_balance": balance,
+            }
+        )
     else:
         # Folio açık değil → sessizce kapalı folio'ya yazma; late-charge'a yönlendir.
         any_folio = await db.folios.find_one(
@@ -488,14 +500,18 @@ async def consume(
             upsert=True,
         )
         logger.warning(
-            "Minibar late-charge: booking=%s oda=%s folio açık değil → AR/late-charge "
-            "(total=%s tenant=%s)",
-            booking_id, payload.room_id, grand_total, tenant_id,
+            "Minibar late-charge: booking=%s oda=%s folio açık değil → AR/late-charge (total=%s tenant=%s)",
+            booking_id,
+            payload.room_id,
+            grand_total,
+            tenant_id,
         )
-        consumption_doc.update({
-            "folio_id": any_folio.get("id") if any_folio else None,
-            "status": "late_charge",
-        })
+        consumption_doc.update(
+            {
+                "folio_id": any_folio.get("id") if any_folio else None,
+                "status": "late_charge",
+            }
+        )
 
     # Tüketim logunu yaz. (tenant_id, idempotency_key) partial-unique → eşzamanlı
     # iki istek (üst prior-check'i ikisi de geçtiyse) burada DB tarafından ayrılır:
@@ -521,13 +537,9 @@ async def consume(
     for ln in log_lines:
         it = items_by_id[ln["item_id"]]
         try:
-            r = await _deplete_stock_best_effort(
-                tenant_id, actor, it, ln["quantity"], log_id, ln["line_no"]
-            )
+            r = await _deplete_stock_best_effort(tenant_id, actor, it, ln["quantity"], log_id, ln["line_no"])
         except Exception:  # noqa: BLE001 — stok hatası faturalamayı bozmaz
-            logger.exception(
-                "Minibar stok düşümü hata item=%s tenant=%s", ln["item_id"], tenant_id
-            )
+            logger.exception("Minibar stok düşümü hata item=%s tenant=%s", ln["item_id"], tenant_id)
             r = {"status": "error"}
         stock_results.append({"item_id": ln["item_id"], **r})
 

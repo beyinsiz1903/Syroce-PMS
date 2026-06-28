@@ -16,6 +16,7 @@ Cooldown / Deduplication:
   - State-change events fire only on actual transitions (not repeated states)
   - Spike events use threshold + cooldown combo
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -138,12 +139,14 @@ async def emit_event(
     cooldown = config["cooldown_seconds"]
     if cooldown > 0:
         cutoff = (now - timedelta(seconds=cooldown)).isoformat()
-        recent = await db[COLL_NOTIFICATION_EVENTS].find_one({
-            "tenant_id": tenant_id,
-            "event_type": event_type,
-            "provider": provider,
-            "timestamp": {"$gte": cutoff},
-        })
+        recent = await db[COLL_NOTIFICATION_EVENTS].find_one(
+            {
+                "tenant_id": tenant_id,
+                "event_type": event_type,
+                "provider": provider,
+                "timestamp": {"$gte": cutoff},
+            }
+        )
         if recent:
             return None  # suppressed by cooldown
 
@@ -173,10 +176,7 @@ async def emit_event(
     if config["severity"] in (EventSeverity.CRITICAL, EventSeverity.BLOCKER):
         await _dispatch_to_slack(tenant_id, event)
 
-    logger.info(
-        f"Event emitted: [{config['severity'].upper()}] {event_type} "
-        f"tenant={tenant_id} provider={provider}"
-    )
+    logger.info(f"Event emitted: [{config['severity'].upper()}] {event_type} tenant={tenant_id} provider={provider}")
     return {k: v for k, v in event.items() if k != "_id"}
 
 
@@ -193,10 +193,12 @@ async def _set_state(tenant_id: str, event_type: str, provider: str) -> None:
     """Set the current state for state-change tracking."""
     await db[COLL_NOTIFICATION_STATE].update_one(
         {"tenant_id": tenant_id, "state_key": event_type, "provider": provider},
-        {"$set": {
-            "last_event_type": event_type,
-            "updated_at": datetime.now(UTC).isoformat(),
-        }},
+        {
+            "$set": {
+                "last_event_type": event_type,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+        },
         upsert=True,
     )
 
@@ -205,13 +207,17 @@ async def _dispatch_to_slack(tenant_id: str, event: dict[str, Any]) -> None:
     """Forward high-severity events to Slack via existing dispatch."""
     try:
         from domains.channel_manager.monitoring.alert_dispatch import dispatch_alert
-        await dispatch_alert({
-            "title": event["description"],
-            "severity": "critical" if event["severity"] == EventSeverity.BLOCKER else event["severity"],
-            "alert_type": event["event_type"],
-            "provider": event.get("provider", "system"),
-            "details": str(event.get("details", "")),
-        }, tenant_id)
+
+        await dispatch_alert(
+            {
+                "title": event["description"],
+                "severity": "critical" if event["severity"] == EventSeverity.BLOCKER else event["severity"],
+                "alert_type": event["event_type"],
+                "provider": event.get("provider", "system"),
+                "details": str(event.get("details", "")),
+            },
+            tenant_id,
+        )
     except Exception as e:
         logger.warning(f"Slack dispatch failed for event {event['event_type']}: {e}")
 
@@ -237,17 +243,21 @@ async def evaluate_tenant_readiness(tenant_id: str, property_id: str = "default"
 
         if health.get("is_production_ready"):
             evt = await emit_event(
-                tenant_id, EventType.MAPPING_COMPLETENESS_100,
+                tenant_id,
+                EventType.MAPPING_COMPLETENESS_100,
                 details={"provider": provider, "completeness": health.get("completeness_pct", 100)},
-                provider=provider, property_id=property_id,
+                provider=provider,
+                property_id=property_id,
             )
             if evt:
                 events_emitted.append(evt)
         elif health.get("broken_count", 0) > 0:
             evt = await emit_event(
-                tenant_id, EventType.MAPPING_BROKEN_DETECTED,
+                tenant_id,
+                EventType.MAPPING_BROKEN_DETECTED,
                 details={"provider": provider, "broken_count": health.get("broken_count", 0)},
-                provider=provider, property_id=property_id,
+                provider=provider,
+                property_id=property_id,
             )
             if evt:
                 events_emitted.append(evt)
@@ -256,14 +266,17 @@ async def evaluate_tenant_readiness(tenant_id: str, property_id: str = "default"
     hf_stats = await get_hard_fail_stats(tenant_id)
     if hf_stats["hard_fail_change_sets"] == 0 and hf_stats["hard_fails_last_24h"] == 0:
         evt = await emit_event(
-            tenant_id, EventType.HARD_FAIL_CLEARED,
-            details=hf_stats, property_id=property_id,
+            tenant_id,
+            EventType.HARD_FAIL_CLEARED,
+            details=hf_stats,
+            property_id=property_id,
         )
         if evt:
             events_emitted.append(evt)
     elif hf_stats["hard_fails_last_24h"] > 5:
         evt = await emit_event(
-            tenant_id, EventType.HARD_FAIL_SPIKE,
+            tenant_id,
+            EventType.HARD_FAIL_SPIKE,
             details={"count_24h": hf_stats["hard_fails_last_24h"]},
             property_id=property_id,
         )
@@ -274,7 +287,8 @@ async def evaluate_tenant_readiness(tenant_id: str, property_id: str = "default"
     ah_stats = await get_auto_heal_stats(tenant_id)
     if ah_stats["total_failed"] > 3:
         evt = await emit_event(
-            tenant_id, EventType.AUTO_HEAL_FAILURE_SPIKE,
+            tenant_id,
+            EventType.AUTO_HEAL_FAILURE_SPIKE,
             details={"total_failed": ah_stats["total_failed"]},
             property_id=property_id,
         )
@@ -286,7 +300,8 @@ async def evaluate_tenant_readiness(tenant_id: str, property_id: str = "default"
     metrics = worker.metrics.to_dict()
     if metrics["verify_fail_count"] > 5 and metrics["verify_success_ratio"] < 0.8:
         evt = await emit_event(
-            tenant_id, EventType.VERIFY_FAILURE_SPIKE,
+            tenant_id,
+            EventType.VERIFY_FAILURE_SPIKE,
             details={
                 "verify_fail_count": metrics["verify_fail_count"],
                 "verify_success_ratio": metrics["verify_success_ratio"],
@@ -297,7 +312,8 @@ async def evaluate_tenant_readiness(tenant_id: str, property_id: str = "default"
             events_emitted.append(evt)
     elif metrics["verify_success_count"] > 0 and metrics["verify_fail_count"] == 0:
         evt = await emit_event(
-            tenant_id, EventType.FIRST_SUCCESSFUL_VERIFY,
+            tenant_id,
+            EventType.FIRST_SUCCESSFUL_VERIFY,
             details={"verify_success_count": metrics["verify_success_count"]},
             property_id=property_id,
         )
@@ -305,14 +321,12 @@ async def evaluate_tenant_readiness(tenant_id: str, property_id: str = "default"
             events_emitted.append(evt)
 
     # 5. Overall readiness (READY / NOT READY transition)
-    is_ready = (
-        hf_stats["hard_fail_change_sets"] == 0
-        and hf_stats["open_hard_fail_incidents"] == 0
-    )
+    is_ready = hf_stats["hard_fail_change_sets"] == 0 and hf_stats["open_hard_fail_incidents"] == 0
 
     if is_ready:
         evt = await emit_event(
-            tenant_id, EventType.TENANT_BECAME_READY,
+            tenant_id,
+            EventType.TENANT_BECAME_READY,
             details={"hard_fail_stats": hf_stats},
             property_id=property_id,
         )
@@ -320,7 +334,8 @@ async def evaluate_tenant_readiness(tenant_id: str, property_id: str = "default"
             events_emitted.append(evt)
     else:
         evt = await emit_event(
-            tenant_id, EventType.TENANT_FELL_OUT_OF_READY,
+            tenant_id,
+            EventType.TENANT_FELL_OUT_OF_READY,
             details={
                 "hard_fail_change_sets": hf_stats["hard_fail_change_sets"],
                 "open_incidents": hf_stats["open_hard_fail_incidents"],
@@ -352,20 +367,30 @@ async def get_event_history(
     if event_type:
         query["event_type"] = event_type
 
-    return await db[COLL_NOTIFICATION_EVENTS].find(
-        query, _NO_ID,
-    ).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+    return (
+        await db[COLL_NOTIFICATION_EVENTS]
+        .find(
+            query,
+            _NO_ID,
+        )
+        .sort("timestamp", -1)
+        .skip(skip)
+        .limit(limit)
+        .to_list(limit)
+    )
 
 
 async def get_event_summary(tenant_id: str) -> dict[str, Any]:
     """Summary of notification events for dashboard."""
     pipeline = [
         {"$match": {"tenant_id": tenant_id}},
-        {"$group": {
-            "_id": {"severity": "$severity", "event_type": "$event_type"},
-            "count": {"$sum": 1},
-            "last_at": {"$max": "$timestamp"},
-        }},
+        {
+            "$group": {
+                "_id": {"severity": "$severity", "event_type": "$event_type"},
+                "count": {"$sum": 1},
+                "last_at": {"$max": "$timestamp"},
+            }
+        },
     ]
     by_severity: dict[str, int] = {}
     by_type: dict[str, int] = {}
@@ -381,10 +406,12 @@ async def get_event_summary(tenant_id: str) -> dict[str, Any]:
 
     # Last 24h count
     since = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
-    recent = await db[COLL_NOTIFICATION_EVENTS].count_documents({
-        "tenant_id": tenant_id,
-        "timestamp": {"$gte": since},
-    })
+    recent = await db[COLL_NOTIFICATION_EVENTS].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "timestamp": {"$gte": since},
+        }
+    )
 
     return {
         "total_events": total,

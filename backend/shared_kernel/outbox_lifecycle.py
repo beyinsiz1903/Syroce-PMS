@@ -119,7 +119,9 @@ class OutboxLifecycleWorker:
                     raise
                 except Exception as e:
                     _transient_tracker.log_exception(
-                        logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                        logger,
+                        e,
+                        TransientFailureTracker.OUTER_LOOP_KEY,
                         context="loop tick",
                         non_transient_msg="%s loop error: %s",
                     )
@@ -177,14 +179,19 @@ class OutboxLifecycleWorker:
 
     async def recover_stuck_processing(self, *, limit: int = 5) -> int:
         cutoff = _iso(utc_now() - timedelta(seconds=self.processing_timeout_seconds))
-        stuck_events = await get_system_db().outbox_events.find(
-            {
-                "event_type": {"$in": MIGRATION_EVENT_TYPES},
-                "status": "processing",
-                "processing_started_at": {"$lte": cutoff},
-            },
-            {"_id": 0},
-        ).sort("processing_started_at", 1).to_list(limit)
+        stuck_events = (
+            await get_system_db()
+            .outbox_events.find(
+                {
+                    "event_type": {"$in": MIGRATION_EVENT_TYPES},
+                    "status": "processing",
+                    "processing_started_at": {"$lte": cutoff},
+                },
+                {"_id": 0},
+            )
+            .sort("processing_started_at", 1)
+            .to_list(limit)
+        )
 
         recovered = 0
         for event in stuck_events:

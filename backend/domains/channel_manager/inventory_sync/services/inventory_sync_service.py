@@ -2,6 +2,7 @@
 Channel Manager Domain — Inventory Sync Service
 Business logic for channel inventory synchronization. No FastAPI dependencies.
 """
+
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -20,7 +21,9 @@ class InventorySyncService:
 
     @staticmethod
     async def create_connection(
-        tenant_id: str, channel: str, credentials: dict[str, Any],
+        tenant_id: str,
+        channel: str,
+        credentials: dict[str, Any],
         room_mappings: list[dict] | None = None,
     ) -> dict[str, Any]:
         connection = {
@@ -39,7 +42,8 @@ class InventorySyncService:
 
     @staticmethod
     async def sync_availability(
-        tenant_id: str, connection_id: str,
+        tenant_id: str,
+        connection_id: str,
         availability_data: dict[str, Any],
     ) -> dict[str, Any]:
         """Push availability update to an OTA channel."""
@@ -60,16 +64,19 @@ class InventorySyncService:
         await InventorySyncRepository.log_sync(sync_log)
 
         # Update last_sync on connection
-        await InventorySyncRepository.upsert_connection({
-            **connection,
-            "last_sync": datetime.now(UTC).isoformat(),
-        })
+        await InventorySyncRepository.upsert_connection(
+            {
+                **connection,
+                "last_sync": datetime.now(UTC).isoformat(),
+            }
+        )
 
         return sync_log
 
     @staticmethod
     async def sync_rates(
-        tenant_id: str, connection_id: str,
+        tenant_id: str,
+        connection_id: str,
         rate_data: dict[str, Any],
     ) -> dict[str, Any]:
         """Push rate update to an OTA channel."""
@@ -90,8 +97,13 @@ class InventorySyncService:
 
     @staticmethod
     async def get_sync_history(
-        tenant_id: str, *, limit: int = 50, channel: str | None = None,
+        tenant_id: str,
+        *,
+        limit: int = 50,
+        channel: str | None = None,
     ) -> list[dict[str, Any]]:
         return await InventorySyncRepository.get_sync_logs(
-            tenant_id, limit=limit, channel=channel,
+            tenant_id,
+            limit=limit,
+            channel=channel,
         )

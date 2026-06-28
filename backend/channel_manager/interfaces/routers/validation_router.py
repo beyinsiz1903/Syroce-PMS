@@ -2,6 +2,7 @@
 Enhanced Sandbox Validation Router + Mapping Completeness + Rate Push Tracking +
 Health Trend Analytics + WebSocket endpoints.
 """
+
 import logging
 
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
@@ -23,6 +24,7 @@ router = APIRouter(tags=["CM Validation & Analytics"])
 
 # ─── Enhanced Sandbox Validation ──────────────────────────────────────
 
+
 @router.post("/validation/sandbox/{connector_id}")
 async def run_sandbox_validation(
     connector_id: str,
@@ -32,11 +34,14 @@ async def run_sandbox_validation(
     """Run full HotelRunner sandbox validation and produce integration readiness report."""
     svc = SandboxValidationService()
     return await svc.run_validation(
-        current_user.tenant_id, connector_id, actor_id=current_user.id,
+        current_user.tenant_id,
+        connector_id,
+        actor_id=current_user.id,
     )
 
 
 # ─── Mapping Completeness ────────────────────────────────────────────
+
 
 @router.get("/mapping-completeness/{connector_id}")
 async def get_mapping_completeness(
@@ -70,6 +75,7 @@ async def check_import_gate(
 
 # ─── Rate Push Tracking ─────────────────────────────────────────────
 
+
 @router.get("/rate-push-metrics/{connector_id}")
 async def get_rate_push_metrics(
     connector_id: str,
@@ -82,6 +88,7 @@ async def get_rate_push_metrics(
 
 
 # ─── Health Trend Analytics ──────────────────────────────────────────
+
 
 @router.get("/health-trend/{connector_id}/daily")
 async def get_daily_health_trend(
@@ -116,6 +123,7 @@ async def get_health_trend_summary(
 
 
 # ─── WebSocket Endpoint ─────────────────────────────────────────────
+
 
 @router.websocket("/ws/admin-updates")
 async def websocket_admin_updates(websocket: WebSocket):

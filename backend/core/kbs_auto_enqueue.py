@@ -7,6 +7,7 @@ PMS akışını bloklamamalıdır.
 Aynı (booking_id, action) için pending/in_progress iş varsa yeni iş
 açmaz (idempotent).
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,9 +32,16 @@ async def _build_payload_snapshot(tenant_id: str, booking_id: str) -> dict:
     booking = await db.bookings.find_one(
         {"tenant_id": tenant_id, "id": booking_id},
         {
-            "_id": 0, "id": 1, "guest_id": 1, "guest_name": 1,
-            "guest_email": 1, "guest_phone": 1, "room_number": 1,
-            "check_in": 1, "check_out": 1, "guest_nationality": 1,
+            "_id": 0,
+            "id": 1,
+            "guest_id": 1,
+            "guest_name": 1,
+            "guest_email": 1,
+            "guest_phone": 1,
+            "room_number": 1,
+            "check_in": 1,
+            "check_out": 1,
+            "guest_nationality": 1,
         },
     )
     if not booking:
@@ -42,23 +50,34 @@ async def _build_payload_snapshot(tenant_id: str, booking_id: str) -> dict:
     guest: dict = {}
     if booking.get("guest_id"):
         from security.encrypted_lookup import decrypt_guest_doc
-        guest = decrypt_guest_doc(await db.guests.find_one(
-            {"tenant_id": tenant_id, "id": booking["guest_id"]},
-            {
-                "_id": 0, "nationality": 1, "id_number": 1,
-                "passport_number": 1, "birth_date": 1, "gender": 1,
-                "address": 1, "father_name": 1, "mother_name": 1,
-                "birth_place": 1,
-            },
-        )) or {}
+
+        guest = (
+            decrypt_guest_doc(
+                await db.guests.find_one(
+                    {"tenant_id": tenant_id, "id": booking["guest_id"]},
+                    {
+                        "_id": 0,
+                        "nationality": 1,
+                        "id_number": 1,
+                        "passport_number": 1,
+                        "birth_date": 1,
+                        "gender": 1,
+                        "address": 1,
+                        "father_name": 1,
+                        "mother_name": 1,
+                        "birth_place": 1,
+                    },
+                )
+            )
+            or {}
+        )
 
     return {
         "guest_name": booking.get("guest_name", ""),
         "room_number": booking.get("room_number", ""),
         "check_in": booking.get("check_in", ""),
         "check_out": booking.get("check_out", ""),
-        "nationality": guest.get("nationality")
-            or booking.get("guest_nationality") or "TC",
+        "nationality": guest.get("nationality") or booking.get("guest_nationality") or "TC",
         "id_number": guest.get("id_number", ""),
         "passport_number": guest.get("passport_number", ""),
         "birth_date": guest.get("birth_date", ""),
@@ -103,7 +122,8 @@ async def auto_enqueue_kbs(
         if existing:
             logger.info(
                 "KBS auto-enqueue skipped (already queued): booking=%s action=%s",
-                booking_id, action,
+                booking_id,
+                action,
             )
             return existing
 
@@ -117,21 +137,24 @@ async def auto_enqueue_kbs(
 
         ok, missing = validate_kbs_payload(snapshot)
         if not ok:
-            await db.kbs_alerts.insert_one({
-                "id": str(uuid.uuid4()),
-                "tenant_id": tenant_id,
-                "kind": "missing_data",
-                "booking_id": booking_id,
-                "action": action,
-                "missing_fields": missing,
-                "guest_name": snapshot.get("guest_name", ""),
-                "room_number": snapshot.get("room_number", ""),
-                "created_at": _now_iso(),
-                "acknowledged": False,
-            })
+            await db.kbs_alerts.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "kind": "missing_data",
+                    "booking_id": booking_id,
+                    "action": action,
+                    "missing_fields": missing,
+                    "guest_name": snapshot.get("guest_name", ""),
+                    "room_number": snapshot.get("room_number", ""),
+                    "created_at": _now_iso(),
+                    "acknowledged": False,
+                }
+            )
             logger.warning(
                 "KBS auto-enqueue blocked (missing fields): booking=%s missing=%s",
-                booking_id, missing,
+                booking_id,
+                missing,
             )
             return None
 
@@ -199,18 +222,23 @@ async def auto_enqueue_kbs(
                 if existing2:
                     logger.info(
                         "KBS auto-enqueue race resolved (existing job): booking=%s action=%s",
-                        booking_id, action,
+                        booking_id,
+                        action,
                     )
                     return existing2
             raise
         logger.info(
             "KBS auto-enqueue ok: booking=%s action=%s job=%s",
-            booking_id, action, job["id"],
+            booking_id,
+            action,
+            job["id"],
         )
         return job
     except Exception as e:
         logger.warning(
             "KBS auto-enqueue failed (non-blocking): booking=%s action=%s err=%s",
-            booking_id, action, e,
+            booking_id,
+            action,
+            e,
         )
         return None

@@ -6,6 +6,7 @@ Pure CRUD over `hotelrunner_room_mappings` collection. No provider HTTP egress.
 Mounted under the main `/api/channel-manager/hotelrunner` prefix by the
 parent router.
 """
+
 import uuid
 from datetime import UTC, datetime
 
@@ -28,23 +29,27 @@ async def create_room_mapping(
     _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Create a PMS <> HotelRunner room mapping."""
-    existing = await db.hotelrunner_room_mappings.find_one({
-        "tenant_id": current_user.tenant_id,
-        "hr_inv_code": payload.hr_inv_code,
-        "hr_rate_code": payload.hr_rate_code,
-    })
+    existing = await db.hotelrunner_room_mappings.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "hr_inv_code": payload.hr_inv_code,
+            "hr_rate_code": payload.hr_rate_code,
+        }
+    )
     if existing:
         await db.hotelrunner_room_mappings.update_one(
             {"_id": existing["_id"]},
-            {"$set": {
-                "pms_room_type": payload.pms_room_type,
-                "hr_room_name": payload.hr_room_name,
-                "sync_availability": payload.sync_availability,
-                "sync_price": payload.sync_price,
-                "sync_restrictions": payload.sync_restrictions,
-                "updated_at": datetime.now(UTC).isoformat(),
-                "updated_by": current_user.name,
-            }},
+            {
+                "$set": {
+                    "pms_room_type": payload.pms_room_type,
+                    "hr_room_name": payload.hr_room_name,
+                    "sync_availability": payload.sync_availability,
+                    "sync_price": payload.sync_price,
+                    "sync_restrictions": payload.sync_restrictions,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                    "updated_by": current_user.name,
+                }
+            },
         )
         return {"message": "Oda eslemesi guncellendi", "mapping_id": existing.get("id")}
 
@@ -77,23 +82,27 @@ async def bulk_create_room_mappings(
     created = 0
     updated = 0
     for m in mappings_data:
-        existing = await db.hotelrunner_room_mappings.find_one({
-            "tenant_id": current_user.tenant_id,
-            "hr_inv_code": m.hr_inv_code,
-            "hr_rate_code": m.hr_rate_code,
-        })
+        existing = await db.hotelrunner_room_mappings.find_one(
+            {
+                "tenant_id": current_user.tenant_id,
+                "hr_inv_code": m.hr_inv_code,
+                "hr_rate_code": m.hr_rate_code,
+            }
+        )
         if existing:
             await db.hotelrunner_room_mappings.update_one(
                 {"_id": existing["_id"]},
-                {"$set": {
-                    "pms_room_type": m.pms_room_type,
-                    "hr_room_name": m.hr_room_name,
-                    "sync_availability": m.sync_availability,
-                    "sync_price": m.sync_price,
-                    "sync_restrictions": m.sync_restrictions,
-                    "updated_at": datetime.now(UTC).isoformat(),
-                    "updated_by": current_user.name,
-                }},
+                {
+                    "$set": {
+                        "pms_room_type": m.pms_room_type,
+                        "hr_room_name": m.hr_room_name,
+                        "sync_availability": m.sync_availability,
+                        "sync_price": m.sync_price,
+                        "sync_restrictions": m.sync_restrictions,
+                        "updated_at": datetime.now(UTC).isoformat(),
+                        "updated_by": current_user.name,
+                    }
+                },
             )
             updated += 1
         else:
@@ -133,10 +142,12 @@ async def delete_room_mapping(
     _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Delete a room mapping."""
-    result = await db.hotelrunner_room_mappings.delete_one({
-        "id": mapping_id,
-        "tenant_id": current_user.tenant_id,
-    })
+    result = await db.hotelrunner_room_mappings.delete_one(
+        {
+            "id": mapping_id,
+            "tenant_id": current_user.tenant_id,
+        }
+    )
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Esleme bulunamadi")
     return {"message": "Esleme silindi"}

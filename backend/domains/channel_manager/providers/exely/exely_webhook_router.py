@@ -11,6 +11,7 @@ Endpoints:
 TIMELINE INTEGRATION: Every webhook writes received → normalized → deduplicated
 stages to the event timeline for full end-to-end traceability.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -37,6 +38,7 @@ logger = logging.getLogger("exely.webhook")
 def _is_prod_env() -> bool:
     """True when running under a production-flagged environment."""
     import os
+
     _env = (os.getenv("ENVIRONMENT") or os.getenv("APP_ENV") or "").lower()
     return _env in ("production", "prod", "live")
 
@@ -66,6 +68,7 @@ def _exely_test_auth_open() -> bool:
     bypass can only ever touch the stress tenant (pilot drift impossible).
     """
     import os
+
     if os.getenv("EXELY_TEST_WEBHOOK_AUTH_MODE") != "open_for_testing":
         return False
     if _is_prod_env():
@@ -89,6 +92,7 @@ def _exely_test_tenant_allowed(tenant_id: str) -> bool:
     any mismatch returns False.
     """
     import os
+
     _stress_tid = (os.getenv("E2E_STRESS_TENANT_ID") or "").strip()
     if not _stress_tid:
         return False
@@ -99,37 +103,48 @@ def _timeline_append(**kwargs):
     """Fire-and-forget timeline write. Returns a coroutine."""
     try:
         from controlplane.timeline_writer import get_timeline_writer
+
         return get_timeline_writer().append(**kwargs)
     except Exception:
+
         async def _noop():
             return None
+
         return _noop()
 
 
 async def _store_raw_payload(
-    tenant_id: str, correlation_id: str, provider: str,
-    external_id: str, event_type: str, raw_body: bytes,
-    content_type: str, source_ip: str,
+    tenant_id: str,
+    correlation_id: str,
+    provider: str,
+    external_id: str,
+    event_type: str,
+    raw_body: bytes,
+    content_type: str,
+    source_ip: str,
 ) -> str:
     """Store raw webhook payload for debugging. Returns payload_id."""
     payload_id = str(uuid.uuid4())
     try:
-        await db.webhook_raw_payloads.insert_one({
-            "id": payload_id,
-            "tenant_id": tenant_id,
-            "correlation_id": correlation_id,
-            "provider": provider,
-            "external_id": external_id,
-            "event_type": event_type,
-            "content_type": content_type,
-            "raw_payload": raw_body.decode("utf-8", errors="replace"),
-            "payload_size_bytes": len(raw_body),
-            "source_ip": source_ip,
-            "received_at": datetime.now(UTC).isoformat(),
-        })
+        await db.webhook_raw_payloads.insert_one(
+            {
+                "id": payload_id,
+                "tenant_id": tenant_id,
+                "correlation_id": correlation_id,
+                "provider": provider,
+                "external_id": external_id,
+                "event_type": event_type,
+                "content_type": content_type,
+                "raw_payload": raw_body.decode("utf-8", errors="replace"),
+                "payload_size_bytes": len(raw_body),
+                "source_ip": source_ip,
+                "received_at": datetime.now(UTC).isoformat(),
+            }
+        )
     except Exception as e:
         logger.warning("Raw payload storage failed (non-blocking): %s", e)
     return payload_id
+
 
 router = APIRouter(prefix="/api/webhooks/exely", tags=["Exely Webhooks"])
 
@@ -138,6 +153,7 @@ SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/"
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
+
 
 def _xml_response(body: str, status_code: int = 200) -> Response:
     return Response(content=body, media_type="text/xml; charset=utf-8", status_code=status_code)
@@ -307,6 +323,7 @@ def _parse_reservation(root) -> dict:
 
 # ── Endpoints ────────────────────────────────────────────────────────
 
+
 @router.get("/health")
 async def webhook_health():
     """SOAP PingRS health check."""
@@ -457,9 +474,9 @@ async def receive_reservation(request: Request):
     if not _bypass and not _test_open:
         if not _allow:
             logger.warning(
-                "Exely webhook rejected: EXELY_IP_WHITELIST not configured "
-                "(set whitelist or ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK=1 to bypass) source_ip=%s peer=%s",
-                source_ip, _peer,
+                "Exely webhook rejected: EXELY_IP_WHITELIST not configured (set whitelist or ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK=1 to bypass) source_ip=%s peer=%s",
+                source_ip,
+                _peer,
             )
             return _xml_response(
                 _soap_error_rs("Webhook not configured (set EXELY_IP_WHITELIST)", "503"),
@@ -469,7 +486,9 @@ async def receive_reservation(request: Request):
         if source_ip not in allowed:
             logger.warning(
                 "Exely webhook rejected: source_ip=%s peer=%s not in allowlist (trust_forwarded=%s)",
-                source_ip, _peer, os.getenv("EXELY_TRUST_FORWARDED", "0"),
+                source_ip,
+                _peer,
+                os.getenv("EXELY_TRUST_FORWARDED", "0"),
             )
             return _xml_response(_soap_error_rs("Unauthorized source IP", "403"), status_code=403)
 
@@ -496,7 +515,10 @@ async def receive_reservation(request: Request):
     if len(raw_body) > _max_bytes:
         logger.warning(
             "Exely webhook rejected oversize payload [%s] from %s: %d bytes > %d limit",
-            correlation_id, source_ip, len(raw_body), _max_bytes,
+            correlation_id,
+            source_ip,
+            len(raw_body),
+            _max_bytes,
         )
         return _xml_response(
             _soap_error_rs(f"Payload too large (limit {_max_bytes} bytes)", "413"),
@@ -530,7 +552,9 @@ async def receive_reservation(request: Request):
         if _is_security:
             logger.warning(
                 "Exely webhook rejected XXE/DTD payload [%s] from %s: %s",
-                correlation_id, source_ip, type(exc).__name__,
+                correlation_id,
+                source_ip,
+                type(exc).__name__,
             )
         await _timeline_append(
             tenant_id="unknown",
@@ -541,10 +565,7 @@ async def receive_reservation(request: Request):
             source="exely_webhook",
             provider="exely",
             metadata={
-                "error": (
-                    f"XML security violation: {type(exc).__name__}"
-                    if _is_security else f"XML parse error: {exc}"
-                ),
+                "error": (f"XML security violation: {type(exc).__name__}" if _is_security else f"XML parse error: {exc}"),
                 "raw_payload_id": raw_payload_id,
                 "source_ip": source_ip,
                 "payload_size_bytes": len(raw_body),
@@ -557,10 +578,13 @@ async def receive_reservation(request: Request):
         # 400, mirroring the empty-body case. Resource/business faults below
         # (unknown hotel code, tenant binding) deliberately stay HTTP 200 +
         # SOAP fault per the OTA no-retry convention.
-        return _xml_response(_soap_error_rs(
-            "XML security violation" if _is_security else f"XML parse error: {exc}",
-            "400",
-        ), status_code=400)
+        return _xml_response(
+            _soap_error_rs(
+                "XML security violation" if _is_security else f"XML parse error: {exc}",
+                "400",
+            ),
+            status_code=400,
+        )
 
     try:
         data = _parse_reservation(root)
@@ -592,9 +616,7 @@ async def receive_reservation(request: Request):
     ext_res_id = data["reservation_id"]
 
     # Resolve tenant by hotel_code
-    conn = await db.exely_connections.find_one(
-        {"hotel_code": hotel_code}, {"_id": 0}
-    )
+    conn = await db.exely_connections.find_one({"hotel_code": hotel_code}, {"_id": 0})
     if not conn:
         await _timeline_append(
             tenant_id="unknown",
@@ -611,9 +633,7 @@ async def receive_reservation(request: Request):
                 "hotel_code": hotel_code,
             },
         )
-        return _xml_response(
-            _soap_error_rs(f"Unknown hotel code: {hotel_code} (404)", "404", echo_token)
-        )
+        return _xml_response(_soap_error_rs(f"Unknown hotel code: {hotel_code} (404)", "404", echo_token))
 
     tenant_id = conn.get("tenant_id", "")
 
@@ -628,9 +648,9 @@ async def receive_reservation(request: Request):
     if _test_open:
         if not _exely_test_tenant_allowed(tenant_id):
             logger.warning(
-                "Exely TEST-AUTH-OPEN rejected: hotel_code=%s resolved tenant_id=%s "
-                "!= E2E_STRESS_TENANT_ID (cross-tenant blocked under stress bypass)",
-                hotel_code, tenant_id,
+                "Exely TEST-AUTH-OPEN rejected: hotel_code=%s resolved tenant_id=%s != E2E_STRESS_TENANT_ID (cross-tenant blocked under stress bypass)",
+                hotel_code,
+                tenant_id,
             )
             await _timeline_append(
                 tenant_id=tenant_id or "unknown",
@@ -647,9 +667,7 @@ async def receive_reservation(request: Request):
                     "hotel_code": hotel_code,
                 },
             )
-            return _xml_response(
-                _soap_error_rs(f"Unknown hotel code: {hotel_code} (404)", "404", echo_token)
-            )
+            return _xml_response(_soap_error_rs(f"Unknown hotel code: {hotel_code} (404)", "404", echo_token))
 
     # Update raw payload with resolved tenant_id and external_id
     try:
@@ -687,8 +705,10 @@ async def receive_reservation(request: Request):
     now = datetime.now(UTC).isoformat()
     status_lower = (data["res_status"] or "commit").lower()
     canonical_status = {
-        "commit": "confirmed", "cancel": "cancelled",
-        "modify": "modified", "confirmed": "confirmed",
+        "commit": "confirmed",
+        "cancel": "cancelled",
+        "modify": "modified",
+        "confirmed": "confirmed",
     }.get(status_lower, "confirmed")
 
     await _timeline_append(
@@ -764,6 +784,10 @@ async def receive_reservation(request: Request):
 
     logger.info(
         "Exely webhook reservation %s [%s] tenant=%s corr=%s new=%s",
-        ext_res_id, canonical_status, tenant_id, correlation_id[:8], is_new,
+        ext_res_id,
+        canonical_status,
+        tenant_id,
+        correlation_id[:8],
+        is_new,
     )
     return _xml_response(_soap_success_rs(echo_token, ext_res_id))

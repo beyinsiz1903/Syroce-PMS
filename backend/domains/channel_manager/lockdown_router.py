@@ -13,6 +13,7 @@ Production-grade endpoints for:
 These endpoints produce DATA, not dashboards.
 Visibility first, visuals later.
 """
+
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
@@ -54,17 +55,13 @@ def _resolve_property(current_user: User, property_id: str | None) -> str:
     4. "default" — last-resort fallback for legacy data written
        before per-property scoping existed
     """
-    return (
-        property_id
-        or getattr(current_user, "property_id", None)
-        or getattr(current_user, "hotel_id", None)
-        or "default"
-    )
+    return property_id or getattr(current_user, "property_id", None) or getattr(current_user, "hotel_id", None) or "default"
 
 
 # ══════════════════════════════════════════════════════════════════════
 # 1. RESERVATION TRACEABILITY
 # ══════════════════════════════════════════════════════════════════════
+
 
 @router.get("/trace/reservation/{external_reservation_id}")
 async def trace_reservation(
@@ -86,30 +83,45 @@ async def trace_reservation(
     if provider:
         q["provider"] = provider
 
-    raw_events = await db[COLL_RAW_CHANNEL_EVENTS].find(
-        q, _NO_ID,
-    ).sort("received_at", 1).to_list(100)
+    raw_events = (
+        await db[COLL_RAW_CHANNEL_EVENTS]
+        .find(
+            q,
+            _NO_ID,
+        )
+        .sort("received_at", 1)
+        .to_list(100)
+    )
 
     lineage = None
     if provider:
         lineage = await repo.get_lineage_by_external_id(
-            tenant_id, provider, external_reservation_id,
+            tenant_id,
+            provider,
+            external_reservation_id,
         )
     else:
         for p in ["exely", "hotelrunner"]:
             lineage = await repo.get_lineage_by_external_id(
-                tenant_id, p, external_reservation_id,
+                tenant_id,
+                p,
+                external_reservation_id,
             )
             if lineage:
                 break
 
-    recon_cases = await db[COLL_RECONCILIATION_CASES].find(
-        {
-            "tenant_id": tenant_id,
-            "external_reservation_id": external_reservation_id,
-        },
-        _NO_ID,
-    ).sort("created_at", -1).to_list(50)
+    recon_cases = (
+        await db[COLL_RECONCILIATION_CASES]
+        .find(
+            {
+                "tenant_id": tenant_id,
+                "external_reservation_id": external_reservation_id,
+            },
+            _NO_ID,
+        )
+        .sort("created_at", -1)
+        .to_list(50)
+    )
 
     return {
         "external_reservation_id": external_reservation_id,
@@ -144,9 +156,12 @@ async def trace_reservation(
 # 2. MAPPING HEALTH (cached)
 # ══════════════════════════════════════════════════════════════════════
 
+
 @cached(ttl=60, key_prefix="lockdown_mapping_health")
 async def _mapping_health_cached(
-    tenant_id: str, property_id: str, provider: str | None,
+    tenant_id: str,
+    property_id: str,
+    provider: str | None,
     _nocache: bool = False,
 ) -> dict:
     providers = [provider] if provider else ["exely", "hotelrunner"]
@@ -155,7 +170,11 @@ async def _mapping_health_cached(
         room_maps = await repo.get_room_mappings(tenant_id, property_id, p)
         rate_maps = await repo.get_rate_plan_mappings(tenant_id, property_id, p)
         health = await compute_mapping_health(
-            tenant_id, property_id, p, room_maps, rate_maps,
+            tenant_id,
+            property_id,
+            p,
+            room_maps,
+            rate_maps,
         )
         results.append(health)
     return {
@@ -175,7 +194,10 @@ async def mapping_health(
     """Mapping health score per provider. Completeness %, broken/inactive/ambiguous."""
     eff_pid = _resolve_property(current_user, property_id)
     return await _mapping_health_cached(
-        current_user.tenant_id, eff_pid, provider, _nocache=nocache,
+        current_user.tenant_id,
+        eff_pid,
+        provider,
+        _nocache=nocache,
     )
 
 
@@ -183,21 +205,28 @@ async def mapping_health(
 # 3. INGEST METRICS (cached)
 # ══════════════════════════════════════════════════════════════════════
 
+
 @cached(ttl=60, key_prefix="lockdown_ingest_metrics")
 async def _ingest_metrics_cached(
-    tenant_id: str, hours: int, _nocache: bool = False,
+    tenant_id: str,
+    hours: int,
+    _nocache: bool = False,
 ) -> dict:
     since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
 
     pipeline = [
-        {"$match": {
-            "tenant_id": tenant_id,
-            "received_at": {"$gte": since},
-        }},
-        {"$group": {
-            "_id": "$processing_status",
-            "count": {"$sum": 1},
-        }},
+        {
+            "$match": {
+                "tenant_id": tenant_id,
+                "received_at": {"$gte": since},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$processing_status",
+                "count": {"$sum": 1},
+            }
+        },
     ]
 
     stats = {}
@@ -212,15 +241,19 @@ async def _ingest_metrics_cached(
     pending = stats.get("pending", 0)
 
     decision_pipeline = [
-        {"$match": {
-            "tenant_id": tenant_id,
-            "received_at": {"$gte": since},
-            "decision_result": {"$ne": None},
-        }},
-        {"$group": {
-            "_id": "$decision_result",
-            "count": {"$sum": 1},
-        }},
+        {
+            "$match": {
+                "tenant_id": tenant_id,
+                "received_at": {"$gte": since},
+                "decision_result": {"$ne": None},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$decision_result",
+                "count": {"$sum": 1},
+            }
+        },
     ]
     decision_stats = {}
     async for doc in db[COLL_RAW_CHANNEL_EVENTS].aggregate(decision_pipeline):
@@ -257,7 +290,9 @@ async def ingest_metrics(
 ):
     """Ingest pipeline metrics for the last N hours."""
     return await _ingest_metrics_cached(
-        current_user.tenant_id, hours, _nocache=nocache,
+        current_user.tenant_id,
+        hours,
+        _nocache=nocache,
     )
 
 
@@ -265,14 +300,17 @@ async def ingest_metrics(
 # 4. LINEAGE METRICS (cached)
 # ══════════════════════════════════════════════════════════════════════
 
+
 @cached(ttl=60, key_prefix="lockdown_lineage_metrics")
 async def _lineage_metrics_cached(tenant_id: str, _nocache: bool = False) -> dict:
     status_pipeline = [
         {"$match": {"tenant_id": tenant_id}},
-        {"$group": {
-            "_id": {"status": "$status", "provider": "$provider"},
-            "count": {"$sum": 1},
-        }},
+        {
+            "$group": {
+                "_id": {"status": "$status", "provider": "$provider"},
+                "count": {"$sum": 1},
+            }
+        },
     ]
 
     by_status: dict[str, int] = {}
@@ -314,6 +352,7 @@ async def lineage_metrics(
 # 5. RECONCILIATION METRICS (cached, contract-fixed)
 # ══════════════════════════════════════════════════════════════════════
 
+
 @cached(ttl=60, key_prefix="lockdown_recon_metrics")
 async def _recon_metrics_cached(tenant_id: str, _nocache: bool = False) -> dict:
     """
@@ -335,9 +374,7 @@ async def _recon_metrics_cached(tenant_id: str, _nocache: bool = False) -> dict:
             {"tenant_id": tenant_id, "status": {"$in": ["resolved", "auto_resolved"]}},
         ),
         db[COLL_RECONCILIATION_CASES].count_documents(
-            {"tenant_id": tenant_id,
-             "status": {"$in": ["open", "investigating"]},
-             "severity": "critical"},
+            {"tenant_id": tenant_id, "status": {"$in": ["open", "investigating"]}, "severity": "critical"},
         ),
         db[COLL_RECONCILIATION_CASES].find_one(
             {"tenant_id": tenant_id, "status": {"$in": ["open", "investigating"]}},
@@ -353,7 +390,8 @@ async def _recon_metrics_cached(tenant_id: str, _nocache: bool = False) -> dict:
                 oldest["created_at"].replace("Z", "+00:00"),
             )
             oldest_age_hours = round(
-                (datetime.now(UTC) - created).total_seconds() / 3600, 1,
+                (datetime.now(UTC) - created).total_seconds() / 3600,
+                1,
             )
         except (ValueError, AttributeError):
             oldest_age_hours = None
@@ -383,44 +421,44 @@ async def reconciliation_metrics(
 # 6. PROVIDER CAPABILITY MATRIX (cached, static-ish)
 # ══════════════════════════════════════════════════════════════════════
 
+
 @cached(ttl=300, key_prefix="lockdown_provider_capabilities")
 async def _capabilities_cached(_nocache: bool = False) -> dict:
     result = []
     for name, cap in PROVIDER_CAPABILITIES.items():
-        result.append({
-            "provider": name,
-            "display_name": cap.display_name,
-            "reservation": {
-                "ingest_type": cap.reservation_ingest_type.value,
-                "cancellation_behavior": cap.cancellation_behavior.value,
-                "modification_behavior": cap.modification_behavior.value,
-            },
-            "ari": {
-                "push_behavior": cap.ari_push_behavior.value,
-                "supports_delta_push": cap.supports_delta_push,
-                "supports_restrictions": cap.supports_restriction_push,
-                "max_date_range_days": cap.max_date_range_days,
-            },
-            "consistency": {
-                "eventual_consistency_window_sec": cap.eventual_consistency_window_seconds,
-                "typical_ack_latency_ms": cap.typical_ack_latency_ms,
-                "ack_means_applied": cap.ack_means_applied,
-            },
-            "rate_limits": {
-                "requests_per_minute": cap.rate_limits.requests_per_minute,
-                "requests_per_hour": cap.rate_limits.requests_per_hour,
-                "burst_limit": cap.rate_limits.burst_limit,
-            },
-            "retry_policy": {
-                "max_attempts": cap.retry_policy.max_attempts,
-                "base_delay_sec": cap.retry_policy.base_delay_seconds,
-                "max_delay_sec": cap.retry_policy.max_delay_seconds,
-            },
-            "error_classes": {
-                pattern: cls.value
-                for pattern, cls in cap.error_classification.items()
-            },
-        })
+        result.append(
+            {
+                "provider": name,
+                "display_name": cap.display_name,
+                "reservation": {
+                    "ingest_type": cap.reservation_ingest_type.value,
+                    "cancellation_behavior": cap.cancellation_behavior.value,
+                    "modification_behavior": cap.modification_behavior.value,
+                },
+                "ari": {
+                    "push_behavior": cap.ari_push_behavior.value,
+                    "supports_delta_push": cap.supports_delta_push,
+                    "supports_restrictions": cap.supports_restriction_push,
+                    "max_date_range_days": cap.max_date_range_days,
+                },
+                "consistency": {
+                    "eventual_consistency_window_sec": cap.eventual_consistency_window_seconds,
+                    "typical_ack_latency_ms": cap.typical_ack_latency_ms,
+                    "ack_means_applied": cap.ack_means_applied,
+                },
+                "rate_limits": {
+                    "requests_per_minute": cap.rate_limits.requests_per_minute,
+                    "requests_per_hour": cap.rate_limits.requests_per_hour,
+                    "burst_limit": cap.rate_limits.burst_limit,
+                },
+                "retry_policy": {
+                    "max_attempts": cap.retry_policy.max_attempts,
+                    "base_delay_sec": cap.retry_policy.base_delay_seconds,
+                    "max_delay_sec": cap.retry_policy.max_delay_seconds,
+                },
+                "error_classes": {pattern: cls.value for pattern, cls in cap.error_classification.items()},
+            }
+        )
     return {"providers": result}
 
 
@@ -437,6 +475,7 @@ async def provider_capabilities(
 # ══════════════════════════════════════════════════════════════════════
 # 7. RECONCILIATION TRUTH TABLE (cached, fully static)
 # ══════════════════════════════════════════════════════════════════════
+
 
 @cached(ttl=300, key_prefix="lockdown_truth_table")
 async def _truth_table_cached(_nocache: bool = False) -> dict:
@@ -456,6 +495,7 @@ async def truth_table(
 # ══════════════════════════════════════════════════════════════════════
 # 8. SYSTEM LOCKDOWN STATUS (cached, parallelized)
 # ══════════════════════════════════════════════════════════════════════
+
 
 @cached(ttl=30, key_prefix="lockdown_status")
 async def _status_cached(tenant_id: str, _nocache: bool = False) -> dict:

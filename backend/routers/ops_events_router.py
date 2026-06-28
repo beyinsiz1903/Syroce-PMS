@@ -9,6 +9,7 @@ Provides endpoints for:
   - Channel health summary
   - Thin dashboard summary (single endpoint for frontend)
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -35,6 +36,7 @@ def _get_tenant(user: User) -> str:
 # 1. Operational Events
 # ══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/list")
 @cached(ttl=60, key_prefix="ops_events_list")
 async def list_ops_events(
@@ -53,24 +55,25 @@ async def list_ops_events(
         query["severity"] = severity
     if event_type:
         from security.query_safety import safe_search_term
-        if (_et := safe_search_term(event_type)):
+
+        if _et := safe_search_term(event_type):
             query["event_type"] = {"$regex": f"^{_et}"}
     if channel:
         query["channel"] = channel
 
-    events = await db.ops_events.find(
-        query, {"_id": 0}
-    ).sort("created_at", -1).limit(limit).to_list(limit)
+    events = await db.ops_events.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
 
     # Count by severity (last 24h) — N+1 fix: tek aggregation
     from datetime import timedelta
+
     since_24h = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
     severity_counts = dict.fromkeys(("info", "warning", "critical", "success"), 0)
-    async for r in db.ops_events.aggregate([
-        {"$match": {"tenant_id": tenant_id, "created_at": {"$gte": since_24h},
-                    "severity": {"$in": list(severity_counts.keys())}}},
-        {"$group": {"_id": "$severity", "n": {"$sum": 1}}},
-    ]):
+    async for r in db.ops_events.aggregate(
+        [
+            {"$match": {"tenant_id": tenant_id, "created_at": {"$gte": since_24h}, "severity": {"$in": list(severity_counts.keys())}}},
+            {"$group": {"_id": "$severity", "n": {"$sum": 1}}},
+        ]
+    ):
         severity_counts[r["_id"]] = r["n"]
 
     return {
@@ -84,6 +87,7 @@ async def list_ops_events(
 # 2. Webhook Deliveries
 # ══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/webhook-deliveries")
 async def list_webhook_deliveries(
     limit: int = Query(50, ge=1, le=200),
@@ -92,6 +96,7 @@ async def list_webhook_deliveries(
 ):
     """Webhook teslimat kayitlarini listele."""
     from core.tenant_db import get_system_db
+
     sysdb = get_system_db()
 
     tenant_id = _get_tenant(current_user)
@@ -99,9 +104,7 @@ async def list_webhook_deliveries(
     if status:
         query["status"] = status
 
-    deliveries = await sysdb.webhook_deliveries.find(
-        query, {"_id": 0}
-    ).sort("created_at", -1).limit(limit).to_list(limit)
+    deliveries = await sysdb.webhook_deliveries.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
 
     # Summary counts
     total = await sysdb.webhook_deliveries.count_documents({"tenant_id": tenant_id})
@@ -126,6 +129,7 @@ async def list_webhook_deliveries(
 # 3. Webhook DLQ (Dead Letter Queue)
 # ══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/webhook-dlq")
 async def list_webhook_dlq(
     limit: int = Query(50, ge=1, le=200),
@@ -134,6 +138,7 @@ async def list_webhook_dlq(
 ):
     """Webhook DLQ kayitlarini listele."""
     from core.tenant_db import get_system_db
+
     sysdb = get_system_db()
 
     tenant_id = _get_tenant(current_user)
@@ -141,9 +146,7 @@ async def list_webhook_dlq(
     if status:
         query["status"] = status
 
-    items = await sysdb.webhook_dlq.find(
-        query, {"_id": 0}
-    ).sort("created_at", -1).limit(limit).to_list(limit)
+    items = await sysdb.webhook_dlq.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
 
     pending_count = await sysdb.webhook_dlq.count_documents({"tenant_id": tenant_id, "status": "pending"})
     total_count = await sysdb.webhook_dlq.count_documents({"tenant_id": tenant_id})
@@ -173,6 +176,7 @@ async def retry_webhook_dlq_item(
 # 4. HotelRunner Rate Limit Status
 # ══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/rate-limit-status")
 async def get_rate_limit_status(
     current_user: User = Depends(get_current_user),
@@ -195,27 +199,33 @@ async def get_rate_limit_status(
 
     try:
         from channel_manager.connectors.hotelrunner_v2.rate_limit import RateLimiter
+
         # Try to get singleton instance if it exists
         # The rate limiter is typically instantiated per-client
         # For status reporting, we create a snapshot view
         rl = RateLimiter()
-        rate_limiter_info.update({
-            "status": "active",
-            "max_per_minute": rl._max_per_minute,
-            "max_per_hour": rl._max_per_hour,
-        })
+        rate_limiter_info.update(
+            {
+                "status": "active",
+                "max_per_minute": rl._max_per_minute,
+                "max_per_hour": rl._max_per_hour,
+            }
+        )
     except Exception:
         pass
 
     # Get recent throttle events from ops_events
     from datetime import timedelta
+
     since_24h = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
 
-    throttle_count = await db.ops_events.count_documents({
-        "tenant_id": tenant_id,
-        "event_type": {"$in": ["rate_limit.active", "push.throttled"]},
-        "created_at": {"$gte": since_24h},
-    })
+    throttle_count = await db.ops_events.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "event_type": {"$in": ["rate_limit.active", "push.throttled"]},
+            "created_at": {"$gte": since_24h},
+        }
+    )
     rate_limiter_info["throttle_events_24h"] = throttle_count
 
     # Get last 429 event
@@ -232,16 +242,23 @@ async def get_rate_limit_status(
         rate_limiter_info["is_throttled"] = throttle_count > 0
 
     # Get rate push metrics for HotelRunner
-    push_metrics = await db.cm_rate_push_metrics.find(
-        {"tenant_id": tenant_id},
-        {"_id": 0},
-    ).sort("recorded_at", -1).limit(5).to_list(5)
+    push_metrics = (
+        await db.cm_rate_push_metrics.find(
+            {"tenant_id": tenant_id},
+            {"_id": 0},
+        )
+        .sort("recorded_at", -1)
+        .limit(5)
+        .to_list(5)
+    )
 
-    rate_limited_pushes = await db.cm_rate_push_metrics.count_documents({
-        "tenant_id": tenant_id,
-        "failure_classification": "rate_limited",
-        "recorded_at": {"$gte": since_24h},
-    })
+    rate_limited_pushes = await db.cm_rate_push_metrics.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "failure_classification": "rate_limited",
+            "recorded_at": {"$gte": since_24h},
+        }
+    )
     rate_limiter_info["rate_limited_pushes_24h"] = rate_limited_pushes
     rate_limiter_info["recent_push_metrics"] = push_metrics
 
@@ -252,6 +269,7 @@ async def get_rate_limit_status(
 # 5. Channel Health Summary
 # ══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/channel-health")
 async def get_channel_health(
     current_user: User = Depends(get_current_user),
@@ -259,6 +277,7 @@ async def get_channel_health(
     """Tum kanallarin saglik ozetini goster."""
     tenant_id = _get_tenant(current_user)
     from datetime import timedelta
+
     since_24h = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
 
     # Get connectors
@@ -271,25 +290,35 @@ async def get_channel_health(
     connector_ids = [c.get("id", "") for c in connectors]
     push_map: dict = {}
     if connector_ids:
-        async for r in db.cm_rate_push_metrics.aggregate([
-            {"$match": {"tenant_id": tenant_id, "connector_id": {"$in": connector_ids},
-                        "recorded_at": {"$gte": since_24h}}},
-            {"$group": {"_id": "$connector_id",
-                        "total": {"$sum": 1},
-                        "failed": {"$sum": {"$cond": [{"$eq": ["$success", False]}, 1, 0]}}}},
-        ]):
+        async for r in db.cm_rate_push_metrics.aggregate(
+            [
+                {"$match": {"tenant_id": tenant_id, "connector_id": {"$in": connector_ids}, "recorded_at": {"$gte": since_24h}}},
+                {"$group": {"_id": "$connector_id", "total": {"$sum": 1}, "failed": {"$sum": {"$cond": [{"$eq": ["$success", False]}, 1, 0]}}}},
+            ]
+        ):
             push_map[r["_id"]] = r
     # Tum import event'lerini tek seferde, sonra Python'da provider regex eslestir
-    import_events = await db.ops_events.find({
-        "tenant_id": tenant_id,
-        "event_type": {"$regex": "^import"},
-        "created_at": {"$gte": since_24h},
-    }, {"_id": 0, "event_type": 1, "channel": 1}).to_list(5000)
+    import_events = await db.ops_events.find(
+        {
+            "tenant_id": tenant_id,
+            "event_type": {"$regex": "^import"},
+            "created_at": {"$gte": since_24h},
+        },
+        {"_id": 0, "event_type": 1, "channel": 1},
+    ).to_list(5000)
     # Recent events cache: per provider basina son 5 event - tek call ile, en az 5*N
-    recent_events_all = await db.ops_events.find({
-        "tenant_id": tenant_id,
-        "created_at": {"$gte": since_24h},
-    }, {"_id": 0}).sort("created_at", -1).limit(500).to_list(500)
+    recent_events_all = (
+        await db.ops_events.find(
+            {
+                "tenant_id": tenant_id,
+                "created_at": {"$gte": since_24h},
+            },
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .limit(500)
+        .to_list(500)
+    )
 
     channels = []
     for conn in connectors:
@@ -301,13 +330,9 @@ async def get_channel_health(
         total_pushes = pm.get("total", 0)
         failed_pushes = pm.get("failed", 0)
 
-        recent_events = [e for e in recent_events_all
-                         if prov_lower in (e.get("channel") or "").lower()][:5]
-        recent_imports = sum(1 for e in import_events
-                             if prov_lower in (e.get("channel") or "").lower())
-        failed_imports = sum(1 for e in import_events
-                             if e.get("event_type") == "import.failed"
-                             and prov_lower in (e.get("channel") or "").lower())
+        recent_events = [e for e in recent_events_all if prov_lower in (e.get("channel") or "").lower()][:5]
+        recent_imports = sum(1 for e in import_events if prov_lower in (e.get("channel") or "").lower())
+        failed_imports = sum(1 for e in import_events if e.get("event_type") == "import.failed" and prov_lower in (e.get("channel") or "").lower())
 
         # Calculate health score
         push_success_rate = round((total_pushes - failed_pushes) / max(total_pushes, 1) * 100, 1)
@@ -317,20 +342,22 @@ async def get_channel_health(
         if push_success_rate < 50:
             health = "critical"
 
-        channels.append({
-            "connector_id": connector_id,
-            "provider": provider,
-            "property_name": conn.get("property_name", ""),
-            "status": conn.get("status", "unknown"),
-            "last_sync_at": conn.get("last_sync_at"),
-            "health": health,
-            "push_success_rate_24h": push_success_rate,
-            "total_pushes_24h": total_pushes,
-            "failed_pushes_24h": failed_pushes,
-            "recent_imports_24h": recent_imports,
-            "failed_imports_24h": failed_imports,
-            "recent_events": recent_events[:3],
-        })
+        channels.append(
+            {
+                "connector_id": connector_id,
+                "provider": provider,
+                "property_name": conn.get("property_name", ""),
+                "status": conn.get("status", "unknown"),
+                "last_sync_at": conn.get("last_sync_at"),
+                "health": health,
+                "push_success_rate_24h": push_success_rate,
+                "total_pushes_24h": total_pushes,
+                "failed_pushes_24h": failed_pushes,
+                "recent_imports_24h": recent_imports,
+                "failed_imports_24h": failed_imports,
+                "recent_events": recent_events[:3],
+            }
+        )
 
     return {
         "channels": channels,
@@ -342,6 +369,7 @@ async def get_channel_health(
 # 6. Dashboard Summary (single endpoint for frontend)
 # ══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/dashboard-summary")
 @cached(ttl=30, key_prefix="ops_dashboard_summary")  # 1.9s → cache 30s
 async def get_dashboard_summary(
@@ -352,11 +380,12 @@ async def get_dashboard_summary(
     Returns all data needed for the operations dashboard in one call.
     """
     from core.tenant_db import get_system_db
+
     sysdb = get_system_db()
     tenant_id = _get_tenant(current_user)
     from datetime import timedelta
-    since_24h = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
 
+    since_24h = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
 
     # ── Webhook delivery stats ──
     wh_total = await sysdb.webhook_deliveries.count_documents({"tenant_id": tenant_id})
@@ -366,22 +395,31 @@ async def get_dashboard_summary(
     wh_dlq_pending = await sysdb.webhook_dlq.count_documents({"tenant_id": tenant_id, "status": "pending"})
 
     # Recent failed deliveries
-    recent_failures = await sysdb.webhook_deliveries.find(
-        {"tenant_id": tenant_id, "status": {"$in": ["failed", "dlq"]}},
-        {"_id": 0, "id": 1, "event": 1, "url": 1, "last_error": 1, "attempt_count": 1, "status": 1, "created_at": 1},
-    ).sort("created_at", -1).limit(10).to_list(10)
+    recent_failures = (
+        await sysdb.webhook_deliveries.find(
+            {"tenant_id": tenant_id, "status": {"$in": ["failed", "dlq"]}},
+            {"_id": 0, "id": 1, "event": 1, "url": 1, "last_error": 1, "attempt_count": 1, "status": 1, "created_at": 1},
+        )
+        .sort("created_at", -1)
+        .limit(10)
+        .to_list(10)
+    )
 
     # ── Rate limit status ──
-    throttle_count_24h = await db.ops_events.count_documents({
-        "tenant_id": tenant_id,
-        "event_type": {"$in": ["rate_limit.active", "push.throttled"]},
-        "created_at": {"$gte": since_24h},
-    })
-    rate_limited_pushes_24h = await db.cm_rate_push_metrics.count_documents({
-        "tenant_id": tenant_id,
-        "failure_classification": "rate_limited",
-        "recorded_at": {"$gte": since_24h},
-    })
+    throttle_count_24h = await db.ops_events.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "event_type": {"$in": ["rate_limit.active", "push.throttled"]},
+            "created_at": {"$gte": since_24h},
+        }
+    )
+    rate_limited_pushes_24h = await db.cm_rate_push_metrics.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "failure_classification": "rate_limited",
+            "recorded_at": {"$gte": since_24h},
+        }
+    )
     last_429 = await db.ops_events.find_one(
         {"tenant_id": tenant_id, "event_type": {"$in": ["rate_limit.active", "push.throttled"]}},
         {"_id": 0},
@@ -398,13 +436,12 @@ async def get_dashboard_summary(
     cs_connector_ids = [c.get("id", "") for c in connectors]
     cs_push_map: dict = {}
     if cs_connector_ids:
-        async for r in db.cm_rate_push_metrics.aggregate([
-            {"$match": {"tenant_id": tenant_id, "connector_id": {"$in": cs_connector_ids},
-                        "recorded_at": {"$gte": since_24h}}},
-            {"$group": {"_id": "$connector_id",
-                        "total": {"$sum": 1},
-                        "failed": {"$sum": {"$cond": [{"$eq": ["$success", False]}, 1, 0]}}}},
-        ]):
+        async for r in db.cm_rate_push_metrics.aggregate(
+            [
+                {"$match": {"tenant_id": tenant_id, "connector_id": {"$in": cs_connector_ids}, "recorded_at": {"$gte": since_24h}}},
+                {"$group": {"_id": "$connector_id", "total": {"$sum": 1}, "failed": {"$sum": {"$cond": [{"$eq": ["$success", False]}, 1, 0]}}}},
+            ]
+        ):
             cs_push_map[r["_id"]] = r
 
     channel_summary = []
@@ -422,49 +459,65 @@ async def get_dashboard_summary(
         if total_pushes > 0 and push_rate < 50:
             health = "critical"
 
-        channel_summary.append({
-            "connector_id": connector_id,
-            "provider": provider,
-            "property_name": conn.get("property_name", ""),
-            "status": conn.get("status", "unknown"),
-            "last_sync_at": conn.get("last_sync_at"),
-            "health": health,
-            "push_success_rate_24h": push_rate,
-            "total_pushes_24h": total_pushes,
-            "failed_pushes_24h": failed_pushes,
-        })
+        channel_summary.append(
+            {
+                "connector_id": connector_id,
+                "provider": provider,
+                "property_name": conn.get("property_name", ""),
+                "status": conn.get("status", "unknown"),
+                "last_sync_at": conn.get("last_sync_at"),
+                "health": health,
+                "push_success_rate_24h": push_rate,
+                "total_pushes_24h": total_pushes,
+                "failed_pushes_24h": failed_pushes,
+            }
+        )
 
     # ── Recent ops events ──
-    recent_events = await db.ops_events.find(
-        {"tenant_id": tenant_id},
-        {"_id": 0},
-    ).sort("created_at", -1).limit(20).to_list(20)
+    recent_events = (
+        await db.ops_events.find(
+            {"tenant_id": tenant_id},
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .limit(20)
+        .to_list(20)
+    )
 
     # ── Recent imports ──
-    recent_import_events = await db.ops_events.find(
-        {"tenant_id": tenant_id, "event_type": {"$regex": "^import"}},
-        {"_id": 0},
-    ).sort("created_at", -1).limit(10).to_list(10)
+    recent_import_events = (
+        await db.ops_events.find(
+            {"tenant_id": tenant_id, "event_type": {"$regex": "^import"}},
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .limit(10)
+        .to_list(10)
+    )
 
     # ── Last successful push per channel ── N+1 fix: tek aggregation (group by connector, max recorded_at)
     last_pushes = []
     if cs_connector_ids:
         last_push_map: dict = {}
-        async for r in db.cm_rate_push_metrics.aggregate([
-            {"$match": {"tenant_id": tenant_id, "connector_id": {"$in": cs_connector_ids}, "success": True}},
-            {"$sort": {"recorded_at": -1}},
-            {"$group": {"_id": "$connector_id", "doc": {"$first": "$$ROOT"}}},
-        ]):
+        async for r in db.cm_rate_push_metrics.aggregate(
+            [
+                {"$match": {"tenant_id": tenant_id, "connector_id": {"$in": cs_connector_ids}, "success": True}},
+                {"$sort": {"recorded_at": -1}},
+                {"$group": {"_id": "$connector_id", "doc": {"$first": "$$ROOT"}}},
+            ]
+        ):
             last_push_map[r["_id"]] = r["doc"]
         for conn in connectors:
             doc = last_push_map.get(conn.get("id", ""))
             if doc:
-                last_pushes.append({
-                    "provider": conn.get("provider", ""),
-                    "connector_id": conn.get("id", ""),
-                    "last_success_at": doc.get("recorded_at"),
-                    "latency_ms": doc.get("latency_ms", 0),
-                })
+                last_pushes.append(
+                    {
+                        "provider": conn.get("provider", ""),
+                        "connector_id": conn.get("id", ""),
+                        "last_success_at": doc.get("recorded_at"),
+                        "latency_ms": doc.get("latency_ms", 0),
+                    }
+                )
 
     return {
         "webhook_delivery": {

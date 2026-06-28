@@ -8,6 +8,7 @@ Indexes:
   - (tenant_id, status)
   - (tenant_id, connector_id, validation_status)
 """
+
 import uuid
 from datetime import UTC, datetime
 from enum import Enum
@@ -43,6 +44,7 @@ class MappingEntityType(str, Enum):
     CANCELLATION_POLICY = "cancellation_policy"
     TAX_MODE = "tax_mode"
     OCCUPANCY = "occupancy"
+
 
 # Required mapping types for sync readiness
 REQUIRED_MAPPING_TYPES = [

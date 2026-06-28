@@ -68,6 +68,7 @@ async def verify_door_reader(
     _require_door_reader_auth(x_door_reader_key)
 
     import uuid
+
     db = get_system_db()
 
     async def _log_access(tenant_id: str | None, room_number: str | None, booking_id: str | None, keycard_id: str | None, guest_id: str | None, decision: str, reason: str | None = None):
@@ -81,7 +82,7 @@ async def verify_door_reader(
             "device_id": payload.device_id,
             "access_decision": decision,
             "reason": reason,
-            "timestamp": datetime.now(UTC).isoformat()
+            "timestamp": datetime.now(UTC).isoformat(),
         }
         try:
             await db.physical_access_logs.insert_one(log_entry)
@@ -124,9 +125,7 @@ async def verify_door_reader(
         return _deny("lockdown")
 
     # 3) Re-validate the booking server-side.
-    booking = await db.bookings.find_one(
-        {"id": booking_id, "tenant_id": tenant_id}, {"_id": 0}
-    )
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
     if not booking:
         await _log_access(tenant_id, room_number, booking_id, keycard_id, guest_id, "denied", "booking_not_found")
         return _deny("booking_not_found")

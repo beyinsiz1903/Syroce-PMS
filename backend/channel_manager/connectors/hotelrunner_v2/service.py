@@ -7,6 +7,7 @@ Orchestrates: client → mapper → pipeline → outbox → metrics.
 
 Endpoint paths from endpoint_map.py (v1/v2 mixed, per HR docs).
 """
+
 import logging
 import time
 import uuid as _uuid
@@ -125,27 +126,34 @@ class HotelRunnerV2Service:
             step_start = time.time()
             try:
                 resp = await self._client.get(path, params={"per_page": "1"}, correlation_id=corr_id)
-                steps.append({
-                    "step": name,
-                    "status": "pass" if resp.success else "fail",
-                    "latency_ms": int((time.time() - step_start) * 1000),
-                    "error": resp.error if not resp.success else None,
-                })
+                steps.append(
+                    {
+                        "step": name,
+                        "status": "pass" if resp.success else "fail",
+                        "latency_ms": int((time.time() - step_start) * 1000),
+                        "error": resp.error if not resp.success else None,
+                    }
+                )
             except HRv2Error as e:
-                steps.append({
-                    "step": name,
-                    "status": "fail",
-                    "latency_ms": int((time.time() - step_start) * 1000),
-                    "error": str(e),
-                    "category": e.category,
-                })
+                steps.append(
+                    {
+                        "step": name,
+                        "status": "fail",
+                        "latency_ms": int((time.time() - step_start) * 1000),
+                        "error": str(e),
+                        "category": e.category,
+                    }
+                )
 
         total_ms = int((time.time() - start) * 1000)
         all_pass = all(s["status"] == "pass" for s in steps)
 
         await record_metric(
-            self._tenant_id, "test_connection",
-            success=all_pass, duration_ms=total_ms, correlation_id=corr_id,
+            self._tenant_id,
+            "test_connection",
+            success=all_pass,
+            duration_ms=total_ms,
+            correlation_id=corr_id,
         )
 
         return {
@@ -206,6 +214,7 @@ class HotelRunnerV2Service:
                 params["reservation_number"] = reservation_number
 
             try:
+
                 async def _call(p=params):
                     return await self._client.get(ep, params=p, correlation_id=corr_id)
 
@@ -213,9 +222,12 @@ class HotelRunnerV2Service:
             except HRv2Error as e:
                 logger.error("[HRv2] pull failed page=%d: %s", page, e)
                 await record_metric(
-                    self._tenant_id, "pull_reservations",
-                    success=False, duration_ms=int((time.time() - start) * 1000),
-                    error_category=e.category, correlation_id=corr_id,
+                    self._tenant_id,
+                    "pull_reservations",
+                    success=False,
+                    duration_ms=int((time.time() - start) * 1000),
+                    error_category=e.category,
+                    correlation_id=corr_id,
                 )
                 return {"success": False, "error": str(e), "correlation_id": corr_id}
 
@@ -241,8 +253,11 @@ class HotelRunnerV2Service:
 
         duration_ms = int((time.time() - start) * 1000)
         await record_metric(
-            self._tenant_id, "pull_reservations",
-            success=True, duration_ms=duration_ms, correlation_id=corr_id,
+            self._tenant_id,
+            "pull_reservations",
+            success=True,
+            duration_ms=duration_ms,
+            correlation_id=corr_id,
             metadata={"count": len(all_raw), "pages": page},
         )
 
@@ -285,6 +300,7 @@ class HotelRunnerV2Service:
 
             # 2. Store raw event
             from core.database import db as _db
+
             raw_event_id = str(_uuid.uuid4())
             raw_event = {
                 "id": raw_event_id,
@@ -308,13 +324,16 @@ class HotelRunnerV2Service:
 
             # 3. Process through existing pipeline
             from domains.channel_manager.ingest.pipeline import process_event
+
             pipeline_result = await process_event(raw_event)
 
             duration_ms = int((time.time() - start) * 1000)
             await record_metric(
-                self._tenant_id, "ingest_reservation",
+                self._tenant_id,
+                "ingest_reservation",
                 success=pipeline_result.status == "processed",
-                duration_ms=duration_ms, correlation_id=corr_id,
+                duration_ms=duration_ms,
+                correlation_id=corr_id,
                 metadata={
                     "event_type": event_type,
                     "decision": pipeline_result.decision,
@@ -336,9 +355,12 @@ class HotelRunnerV2Service:
         except Exception as e:
             duration_ms = int((time.time() - start) * 1000)
             await record_metric(
-                self._tenant_id, "ingest_reservation",
-                success=False, duration_ms=duration_ms,
-                error_category="unknown", correlation_id=corr_id,
+                self._tenant_id,
+                "ingest_reservation",
+                success=False,
+                duration_ms=duration_ms,
+                error_category="unknown",
+                correlation_id=corr_id,
             )
             logger.error("[HRv2] ingest error: %s", e)
             return {
@@ -383,11 +405,13 @@ class HotelRunnerV2Service:
 
         if shadow or not write_ok:
             duration_ms = int((time.time() - start) * 1000)
-            logger.info("[HRv2 SHADOW] ARI push skipped: inv=%s %s→%s (shadow=%s, write=%s)",
-                        inv_code, start_date, end_date, shadow, write_ok)
+            logger.info("[HRv2 SHADOW] ARI push skipped: inv=%s %s→%s (shadow=%s, write=%s)", inv_code, start_date, end_date, shadow, write_ok)
             await record_metric(
-                self._tenant_id, "ari_push_shadow",
-                success=True, duration_ms=duration_ms, correlation_id=corr_id,
+                self._tenant_id,
+                "ari_push_shadow",
+                success=True,
+                duration_ms=duration_ms,
+                correlation_id=corr_id,
                 metadata={"inv_code": inv_code, "shadow": True},
             )
             return {
@@ -398,15 +422,23 @@ class HotelRunnerV2Service:
             }
 
         form_data = ari_to_update_payload(
-            inv_code, start_date, end_date,
-            availability=availability, price=price, stop_sale=stop_sale,
-            min_stay=min_stay, cta=cta, ctd=ctd,
-            days=days, channel_codes=channel_codes,
+            inv_code,
+            start_date,
+            end_date,
+            availability=availability,
+            price=price,
+            stop_sale=stop_sale,
+            min_stay=min_stay,
+            cta=cta,
+            ctd=ctd,
+            days=days,
+            channel_codes=channel_codes,
         )
 
         ep = get_path("rooms_update")
 
         try:
+
             async def _call():
                 return await self._client.put(ep, form_data=form_data, correlation_id=corr_id)
 
@@ -414,8 +446,11 @@ class HotelRunnerV2Service:
             duration_ms = int((time.time() - start) * 1000)
 
             await record_metric(
-                self._tenant_id, "ari_push",
-                success=resp.success, duration_ms=duration_ms, correlation_id=corr_id,
+                self._tenant_id,
+                "ari_push",
+                success=resp.success,
+                duration_ms=duration_ms,
+                correlation_id=corr_id,
                 metadata={"inv_code": inv_code},
             )
 
@@ -441,14 +476,21 @@ class HotelRunnerV2Service:
         except HRv2Error as e:
             duration_ms = int((time.time() - start) * 1000)
             await record_metric(
-                self._tenant_id, "ari_push",
-                success=False, duration_ms=duration_ms,
-                error_category=e.category, correlation_id=corr_id,
+                self._tenant_id,
+                "ari_push",
+                success=False,
+                duration_ms=duration_ms,
+                error_category=e.category,
+                correlation_id=corr_id,
             )
             # Send to DLQ on final failure
             await send_to_dlq(
-                self._tenant_id, "ari_push", form_data,
-                str(e), self._retry.max_retries, corr_id,
+                self._tenant_id,
+                "ari_push",
+                form_data,
+                str(e),
+                self._retry.max_retries,
+                corr_id,
             )
             return {
                 "success": False,
@@ -505,6 +547,7 @@ class HotelRunnerV2Service:
             params["pms_number"] = pms_number
 
         try:
+
             async def _call():
                 return await self._client.put(ep, params=params)
 
@@ -532,18 +575,21 @@ class HotelRunnerV2Service:
     async def _store_outbox(self, corr_id: str, operation: str, request: dict, response: dict) -> None:
         """Store outbound operation in outbox collection for audit."""
         from core.database import db as _db
-        await _db["connector_outbox"].insert_one({
-            "id": str(_uuid.uuid4()),
-            "tenant_id": self._tenant_id,
-            "property_id": self._property_id,
-            "provider": "hotelrunner_v2",
-            "operation": operation,
-            "request_payload": request,
-            "response_payload": response,
-            "correlation_id": corr_id,
-            "status": "completed",
-            "created_at": datetime.now(UTC).isoformat(),
-        })
+
+        await _db["connector_outbox"].insert_one(
+            {
+                "id": str(_uuid.uuid4()),
+                "tenant_id": self._tenant_id,
+                "property_id": self._property_id,
+                "provider": "hotelrunner_v2",
+                "operation": operation,
+                "request_payload": request,
+                "response_payload": response,
+                "correlation_id": corr_id,
+                "status": "completed",
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
 
     # ── Health / Status ───────────────────────────────────────────────
 
@@ -554,6 +600,7 @@ class HotelRunnerV2Service:
         flags_data = None
         try:
             from .feature_flags import get_flags
+
             flags_data = await get_flags(self._tenant_id)
         except Exception:
             pass

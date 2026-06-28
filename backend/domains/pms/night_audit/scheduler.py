@@ -13,6 +13,7 @@ Only the DST-aware UTC->local conversion is kept here, because the dispatcher
 needs it to decide whether a tenant's configured ``hour:minute`` has arrived in
 that tenant's own timezone.
 """
+
 import logging
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -37,7 +38,8 @@ def utc_to_local(utc_dt: datetime, tz_name: str) -> datetime:
     except (ZoneInfoNotFoundError, ValueError, KeyError, OSError) as exc:
         logger.warning(
             "Night-audit schedule has unknown timezone %r; falling back to UTC (%s)",
-            tz_name, exc,
+            tz_name,
+            exc,
         )
         tz = UTC
     return utc_dt.astimezone(tz)

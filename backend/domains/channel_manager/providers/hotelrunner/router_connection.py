@@ -10,6 +10,7 @@ client over HTTP for the live `test_connection`, `get_channels`,
 Mounted under the main `/api/channel-manager/hotelrunner` prefix by the
 parent router.
 """
+
 import logging
 import secrets
 import uuid
@@ -34,6 +35,7 @@ router = APIRouter()
 
 # ── Connection Management ────────────────────────────────────────────
 
+
 @router.post("/connect")
 async def setup_connection(
     payload: HRConnectionSetup,
@@ -45,7 +47,8 @@ async def setup_connection(
 
     logger.info(
         "[HR-CONNECT] env=%s hr_id=%s token=%s...%s",
-        payload.environment, payload.hr_id,
+        payload.environment,
+        payload.hr_id,
         payload.token[:4] if len(payload.token) > 8 else "****",
         payload.token[-4:] if len(payload.token) > 8 else "****",
     )
@@ -105,8 +108,7 @@ async def setup_connection(
         {"$unset": {"token": ""}},
     )
 
-    await log_sync(current_user.tenant_id, "connection", "success",
-                   duration_ms=test_result.duration_ms, user_name=current_user.name)
+    await log_sync(current_user.tenant_id, "connection", "success", duration_ms=test_result.duration_ms, user_name=current_user.name)
 
     channels = (test_result.data or {}).get("channels", [])
     return {
@@ -131,16 +133,15 @@ async def get_connection_status(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/test")
-async def test_connection(current_user: User = Depends(get_current_user),
+async def test_connection(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Test existing HotelRunner connection."""
     tid = current_user.tenant_id
     hr_conn = await db.hotelrunner_connections.find_one({"tenant_id": tid, "is_active": True})
     if not hr_conn:
-        hr_conn = await db.provider_connections.find_one(
-            {"tenant_id": tid, "provider": "hotelrunner", "status": "active"}
-        )
+        hr_conn = await db.provider_connections.find_one({"tenant_id": tid, "provider": "hotelrunner", "status": "active"})
     if not hr_conn:
         raise HTTPException(status_code=404, detail="HotelRunner baglantisi bulunamadi. Lutfen once baglanti kurun.")
 
@@ -154,7 +155,8 @@ async def test_connection(current_user: User = Depends(get_current_user),
 
 
 @router.delete("/disconnect")
-async def disconnect(current_user: User = Depends(get_current_user),
+async def disconnect(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Disconnect HotelRunner integration."""
@@ -169,6 +171,7 @@ async def disconnect(current_user: User = Depends(get_current_user),
 
 
 # ── Webhook Signing Secret (Task #397) ───────────────────────────────
+
 
 @router.get("/webhook-secret")
 async def get_webhook_secret_status(current_user: User = Depends(get_current_user)):
@@ -224,29 +227,31 @@ async def rotate_webhook_secret(
     now = datetime.now(UTC).isoformat()
     await db.hotelrunner_connections.update_one(
         {"tenant_id": current_user.tenant_id},
-        {"$set": {
-            "webhook_secret_set": True,
-            "webhook_secret_rotated_at": now,
-            "webhook_secret_rotated_by": current_user.name,
-        }},
+        {
+            "$set": {
+                "webhook_secret_set": True,
+                "webhook_secret_rotated_at": now,
+                "webhook_secret_rotated_by": current_user.name,
+            }
+        },
     )
 
     logger.info(
         "[HR-WEBHOOK-SECRET] rotated tenant=%s hr_id=%s by=%s",
-        current_user.tenant_id, conn["hr_id"], current_user.name,
+        current_user.tenant_id,
+        conn["hr_id"],
+        current_user.name,
     )
 
     return {
-        "message": (
-            "Webhook imza secret'i olusturuldu. Bu degeri simdi kopyalayip "
-            "HotelRunner paneline girin; tekrar gosterilmeyecektir."
-        ),
+        "message": ("Webhook imza secret'i olusturuldu. Bu degeri simdi kopyalayip HotelRunner paneline girin; tekrar gosterilmeyecektir."),
         "webhook_secret": new_secret,
         "rotated_at": now,
     }
 
 
 # ── Channel Operations ───────────────────────────────────────────────
+
 
 @router.get("/channels")
 async def get_channels(current_user: User = Depends(get_current_user)):
@@ -269,6 +274,7 @@ async def get_connected_channels(current_user: User = Depends(get_current_user))
 
 
 # ── Transaction Tracking ─────────────────────────────────────────────
+
 
 @router.get("/transactions/{transaction_id}")
 async def get_transaction_details(

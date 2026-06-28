@@ -9,6 +9,7 @@ Doktrin:
   ``caller_id_enc`` (zarf-şifreli). recording_ref yalnızca nesne-deposu anahtarı.
 - Dayanıklı: hatalar yutulur (PII'siz log) — webhook 200-fast sözleşmesini bozmaz.
 """
+
 from __future__ import annotations
 
 import logging
@@ -104,9 +105,7 @@ async def _record_call(
                 return_document=ReturnDocument.AFTER,
             )
         except DuplicateKeyError:
-            doc = await db[_COLLECTION].find_one(
-                {"tenant_id": tenant_id, "provider_call_sid": provider_call_sid}
-            )
+            doc = await db[_COLLECTION].find_one({"tenant_id": tenant_id, "provider_call_sid": provider_call_sid})
         return (doc or {}).get("id") or set_on_insert["id"]
     except Exception:
         logger.exception("[CC-VOICE] çağrı kaydı başarısız (bastırıldı, PII'siz)")

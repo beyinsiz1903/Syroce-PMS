@@ -2,9 +2,11 @@
 Report Automation Service
 Otomatik rapor email gönderimi, PDF generation, scheduling
 """
+
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 class ReportAutomation:
     """Otomatik rapor gönderimi"""
@@ -18,7 +20,8 @@ class ReportAutomation:
         """Flash report HTML email oluştur"""
         # Bug AQ: report_data.report_date may bubble up from user-tunable filters.
         import html as _html_mod
-        _safe_date = _html_mod.escape(str(report_data.get('report_date', '') or ''), quote=True)
+
+        _safe_date = _html_mod.escape(str(report_data.get("report_date", "") or ""), quote=True)
         html = f"""
         <!DOCTYPE html>
         <html>
@@ -44,7 +47,7 @@ class ReportAutomation:
                     <h2>📊 Key Metrics</h2>
                     <div class="metric-card">
                         <div class="metric-label">Doluluk</div>
-                        <div class="metric-value">{report_data.get('occupancy', {}).get('occupancy_pct', 0)}%</div>
+                        <div class="metric-value">{report_data.get("occupancy", {}).get("occupancy_pct", 0)}%</div>
                     </div>
                 </div>
             </div>
@@ -58,8 +61,10 @@ class ReportAutomation:
         logger.info(f"📧 Sending flash report to {len(recipients)} recipients")
         return True
 
+
 # Global
 report_automation = None
+
 
 def get_report_automation(db, email_service):
     global report_automation

@@ -8,6 +8,7 @@ This script rewrites those fields with the sanitized text so the DB itself is cl
 Usage:
     python -m backend.scripts.cleanup_xss_invoice_seeds [--dry-run] [--tenant <id>]
 """
+
 import argparse
 import asyncio
 import re
@@ -25,11 +26,9 @@ SUSPECT = re.compile(
     re.IGNORECASE,
 )
 COLLECTIONS = [
-    ("accounting_invoices", ["billing_name", "billing_tax_id", "customer_name",
-                             "customer_tax_office", "customer_address", "notes"]),
+    ("accounting_invoices", ["billing_name", "billing_tax_id", "customer_name", "customer_tax_office", "customer_address", "notes"]),
     # v95.4 — invoices collection legacy seeds: billing_name + billing_tax_id
-    ("invoices", ["billing_name", "billing_tax_id", "customer_name",
-                  "customer_email", "notes"]),
+    ("invoices", ["billing_name", "billing_tax_id", "customer_name", "customer_email", "notes"]),
     ("folios", ["guest_name", "company_name", "notes"]),
     ("guests", ["first_name", "last_name", "address", "notes"]),
     ("bookings", ["guest_name", "notes", "special_requests"]),

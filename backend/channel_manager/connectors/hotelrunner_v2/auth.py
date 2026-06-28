@@ -2,6 +2,7 @@
 HotelRunner Authentication Manager.
 Handles token-based auth with hr_id for all HotelRunner API calls.
 """
+
 from typing import Any
 
 
@@ -37,5 +38,6 @@ class HotelRunnerAuth:
         hr_id = credentials.get("hr_id", "")
         if not token or not hr_id:
             from .connector_errors import AuthenticationError
+
             raise AuthenticationError("Missing token or hr_id in connector credentials")
         return cls(token=token, hr_id=hr_id)

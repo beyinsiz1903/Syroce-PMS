@@ -2,6 +2,7 @@
 Aggregator package — auto-split from pos_fnb_router.py.
 Public API: from domains.pms.pos_fnb_router import router
 """
+
 from fastapi import APIRouter
 
 from .fnb_reports import router as _fnb_reports_r

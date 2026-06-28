@@ -27,6 +27,7 @@ Invariants (doctrine):
 - Fail-closed: if the idempotency index cannot be ensured, the apply returns a
   retryable result rather than risk a non-deduped double post.
 """
+
 from __future__ import annotations
 
 import logging
@@ -130,7 +131,11 @@ async def _route_late_charge(
     )
     logger.warning(
         "POS late-charge routed: order=%s folio=%s status=%s total=%s tenant=%s",
-        order_id, folio.get("id"), folio_status, total, tenant_id,
+        order_id,
+        folio.get("id"),
+        folio_status,
+        total,
+        tenant_id,
     )
 
 
@@ -167,10 +172,7 @@ async def _apply_posted(event: dict[str, Any]) -> tuple[bool, str]:
         # Apply-time late-charge / AR guard — NEVER silently write to a
         # non-open folio.
         await _route_late_charge(db, tenant_id, folio, order_id, charges, folio_status)
-        return True, (
-            f"late-charge: folio {folio_id} not open (status={folio_status}); "
-            f"routed order {order_id} to AR/late-charge"
-        )
+        return True, (f"late-charge: folio {folio_id} not open (status={folio_status}); routed order {order_id} to AR/late-charge")
 
     inserted = 0
     for cdoc in charges:
@@ -182,10 +184,7 @@ async def _apply_posted(event: dict[str, Any]) -> tuple[bool, str]:
             continue
 
     balance = await _recalc_folio_balance(db, tenant_id, folio_id)
-    return True, (
-        f"posted {inserted} charge(s) for order {order_id} to folio {folio_id}; "
-        f"balance={balance}"
-    )
+    return True, (f"posted {inserted} charge(s) for order {order_id} to folio {folio_id}; balance={balance}")
 
 
 async def _apply_reversed(event: dict[str, Any]) -> tuple[bool, str]:
@@ -216,10 +215,7 @@ async def _apply_reversed(event: dict[str, Any]) -> tuple[bool, str]:
 
     if folio_id:
         balance = await _recalc_folio_balance(db, tenant_id, folio_id)
-        return True, (
-            f"reversed {res.modified_count} charge(s) for order {order_id}; "
-            f"folio {folio_id} balance={balance}"
-        )
+        return True, (f"reversed {res.modified_count} charge(s) for order {order_id}; folio {folio_id} balance={balance}")
     return True, f"reversed {res.modified_count} charge(s) for order {order_id}"
 
 
@@ -268,12 +264,14 @@ async def drain_pending_pos_charges(tenant_id: str, folio_id: str) -> int:
         if success:
             await db.outbox_events.update_one(
                 {"id": event.get("id"), "tenant_id": tenant_id},
-                {"$set": {
-                    "status": "processed",
-                    "processed_at": _now_iso(),
-                    "updated_at": _now_iso(),
-                    "last_error": None,
-                }},
+                {
+                    "$set": {
+                        "status": "processed",
+                        "processed_at": _now_iso(),
+                        "updated_at": _now_iso(),
+                        "last_error": None,
+                    }
+                },
             )
             drained += 1
     return drained

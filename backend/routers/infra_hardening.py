@@ -3,6 +3,7 @@ Infrastructure Hardening Router — API endpoints for all infrastructure
 hardening components: containers, Redis cluster, workers, secrets,
 backups, observability, scaling, and unified dashboard data.
 """
+
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
 
 from core.security import get_current_user
@@ -13,6 +14,7 @@ router = APIRouter(prefix="/api/infra", tags=["infrastructure-hardening"])
 
 
 # ── Unified Dashboard Summary ──────────────────────────────────────
+
 
 @router.get("/summary")
 async def get_infrastructure_summary(current_user: User = Depends(get_current_user)):
@@ -52,21 +54,25 @@ async def get_infrastructure_summary(current_user: User = Depends(get_current_us
 
 # ── Redis Cluster ──────────────────────────────────────────────────
 
+
 @router.get("/redis/health")
 async def redis_health(current_user: User = Depends(get_current_user)):
     from infra.redis_cluster import redis_cluster
+
     return await redis_cluster.health_check()
 
 
 @router.get("/redis/metrics")
 async def redis_metrics(current_user: User = Depends(get_current_user)):
     from infra.redis_cluster import redis_cluster
+
     return redis_cluster.get_metrics()
 
 
 @router.get("/redis/locks")
 async def redis_locks(current_user: User = Depends(get_current_user)):
     from infra.distributed_lock import lock_manager
+
     return {
         "metrics": lock_manager.get_metrics(),
         "active_locks": lock_manager.get_active_locks(),
@@ -75,15 +81,18 @@ async def redis_locks(current_user: User = Depends(get_current_user)):
 
 # ── Worker Queues ──────────────────────────────────────────────────
 
+
 @router.get("/workers/summary")
 async def worker_summary(current_user: User = Depends(get_current_user)):
     from infra.worker_queue import worker_queue_manager
+
     return worker_queue_manager.get_worker_summary()
 
 
 @router.get("/workers/queues")
 async def worker_queues(current_user: User = Depends(get_current_user)):
     from infra.worker_queue import worker_queue_manager
+
     return worker_queue_manager.get_queue_status()
 
 
@@ -93,20 +102,24 @@ async def worker_failures(
     current_user: User = Depends(get_current_user),
 ):
     from infra.worker_queue import worker_queue_manager
+
     return worker_queue_manager.get_failure_archive(limit)
 
 
 @router.get("/workers/stuck")
 async def worker_stuck_tasks(current_user: User = Depends(get_current_user)):
     from infra.worker_queue import worker_queue_manager
+
     return worker_queue_manager.get_stuck_task_candidates()
 
 
 # ── Secrets Management ─────────────────────────────────────────────
 
+
 @router.get("/secrets/health")
 async def secrets_health(current_user: User = Depends(get_current_user)):
     from infra.secrets_manager import secrets_manager
+
     return await secrets_manager.health_check()
 
 
@@ -116,6 +129,7 @@ async def secrets_audit(
     current_user: User = Depends(get_current_user),
 ):
     from infra.secrets_manager import secrets_manager
+
     return {
         "access_log": secrets_manager.get_access_log(limit),
         "metrics": secrets_manager.get_metrics(),
@@ -124,9 +138,11 @@ async def secrets_audit(
 
 # ── Backup & DR ────────────────────────────────────────────────────
 
+
 @router.get("/backup/status")
 async def backup_status(current_user: User = Depends(get_current_user)):
     from infra.backup_manager import backup_manager
+
     return backup_manager.get_status()
 
 
@@ -136,6 +152,7 @@ async def backup_history(
     current_user: User = Depends(get_current_user),
 ):
     from infra.backup_manager import backup_manager
+
     return backup_manager.get_history(limit)
 
 
@@ -146,6 +163,7 @@ async def trigger_backup(
     _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     from infra.backup_manager import backup_manager
+
     background_tasks.add_task(backup_manager.create_backup, "manual")
     return {"status": "backup_triggered", "message": "Backup started in background"}
 
@@ -157,22 +175,27 @@ async def test_restore(
     _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     from infra.backup_manager import backup_manager
+
     return await backup_manager.test_restore(backup_id)
 
 
 @router.post("/backup/cleanup")
-async def cleanup_backups(current_user: User = Depends(get_current_user),
+async def cleanup_backups(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     from infra.backup_manager import backup_manager
+
     return await backup_manager.cleanup_old_backups()
 
 
 # ── Cloud Observability ────────────────────────────────────────────
 
+
 @router.get("/observability/status")
 async def observability_status(current_user: User = Depends(get_current_user)):
     from infra.cloud_observability import cloud_metrics, otel_tracer, sentry_integration
+
     return {
         "otel": otel_tracer.get_status(),
         "sentry": sentry_integration.get_status(),
@@ -183,26 +206,31 @@ async def observability_status(current_user: User = Depends(get_current_user)):
 @router.get("/observability/metrics")
 async def observability_cloud_metrics(current_user: User = Depends(get_current_user)):
     from infra.cloud_observability import cloud_metrics
+
     return cloud_metrics.get_summary()
 
 
 # ── Horizontal Scaling ─────────────────────────────────────────────
 
+
 @router.get("/scaling/summary")
 async def scaling_summary(current_user: User = Depends(get_current_user)):
     from infra.horizontal_scaling import scaling_manager
+
     return await scaling_manager.get_scaling_summary()
 
 
 @router.get("/scaling/instances")
 async def scaling_instances(current_user: User = Depends(get_current_user)):
     from infra.horizontal_scaling import scaling_manager
+
     return await scaling_manager.get_active_instances()
 
 
 @router.get("/scaling/stateless-check")
 async def stateless_check(current_user: User = Depends(get_current_user)):
     from infra.horizontal_scaling import scaling_manager
+
     return scaling_manager.stateless_validation()
 
 
@@ -210,10 +238,12 @@ async def stateless_check(current_user: User = Depends(get_current_user)):
 async def scaling_readiness():
     """Load balancer readiness probe (no auth required)."""
     from infra.horizontal_scaling import scaling_manager
+
     return scaling_manager.readiness_check()
 
 
 # ── Container Info ─────────────────────────────────────────────────
+
 
 @router.get("/container/info")
 async def container_info(current_user: User = Depends(get_current_user)):

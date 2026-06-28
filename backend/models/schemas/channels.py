@@ -1,4 +1,5 @@
 """Auto-split from schemas.py — domain: channels."""
+
 import uuid
 from datetime import UTC, datetime
 
@@ -29,6 +30,7 @@ class ChannelConnection(BaseModel):
     sync_reservations: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class ChannelConnectionCreate(BaseModel):
     channel_type: ChannelType
     channel_name: str
@@ -38,6 +40,7 @@ class ChannelConnectionCreate(BaseModel):
     api_secret: str | None = None
     sync_rate_availability: bool = True
     sync_reservations: bool = True
+
 
 class RoomMapping(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -51,12 +54,14 @@ class RoomMapping(BaseModel):
     notes: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class RoomMappingCreate(BaseModel):
     channel_id: str
     pms_room_type: str
     channel_room_type: str
     channel_room_id: str | None = None
     notes: str | None = None
+
 
 class RatePlan(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -75,6 +80,7 @@ class RatePlan(BaseModel):
     is_active: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class RateUpdate(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -89,6 +95,7 @@ class RateUpdate(BaseModel):
     pushed_to_channels: list[ChannelType] = []
     push_status: dict = {}  # {channel: status}
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
 
 class OTAReservation(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -113,6 +120,7 @@ class OTAReservation(BaseModel):
     received_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     processed_at: datetime | None = None
 
+
 class ExceptionQueue(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -126,5 +134,3 @@ class ExceptionQueue(BaseModel):
     resolved_by: str | None = None
     resolved_at: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
-

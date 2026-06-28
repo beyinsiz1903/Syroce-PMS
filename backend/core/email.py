@@ -3,6 +3,7 @@
 Falls back to logging the email body to the console when RESEND_API_KEY is not
 configured, which keeps development workflows usable without a real provider.
 """
+
 from __future__ import annotations
 
 import logging
@@ -55,11 +56,11 @@ def _provider() -> str:
     return "resend"
 
 
-async def _send_via_ses(*, to: str, subject: str, html: str, text: str | None,
-                       sender: str, reply_to: str | None) -> dict:
+async def _send_via_ses(*, to: str, subject: str, html: str, text: str | None, sender: str, reply_to: str | None) -> dict:
     """Send a single email via Amazon SES (used when MAIL_PROVIDER=ses)."""
     try:
         import boto3  # type: ignore
+
         client = boto3.client(
             "ses",
             region_name=os.environ.get("AWS_REGION", "eu-central-1"),
@@ -131,20 +132,18 @@ async def send_email(
     # value must be "email@domain" or "Name <email@domain>".
     if not _is_valid_sender(sender):
         logger.warning(
-            "[email] skipping send — invalid sender %r; set RESEND_FROM to "
-            "'email@domain' or 'Name <email@domain>' (subject=%r)",
-            sender, subject,
+            "[email] skipping send — invalid sender %r; set RESEND_FROM to 'email@domain' or 'Name <email@domain>' (subject=%r)",
+            sender,
+            subject,
         )
         return {"sent": False, "provider": "skipped", "error": "invalid_sender"}
 
     if _provider() == "ses":
-        return await _send_via_ses(to=to, subject=subject, html=html, text=text,
-                                    sender=sender, reply_to=reply_to)
+        return await _send_via_ses(to=to, subject=subject, html=html, text=text, sender=sender, reply_to=reply_to)
 
     if not api_key:
         logger.warning(
-            "[email] RESEND_API_KEY missing — printing email instead.\n"
-            "    To: %s\n    Subject: %s\n    Body:\n%s",
+            "[email] RESEND_API_KEY missing — printing email instead.\n    To: %s\n    Subject: %s\n    Body:\n%s",
             to,
             subject,
             html,
@@ -170,6 +169,7 @@ async def send_email(
             # base64-encoded string OR a list of byte values. We accept both
             # raw bytes and base64-string from callers and normalize here.
             import base64 as _b64
+
             norm = []
             for a in attachments:
                 if not isinstance(a, dict):
@@ -210,6 +210,7 @@ def render_password_reset_email(
     # ve `code` backend-üretimi sabit-format — escape gerekmiyor ama defansif
     # olarak escape ediyoruz.
     from core.mailing_safe import safe_html_value
+
     escaped_name = safe_html_value(name) if name else None
     escaped_reset_link = safe_html_value(reset_link)
     escaped_code = safe_html_value(code)

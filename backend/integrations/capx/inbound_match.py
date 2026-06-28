@@ -17,6 +17,7 @@ Idempotency: capx_match_id koleksiyon-bazında benzersiz arandığı için
 duplicate match.created tek kayıt üretir; capx_events tablosundaki
 event_id idempotency'si zaten webhook'un üst katmanında çalışır.
 """
+
 from __future__ import annotations
 
 import logging
@@ -53,7 +54,8 @@ def _extract_match(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _find_existing_booking_by_match(
-    tenant_id: str, capx_match_id: str,
+    tenant_id: str,
+    capx_match_id: str,
 ) -> dict[str, Any] | None:
     return await db.bookings.find_one(
         {"tenant_id": tenant_id, "capx_match_id": capx_match_id},
@@ -62,7 +64,8 @@ async def _find_existing_booking_by_match(
 
 
 async def _find_existing_outgoing(
-    tenant_id: str, capx_match_id: str,
+    tenant_id: str,
+    capx_match_id: str,
 ) -> dict[str, Any] | None:
     return await db[OUTGOING_COLLECTION].find_one(
         {"tenant_id": tenant_id, "capx_match_id": capx_match_id},
@@ -115,10 +118,7 @@ def _booking_payload_from_match(match: dict[str, Any]) -> dict[str, Any]:
         "origin": "capx",
         "allocation_source": "capx",
         "hold_status": "none",
-        "special_requests": (
-            f"CapX eşleşme: {match.get('reference_code') or match['id']}"
-            f" — kontak: {counter.get('phone') or '-'}"
-        ),
+        "special_requests": (f"CapX eşleşme: {match.get('reference_code') or match['id']} — kontak: {counter.get('phone') or '-'}"),
         "status": "confirmed",
         # Counterparty bilgisi (raporlama için)
         "capx_counterparty": {
@@ -132,7 +132,9 @@ def _booking_payload_from_match(match: dict[str, Any]) -> dict[str, Any]:
 
 
 async def handle_match_created(
-    *, tenant_id: str, payload: dict[str, Any],
+    *,
+    tenant_id: str,
+    payload: dict[str, Any],
 ) -> dict[str, Any]:
     match = _extract_match(payload)
     direction = match["direction"]
@@ -142,8 +144,10 @@ async def handle_match_created(
         existing = await _find_existing_booking_by_match(tenant_id, capx_match_id)
         if existing:
             return {
-                "handled": True, "action": "noop_existing_booking",
-                "direction": direction, "booking_id": existing.get("id"),
+                "handled": True,
+                "action": "noop_existing_booking",
+                "direction": direction,
+                "booking_id": existing.get("id"),
                 "capx_match_id": capx_match_id,
             }
         booking_data = _booking_payload_from_match(match)
@@ -151,17 +155,22 @@ async def handle_match_created(
             booking = await ReservationService.create_reservation(tenant_id, booking_data)
         except Exception as exc:
             logger.exception(
-                "match.created incoming reservation insert failed: %s", exc,
+                "match.created incoming reservation insert failed: %s",
+                exc,
             )
             return {"handled": False, "error": str(exc), "capx_match_id": capx_match_id}
 
         logger.info(
             "CapX match.created → booking opened: tenant=%s match=%s booking=%s",
-            (tenant_id or "")[:8], capx_match_id[:12], booking.get("id", "?")[:12],
+            (tenant_id or "")[:8],
+            capx_match_id[:12],
+            booking.get("id", "?")[:12],
         )
         return {
-            "handled": True, "action": "booking_created",
-            "direction": direction, "booking_id": booking.get("id"),
+            "handled": True,
+            "action": "booking_created",
+            "direction": direction,
+            "booking_id": booking.get("id"),
             "capx_match_id": capx_match_id,
         }
 
@@ -169,8 +178,10 @@ async def handle_match_created(
     existing = await _find_existing_outgoing(tenant_id, capx_match_id)
     if existing:
         return {
-            "handled": True, "action": "noop_existing_outgoing",
-            "direction": direction, "capx_match_id": capx_match_id,
+            "handled": True,
+            "action": "noop_existing_outgoing",
+            "direction": direction,
+            "capx_match_id": capx_match_id,
         }
 
     listing = match.get("listing") or {}
@@ -208,16 +219,21 @@ async def handle_match_created(
 
     logger.info(
         "CapX match.created → outgoing transfer logged: tenant=%s match=%s",
-        (tenant_id or "")[:8], capx_match_id[:12],
+        (tenant_id or "")[:8],
+        capx_match_id[:12],
     )
     return {
-        "handled": True, "action": "outgoing_logged",
-        "direction": direction, "capx_match_id": capx_match_id,
+        "handled": True,
+        "action": "outgoing_logged",
+        "direction": direction,
+        "capx_match_id": capx_match_id,
     }
 
 
 async def handle_match_cancelled(
-    *, tenant_id: str, payload: dict[str, Any],
+    *,
+    tenant_id: str,
+    payload: dict[str, Any],
 ) -> dict[str, Any]:
     match = _extract_match(payload)
     direction = match["direction"]
@@ -230,16 +246,20 @@ async def handle_match_cancelled(
         if not existing:
             logger.warning(
                 "match.cancelled incoming: no local booking for match=%s tenant=%s",
-                capx_match_id[:12], (tenant_id or "")[:8],
+                capx_match_id[:12],
+                (tenant_id or "")[:8],
             )
             return {
-                "handled": True, "action": "noop_no_booking",
-                "direction": direction, "capx_match_id": capx_match_id,
+                "handled": True,
+                "action": "noop_no_booking",
+                "direction": direction,
+                "capx_match_id": capx_match_id,
             }
         status = (existing.get("status") or "").lower()
         if status in ("cancelled", "checked_in", "checked_out", "no_show"):
             return {
-                "handled": True, "action": "noop_terminal_status",
+                "handled": True,
+                "action": "noop_terminal_status",
                 "direction": direction,
                 "booking_id": existing.get("id"),
                 "current_status": status,
@@ -247,7 +267,8 @@ async def handle_match_cancelled(
             }
         try:
             await ReservationService.cancel_reservation(
-                tenant_id, existing["id"],
+                tenant_id,
+                existing["id"],
                 reason=f"CapX: {cancel_reason}",
             )
         except Exception as exc:
@@ -256,25 +277,32 @@ async def handle_match_cancelled(
 
         logger.info(
             "CapX match.cancelled → booking cancelled: tenant=%s match=%s booking=%s",
-            (tenant_id or "")[:8], capx_match_id[:12], existing["id"][:12],
+            (tenant_id or "")[:8],
+            capx_match_id[:12],
+            existing["id"][:12],
         )
         return {
-            "handled": True, "action": "booking_cancelled",
-            "direction": direction, "booking_id": existing["id"],
+            "handled": True,
+            "action": "booking_cancelled",
+            "direction": direction,
+            "booking_id": existing["id"],
             "capx_match_id": capx_match_id,
         }
 
     # outgoing
     res = await db[OUTGOING_COLLECTION].update_one(
         {"tenant_id": tenant_id, "capx_match_id": capx_match_id},
-        {"$set": {
-            "status": "cancelled",
-            "cancelled_at": cancelled_at,
-            "cancel_reason": cancel_reason,
-        }},
+        {
+            "$set": {
+                "status": "cancelled",
+                "cancelled_at": cancelled_at,
+                "cancel_reason": cancel_reason,
+            }
+        },
     )
     return {
         "handled": True,
         "action": "outgoing_cancelled" if res.modified_count else "noop_no_outgoing",
-        "direction": direction, "capx_match_id": capx_match_id,
+        "direction": direction,
+        "capx_match_id": capx_match_id,
     }

@@ -16,6 +16,7 @@ Security model:
   - IP rate-limited (Redis-backed, shared across instances) so the public,
     low-cost surface cannot be abused to brute-force codes or generate load.
 """
+
 from __future__ import annotations
 
 import ipaddress

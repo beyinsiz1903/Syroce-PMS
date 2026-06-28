@@ -9,6 +9,7 @@ This is the read-only PMS surface Af-sadakat needs:
 - guests (lookup by reservation/room)
 - folio.charge — push a charge from Af-sadakat into PMS folio
 """
+
 from __future__ import annotations
 
 import logging
@@ -36,6 +37,7 @@ router = APIRouter(prefix="/api/pms-outbound", tags=["pms-outbound"])
 
 def _db():
     from core.database import _raw_db
+
     return _raw_db
 
 
@@ -57,10 +59,7 @@ async def _auth(authorization: str | None) -> dict[str, Any]:
         # 403 — credential is recognized but subscription is no longer
         # active. Caller should stop polling and prompt the hotelier
         # to renew via the marketplace.
-        raise HTTPException(
-            status_code=403,
-            detail="Af-sadakat aboneliği aktif değil — entegrasyon askıda"
-        )
+        raise HTTPException(status_code=403, detail="Af-sadakat aboneliği aktif değil — entegrasyon askıda")
     return creds
 
 
@@ -82,8 +81,7 @@ async def list_rooms(
     db = _db()
     cur = db.rooms.find(
         {"tenant_id": tenant_id},
-        {"_id": 0, "id": 1, "room_number": 1, "room_type": 1,
-         "status": 1, "floor": 1, "capacity": 1},
+        {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "status": 1, "floor": 1, "capacity": 1},
     ).limit(limit)
     items = [_strip_id(d) async for d in cur]
     return {"rooms": items, "count": len(items)}
@@ -102,12 +100,14 @@ async def list_reservations(
     q: dict[str, Any] = {"tenant_id": tenant_id}
     if status:
         q["status"] = status
-    cur = db.reservations.find(
-        q,
-        {"_id": 0, "id": 1, "guest_id": 1, "guest_name": 1,
-         "room_number": 1, "check_in": 1, "check_out": 1,
-         "status": 1, "adults": 1, "children": 1, "total": 1},
-    ).sort("check_in", -1).limit(limit)
+    cur = (
+        db.reservations.find(
+            q,
+            {"_id": 0, "id": 1, "guest_id": 1, "guest_name": 1, "room_number": 1, "check_in": 1, "check_out": 1, "status": 1, "adults": 1, "children": 1, "total": 1},
+        )
+        .sort("check_in", -1)
+        .limit(limit)
+    )
     items = [_strip_id(d) async for d in cur]
     return {"reservations": items, "count": len(items)}
 
@@ -141,7 +141,8 @@ async def list_guests(
     flt: dict[str, Any] = {"tenant_id": tenant_id}
     if q:
         from security.query_safety import safe_search_term
-        if (_s := safe_search_term(q)):
+
+        if _s := safe_search_term(q):
             flt["$or"] = [
                 {"first_name": {"$regex": _s, "$options": "i"}},
                 {"last_name": {"$regex": _s, "$options": "i"}},
@@ -149,10 +150,10 @@ async def list_guests(
             ]
     cur = db.guests.find(
         flt,
-        {"_id": 0, "id": 1, "first_name": 1, "last_name": 1,
-         "email": 1, "phone": 1, "loyalty_id": 1, "vip": 1},
+        {"_id": 0, "id": 1, "first_name": 1, "last_name": 1, "email": 1, "phone": 1, "loyalty_id": 1, "vip": 1},
     ).limit(limit)
     from security.encrypted_lookup import decrypt_guest_doc
+
     items = [decrypt_guest_doc(_strip_id(d)) async for d in cur]
     return {"guests": items, "count": len(items)}
 
@@ -165,10 +166,13 @@ async def get_guest(
     creds = await _auth(authorization)
     db = _db()
     from security.encrypted_lookup import decrypt_guest_doc
-    doc = decrypt_guest_doc(await db.guests.find_one(
-        {"id": guest_id, "tenant_id": creds["tenant_id"]},
-        {"_id": 0},
-    ))
+
+    doc = decrypt_guest_doc(
+        await db.guests.find_one(
+            {"id": guest_id, "tenant_id": creds["tenant_id"]},
+            {"_id": 0},
+        )
+    )
     if not doc:
         raise HTTPException(status_code=404, detail="Misafir bulunamadı")
     return doc
@@ -180,8 +184,7 @@ class FolioChargeIn(BaseModel):
     description: str
     amount: float = Field(gt=0)
     currency: str = "TRY"
-    source: str = Field(default="afsadakat",
-                        description="Af-sadakat module that originated the charge")
+    source: str = Field(default="afsadakat", description="Af-sadakat module that originated the charge")
     external_ref: str | None = None  # idempotency key from caller
 
 
@@ -206,6 +209,7 @@ async def post_folio_charge(
     from datetime import UTC, datetime
 
     from pymongo.errors import DuplicateKeyError
+
     charge_id = str(uuid.uuid4())
     doc = {
         "id": charge_id,
@@ -225,15 +229,17 @@ async def post_folio_charge(
     try:
         await db.folio_charges.insert_one(doc)
     except DuplicateKeyError:
-        existing = await db.folio_charges.find_one({
-            "tenant_id": tenant_id,
-            "source": payload.source,
-            "external_ref": payload.external_ref,
-        }, {"_id": 0, "id": 1})
+        existing = await db.folio_charges.find_one(
+            {
+                "tenant_id": tenant_id,
+                "source": payload.source,
+                "external_ref": payload.external_ref,
+            },
+            {"_id": 0, "id": 1},
+        )
         if existing:
             return {"ok": True, "charge_id": existing["id"], "duplicate": True}
         # Index hit but doc not found → race against deletion; rethrow
         raise
-    logger.info("[pms-outbound] tenant=%s folio charge %s amount=%s source=%s",
-                tenant_id, charge_id, payload.amount, payload.source)
+    logger.info("[pms-outbound] tenant=%s folio charge %s amount=%s source=%s", tenant_id, charge_id, payload.amount, payload.source)
     return {"ok": True, "charge_id": charge_id, "duplicate": False}

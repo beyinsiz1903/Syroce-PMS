@@ -33,6 +33,7 @@ while an ongoing burst is still inside the window.
 Tick interval is env-overridable via
 ``KVKK_ID_PHOTO_ALERT_INTERVAL_SECONDS`` (default 600s).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -55,9 +56,7 @@ DEFAULT_THRESHOLD = 20
 DEFAULT_WINDOW_MINUTES = 60
 DEFAULT_COOLDOWN_MINUTES = 60
 
-DEFAULT_INTERVAL_SECONDS = int(
-    os.environ.get("KVKK_ID_PHOTO_ALERT_INTERVAL_SECONDS", "600")
-)
+DEFAULT_INTERVAL_SECONDS = int(os.environ.get("KVKK_ID_PHOTO_ALERT_INTERVAL_SECONDS", "600"))
 
 CONFIG_COLLECTION = "kvkk_id_photo_alert_config"
 STATE_COLLECTION = "kvkk_id_photo_alert_state"
@@ -79,6 +78,7 @@ DEFAULT_ALERT_ROLES: tuple[str, ...] = (
 def _system_db():
     """Bypass the tenant-aware proxy: this worker spans every tenant."""
     from core.tenant_db import get_system_db
+
     return get_system_db()
 
 
@@ -157,9 +157,7 @@ async def _load_configs(db) -> dict[str, dict]:
                     continue
                 out[tid] = _resolve_config(doc, tid)
             except Exception:
-                logger.exception(
-                    "[kvkk-id-photo-alert] skipping malformed config doc: %r", doc
-                )
+                logger.exception("[kvkk-id-photo-alert] skipping malformed config doc: %r", doc)
     except Exception:
         logger.exception("[kvkk-id-photo-alert] config cursor iteration failed")
     return out
@@ -198,18 +196,18 @@ async def _scan_actor_view_counts(db, since_iso: str) -> list[dict]:
         actor_id = key.get("actor_id")
         if not tenant_id or not actor_id:
             continue
-        rows.append({
-            "tenant_id": tenant_id,
-            "actor_id": actor_id,
-            "count": int(doc.get("count") or 0),
-            "last_view_at": doc.get("last_view_at"),
-        })
+        rows.append(
+            {
+                "tenant_id": tenant_id,
+                "actor_id": actor_id,
+                "count": int(doc.get("count") or 0),
+                "last_view_at": doc.get("last_view_at"),
+            }
+        )
     return rows
 
 
-async def _should_fire(
-    db, tenant_id: str, actor_id: str, cooldown_minutes: int
-) -> bool:
+async def _should_fire(db, tenant_id: str, actor_id: str, cooldown_minutes: int) -> bool:
     """Cooldown gate — avoids spamming admins every tick during an ongoing burst."""
     state = await db[STATE_COLLECTION].find_one(
         {"tenant_id": tenant_id, "actor_id": actor_id},
@@ -252,17 +250,14 @@ async def _write_high_severity_audit(
     threshold: int,
 ) -> None:
     from core.audit import log_audit_event
+
     await log_audit_event(
         tenant_id=tenant_id,
         user_id=actor_id,
         action=ALERT_ACTION,
         entity_type="audit_alert",
         entity_id=actor_id,
-        details=(
-            f"KVKK kimlik fotoğrafı görüntüleme uyarısı: "
-            f"actor={actor_id} son {window_minutes} dk içinde {count} "
-            f"görüntüleme yaptı (eşik={threshold})."
-        ),
+        details=(f"KVKK kimlik fotoğrafı görüntüleme uyarısı: actor={actor_id} son {window_minutes} dk içinde {count} görüntüleme yaptı (eşik={threshold})."),
         after_value={
             "actor_id": actor_id,
             "view_count": count,
@@ -297,10 +292,7 @@ async def _dispatch_admin_notification(
         "target_roles": list(alert_roles),
         "type": "kvkk_id_photo_alert",
         "title": "KVKK: Olağandışı kimlik fotoğrafı görüntüleme",
-        "message": (
-            f"{actor_id} kullanıcısı son {window_minutes} dakikada "
-            f"{count} kimlik fotoğrafı açtı (eşik {threshold})."
-        ),
+        "message": (f"{actor_id} kullanıcısı son {window_minutes} dakikada {count} kimlik fotoğrafı açtı (eşik {threshold})."),
         "priority": "high",
         "read": False,
         "action_url": "/audit-timeline?report=id-photo-views",
@@ -315,20 +307,20 @@ async def _dispatch_admin_notification(
     await db.notifications.insert_one(doc)
 
 
-async def _recount_for_tenant_window(
-    db, tenant_id: str, actor_id: str, window_minutes: int
-) -> int:
+async def _recount_for_tenant_window(db, tenant_id: str, actor_id: str, window_minutes: int) -> int:
     """Recount within the tenant's (smaller) window when the global scan
     used a wider one. Without this the worker would over-trigger for
     tenants whose window is shorter than the global max.
     """
     since = datetime.now(UTC) - timedelta(minutes=window_minutes)
-    return await db.audit_logs.count_documents({
-        "tenant_id": tenant_id,
-        "operation_name": VIEW_ACTION,
-        "actor_id": actor_id,
-        "timestamp": {"$gte": since.isoformat()},
-    })
+    return await db.audit_logs.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "operation_name": VIEW_ACTION,
+            "actor_id": actor_id,
+            "timestamp": {"$gte": since.isoformat()},
+        }
+    )
 
 
 async def _evaluate_row(db, row: dict, configs: dict[str, dict]) -> bool:
@@ -342,9 +334,7 @@ async def _evaluate_row(db, row: dict, configs: dict[str, dict]) -> bool:
     if not await _should_fire(db, tenant_id, actor_id, cfg["cooldown_minutes"]):
         return False
 
-    await _write_high_severity_audit(
-        db, tenant_id, actor_id, row["count"], cfg["window_minutes"], cfg["threshold"]
-    )
+    await _write_high_severity_audit(db, tenant_id, actor_id, row["count"], cfg["window_minutes"], cfg["threshold"])
     await _dispatch_admin_notification(
         db,
         tenant_id,
@@ -356,9 +346,12 @@ async def _evaluate_row(db, row: dict, configs: dict[str, dict]) -> bool:
     )
     await _record_alert_state(db, tenant_id, actor_id)
     logger.warning(
-        "[kvkk-id-photo-alert] FIRED tenant=%s actor=%s count=%d "
-        "threshold=%d window=%dm",
-        tenant_id, actor_id, row["count"], cfg["threshold"], cfg["window_minutes"],
+        "[kvkk-id-photo-alert] FIRED tenant=%s actor=%s count=%d threshold=%d window=%dm",
+        tenant_id,
+        actor_id,
+        row["count"],
+        cfg["threshold"],
+        cfg["window_minutes"],
     )
     return True
 
@@ -377,14 +370,13 @@ async def _run_once() -> dict:
             try:
                 row = {
                     **row,
-                    "count": await _recount_for_tenant_window(
-                        db, row["tenant_id"], row["actor_id"], cfg["window_minutes"]
-                    ),
+                    "count": await _recount_for_tenant_window(db, row["tenant_id"], row["actor_id"], cfg["window_minutes"]),
                 }
             except Exception:
                 logger.exception(
                     "[kvkk-id-photo-alert] recount failed tenant=%s actor=%s",
-                    row["tenant_id"], row["actor_id"],
+                    row["tenant_id"],
+                    row["actor_id"],
                 )
                 continue
         try:
@@ -393,7 +385,8 @@ async def _run_once() -> dict:
         except Exception:
             logger.exception(
                 "[kvkk-id-photo-alert] evaluate failed tenant=%s actor=%s",
-                row["tenant_id"], row["actor_id"],
+                row["tenant_id"],
+                row["actor_id"],
             )
 
     summary = {"rows_scanned": len(rows), "alerts_fired": fired}
@@ -405,9 +398,7 @@ async def _run_once() -> dict:
 async def _ensure_indexes(db) -> None:
     """Best-effort index creation; failures are non-fatal."""
     try:
-        await db[STATE_COLLECTION].create_index(
-            [("tenant_id", 1), ("actor_id", 1)], unique=True
-        )
+        await db[STATE_COLLECTION].create_index([("tenant_id", 1), ("actor_id", 1)], unique=True)
         await db[CONFIG_COLLECTION].create_index("tenant_id", unique=True)
     except Exception as e:
         logger.warning("[kvkk-id-photo-alert] index ensure failed: %s", e)
@@ -428,7 +419,9 @@ async def run_loop(interval_seconds: int | None = None) -> None:
             raise
         except Exception as exc:
             _transient_tracker.log_exception(
-                logger, exc, TransientFailureTracker.OUTER_LOOP_KEY,
+                logger,
+                exc,
+                TransientFailureTracker.OUTER_LOOP_KEY,
                 context="tick",
                 non_transient_msg="%s tick crashed: %s",
             )

@@ -3,6 +3,7 @@ Exely ARI Adapter.
 
 Translates ARIDelta into Exely SOAP API calls (OTA_HotelAvailNotifRQ, OTA_HotelRateAmountNotifRQ).
 """
+
 import logging
 import time
 
@@ -54,32 +55,38 @@ class ExelyARIAdapter:
             if scope == "availability":
                 soap_action = "OTA_HotelAvailNotifRQ"
                 request_body = {
-                    "AvailStatusMessages": [{
-                        "StatusApplicationControl": {
-                            "Start": str(delta.date_from),
-                            "End": str(delta.date_to),
-                            "InvTypeCode": delta.room_type_code,
-                            "RatePlanCode": delta.rate_plan_code or "",
-                        },
-                        "BookingLimit": payload.get("BookingLimit", 0),
-                        "RestrictionStatus": payload.get("RestrictionStatus", "Open"),
-                    }],
+                    "AvailStatusMessages": [
+                        {
+                            "StatusApplicationControl": {
+                                "Start": str(delta.date_from),
+                                "End": str(delta.date_to),
+                                "InvTypeCode": delta.room_type_code,
+                                "RatePlanCode": delta.rate_plan_code or "",
+                            },
+                            "BookingLimit": payload.get("BookingLimit", 0),
+                            "RestrictionStatus": payload.get("RestrictionStatus", "Open"),
+                        }
+                    ],
                 }
             elif scope == "rate":
                 soap_action = "OTA_HotelRateAmountNotifRQ"
                 request_body = {
-                    "RateAmountMessages": [{
-                        "StatusApplicationControl": {
-                            "Start": str(delta.date_from),
-                            "End": str(delta.date_to),
-                            "InvTypeCode": delta.room_type_code,
-                            "RatePlanCode": delta.rate_plan_code or "",
-                        },
-                        "Rates": [{
-                            "AmountAfterTax": payload.get("AmountAfterTax", "0"),
-                            "CurrencyCode": payload.get("CurrencyCode", "TRY"),
-                        }],
-                    }],
+                    "RateAmountMessages": [
+                        {
+                            "StatusApplicationControl": {
+                                "Start": str(delta.date_from),
+                                "End": str(delta.date_to),
+                                "InvTypeCode": delta.room_type_code,
+                                "RatePlanCode": delta.rate_plan_code or "",
+                            },
+                            "Rates": [
+                                {
+                                    "AmountAfterTax": payload.get("AmountAfterTax", "0"),
+                                    "CurrencyCode": payload.get("CurrencyCode", "TRY"),
+                                }
+                            ],
+                        }
+                    ],
                 }
             elif scope == "restriction":
                 soap_action = "OTA_HotelAvailNotifRQ"
@@ -101,7 +108,8 @@ class ExelyARIAdapter:
                 request_body = {"AvailStatusMessages": [restriction_msg]}
             else:
                 return ProviderResult(
-                    success=False, provider="exely",
+                    success=False,
+                    provider="exely",
                     error=f"Unknown scope: {scope}",
                 )
 

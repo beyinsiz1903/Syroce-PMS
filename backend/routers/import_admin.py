@@ -11,6 +11,7 @@ Endpoints:
   - POST /api/imports/{id}/approve-and-import → Approve and auto-import
   - POST /api/imports/{id}/dismiss        → Dismiss a review item
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -113,6 +114,7 @@ async def import_status():
     # Worker metrics
     try:
         from core.import_retry_worker import import_retry_worker
+
         worker_metrics = import_retry_worker.metrics
     except Exception:
         worker_metrics = {"running": False}
@@ -146,9 +148,17 @@ async def list_review_queue(
     if tenant_id:
         query["tenant_id"] = tenant_id
 
-    items = await db[COLL_IMPORTED].find(
-        query, {"_id": 0},
-    ).sort("created_at", -1).skip(offset).limit(limit).to_list(limit)
+    items = (
+        await db[COLL_IMPORTED]
+        .find(
+            query,
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .skip(offset)
+        .limit(limit)
+        .to_list(limit)
+    )
 
     total = await db[COLL_IMPORTED].count_documents(query)
 
@@ -177,9 +187,17 @@ async def list_import_events(
     if tenant_id:
         query["tenant_id"] = tenant_id
 
-    items = await db[COLL_IMPORTED].find(
-        query, {"_id": 0},
-    ).sort("created_at", -1).skip(offset).limit(limit).to_list(limit)
+    items = (
+        await db[COLL_IMPORTED]
+        .find(
+            query,
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .skip(offset)
+        .limit(limit)
+        .to_list(limit)
+    )
 
     total = await db[COLL_IMPORTED].count_documents(query)
 

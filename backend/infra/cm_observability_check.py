@@ -15,6 +15,7 @@ Why a separate helper (vs reusing health_check.py / cm_runtime_service):
 NEVER returns raw IPs, credentials, tenant_ids, or event payloads —
 only counts + verdicts safe for ops dashboards / Sentry / log sinks.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -26,19 +27,19 @@ logger = logging.getLogger("infra.cm_observability_check")
 # Tuned for the HR pilot. Pending+retry combined because retries are
 # transient back-pressure, not fresh work — they belong in the same
 # bucket from the operator's POV.
-OUTBOX_PENDING_DEGRADED = 100        # pending+retry
-OUTBOX_PENDING_FAIL     = 500
-OUTBOX_FAILED_DEGRADED  = 50         # status="failed" (terminal)
-OUTBOX_FAILED_FAIL      = 200
-OUTBOX_OLDEST_DEGRADED_SECONDS = 600    # 10 min
-OUTBOX_OLDEST_FAIL_SECONDS     = 1800   # 30 min
+OUTBOX_PENDING_DEGRADED = 100  # pending+retry
+OUTBOX_PENDING_FAIL = 500
+OUTBOX_FAILED_DEGRADED = 50  # status="failed" (terminal)
+OUTBOX_FAILED_FAIL = 200
+OUTBOX_OLDEST_DEGRADED_SECONDS = 600  # 10 min
+OUTBOX_OLDEST_FAIL_SECONDS = 1800  # 30 min
 OUTBOX_NO_PROCESSING_DEGRADED_SECONDS = 1800  # 30 min since last success
 
 # Circuit breaker thresholds.
 # OPEN==1 → DEGRADED (single provider down, fail-over candidate);
 # OPEN>=3 → FAIL (multi-provider blackout, pilot can't push ARI).
 CB_OPEN_DEGRADED = 1
-CB_OPEN_FAIL     = 3
+CB_OPEN_FAIL = 3
 
 
 async def get_outbox_status(db) -> dict[str, Any]:
@@ -49,10 +50,10 @@ async def get_outbox_status(db) -> dict[str, Any]:
     from cron / readiness — no FastAPI dependency.
     """
     try:
-        pending    = await db.outbox_events.count_documents({"status": "pending"})
+        pending = await db.outbox_events.count_documents({"status": "pending"})
         processing = await db.outbox_events.count_documents({"status": "processing"})
-        retry      = await db.outbox_events.count_documents({"status": "retry"})
-        failed     = await db.outbox_events.count_documents({"status": "failed"})
+        retry = await db.outbox_events.count_documents({"status": "retry"})
+        failed = await db.outbox_events.count_documents({"status": "failed"})
 
         backlog = pending + retry  # operator-facing back-pressure metric
 
@@ -85,9 +86,7 @@ async def get_outbox_status(db) -> dict[str, Any]:
                 processed = datetime.fromisoformat(last_processed["processed_at"])
                 if processed.tzinfo is None:
                     processed = processed.replace(tzinfo=UTC)
-                last_processed_seconds = round(
-                    (datetime.now(UTC) - processed).total_seconds(), 1
-                )
+                last_processed_seconds = round((datetime.now(UTC) - processed).total_seconds(), 1)
             except Exception:
                 last_processed_seconds = None
 
@@ -116,21 +115,11 @@ async def get_outbox_status(db) -> dict[str, Any]:
                 reasons.append(f"oldest={oldest_seconds:.0f}s ≥ {OUTBOX_OLDEST_FAIL_SECONDS}s")
             elif oldest_seconds >= OUTBOX_OLDEST_DEGRADED_SECONDS and verdict == "ok":
                 verdict, score = "degraded", 0.5
-                reasons.append(
-                    f"oldest={oldest_seconds:.0f}s ≥ {OUTBOX_OLDEST_DEGRADED_SECONDS}s"
-                )
+                reasons.append(f"oldest={oldest_seconds:.0f}s ≥ {OUTBOX_OLDEST_DEGRADED_SECONDS}s")
 
-        if (
-            backlog > 0
-            and last_processed_seconds is not None
-            and last_processed_seconds >= OUTBOX_NO_PROCESSING_DEGRADED_SECONDS
-            and verdict == "ok"
-        ):
+        if backlog > 0 and last_processed_seconds is not None and last_processed_seconds >= OUTBOX_NO_PROCESSING_DEGRADED_SECONDS and verdict == "ok":
             verdict, score = "degraded", 0.5
-            reasons.append(
-                f"no_throughput={last_processed_seconds:.0f}s "
-                f"≥ {OUTBOX_NO_PROCESSING_DEGRADED_SECONDS}s"
-            )
+            reasons.append(f"no_throughput={last_processed_seconds:.0f}s ≥ {OUTBOX_NO_PROCESSING_DEGRADED_SECONDS}s")
 
         return {
             "status": verdict,
@@ -184,10 +173,10 @@ async def get_circuit_breaker_status() -> dict[str, Any]:
         # eviction can override get_state_counts() without breaking
         # readiness/alerting).
         counts = await provider_failover.get_state_counts_shared()
-        total           = counts.get("total", 0)
-        open_count      = counts.get("open", 0)
+        total = counts.get("total", 0)
+        open_count = counts.get("open", 0)
         half_open_count = counts.get("half_open", 0)
-        closed_count    = counts.get("closed", 0)
+        closed_count = counts.get("closed", 0)
 
         verdict = "ok"
         score = 1.0
@@ -219,8 +208,8 @@ async def get_circuit_breaker_status() -> dict[str, Any]:
         return {
             "status": "unknown",
             "score": 0.7,  # in-process breakers should always be readable;
-                          # if they're not, something deeper is wrong but
-                          # we don't want to single-handedly fail readiness.
+            # if they're not, something deeper is wrong but
+            # we don't want to single-handedly fail readiness.
             "error_type": type(e).__name__,
         }
 

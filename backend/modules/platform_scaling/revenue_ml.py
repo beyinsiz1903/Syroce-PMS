@@ -3,6 +3,7 @@ Revenue ML - Machine learning models for demand forecasting, rate elasticity,
 booking probability, and cancellation prediction.
 Uses statistical models (no external ML dependencies needed).
 """
+
 import asyncio
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -15,10 +16,12 @@ class DemandForecastingModel:
 
     async def forecast_demand(self, tenant_id: str, forecast_days: int = 30) -> dict[str, Any]:
         """Generate demand forecast using weighted historical analysis."""
-        total_rooms = await db.rooms.count_documents({
-            "tenant_id": tenant_id,
-            "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
-        })
+        total_rooms = await db.rooms.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
+            }
+        )
         if total_rooms == 0:
             total_rooms = 1
 
@@ -33,22 +36,30 @@ class DemandForecastingModel:
         otb_status_set = ["confirmed", "guaranteed"]
 
         hist_tasks = [
-            db.bookings.count_documents({
-                "tenant_id": tenant_id,
-                "check_in": {"$lte": d.isoformat()}, "check_out": {"$gt": d.isoformat()},
-                "status": {"$in": hist_status_set},
-            }) for d in hist_dates
+            db.bookings.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "check_in": {"$lte": d.isoformat()},
+                    "check_out": {"$gt": d.isoformat()},
+                    "status": {"$in": hist_status_set},
+                }
+            )
+            for d in hist_dates
         ]
         otb_tasks = [
-            db.bookings.count_documents({
-                "tenant_id": tenant_id,
-                "check_in": {"$lte": d.isoformat()}, "check_out": {"$gt": d.isoformat()},
-                "status": {"$in": otb_status_set},
-            }) for d in target_dates
+            db.bookings.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "check_in": {"$lte": d.isoformat()},
+                    "check_out": {"$gt": d.isoformat()},
+                    "status": {"$in": otb_status_set},
+                }
+            )
+            for d in target_dates
         ]
         all_counts = await asyncio.gather(*hist_tasks, *otb_tasks, return_exceptions=True)
-        hist_counts = all_counts[:len(hist_tasks)]
-        otb_counts = all_counts[len(hist_tasks):]
+        hist_counts = all_counts[: len(hist_tasks)]
+        otb_counts = all_counts[len(hist_tasks) :]
 
         dow_history: dict[int, list[float]] = {i: [] for i in range(7)}
         for d, booked in zip(hist_dates, hist_counts):
@@ -94,16 +105,18 @@ class DemandForecastingModel:
             if len(dow_history.get(dow, [])) < 4:
                 confidence *= 0.7
 
-            forecast.append({
-                "date": target_s,
-                "day_of_week": target.strftime("%A"),
-                "predicted_occupancy_pct": predicted_occ,
-                "predicted_rooms_sold": predicted_rooms,
-                "on_the_books": otb,
-                "remaining_to_sell": max(total_rooms - otb, 0),
-                "confidence": round(confidence, 2),
-                "demand_level": "high" if predicted_occ > 80 else ("medium" if predicted_occ > 50 else "low"),
-            })
+            forecast.append(
+                {
+                    "date": target_s,
+                    "day_of_week": target.strftime("%A"),
+                    "predicted_occupancy_pct": predicted_occ,
+                    "predicted_rooms_sold": predicted_rooms,
+                    "on_the_books": otb,
+                    "remaining_to_sell": max(total_rooms - otb, 0),
+                    "confidence": round(confidence, 2),
+                    "demand_level": "high" if predicted_occ > 80 else ("medium" if predicted_occ > 50 else "low"),
+                }
+            )
 
         return {
             "tenant_id": tenant_id,
@@ -121,14 +134,11 @@ class RateElasticityModel:
         """Analyze rate elasticity using historical booking and rate data."""
         # Get recent bookings with rates
         cutoff = (date.today() - timedelta(days=90)).isoformat()
-        query = {"tenant_id": tenant_id, "created_at": {"$gte": cutoff},
-                 "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]}}
+        query = {"tenant_id": tenant_id, "created_at": {"$gte": cutoff}, "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]}}
         if room_type:
             query["room_type"] = room_type
 
-        bookings = await db.bookings.find(
-            query, {"_id": 0, "total_amount": 1, "check_in": 1, "check_out": 1, "room_type": 1}
-        ).to_list(5000)
+        bookings = await db.bookings.find(query, {"_id": 0, "total_amount": 1, "check_in": 1, "check_out": 1, "room_type": 1}).to_list(5000)
 
         if len(bookings) < 10:
             return {
@@ -151,7 +161,7 @@ class RateElasticityModel:
             "mid_low": {"range": (avg_price * 0.8, avg_price * 0.95), "count": 0},
             "mid": {"range": (avg_price * 0.95, avg_price * 1.05), "count": 0},
             "mid_high": {"range": (avg_price * 1.05, avg_price * 1.2), "count": 0},
-            "high": {"range": (avg_price * 1.2, float('inf')), "count": 0},
+            "high": {"range": (avg_price * 1.2, float("inf")), "count": 0},
         }
 
         for p in prices:
@@ -200,6 +210,7 @@ class RateElasticityModel:
             room_types = ["Standard"]
 
         import asyncio
+
         async def _one(rt: str) -> dict[str, Any]:
             elasticity, rooms = await asyncio.gather(
                 self.analyze_elasticity(tenant_id, rt),
@@ -237,9 +248,7 @@ class RateElasticityModel:
 class BookingProbabilityModel:
     """Predict booking conversion probability based on lead time and patterns."""
 
-    async def predict_conversion(self, tenant_id: str, check_in: str, check_out: str,
-                                  source: str = "direct", room_type: str = "Standard",
-                                  rate: float = 0) -> dict[str, Any]:
+    async def predict_conversion(self, tenant_id: str, check_in: str, check_out: str, source: str = "direct", room_type: str = "Standard", rate: float = 0) -> dict[str, Any]:
         """Predict probability of a booking converting (not cancelling)."""
         today = date.today()
         try:
@@ -251,14 +260,21 @@ class BookingProbabilityModel:
 
         # Historical conversion rate by source
         cutoff = (today - timedelta(days=90)).isoformat()
-        total = await db.bookings.count_documents({
-            "tenant_id": tenant_id, "created_at": {"$gte": cutoff},
-            "source": source,
-        })
-        cancelled = await db.bookings.count_documents({
-            "tenant_id": tenant_id, "created_at": {"$gte": cutoff},
-            "source": source, "status": "cancelled",
-        })
+        total = await db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "created_at": {"$gte": cutoff},
+                "source": source,
+            }
+        )
+        cancelled = await db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "created_at": {"$gte": cutoff},
+                "source": source,
+                "status": "cancelled",
+            }
+        )
         base_rate = 1.0 - (cancelled / max(total, 1))
         if total < 5:
             base_rate = 0.75
@@ -322,13 +338,15 @@ class BookingProbabilityModel:
         rates = []
         for src, data in by_source.items():
             conv_rate = round(1.0 - (data["cancelled"] / max(data["total"], 1)), 3)
-            rates.append({
-                "source": src,
-                "total_bookings": data["total"],
-                "cancelled": data["cancelled"],
-                "completed": data["completed"],
-                "conversion_rate": conv_rate,
-            })
+            rates.append(
+                {
+                    "source": src,
+                    "total_bookings": data["total"],
+                    "cancelled": data["cancelled"],
+                    "completed": data["completed"],
+                    "conversion_rate": conv_rate,
+                }
+            )
 
         rates.sort(key=lambda x: x["conversion_rate"], reverse=True)
         return {"tenant_id": tenant_id, "period_days": 90, "by_source": rates}
@@ -339,9 +357,7 @@ class CancellationPredictionModel:
 
     async def predict_cancellation_risk(self, tenant_id: str, booking_id: str) -> dict[str, Any]:
         """Predict cancellation risk for a specific booking."""
-        booking = await db.bookings.find_one(
-            {"id": booking_id, "tenant_id": tenant_id}, {"_id": 0}
-        )
+        booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
         if not booking:
             return {"success": False, "error": "Booking not found"}
 
@@ -379,14 +395,20 @@ class CancellationPredictionModel:
         # Guest history - repeat guest lower risk
         guest_id = booking.get("guest_id")
         if guest_id:
-            past_stays = await db.bookings.count_documents({
-                "tenant_id": tenant_id, "guest_id": guest_id,
-                "status": {"$in": ["checked_out"]},
-            })
-            past_cancels = await db.bookings.count_documents({
-                "tenant_id": tenant_id, "guest_id": guest_id,
-                "status": "cancelled",
-            })
+            past_stays = await db.bookings.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "guest_id": guest_id,
+                    "status": {"$in": ["checked_out"]},
+                }
+            )
+            past_cancels = await db.bookings.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "guest_id": guest_id,
+                    "status": "cancelled",
+                }
+            )
             if past_cancels > past_stays:
                 risk_score += 0.20
                 factors.append({"factor": "cancel_history", "impact": 0.20, "detail": f"{past_cancels} onceki iptal"})
@@ -429,22 +451,19 @@ class CancellationPredictionModel:
         # ilk projection'a dahil edip, guest_id history'sini tek bir aggregation
         # ile bulk topluyoruz; risk skoru tamamen in-memory hesaplanıyor.
         upcoming = await db.bookings.find(
-            {"tenant_id": tenant_id, "check_in": {"$gte": today},
-             "status": {"$in": ["confirmed", "guaranteed"]}},
-            {"_id": 0, "id": 1, "guest_name": 1, "check_in": 1, "check_out": 1,
-             "room_id": 1, "source": 1, "total_amount": 1, "guest_id": 1,
-             "payment_received": 1, "deposit_paid": 1, "group_id": 1},
+            {"tenant_id": tenant_id, "check_in": {"$gte": today}, "status": {"$in": ["confirmed", "guaranteed"]}},
+            {"_id": 0, "id": 1, "guest_name": 1, "check_in": 1, "check_out": 1, "room_id": 1, "source": 1, "total_amount": 1, "guest_id": 1, "payment_received": 1, "deposit_paid": 1, "group_id": 1},
         ).to_list(500)
 
         guest_ids = list({b["guest_id"] for b in upcoming if b.get("guest_id")})
         history: dict[str, dict[str, int]] = {}
         if guest_ids:
-            cursor = db.bookings.aggregate([
-                {"$match": {"tenant_id": tenant_id, "guest_id": {"$in": guest_ids},
-                            "status": {"$in": ["checked_out", "cancelled"]}}},
-                {"$group": {"_id": {"gid": "$guest_id", "st": "$status"},
-                             "n": {"$sum": 1}}},
-            ])
+            cursor = db.bookings.aggregate(
+                [
+                    {"$match": {"tenant_id": tenant_id, "guest_id": {"$in": guest_ids}, "status": {"$in": ["checked_out", "cancelled"]}}},
+                    {"$group": {"_id": {"gid": "$guest_id", "st": "$status"}, "n": {"$sum": 1}}},
+                ]
+            )
             async for row in cursor:
                 gid = row["_id"]["gid"]
                 st = row["_id"]["st"]
@@ -497,13 +516,14 @@ class CancellationPredictionModel:
             score = min(max(round(score, 3), 0.0), 1.0)
             if score >= min_risk:
                 risk_level = "high" if score > 0.5 else ("medium" if score > 0.25 else "low")
-                at_risk.append({
-                    **{k: v for k, v in b.items()
-                       if k not in ("payment_received", "deposit_paid", "group_id", "guest_id")},
-                    "cancellation_probability": score,
-                    "risk_level": risk_level,
-                    "risk_factors": factors,
-                })
+                at_risk.append(
+                    {
+                        **{k: v for k, v in b.items() if k not in ("payment_received", "deposit_paid", "group_id", "guest_id")},
+                        "cancellation_probability": score,
+                        "risk_level": risk_level,
+                        "risk_factors": factors,
+                    }
+                )
 
         at_risk.sort(key=lambda x: x["cancellation_probability"], reverse=True)
         total_at_risk_revenue = sum(b.get("total_amount", 0) for b in at_risk)
@@ -534,6 +554,7 @@ class RevenueMLDashboard:
         """
         import asyncio
         import logging as _logging
+
         _log = _logging.getLogger(__name__)
 
         results = await asyncio.gather(

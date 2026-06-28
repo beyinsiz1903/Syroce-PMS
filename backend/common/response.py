@@ -2,6 +2,7 @@
 Common — Normalized API Response Helpers
 Standardised response envelope for all domain endpoints.
 """
+
 from datetime import UTC, datetime
 from typing import Any
 

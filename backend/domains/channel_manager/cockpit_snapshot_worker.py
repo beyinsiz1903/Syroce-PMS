@@ -14,6 +14,7 @@ Streams only critical metrics every 3 seconds:
   - is_production_ready
   - last_verify_timestamp
 """
+
 import asyncio
 import logging
 from typing import Any
@@ -36,17 +37,15 @@ async def _compute_snapshot(tenant_id: str) -> dict[str, Any]:
     hf_stats = await get_hard_fail_stats(tenant_id)
     quarantine = await get_quarantine_overview(tenant_id)
 
-    drift_count = await db["channel_reconciliation_cases"].count_documents({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["open", "investigating"]},
-        "drift_type": {"$exists": True, "$ne": None},
-    })
-
-    is_ready = (
-        hf_stats["hard_fail_change_sets"] == 0
-        and hf_stats["open_hard_fail_incidents"] == 0
-        and quarantine["total_quarantined"] == 0
+    drift_count = await db["channel_reconciliation_cases"].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["open", "investigating"]},
+            "drift_type": {"$exists": True, "$ne": None},
+        }
     )
+
+    is_ready = hf_stats["hard_fail_change_sets"] == 0 and hf_stats["open_hard_fail_incidents"] == 0 and quarantine["total_quarantined"] == 0
 
     return {
         "verify_ratio": metrics["verify_success_ratio"],

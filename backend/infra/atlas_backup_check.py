@@ -14,6 +14,7 @@ Admin API call, no credentials. Operators can additionally run
 `backend/scripts/verify_atlas_backup.py` to validate the actual
 snapshot recency via the Atlas Admin API when keys are configured.
 """
+
 from __future__ import annotations
 
 import os
@@ -28,11 +29,7 @@ def _get_mongo_uri() -> str:
     and falls back to `MONGO_ATLAS_URI` for environments where the
     Atlas string is the only one stored in Replit Secrets.
     """
-    return (
-        os.environ.get("MONGO_URL")
-        or os.environ.get("MONGO_ATLAS_URI")
-        or ""
-    )
+    return os.environ.get("MONGO_URL") or os.environ.get("MONGO_ATLAS_URI") or ""
 
 
 def is_atlas_uri(uri: str) -> bool:
@@ -113,11 +110,9 @@ def get_atlas_backup_status() -> dict[str, Any]:
     # M10 and above include continuous cloud backup + PITR by default.
     # Coverage extends to L (low-CPU) and R (NVMe) variants of those tiers.
     # M2/M5 include daily snapshots only. M0 has no backup.
-    _M10_PLUS_BASES = {"M10", "M20", "M30", "M40", "M50", "M60", "M80",
-                       "M140", "M200", "M300", "M400", "M700"}
+    _M10_PLUS_BASES = {"M10", "M20", "M30", "M40", "M50", "M60", "M80", "M140", "M200", "M300", "M400", "M700"}
     has_continuous_backup = (
-        tier in _M10_PLUS_BASES
-        or any(tier.startswith(b) for b in _M10_PLUS_BASES)  # M30L, M40R, etc.
+        tier in _M10_PLUS_BASES or any(tier.startswith(b) for b in _M10_PLUS_BASES)  # M30L, M40R, etc.
     )
     has_snapshot_only = tier in {"M2", "M5"}
 
@@ -154,11 +149,7 @@ def resolve_backup_check(local_backup_status: dict[str, Any]) -> tuple[dict[str,
       * Non-Atlas: fall back to legacy local-backup-manager behaviour.
     """
     atlas = get_atlas_backup_status()
-    env = (
-        os.environ.get("ENVIRONMENT")
-        or os.environ.get("APP_ENV")
-        or "development"
-    ).strip().lower()
+    env = (os.environ.get("ENVIRONMENT") or os.environ.get("APP_ENV") or "development").strip().lower()
     is_prod = env in ("production", "prod", "live")
 
     if atlas["atlas_managed"]:
@@ -195,10 +186,7 @@ def resolve_backup_check(local_backup_status: dict[str, Any]) -> tuple[dict[str,
                 "status": "atlas_no_backup" if is_m0 else "atlas_unknown_tier",
                 "atlas": atlas,
                 "warning": (
-                    "M0 free-tier has NO managed backup — upgrade to M10+ "
-                    "or enable BACKUP_ENABLED=true with durable upload"
-                    if is_m0
-                    else "ATLAS_TIER env-var unset — set it to declare your plan"
+                    "M0 free-tier has NO managed backup — upgrade to M10+ or enable BACKUP_ENABLED=true with durable upload" if is_m0 else "ATLAS_TIER env-var unset — set it to declare your plan"
                 ),
             },
             0.0 if is_prod else 0.3,

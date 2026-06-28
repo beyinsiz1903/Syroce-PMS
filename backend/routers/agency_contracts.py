@@ -64,7 +64,9 @@ async def _periodic_expire_worker(interval_seconds: int = 3600) -> None:
             _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
         except Exception as e:  # noqa: BLE001
             _transient_tracker.log_exception(
-                logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                logger,
+                e,
+                TransientFailureTracker.OUTER_LOOP_KEY,
                 context="periodic expire",
                 non_transient_msg="%s periodic expire worker error: %s",
             )
@@ -105,8 +107,7 @@ async def _ensure_indexes() -> None:
     await coll.create_index([("contract_code", 1)], unique=True, name="uniq_code")
     # 3) Perf: tek otel kontrolü (has_active_contract)
     await coll.create_index(
-        [("agency_id", 1), ("tenant_id", 1), ("status", 1),
-         ("valid_from", 1), ("valid_to", 1)],
+        [("agency_id", 1), ("tenant_id", 1), ("status", 1), ("valid_from", 1), ("valid_to", 1)],
         name="perf_active_lookup",
     )
     # 4) Perf: partner listeleme
@@ -118,6 +119,7 @@ async def _ensure_indexes() -> None:
 
 
 # ─── Public helper (marketplace_b2b.py'den çağrılır) ──────────────────────
+
 
 async def has_active_contract(agency_id: str, tenant_id: str, on_date: str | None = None) -> dict | None:
     """O acentenin o otelle on_date için aktif (approved + tarih içinde) sözleşmesi
@@ -154,9 +156,7 @@ async def list_partner_tenant_ids(agency_id: str, on_date: str | None = None) ->
     return [doc["tenant_id"] async for doc in cursor]
 
 
-async def list_active_agencies_for_tenant(
-    tenant_id: str, on_date: str | None = None
-) -> list[str]:
+async def list_active_agencies_for_tenant(tenant_id: str, on_date: str | None = None) -> list[str]:
     """Bu otelle bugün aktif (approved + tarih içinde) sözleşmesi olan tüm agency_id
     listesi. has_active_contract / list_partner_tenant_ids'in TERSİ (tenant -> agency).
 
@@ -200,10 +200,9 @@ class ContractPropose(BaseModel):
     tenant_id: str
     commission_pct: float = Field(default=12.0, ge=0, le=100)
     cancellation_policy: CancellationPolicy = Field(default_factory=CancellationPolicy)
-    payment_terms: str = Field(default="on_arrival",
-                               pattern="^(prepaid|on_arrival|net_7|net_15|net_30)$")
+    payment_terms: str = Field(default="on_arrival", pattern="^(prepaid|on_arrival|net_7|net_15|net_30)$")
     valid_from: str  # YYYY-MM-DD
-    valid_to: str    # YYYY-MM-DD
+    valid_to: str  # YYYY-MM-DD
     currency: str = Field(default="TRY", pattern="^[A-Z]{3}$")
     allowed_room_types: list[str] = []
     special_terms: str = ""
@@ -244,6 +243,7 @@ def _validate_dates(valid_from: str, valid_to: str) -> None:
 async def _get_agency_dep():
     """Lazy import — marketplace_b2b.get_marketplace_agency'yi tekrar kullanırız."""
     from routers.marketplace_b2b import get_marketplace_agency
+
     return get_marketplace_agency
 
 
@@ -316,16 +316,15 @@ async def contract_propose(
         await sysdb.agency_contracts.insert_one(doc)
     except DuplicateKeyError:
         # Partial unique index tetiklendi → zaten pending/approved bir sözleşme var
-        existing = await sysdb.agency_contracts.find_one({
-            "agency_id": agency["agency_id"],
-            "tenant_id": data.tenant_id,
-            "status": {"$in": ["pending", "approved"]},
-        }, {"_id": 0, "id": 1, "status": 1, "contract_code": 1})
-        raise HTTPException(
-            409,
-            f"Bu otelle zaten {existing['status']} durumda bir sözleşmeniz var "
-            f"({existing['contract_code']}). Önce onu sonlandırın/geri çekin."
+        existing = await sysdb.agency_contracts.find_one(
+            {
+                "agency_id": agency["agency_id"],
+                "tenant_id": data.tenant_id,
+                "status": {"$in": ["pending", "approved"]},
+            },
+            {"_id": 0, "id": 1, "status": 1, "contract_code": 1},
         )
+        raise HTTPException(409, f"Bu otelle zaten {existing['status']} durumda bir sözleşmeniz var ({existing['contract_code']}). Önce onu sonlandırın/geri çekin.")
     doc.pop("_id", None)
     return {"ok": True, "contract": doc}
 
@@ -365,9 +364,7 @@ async def contract_get(
     agency: dict = Depends(_agency_dep),
 ):
     sysdb = get_system_db()
-    doc = await sysdb.agency_contracts.find_one(
-        {"id": contract_id, "agency_id": agency["agency_id"]}, {"_id": 0}
-    )
+    doc = await sysdb.agency_contracts.find_one({"id": contract_id, "agency_id": agency["agency_id"]}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Sözleşme bulunamadı")
     return {"contract": doc}
@@ -382,15 +379,12 @@ async def contract_withdraw(
     sysdb = get_system_db()
     contract = await sysdb.agency_contracts.find_one_and_update(
         {"id": contract_id, "agency_id": agency["agency_id"], "status": "pending"},
-        {"$set": {"status": "withdrawn", "updated_at": _now_iso(),
-                  "decision_notes": "Acente tarafından geri çekildi"}},
+        {"$set": {"status": "withdrawn", "updated_at": _now_iso(), "decision_notes": "Acente tarafından geri çekildi"}},
         projection={"_id": 0, "id": 1, "status": 1},
         return_document=ReturnDocument.AFTER,
     )
     if not contract:
-        any_doc = await sysdb.agency_contracts.find_one(
-            {"id": contract_id, "agency_id": agency["agency_id"]}, {"_id": 0, "status": 1}
-        )
+        any_doc = await sysdb.agency_contracts.find_one({"id": contract_id, "agency_id": agency["agency_id"]}, {"_id": 0, "status": 1})
         if not any_doc:
             raise HTTPException(404, "Sözleşme bulunamadı")
         raise HTTPException(409, "Sadece bekleyen teklifler geri çekilebilir")
@@ -478,12 +472,13 @@ async def hotel_list_requests(
     docs = await sysdb.agency_contracts.find(q, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
 
     # Sayaclar tek aggregate roundtrip — 10K+ kayitta da sabit O(1) bellek.
-    counts = {"pending": 0, "approved": 0, "rejected": 0,
-              "terminated": 0, "expired": 0, "withdrawn": 0}
-    cursor = sysdb.agency_contracts.aggregate([
-        {"$match": {"tenant_id": tenant_id}},
-        {"$group": {"_id": "$status", "n": {"$sum": 1}}},
-    ])
+    counts = {"pending": 0, "approved": 0, "rejected": 0, "terminated": 0, "expired": 0, "withdrawn": 0}
+    cursor = sysdb.agency_contracts.aggregate(
+        [
+            {"$match": {"tenant_id": tenant_id}},
+            {"$group": {"_id": "$status", "n": {"$sum": 1}}},
+        ]
+    )
     async for row in cursor:
         s = row.get("_id") or "pending"
         if s in counts:
@@ -502,9 +497,7 @@ async def hotel_get_request(
     sysdb = get_system_db()
     # Detail call'da da read-time auto-expire — list/detail tutarliligi.
     await _auto_expire_overdue(tenant_id)
-    doc = await sysdb.agency_contracts.find_one(
-        {"id": contract_id, "tenant_id": tenant_id}, {"_id": 0}
-    )
+    doc = await sysdb.agency_contracts.find_one({"id": contract_id, "tenant_id": tenant_id}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Sözleşme bulunamadı")
     return {"contract": doc}
@@ -521,49 +514,46 @@ async def hotel_approve_request(
     sysdb = get_system_db()
 
     # Önce mevcut komisyonu öğren (override yoksa korumak için)
-    existing = await sysdb.agency_contracts.find_one(
-        {"id": contract_id, "tenant_id": tenant_id},
-        {"_id": 0, "commission_pct": 1, "status": 1}
-    )
+    existing = await sysdb.agency_contracts.find_one({"id": contract_id, "tenant_id": tenant_id}, {"_id": 0, "commission_pct": 1, "status": 1})
     if not existing:
         raise HTTPException(404, "Sözleşme bulunamadı")
     if existing["status"] != "pending":
         raise HTTPException(409, f"Bu sözleşme zaten '{existing['status']}' durumunda")
 
-    final_pct = (
-        data.commission_pct_override
-        if data.commission_pct_override is not None
-        else existing["commission_pct"]
-    )
+    final_pct = data.commission_pct_override if data.commission_pct_override is not None else existing["commission_pct"]
     # ATOMIC: yalnızca status="pending" iken güncelle. Başka istek araya girip
     # durumu değiştirdiyse update düşmez.
     contract = await sysdb.agency_contracts.find_one_and_update(
         {"id": contract_id, "tenant_id": tenant_id, "status": "pending"},
-        {"$set": {
-            "status": "approved",
-            "commission_pct": final_pct,
-            "hotel_approved_commission_pct": final_pct,
-            "decided_at": _now_iso(),
-            "decided_by": current_user.email,
-            "decision_notes": data.notes,
-            "updated_at": _now_iso(),
-        }},
+        {
+            "$set": {
+                "status": "approved",
+                "commission_pct": final_pct,
+                "hotel_approved_commission_pct": final_pct,
+                "decided_at": _now_iso(),
+                "decided_by": current_user.email,
+                "decision_notes": data.notes,
+                "updated_at": _now_iso(),
+            }
+        },
         projection={"_id": 0},
         return_document=ReturnDocument.AFTER,
     )
     if not contract:
         raise HTTPException(409, "Sözleşme durumu eş zamanlı bir istekle değişti, lütfen yenileyin")
 
-    await sysdb.agency_contract_events.insert_one({
-        "id": _uuid(),
-        "contract_id": contract_id,
-        "agency_id": contract["agency_id"],
-        "tenant_id": tenant_id,
-        "event": "approved",
-        "actor": current_user.email,
-        "payload": {"commission_pct": final_pct, "notes": data.notes},
-        "created_at": _now_iso(),
-    })
+    await sysdb.agency_contract_events.insert_one(
+        {
+            "id": _uuid(),
+            "contract_id": contract_id,
+            "agency_id": contract["agency_id"],
+            "tenant_id": tenant_id,
+            "event": "approved",
+            "actor": current_user.email,
+            "payload": {"commission_pct": final_pct, "notes": data.notes},
+            "created_at": _now_iso(),
+        }
+    )
     return {"ok": True, "contract": contract}
 
 
@@ -579,35 +569,37 @@ async def hotel_reject_request(
     # ATOMIC find-and-update
     contract = await sysdb.agency_contracts.find_one_and_update(
         {"id": contract_id, "tenant_id": tenant_id, "status": "pending"},
-        {"$set": {
-            "status": "rejected",
-            "decided_at": _now_iso(),
-            "decided_by": current_user.email,
-            "decision_notes": data.reason or "Sebep belirtilmedi",
-            "updated_at": _now_iso(),
-        }},
+        {
+            "$set": {
+                "status": "rejected",
+                "decided_at": _now_iso(),
+                "decided_by": current_user.email,
+                "decision_notes": data.reason or "Sebep belirtilmedi",
+                "updated_at": _now_iso(),
+            }
+        },
         projection={"_id": 0},
         return_document=ReturnDocument.AFTER,
     )
     if not contract:
         # Var mı diye bak — yok mu, yoksa durumu mu değişti?
-        any_doc = await sysdb.agency_contracts.find_one(
-            {"id": contract_id, "tenant_id": tenant_id}, {"_id": 0, "status": 1}
-        )
+        any_doc = await sysdb.agency_contracts.find_one({"id": contract_id, "tenant_id": tenant_id}, {"_id": 0, "status": 1})
         if not any_doc:
             raise HTTPException(404, "Sözleşme bulunamadı")
         raise HTTPException(409, f"Bu sözleşme zaten '{any_doc['status']}' durumunda")
 
-    await sysdb.agency_contract_events.insert_one({
-        "id": _uuid(),
-        "contract_id": contract_id,
-        "agency_id": contract["agency_id"],
-        "tenant_id": tenant_id,
-        "event": "rejected",
-        "actor": current_user.email,
-        "payload": {"reason": data.reason},
-        "created_at": _now_iso(),
-    })
+    await sysdb.agency_contract_events.insert_one(
+        {
+            "id": _uuid(),
+            "contract_id": contract_id,
+            "agency_id": contract["agency_id"],
+            "tenant_id": tenant_id,
+            "event": "rejected",
+            "actor": current_user.email,
+            "payload": {"reason": data.reason},
+            "created_at": _now_iso(),
+        }
+    )
     return {"ok": True, "contract": contract}
 
 
@@ -622,10 +614,7 @@ async def hotel_terminate_contract(
     var olan rezervasyonlar etkilenmez)."""
     tenant_id = _require_hotel_user(current_user)
     sysdb = get_system_db()
-    existing = await sysdb.agency_contracts.find_one(
-        {"id": contract_id, "tenant_id": tenant_id},
-        {"_id": 0, "decision_notes": 1, "status": 1}
-    )
+    existing = await sysdb.agency_contracts.find_one({"id": contract_id, "tenant_id": tenant_id}, {"_id": 0, "decision_notes": 1, "status": 1})
     if not existing:
         raise HTTPException(404, "Sözleşme bulunamadı")
 
@@ -634,30 +623,34 @@ async def hotel_terminate_contract(
 
     contract = await sysdb.agency_contracts.find_one_and_update(
         {"id": contract_id, "tenant_id": tenant_id, "status": "approved"},
-        {"$set": {
-            "status": "terminated",
-            "terminated_at": _now_iso(),
-            "terminated_by": current_user.email,
-            "decision_notes": new_notes,
-            "valid_to": new_valid_to,
-            "updated_at": _now_iso(),
-        }},
+        {
+            "$set": {
+                "status": "terminated",
+                "terminated_at": _now_iso(),
+                "terminated_by": current_user.email,
+                "decision_notes": new_notes,
+                "valid_to": new_valid_to,
+                "updated_at": _now_iso(),
+            }
+        },
         projection={"_id": 0},
         return_document=ReturnDocument.AFTER,
     )
     if not contract:
         raise HTTPException(409, f"Sadece onaylı sözleşmeler feshedilebilir (mevcut durum: {existing['status']})")
 
-    await sysdb.agency_contract_events.insert_one({
-        "id": _uuid(),
-        "contract_id": contract_id,
-        "agency_id": contract["agency_id"],
-        "tenant_id": tenant_id,
-        "event": "terminated",
-        "actor": current_user.email,
-        "payload": {"reason": data.reason, "effective_date": new_valid_to},
-        "created_at": _now_iso(),
-    })
+    await sysdb.agency_contract_events.insert_one(
+        {
+            "id": _uuid(),
+            "contract_id": contract_id,
+            "agency_id": contract["agency_id"],
+            "tenant_id": tenant_id,
+            "event": "terminated",
+            "actor": current_user.email,
+            "payload": {"reason": data.reason, "effective_date": new_valid_to},
+            "created_at": _now_iso(),
+        }
+    )
     return {"ok": True, "contract": contract}
 
 
@@ -680,12 +673,8 @@ async def migrate_existing_agencies(
     sysdb = get_system_db()
     await _ensure_indexes()  # Migration öncesi unique index garanti
 
-    agencies = await sysdb.marketplace_agencies.find(
-        {"status": "active"}, {"_id": 0}
-    ).to_list(10000)
-    listings = await sysdb.marketplace_listings.find(
-        {"is_listed": True}, {"_id": 0}
-    ).to_list(10000)
+    agencies = await sysdb.marketplace_agencies.find({"status": "active"}, {"_id": 0}).to_list(10000)
+    listings = await sysdb.marketplace_listings.find({"is_listed": True}, {"_id": 0}).to_list(10000)
 
     today = datetime.now(UTC).strftime("%Y-%m-%d")
     far_future = (datetime.now(UTC) + timedelta(days=730)).strftime("%Y-%m-%d")
@@ -697,54 +686,54 @@ async def migrate_existing_agencies(
             code = await _next_contract_code(sysdb)
             commission = ls.get("commission_pct") or ag.get("default_commission_pct", 12.0)
             try:
-                await sysdb.agency_contracts.insert_one({
-                    "id": cid,
-                    "contract_code": code,
-                    "agency_id": ag["id"],
-                    "agency_name": ag.get("name", ""),
-                    "agency_country": ag.get("country", ""),
-                    "agency_email": ag.get("contact_email", ""),
-                    "tenant_id": ls["tenant_id"],
-                    "hotel_name": ls.get("hotel_name", ""),
-                    "hotel_city": ls.get("city", ""),
-                    "status": "approved",
-                    "commission_pct": commission,
-                    "agency_proposed_commission_pct": commission,
-                    "hotel_approved_commission_pct": commission,
-                    "cancellation_policy": {
-                        "free_until_days_before": 7,
-                        "penalty_pct": 50.0,
-                        "no_show_penalty_pct": 100.0,
-                    },
-                    "payment_terms": "on_arrival",
-                    "valid_from": today,
-                    "valid_to": far_future,
-                    "currency": "TRY",
-                    "allowed_room_types": ls.get("allowed_room_types", []),
-                    "special_terms": "Otomatik geçiş — eski marketplace açık ilişkisinden",
-                    # Agency v1 (ADR Karar 6) — webhook hedefi migrasyonda yok;
-                    # acente sonradan sozlesme teklifi/guncellemesiyle ayarlar.
-                    "webhook_url": None,
-                    "proposed_at": _now_iso(),
-                    "proposed_by_email": "migration@syroce.com",
-                    "decided_at": _now_iso(),
-                    "decided_by": "migration@syroce.com",
-                    "decision_notes": "Sözleşme-tabanlı pazaryerine geçişte otomatik onaylandı",
-                    "created_at": _now_iso(),
-                    "updated_at": _now_iso(),
-                    "is_migration": True,
-                })
+                await sysdb.agency_contracts.insert_one(
+                    {
+                        "id": cid,
+                        "contract_code": code,
+                        "agency_id": ag["id"],
+                        "agency_name": ag.get("name", ""),
+                        "agency_country": ag.get("country", ""),
+                        "agency_email": ag.get("contact_email", ""),
+                        "tenant_id": ls["tenant_id"],
+                        "hotel_name": ls.get("hotel_name", ""),
+                        "hotel_city": ls.get("city", ""),
+                        "status": "approved",
+                        "commission_pct": commission,
+                        "agency_proposed_commission_pct": commission,
+                        "hotel_approved_commission_pct": commission,
+                        "cancellation_policy": {
+                            "free_until_days_before": 7,
+                            "penalty_pct": 50.0,
+                            "no_show_penalty_pct": 100.0,
+                        },
+                        "payment_terms": "on_arrival",
+                        "valid_from": today,
+                        "valid_to": far_future,
+                        "currency": "TRY",
+                        "allowed_room_types": ls.get("allowed_room_types", []),
+                        "special_terms": "Otomatik geçiş — eski marketplace açık ilişkisinden",
+                        # Agency v1 (ADR Karar 6) — webhook hedefi migrasyonda yok;
+                        # acente sonradan sozlesme teklifi/guncellemesiyle ayarlar.
+                        "webhook_url": None,
+                        "proposed_at": _now_iso(),
+                        "proposed_by_email": "migration@syroce.com",
+                        "decided_at": _now_iso(),
+                        "decided_by": "migration@syroce.com",
+                        "decision_notes": "Sözleşme-tabanlı pazaryerine geçişte otomatik onaylandı",
+                        "created_at": _now_iso(),
+                        "updated_at": _now_iso(),
+                        "is_migration": True,
+                    }
+                )
                 created += 1
             except DuplicateKeyError:
                 # Zaten pending/approved sözleşme var → atla
                 skipped += 1
 
-    return {"ok": True, "created": created, "skipped": skipped,
-            "total_agencies": len(agencies), "total_listings": len(listings)}
+    return {"ok": True, "created": created, "skipped": skipped, "total_agencies": len(agencies), "total_listings": len(listings)}
 
 
 # ─── Tek bir router objesi expose et (registry için) ──────────────────────
 
 # Birden fazla prefix var; registry'ye ayrı ayrı ekleyeceğiz.
-__all__ = ["agency_router", "hotel_router", "admin_router",
-           "has_active_contract", "list_partner_tenant_ids"]
+__all__ = ["agency_router", "hotel_router", "admin_router", "has_active_contract", "list_partner_tenant_ids"]

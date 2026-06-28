@@ -10,6 +10,7 @@ Provides:
   GET  /api/ops/kms/status               — KMS envelope encryption status
   GET  /api/ops/pii/metrics              — PII masking middleware metrics
 """
+
 import logging
 import os
 from datetime import UTC, datetime
@@ -60,10 +61,7 @@ async def secrets_inventory():
 
     # Scan _dev_secrets
     try:
-        async for doc in db["_dev_secrets"].find(
-            {}, {"_id": 0, "path": 1, "created_at": 1, "updated_at": 1,
-                 "rotation_count": 1, "tags": 1}
-        ):
+        async for doc in db["_dev_secrets"].find({}, {"_id": 0, "path": 1, "created_at": 1, "updated_at": 1, "rotation_count": 1, "tags": 1}):
             path = doc.get("path", "")
             parts = path.split("/")
             if len(parts) < 6:
@@ -182,8 +180,10 @@ async def pii_metrics():
 
 _SECRET_DESCRIPTIONS = {}
 
+
 def _init_descriptions():
     from security.pii_registry import SecretType
+
     global _SECRET_DESCRIPTIONS
     _SECRET_DESCRIPTIONS = {
         SecretType.JWT_APP: "JWT signing keys and application secrets",
@@ -194,6 +194,7 @@ def _init_descriptions():
         SecretType.DATABASE: "Database connection strings and passwords",
         SecretType.INTERNAL: "Internal service-to-service tokens",
     }
+
 
 _init_descriptions()
 
@@ -242,26 +243,30 @@ def _scan_env_secrets() -> list[dict]:
 
     for env_name, secret_type in secret_env_map.items():
         if os.environ.get(env_name):
-            env_secrets.append({
-                "path_masked": f"env://{env_name}",
-                "type": secret_type.value,
-                "storage": "environment_variable",
-                "created_at": "N/A",
-                "updated_at": "N/A",
-                "rotation_count": 0,
-                "max_rotation_days": 0,
-            })
+            env_secrets.append(
+                {
+                    "path_masked": f"env://{env_name}",
+                    "type": secret_type.value,
+                    "storage": "environment_variable",
+                    "created_at": "N/A",
+                    "updated_at": "N/A",
+                    "rotation_count": 0,
+                    "max_rotation_days": 0,
+                }
+            )
 
     return env_secrets
 
 
 def _count_pii_fields() -> int:
     from security.pii_registry import PII_FIELDS
+
     return len(PII_FIELDS)
 
 
 def _count_pii_categories() -> dict:
     from security.pii_registry import PII_FIELDS
+
     cats: dict[str, int] = {}
     for rule in PII_FIELDS.values():
         cat = rule.category.value

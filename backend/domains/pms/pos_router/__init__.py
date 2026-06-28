@@ -2,6 +2,7 @@
 Aggregator package — auto-split from pos_router.py.
 Public API: from domains.pms.pos_router import router
 """
+
 from fastapi import APIRouter
 
 from .frontdesk import router as _frontdesk_r

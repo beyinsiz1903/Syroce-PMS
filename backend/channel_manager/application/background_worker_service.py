@@ -14,6 +14,7 @@ Features:
   - Job lifecycle audit log
   - Job failure alerting
 """
+
 import asyncio
 import logging
 import uuid
@@ -33,10 +34,10 @@ _NO_ID = {"_id": 0}
 
 # Default intervals in seconds
 DEFAULT_INTERVALS = {
-    "reservation_import": 300,       # 5 min
-    "inventory_safety_sync": 1800,   # 30 min
-    "connector_health_check": 900,   # 15 min
-    "metrics_aggregation": 1800,     # 30 min
+    "reservation_import": 300,  # 5 min
+    "inventory_safety_sync": 1800,  # 30 min
+    "connector_health_check": 900,  # 15 min
+    "metrics_aggregation": 1800,  # 30 min
 }
 
 MAX_RETRIES = 3
@@ -99,11 +100,13 @@ class BackgroundWorkerService:
                 return True
             return False  # Lock held
 
-        await db[WORKER_LOCKS].insert_one({
-            "lock_key": lock_key,
-            "acquired_at": now.isoformat(),
-            "expires_at": expires,
-        })
+        await db[WORKER_LOCKS].insert_one(
+            {
+                "lock_key": lock_key,
+                "acquired_at": now.isoformat(),
+                "expires_at": expires,
+            }
+        )
         return True
 
     async def release_lock(self, lock_key: str):
@@ -153,7 +156,7 @@ class BackgroundWorkerService:
                     job.status = "retrying"
                     await self._store_job(job)
                     await self._audit_job(job, "retrying", actor_id, {"error": job.error, "attempt": job.retry_count})
-                    await asyncio.sleep(min(2 ** job.retry_count, 30))
+                    await asyncio.sleep(min(2**job.retry_count, 30))
                 else:
                     job.status = "failed"
                     job.completed_at = datetime.now(UTC).isoformat()
@@ -181,6 +184,7 @@ class BackgroundWorkerService:
 
     async def _run_reservation_import(self, job: WorkerJob) -> dict[str, Any]:
         from .scheduled_import_service import ScheduledImportService
+
         svc = ScheduledImportService(repo=self._repo)
         if job.connector_id:
             return await svc.run_scheduled_import(job.tenant_id, job.connector_id)
@@ -188,11 +192,13 @@ class BackgroundWorkerService:
 
     async def _run_inventory_safety_sync(self, job: WorkerJob) -> dict[str, Any]:
         from .scheduled_import_service import ScheduledImportService
+
         svc = ScheduledImportService(repo=self._repo)
         return await svc.run_safety_net_inventory_sync(job.tenant_id)
 
     async def _run_connector_health_check(self, job: WorkerJob) -> dict[str, Any]:
         from .connector_health_service import ConnectorHealthService
+
         svc = ConnectorHealthService(repo=self._repo)
         if job.connector_id:
             return await svc.get_connector_health(job.tenant_id, job.connector_id)
@@ -200,6 +206,7 @@ class BackgroundWorkerService:
 
     async def _run_metrics_aggregation(self, job: WorkerJob) -> dict[str, Any]:
         from .historical_metrics_service import HistoricalMetricsService
+
         svc = HistoricalMetricsService(repo=self._repo)
         connectors = await self._repo.get_connectors_by_tenant(job.tenant_id)
         aggregated = 0
@@ -224,8 +231,11 @@ class BackgroundWorkerService:
     # ─── Job History ──────────────────────────────────────────────────
 
     async def get_jobs(
-        self, tenant_id: str, job_type: str | None = None,
-        status: str | None = None, limit: int = 50,
+        self,
+        tenant_id: str,
+        job_type: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
     ) -> list[dict[str, Any]]:
         q: dict[str, Any] = {"tenant_id": tenant_id}
         if job_type:
@@ -238,10 +248,12 @@ class BackgroundWorkerService:
         """Get statistics for worker jobs."""
         pipeline = [
             {"$match": {"tenant_id": tenant_id}},
-            {"$group": {
-                "_id": {"job_type": "$job_type", "status": "$status"},
-                "count": {"$sum": 1},
-            }},
+            {
+                "$group": {
+                    "_id": {"job_type": "$job_type", "status": "$status"},
+                    "count": {"$sum": 1},
+                }
+            },
         ]
         stats = {}
         async for doc in db[WORKER_JOBS].aggregate(pipeline):
@@ -259,8 +271,11 @@ class BackgroundWorkerService:
         await db[WORKER_JOBS].replace_one({"id": job.id}, doc, upsert=True)
 
     async def _audit_job(
-        self, job: WorkerJob, action: str,
-        actor_id: str | None = None, metadata: dict | None = None,
+        self,
+        job: WorkerJob,
+        action: str,
+        actor_id: str | None = None,
+        metadata: dict | None = None,
     ):
         log = IntegrationAuditLog(
             tenant_id=job.tenant_id,
@@ -278,6 +293,7 @@ class BackgroundWorkerService:
 
     async def _alert_on_failure(self, job: WorkerJob):
         from .alerting_service import AlertingService
+
         alert_svc = AlertingService(repo=self._repo)
         await alert_svc.check_and_fire_alert(
             tenant_id=job.tenant_id,

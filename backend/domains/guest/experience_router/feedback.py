@@ -3,6 +3,7 @@ feedback
 
 Auto-split sub-router (shared imports/classes inlined).
 """
+
 """
 Domain Router: Guest Experience
 
@@ -72,48 +73,25 @@ async def _get_upsell_prices(tenant_id: str) -> dict:
 # ============= PHASE H: GUEST CRM + UPSELL AI + MESSAGING =============
 
 
-
-
-
-
-
-
-
 _MANUAL_UPSELL_TYPES = {
-    "early_checkin", "late_checkout", "airport_transfer",
-    "room_upgrade", "spa_package", "dining_credit", "champagne", "custom",
+    "early_checkin",
+    "late_checkout",
+    "airport_transfer",
+    "room_upgrade",
+    "spa_package",
+    "dining_credit",
+    "champagne",
+    "custom",
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 async def check_rate_limit(tenant_id: str, channel: str, limit_per_hour: int = 100) -> bool:
     """Check if rate limit is exceeded for messaging"""
     one_hour_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
 
-    count = await db.messages.count_documents({
-        'tenant_id': tenant_id,
-        'channel': channel,
-        'sent_at': {'$gte': one_hour_ago}
-    })
+    count = await db.messages.count_documents({"tenant_id": tenant_id, "channel": channel, "sent_at": {"$gte": one_hour_ago}})
 
     return count < limit_per_hour
-
-
-
-
-
-
 
 
 # Router will be included at the very end after ALL endpoints are defined
@@ -121,61 +99,20 @@ async def check_rate_limit(tenant_id: str, channel: str, limit_per_hour: int = 1
 logger = logging.getLogger(__name__)
 
 
-
 # ========================================
 
 # 1. EXTERNAL REVIEW API INTEGRATION (Booking.com, Google, TripAdvisor)
 
 
-
-
-
 # 2. IN-HOUSE SURVEY SYSTEM
-
-
-
 
 
 # 3. DEPARTMENT-BASED SATISFACTION TRACKING
 
 
-
-
 # ============= GUEST MOBILE APP ENDPOINTS =============
 
 # rbac-allow: cache-rbac — GUEST portal — kendi rezervasyonları
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ── Halka açık yüzey sertleştirme: tekil oy DB zırhı + abuse sınırları ──
@@ -201,13 +138,12 @@ async def _ensure_single_vote_indexes() -> None:
     Mevcut dokümanlar bu alanlara sahip olmadığından partial filtre index
     build'ini bozmaz (yalnız yeni, alanlı kayıtlar kapsanır)."""
     import time as _time
+
     global _SINGLE_VOTE_INDEX_READY, _SINGLE_VOTE_INDEX_FAILED_AT
     if _SINGLE_VOTE_INDEX_READY:
         return
     now = _time.monotonic()
-    if _SINGLE_VOTE_INDEX_FAILED_AT and (
-        now - _SINGLE_VOTE_INDEX_FAILED_AT
-    ) < _SINGLE_VOTE_INDEX_FAIL_COOLDOWN_SEC:
+    if _SINGLE_VOTE_INDEX_FAILED_AT and (now - _SINGLE_VOTE_INDEX_FAILED_AT) < _SINGLE_VOTE_INDEX_FAIL_COOLDOWN_SEC:
         raise HTTPException(503, "Tekil oy index'i hazır değil (cooldown), tekrar deneyin")
     try:
         await db.survey_responses.create_index(
@@ -234,9 +170,9 @@ async def _ensure_single_vote_indexes() -> None:
 
 
 # Halka açık uç abuse sınırları (Redis-backed sayaç → multi-instance dağıtık).
-_PUBLIC_RL_WINDOW_SEC = 600          # 10 dakikalık pencere
-_PUBLIC_RL_GET_MAX = 60              # IP başına 10 dk'da 60 davet görüntüleme
-_PUBLIC_RL_POST_MAX = 15            # IP+token başına 10 dk'da 15 gönderim denemesi
+_PUBLIC_RL_WINDOW_SEC = 600  # 10 dakikalık pencere
+_PUBLIC_RL_GET_MAX = 60  # IP başına 10 dk'da 60 davet görüntüleme
+_PUBLIC_RL_POST_MAX = 15  # IP+token başına 10 dk'da 15 gönderim denemesi
 _PUBLIC_MAX_BODY_BYTES = 16 * 1024  # 16 KB; yorum 2000 + ad 120 char fazlasıyla yeter
 
 _DEFAULT_TRUSTED_CIDRS = "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
@@ -302,124 +238,101 @@ def _guard_public_body_size(request: Request | None) -> None:
     if length > _PUBLIC_MAX_BODY_BYTES:
         raise HTTPException(status_code=413, detail="İstek gövdesi çok büyük")
 
+
 router = APIRouter(prefix="/api", tags=["guest-experience"])
 
 
 # ── POST /feedback/external-review-webhook ──
 @router.post("/feedback/external-review-webhook")
-async def receive_external_review(
-    request: ExternalReviewWebhookRequest,
-    current_user: User = Depends(get_current_user)
-):
+async def receive_external_review(request: ExternalReviewWebhookRequest, current_user: User = Depends(get_current_user)):
     """Webhook to receive reviews from external platforms"""
     review = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'platform': request.platform,
-        'external_review_id': request.review_id,
-        'rating': request.rating,
-        'reviewer_name': request.reviewer_name,
-        'review_text': request.review_text,
-        'review_date': request.review_date,
-        'booking_reference': request.booking_reference,
-        'status': 'new',
-        'sentiment': 'positive' if request.rating >= 4.0 else ('neutral' if request.rating >= 3.0 else 'negative'),
-        'received_at': datetime.now(UTC).isoformat()
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "platform": request.platform,
+        "external_review_id": request.review_id,
+        "rating": request.rating,
+        "reviewer_name": request.reviewer_name,
+        "review_text": request.review_text,
+        "review_date": request.review_date,
+        "booking_reference": request.booking_reference,
+        "status": "new",
+        "sentiment": "positive" if request.rating >= 4.0 else ("neutral" if request.rating >= 3.0 else "negative"),
+        "received_at": datetime.now(UTC).isoformat(),
     }
 
     review_copy = review.copy()
     await db.external_reviews.insert_one(review_copy)
 
-    return {'message': 'External review received successfully', 'review_id': review['id']}
+    return {"message": "External review received successfully", "review_id": review["id"]}
+
+
 # ── GET /feedback/external-reviews ──
 @router.get("/feedback/external-reviews")
-async def get_external_reviews(
-    platform: str = None,
-    sentiment: str = None,
-    start_date: str = None,
-    end_date: str = None,
-    current_user: User = Depends(get_current_user)
-):
+async def get_external_reviews(platform: str = None, sentiment: str = None, start_date: str = None, end_date: str = None, current_user: User = Depends(get_current_user)):
     """Get reviews from external platforms"""
-    query = {'tenant_id': current_user.tenant_id}
+    query = {"tenant_id": current_user.tenant_id}
 
     if platform:
-        query['platform'] = platform
+        query["platform"] = platform
     if sentiment:
-        query['sentiment'] = sentiment
+        query["sentiment"] = sentiment
     if start_date and end_date:
-        query['review_date'] = {'$gte': start_date, '$lte': end_date}
+        query["review_date"] = {"$gte": start_date, "$lte": end_date}
 
-    reviews = await db.external_reviews.find(
-        query,
-        {'_id': 0}
-    ).sort('review_date', -1).to_list(1000)
+    reviews = await db.external_reviews.find(query, {"_id": 0}).sort("review_date", -1).to_list(1000)
 
-    return {'reviews': reviews, 'count': len(reviews)}
+    return {"reviews": reviews, "count": len(reviews)}
+
+
 # ── GET /feedback/external-reviews/summary ──
 @router.get("/feedback/external-reviews/summary")
-async def get_external_reviews_summary(
-    start_date: str = None,
-    end_date: str = None,
-    current_user: User = Depends(get_current_user)
-):
+async def get_external_reviews_summary(start_date: str = None, end_date: str = None, current_user: User = Depends(get_current_user)):
     """Get aggregated summary of external reviews"""
-    query = {'tenant_id': current_user.tenant_id}
+    query = {"tenant_id": current_user.tenant_id}
 
     if start_date and end_date:
-        query['review_date'] = {'$gte': start_date, '$lte': end_date}
+        query["review_date"] = {"$gte": start_date, "$lte": end_date}
 
-    reviews = await db.external_reviews.find(query, {'_id': 0}).to_list(10000)
+    reviews = await db.external_reviews.find(query, {"_id": 0}).to_list(10000)
 
     if not reviews:
-        return {
-            'message': 'No external reviews found',
-            'summary': {}
-        }
+        return {"message": "No external reviews found", "summary": {}}
 
     # Calculate platform breakdown
     platform_stats = {}
     for review in reviews:
-        platform = review.get('platform', 'unknown')
+        platform = review.get("platform", "unknown")
         if platform not in platform_stats:
-            platform_stats[platform] = {
-                'count': 0,
-                'total_rating': 0,
-                'positive': 0,
-                'neutral': 0,
-                'negative': 0
-            }
+            platform_stats[platform] = {"count": 0, "total_rating": 0, "positive": 0, "neutral": 0, "negative": 0}
 
-        platform_stats[platform]['count'] += 1
-        platform_stats[platform]['total_rating'] += review.get('rating', 0)
+        platform_stats[platform]["count"] += 1
+        platform_stats[platform]["total_rating"] += review.get("rating", 0)
 
-        sentiment = review.get('sentiment', 'neutral')
+        sentiment = review.get("sentiment", "neutral")
         platform_stats[platform][sentiment] += 1
 
     # Calculate averages
     for platform, stats in platform_stats.items():
-        if stats['count'] > 0:
-            stats['avg_rating'] = round(stats['total_rating'] / stats['count'], 2)
+        if stats["count"] > 0:
+            stats["avg_rating"] = round(stats["total_rating"] / stats["count"], 2)
 
     # Overall stats
     total_reviews = len(reviews)
-    avg_rating = sum(r.get('rating', 0) for r in reviews) / total_reviews if total_reviews > 0 else 0
+    avg_rating = sum(r.get("rating", 0) for r in reviews) / total_reviews if total_reviews > 0 else 0
 
     sentiment_breakdown = {
-        'positive': sum(1 for r in reviews if r.get('sentiment') == 'positive'),
-        'neutral': sum(1 for r in reviews if r.get('sentiment') == 'neutral'),
-        'negative': sum(1 for r in reviews if r.get('sentiment') == 'negative')
+        "positive": sum(1 for r in reviews if r.get("sentiment") == "positive"),
+        "neutral": sum(1 for r in reviews if r.get("sentiment") == "neutral"),
+        "negative": sum(1 for r in reviews if r.get("sentiment") == "negative"),
     }
 
     return {
-        'summary': {
-            'total_reviews': total_reviews,
-            'avg_rating': round(avg_rating, 2),
-            'sentiment_breakdown': sentiment_breakdown,
-            'platforms': platform_stats
-        },
-        'date_range': f"{start_date or 'all'} to {end_date or 'all'}"
+        "summary": {"total_reviews": total_reviews, "avg_rating": round(avg_rating, 2), "sentiment_breakdown": sentiment_breakdown, "platforms": platform_stats},
+        "date_range": f"{start_date or 'all'} to {end_date or 'all'}",
     }
+
+
 # ── POST /feedback/external-reviews/{review_id}/respond ──
 @router.post("/feedback/external-reviews/{review_id}/respond")
 async def respond_to_external_review(
@@ -429,45 +342,32 @@ async def respond_to_external_review(
     _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """Respond to external review"""
-    review = await db.external_reviews.find_one({
-        'id': review_id,
-        'tenant_id': current_user.tenant_id
-    })
+    review = await db.external_reviews.find_one({"id": review_id, "tenant_id": current_user.tenant_id})
 
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
 
     await db.external_reviews.update_one(
-        {'id': review_id},
-        {
-            '$set': {
-                'response': response_text,
-                'responded_at': datetime.now(UTC).isoformat(),
-                'responded_by': current_user.id,
-                'status': 'responded'
-            }
-        }
+        {"id": review_id}, {"$set": {"response": response_text, "responded_at": datetime.now(UTC).isoformat(), "responded_by": current_user.id, "status": "responded"}}
     )
 
-    return {'message': 'Response posted successfully'}
+    return {"message": "Response posted successfully"}
+
+
 # ── GET /feedback/surveys ──
 @router.get("/feedback/surveys")
 async def get_surveys(current_user: User = Depends(get_current_user)):
     """Get all surveys"""
-    surveys = await db.surveys.find(
-        {'tenant_id': current_user.tenant_id},
-        {'_id': 0}
-    ).to_list(100)
+    surveys = await db.surveys.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(100)
 
     # Get response counts
     for survey in surveys:
-        response_count = await db.survey_responses.count_documents({
-            'tenant_id': current_user.tenant_id,
-            'survey_id': survey['id']
-        })
-        survey['response_count'] = response_count
+        response_count = await db.survey_responses.count_documents({"tenant_id": current_user.tenant_id, "survey_id": survey["id"]})
+        survey["response_count"] = response_count
 
-    return {'surveys': surveys, 'count': len(surveys)}
+    return {"surveys": surveys, "count": len(surveys)}
+
+
 # ── POST /feedback/surveys ──
 @router.post("/feedback/surveys")
 async def create_survey(
@@ -477,33 +377,29 @@ async def create_survey(
 ):
     """Create new survey"""
     survey = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'survey_name': request.survey_name,
-        'description': request.description,
-        'target_department': request.target_department,
-        'questions': request.questions,
-        'trigger': request.trigger,
-        'status': 'active',
-        'created_at': datetime.now(UTC).isoformat(),
-        'created_by': current_user.id
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "survey_name": request.survey_name,
+        "description": request.description,
+        "target_department": request.target_department,
+        "questions": request.questions,
+        "trigger": request.trigger,
+        "status": "active",
+        "created_at": datetime.now(UTC).isoformat(),
+        "created_by": current_user.id,
     }
 
     survey_copy = survey.copy()
     await db.surveys.insert_one(survey_copy)
     return survey
+
+
 # ── POST /feedback/surveys/response ──
 @router.post("/feedback/surveys/response")
-async def submit_survey_response(
-    request: SubmitSurveyResponseRequest,
-    current_user: User = Depends(get_current_user)
-):
+async def submit_survey_response(request: SubmitSurveyResponseRequest, current_user: User = Depends(get_current_user)):
     """Submit survey response"""
     # Verify survey exists
-    survey = await db.surveys.find_one({
-        'id': request.survey_id,
-        'tenant_id': current_user.tenant_id
-    })
+    survey = await db.surveys.find_one({"id": request.survey_id, "tenant_id": current_user.tenant_id})
 
     if not survey:
         raise HTTPException(status_code=404, detail="Survey not found")
@@ -518,12 +414,14 @@ async def submit_survey_response(
     if getattr(request, "booking_id", None):
         day_start = now.strftime("%Y-%m-%dT00:00:00")
         day_end = (now + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00")
-        dup = await db.survey_responses.find_one({
-            'tenant_id': current_user.tenant_id,
-            'survey_id': request.survey_id,
-            'booking_id': request.booking_id,
-            'submitted_at': {'$gte': day_start, '$lt': day_end},
-        })
+        dup = await db.survey_responses.find_one(
+            {
+                "tenant_id": current_user.tenant_id,
+                "survey_id": request.survey_id,
+                "booking_id": request.booking_id,
+                "submitted_at": {"$gte": day_start, "$lt": day_end},
+            }
+        )
         if dup:
             raise HTTPException(
                 status_code=409,
@@ -531,26 +429,26 @@ async def submit_survey_response(
             )
 
     # Calculate overall rating
-    ratings = [r.get('rating') for r in request.responses if r.get('rating')]
+    ratings = [r.get("rating") for r in request.responses if r.get("rating")]
     avg_rating = sum(ratings) / len(ratings) if ratings else None
 
     response = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'survey_id': request.survey_id,
-        'survey_name': survey.get('survey_name'),
-        'booking_id': request.booking_id,
-        'guest_name': request.guest_name,
-        'guest_email': request.guest_email,
-        'responses': request.responses,
-        'overall_rating': round(avg_rating, 2) if avg_rating else None,
-        'submitted_at': now.isoformat()
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "survey_id": request.survey_id,
+        "survey_name": survey.get("survey_name"),
+        "booking_id": request.booking_id,
+        "guest_name": request.guest_name,
+        "guest_email": request.guest_email,
+        "responses": request.responses,
+        "overall_rating": round(avg_rating, 2) if avg_rating else None,
+        "submitted_at": now.isoformat(),
     }
     # vote_day yalnız booking_id varken yazılır → partial-unique index'in
     # (tenant_id, survey_id, booking_id, vote_day) kapsamına girer; ad-hoc
     # yanıtlar (booking_id yok) index dışında kalır.
     if vote_day is not None:
-        response['vote_day'] = vote_day
+        response["vote_day"] = vote_day
 
     response_copy = response.copy()
     # DB-seviyesi race guard: find_one pre-check ile claim arasındaki TOCTOU
@@ -566,214 +464,167 @@ async def submit_survey_response(
     # Kanonik modele dual-write (idempotent, en-iyi-çaba). NPS-uygun DEĞİL
     # (nps_eligible=False) → NPS skorunu değiştirmez, yalnız birleşik modelde
     # temsil edilir.
-    await feedback_report.dualwrite_canonical(
-        feedback_report.SOURCE_SURVEY_RESPONSE, response
-    )
+    await feedback_report.dualwrite_canonical(feedback_report.SOURCE_SURVEY_RESPONSE, response)
 
-    return {'message': 'Survey response submitted successfully', 'response_id': response['id']}
+    return {"message": "Survey response submitted successfully", "response_id": response["id"]}
+
+
 # ── GET /feedback/surveys/{survey_id}/responses ──
 @router.get("/feedback/surveys/{survey_id}/responses")
-async def get_survey_responses(
-    survey_id: str,
-    current_user: User = Depends(get_current_user)
-):
+async def get_survey_responses(survey_id: str, current_user: User = Depends(get_current_user)):
     """Get responses for specific survey"""
     # Verify survey
-    survey = await db.surveys.find_one({
-        'id': survey_id,
-        'tenant_id': current_user.tenant_id
-    }, {'_id': 0})
+    survey = await db.surveys.find_one({"id": survey_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
 
     if not survey:
         raise HTTPException(status_code=404, detail="Survey not found")
 
     # Get responses
-    responses = await db.survey_responses.find({
-        'tenant_id': current_user.tenant_id,
-        'survey_id': survey_id
-    }, {'_id': 0}).to_list(1000)
+    responses = await db.survey_responses.find({"tenant_id": current_user.tenant_id, "survey_id": survey_id}, {"_id": 0}).to_list(1000)
 
     # Calculate statistics
     if responses:
-        ratings = [r.get('overall_rating') for r in responses if r.get('overall_rating')]
+        ratings = [r.get("overall_rating") for r in responses if r.get("overall_rating")]
         avg_rating = sum(ratings) / len(ratings) if ratings else 0
 
         # Aggregate answers per question
         question_stats = {}
         for response in responses:
-            for answer in response.get('responses', []):
-                q_id = answer.get('question_id', 'unknown')
+            for answer in response.get("responses", []):
+                q_id = answer.get("question_id", "unknown")
                 if q_id not in question_stats:
-                    question_stats[q_id] = {
-                        'ratings': [],
-                        'answers': []
-                    }
+                    question_stats[q_id] = {"ratings": [], "answers": []}
 
-                if answer.get('rating'):
-                    question_stats[q_id]['ratings'].append(answer['rating'])
-                if answer.get('answer'):
-                    question_stats[q_id]['answers'].append(answer['answer'])
+                if answer.get("rating"):
+                    question_stats[q_id]["ratings"].append(answer["rating"])
+                if answer.get("answer"):
+                    question_stats[q_id]["answers"].append(answer["answer"])
 
         # Calculate averages
         for q_id, stats in question_stats.items():
-            if stats['ratings']:
-                stats['avg_rating'] = round(sum(stats['ratings']) / len(stats['ratings']), 2)
+            if stats["ratings"]:
+                stats["avg_rating"] = round(sum(stats["ratings"]) / len(stats["ratings"]), 2)
     else:
         avg_rating = 0
         question_stats = {}
 
-    return {
-        'survey': survey,
-        'responses': responses,
-        'statistics': {
-            'total_responses': len(responses),
-            'avg_overall_rating': round(avg_rating, 2),
-            'question_stats': question_stats
-        }
-    }
+    return {"survey": survey, "responses": responses, "statistics": {"total_responses": len(responses), "avg_overall_rating": round(avg_rating, 2), "question_stats": question_stats}}
+
+
 # ── POST /feedback/department ──
 @router.post("/feedback/department")
-async def submit_department_feedback(
-    request: CreateDepartmentFeedbackRequest,
-    current_user: User = Depends(get_current_user)
-):
+async def submit_department_feedback(request: CreateDepartmentFeedbackRequest, current_user: User = Depends(get_current_user)):
     """Submit feedback for specific department"""
     feedback = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'department': request.department,
-        'booking_id': request.booking_id,
-        'guest_name': request.guest_name,
-        'rating': request.rating,
-        'comment': request.comment,
-        'staff_member': request.staff_member,
-        'sentiment': 'positive' if request.rating >= 4 else ('neutral' if request.rating == 3 else 'negative'),
-        'submitted_at': datetime.now(UTC).isoformat()
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "department": request.department,
+        "booking_id": request.booking_id,
+        "guest_name": request.guest_name,
+        "rating": request.rating,
+        "comment": request.comment,
+        "staff_member": request.staff_member,
+        "sentiment": "positive" if request.rating >= 4 else ("neutral" if request.rating == 3 else "negative"),
+        "submitted_at": datetime.now(UTC).isoformat(),
     }
 
     feedback_copy = feedback.copy()
     await db.department_feedback.insert_one(feedback_copy)
 
-    return {'message': 'Department feedback submitted successfully', 'feedback_id': feedback['id']}
+    return {"message": "Department feedback submitted successfully", "feedback_id": feedback["id"]}
+
+
 # ── GET /feedback/department ──
 @router.get("/feedback/department")
-async def get_department_feedback(
-    department: str = None,
-    start_date: str = None,
-    end_date: str = None,
-    current_user: User = Depends(get_current_user)
-):
+async def get_department_feedback(department: str = None, start_date: str = None, end_date: str = None, current_user: User = Depends(get_current_user)):
     """Get department feedback"""
-    query = {'tenant_id': current_user.tenant_id}
+    query = {"tenant_id": current_user.tenant_id}
 
     if department:
-        query['department'] = department
+        query["department"] = department
 
     if start_date and end_date:
-        query['submitted_at'] = {'$gte': start_date, '$lte': end_date}
+        query["submitted_at"] = {"$gte": start_date, "$lte": end_date}
 
-    feedback = await db.department_feedback.find(
-        query,
-        {'_id': 0}
-    ).sort('submitted_at', -1).to_list(1000)
+    feedback = await db.department_feedback.find(query, {"_id": 0}).sort("submitted_at", -1).to_list(1000)
 
-    return {'feedback': feedback, 'count': len(feedback)}
+    return {"feedback": feedback, "count": len(feedback)}
+
+
 # ── GET /feedback/department/summary ──
 @router.get("/feedback/department/summary")
-async def get_department_satisfaction_summary(
-    start_date: str = None,
-    end_date: str = None,
-    current_user: User = Depends(get_current_user)
-):
+async def get_department_satisfaction_summary(start_date: str = None, end_date: str = None, current_user: User = Depends(get_current_user)):
     """Get department satisfaction summary"""
-    query = {'tenant_id': current_user.tenant_id}
+    query = {"tenant_id": current_user.tenant_id}
 
     if start_date and end_date:
-        query['submitted_at'] = {'$gte': start_date, '$lte': end_date}
+        query["submitted_at"] = {"$gte": start_date, "$lte": end_date}
 
-    feedback = await db.department_feedback.find(query, {'_id': 0}).to_list(10000)
+    feedback = await db.department_feedback.find(query, {"_id": 0}).to_list(10000)
 
     if not feedback:
-        return {
-            'message': 'No department feedback found',
-            'summary': {}
-        }
+        return {"message": "No department feedback found", "summary": {}}
 
     # Aggregate by department
     dept_stats = {}
-    departments = ['housekeeping', 'front_desk', 'fnb', 'spa', 'concierge']
+    departments = ["housekeeping", "front_desk", "fnb", "spa", "concierge"]
 
     for dept in departments:
-        dept_feedback = [f for f in feedback if f.get('department') == dept]
+        dept_feedback = [f for f in feedback if f.get("department") == dept]
 
         if dept_feedback:
-            ratings = [f.get('rating', 0) for f in dept_feedback]
+            ratings = [f.get("rating", 0) for f in dept_feedback]
             avg_rating = sum(ratings) / len(ratings) if ratings else 0
 
             sentiment_counts = {
-                'positive': sum(1 for f in dept_feedback if f.get('sentiment') == 'positive'),
-                'neutral': sum(1 for f in dept_feedback if f.get('sentiment') == 'neutral'),
-                'negative': sum(1 for f in dept_feedback if f.get('sentiment') == 'negative')
+                "positive": sum(1 for f in dept_feedback if f.get("sentiment") == "positive"),
+                "neutral": sum(1 for f in dept_feedback if f.get("sentiment") == "neutral"),
+                "negative": sum(1 for f in dept_feedback if f.get("sentiment") == "negative"),
             }
 
             dept_stats[dept] = {
-                'total_feedback': len(dept_feedback),
-                'avg_rating': round(avg_rating, 2),
-                'sentiment_breakdown': sentiment_counts,
-                'satisfaction_rate': round((sentiment_counts['positive'] / len(dept_feedback) * 100), 1) if dept_feedback else 0
+                "total_feedback": len(dept_feedback),
+                "avg_rating": round(avg_rating, 2),
+                "sentiment_breakdown": sentiment_counts,
+                "satisfaction_rate": round((sentiment_counts["positive"] / len(dept_feedback) * 100), 1) if dept_feedback else 0,
             }
         else:
-            dept_stats[dept] = {
-                'total_feedback': 0,
-                'avg_rating': 0,
-                'sentiment_breakdown': {'positive': 0, 'neutral': 0, 'negative': 0},
-                'satisfaction_rate': 0
-            }
+            dept_stats[dept] = {"total_feedback": 0, "avg_rating": 0, "sentiment_breakdown": {"positive": 0, "neutral": 0, "negative": 0}, "satisfaction_rate": 0}
 
     # Overall stats
-    all_ratings = [f.get('rating', 0) for f in feedback]
+    all_ratings = [f.get("rating", 0) for f in feedback]
     overall_avg = sum(all_ratings) / len(all_ratings) if all_ratings else 0
 
     # Staff member performance
     staff_performance = {}
     for f in feedback:
-        if f.get('staff_member'):
-            staff = f['staff_member']
+        if f.get("staff_member"):
+            staff = f["staff_member"]
             if staff not in staff_performance:
-                staff_performance[staff] = {
-                    'ratings': [],
-                    'department': f.get('department')
-                }
-            staff_performance[staff]['ratings'].append(f.get('rating', 0))
+                staff_performance[staff] = {"ratings": [], "department": f.get("department")}
+            staff_performance[staff]["ratings"].append(f.get("rating", 0))
 
     # Calculate staff averages
     staff_stats = []
     for staff, data in staff_performance.items():
-        if data['ratings']:
-            avg = sum(data['ratings']) / len(data['ratings'])
-            staff_stats.append({
-                'staff_member': staff,
-                'department': data['department'],
-                'avg_rating': round(avg, 2),
-                'feedback_count': len(data['ratings'])
-            })
+        if data["ratings"]:
+            avg = sum(data["ratings"]) / len(data["ratings"])
+            staff_stats.append({"staff_member": staff, "department": data["department"], "avg_rating": round(avg, 2), "feedback_count": len(data["ratings"])})
 
-    staff_stats.sort(key=lambda x: x['avg_rating'], reverse=True)
+    staff_stats.sort(key=lambda x: x["avg_rating"], reverse=True)
 
     return {
-        'summary': {
-            'total_feedback': len(feedback),
-            'overall_avg_rating': round(overall_avg, 2),
-            'departments': dept_stats,
-            'top_performers': staff_stats[:10],
-            'needs_attention': [
-                {'department': dept, 'avg_rating': stats['avg_rating']}
-                for dept, stats in dept_stats.items()
-                if stats['avg_rating'] > 0 and stats['avg_rating'] < 3.5
-            ]
+        "summary": {
+            "total_feedback": len(feedback),
+            "overall_avg_rating": round(overall_avg, 2),
+            "departments": dept_stats,
+            "top_performers": staff_stats[:10],
+            "needs_attention": [{"department": dept, "avg_rating": stats["avg_rating"]} for dept, stats in dept_stats.items() if stats["avg_rating"] > 0 and stats["avg_rating"] < 3.5],
         },
-        'date_range': f"{start_date or 'all'} to {end_date or 'all'}"
+        "date_range": f"{start_date or 'all'} to {end_date or 'all'}",
     }
+
+
 # ── POST /feedback/review-invite ──
 @router.post("/feedback/review-invite")
 async def send_review_invite(
@@ -797,10 +648,13 @@ async def send_review_invite(
     if not guest_email or "@" not in guest_email:
         raise HTTPException(status_code=400, detail="Misafirin geçerli bir e-posta adresi yok")
 
-    tenant = await db.tenants.find_one(
-        {"id": current_user.tenant_id},
-        {"_id": 0, "name": 1, "hotel_name": 1},
-    ) or {}
+    tenant = (
+        await db.tenants.find_one(
+            {"id": current_user.tenant_id},
+            {"_id": 0, "name": 1, "hotel_name": 1},
+        )
+        or {}
+    )
     hotel_name = (tenant.get("hotel_name") or tenant.get("name") or "Otel").strip()
 
     await _ensure_review_invite_indexes()
@@ -824,6 +678,7 @@ async def send_review_invite(
     await db.review_invites.insert_one(invite.copy())
 
     from core.email import _frontend_base_url, send_email  # local import; avoid circulars
+
     base = _frontend_base_url()
     link = f"{base.rstrip('/')}/review/{token}"
     subject = f"{hotel_name} — Konaklamanızı değerlendirir misiniz?"
@@ -855,6 +710,8 @@ async def send_review_invite(
         "sent": bool(send_result.get("sent")),
         "link": link,
     }
+
+
 # ── GET /feedback/public/invite/{token} ──
 @router.get("/feedback/public/invite/{token}")
 async def get_review_invite_public(token: str, request: Request = None):
@@ -879,6 +736,8 @@ async def get_review_invite_public(token: str, request: Request = None):
         "check_in": invite.get("check_in"),
         "check_out": invite.get("check_out"),
     }
+
+
 # ── POST /feedback/public/invite/{token} ──
 @router.post("/feedback/public/invite/{token}")
 async def submit_review_public(token: str, payload: dict, request: Request = None):
@@ -891,9 +750,7 @@ async def submit_review_public(token: str, payload: dict, request: Request = Non
     """
     _validate_review_invite_token(token)
     _guard_public_body_size(request)
-    _public_rate_limit_or_raise(
-        f"post:{_public_client_ip(request)}:{token}", _PUBLIC_RL_POST_MAX
-    )
+    _public_rate_limit_or_raise(f"post:{_public_client_ip(request)}:{token}", _PUBLIC_RL_POST_MAX)
     await _ensure_single_vote_indexes()
 
     raw_rating = (payload or {}).get("rating")
@@ -960,18 +817,18 @@ async def submit_review_public(token: str, payload: dict, request: Request = Non
 
     await db.review_invites.update_one(
         {"_id": invite["_id"]},
-        {"$set": {
-            "status": "submitted",
-            "submitted_at": datetime.now(UTC).isoformat(),
-            "review_id": review["id"],
-        }},
+        {
+            "$set": {
+                "status": "submitted",
+                "submitted_at": datetime.now(UTC).isoformat(),
+                "review_id": review["id"],
+            }
+        },
     )
 
     # Kanonik modele dual-write (idempotent, en-iyi-çaba). 1-5 yıldız yorum
     # NPS-uygun DEĞİL → NPS skorunu değiştirmez, yalnız birleşik modelde
     # temsil edilir.
-    await feedback_report.dualwrite_canonical(
-        feedback_report.SOURCE_GUEST_REVIEW, review
-    )
+    await feedback_report.dualwrite_canonical(feedback_report.SOURCE_GUEST_REVIEW, review)
 
     return {"success": True, "review_id": review["id"]}

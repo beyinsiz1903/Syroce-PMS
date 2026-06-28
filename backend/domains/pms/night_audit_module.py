@@ -2,6 +2,7 @@
 Night Audit Module - Enterprise Grade
 Comprehensive night audit functionality for hotel operations
 """
+
 import uuid
 from datetime import UTC, datetime
 from enum import Enum
@@ -15,8 +16,10 @@ class AuditStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
 
+
 class NightAuditRecord(BaseModel):
     """Night Audit Record"""
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     audit_date: str  # Business date being audited
@@ -49,16 +52,20 @@ class NightAuditRecord(BaseModel):
 
     notes: str | None = None
 
+
 class AutomaticPosting(BaseModel):
     """Automatic posting configuration"""
+
     tenant_id: str
     post_room_charges: bool = True
     post_taxes: bool = True
     post_packages: bool = True
     tax_percentage: float = 10.0
 
+
 class CityLedgerAccount(BaseModel):
     """City Ledger Account for direct billing"""
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     account_name: str
@@ -73,8 +80,10 @@ class CityLedgerAccount(BaseModel):
     is_active: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class CityLedgerTransaction(BaseModel):
     """City Ledger Transaction"""
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     account_id: str
@@ -86,14 +95,18 @@ class CityLedgerTransaction(BaseModel):
     reference_number: str | None = None
     posted_by: str
 
+
 class SplitPayment(BaseModel):
     """Split payment configuration"""
+
     payment_method: str  # cash, card, city_ledger, etc
     amount: float
     reference: str | None = None
 
+
 class QueueRoom(BaseModel):
     """Room queue for early arrivals"""
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     booking_id: str
@@ -108,8 +121,10 @@ class QueueRoom(BaseModel):
     notified: bool = False
     status: str = "waiting"  # waiting, assigned, cancelled
 
+
 class AuditTrailEntry(BaseModel):
     """Audit trail for all system changes"""
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))

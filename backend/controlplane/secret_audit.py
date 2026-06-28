@@ -11,6 +11,7 @@ Rules:
 - Every access is logged
 - No secret values in audit logs
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -60,6 +61,7 @@ class SecretAccessControl:
     def _get_db(self):
         if self._db is None:
             from core.database import db
+
             self._db = db
         return self._db
 
@@ -132,7 +134,9 @@ class SecretAccessControl:
             )
             logger.critical(
                 "SECURITY: Cross-tenant secret access DENIED caller=%s req_tenant=%s target_tenant=%s",
-                caller, request_tenant_id, tenant_id,
+                caller,
+                request_tenant_id,
+                tenant_id,
             )
             return False
 
@@ -150,7 +154,9 @@ class SecretAccessControl:
             )
             logger.warning(
                 "SECURITY: Secret access DENIED by policy caller=%s provider=%s tenant=%s",
-                caller, provider, tenant_id,
+                caller,
+                provider,
+                tenant_id,
             )
             return False
 
@@ -186,9 +192,7 @@ class SecretAccessControl:
         db = self._get_db()
         coll = db[COLL_SECRET_AUDIT]
         total = await coll.count_documents(query)
-        items = await coll.find(
-            query, {"_id": 0}
-        ).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+        items = await coll.find(query, {"_id": 0}).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
 
         return {
             "items": items,
@@ -215,9 +219,7 @@ class SecretAccessControl:
         db = self._get_db()
         coll = db[COLL_SECRET_AUDIT]
         count = await coll.count_documents(query)
-        items = await coll.find(
-            query, {"_id": 0}
-        ).sort("timestamp", -1).limit(20).to_list(20)
+        items = await coll.find(query, {"_id": 0}).sort("timestamp", -1).limit(20).to_list(20)
 
         return {
             "anomaly_count": count,
@@ -239,6 +241,7 @@ class SecretAccessControl:
         try:
             from controlplane.failure_model import FailureType, Severity
             from controlplane.failure_tracker import get_failure_tracker
+
             tracker = get_failure_tracker()
             await tracker.record(
                 tenant_id=tenant_id,

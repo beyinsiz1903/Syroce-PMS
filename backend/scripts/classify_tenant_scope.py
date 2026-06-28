@@ -90,9 +90,7 @@ def has_tenant_id_query(coll: str, files: list[Path]) -> bool:
         col = db["bookings"]
         await col.find_one({"tenant_id": tid, ...})
     """
-    pat_coll = re.compile(
-        rf"""(?:db\[['"]|get_collection\(['"]){re.escape(coll)}['"]"""
-    )
+    pat_coll = re.compile(rf"""(?:db\[['"]|get_collection\(['"]){re.escape(coll)}['"]""")
     for f in files:
         try:
             lines = f.read_text(encoding="utf-8", errors="ignore").splitlines()
@@ -135,9 +133,7 @@ def build_report(root: Path) -> dict:
                 "ref_files": [str(f.relative_to(root.parent)) for f in files[:3]],
             }
         )
-    report["_summary"] = {
-        k: len(v) for k, v in report.items() if not k.startswith("_")
-    }
+    report["_summary"] = {k: len(v) for k, v in report.items() if not k.startswith("_")}
     return report
 
 

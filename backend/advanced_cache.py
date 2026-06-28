@@ -4,6 +4,7 @@ L1: 1 minute (critical real-time data)
 L2: 5 minutes (standard data)
 L3: 1 hour (reports and analytics)
 """
+
 import hashlib
 import json
 import logging
@@ -14,16 +15,18 @@ import redis
 
 logger = logging.getLogger(__name__)
 
+
 class CacheLayer:
     L1_CRITICAL = "L1"  # 1 minute - Real-time critical data
     L2_STANDARD = "L2"  # 5 minutes - Standard data
-    L3_REPORTS = "L3"   # 1 hour - Reports and analytics
+    L3_REPORTS = "L3"  # 1 hour - Reports and analytics
 
     TTL_MAP = {
-        L1_CRITICAL: 60,        # 1 minute
-        L2_STANDARD: 300,       # 5 minutes
-        L3_REPORTS: 3600        # 1 hour
+        L1_CRITICAL: 60,  # 1 minute
+        L2_STANDARD: 300,  # 5 minutes
+        L3_REPORTS: 3600,  # 1 hour
     }
+
 
 class AdvancedCacheManager:
     def __init__(self, redis_client: redis.Redis):
@@ -76,13 +79,7 @@ class AdvancedCacheManager:
             logger.error(f"Cache get error: {e}")
             return None
 
-    async def set(
-        self,
-        key: str,
-        value: Any,
-        layer: str = CacheLayer.L2_STANDARD,
-        ttl: int | None = None
-    ) -> bool:
+    async def set(self, key: str, value: Any, layer: str = CacheLayer.L2_STANDARD, ttl: int | None = None) -> bool:
         """
         Set value in cache
 
@@ -154,11 +151,7 @@ class AdvancedCacheManager:
             all_keys = self.redis.keys(f"{self.namespace}:*")
 
             # Count by layer
-            layer_stats = {
-                CacheLayer.L1_CRITICAL: 0,
-                CacheLayer.L2_STANDARD: 0,
-                CacheLayer.L3_REPORTS: 0
-            }
+            layer_stats = {CacheLayer.L1_CRITICAL: 0, CacheLayer.L2_STANDARD: 0, CacheLayer.L3_REPORTS: 0}
 
             for key in all_keys:
                 key_str = key.decode() if isinstance(key, bytes) else key
@@ -179,8 +172,8 @@ class AdvancedCacheManager:
                 "layers": {
                     "L1": {"ttl": CacheLayer.TTL_MAP[CacheLayer.L1_CRITICAL], "description": "Critical real-time"},
                     "L2": {"ttl": CacheLayer.TTL_MAP[CacheLayer.L2_STANDARD], "description": "Standard data"},
-                    "L3": {"ttl": CacheLayer.TTL_MAP[CacheLayer.L3_REPORTS], "description": "Reports & analytics"}
-                }
+                    "L3": {"ttl": CacheLayer.TTL_MAP[CacheLayer.L3_REPORTS], "description": "Reports & analytics"},
+                },
             }
 
         except Exception as e:
@@ -188,11 +181,7 @@ class AdvancedCacheManager:
             return {"error": str(e)}
 
 
-def cache_with_layer(
-    layer: str = CacheLayer.L2_STANDARD,
-    key_prefix: str = "",
-    ttl: int | None = None
-):
+def cache_with_layer(layer: str = CacheLayer.L2_STANDARD, key_prefix: str = "", ttl: int | None = None):
     """
     Decorator for caching function results with specific layer
 
@@ -201,6 +190,7 @@ def cache_with_layer(
         async def get_dashboard_data():
             ...
     """
+
     def decorator(func: Callable):
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -208,7 +198,7 @@ def cache_with_layer(
             key_parts = [key_prefix or func.__name__]
 
             # Add args to key (skip first arg if it's 'self')
-            func_args = args[1:] if args and hasattr(args[0], '__class__') else args
+            func_args = args[1:] if args and hasattr(args[0], "__class__") else args
             if func_args:
                 key_parts.append(str(func_args))
             if kwargs:
@@ -217,7 +207,7 @@ def cache_with_layer(
             cache_key = hashlib.md5(":".join(key_parts).encode()).hexdigest()
 
             # Try to get from cache
-            cache_manager = kwargs.get('cache_manager')
+            cache_manager = kwargs.get("cache_manager")
             if cache_manager:
                 cached = await cache_manager.get(cache_key, layer)
                 if cached is not None:
@@ -234,6 +224,7 @@ def cache_with_layer(
             return result
 
         return wrapper
+
     return decorator
 
 
@@ -253,11 +244,7 @@ class CacheWarmer:
 
             if metrics:
                 # Cache in L1 for immediate access
-                await self.cache.set(
-                    "dashboard:metrics",
-                    metrics,
-                    CacheLayer.L1_CRITICAL
-                )
+                await self.cache.set("dashboard:metrics", metrics, CacheLayer.L1_CRITICAL)
                 logger.info("Dashboard cache warmed successfully")
                 return True
 
@@ -274,27 +261,15 @@ class CacheWarmer:
 
             # Cache room statuses
             rooms = await db.rooms.find({"status": {"$ne": "out_of_order"}}).to_list(None)
-            await self.cache.set(
-                "pms:rooms:active",
-                rooms,
-                CacheLayer.L2_STANDARD
-            )
+            await self.cache.set("pms:rooms:active", rooms, CacheLayer.L2_STANDARD)
 
             # Cache today's arrivals
             from datetime import datetime, timedelta
-            today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-            arrivals = await db.bookings.find({
-                "check_in": {
-                    "$gte": today,
-                    "$lt": today + timedelta(days=1)
-                }
-            }).to_list(100)
 
-            await self.cache.set(
-                "pms:arrivals:today",
-                arrivals,
-                CacheLayer.L1_CRITICAL
-            )
+            today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            arrivals = await db.bookings.find({"check_in": {"$gte": today, "$lt": today + timedelta(days=1)}}).to_list(100)
+
+            await self.cache.set("pms:arrivals:today", arrivals, CacheLayer.L1_CRITICAL)
 
             logger.info("PMS cache warmed successfully")
             return True

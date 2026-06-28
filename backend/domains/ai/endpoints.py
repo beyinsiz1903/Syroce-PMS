@@ -1,6 +1,7 @@
 """
 AI Intelligence API Endpoints
 """
+
 import asyncio as _asyncio
 import logging
 from datetime import datetime
@@ -35,10 +36,12 @@ async def get_daily_briefing(
         # Exclude virtual rooms so the briefing matches the dashboard KPI cards.
         # v95 — Projections: only fields actually used downstream (was full-doc fetch).
         total_rooms, all_bookings, invoices, tenant = await _asyncio.gather(
-            db.rooms.count_documents({
-                "tenant_id": current_user.tenant_id,
-                "$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}],
-            }),
+            db.rooms.count_documents(
+                {
+                    "tenant_id": current_user.tenant_id,
+                    "$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}],
+                }
+            ),
             db.bookings.find(
                 {"tenant_id": current_user.tenant_id},
                 {"_id": 0, "status": 1, "check_in": 1, "check_out": 1, "total_amount": 1},
@@ -59,57 +62,54 @@ async def get_daily_briefing(
         month_start_str = today.replace(day=1).isoformat()
 
         # Active statuses (exclude cancelled, checked_out, no_show)
-        active_statuses = {'confirmed', 'guaranteed', 'checked_in'}
+        active_statuses = {"confirmed", "guaranteed", "checked_in"}
 
         # Occupancy: count rooms occupied today (checked_in + confirmed overlapping today)
         occupied_rooms = 0
         for b in all_bookings:
-            if b.get('status') not in active_statuses:
+            if b.get("status") not in active_statuses:
                 continue
-            ci = str(b.get('check_in', ''))[:10]
-            co = str(b.get('check_out', ''))[:10]
+            ci = str(b.get("check_in", ""))[:10]
+            co = str(b.get("check_out", ""))[:10]
             if ci <= today_str and co > today_str:
                 occupied_rooms += 1
 
-        confirmed_bookings = len([b for b in all_bookings if b.get('status') == 'confirmed'])
+        confirmed_bookings = len([b for b in all_bookings if b.get("status") == "confirmed"])
 
         # Count today's check-ins/outs (only active bookings)
         today_checkins = 0
         today_checkouts = 0
         for b in all_bookings:
-            if b.get('status') in ('cancelled', 'no_show'):
+            if b.get("status") in ("cancelled", "no_show"):
                 continue
-            ci = str(b.get('check_in', ''))[:10]
-            co = str(b.get('check_out', ''))[:10]
+            ci = str(b.get("check_in", ""))[:10]
+            co = str(b.get("check_out", ""))[:10]
             if ci == today_str:
                 today_checkins += 1
             if co == today_str:
                 today_checkouts += 1
 
-        pending_invoices = len([i for i in invoices if i.get('status') == 'pending'])
+        pending_invoices = len([i for i in invoices if i.get("status") == "pending"])
 
         # Monthly revenue: sum of invoices issued this month only
         # (uses invoice_date / created_at, not all-time totals).
         def _inv_month(i):
-            d = i.get('invoice_date') or i.get('created_at') or ''
+            d = i.get("invoice_date") or i.get("created_at") or ""
             return str(d)[:10]
-        monthly_revenue = sum(
-            (i.get('total') or 0)
-            for i in invoices
-            if _inv_month(i) >= month_start_str
-        )
+
+        monthly_revenue = sum((i.get("total") or 0) for i in invoices if _inv_month(i) >= month_start_str)
 
         # Fallback: if no invoice revenue this month, calculate from active bookings checking in this month.
         if monthly_revenue == 0:
             for b in all_bookings:
-                if b.get('status') in ('cancelled', 'no_show'):
+                if b.get("status") in ("cancelled", "no_show"):
                     continue
-                ci = str(b.get('check_in', ''))[:10]
+                ci = str(b.get("check_in", ""))[:10]
                 if ci >= month_start_str:
-                    monthly_revenue += float(b.get('total_amount', 0) or 0)
+                    monthly_revenue += float(b.get("total_amount", 0) or 0)
 
         # Hotel name from tenant (already fetched above).
-        hotel_name = tenant.get('property_name', 'Hotel') if tenant else 'Hotel'
+        hotel_name = tenant.get("property_name", "Hotel") if tenant else "Hotel"
 
         occupancy_rate = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
 
@@ -128,7 +128,7 @@ async def get_daily_briefing(
                     pending_invoices=pending_invoices,
                     monthly_revenue=monthly_revenue,
                     weather="clear",
-                    lang=lang
+                    lang=lang,
                 )
                 if briefing_text:
                     ai_powered = True
@@ -198,26 +198,18 @@ async def get_daily_briefing(
                 "confirmed_bookings": confirmed_bookings,
                 "currency": currency_code,
                 "currency_symbol": currency_symbol,
-            }
+            },
         }
     except Exception:
         # Even on failure, return a basic response so frontend doesn't break
         err_msg = "AI briefing is currently unavailable. Please try again later." if lang != "tr" else "AI brifing şu an yüklenemiyor. Lütfen daha sonra tekrar deneyin."
-        return {
-            "summary": err_msg,
-            "text": err_msg,
-            "briefing": err_msg,
-            "ai_powered": False,
-            "generated_at": datetime.now().isoformat(),
-            "insights": [],
-            "metrics": {}
-        }
+        return {"summary": err_msg, "text": err_msg, "briefing": err_msg, "ai_powered": False, "generated_at": datetime.now().isoformat(), "insights": [], "metrics": {}}
 
 
 @api_router.get("/ai/pms/occupancy-prediction")
 async def predict_occupancy(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_reports"))  # v103 DX alias drift fix
+    _perm=Depends(require_op("view_reports")),  # v103 DX alias drift fix
 ):
     """
     Get AI-powered occupancy predictions
@@ -227,30 +219,18 @@ async def predict_occupancy(
 
         # Use count queries instead of fetching full documents
         total_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id})
-        occupied_rooms = await db.bookings.count_documents(
-            {"tenant_id": current_user.tenant_id, "status": "checked_in"}
-        )
-        upcoming_bookings = await db.bookings.count_documents(
-            {"tenant_id": current_user.tenant_id, "status": "confirmed"}
-        )
+        occupied_rooms = await db.bookings.count_documents({"tenant_id": current_user.tenant_id, "status": "checked_in"})
+        upcoming_bookings = await db.bookings.count_documents({"tenant_id": current_user.tenant_id, "status": "confirmed"})
         current_occupancy = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
 
         # Get historical data (simplified)
         historical_data = []
 
         prediction = await get_ai_service().predict_occupancy(
-            historical_data=historical_data,
-            current_occupancy=current_occupancy,
-            upcoming_bookings=upcoming_bookings,
-            season="normal",
-            room_capacity=total_rooms
+            historical_data=historical_data, current_occupancy=current_occupancy, upcoming_bookings=upcoming_bookings, season="normal", room_capacity=total_rooms
         )
 
-        return {
-            "prediction": prediction,
-            "current_occupancy": current_occupancy,
-            "upcoming_bookings": upcoming_bookings
-        }
+        return {"prediction": prediction, "current_occupancy": current_occupancy, "upcoming_bookings": upcoming_bookings}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to predict occupancy: {str(e)}")
 
@@ -258,7 +238,7 @@ async def predict_occupancy(
 @api_router.get("/ai/pms/guest-patterns")
 async def analyze_guest_patterns(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_reports"))  # v103 DX alias drift fix
+    _perm=Depends(require_op("view_reports")),  # v103 DX alias drift fix
 ):
     """
     Analyze check-in/check-out patterns
@@ -266,17 +246,15 @@ async def analyze_guest_patterns(
     try:
         pass  # db imported at module level
 
-        bookings = await db.bookings.find({
-            "tenant_id": current_user.tenant_id
-        }).to_list(100)  # Limit for performance
+        bookings = await db.bookings.find({"tenant_id": current_user.tenant_id}).to_list(100)  # Limit for performance
 
         # Safely convert datetime objects to strings
         checkin_times = []
         checkout_times = []
 
         for b in bookings:
-            checkin = b.get('check_in')
-            checkout = b.get('check_out')
+            checkin = b.get("check_in")
+            checkout = b.get("check_out")
 
             if checkin:
                 if isinstance(checkin, datetime):
@@ -300,14 +278,10 @@ async def analyze_guest_patterns(
                 "avg_checkout_time": f"{avg_checkout_hour}:00",
                 "peak_checkin_days": ["Friday", "Saturday"],
                 "peak_checkout_days": ["Sunday", "Monday"],
-                "avg_length_of_stay": 2.5
+                "avg_length_of_stay": 2.5,
             },
             "total_bookings": len(bookings),
-            "insights": [
-                f"Analyzed {len(bookings)} bookings",
-                f"Average check-in: {avg_checkin_hour}:00",
-                f"Average checkout: {avg_checkout_hour}:00"
-            ]
+            "insights": [f"Analyzed {len(bookings)} bookings", f"Average check-in: {avg_checkin_hour}:00", f"Average checkout: {avg_checkout_hour}:00"],
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to analyze patterns: {str(e)}")
@@ -325,64 +299,43 @@ async def categorize_expense(
     AI-powered expense categorization
     """
     try:
-        result = await get_ai_service().categorize_expense(
-            description=description,
-            amount=amount,
-            vendor=vendor
-        )
+        result = await get_ai_service().categorize_expense(description=description, amount=amount, vendor=vendor)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to categorize expense: {str(e)}")
 
 
 @api_router.get("/ai/invoices/anomaly-detection")
-async def detect_invoice_anomalies(
-    current_user: User = Depends(get_current_user)
-):
+async def detect_invoice_anomalies(current_user: User = Depends(get_current_user)):
     """
     Detect anomalies in invoices
     """
     try:
         pass  # db imported at module level
 
-        invoices = await db.accounting_invoices.find({
-            "tenant_id": current_user.tenant_id
-        }).to_list(None)
+        invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id}).to_list(None)
 
-        average_amount = sum(i.get('total', 0) for i in invoices) / len(invoices) if invoices else 0
+        average_amount = sum(i.get("total", 0) for i in invoices) / len(invoices) if invoices else 0
 
-        anomalies = await get_ai_service().detect_invoice_anomalies(
-            invoices=invoices,
-            average_amount=average_amount
-        )
+        anomalies = await get_ai_service().detect_invoice_anomalies(invoices=invoices, average_amount=average_amount)
 
-        return {
-            "anomalies": anomalies,
-            "total_invoices": len(invoices),
-            "average_amount": average_amount
-        }
+        return {"anomalies": anomalies, "total_invoices": len(invoices), "average_amount": average_amount}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to detect anomalies: {str(e)}")
 
 
 @api_router.get("/ai/loyalty/guest-segmentation")
-async def segment_guests(
-    current_user: User = Depends(get_current_user)
-):
+async def segment_guests(current_user: User = Depends(get_current_user)):
     """
     AI-powered guest segmentation for loyalty programs
     """
     try:
         pass  # db imported at module level
 
-        guests = await db.guests.find({
-            "tenant_id": current_user.tenant_id
-        }).to_list(None)
+        guests = await db.guests.find({"tenant_id": current_user.tenant_id}).to_list(None)
 
         # Get loyalty data
-        await db.loyalty_programs.find({
-            "tenant_id": current_user.tenant_id
-        }).to_list(None)
+        await db.loyalty_programs.find({"tenant_id": current_user.tenant_id}).to_list(None)
 
         segments = await get_ai_service().segment_guests(guests=guests)
 
@@ -392,10 +345,7 @@ async def segment_guests(
 
 
 @api_router.get("/ai/loyalty/churn-risk/{guest_id}")
-async def predict_churn_risk(
-    guest_id: str,
-    current_user: User = Depends(get_current_user)
-):
+async def predict_churn_risk(guest_id: str, current_user: User = Depends(get_current_user)):
     """
     Predict churn risk for a specific guest
     """
@@ -408,31 +358,20 @@ async def predict_churn_risk(
             raise HTTPException(status_code=404, detail="Guest not found")
 
         # Get booking history
-        bookings = await db.bookings.find({
-            "guest_id": guest_id,
-            "tenant_id": current_user.tenant_id
-        }).to_list(None)
+        bookings = await db.bookings.find({"guest_id": guest_id, "tenant_id": current_user.tenant_id}).to_list(None)
 
         if not bookings:
-            return {
-                "risk_level": "low",
-                "analysis": "New guest - no history to analyze"
-            }
+            return {"risk_level": "low", "analysis": "New guest - no history to analyze"}
 
         # Calculate metrics
-        last_booking = max(bookings, key=lambda b: b.get('check_out', ''))
-        last_visit_date = datetime.fromisoformat(last_booking.get('check_out', datetime.now().isoformat()))
+        last_booking = max(bookings, key=lambda b: b.get("check_out", ""))
+        last_visit_date = datetime.fromisoformat(last_booking.get("check_out", datetime.now().isoformat()))
         last_visit_days = (datetime.now() - last_visit_date).days
 
         total_visits = len(bookings)
-        average_spend = sum(b.get('total_amount', 0) for b in bookings) / len(bookings)
+        average_spend = sum(b.get("total_amount", 0) for b in bookings) / len(bookings)
 
-        risk = await get_ai_service().predict_churn_risk(
-            guest_id=guest_id,
-            last_visit_days=last_visit_days,
-            total_visits=total_visits,
-            average_spend=average_spend
-        )
+        risk = await get_ai_service().predict_churn_risk(guest_id=guest_id, last_visit_days=last_visit_days, total_visits=total_visits, average_spend=average_spend)
 
         return risk
     except Exception as e:
@@ -440,41 +379,26 @@ async def predict_churn_risk(
 
 
 @api_router.get("/ai/marketplace/product-recommendations")
-async def get_product_recommendations(
-    current_user: User = Depends(get_current_user)
-):
+async def get_product_recommendations(current_user: User = Depends(get_current_user)):
     """
     AI-powered product recommendations
     """
     try:
         pass  # db imported at module level
 
-        products = await db.marketplace_products.find({
-            "tenant_id": current_user.tenant_id
-        }).to_list(None)
+        products = await db.marketplace_products.find({"tenant_id": current_user.tenant_id}).to_list(None)
 
-        orders = await db.marketplace_orders.find({
-            "tenant_id": current_user.tenant_id
-        }).to_list(None)
+        orders = await db.marketplace_orders.find({"tenant_id": current_user.tenant_id}).to_list(None)
 
-        recommendations = await get_ai_service().recommend_products(
-            inventory=products,
-            recent_orders=orders,
-            season="normal"
-        )
+        recommendations = await get_ai_service().recommend_products(inventory=products, recent_orders=orders, season="normal")
 
-        return {
-            "recommendations": recommendations,
-            "total_products": len(products)
-        }
+        return {"recommendations": recommendations, "total_products": len(products)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get recommendations: {str(e)}")
 
 
 @api_router.get("/ai/rms/revenue-analysis")
-async def analyze_revenue(
-    current_user: User = Depends(get_current_user)
-):
+async def analyze_revenue(current_user: User = Depends(get_current_user)):
     """
     AI-powered revenue trend analysis
     """
@@ -482,35 +406,23 @@ async def analyze_revenue(
         pass  # db imported at module level
 
         # Get invoice data
-        invoices = await db.accounting_invoices.find({
-            "tenant_id": current_user.tenant_id
-        }).to_list(None)
+        invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id}).to_list(None)
 
         # Calculate monthly revenue
         current_month = datetime.now().month
         last_month = current_month - 1 if current_month > 1 else 12
 
-        current_month_revenue = sum(
-            i.get('total', 0) for i in invoices
-            if datetime.fromisoformat(i.get('created_at', datetime.now().isoformat())).month == current_month
-        )
+        current_month_revenue = sum(i.get("total", 0) for i in invoices if datetime.fromisoformat(i.get("created_at", datetime.now().isoformat())).month == current_month)
 
-        last_month_revenue = sum(
-            i.get('total', 0) for i in invoices
-            if datetime.fromisoformat(i.get('created_at', datetime.now().isoformat())).month == last_month
-        )
+        last_month_revenue = sum(i.get("total", 0) for i in invoices if datetime.fromisoformat(i.get("created_at", datetime.now().isoformat())).month == last_month)
 
-        analysis = await get_ai_service().analyze_revenue_trends(
-            revenue_data=invoices,
-            current_month_revenue=current_month_revenue,
-            last_month_revenue=last_month_revenue
-        )
+        analysis = await get_ai_service().analyze_revenue_trends(revenue_data=invoices, current_month_revenue=current_month_revenue, last_month_revenue=last_month_revenue)
 
         return {
             "analysis": analysis,
             "current_month_revenue": current_month_revenue,
             "last_month_revenue": last_month_revenue,
-            "change_percent": ((current_month_revenue - last_month_revenue) / last_month_revenue * 100) if last_month_revenue > 0 else 0
+            "change_percent": ((current_month_revenue - last_month_revenue) / last_month_revenue * 100) if last_month_revenue > 0 else 0,
         }
     except HTTPException:
         raise

@@ -4,6 +4,7 @@ Encryption Service — REFACTORED to delegate to core.crypto.
 Backward-compatible wrapper. All callers that import EncryptionService
 or KeyManagementService continue to work without changes.
 """
+
 import logging
 
 from core.crypto import get_crypto_service
@@ -62,6 +63,4 @@ class EncryptionService:
 
     @staticmethod
     def is_aes_encrypted(value: str) -> bool:
-        return isinstance(value, str) and (
-            value.startswith(AES_PREFIX) or value.startswith("SYR1:")
-        )
+        return isinstance(value, str) and (value.startswith(AES_PREFIX) or value.startswith("SYR1:"))

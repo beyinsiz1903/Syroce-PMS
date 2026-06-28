@@ -24,6 +24,7 @@ Environment:
   JWT_SECRET              — fallback for XOR decryption
   CRYPTO_V2_ENABLED=true  — must be true for migration (or use --force-v2)
 """
+
 import argparse
 import asyncio
 import logging
@@ -68,19 +69,17 @@ async def migrate_provider_secrets(db, svc, dry_run: bool):
             stats["skipped"] += 1
             continue
 
-        all_current = all(
-            svc.is_current_format(v)
-            for v in payload.values()
-            if isinstance(v, str) and v
-        )
+        all_current = all(svc.is_current_format(v) for v in payload.values() if isinstance(v, str) and v)
         if all_current:
             stats["already_current"] += 1
             continue
 
         try:
             from core.crypto import AADContext
+
             aad = AADContext(
-                tenant_id=tenant, provider=provider,
+                tenant_id=tenant,
+                provider=provider,
                 property_id=prop,
                 environment=os.environ.get("APP_ENV", "development"),
                 context_type="credential",
@@ -90,17 +89,21 @@ async def migrate_provider_secrets(db, svc, dry_run: bool):
             if not dry_run:
                 await coll.update_one(
                     {"id": secret_id},
-                    {"$set": {
-                        "encrypted_payload": new_payload,
-                        "key_version": svc._keyring.current_kid,
-                        "migrated_at": datetime.now(UTC).isoformat(),
-                    }},
+                    {
+                        "$set": {
+                            "encrypted_payload": new_payload,
+                            "key_version": svc._keyring.current_kid,
+                            "migrated_at": datetime.now(UTC).isoformat(),
+                        }
+                    },
                 )
             stats["migrated"] += 1
             logger.info(
                 "%s provider_secrets/%s (%s/%s)",
                 "WOULD MIGRATE" if dry_run else "MIGRATED",
-                secret_id, provider, prop,
+                secret_id,
+                provider,
+                prop,
             )
         except Exception as e:
             stats["failed"] += 1
@@ -130,9 +133,11 @@ async def migrate_credential_vault(db, svc, dry_run: bool):
 
         try:
             from core.crypto import AADContext
+
             plaintext = svc.decrypt_legacy_base64(encoded)
             aad = AADContext(
-                tenant_id=tenant, provider=cred_type,
+                tenant_id=tenant,
+                provider=cred_type,
                 property_id=cred_key,
                 environment=os.environ.get("APP_ENV", "development"),
                 context_type="credential",
@@ -142,19 +147,23 @@ async def migrate_credential_vault(db, svc, dry_run: bool):
             if not dry_run:
                 await coll.update_one(
                     {"id": cred_id},
-                    {"$set": {
-                        "credential_encrypted": encrypted,
-                        "key_version": svc._keyring.current_kid,
-                        "credential_value_encoded": None,
-                        "credential_value_hash": None,
-                        "migrated_at": datetime.now(UTC).isoformat(),
-                    }},
+                    {
+                        "$set": {
+                            "credential_encrypted": encrypted,
+                            "key_version": svc._keyring.current_kid,
+                            "credential_value_encoded": None,
+                            "credential_value_hash": None,
+                            "migrated_at": datetime.now(UTC).isoformat(),
+                        }
+                    },
                 )
             stats["migrated"] += 1
             logger.info(
                 "%s credential_vault/%s (%s/%s)",
                 "WOULD MIGRATE" if dry_run else "MIGRATED",
-                cred_id, cred_type, cred_key,
+                cred_id,
+                cred_type,
+                cred_key,
             )
         except Exception as e:
             stats["failed"] += 1
@@ -180,6 +189,7 @@ async def migrate_dev_secrets(db, svc, dry_run: bool):
 
         try:
             from core.crypto import AADContext
+
             parts = path.split("/")
             aad = AADContext(
                 tenant_id=parts[3] if len(parts) > 3 else "",
@@ -193,16 +203,19 @@ async def migrate_dev_secrets(db, svc, dry_run: bool):
             if not dry_run:
                 await coll.update_one(
                     {"path": path},
-                    {"$set": {
-                        "encrypted_payload": new_encrypted,
-                        "key_version": svc._keyring.current_kid,
-                        "migrated_at": datetime.now(UTC).isoformat(),
-                    }},
+                    {
+                        "$set": {
+                            "encrypted_payload": new_encrypted,
+                            "key_version": svc._keyring.current_kid,
+                            "migrated_at": datetime.now(UTC).isoformat(),
+                        }
+                    },
                 )
             stats["migrated"] += 1
             logger.info(
                 "%s _dev_secrets/%s",
-                "WOULD MIGRATE" if dry_run else "MIGRATED", path,
+                "WOULD MIGRATE" if dry_run else "MIGRATED",
+                path,
             )
         except Exception as e:
             stats["failed"] += 1
@@ -218,14 +231,13 @@ async def run_migration(args):
     logger.info("Crypto service: %s", health)
 
     if not health["v2_enabled"] and not args.force_v2:
-        logger.error(
-            "CRYPTO_V2_ENABLED=false — migration requires V2 or --force-v2 flag"
-        )
+        logger.error("CRYPTO_V2_ENABLED=false — migration requires V2 or --force-v2 flag")
         return
 
     if args.force_v2:
         os.environ["CRYPTO_V2_ENABLED"] = "true"
         from core.crypto.service import reset_crypto_service
+
         reset_crypto_service()
         svc = get_crypto_service()
         logger.info("Forced V2 mode for migration")

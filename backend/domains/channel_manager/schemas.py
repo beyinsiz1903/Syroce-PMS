@@ -2,6 +2,7 @@
 Channel Manager Domain — Schemas
 Request/response models extracted from channel_manager routers.
 """
+
 import uuid
 from datetime import UTC, datetime
 from enum import Enum

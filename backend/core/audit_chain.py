@@ -22,6 +22,7 @@ records written before the chain genesis are honestly skipped as legacy, but any
 unchained record written AFTER the genesis is surfaced as an integrity break so a
 silent linking gap can never masquerade as a healthy chain.
 """
+
 import hashlib
 import json
 import logging
@@ -72,6 +73,7 @@ def compute_record_hash(entry: dict, seq: int, prev_hash: str) -> str:
 
 def _system_db():
     from core.tenant_db import get_system_db
+
     return get_system_db()
 
 
@@ -190,7 +192,7 @@ async def verify_chain(tenant_id: str, limit: int = 5000) -> dict:
             truncated = True
         chained.extend(part)
 
-    chained.sort(key=lambda r: (r.get("seq") if isinstance(r.get("seq"), int) else 0))
+    chained.sort(key=lambda r: r.get("seq") if isinstance(r.get("seq"), int) else 0)
     rows: list[dict] = []
     seen_seq: set = set()
     for r in chained:
@@ -218,19 +220,23 @@ async def verify_chain(tenant_id: str, limit: int = 5000) -> dict:
         # Recompute this record's hash from its persisted content.
         recomputed = compute_record_hash(row, seq, stored_prev)
         if recomputed != stored_hash:
-            breaks.append({
-                "seq": seq,
-                "id": row.get("id"),
-                "reason": "content_hash_mismatch",
-            })
+            breaks.append(
+                {
+                    "seq": seq,
+                    "id": row.get("id"),
+                    "reason": "content_hash_mismatch",
+                }
+            )
 
         # Link continuity (skip for the first record in the window).
         if idx > 0 and prev_record_hash is not None and stored_prev != prev_record_hash:
-            breaks.append({
-                "seq": seq,
-                "id": row.get("id"),
-                "reason": "prev_hash_mismatch",
-            })
+            breaks.append(
+                {
+                    "seq": seq,
+                    "id": row.get("id"),
+                    "reason": "prev_hash_mismatch",
+                }
+            )
 
         prev_record_hash = stored_hash
 
@@ -240,31 +246,39 @@ async def verify_chain(tenant_id: str, limit: int = 5000) -> dict:
     for coll_name in _CHAIN_COLLECTIONS:
         coll = sysdb[coll_name]
         if genesis_ts is not None:
-            unverifiable += await coll.count_documents({
-                "tenant_id": tenant_id,
-                "record_hash": {"$exists": False},
-                "timestamp": {"$gte": genesis_ts},
-            })
-            legacy_skipped += await coll.count_documents({
-                "tenant_id": tenant_id,
-                "record_hash": {"$exists": False},
-                "timestamp": {"$lt": genesis_ts},
-            })
+            unverifiable += await coll.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "record_hash": {"$exists": False},
+                    "timestamp": {"$gte": genesis_ts},
+                }
+            )
+            legacy_skipped += await coll.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "record_hash": {"$exists": False},
+                    "timestamp": {"$lt": genesis_ts},
+                }
+            )
         else:
             # No chained record at all → chain has not started; every unchained
             # row is legacy (forward-only), not a gap.
-            legacy_skipped += await coll.count_documents({
-                "tenant_id": tenant_id,
-                "record_hash": {"$exists": False},
-            })
+            legacy_skipped += await coll.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "record_hash": {"$exists": False},
+                }
+            )
 
     if unverifiable > 0:
-        breaks.append({
-            "seq": None,
-            "id": None,
-            "reason": "unverifiable_unchained_records",
-            "count": unverifiable,
-        })
+        breaks.append(
+            {
+                "seq": None,
+                "id": None,
+                "reason": "unverifiable_unchained_records",
+                "count": unverifiable,
+            }
+        )
 
     return {
         "ok": len(breaks) == 0,

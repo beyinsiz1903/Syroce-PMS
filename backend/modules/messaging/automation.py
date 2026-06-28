@@ -8,6 +8,7 @@ Trigger Events:
 - checked_in: Misafir check-in yapti
 - checked_out: Misafir check-out yapti
 """
+
 import asyncio
 import logging
 import uuid
@@ -71,6 +72,7 @@ def new_automation_rule(
 
 async def _get_db():
     from server import db
+
     return db
 
 
@@ -97,19 +99,16 @@ async def process_booking_event(tenant_id: str, event_type: str, booking: dict):
         guest_id = booking.get("guest_id")
         if guest_id:
             from security.encrypted_lookup import decrypt_guest_doc
+
             # Decrypt before deriving recipient_email/recipient_phone — encrypted
             # guests would otherwise yield AES envelopes as recipients and every
             # automation (email + SMS) would silently fail for migrated guests.
-            guest = decrypt_guest_doc(await db.guests.find_one(
-                {"id": guest_id, "tenant_id": tenant_id}, {"_id": 0}
-            ))
+            guest = decrypt_guest_doc(await db.guests.find_one({"id": guest_id, "tenant_id": tenant_id}, {"_id": 0}))
 
         room = None
         room_id = booking.get("room_id")
         if room_id:
-            room = await db.rooms.find_one(
-                {"id": room_id, "tenant_id": tenant_id}, {"_id": 0}
-            )
+            room = await db.rooms.find_one({"id": room_id, "tenant_id": tenant_id}, {"_id": 0})
 
         tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
 
@@ -122,9 +121,7 @@ async def process_booking_event(tenant_id: str, event_type: str, booking: dict):
             try:
                 recipient = recipient_email if rule["channel"] == "email" else recipient_phone
                 if not recipient:
-                    logger.warning(
-                        f"Automation {rule['id']}: {rule['channel']} alici bilgisi yok (booking={booking.get('id')})"
-                    )
+                    logger.warning(f"Automation {rule['id']}: {rule['channel']} alici bilgisi yok (booking={booking.get('id')})")
                     await db.messaging_automation_rules.update_one(
                         {"id": rule["id"]},
                         {"$inc": {"total_failed": 1}, "$set": {"last_triggered_at": datetime.now(UTC).isoformat()}},
@@ -133,9 +130,7 @@ async def process_booking_event(tenant_id: str, event_type: str, booking: dict):
 
                 template = None
                 if rule.get("template_id"):
-                    template = await db.messaging_templates.find_one(
-                        {"id": rule["template_id"], "tenant_id": tenant_id}, {"_id": 0}
-                    )
+                    template = await db.messaging_templates.find_one({"id": rule["template_id"], "tenant_id": tenant_id}, {"_id": 0})
 
                 # v41 Bug BG: HTML-escape variables when channel renders HTML.
                 _esc_html = rule["channel"] in ("email",)
@@ -143,6 +138,7 @@ async def process_booking_event(tenant_id: str, event_type: str, booking: dict):
                 subject = _render_subject(template, variables) if template else None
 
                 from modules.messaging.service import MessagingService
+
                 svc = MessagingService(db)
                 result = await svc.send_message(
                     tenant_id=tenant_id,
@@ -165,7 +161,9 @@ async def process_booking_event(tenant_id: str, event_type: str, booking: dict):
                     logger.info(f"Automation sent: {rule['name']} -> {recipient} ({rule['channel']})")
                     # Create in-app notification for success
                     await _create_automation_notification(
-                        db, tenant_id, success=True,
+                        db,
+                        tenant_id,
+                        success=True,
                         rule_name=rule["name"],
                         guest_name=variables.get("misafir_adi", "Misafir"),
                         channel=rule["channel"],
@@ -179,7 +177,9 @@ async def process_booking_event(tenant_id: str, event_type: str, booking: dict):
                     logger.warning(f"Automation failed: {rule['name']} -> {result.get('error')}")
                     # Create in-app notification for failure
                     await _create_automation_notification(
-                        db, tenant_id, success=False,
+                        db,
+                        tenant_id,
+                        success=False,
                         rule_name=rule["name"],
                         guest_name=variables.get("misafir_adi", "Misafir"),
                         channel=rule["channel"],
@@ -234,6 +234,7 @@ def _render_template(template: dict, variables: dict, escape_html: bool = False)
     # v41 Bug BG: HTML-escape variables for email/HTML channels — guest-controlled
     # fields must not inject markup into rendered email bodies.
     import html as _html_mod
+
     body = template.get("body_template", "")
     for key, val in variables.items():
         sv = str(val) if val is not None else ""
@@ -253,8 +254,13 @@ def _render_subject(template: dict, variables: dict) -> str | None:
 
 
 async def _create_automation_notification(
-    db, tenant_id: str, success: bool,
-    rule_name: str, guest_name: str, channel: str, event_type: str,
+    db,
+    tenant_id: str,
+    success: bool,
+    rule_name: str,
+    guest_name: str,
+    channel: str,
+    event_type: str,
     error: str = "",
 ):
     """Create in-app notification for automation event results."""

@@ -23,6 +23,7 @@ Environment:
   KMS_GRANT_TOKENS       — optional, comma-separated grant tokens
   KMS_ENCRYPTION_CONTEXT — optional, JSON string for encryption context
 """
+
 import base64
 import json
 import logging
@@ -42,6 +43,7 @@ DATA_KEY_SPEC = "AES_256"
 @dataclass(frozen=True)
 class KMSEnvelope:
     """Envelope containing encrypted data + KMS-encrypted data key."""
+
     encrypted_data_key: bytes
     nonce: bytes
     ciphertext: bytes
@@ -204,7 +206,9 @@ class KMSEnvelopeEncryption:
 
         try:
             plaintext_bytes = aesgcm.decrypt(
-                envelope.nonce, envelope.ciphertext, aad,
+                envelope.nonce,
+                envelope.ciphertext,
+                aad,
             )
         finally:
             plaintext_key = b"\x00" * len(plaintext_key)

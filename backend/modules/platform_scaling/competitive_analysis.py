@@ -2,6 +2,7 @@
 Competitive Set Analysis - Competitor price tracking, market positioning,
 and ADR adjustment suggestions based on competitive intelligence.
 """
+
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -12,9 +13,7 @@ from core.database import db
 class CompetitorPriceTracker:
     """Track and analyze competitor pricing."""
 
-    async def add_competitor(self, tenant_id: str, name: str, star_rating: int = 4,
-                              room_types: list[str] | None = None,
-                              location: str | None = None) -> dict[str, Any]:
+    async def add_competitor(self, tenant_id: str, name: str, star_rating: int = 4, room_types: list[str] | None = None, location: str | None = None) -> dict[str, Any]:
         """Add a competitor hotel to the comp set."""
         competitor = {
             "id": str(uuid.uuid4()),
@@ -31,14 +30,10 @@ class CompetitorPriceTracker:
 
     async def get_competitors(self, tenant_id: str) -> dict[str, Any]:
         """Get all competitors in the comp set."""
-        competitors = await db.competitors.find(
-            {"tenant_id": tenant_id, "active": True}, {"_id": 0}
-        ).to_list(50)
+        competitors = await db.competitors.find({"tenant_id": tenant_id, "active": True}, {"_id": 0}).to_list(50)
         return {"count": len(competitors), "competitors": competitors}
 
-    async def record_competitor_rate(self, tenant_id: str, competitor_id: str,
-                                      room_type: str, rate: float, date_str: str,
-                                      source: str = "manual") -> dict[str, Any]:
+    async def record_competitor_rate(self, tenant_id: str, competitor_id: str, room_type: str, rate: float, date_str: str, source: str = "manual") -> dict[str, Any]:
         """Record a competitor's rate for a specific date."""
         record = {
             "id": str(uuid.uuid4()),
@@ -53,8 +48,7 @@ class CompetitorPriceTracker:
         await db.competitor_rates.insert_one(record)
         return {"success": True, "rate_id": record["id"]}
 
-    async def get_competitor_rates(self, tenant_id: str, target_date: str | None = None,
-                                    competitor_id: str | None = None) -> dict[str, Any]:
+    async def get_competitor_rates(self, tenant_id: str, target_date: str | None = None, competitor_id: str | None = None) -> dict[str, Any]:
         """Get competitor rates with optional filters."""
         query: dict[str, Any] = {"tenant_id": tenant_id}
         if target_date:
@@ -62,14 +56,10 @@ class CompetitorPriceTracker:
         if competitor_id:
             query["competitor_id"] = competitor_id
 
-        rates = await db.competitor_rates.find(
-            query, {"_id": 0}
-        ).sort("recorded_at", -1).to_list(500)
+        rates = await db.competitor_rates.find(query, {"_id": 0}).sort("recorded_at", -1).to_list(500)
 
         # Enrich with competitor names
-        competitors = {c["id"]: c["name"] for c in await db.competitors.find(
-            {"tenant_id": tenant_id}, {"_id": 0, "id": 1, "name": 1}
-        ).to_list(50)}
+        competitors = {c["id"]: c["name"] for c in await db.competitors.find({"tenant_id": tenant_id}, {"_id": 0, "id": 1, "name": 1}).to_list(50)}
 
         for r in rates:
             r["competitor_name"] = competitors.get(r.get("competitor_id"), "Bilinmeyen")
@@ -80,10 +70,7 @@ class CompetitorPriceTracker:
         """Bulk record competitor rates."""
         recorded = 0
         for r in rates:
-            await self.record_competitor_rate(
-                tenant_id, r["competitor_id"], r.get("room_type", "Standard"),
-                r["rate"], r["date"], r.get("source", "bulk_import")
-            )
+            await self.record_competitor_rate(tenant_id, r["competitor_id"], r.get("room_type", "Standard"), r["rate"], r["date"], r.get("source", "bulk_import"))
             recorded += 1
         return {"success": True, "recorded": recorded}
 
@@ -101,9 +88,7 @@ class MarketPositioning:
         our_avg_rate = sum(r.get("base_price", 0) for r in our_rooms) / max(len(our_rooms), 1)
 
         # Competitor rates (most recent)
-        competitors = await db.competitors.find(
-            {"tenant_id": tenant_id, "active": True}, {"_id": 0}
-        ).to_list(50)
+        competitors = await db.competitors.find({"tenant_id": tenant_id, "active": True}, {"_id": 0}).to_list(50)
 
         comp_rates = []
         for comp in competitors:
@@ -113,13 +98,15 @@ class MarketPositioning:
                 sort=[("recorded_at", -1)],
             )
             if latest_rate:
-                comp_rates.append({
-                    "competitor_id": comp["id"],
-                    "competitor_name": comp["name"],
-                    "star_rating": comp.get("star_rating", 4),
-                    "rate": latest_rate["rate"],
-                    "date": latest_rate.get("date"),
-                })
+                comp_rates.append(
+                    {
+                        "competitor_id": comp["id"],
+                        "competitor_name": comp["name"],
+                        "star_rating": comp.get("star_rating", 4),
+                        "rate": latest_rate["rate"],
+                        "date": latest_rate.get("date"),
+                    }
+                )
 
         if not comp_rates:
             return {
@@ -152,11 +139,13 @@ class MarketPositioning:
         for c in comp_rates:
             diff = round(our_avg_rate - c["rate"], 2)
             diff_pct = round((diff / c["rate"]) * 100, 1) if c["rate"] > 0 else 0
-            comp_analysis.append({
-                **c,
-                "rate_difference": diff,
-                "difference_pct": diff_pct,
-            })
+            comp_analysis.append(
+                {
+                    **c,
+                    "rate_difference": diff,
+                    "difference_pct": diff_pct,
+                }
+            )
 
         comp_analysis.sort(key=lambda x: x["rate"])
 
@@ -181,13 +170,15 @@ class MarketPositioning:
         parity_results = []
         for rt in room_types:
             position = await self.get_market_position(tenant_id, rt)
-            parity_results.append({
-                "room_type": rt,
-                "our_rate": position.get("our_rate", 0),
-                "market_average": position.get("market_average", 0),
-                "position_index": position.get("position_index", 100),
-                "market_position": position.get("market_position", "unknown"),
-            })
+            parity_results.append(
+                {
+                    "room_type": rt,
+                    "our_rate": position.get("our_rate", 0),
+                    "market_average": position.get("market_average", 0),
+                    "position_index": position.get("position_index", 100),
+                    "market_position": position.get("market_position", "unknown"),
+                }
+            )
 
         return {"tenant_id": tenant_id, "room_types": parity_results}
 
@@ -236,16 +227,18 @@ class ADRAdjustmentEngine:
 
             revenue_impact = round((suggested - our_rate) * 30, 2)  # Estimated 30 room-nights
 
-            suggestions.append({
-                "room_type": rt,
-                "current_rate": our_rate,
-                "market_average": market_avg,
-                "suggested_rate": suggested,
-                "action": action,
-                "reason": reason,
-                "estimated_monthly_impact": revenue_impact,
-                "market_position": position,
-            })
+            suggestions.append(
+                {
+                    "room_type": rt,
+                    "current_rate": our_rate,
+                    "market_average": market_avg,
+                    "suggested_rate": suggested,
+                    "action": action,
+                    "reason": reason,
+                    "estimated_monthly_impact": revenue_impact,
+                    "market_position": position,
+                }
+            )
 
         total_impact = sum(s["estimated_monthly_impact"] for s in suggestions)
         return {
@@ -254,8 +247,7 @@ class ADRAdjustmentEngine:
             "total_estimated_monthly_impact": round(total_impact, 2),
         }
 
-    async def apply_suggestion(self, tenant_id: str, room_type: str,
-                                new_rate: float, user_id: str) -> dict[str, Any]:
+    async def apply_suggestion(self, tenant_id: str, room_type: str, new_rate: float, user_id: str) -> dict[str, Any]:
         """Apply an ADR adjustment suggestion."""
         result = await db.rooms.update_many(
             {"tenant_id": tenant_id, "room_type": room_type},
@@ -263,18 +255,19 @@ class ADRAdjustmentEngine:
         )
 
         # Audit
-        await db.competitive_rate_adjustments.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "room_type": room_type,
-            "new_rate": new_rate,
-            "applied_by": user_id,
-            "applied_at": datetime.now(UTC).isoformat(),
-            "rooms_affected": result.modified_count,
-        })
+        await db.competitive_rate_adjustments.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "room_type": room_type,
+                "new_rate": new_rate,
+                "applied_by": user_id,
+                "applied_at": datetime.now(UTC).isoformat(),
+                "rooms_affected": result.modified_count,
+            }
+        )
 
-        return {"success": True, "room_type": room_type, "new_rate": new_rate,
-                "rooms_updated": result.modified_count}
+        return {"success": True, "room_type": room_type, "new_rate": new_rate, "rooms_updated": result.modified_count}
 
 
 class CompetitiveSetDashboard:

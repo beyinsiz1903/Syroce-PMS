@@ -10,6 +10,7 @@ Collects operational metrics in MongoDB for dashboard visibility:
   - retry_count
   - error_taxonomy (timeout, auth, validation, conflict, server)
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -58,14 +59,16 @@ async def get_summary(tenant_id: str, hours: int = 24) -> dict[str, Any]:
 
     pipeline = [
         {"$match": {"tenant_id": tenant_id, "provider": "hotelrunner_v2", "recorded_at": {"$gte": since}}},
-        {"$group": {
-            "_id": "$operation",
-            "total": {"$sum": 1},
-            "success_count": {"$sum": {"$cond": ["$success", 1, 0]}},
-            "fail_count": {"$sum": {"$cond": ["$success", 0, 1]}},
-            "avg_duration_ms": {"$avg": "$duration_ms"},
-            "max_duration_ms": {"$max": "$duration_ms"},
-        }},
+        {
+            "$group": {
+                "_id": "$operation",
+                "total": {"$sum": 1},
+                "success_count": {"$sum": {"$cond": ["$success", 1, 0]}},
+                "fail_count": {"$sum": {"$cond": ["$success", 0, 1]}},
+                "avg_duration_ms": {"$avg": "$duration_ms"},
+                "max_duration_ms": {"$max": "$duration_ms"},
+            }
+        },
     ]
 
     results = await db[COLL_METRICS].aggregate(pipeline).to_list(50)
@@ -96,8 +99,7 @@ async def get_summary(tenant_id: str, hours: int = 24) -> dict[str, Any]:
 
     # Error taxonomy
     err_pipeline = [
-        {"$match": {"tenant_id": tenant_id, "provider": "hotelrunner_v2",
-                     "recorded_at": {"$gte": since}, "success": False}},
+        {"$match": {"tenant_id": tenant_id, "provider": "hotelrunner_v2", "recorded_at": {"$gte": since}, "success": False}},
         {"$group": {"_id": "$error_category", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}},
     ]
@@ -110,8 +112,7 @@ async def get_summary(tenant_id: str, hours: int = 24) -> dict[str, Any]:
 async def get_last_sync(tenant_id: str) -> dict[str, Any] | None:
     """Get the last sync operation for a tenant."""
     doc = await db[COLL_METRICS].find_one(
-        {"tenant_id": tenant_id, "provider": "hotelrunner_v2",
-         "operation": {"$in": ["ingest_reservation", "pull_reservations"]}},
+        {"tenant_id": tenant_id, "provider": "hotelrunner_v2", "operation": {"$in": ["ingest_reservation", "pull_reservations"]}},
         _NO_ID,
         sort=[("recorded_at", -1)],
     )

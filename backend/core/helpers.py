@@ -2,6 +2,7 @@
 Syroce PMS - Shared Helper Functions
 Common utilities used across multiple routers.
 """
+
 from typing import Any
 
 from fastapi import Depends, HTTPException, status
@@ -22,90 +23,155 @@ FEATURES_BY_PLAN: dict[str, dict[str, bool]] = {
     # KBS bildirimi ve kanal entegrasyonu küçük tesis için kritik
     # operasyonel temeli oluşturuyor.
     "mini_pension": {
-        "core_dashboard": True, "core_pms": True, "core_rooms": True,
-        "core_rates_availability": True, "core_bookings_frontdesk": True,
-        "core_calendar": True, "core_guests_basic": True,
-        "core_housekeeping_basic": True, "core_basic_reporting": True,
+        "core_dashboard": True,
+        "core_pms": True,
+        "core_rooms": True,
+        "core_rates_availability": True,
+        "core_bookings_frontdesk": True,
+        "core_calendar": True,
+        "core_guests_basic": True,
+        "core_housekeeping_basic": True,
+        "core_basic_reporting": True,
         "core_mobile_view": True,
         # Elektraweb Mini eşdeğeri ek modüller:
-        "mini_folio_basic": True,        # basit folyo (split/route yok)
-        "mini_invoices_basic": True,     # PDF + e-arşiv
+        "mini_folio_basic": True,  # basit folyo (split/route yok)
+        "mini_invoices_basic": True,  # PDF + e-arşiv
         "mini_night_audit_basic": True,  # tek-tıkla gün sonu
         "mini_channel_manager_lite": True,  # 3 kanal limiti
-        "mini_payments_link": True,      # sanal POS + ödeme linki
-        "mini_kbs_notify": True,         # polis kimlik bildirimi (KBS)
+        "mini_payments_link": True,  # sanal POS + ödeme linki
+        "mini_kbs_notify": True,  # polis kimlik bildirimi (KBS)
     },
     "core_small_hotel": {
         # Tüm Mini özellikleri + küçük-orta tesis için ek üst-katman.
-        "core_dashboard": True, "core_pms": True, "core_rooms": True,
-        "core_rates_availability": True, "core_bookings_frontdesk": True,
-        "core_calendar": True, "core_guests_basic": True,
-        "core_housekeeping_basic": True, "core_basic_reporting": True,
+        "core_dashboard": True,
+        "core_pms": True,
+        "core_rooms": True,
+        "core_rates_availability": True,
+        "core_bookings_frontdesk": True,
+        "core_calendar": True,
+        "core_guests_basic": True,
+        "core_housekeeping_basic": True,
+        "core_basic_reporting": True,
         "core_mobile_view": True,
-        "mini_folio_basic": True, "mini_invoices_basic": True,
-        "mini_night_audit_basic": True, "mini_channel_manager_lite": True,
-        "mini_payments_link": True, "mini_kbs_notify": True,
+        "mini_folio_basic": True,
+        "mini_invoices_basic": True,
+        "mini_night_audit_basic": True,
+        "mini_channel_manager_lite": True,
+        "mini_payments_link": True,
+        "mini_kbs_notify": True,
         # Basic-only ek değerler:
-        "basic_mailing": True, "basic_guest_advanced": True,
-        "basic_housekeeping_advanced": True, "basic_cost_management": True,
+        "basic_mailing": True,
+        "basic_guest_advanced": True,
+        "basic_housekeeping_advanced": True,
+        "basic_cost_management": True,
         "basic_advanced_reporting": True,
     },
     "professional_city_hotel": {
-        "core_dashboard": True, "core_pms": True, "core_rooms": True,
-        "core_rates_availability": True, "core_bookings_frontdesk": True,
-        "core_calendar": True, "core_guests_basic": True,
-        "core_housekeeping_basic": True, "core_basic_reporting": True,
+        "core_dashboard": True,
+        "core_pms": True,
+        "core_rooms": True,
+        "core_rates_availability": True,
+        "core_bookings_frontdesk": True,
+        "core_calendar": True,
+        "core_guests_basic": True,
+        "core_housekeeping_basic": True,
+        "core_basic_reporting": True,
         "core_mobile_view": True,
-        "pro_channel_manager": True, "pro_rate_manager": True,
-        "pro_revenue_management": True, "pro_folio_billing": True,
-        "pro_night_audit": True, "pro_invoicing": True,
-        "pro_advanced_housekeeping": True, "pro_guest_advanced": True,
-        "pro_group_reservations": True, "pro_allotments": True,
-        "pro_pos_basic": True, "pro_maintenance": True,
+        "pro_channel_manager": True,
+        "pro_rate_manager": True,
+        "pro_revenue_management": True,
+        "pro_folio_billing": True,
+        "pro_night_audit": True,
+        "pro_invoicing": True,
+        "pro_advanced_housekeeping": True,
+        "pro_guest_advanced": True,
+        "pro_group_reservations": True,
+        "pro_allotments": True,
+        "pro_pos_basic": True,
+        "pro_maintenance": True,
     },
     "enterprise_resort": {
-        "core_dashboard": True, "core_pms": True, "core_rooms": True,
-        "core_rates_availability": True, "core_bookings_frontdesk": True,
-        "core_calendar": True, "core_guests_basic": True,
-        "core_housekeeping_basic": True, "core_basic_reporting": True,
+        "core_dashboard": True,
+        "core_pms": True,
+        "core_rooms": True,
+        "core_rates_availability": True,
+        "core_bookings_frontdesk": True,
+        "core_calendar": True,
+        "core_guests_basic": True,
+        "core_housekeeping_basic": True,
+        "core_basic_reporting": True,
         "core_mobile_view": True,
-        "pro_channel_manager": True, "pro_rate_manager": True,
-        "pro_revenue_management": True, "pro_folio_billing": True,
-        "pro_night_audit": True, "pro_invoicing": True,
-        "pro_advanced_housekeeping": True, "pro_guest_advanced": True,
-        "pro_group_reservations": True, "pro_allotments": True,
-        "pro_pos_basic": True, "pro_maintenance": True,
-        "ent_multi_property": True, "ent_sales_crm": True,
-        "ent_loyalty_program": True, "ent_spa_wellness": True,
-        "ent_meetings_events": True, "ent_advanced_analytics": True,
-        "ent_gm_dashboards": True, "ent_api_access": True,
-        "ent_white_label": True, "ent_audit_trail": True,
+        "pro_channel_manager": True,
+        "pro_rate_manager": True,
+        "pro_revenue_management": True,
+        "pro_folio_billing": True,
+        "pro_night_audit": True,
+        "pro_invoicing": True,
+        "pro_advanced_housekeeping": True,
+        "pro_guest_advanced": True,
+        "pro_group_reservations": True,
+        "pro_allotments": True,
+        "pro_pos_basic": True,
+        "pro_maintenance": True,
+        "ent_multi_property": True,
+        "ent_sales_crm": True,
+        "ent_loyalty_program": True,
+        "ent_spa_wellness": True,
+        "ent_meetings_events": True,
+        "ent_advanced_analytics": True,
+        "ent_gm_dashboards": True,
+        "ent_api_access": True,
+        "ent_white_label": True,
+        "ent_audit_trail": True,
     },
     "deluxe_plus": {
-        "core_dashboard": True, "core_pms": True, "core_rooms": True,
-        "core_rates_availability": True, "core_bookings_frontdesk": True,
-        "core_calendar": True, "core_guests_basic": True,
-        "core_housekeeping_basic": True, "core_basic_reporting": True,
+        "core_dashboard": True,
+        "core_pms": True,
+        "core_rooms": True,
+        "core_rates_availability": True,
+        "core_bookings_frontdesk": True,
+        "core_calendar": True,
+        "core_guests_basic": True,
+        "core_housekeeping_basic": True,
+        "core_basic_reporting": True,
         "core_mobile_view": True,
-        "pro_channel_manager": True, "pro_rate_manager": True,
-        "pro_revenue_management": True, "pro_folio_billing": True,
-        "pro_night_audit": True, "pro_invoicing": True,
-        "pro_advanced_housekeeping": True, "pro_guest_advanced": True,
-        "pro_group_reservations": True, "pro_allotments": True,
-        "pro_pos_basic": True, "pro_maintenance": True,
-        "ent_multi_property": True, "ent_sales_crm": True,
-        "ent_loyalty_program": True, "ent_spa_wellness": True,
-        "ent_meetings_events": True, "ent_advanced_analytics": True,
-        "ent_gm_dashboards": True, "ent_api_access": True,
-        "ent_white_label": True, "ent_audit_trail": True,
-        "dlx_ai_pricing": True, "dlx_ai_chatbot": True,
-        "dlx_ai_predictive": True, "dlx_whatsapp_concierge": True,
-        "dlx_social_radar": True, "dlx_revenue_autopilot": True,
-        "dlx_guest_dna": True, "dlx_dynamic_staffing": True,
+        "pro_channel_manager": True,
+        "pro_rate_manager": True,
+        "pro_revenue_management": True,
+        "pro_folio_billing": True,
+        "pro_night_audit": True,
+        "pro_invoicing": True,
+        "pro_advanced_housekeeping": True,
+        "pro_guest_advanced": True,
+        "pro_group_reservations": True,
+        "pro_allotments": True,
+        "pro_pos_basic": True,
+        "pro_maintenance": True,
+        "ent_multi_property": True,
+        "ent_sales_crm": True,
+        "ent_loyalty_program": True,
+        "ent_spa_wellness": True,
+        "ent_meetings_events": True,
+        "ent_advanced_analytics": True,
+        "ent_gm_dashboards": True,
+        "ent_api_access": True,
+        "ent_white_label": True,
+        "ent_audit_trail": True,
+        "dlx_ai_pricing": True,
+        "dlx_ai_chatbot": True,
+        "dlx_ai_predictive": True,
+        "dlx_whatsapp_concierge": True,
+        "dlx_social_radar": True,
+        "dlx_revenue_autopilot": True,
+        "dlx_guest_dna": True,
+        "dlx_dynamic_staffing": True,
     },
     "pms_lite": {
-        "core_dashboard": True, "core_pms": True, "core_rooms": True,
-        "core_calendar": True, "core_guests_basic": True,
+        "core_dashboard": True,
+        "core_pms": True,
+        "core_rooms": True,
+        "core_calendar": True,
+        "core_guests_basic": True,
         "core_housekeeping_basic": True,
     },
 }
@@ -124,12 +190,7 @@ OPT_IN_EXTRA_FEATURES: set[str] = {"hidden_marketplace"}
 def resolve_tenant_features(tenant_doc: dict[str, Any]) -> dict[str, bool]:
     """Plan + overrides ile efektif feature set uretir."""
     tenant_doc = tenant_doc or {}
-    plan = (
-        tenant_doc.get("subscription_plan")
-        or tenant_doc.get("plan")
-        or tenant_doc.get("subscription_tier")
-        or "core_small_hotel"
-    )
+    plan = tenant_doc.get("subscription_plan") or tenant_doc.get("plan") or tenant_doc.get("subscription_tier") or "core_small_hotel"
     all_keys: set = set()
     for _plan, feats in FEATURES_BY_PLAN.items():
         for k in (feats or {}).keys():
@@ -173,6 +234,7 @@ async def load_tenant_doc(tenant_id: str) -> dict[str, Any] | None:
         return doc
     try:
         from bson import ObjectId
+
         if len(tenant_id) == 24:
             doc = await db.tenants.find_one({"_id": ObjectId(tenant_id)})
             if doc:
@@ -210,21 +272,48 @@ async def create_audit_log(
 
 
 MODULE_DEFAULTS: dict[str, bool] = {
-    "pms": True, "reservation_calendar": True, "dashboard": True,
-    "guests": True, "housekeeping": True, "basic_reporting": True,
-    "settings": True, "pms_mobile": True, "invoices_basic": True,
-    "channel_manager": True, "folio_management": True, "night_audit": True,
-    "invoices": True, "cost_management": True, "reports": True,
-    "mobile_housekeeping": True, "rate_management": True, "booking_engine": True,
-    "guest_advanced": True, "revenue_management": True, "multi_property": True,
-    "group_sales": True, "sales_crm": True, "loyalty_program": True,
-    "gm_dashboards": True, "mobile_revenue": True, "advanced_analytics": True,
-    "api_access": True, "white_label": True, "audit_trail": True,
-    "ai": True, "ai_chatbot": True, "ai_pricing": True, "ai_whatsapp": True,
-    "ai_predictive": True, "ai_reputation": True, "ai_revenue_autopilot": True,
+    "pms": True,
+    "reservation_calendar": True,
+    "dashboard": True,
+    "guests": True,
+    "housekeeping": True,
+    "basic_reporting": True,
+    "settings": True,
+    "pms_mobile": True,
+    "invoices_basic": True,
+    "channel_manager": True,
+    "folio_management": True,
+    "night_audit": True,
+    "invoices": True,
+    "cost_management": True,
+    "reports": True,
+    "mobile_housekeeping": True,
+    "rate_management": True,
+    "booking_engine": True,
+    "guest_advanced": True,
+    "revenue_management": True,
+    "multi_property": True,
+    "group_sales": True,
+    "sales_crm": True,
+    "loyalty_program": True,
+    "gm_dashboards": True,
+    "mobile_revenue": True,
+    "advanced_analytics": True,
+    "api_access": True,
+    "white_label": True,
+    "audit_trail": True,
+    "ai": True,
+    "ai_chatbot": True,
+    "ai_pricing": True,
+    "ai_whatsapp": True,
+    "ai_predictive": True,
+    "ai_reputation": True,
+    "ai_revenue_autopilot": True,
     "ai_social_radar": True,
     # Add-on modules — sold separately, default OFF.
-    "spa": False, "mice": False, "academy": False,
+    "spa": False,
+    "mice": False,
+    "academy": False,
 }
 
 
@@ -250,6 +339,7 @@ def get_tenant_modules(tenant_doc: dict[str, Any]) -> dict[str, bool]:
 
 def require_feature(feature_key: str, not_found: bool = True):
     """Belirli bir feature acik degilse 404/403 doner."""
+
     async def _guard(current_user: User = Depends(get_current_user)):
         if _is_super_admin(current_user):
             return current_user
@@ -264,11 +354,13 @@ def require_feature(feature_key: str, not_found: bool = True):
                 detail="Not found" if not_found else "Forbidden",
             )
         return current_user
+
     return _guard
 
 
 def require_super_admin_guard(not_found: bool = True):
     """Sadece super_admin erisebilsin."""
+
     async def _guard(current_user: User = Depends(get_current_user)):
         if _is_super_admin(current_user):
             return current_user
@@ -276,6 +368,7 @@ def require_super_admin_guard(not_found: bool = True):
             status_code=status.HTTP_404_NOT_FOUND if not_found else status.HTTP_403_FORBIDDEN,
             detail="Not found" if not_found else "Forbidden",
         )
+
     return _guard
 
 
@@ -336,6 +429,7 @@ def invalidate_tenant_doc_cache(tenant_id: str | None = None) -> None:
     # import it at module-load time (circular).
     try:
         from infra.auth_cache_pubsub import auth_cache_pubsub
+
         auth_cache_pubsub.schedule_publish_tenant(tenant_id)
     except Exception:
         pass
@@ -343,6 +437,7 @@ def invalidate_tenant_doc_cache(tenant_id: str | None = None) -> None:
 
 def require_module(module_name: str):
     """Dependency to ensure the current hotel has a specific module enabled."""
+
     async def dependency(current_user: User = Depends(get_current_user)) -> None:
         # Tenant context is mandatory even for super_admin: downstream handlers
         # rely on current_user.tenant_id and may otherwise read/write unscoped.
@@ -360,6 +455,7 @@ def require_module(module_name: str):
             if not tenant_doc:
                 try:
                     from bson import ObjectId
+
                     tenant_doc = await db.tenants.find_one({"_id": ObjectId(current_user.tenant_id)})
                 except Exception:
                     tenant_doc = None
@@ -379,6 +475,7 @@ def require_module(module_name: str):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"{module_name} modulu bu otel icin aktif degil",
             )
+
     return dependency
 
 
@@ -397,10 +494,20 @@ async def require_admin(current_user: User = Depends(get_current_user)) -> User:
 # these (UUID generation, tenant scoping, audit trail, lifecycle timestamps).
 # Used by routers that accept raw `dict` bodies and spread them into persisted docs.
 # Prefer Pydantic input models with explicit allowlists for new endpoints.
-_RESERVED_DOC_FIELDS = frozenset({
-    "id", "_id", "guest_id", "tenant_id", "approved_by", "approved_at",
-    "reported_by", "active", "created_at", "updated_at",
-})
+_RESERVED_DOC_FIELDS = frozenset(
+    {
+        "id",
+        "_id",
+        "guest_id",
+        "tenant_id",
+        "approved_by",
+        "approved_at",
+        "reported_by",
+        "active",
+        "created_at",
+        "updated_at",
+    }
+)
 
 
 def strip_reserved(payload: Any) -> dict:

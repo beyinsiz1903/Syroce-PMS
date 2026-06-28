@@ -2,6 +2,7 @@
 Aggregator package — auto-split from mobile_router.py.
 Public API: from domains.pms.mobile_router import router
 """
+
 from fastapi import APIRouter
 
 from .dashboard import router as _dashboard_r

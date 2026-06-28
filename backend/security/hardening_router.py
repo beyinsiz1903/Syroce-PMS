@@ -4,6 +4,7 @@ Production runtime APIs for audit status, rate limiting,
 credential checks, tenant guard, and log sanitization status.
 Thin router: delegates all business logic to SecurityRuntimeService.
 """
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from common.context import OperationContext
@@ -35,7 +36,8 @@ async def get_rate_limit_status(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/credentials/check", summary="Scan for weak credentials")
-async def check_credentials(current_user: User = Depends(get_current_user),
+async def check_credentials(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     result = await security_runtime_service.check_credentials(_ctx(current_user))

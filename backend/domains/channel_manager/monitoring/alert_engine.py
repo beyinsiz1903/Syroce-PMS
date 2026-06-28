@@ -6,6 +6,7 @@ Evaluates collected metrics against defined thresholds.
 Creates alert events when thresholds are breached.
 Auto-resolves alerts when metrics return to normal.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -64,47 +65,55 @@ async def evaluate_alerts(metrics: dict[str, Any]) -> list[dict[str, Any]]:
     for provider_name, pdata in provider_health.get("providers", {}).items():
         consec = pdata.get("consecutive_failures", 0)
         if consec >= THRESHOLDS["provider_consecutive_failures"]:
-            new_alerts.append(_build_alert(
-                AlertType.PROVIDER_CONNECTION_FAILURE,
-                provider=provider_name,
-                title=f"{provider_name} baglanti hatasi",
-                details=f"Ardisik hata sayisi: {consec}",
-                metric_value=consec,
-                threshold=THRESHOLDS["provider_consecutive_failures"],
-            ))
+            new_alerts.append(
+                _build_alert(
+                    AlertType.PROVIDER_CONNECTION_FAILURE,
+                    provider=provider_name,
+                    title=f"{provider_name} baglanti hatasi",
+                    details=f"Ardisik hata sayisi: {consec}",
+                    metric_value=consec,
+                    threshold=THRESHOLDS["provider_consecutive_failures"],
+                )
+            )
 
         error_rate = pdata.get("api_error_rate", 0)
         if error_rate > THRESHOLDS["provider_error_rate"]:
-            new_alerts.append(_build_alert(
-                AlertType.ERROR_RATE_SPIKE,
-                provider=provider_name,
-                title=f"{provider_name} hata orani yuksek",
-                details=f"API hata orani: %{error_rate}",
-                metric_value=error_rate,
-                threshold=THRESHOLDS["provider_error_rate"],
-            ))
+            new_alerts.append(
+                _build_alert(
+                    AlertType.ERROR_RATE_SPIKE,
+                    provider=provider_name,
+                    title=f"{provider_name} hata orani yuksek",
+                    details=f"API hata orani: %{error_rate}",
+                    metric_value=error_rate,
+                    threshold=THRESHOLDS["provider_error_rate"],
+                )
+            )
 
     # 2. Ingest Pipeline Alerts
     ingest = metrics.get("ingest_health", {})
     failed_24h = ingest.get("failed_recent_24h", 0)
     if failed_24h >= THRESHOLDS["ingest_failed_24h"]:
-        new_alerts.append(_build_alert(
-            AlertType.FAILED_INGEST_SPIKE,
-            title="Ingest pipeline basarisiz islem artisi",
-            details=f"Son 24 saatte {failed_24h} basarisiz islem",
-            metric_value=failed_24h,
-            threshold=THRESHOLDS["ingest_failed_24h"],
-        ))
+        new_alerts.append(
+            _build_alert(
+                AlertType.FAILED_INGEST_SPIKE,
+                title="Ingest pipeline basarisiz islem artisi",
+                details=f"Son 24 saatte {failed_24h} basarisiz islem",
+                metric_value=failed_24h,
+                threshold=THRESHOLDS["ingest_failed_24h"],
+            )
+        )
 
     pending = ingest.get("pending", 0)
     if pending >= THRESHOLDS["ingest_pending_queue"]:
-        new_alerts.append(_build_alert(
-            AlertType.INGEST_PIPELINE_FAILURE,
-            title="Ingest pipeline kuyrugu doldu",
-            details=f"Bekleyen event sayisi: {pending}",
-            metric_value=pending,
-            threshold=THRESHOLDS["ingest_pending_queue"],
-        ))
+        new_alerts.append(
+            _build_alert(
+                AlertType.INGEST_PIPELINE_FAILURE,
+                title="Ingest pipeline kuyrugu doldu",
+                details=f"Bekleyen event sayisi: {pending}",
+                metric_value=pending,
+                threshold=THRESHOLDS["ingest_pending_queue"],
+            )
+        )
 
     # Catchup pre-insert dedup guard spike — per tenant+provider.
     # The breakdown key is "<provider>/<tenant_id>". We must surface one
@@ -137,36 +146,42 @@ async def evaluate_alerts(metrics: dict[str, Any]) -> list[dict[str, Any]]:
             breaches[key] = ("24h", count, thr_24h)
     for key in sorted(breaches):  # deterministic emission order
         window, count, thr = breaches[key]
-        new_alerts.append(_build_alert(
-            AlertType.CATCHUP_DEDUP_SPIKE,
-            provider=key,  # full "<provider>/<tenant_id>" so dedupe is per-tenant
-            title=f"Catchup yinelenen yazma korumasi cok sik tetikleniyor ({window})",
-            details=f"{key}: {count} skip ({window}). Esik: {thr}.",
-            metric_value=count,
-            threshold=thr,
-        ))
+        new_alerts.append(
+            _build_alert(
+                AlertType.CATCHUP_DEDUP_SPIKE,
+                provider=key,  # full "<provider>/<tenant_id>" so dedupe is per-tenant
+                title=f"Catchup yinelenen yazma korumasi cok sik tetikleniyor ({window})",
+                details=f"{key}: {count} skip ({window}). Esik: {thr}.",
+                metric_value=count,
+                threshold=thr,
+            )
+        )
 
     # 3. ARI Push Alerts
     ari = metrics.get("ari_health", {})
     success_rate = ari.get("success_rate", 100)
     if success_rate < THRESHOLDS["ari_success_rate_min"]:
-        new_alerts.append(_build_alert(
-            AlertType.ARI_PUSH_FAILURE,
-            title="ARI push basari orani dusuk",
-            details=f"Basari orani: %{success_rate}",
-            metric_value=success_rate,
-            threshold=THRESHOLDS["ari_success_rate_min"],
-        ))
+        new_alerts.append(
+            _build_alert(
+                AlertType.ARI_PUSH_FAILURE,
+                title="ARI push basari orani dusuk",
+                details=f"Basari orani: %{success_rate}",
+                metric_value=success_rate,
+                threshold=THRESHOLDS["ari_success_rate_min"],
+            )
+        )
 
     pending_cs = ari.get("pending_changesets", 0)
     if pending_cs >= THRESHOLDS["ari_pending_changesets"]:
-        new_alerts.append(_build_alert(
-            AlertType.RETRY_BACKLOG_GROWTH,
-            title="ARI retry kuyrugu buyuyor",
-            details=f"Bekleyen changeset: {pending_cs}",
-            metric_value=pending_cs,
-            threshold=THRESHOLDS["ari_pending_changesets"],
-        ))
+        new_alerts.append(
+            _build_alert(
+                AlertType.RETRY_BACKLOG_GROWTH,
+                title="ARI retry kuyrugu buyuyor",
+                details=f"Bekleyen changeset: {pending_cs}",
+                metric_value=pending_cs,
+                threshold=THRESHOLDS["ari_pending_changesets"],
+            )
+        )
 
     # 4. Reconciliation Alerts
     recon = metrics.get("reconciliation_health", {})
@@ -175,65 +190,77 @@ async def evaluate_alerts(metrics: dict[str, Any]) -> list[dict[str, Any]]:
 
     critical_cases = by_severity.get("critical", 0)
     if critical_cases >= THRESHOLDS["recon_critical_cases"]:
-        new_alerts.append(_build_alert(
-            AlertType.OVERBOOKING_RISK,
-            title="Kritik reconciliation vakalari tespit edildi",
-            details=f"Kritik vaka sayisi: {critical_cases}",
-            metric_value=critical_cases,
-            threshold=THRESHOLDS["recon_critical_cases"],
-        ))
+        new_alerts.append(
+            _build_alert(
+                AlertType.OVERBOOKING_RISK,
+                title="Kritik reconciliation vakalari tespit edildi",
+                details=f"Kritik vaka sayisi: {critical_cases}",
+                metric_value=critical_cases,
+                threshold=THRESHOLDS["recon_critical_cases"],
+            )
+        )
 
     status_conflicts = by_type.get("status_conflict", 0)
     if status_conflicts >= THRESHOLDS["recon_status_conflicts"]:
-        new_alerts.append(_build_alert(
-            AlertType.STATUS_CONFLICT_DETECTED,
-            title="Durum catismasi tespit edildi",
-            details=f"Status conflict sayisi: {status_conflicts}",
-            metric_value=status_conflicts,
-            threshold=THRESHOLDS["recon_status_conflicts"],
-        ))
+        new_alerts.append(
+            _build_alert(
+                AlertType.STATUS_CONFLICT_DETECTED,
+                title="Durum catismasi tespit edildi",
+                details=f"Status conflict sayisi: {status_conflicts}",
+                metric_value=status_conflicts,
+                threshold=THRESHOLDS["recon_status_conflicts"],
+            )
+        )
 
     missing_res = by_type.get("missing_reservation", 0)
     if missing_res >= THRESHOLDS["recon_missing_reservations"]:
-        new_alerts.append(_build_alert(
-            AlertType.MISSING_RESERVATION_SPIKE,
-            title="Eksik rezervasyon artisi",
-            details=f"Eksik rezervasyon sayisi: {missing_res}",
-            metric_value=missing_res,
-            threshold=THRESHOLDS["recon_missing_reservations"],
-        ))
+        new_alerts.append(
+            _build_alert(
+                AlertType.MISSING_RESERVATION_SPIKE,
+                title="Eksik rezervasyon artisi",
+                details=f"Eksik rezervasyon sayisi: {missing_res}",
+                metric_value=missing_res,
+                threshold=THRESHOLDS["recon_missing_reservations"],
+            )
+        )
 
     amount_mm = by_type.get("amount_mismatch", 0)
     if amount_mm >= THRESHOLDS["recon_amount_mismatches"]:
-        new_alerts.append(_build_alert(
-            AlertType.AMOUNT_MISMATCH_SPIKE,
-            title="Tutar uyusmazligi artisi",
-            details=f"Amount mismatch sayisi: {amount_mm}",
-            metric_value=amount_mm,
-            threshold=THRESHOLDS["recon_amount_mismatches"],
-        ))
+        new_alerts.append(
+            _build_alert(
+                AlertType.AMOUNT_MISMATCH_SPIKE,
+                title="Tutar uyusmazligi artisi",
+                details=f"Amount mismatch sayisi: {amount_mm}",
+                metric_value=amount_mm,
+                threshold=THRESHOLDS["recon_amount_mismatches"],
+            )
+        )
 
     # 5. Queue & Worker Alerts
     queue = metrics.get("queue_health", {})
     stalled = queue.get("stalled_workers", [])
     if len(stalled) >= THRESHOLDS["worker_stalled_count"]:
-        new_alerts.append(_build_alert(
-            AlertType.WORKER_STALLED,
-            title="Worker durdu",
-            details=f"Duran worker'lar: {', '.join(stalled)}",
-            metric_value=len(stalled),
-            threshold=THRESHOLDS["worker_stalled_count"],
-        ))
+        new_alerts.append(
+            _build_alert(
+                AlertType.WORKER_STALLED,
+                title="Worker durdu",
+                details=f"Duran worker'lar: {', '.join(stalled)}",
+                metric_value=len(stalled),
+                threshold=THRESHOLDS["worker_stalled_count"],
+            )
+        )
 
     queue_depth = queue.get("queue_depth", 0)
     if queue_depth >= THRESHOLDS["queue_depth_max"]:
-        new_alerts.append(_build_alert(
-            AlertType.QUEUE_OVERFLOW,
-            title="Kuyruk tasmasi riski",
-            details=f"Kuyruk derinligi: {queue_depth}",
-            metric_value=queue_depth,
-            threshold=THRESHOLDS["queue_depth_max"],
-        ))
+        new_alerts.append(
+            _build_alert(
+                AlertType.QUEUE_OVERFLOW,
+                title="Kuyruk tasmasi riski",
+                details=f"Kuyruk derinligi: {queue_depth}",
+                metric_value=queue_depth,
+                threshold=THRESHOLDS["queue_depth_max"],
+            )
+        )
 
     return new_alerts
 
@@ -275,24 +302,32 @@ async def process_alerts(new_alerts: list[dict[str, Any]]) -> dict[str, Any]:
         # Dispatch to configured channels (Slack, etc.)
         try:
             from .alert_dispatch import dispatch_alert
+
             await dispatch_alert(alert_data)
         except Exception as e:
             logger.warning(f"Alert dispatch failed: {e}")
 
     # Auto-resolve alerts whose conditions are no longer met
-    active_alerts = await db[COLL_MONITORING_ALERTS].find(
-        {"status": "active"}, _NO_ID,
-    ).to_list(500)
+    active_alerts = (
+        await db[COLL_MONITORING_ALERTS]
+        .find(
+            {"status": "active"},
+            _NO_ID,
+        )
+        .to_list(500)
+    )
 
     for alert in active_alerts:
         key = (alert.get("alert_type", ""), alert.get("provider", ""))
         if key not in active_types:
             await db[COLL_MONITORING_ALERTS].update_one(
                 {"id": alert["id"]},
-                {"$set": {
-                    "status": AlertStatus.RESOLVED.value,
-                    "resolved_at": datetime.now(UTC).isoformat(),
-                }},
+                {
+                    "$set": {
+                        "status": AlertStatus.RESOLVED.value,
+                        "resolved_at": datetime.now(UTC).isoformat(),
+                    }
+                },
             )
             resolved += 1
             logger.info(f"Alert auto-resolved: {alert.get('title', '?')}")

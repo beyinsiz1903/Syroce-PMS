@@ -2,6 +2,7 @@
 WebSocket Redis Adapter — Distributed WebSocket broadcasting via Redis Pub/Sub.
 Enables multi-instance WebSocket support. Falls back to local broadcast.
 """
+
 import asyncio
 import json
 import logging
@@ -18,8 +19,10 @@ from typing import Any
 try:
     from redis.exceptions import TimeoutError as RedisTimeoutError
 except Exception:  # pragma: no cover — defensive
+
     class RedisTimeoutError(Exception):
         """Shim used when redis.exceptions is unavailable."""
+
 
 logger = logging.getLogger("infra.ws_redis_adapter")
 
@@ -131,9 +134,7 @@ class WebSocketRedisAdapter:
             return
         async with self._get_lock():
             if channel in self._subscribed_channels:
-                self._channel_refcounts[channel] = (
-                    self._channel_refcounts.get(channel, 0) + 1
-                )
+                self._channel_refcounts[channel] = self._channel_refcounts.get(channel, 0) + 1
                 return
             # Record first; reconnect uses _subscribed_channels as the
             # source of truth when rebuilding the pub/sub connection.
@@ -198,9 +199,7 @@ class WebSocketRedisAdapter:
         # 2) Cross-instance fan-out via Redis pub/sub (best-effort).
         await self.publish_remote_only(room, event, data)
 
-    async def publish_remote_only(
-        self, room: str, event: str, data: dict[str, Any]
-    ) -> None:
+    async def publish_remote_only(self, room: str, event: str, data: dict[str, Any]) -> None:
         """Publish ONLY to other instances via Redis pub/sub — skip the
         local-handler invocation that :meth:`publish` performs.
 
@@ -216,13 +215,15 @@ class WebSocketRedisAdapter:
             return
         try:
             channel = f"{self.CHANNEL_PREFIX}{room}"
-            message = json.dumps({
-                "room": room,
-                "event": event,
-                "data": data,
-                "source_instance": self._instance_id,
-                "timestamp": datetime.now(UTC).isoformat(),
-            })
+            message = json.dumps(
+                {
+                    "room": room,
+                    "event": event,
+                    "data": data,
+                    "source_instance": self._instance_id,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
             await self._redis.publish(channel, message)
             self._metrics["messages_published"] += 1
         except Exception as e:
@@ -276,25 +277,17 @@ class WebSocketRedisAdapter:
                             self._metrics["messages_received"] += 1
                             # Forward to local websocket clients
                             if self._local_handler:
-                                await self._local_handler(
-                                    payload["room"], payload["event"], payload["data"]
-                                )
+                                await self._local_handler(payload["room"], payload["event"], payload["data"])
                                 self._metrics["messages_forwarded"] += 1
                         except Exception as e:
-                            self._metrics["last_listen_error"] = (
-                                f"{type(e).__name__}: {str(e)[:200]}"
-                            )
-                            self._metrics["last_listen_error_at"] = (
-                                datetime.now(UTC).isoformat()
-                            )
+                            self._metrics["last_listen_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+                            self._metrics["last_listen_error_at"] = datetime.now(UTC).isoformat()
                             logger.error(f"WS message parse error: {e}")
                     # listen() returned without raising → server closed
                     # the subscription cleanly. Treat as a transient
                     # drop and rebuild so bridged events keep flowing.
                     if breaker_count < self._breaker_threshold:
-                        logger.warning(
-                            "WS pubsub listener exited; attempting reconnect"
-                        )
+                        logger.warning("WS pubsub listener exited; attempting reconnect")
                 except asyncio.CancelledError:
                     return
                 except (TimeoutError, RedisTimeoutError) as e:
@@ -302,33 +295,21 @@ class WebSocketRedisAdapter:
                     # ~30s). No message arrived in the read window — this is
                     # normal for low-traffic channels, NOT an error. Quiet
                     # reconnect keeps the listener alive without log spam.
-                    self._metrics["last_listen_error"] = (
-                        f"IdleTimeout: {str(e)[:120]}"
-                    )
-                    self._metrics["last_listen_error_at"] = (
-                        datetime.now(UTC).isoformat()
-                    )
+                    self._metrics["last_listen_error"] = f"IdleTimeout: {str(e)[:120]}"
+                    self._metrics["last_listen_error_at"] = datetime.now(UTC).isoformat()
                     logger.debug("WS pubsub idle timeout; reconnecting")
                     exit_reason = "idle"
                 except Exception as e:
-                    self._metrics["last_listen_error"] = (
-                        f"{type(e).__name__}: {str(e)[:200]}"
-                    )
-                    self._metrics["last_listen_error_at"] = (
-                        datetime.now(UTC).isoformat()
-                    )
+                    self._metrics["last_listen_error"] = f"{type(e).__name__}: {str(e)[:200]}"
+                    self._metrics["last_listen_error_at"] = datetime.now(UTC).isoformat()
                     exit_reason = "error"
                     # Genuine connection failure (network blip, Redis restart)
                     # — WARNING the first few times, then suppress to debug
                     # so a stuck remote endpoint cannot flood the log.
                     if breaker_count < self._breaker_threshold:
-                        logger.warning(
-                            f"WS pubsub listener error: {e}; attempting reconnect"
-                        )
+                        logger.warning(f"WS pubsub listener error: {e}; attempting reconnect")
                     else:
-                        logger.debug(
-                            f"WS pubsub listener error (suppressed): {e}"
-                        )
+                        logger.debug(f"WS pubsub listener error (suppressed): {e}")
             # else: previous reconnect attempt cleared _pubsub but
             # failed to rebuild it — fall through and keep retrying so
             # we don't permanently drop into local-only mode.
@@ -413,10 +394,7 @@ class WebSocketRedisAdapter:
                 # seconds for low-traffic channels). Surface them at DEBUG
                 # to avoid log spam; operators can still see them via
                 # ``get_metrics()['reconnects']``.
-                logger.debug(
-                    "WS pubsub reconnected; re-subscribed to "
-                    f"{len(channels)} channel(s)"
-                )
+                logger.debug(f"WS pubsub reconnected; re-subscribed to {len(channels)} channel(s)")
                 return True
         except Exception as e:
             logger.warning(f"WS pubsub reconnect failed: {e}")
@@ -452,10 +430,7 @@ class WebSocketRedisAdapter:
         """
         now = self._now()
         now_ts = now.timestamp()
-        if (
-            self._last_snapshot_at is not None
-            and (now_ts - self._last_snapshot_at) < self._snapshot_interval_s
-        ):
+        if self._last_snapshot_at is not None and (now_ts - self._last_snapshot_at) < self._snapshot_interval_s:
             return
         self._last_snapshot_at = now_ts
         self._snapshots.append(

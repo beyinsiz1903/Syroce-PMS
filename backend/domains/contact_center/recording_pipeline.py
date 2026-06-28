@@ -7,6 +7,7 @@ Retention: süresi dolan kayıtları depodan siler ve referansı kaldırır.
 Doktrin: imzalı URL ASLA persist/loglanmaz; PII loglanmaz; depo/Twilio yoksa
 boru hattı fail-closed (kayıt indirilmez/saklanmaz).
 """
+
 from __future__ import annotations
 
 import logging
@@ -43,9 +44,7 @@ async def process_call_recording(
         audio = await fetch_twilio_recording(recording_url)
         if not audio:
             return {"status": "fetch_not_configured_or_unavailable"}
-        ref = store_recording_bytes(
-            audio, tenant_id=tenant_id, call_id=provider_call_sid
-        )
+        ref = store_recording_bytes(audio, tenant_id=tenant_id, call_id=provider_call_sid)
         if not ref:
             return {"status": "storage_not_configured"}
         await attach_recording_ref(

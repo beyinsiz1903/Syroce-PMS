@@ -12,6 +12,7 @@ Metrics:
   - Field KPIs (period-over-period comparison, MTTR, operator interventions)
   - Weekly proof (week-over-week improvement summary)
 """
+
 import asyncio
 import logging
 import math
@@ -34,7 +35,8 @@ SLA_RETRY_SUCCESS_RATE = 80.0
 
 
 async def compute_channel_health(
-    tenant_id: str | None = None, hours: int = 24,
+    tenant_id: str | None = None,
+    hours: int = 24,
 ) -> dict[str, Any]:
     """Top-level aggregation for the Channel Health tab."""
     now = datetime.now(UTC)
@@ -74,6 +76,7 @@ async def compute_channel_health(
 
 
 # ─── Historical Trends ───────────────────────────────────────────
+
 
 async def compute_channel_health_trends(
     tenant_id: str | None = None,
@@ -139,31 +142,39 @@ async def _trend_push_latency(tenant_id: str | None, cutoff: str, bucket_hours: 
         match["tenant_id"] = tenant_id
     pipeline = [
         {"$match": match},
-        {"$addFields": {
-            "_ts": {"$dateFromString": {"dateString": "$recorded_at", "onError": None}},
-        }},
+        {
+            "$addFields": {
+                "_ts": {"$dateFromString": {"dateString": "$recorded_at", "onError": None}},
+            }
+        },
         {"$match": {"_ts": {"$ne": None}}},
-        {"$addFields": {
-            "_bucket": {"$dateTrunc": {"date": "$_ts", "unit": "hour", "binSize": bucket_hours}},
-        }},
-        {"$group": {
-            "_id": "$_bucket",
-            "latencies": {"$push": "$latency_ms"},
-            "count": {"$sum": 1},
-        }},
+        {
+            "$addFields": {
+                "_bucket": {"$dateTrunc": {"date": "$_ts", "unit": "hour", "binSize": bucket_hours}},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$_bucket",
+                "latencies": {"$push": "$latency_ms"},
+                "count": {"$sum": 1},
+            }
+        },
         {"$sort": {"_id": 1}},
     ]
     result = []
     try:
         async for doc in db[RATE_PUSH_METRICS].aggregate(pipeline):
             lats = sorted(doc["latencies"])
-            result.append({
-                "t": doc["_id"].isoformat() if doc["_id"] else "",
-                "p50": _percentile(lats, 50),
-                "p95": _percentile(lats, 95),
-                "p99": _percentile(lats, 99),
-                "count": doc["count"],
-            })
+            result.append(
+                {
+                    "t": doc["_id"].isoformat() if doc["_id"] else "",
+                    "p50": _percentile(lats, 50),
+                    "p95": _percentile(lats, 95),
+                    "p99": _percentile(lats, 99),
+                    "count": doc["count"],
+                }
+            )
     except Exception as e:
         logger.warning("Trend push latency error: %s", e)
     return result
@@ -175,18 +186,24 @@ async def _trend_sync_success(tenant_id: str | None, cutoff: str, bucket_hours: 
         match["tenant_id"] = tenant_id
     pipeline = [
         {"$match": match},
-        {"$addFields": {
-            "_ts": {"$dateFromString": {"dateString": "$started_at", "onError": None}},
-        }},
+        {
+            "$addFields": {
+                "_ts": {"$dateFromString": {"dateString": "$started_at", "onError": None}},
+            }
+        },
         {"$match": {"_ts": {"$ne": None}}},
-        {"$addFields": {
-            "_bucket": {"$dateTrunc": {"date": "$_ts", "unit": "hour", "binSize": bucket_hours}},
-        }},
-        {"$group": {
-            "_id": "$_bucket",
-            "total": {"$sum": 1},
-            "completed": {"$sum": {"$cond": [{"$eq": ["$status", "completed"]}, 1, 0]}},
-        }},
+        {
+            "$addFields": {
+                "_bucket": {"$dateTrunc": {"date": "$_ts", "unit": "hour", "binSize": bucket_hours}},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$_bucket",
+                "total": {"$sum": 1},
+                "completed": {"$sum": {"$cond": [{"$eq": ["$status", "completed"]}, 1, 0]}},
+            }
+        },
         {"$sort": {"_id": 1}},
     ]
     result = []
@@ -194,12 +211,14 @@ async def _trend_sync_success(tenant_id: str | None, cutoff: str, bucket_hours: 
         async for doc in db[SYNC_JOBS].aggregate(pipeline):
             t = doc["total"]
             c = doc["completed"]
-            result.append({
-                "t": doc["_id"].isoformat() if doc["_id"] else "",
-                "success_rate": round(c / max(t, 1) * 100, 1),
-                "total": t,
-                "completed": c,
-            })
+            result.append(
+                {
+                    "t": doc["_id"].isoformat() if doc["_id"] else "",
+                    "success_rate": round(c / max(t, 1) * 100, 1),
+                    "total": t,
+                    "completed": c,
+                }
+            )
     except Exception as e:
         logger.warning("Trend sync success error: %s", e)
     return result
@@ -211,13 +230,17 @@ async def _trend_failures(tenant_id: str | None, cutoff: str, bucket_hours: int)
         match["tenant_id"] = tenant_id
     pipeline = [
         {"$match": match},
-        {"$addFields": {
-            "_ts": {"$dateFromString": {"dateString": "$recorded_at", "onError": None}},
-        }},
+        {
+            "$addFields": {
+                "_ts": {"$dateFromString": {"dateString": "$recorded_at", "onError": None}},
+            }
+        },
         {"$match": {"_ts": {"$ne": None}}},
-        {"$addFields": {
-            "_bucket": {"$dateTrunc": {"date": "$_ts", "unit": "hour", "binSize": bucket_hours}},
-        }},
+        {
+            "$addFields": {
+                "_bucket": {"$dateTrunc": {"date": "$_ts", "unit": "hour", "binSize": bucket_hours}},
+            }
+        },
         {"$group": {"_id": "$_bucket", "count": {"$sum": 1}}},
         {"$sort": {"_id": 1}},
     ]
@@ -236,13 +259,17 @@ async def _trend_drift_created(tenant_id: str | None, cutoff: str, bucket_hours:
         match["tenant_id"] = tenant_id
     pipeline = [
         {"$match": match},
-        {"$addFields": {
-            "_ts": {"$dateFromString": {"dateString": "$detected_at", "onError": None}},
-        }},
+        {
+            "$addFields": {
+                "_ts": {"$dateFromString": {"dateString": "$detected_at", "onError": None}},
+            }
+        },
         {"$match": {"_ts": {"$ne": None}}},
-        {"$addFields": {
-            "_bucket": {"$dateTrunc": {"date": "$_ts", "unit": "hour", "binSize": bucket_hours}},
-        }},
+        {
+            "$addFields": {
+                "_bucket": {"$dateTrunc": {"date": "$_ts", "unit": "hour", "binSize": bucket_hours}},
+            }
+        },
         {"$group": {"_id": "$_bucket", "count": {"$sum": 1}}},
         {"$sort": {"_id": 1}},
     ]
@@ -261,18 +288,24 @@ async def _trend_retry_success(tenant_id: str | None, cutoff: str, bucket_hours:
         match["tenant_id"] = tenant_id
     pipeline = [
         {"$match": match},
-        {"$addFields": {
-            "_ts": {"$dateFromString": {"dateString": "$recorded_at", "onError": None}},
-        }},
+        {
+            "$addFields": {
+                "_ts": {"$dateFromString": {"dateString": "$recorded_at", "onError": None}},
+            }
+        },
         {"$match": {"_ts": {"$ne": None}}},
-        {"$addFields": {
-            "_bucket": {"$dateTrunc": {"date": "$_ts", "unit": "hour", "binSize": bucket_hours}},
-        }},
-        {"$group": {
-            "_id": "$_bucket",
-            "total": {"$sum": 1},
-            "success": {"$sum": {"$cond": ["$success", 1, 0]}},
-        }},
+        {
+            "$addFields": {
+                "_bucket": {"$dateTrunc": {"date": "$_ts", "unit": "hour", "binSize": bucket_hours}},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$_bucket",
+                "total": {"$sum": 1},
+                "success": {"$sum": {"$cond": ["$success", 1, 0]}},
+            }
+        },
         {"$sort": {"_id": 1}},
     ]
     result = []
@@ -280,17 +313,20 @@ async def _trend_retry_success(tenant_id: str | None, cutoff: str, bucket_hours:
         async for doc in db[RATE_PUSH_METRICS].aggregate(pipeline):
             t = doc["total"]
             s = doc["success"]
-            result.append({
-                "t": doc["_id"].isoformat() if doc["_id"] else "",
-                "success_rate": round(s / max(t, 1) * 100, 1),
-                "total": t,
-            })
+            result.append(
+                {
+                    "t": doc["_id"].isoformat() if doc["_id"] else "",
+                    "success_rate": round(s / max(t, 1) * 100, 1),
+                    "total": t,
+                }
+            )
     except Exception as e:
         logger.warning("Trend retry success error: %s", e)
     return result
 
 
 # ─── Field KPIs ──────────────────────────────────────────────────
+
 
 async def compute_field_kpis(
     tenant_id: str | None = None,
@@ -344,10 +380,16 @@ async def _kpi_sync_success(tenant_id, current_cutoff, prev_cutoff, current_star
         match: dict[str, Any] = {"started_at": {"$gte": cutoff_from, "$lt": cutoff_to}}
         if tenant_id:
             match["tenant_id"] = tenant_id
-        pipeline = [{"$match": match}, {"$group": {
-            "_id": None, "total": {"$sum": 1},
-            "completed": {"$sum": {"$cond": [{"$eq": ["$status", "completed"]}, 1, 0]}},
-        }}]
+        pipeline = [
+            {"$match": match},
+            {
+                "$group": {
+                    "_id": None,
+                    "total": {"$sum": 1},
+                    "completed": {"$sum": {"$cond": [{"$eq": ["$status", "completed"]}, 1, 0]}},
+                }
+            },
+        ]
         try:
             async for doc in db[SYNC_JOBS].aggregate(pipeline):
                 t = doc["total"]
@@ -388,10 +430,12 @@ async def _kpi_mttr(tenant_id, current_cutoff, prev_cutoff, current_start) -> di
             match["tenant_id"] = tenant_id
         pipeline = [
             {"$match": match},
-            {"$addFields": {
-                "_det": {"$dateFromString": {"dateString": "$detected_at", "onError": None}},
-                "_res": {"$dateFromString": {"dateString": "$resolved_at", "onError": None}},
-            }},
+            {
+                "$addFields": {
+                    "_det": {"$dateFromString": {"dateString": "$detected_at", "onError": None}},
+                    "_res": {"$dateFromString": {"dateString": "$resolved_at", "onError": None}},
+                }
+            },
             {"$match": {"_det": {"$ne": None}, "_res": {"$ne": None}}},
             {"$addFields": {"_dur_ms": {"$subtract": ["$_res", "$_det"]}}},
             {"$group": {"_id": None, "avg_ms": {"$avg": "$_dur_ms"}}},
@@ -435,11 +479,13 @@ async def _kpi_push_sla(tenant_id, current_cutoff, prev_cutoff, current_start) -
             match["tenant_id"] = tenant_id
         pipeline = [
             {"$match": match},
-            {"$group": {
-                "_id": None,
-                "total": {"$sum": 1},
-                "within_sla": {"$sum": {"$cond": [{"$lte": ["$latency_ms", SLA_PUSH_LATENCY_P95_MS]}, 1, 0]}},
-            }},
+            {
+                "$group": {
+                    "_id": None,
+                    "total": {"$sum": 1},
+                    "within_sla": {"$sum": {"$cond": [{"$lte": ["$latency_ms", SLA_PUSH_LATENCY_P95_MS]}, 1, 0]}},
+                }
+            },
         ]
         try:
             async for doc in db[RATE_PUSH_METRICS].aggregate(pipeline):
@@ -455,7 +501,8 @@ async def _kpi_push_sla(tenant_id, current_cutoff, prev_cutoff, current_start) -
 
 
 async def _push_latency_percentiles(
-    tenant_id: str | None, cutoff: str,
+    tenant_id: str | None,
+    cutoff: str,
 ) -> dict[str, Any]:
     """Compute p50/p95/p99 push latency per provider and overall."""
     match: dict[str, Any] = {"recorded_at": {"$gte": cutoff}, "success": True}
@@ -465,24 +512,34 @@ async def _push_latency_percentiles(
     # Get all successful push latencies grouped by provider
     pipeline = [
         {"$match": match},
-        {"$lookup": {
-            "from": CONNECTORS,
-            "let": {"cid": "$connector_id", "tid": "$tenant_id"},
-            "pipeline": [
-                {"$match": {"$expr": {"$and": [
-                    {"$eq": ["$id", "$$cid"]},
-                    {"$eq": ["$tenant_id", "$$tid"]},
-                ]}}},
-                {"$project": {"_id": 0, "provider": 1}},
-            ],
-            "as": "_conn",
-        }},
+        {
+            "$lookup": {
+                "from": CONNECTORS,
+                "let": {"cid": "$connector_id", "tid": "$tenant_id"},
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    {"$eq": ["$id", "$$cid"]},
+                                    {"$eq": ["$tenant_id", "$$tid"]},
+                                ]
+                            }
+                        }
+                    },
+                    {"$project": {"_id": 0, "provider": 1}},
+                ],
+                "as": "_conn",
+            }
+        },
         {"$addFields": {"provider": {"$ifNull": [{"$arrayElemAt": ["$_conn.provider", 0]}, "unknown"]}}},
-        {"$group": {
-            "_id": "$provider",
-            "latencies": {"$push": "$latency_ms"},
-            "count": {"$sum": 1},
-        }},
+        {
+            "$group": {
+                "_id": "$provider",
+                "latencies": {"$push": "$latency_ms"},
+                "count": {"$sum": 1},
+            }
+        },
     ]
 
     results: dict[str, Any] = {"overall": {}, "by_provider": {}}
@@ -521,7 +578,8 @@ async def _push_latency_percentiles(
 
 
 async def _sync_metrics_by_provider(
-    tenant_id: str | None, cutoff: str,
+    tenant_id: str | None,
+    cutoff: str,
 ) -> dict[str, Any]:
     """Sync success rate per provider."""
     match: dict[str, Any] = {"started_at": {"$gte": cutoff}}
@@ -530,26 +588,36 @@ async def _sync_metrics_by_provider(
 
     pipeline = [
         {"$match": match},
-        {"$lookup": {
-            "from": CONNECTORS,
-            "let": {"cid": "$connector_id", "tid": "$tenant_id"},
-            "pipeline": [
-                {"$match": {"$expr": {"$and": [
-                    {"$eq": ["$id", "$$cid"]},
-                    {"$eq": ["$tenant_id", "$$tid"]},
-                ]}}},
-                {"$project": {"_id": 0, "provider": 1}},
-            ],
-            "as": "_conn",
-        }},
+        {
+            "$lookup": {
+                "from": CONNECTORS,
+                "let": {"cid": "$connector_id", "tid": "$tenant_id"},
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    {"$eq": ["$id", "$$cid"]},
+                                    {"$eq": ["$tenant_id", "$$tid"]},
+                                ]
+                            }
+                        }
+                    },
+                    {"$project": {"_id": 0, "provider": 1}},
+                ],
+                "as": "_conn",
+            }
+        },
         {"$addFields": {"provider": {"$ifNull": [{"$arrayElemAt": ["$_conn.provider", 0]}, "unknown"]}}},
-        {"$group": {
-            "_id": "$provider",
-            "total": {"$sum": 1},
-            "completed": {"$sum": {"$cond": [{"$eq": ["$status", "completed"]}, 1, 0]}},
-            "failed": {"$sum": {"$cond": [{"$eq": ["$status", "failed"]}, 1, 0]}},
-            "avg_duration": {"$avg": "$duration_ms"},
-        }},
+        {
+            "$group": {
+                "_id": "$provider",
+                "total": {"$sum": 1},
+                "completed": {"$sum": {"$cond": [{"$eq": ["$status", "completed"]}, 1, 0]}},
+                "failed": {"$sum": {"$cond": [{"$eq": ["$status", "failed"]}, 1, 0]}},
+                "avg_duration": {"$avg": "$duration_ms"},
+            }
+        },
     ]
 
     results: dict[str, Any] = {"by_provider": {}, "overall": {}}
@@ -584,7 +652,8 @@ async def _sync_metrics_by_provider(
 
 
 async def _failure_breakdown(
-    tenant_id: str | None, cutoff: str,
+    tenant_id: str | None,
+    cutoff: str,
 ) -> dict[str, Any]:
     """Failure breakdown by classification (timeout/validation/mapping etc.)."""
     match: dict[str, Any] = {"recorded_at": {"$gte": cutoff}, "success": False}
@@ -593,23 +662,33 @@ async def _failure_breakdown(
 
     pipeline = [
         {"$match": match},
-        {"$lookup": {
-            "from": CONNECTORS,
-            "let": {"cid": "$connector_id", "tid": "$tenant_id"},
-            "pipeline": [
-                {"$match": {"$expr": {"$and": [
-                    {"$eq": ["$id", "$$cid"]},
-                    {"$eq": ["$tenant_id", "$$tid"]},
-                ]}}},
-                {"$project": {"_id": 0, "provider": 1}},
-            ],
-            "as": "_conn",
-        }},
+        {
+            "$lookup": {
+                "from": CONNECTORS,
+                "let": {"cid": "$connector_id", "tid": "$tenant_id"},
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    {"$eq": ["$id", "$$cid"]},
+                                    {"$eq": ["$tenant_id", "$$tid"]},
+                                ]
+                            }
+                        }
+                    },
+                    {"$project": {"_id": 0, "provider": 1}},
+                ],
+                "as": "_conn",
+            }
+        },
         {"$addFields": {"provider": {"$ifNull": [{"$arrayElemAt": ["$_conn.provider", 0]}, "unknown"]}}},
-        {"$group": {
-            "_id": {"provider": "$provider", "classification": "$failure_classification"},
-            "count": {"$sum": 1},
-        }},
+        {
+            "$group": {
+                "_id": {"provider": "$provider", "classification": "$failure_classification"},
+                "count": {"$sum": 1},
+            }
+        },
     ]
 
     results: dict[str, Any] = {"by_provider": {}, "overall": {}}
@@ -644,23 +723,33 @@ async def _reconciliation_drift(
 
     pipeline = [
         {"$match": match},
-        {"$lookup": {
-            "from": CONNECTORS,
-            "let": {"cid": "$connector_id", "tid": "$tenant_id"},
-            "pipeline": [
-                {"$match": {"$expr": {"$and": [
-                    {"$eq": ["$id", "$$cid"]},
-                    {"$eq": ["$tenant_id", "$$tid"]},
-                ]}}},
-                {"$project": {"_id": 0, "provider": 1}},
-            ],
-            "as": "_conn",
-        }},
+        {
+            "$lookup": {
+                "from": CONNECTORS,
+                "let": {"cid": "$connector_id", "tid": "$tenant_id"},
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    {"$eq": ["$id", "$$cid"]},
+                                    {"$eq": ["$tenant_id", "$$tid"]},
+                                ]
+                            }
+                        }
+                    },
+                    {"$project": {"_id": 0, "provider": 1}},
+                ],
+                "as": "_conn",
+            }
+        },
         {"$addFields": {"provider": {"$ifNull": [{"$arrayElemAt": ["$_conn.provider", 0]}, "unknown"]}}},
-        {"$group": {
-            "_id": {"provider": "$provider", "issue_type": "$issue_type"},
-            "count": {"$sum": 1},
-        }},
+        {
+            "$group": {
+                "_id": {"provider": "$provider", "issue_type": "$issue_type"},
+                "count": {"$sum": 1},
+            }
+        },
     ]
 
     results: dict[str, Any] = {"by_provider": {}, "total_open": 0}
@@ -683,7 +772,8 @@ async def _reconciliation_drift(
 
 
 async def _retry_metrics(
-    tenant_id: str | None, cutoff: str,
+    tenant_id: str | None,
+    cutoff: str,
 ) -> dict[str, Any]:
     """Retry success rate — pushes with retry_count > 0 that eventually succeeded."""
     match: dict[str, Any] = {"recorded_at": {"$gte": cutoff}, "retry_count": {"$gt": 0}}
@@ -692,25 +782,35 @@ async def _retry_metrics(
 
     pipeline = [
         {"$match": match},
-        {"$lookup": {
-            "from": CONNECTORS,
-            "let": {"cid": "$connector_id", "tid": "$tenant_id"},
-            "pipeline": [
-                {"$match": {"$expr": {"$and": [
-                    {"$eq": ["$id", "$$cid"]},
-                    {"$eq": ["$tenant_id", "$$tid"]},
-                ]}}},
-                {"$project": {"_id": 0, "provider": 1}},
-            ],
-            "as": "_conn",
-        }},
+        {
+            "$lookup": {
+                "from": CONNECTORS,
+                "let": {"cid": "$connector_id", "tid": "$tenant_id"},
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    {"$eq": ["$id", "$$cid"]},
+                                    {"$eq": ["$tenant_id", "$$tid"]},
+                                ]
+                            }
+                        }
+                    },
+                    {"$project": {"_id": 0, "provider": 1}},
+                ],
+                "as": "_conn",
+            }
+        },
         {"$addFields": {"provider": {"$ifNull": [{"$arrayElemAt": ["$_conn.provider", 0]}, "unknown"]}}},
-        {"$group": {
-            "_id": "$provider",
-            "total_retried": {"$sum": 1},
-            "retried_success": {"$sum": {"$cond": ["$success", 1, 0]}},
-            "total_retry_count": {"$sum": "$retry_count"},
-        }},
+        {
+            "$group": {
+                "_id": "$provider",
+                "total_retried": {"$sum": 1},
+                "retried_success": {"$sum": {"$cond": ["$success", 1, 0]}},
+                "total_retry_count": {"$sum": "$retry_count"},
+            }
+        },
     ]
 
     results: dict[str, Any] = {"by_provider": {}, "overall": {}}
@@ -752,12 +852,14 @@ async def _provider_summary(
 
     pipeline = [
         {"$match": match},
-        {"$group": {
-            "_id": "$provider",
-            "total": {"$sum": 1},
-            "active": {"$sum": {"$cond": [{"$eq": ["$status", "active"]}, 1, 0]}},
-            "inactive": {"$sum": {"$cond": [{"$ne": ["$status", "active"]}, 1, 0]}},
-        }},
+        {
+            "$group": {
+                "_id": "$provider",
+                "total": {"$sum": 1},
+                "active": {"$sum": {"$cond": [{"$eq": ["$status", "active"]}, 1, 0]}},
+                "inactive": {"$sum": {"$cond": [{"$ne": ["$status", "active"]}, 1, 0]}},
+            }
+        },
     ]
 
     results: dict[str, Any] = {}
@@ -835,6 +937,7 @@ def _percentile(sorted_values: list[int], pct: int) -> int:
 
 # ─── Weekly Proof — Week-over-week improvement ──────────────────
 
+
 async def compute_weekly_proof(
     tenant_id: str | None = None,
     weeks: int = 8,
@@ -864,16 +967,18 @@ async def compute_weekly_proof(
         sla_pct = results[3] if not isinstance(results[3], Exception) else 0.0
         push_p95 = results[4] if not isinstance(results[4], Exception) else 0
 
-        weekly_data.append({
-            "week_label": week_start.strftime("W%U"),
-            "week_start": week_start.strftime("%Y-%m-%d"),
-            "week_end": week_end.strftime("%Y-%m-%d"),
-            "sync_success_rate": sync_rate,
-            "drift_count": drift_count,
-            "mttr_hours": mttr,
-            "sla_compliance": sla_pct,
-            "push_latency_p95": push_p95,
-        })
+        weekly_data.append(
+            {
+                "week_label": week_start.strftime("W%U"),
+                "week_start": week_start.strftime("%Y-%m-%d"),
+                "week_end": week_end.strftime("%Y-%m-%d"),
+                "sync_success_rate": sync_rate,
+                "drift_count": drift_count,
+                "mttr_hours": mttr,
+                "sla_compliance": sla_pct,
+                "push_latency_p95": push_p95,
+            }
+        )
 
     # Compute improvement deltas (first week vs last week)
     improvements = {}
@@ -900,10 +1005,16 @@ async def _weekly_sync_rate(tenant_id: str | None, start: str, end: str) -> floa
     match: dict[str, Any] = {"started_at": {"$gte": start, "$lt": end}}
     if tenant_id:
         match["tenant_id"] = tenant_id
-    pipeline = [{"$match": match}, {"$group": {
-        "_id": None, "total": {"$sum": 1},
-        "completed": {"$sum": {"$cond": [{"$eq": ["$status", "completed"]}, 1, 0]}},
-    }}]
+    pipeline = [
+        {"$match": match},
+        {
+            "$group": {
+                "_id": None,
+                "total": {"$sum": 1},
+                "completed": {"$sum": {"$cond": [{"$eq": ["$status", "completed"]}, 1, 0]}},
+            }
+        },
+    ]
     try:
         async for doc in db[SYNC_JOBS].aggregate(pipeline):
             return round(doc["completed"] / max(doc["total"], 1) * 100, 1)
@@ -931,10 +1042,12 @@ async def _weekly_mttr(tenant_id: str | None, start: str, end: str) -> float:
         match["tenant_id"] = tenant_id
     pipeline = [
         {"$match": match},
-        {"$addFields": {
-            "_det": {"$dateFromString": {"dateString": "$detected_at", "onError": None}},
-            "_res": {"$dateFromString": {"dateString": "$resolved_at", "onError": None}},
-        }},
+        {
+            "$addFields": {
+                "_det": {"$dateFromString": {"dateString": "$detected_at", "onError": None}},
+                "_res": {"$dateFromString": {"dateString": "$resolved_at", "onError": None}},
+            }
+        },
         {"$match": {"_det": {"$ne": None}, "_res": {"$ne": None}}},
         {"$addFields": {"_dur_ms": {"$subtract": ["$_res", "$_det"]}}},
         {"$group": {"_id": None, "avg_ms": {"$avg": "$_dur_ms"}}},
@@ -953,11 +1066,13 @@ async def _weekly_sla_compliance(tenant_id: str | None, start: str, end: str) ->
         match["tenant_id"] = tenant_id
     pipeline = [
         {"$match": match},
-        {"$group": {
-            "_id": None,
-            "total": {"$sum": 1},
-            "within_sla": {"$sum": {"$cond": [{"$lte": ["$latency_ms", SLA_PUSH_LATENCY_P95_MS]}, 1, 0]}},
-        }},
+        {
+            "$group": {
+                "_id": None,
+                "total": {"$sum": 1},
+                "within_sla": {"$sum": {"$cond": [{"$lte": ["$latency_ms", SLA_PUSH_LATENCY_P95_MS]}, 1, 0]}},
+            }
+        },
     ]
     try:
         async for doc in db[RATE_PUSH_METRICS].aggregate(pipeline):

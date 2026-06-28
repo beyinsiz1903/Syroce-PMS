@@ -2,6 +2,7 @@
 Channel Manager — Provider Validation API Router
 =================================================
 """
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
@@ -19,7 +20,9 @@ class ValidateProviderRequest(BaseModel):
 
 
 @router.post("/run")
-async def run_validation(req: ValidateProviderRequest, user=Depends(get_current_user),
+async def run_validation(
+    req: ValidateProviderRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     ctx = OperationContext.from_user(user)

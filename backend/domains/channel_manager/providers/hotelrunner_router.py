@@ -34,6 +34,7 @@ hr_rate_manager_router, unified_rate_manager_router) were migrated to
 canonical imports and a 6-endpoint live smoke (HTTP 403 = endpoint
 resolved, auth gate active) passed.
 """
+
 from fastapi import APIRouter
 
 from domains.channel_manager.providers.hotelrunner import (

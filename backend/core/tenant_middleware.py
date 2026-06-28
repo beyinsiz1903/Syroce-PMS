@@ -10,6 +10,7 @@ are tenant-isolated.
 Uses pure ASGI middleware (not BaseHTTPMiddleware) to avoid event-loop
 conflicts in async test runners and improve performance.
 """
+
 import logging
 
 import jwt

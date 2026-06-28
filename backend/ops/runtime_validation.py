@@ -4,6 +4,7 @@ Phase 6 — Runtime Validation Orchestrator
 Executes staging validation scenarios: load, stress, soak, chaos simulations.
 Collects metrics, generates validation reports, tracks pass/fail per scenario.
 """
+
 import asyncio
 import logging
 import time
@@ -136,11 +137,10 @@ class RuntimeValidationOrchestrator:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
-    async def run_scenario(
-        self, ctx: OperationContext, scenario_type: str, scenario_id: str
-    ) -> ServiceResult:
+    async def run_scenario(self, ctx: OperationContext, scenario_type: str, scenario_id: str) -> ServiceResult:
         """Execute a single validation scenario."""
         scenarios = VALIDATION_SCENARIOS.get(scenario_type, [])
         scenario = next((s for s in scenarios if s["id"] == scenario_id), None)
@@ -170,9 +170,7 @@ class RuntimeValidationOrchestrator:
 
         return ServiceResult.success(run_doc)
 
-    async def _execute_scenario(
-        self, ctx: OperationContext, stype: str, scenario: dict, run_id: str
-    ) -> dict:
+    async def _execute_scenario(self, ctx: OperationContext, stype: str, scenario: dict, run_id: str) -> dict:
         """Execute scenario and measure metrics."""
         start = time.monotonic()
         metrics = {}
@@ -346,24 +344,24 @@ class RuntimeValidationOrchestrator:
     async def _timed_db_operation(self, ctx: OperationContext, label: str, idx: int) -> float:
         """Execute a timed DB read to measure latency."""
         start = time.monotonic()
-        await self._db.bookings.find_one(
-            {"tenant_id": ctx.tenant_id, "status": "confirmed"}, {"_id": 0, "id": 1}
-        )
+        await self._db.bookings.find_one({"tenant_id": ctx.tenant_id, "status": "confirmed"}, {"_id": 0, "id": 1})
         return round((time.monotonic() - start) * 1000, 1)
 
     async def get_all_scenarios(self) -> ServiceResult:
         """Return all validation scenarios."""
         return ServiceResult.success({"scenarios": VALIDATION_SCENARIOS})
 
-    async def get_validation_report(
-        self, ctx: OperationContext, hours: int = 24
-    ) -> ServiceResult:
+    async def get_validation_report(self, ctx: OperationContext, hours: int = 24) -> ServiceResult:
         """Generate a comprehensive validation report."""
         since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
-        runs = await self._db.validation_runs.find(
-            {"tenant_id": ctx.tenant_id, "started_at": {"$gte": since}},
-            {"_id": 0},
-        ).sort("started_at", -1).to_list(200)
+        runs = (
+            await self._db.validation_runs.find(
+                {"tenant_id": ctx.tenant_id, "started_at": {"$gte": since}},
+                {"_id": 0},
+            )
+            .sort("started_at", -1)
+            .to_list(200)
+        )
 
         by_type = {}
         total_passed = 0
@@ -378,24 +376,28 @@ class RuntimeValidationOrchestrator:
             else:
                 by_type[st]["failed"] += 1
                 total_failed += 1
-            by_type[st]["runs"].append({
-                "scenario_id": r["scenario_id"],
-                "scenario_name": r["scenario_name"],
-                "status": r["status"],
-                "duration_ms": r.get("duration_ms", 0),
-                "started_at": r.get("started_at"),
-            })
+            by_type[st]["runs"].append(
+                {
+                    "scenario_id": r["scenario_id"],
+                    "scenario_name": r["scenario_name"],
+                    "status": r["status"],
+                    "duration_ms": r.get("duration_ms", 0),
+                    "started_at": r.get("started_at"),
+                }
+            )
 
         total = total_passed + total_failed
-        return ServiceResult.success({
-            "period_hours": hours,
-            "total_runs": total,
-            "passed": total_passed,
-            "failed": total_failed,
-            "pass_rate": round(total_passed / max(total, 1) * 100, 1),
-            "by_type": by_type,
-            "generated_at": datetime.now(UTC).isoformat(),
-        })
+        return ServiceResult.success(
+            {
+                "period_hours": hours,
+                "total_runs": total,
+                "passed": total_passed,
+                "failed": total_failed,
+                "pass_rate": round(total_passed / max(total, 1) * 100, 1),
+                "by_type": by_type,
+                "generated_at": datetime.now(UTC).isoformat(),
+            }
+        )
 
 
 runtime_validation = RuntimeValidationOrchestrator()

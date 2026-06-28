@@ -30,6 +30,7 @@ configure an ENCRYPTED field here — storing trigrams of encrypted PII
 for low-entropy structured fields it is effectively recoverable). That is an
 opt-in, separately-flagged phase, out of scope for this module by design.
 """
+
 from __future__ import annotations
 
 import unicodedata
@@ -50,9 +51,9 @@ NGRAM_LEADING_KEY: dict[str, str] = {
 }
 
 NGRAM_SIZE = 3
-_MAX_WORD_LEN = 64       # cap per-word length before tokenizing (DoS guard)
-_MAX_DOC_TOKENS = 96     # cap trigrams stored per document (write/index amp)
-_MAX_QUERY_TOKENS = 64   # cap trigrams in a single query's $all
+_MAX_WORD_LEN = 64  # cap per-word length before tokenizing (DoS guard)
+_MAX_DOC_TOKENS = 96  # cap trigrams stored per document (write/index amp)
+_MAX_QUERY_TOKENS = 64  # cap trigrams in a single query's $all
 
 
 def normalize_ngram_value(value) -> str | None:
@@ -78,7 +79,7 @@ def _word_trigrams(word: str) -> set[str]:
     word = word[:_MAX_WORD_LEN]
     if len(word) < NGRAM_SIZE:
         return set()
-    return {word[i:i + NGRAM_SIZE] for i in range(len(word) - NGRAM_SIZE + 1)}
+    return {word[i : i + NGRAM_SIZE] for i in range(len(word) - NGRAM_SIZE + 1)}
 
 
 def trigrams(text) -> list[str]:
@@ -140,9 +141,7 @@ def ngram_set_for_update(update_source: dict, *, collection: str) -> dict:
     return {target: toks} if toks else {}
 
 
-def ngram_set_for_update_merged(
-    existing_doc, update_source: dict, *, collection: str
-) -> dict:
+def ngram_set_for_update_merged(existing_doc, update_source: dict, *, collection: str) -> dict:
     """``$set`` fragment recomputing the COMBINED token field from MERGED names.
 
     ``ngram_set_for_update`` sees only the update payload, so a partial rename

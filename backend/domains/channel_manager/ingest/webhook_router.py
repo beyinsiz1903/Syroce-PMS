@@ -10,6 +10,7 @@ Endpoints:
   POST /api/channel-manager/hotelrunner/webhooks/modifications
   POST /api/channel-manager/hotelrunner/webhooks/cancellations
 """
+
 import logging
 from typing import Any
 

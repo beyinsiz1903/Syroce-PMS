@@ -27,6 +27,7 @@ RULE (permanent): never move a new correctness-critical path onto this Redis
 lock. Add a DB-atomic guard (unique / partial-unique index + DuplicateKeyError,
 or a transaction) instead.
 """
+
 import asyncio
 import logging
 import time
@@ -41,8 +42,7 @@ logger = logging.getLogger("infra.distributed_lock")
 class DistributedLock:
     """A single distributed lock instance."""
 
-    def __init__(self, redis_client, name: str, timeout: float = 30.0,
-                 retry_interval: float = 0.1, retry_count: int = 50):
+    def __init__(self, redis_client, name: str, timeout: float = 30.0, retry_interval: float = 0.1, retry_count: int = 50):
         self._redis = redis_client
         self._name = f"lock:{name}"
         self._timeout = timeout
@@ -53,9 +53,7 @@ class DistributedLock:
 
     async def acquire(self) -> bool:
         for _ in range(self._retry_count):
-            result = await self._redis.set(
-                self._name, self._token, nx=True, ex=int(self._timeout)
-            )
+            result = await self._redis.set(self._name, self._token, nx=True, ex=int(self._timeout))
             if result:
                 self._acquired = True
                 return True
@@ -90,9 +88,7 @@ class DistributedLock:
         end
         """
         try:
-            result = await self._redis.eval(
-                script, 1, self._name, self._token, int(additional_time * 1000)
-            )
+            result = await self._redis.eval(script, 1, self._name, self._token, int(additional_time * 1000))
             return result == 1
         except Exception:
             return False
@@ -119,8 +115,7 @@ class DistributedLockManager:
         self._redis = redis_client
 
     @asynccontextmanager
-    async def lock(self, name: str, timeout: float = 30.0,
-                   tenant_id: str | None = None):
+    async def lock(self, name: str, timeout: float = 30.0, tenant_id: str | None = None):
         """Acquire a distributed lock as async context manager."""
         lock_name = f"{tenant_id}:{name}" if tenant_id else name
         acquired = False

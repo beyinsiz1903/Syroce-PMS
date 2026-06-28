@@ -27,6 +27,7 @@ References
 ----------
 * Expo Push API: https://docs.expo.dev/push-notifications/sending-notifications/
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -41,9 +42,7 @@ from core.database import db
 
 logger = logging.getLogger(__name__)
 
-EXPO_PUSH_URL = os.environ.get(
-    "EXPO_PUSH_URL", "https://exp.host/--/api/v2/push/send"
-)
+EXPO_PUSH_URL = os.environ.get("EXPO_PUSH_URL", "https://exp.host/--/api/v2/push/send")
 _EXPO_TIMEOUT_SEC = float(os.environ.get("EXPO_PUSH_TIMEOUT_SEC", "5"))
 _EXPO_BATCH = 100  # Expo accepts up to 100 messages per request
 
@@ -51,9 +50,7 @@ _EXPO_BATCH = 100  # Expo accepts up to 100 messages per request
 def _is_expo_token(token: str | None) -> bool:
     if not token or not isinstance(token, str):
         return False
-    return token.startswith("ExponentPushToken[") or token.startswith(
-        "ExpoPushToken["
-    )
+    return token.startswith("ExponentPushToken[") or token.startswith("ExpoPushToken[")
 
 
 def _push_disabled() -> bool:
@@ -77,9 +74,7 @@ async def _collect_expo_tokens(
         or_clauses.append({"departments": {"$in": departments}})
     if or_clauses:
         query["$or"] = or_clauses
-    devices = await db.push_device_tokens.find(
-        query, {"_id": 0}
-    ).to_list(2000)
+    devices = await db.push_device_tokens.find(query, {"_id": 0}).to_list(2000)
     return [d for d in devices if _is_expo_token(d.get("push_token"))]
 
 
@@ -128,9 +123,7 @@ async def send_expo_push(
     """
     if _push_disabled():
         return {"sent": 0, "skipped": True, "reason": "DISABLE_EXPO_PUSH"}
-    devices = await _collect_expo_tokens(
-        tenant_id, user_ids=user_ids, departments=departments
-    )
+    devices = await _collect_expo_tokens(tenant_id, user_ids=user_ids, departments=departments)
     if not devices:
         return {"sent": 0, "tokens": 0, "skipped": True}
 

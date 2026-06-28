@@ -3,6 +3,7 @@ Exely Reservation Normalizer
 Converts Exely-specific reservation format to the canonical PMS format
 used by the common ingest pipeline.
 """
+
 from datetime import datetime
 from typing import Any
 
@@ -14,16 +15,18 @@ def normalize_reservation(raw: dict[str, Any], source: str = "pull") -> dict[str
     rooms = raw.get("rooms", [])
     room_details = []
     for room in rooms:
-        room_details.append({
-            "room_type_code": room.get("room_type_code", ""),
-            "rate_plan_code": room.get("rate_plan_code", ""),
-            "room_name": room.get("room_name", ""),
-            "adults": room.get("adults", 1),
-            "children": room.get("children", 0),
-            "amount": room.get("amount", 0),
-            "daily_rates": room.get("daily_rates", []),
-            "guest_name": raw.get("guest_name", ""),
-        })
+        room_details.append(
+            {
+                "room_type_code": room.get("room_type_code", ""),
+                "rate_plan_code": room.get("rate_plan_code", ""),
+                "room_name": room.get("room_name", ""),
+                "adults": room.get("adults", 1),
+                "children": room.get("children", 0),
+                "amount": room.get("amount", 0),
+                "daily_rates": room.get("daily_rates", []),
+                "guest_name": raw.get("guest_name", ""),
+            }
+        )
 
     # Map Exely status to canonical
     exely_status = (raw.get("status") or "").lower()

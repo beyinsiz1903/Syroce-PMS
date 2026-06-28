@@ -3,6 +3,7 @@ Core: Audit Event Logger
 
 Shared audit logging utility used across all domain routers.
 """
+
 import uuid
 from datetime import UTC, datetime
 
@@ -30,6 +31,7 @@ async def log_audit_event(
     # Capture the real client IP + device for this request (best-effort).
     try:
         from common.request_context import get_client_ip, get_user_agent
+
         ip_address = get_client_ip()
         user_agent = get_user_agent()
     except Exception:
@@ -71,7 +73,9 @@ async def log_audit_event(
     # dereferences None and silently drops a critical-mutation audit entry.
     if db is None:
         from core.database import db as _default_db
+
         db = _default_db
     from core.audit_chain import append_audit_log
+
     await append_audit_log(db, audit_copy)
     return audit_log

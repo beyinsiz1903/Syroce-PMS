@@ -16,12 +16,14 @@ router = APIRouter(prefix="/api/event-bus", tags=["event-bus"])
 @router.get("/status")
 async def get_status(current_user: User = Depends(get_current_user)):
     from modules.event_bus.abstraction import event_bus
+
     return await event_bus.get_status()
 
 
 @router.get("/metrics")
 async def get_metrics(current_user: User = Depends(get_current_user)):
     from modules.event_bus.abstraction import event_bus
+
     return await event_bus.get_metrics()
 
 
@@ -33,6 +35,7 @@ async def publish_event(
     _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     from modules.event_bus.abstraction import event_bus
+
     result = await event_bus.publish(
         tenant_id=current_user.tenant_id,
         event_type=event_type,
@@ -51,6 +54,7 @@ async def replay_events(
     current_user: User = Depends(get_current_user),
 ):
     from modules.event_bus.abstraction import event_bus
+
     types = event_types.split(",") if event_types else None
     return await event_bus.replay(current_user.tenant_id, since, types, limit)
 
@@ -62,17 +66,21 @@ async def replay_summary(current_user: User = Depends(get_current_user)):
     from core.database import db
 
     one_day_ago = (datetime.now(UTC) - timedelta(days=1)).isoformat()
-    count = await db.event_bus_log.count_documents({
-        "tenant_id": current_user.tenant_id,
-        "timestamp": {"$gte": one_day_ago},
-    })
+    count = await db.event_bus_log.count_documents(
+        {
+            "tenant_id": current_user.tenant_id,
+            "timestamp": {"$gte": one_day_ago},
+        }
+    )
     pipeline = [
         {"$match": {"tenant_id": current_user.tenant_id, "timestamp": {"$gte": one_day_ago}}},
-        {"$group": {
-            "_id": "$event_type",
-            "count": {"$sum": 1},
-            "last_sequence": {"$max": "$sequence"},
-        }},
+        {
+            "$group": {
+                "_id": "$event_type",
+                "count": {"$sum": 1},
+                "last_sequence": {"$max": "$sequence"},
+            }
+        },
         {"$sort": {"count": -1}},
     ]
     by_type = await db.event_bus_log.aggregate(pipeline).to_list(20)
@@ -85,12 +93,14 @@ async def replay_summary(current_user: User = Depends(get_current_user)):
 @router.get("/channels")
 async def get_channels(current_user: User = Depends(get_current_user)):
     from modules.event_bus.abstraction import event_bus
+
     return event_bus.get_channels(current_user.tenant_id)
 
 
 @router.get("/sessions")
 async def get_sessions(current_user: User = Depends(get_current_user)):
     from modules.event_bus.abstraction import event_bus
+
     return event_bus.get_active_sessions(current_user.tenant_id)
 
 
@@ -101,6 +111,7 @@ async def register_session(
     _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     from modules.event_bus.abstraction import event_bus
+
     return event_bus.register_session(
         tenant_id=current_user.tenant_id,
         session_id=session_id,
@@ -110,9 +121,12 @@ async def register_session(
 
 
 @router.post("/sessions/{session_id}/unregister")
-async def unregister_session(session_id: str, current_user: User = Depends(get_current_user),
+async def unregister_session(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     from modules.event_bus.abstraction import event_bus
+
     event_bus.unregister_session(current_user.tenant_id, session_id)
     return {"session_id": session_id, "status": "unregistered"}

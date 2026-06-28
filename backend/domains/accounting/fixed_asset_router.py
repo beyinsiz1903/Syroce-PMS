@@ -13,6 +13,7 @@ Değişmezler:
     iki kez çalışsa ikinci kez yeni gider yazmaz.
   * Amortisman defter değerini hurda değerin altına indirmez (fail-safe clamp).
 """
+
 import logging
 import uuid
 from calendar import monthrange
@@ -107,20 +108,20 @@ def _build_schedule(asset: dict, max_periods: int = 600) -> list[dict]:
             break
         book = round(book - dep, 2)
         accumulated = round(accumulated + dep, 2)
-        sched.append({
-            "period": period,
-            "depreciation": dep,
-            "accumulated_depreciation": accumulated,
-            "book_value": book,
-        })
+        sched.append(
+            {
+                "period": period,
+                "depreciation": dep,
+                "accumulated_depreciation": accumulated,
+                "book_value": book,
+            }
+        )
         period = _add_months(period, 1)
     return sched
 
 
 async def _accumulated(tenant_id: str, asset_id: str) -> float:
-    entries = await db.depreciation_entries.find(
-        {"tenant_id": tenant_id, "asset_id": asset_id}, {"_id": 0}
-    ).to_list(10000)
+    entries = await db.depreciation_entries.find({"tenant_id": tenant_id, "asset_id": asset_id}, {"_id": 0}).to_list(10000)
     return round(sum(float(e.get("depreciation", 0) or 0) for e in entries), 2)
 
 
@@ -172,13 +173,9 @@ async def create_asset(payload: AssetIn, current_user: User = Depends(get_curren
     if payload.method not in _METHODS:
         raise HTTPException(status_code=400, detail="Geçersiz amortisman yöntemi")
     if payload.method == "declining_balance" and payload.declining_rate <= 0:
-        raise HTTPException(
-            status_code=400, detail="Azalan bakiye için declining_rate > 0 olmalı"
-        )
+        raise HTTPException(status_code=400, detail="Azalan bakiye için declining_rate > 0 olmalı")
     if payload.salvage_value >= payload.acquisition_cost:
-        raise HTTPException(
-            status_code=400, detail="Hurda değer maliyetten küçük olmalı"
-        )
+        raise HTTPException(status_code=400, detail="Hurda değer maliyetten küçük olmalı")
     now = _now_iso()
     doc = {
         "id": str(uuid.uuid4()),
@@ -204,9 +201,7 @@ async def create_asset(payload: AssetIn, current_user: User = Depends(get_curren
 @router.get("/assets/{asset_id}")
 async def get_asset(asset_id: str, current_user: User = Depends(get_current_user)):
     tenant_id = _tenant_of(current_user)
-    a = await db.fixed_assets.find_one(
-        {"tenant_id": tenant_id, "id": asset_id}, {"_id": 0}
-    )
+    a = await db.fixed_assets.find_one({"tenant_id": tenant_id, "id": asset_id}, {"_id": 0})
     if not a:
         raise HTTPException(status_code=404, detail="Kıymet bulunamadı")
     return {"asset": _enrich(a, await _accumulated(tenant_id, asset_id))}
@@ -215,9 +210,7 @@ async def get_asset(asset_id: str, current_user: User = Depends(get_current_user
 @router.get("/assets/{asset_id}/schedule")
 async def asset_schedule(asset_id: str, current_user: User = Depends(get_current_user)):
     tenant_id = _tenant_of(current_user)
-    a = await db.fixed_assets.find_one(
-        {"tenant_id": tenant_id, "id": asset_id}, {"_id": 0}
-    )
+    a = await db.fixed_assets.find_one({"tenant_id": tenant_id, "id": asset_id}, {"_id": 0})
     if not a:
         raise HTTPException(status_code=404, detail="Kıymet bulunamadı")
     return {"asset_id": asset_id, "schedule": _build_schedule(a)}
@@ -227,21 +220,16 @@ async def asset_schedule(asset_id: str, current_user: User = Depends(get_current
 async def dispose_asset(asset_id: str, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _ASSET_ROLES)
     tenant_id = _tenant_of(current_user)
-    a = await db.fixed_assets.find_one(
-        {"tenant_id": tenant_id, "id": asset_id}, {"_id": 0}
-    )
+    a = await db.fixed_assets.find_one({"tenant_id": tenant_id, "id": asset_id}, {"_id": 0})
     if not a:
         raise HTTPException(status_code=404, detail="Kıymet bulunamadı")
     if a.get("status") == "disposed":
         return {"asset": _enrich(a, await _accumulated(tenant_id, asset_id))}
     await db.fixed_assets.update_one(
         {"tenant_id": tenant_id, "id": asset_id},
-        {"$set": {"status": "disposed", "disposed_at": _now_iso(),
-                  "disposed_by": _actor_id(current_user), "updated_at": _now_iso()}},
+        {"$set": {"status": "disposed", "disposed_at": _now_iso(), "disposed_by": _actor_id(current_user), "updated_at": _now_iso()}},
     )
-    a = await db.fixed_assets.find_one(
-        {"tenant_id": tenant_id, "id": asset_id}, {"_id": 0}
-    )
+    a = await db.fixed_assets.find_one({"tenant_id": tenant_id, "id": asset_id}, {"_id": 0})
     return {"asset": _enrich(a, await _accumulated(tenant_id, asset_id))}
 
 
@@ -261,11 +249,7 @@ async def list_entries(
         q["period"] = period
     if asset_id:
         q["asset_id"] = asset_id
-    rows = (
-        await db.depreciation_entries.find(q, {"_id": 0})
-        .sort("period", -1)
-        .to_list(10000)
-    )
+    rows = await db.depreciation_entries.find(q, {"_id": 0}).sort("period", -1).to_list(10000)
     return {"entries": rows}
 
 
@@ -281,9 +265,7 @@ async def run_depreciation(
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=400, detail="Geçersiz dönem (YYYY-MM)") from exc
 
-    assets = await db.fixed_assets.find(
-        {"tenant_id": tenant_id, "status": "active"}, {"_id": 0}
-    ).to_list(50000)
+    assets = await db.fixed_assets.find({"tenant_id": tenant_id, "status": "active"}, {"_id": 0}).to_list(50000)
 
     created = 0
     skipped = 0

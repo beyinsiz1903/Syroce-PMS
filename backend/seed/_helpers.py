@@ -1,4 +1,5 @@
 """Shared seed helpers: timestamps, UUIDs, optional PII encryption, constants."""
+
 import uuid
 from datetime import UTC, datetime
 
@@ -23,6 +24,7 @@ def _encrypt_doc(doc: dict, collection: str) -> dict:
     """Encrypt PII fields if field encryption service is available."""
     try:
         from security.field_encryption import get_field_encryption_service
+
         svc = get_field_encryption_service()
         return svc.encrypt_document(doc, collection=collection)
     except Exception:

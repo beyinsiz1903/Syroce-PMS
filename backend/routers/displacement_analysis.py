@@ -2,6 +2,7 @@
 Displacement Analysis Router
 All endpoints under /api/displacement/
 """
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
@@ -13,10 +14,13 @@ from modules.revenue_management.displacement_engine import DisplacementEngine
 try:
     from cache_manager import cached
 except ImportError:  # pragma: no cover
+
     def cached(ttl=300, key_prefix=""):
         def decorator(func):
             return func
+
         return decorator
+
 
 router = APIRouter(prefix="/api/displacement", tags=["displacement-analysis"])
 engine = DisplacementEngine()
@@ -47,7 +51,9 @@ class CompareRequest(BaseModel):
 
 
 @router.post("/analyze")
-async def analyze_displacement(req: DisplacementRequest, current_user: User = Depends(get_current_user),
+async def analyze_displacement(
+    req: DisplacementRequest,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     try:
@@ -81,7 +87,9 @@ async def market_overview(
 
 
 @router.post("/compare")
-async def compare_scenarios(req: CompareRequest, current_user: User = Depends(get_current_user),
+async def compare_scenarios(
+    req: CompareRequest,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     scenarios = [s.model_dump() for s in req.scenarios]
@@ -95,7 +103,9 @@ async def compare_scenarios(req: CompareRequest, current_user: User = Depends(ge
 
 
 @router.post("/save")
-async def save_analysis(req: DisplacementRequest, current_user: User = Depends(get_current_user),
+async def save_analysis(
+    req: DisplacementRequest,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     analysis = await engine.analyze_displacement(

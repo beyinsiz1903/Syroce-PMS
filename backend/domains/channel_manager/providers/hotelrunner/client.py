@@ -12,6 +12,7 @@ Responsibilities:
 - Log every request with correlation context
 - Support both JSON and form-encoded payloads
 """
+
 import logging
 import time
 import uuid as _uuid
@@ -38,6 +39,7 @@ _TIMEOUT = httpx.Timeout(20.0, connect=5.0)
 @dataclass
 class HttpResult:
     """Structured result from an HTTP call."""
+
     success: bool
     status_code: int = 0
     data: Any = None
@@ -92,8 +94,12 @@ class HotelRunnerHttpClient:
     ) -> HttpResult:
         """HTTP PUT with auth params."""
         return await self._request(
-            "PUT", path, params=params, json_body=json_body,
-            form_data=form_data, correlation_id=correlation_id,
+            "PUT",
+            path,
+            params=params,
+            json_body=json_body,
+            form_data=form_data,
+            correlation_id=correlation_id,
         )
 
     async def post(
@@ -107,8 +113,12 @@ class HotelRunnerHttpClient:
     ) -> HttpResult:
         """HTTP POST with auth params."""
         return await self._request(
-            "POST", path, params=params, json_body=json_body,
-            form_data=form_data, correlation_id=correlation_id,
+            "POST",
+            path,
+            params=params,
+            json_body=json_body,
+            form_data=form_data,
+            correlation_id=correlation_id,
         )
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -163,7 +173,11 @@ class HotelRunnerHttpClient:
 
             logger.info(
                 "[HR] %s %s -> %d (%dms) [%s]",
-                method, path, resp.status_code, duration_ms, corr_id,
+                method,
+                path,
+                resp.status_code,
+                duration_ms,
+                corr_id,
             )
 
             self._raise_for_status(resp, duration_ms, corr_id)
@@ -196,21 +210,19 @@ class HotelRunnerHttpClient:
             )
 
         except (
-            HotelRunnerAuthError, HotelRunnerRateLimitError,
-            HotelRunnerTemporaryError, HotelRunnerPayloadError,
+            HotelRunnerAuthError,
+            HotelRunnerRateLimitError,
+            HotelRunnerTemporaryError,
+            HotelRunnerPayloadError,
             HotelRunnerParseError,
         ):
             raise
         except httpx.ConnectError:
             duration_ms = int((time.monotonic() - start) * 1000)
-            raise HotelRunnerTemporaryError(
-                f"Cannot connect to HotelRunner API ({path})"
-            )
+            raise HotelRunnerTemporaryError(f"Cannot connect to HotelRunner API ({path})")
         except httpx.TimeoutException:
             duration_ms = int((time.monotonic() - start) * 1000)
-            raise HotelRunnerTemporaryError(
-                f"HotelRunner API timeout ({path})"
-            )
+            raise HotelRunnerTemporaryError(f"HotelRunner API timeout ({path})")
 
     @staticmethod
     def _raise_for_status(resp: httpx.Response, duration_ms: int, corr_id: str) -> None:
@@ -229,14 +241,8 @@ class HotelRunnerHttpClient:
                 message=f"Rate limit exceeded (429) [{corr_id}]",
             )
         if code == 400:
-            raise HotelRunnerPayloadError(
-                f"Bad request (400) [{corr_id}]: {resp.text[:500]}"
-            )
+            raise HotelRunnerPayloadError(f"Bad request (400) [{corr_id}]: {resp.text[:500]}")
         if code >= 500:
-            raise HotelRunnerTemporaryError(
-                f"Server error ({code}) [{corr_id}]"
-            )
+            raise HotelRunnerTemporaryError(f"Server error ({code}) [{corr_id}]")
         if code >= 400:
-            raise HotelRunnerPayloadError(
-                f"Client error ({code}) [{corr_id}]: {resp.text[:500]}"
-            )
+            raise HotelRunnerPayloadError(f"Client error ({code}) [{corr_id}]: {resp.text[:500]}")

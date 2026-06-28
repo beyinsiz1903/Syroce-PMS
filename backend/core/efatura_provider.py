@@ -12,6 +12,7 @@ configured we refuse to "generate" anything. NO fake success is ever written and
 no invalid document is produced. Generation failures (missing/corrupt data) are
 surfaced so the caller can retry and, after a cap, alert ops.
 """
+
 from __future__ import annotations
 
 import os
@@ -28,9 +29,7 @@ class EFaturaConfigError(RuntimeError):
 # Minimum env vars required before we will generate a real document. Only the
 # supplier identity (VKN) is needed now — provider POST credentials are gone.
 # Without the VKN the integration stays fail-closed (no mock fallback).
-_REQUIRED_ENV = (
-    "EFATURA_SUPPLIER_VKN",
-)
+_REQUIRED_ENV = ("EFATURA_SUPPLIER_VKN",)
 
 
 def is_configured() -> bool:
@@ -42,9 +41,7 @@ def provider_config() -> dict[str, Any]:
     """Resolve supplier config from env; raise EFaturaConfigError if incomplete."""
     missing = [k for k in _REQUIRED_ENV if not os.environ.get(k)]
     if missing:
-        raise EFaturaConfigError(
-            "e-Fatura supplier not configured; missing env: " + ", ".join(missing)
-        )
+        raise EFaturaConfigError("e-Fatura supplier not configured; missing env: " + ", ".join(missing))
     return {
         "provider": os.environ.get("EFATURA_PROVIDER", "generic"),
         "supplier_vkn": os.environ["EFATURA_SUPPLIER_VKN"],
@@ -127,7 +124,7 @@ def build_ubl_tr_document(
         lines.append(
             "  <cac:InvoiceLine>\n"
             f"    <cbc:ID>{idx}</cbc:ID>\n"
-            f"    <cbc:InvoicedQuantity unitCode=\"C62\">{_money(qty)}</cbc:InvoicedQuantity>\n"
+            f'    <cbc:InvoicedQuantity unitCode="C62">{_money(qty)}</cbc:InvoicedQuantity>\n'
             f"    <cbc:LineExtensionAmount currencyID={_qa(currency)}>{_money(line_ext)}</cbc:LineExtensionAmount>\n"
             "    <cac:TaxTotal>\n"
             f"      <cbc:TaxAmount currencyID={_qa(currency)}>{_money(vat_amount)}</cbc:TaxAmount>\n"
@@ -156,24 +153,16 @@ def build_ubl_tr_document(
 
     customer_party_id = ""
     if customer_tax:
-        customer_party_id = (
-            "      <cac:PartyIdentification>"
-            f"<cbc:ID schemeID={_qa(tax_scheme_id)}>{_xe(customer_tax)}</cbc:ID>"
-            "</cac:PartyIdentification>\n"
-        )
+        customer_party_id = f"      <cac:PartyIdentification><cbc:ID schemeID={_qa(tax_scheme_id)}>{_xe(customer_tax)}</cbc:ID></cac:PartyIdentification>\n"
     customer_address_xml = ""
     if customer_address:
-        customer_address_xml = (
-            "      <cac:PostalAddress>"
-            f"<cbc:StreetName>{_xe(customer_address)}</cbc:StreetName>"
-            "</cac:PostalAddress>\n"
-        )
+        customer_address_xml = f"      <cac:PostalAddress><cbc:StreetName>{_xe(customer_address)}</cbc:StreetName></cac:PostalAddress>\n"
 
     return (
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-        "<Invoice xmlns=\"urn:oasis:names:specification:ubl:schema:xsd:Invoice-2\""
-        " xmlns:cac=\"urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2\""
-        " xmlns:cbc=\"urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2\">\n"
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"'
+        ' xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"'
+        ' xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">\n'
         "  <cbc:UBLVersionID>2.1</cbc:UBLVersionID>\n"
         "  <cbc:CustomizationID>TR1.2</cbc:CustomizationID>\n"
         f"  <cbc:ProfileID>{_xe(profile)}</cbc:ProfileID>\n"
@@ -186,7 +175,7 @@ def build_ubl_tr_document(
         f"  <cbc:LineCountNumeric>{len(items)}</cbc:LineCountNumeric>\n"
         "  <cac:AccountingSupplierParty>\n"
         "    <cac:Party>\n"
-        f"      <cac:PartyIdentification><cbc:ID schemeID=\"VKN\">{_xe(str(supplier_vkn))}</cbc:ID></cac:PartyIdentification>\n"
+        f'      <cac:PartyIdentification><cbc:ID schemeID="VKN">{_xe(str(supplier_vkn))}</cbc:ID></cac:PartyIdentification>\n'
         f"      <cac:PartyName><cbc:Name>{_xe(str(supplier_name) or 'Tedarikci')}</cbc:Name></cac:PartyName>\n"
         "    </cac:Party>\n"
         "  </cac:AccountingSupplierParty>\n"
@@ -211,9 +200,7 @@ def build_ubl_tr_document(
         f"    <cbc:TaxExclusiveAmount currencyID={_qa(currency)}>{_money(subtotal)}</cbc:TaxExclusiveAmount>\n"
         f"    <cbc:TaxInclusiveAmount currencyID={_qa(currency)}>{_money(grand_total)}</cbc:TaxInclusiveAmount>\n"
         f"    <cbc:PayableAmount currencyID={_qa(currency)}>{_money(grand_total)}</cbc:PayableAmount>\n"
-        "  </cac:LegalMonetaryTotal>\n"
-        + ("\n".join(lines) + ("\n" if lines else ""))
-        + "</Invoice>\n"
+        "  </cac:LegalMonetaryTotal>\n" + ("\n".join(lines) + ("\n" if lines else "")) + "</Invoice>\n"
     )
 
 

@@ -1,4 +1,5 @@
 """Auto-split from schemas.py — domain: audit."""
+
 import uuid
 from datetime import UTC, datetime
 
@@ -24,6 +25,7 @@ class AuditLog(BaseModel):
     ip_address: str | None = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 # Rate Override Log Model
 class RateOverrideLog(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -39,6 +41,7 @@ class RateOverrideLog(BaseModel):
     terminal: str | None = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 # Room Move History Model
 class RoomMoveHistory(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -52,5 +55,3 @@ class RoomMoveHistory(BaseModel):
     reason: str
     moved_by: str  # User name
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
-

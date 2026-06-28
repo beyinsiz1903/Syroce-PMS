@@ -3,6 +3,7 @@ guests
 
 Auto-split sub-router (shared imports/classes inlined).
 """
+
 """
 Syroce Open API — Kapsamli Otel PMS Entegrasyon API'si
 ======================================================
@@ -101,8 +102,8 @@ from models.schemas import User
 logger = logging.getLogger(__name__)
 
 
-
 # ── Helpers ──────────────────────────────────────────────────────
+
 
 def _now_iso():
     return datetime.now(UTC).isoformat()
@@ -153,6 +154,7 @@ async def _agency_has_current_booking_for_guest(tenant_id: str, agency_id: str, 
     allowing legitimate post-stay loyalty credit submissions.
     """
     from datetime import date, timedelta
+
     cutoff = (date.today() - timedelta(days=30)).isoformat()
     n = await db.bookings.count_documents(
         {
@@ -175,13 +177,16 @@ async def _agency_owns_block(tenant_id: str, agency_id: str, block_id: str) -> d
 
 # ── API Key Auth Dependency ──────────────────────────────────────
 
+
 async def get_b2b_agency(x_api_key: str | None = Header(None, alias="X-API-Key")):
     """API key ile acente kimlik dogrulamasi + per-subrouter scope kontrolu."""
     from ._scope import authenticate_b2b_agency
+
     return await authenticate_b2b_agency(x_api_key, required_scope="guests")
 
 
 # ── Request Models ───────────────────────────────────────────────
+
 
 class B2BReservationCreate(BaseModel):
     room_type: str
@@ -227,29 +232,9 @@ async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
 # ═════════════════════════════════════════════════════════════════
 
 
-
-
-
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # B2B ENDPOINTS — Syroce Acente Sistemi (API Key Auth)
 # ═════════════════════════════════════════════════════════════════
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -259,22 +244,9 @@ async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
 VALID_WEBHOOK_EVENTS = {"reservation.created", "reservation.cancelled", "reservation.updated", "rates.updated", "availability.updated"}
 
 
-
-
-
-
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # GUEST & LOYALTY — Misafir ve Sadakat Programi
 # ═════════════════════════════════════════════════════════════════
-
-
-
-
-
 
 
 class LoyaltyPointsUpdate(BaseModel):
@@ -283,14 +255,9 @@ class LoyaltyPointsUpdate(BaseModel):
     operation: str = "add"
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # HOUSEKEEPING — Kat Hizmetleri
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class HousekeepingStatusUpdate(BaseModel):
@@ -298,12 +265,9 @@ class HousekeepingStatusUpdate(BaseModel):
     notes: str = ""
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # KBS / POLICE NOTIFICATION — Emniyet Bildirim Sistemi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class KBSReportCreate(BaseModel):
@@ -312,13 +276,10 @@ class KBSReportCreate(BaseModel):
     notes: str = ""
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # PASSPORT / ID — Kimlik ve Pasaport Okuma
 # ═════════════════════════════════════════════════════════════════
+
 
 class IdentityScanData(BaseModel):
     guest_id: str
@@ -337,14 +298,9 @@ class IdentityScanData(BaseModel):
     raw_ocr_data: dict | None = None
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # LOST & FOUND — Kayip Esya
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class LostFoundCreate(BaseModel):
@@ -357,8 +313,6 @@ class LostFoundCreate(BaseModel):
     room_number: str = ""
 
 
-
-
 class LostFoundUpdate(BaseModel):
     status: str | None = None
     guest_name: str | None = None
@@ -366,12 +320,9 @@ class LostFoundUpdate(BaseModel):
     claimed_by: str | None = None
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # WAKE-UP CALLS — Uyandirma Servisi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class WakeUpCallCreate(BaseModel):
@@ -384,21 +335,16 @@ class WakeUpCallCreate(BaseModel):
     recurring_until: str = ""  # YYYY-MM-DD
 
 
-
-
 class WakeUpCallUpdate(BaseModel):
     wake_time: str | None = None
     status: str | None = None
     notes: str | None = None
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # GUEST JOURNEY — Misafir Yolculugu
 # ═════════════════════════════════════════════════════════════════
+
 
 class B2BOnlineCheckin(BaseModel):
     booking_id: str
@@ -410,10 +356,6 @@ class B2BOnlineCheckin(BaseModel):
     nationality: str | None = None
 
 
-
-
-
-
 class B2BGuestRequest(BaseModel):
     booking_id: str
     request_type: str  # concierge, spa, room_service, maintenance, transport, other
@@ -421,14 +363,9 @@ class B2BGuestRequest(BaseModel):
     priority: str = "normal"
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # CONCIERGE & SPA — Concierge ve Spa Hizmetleri
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class ConciergeRequest(BaseModel):
@@ -440,10 +377,6 @@ class ConciergeRequest(BaseModel):
     guest_count: int = 1
 
 
-
-
-
-
 class SpaBookingCreate(BaseModel):
     booking_id: str
     service_id: str
@@ -453,12 +386,9 @@ class SpaBookingCreate(BaseModel):
     notes: str = ""
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # MICE & GROUPS — Grup ve Toplanti Yonetimi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class GroupBlockCreate(BaseModel):
@@ -475,10 +405,6 @@ class GroupBlockCreate(BaseModel):
     notes: str = ""
 
 
-
-
-
-
 class RoomingListEntry(BaseModel):
     guest_name: str
     room_type: str = ""
@@ -491,12 +417,9 @@ class RoomingListUpload(BaseModel):
     guests: list[RoomingListEntry]
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # FOLIO & BILLING — Folio ve Fatura
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class FolioChargeCreate(BaseModel):
@@ -504,6 +427,7 @@ class FolioChargeCreate(BaseModel):
     description: str = Field(..., min_length=1)
     amount: float = Field(..., gt=0, le=1000000)
     quantity: int = Field(1, ge=1, le=9999)
+
 
 router = APIRouter(prefix="/api/b2b", tags=["B2B API - Syroce"])
 
@@ -530,6 +454,7 @@ async def b2b_search_guests(
 
     from security.encrypted_lookup import decrypt_guest_doc, guest_pii_regex_or_conditions
     from security.query_safety import safe_search_term
+
     _s = safe_search_term(q)
     if not _s:
         return {"guests": [], "count": 0}
@@ -538,29 +463,35 @@ async def b2b_search_guests(
     # never match an encrypted row. guest_pii_regex_or_conditions adds the exact
     # blind-index hash branch (full-value match) + keeps the legacy plaintext
     # regex branch for not-yet-backfilled rows.
-    or_conditions = (
-        [{"name": regex}]
-        + guest_pii_regex_or_conditions("email", q)
-        + guest_pii_regex_or_conditions("phone", q)
+    or_conditions = [{"name": regex}] + guest_pii_regex_or_conditions("email", q) + guest_pii_regex_or_conditions("phone", q)
+    docs = (
+        await db.guests.find(
+            {
+                "tenant_id": tenant_id,
+                "id": {"$in": agency_guest_ids},
+                "$or": or_conditions,
+            },
+            # Exclude PII identity fields — these may have been written by other agencies
+            # or by hotel staff and must not leak across agency boundaries.
+            {
+                "_id": 0,
+                "tenant_id": 0,
+                "id_number": 0,
+                "passport_number": 0,
+                "birth_date": 0,
+                "gender": 0,
+                "nationality": 0,
+            },
+        )
+        .sort("name", 1)
+        .to_list(limit)
     )
-    docs = await db.guests.find(
-        {
-            "tenant_id": tenant_id,
-            "id": {"$in": agency_guest_ids},
-            "$or": or_conditions,
-        },
-        # Exclude PII identity fields — these may have been written by other agencies
-        # or by hotel staff and must not leak across agency boundaries.
-        {
-            "_id": 0, "tenant_id": 0,
-            "id_number": 0, "passport_number": 0,
-            "birth_date": 0, "gender": 0, "nationality": 0,
-        },
-    ).sort("name", 1).to_list(limit)
     # Decrypt the retained PII (email/phone) so agencies receive plaintext, never
     # AES envelopes.
     docs = [decrypt_guest_doc(d) for d in docs]
     return {"guests": docs, "count": len(docs)}
+
+
 # ── GET /guests/{guest_id} ──
 @router.get("/guests/{guest_id}")
 async def b2b_get_guest(guest_id: str, agency: dict = Depends(get_b2b_agency)):
@@ -569,19 +500,27 @@ async def b2b_get_guest(guest_id: str, agency: dict = Depends(get_b2b_agency)):
     # v64 Bug DA: cross-agency IDOR guard — sadece kendi rezervasyonu olan misafir
     if not await _agency_owns_guest(tenant_id, agency["agency_id"], guest_id):
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
-    doc = decrypt_guest_doc(await db.guests.find_one(
-        {"tenant_id": tenant_id, "id": guest_id},
-        # B2B Agency Isolation: exclude PII identity fields that may have been
-        # written by hotel staff or other agencies — prevents cross-agency PII leakage.
-        {
-            "_id": 0, "tenant_id": 0,
-            "id_number": 0, "passport_number": 0,
-            "birth_date": 0, "gender": 0, "nationality": 0,
-        },
-    ))
+    doc = decrypt_guest_doc(
+        await db.guests.find_one(
+            {"tenant_id": tenant_id, "id": guest_id},
+            # B2B Agency Isolation: exclude PII identity fields that may have been
+            # written by hotel staff or other agencies — prevents cross-agency PII leakage.
+            {
+                "_id": 0,
+                "tenant_id": 0,
+                "id_number": 0,
+                "passport_number": 0,
+                "birth_date": 0,
+                "gender": 0,
+                "nationality": 0,
+            },
+        )
+    )
     if not doc:
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
     return {"guest": doc}
+
+
 # ── GET /guests/{guest_id}/loyalty ──
 @router.get("/guests/{guest_id}/loyalty")
 async def b2b_get_guest_loyalty(guest_id: str, agency: dict = Depends(get_b2b_agency)):
@@ -593,8 +532,7 @@ async def b2b_get_guest_loyalty(guest_id: str, agency: dict = Depends(get_b2b_ag
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
     guest = await db.guests.find_one(
         {"tenant_id": tenant_id, "id": guest_id},
-        {"_id": 0, "id": 1, "name": 1, "loyalty_points": 1, "loyalty_tier": 1,
-         "vip_status": 1, "total_stays": 1, "total_spend": 1},
+        {"_id": 0, "id": 1, "name": 1, "loyalty_points": 1, "loyalty_tier": 1, "vip_status": 1, "total_stays": 1, "total_spend": 1},
     )
     if not guest:
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
@@ -620,6 +558,8 @@ async def b2b_get_guest_loyalty(guest_id: str, agency: dict = Depends(get_b2b_ag
         "total_stays": guest.get("total_stays", 0),
         "total_spend": guest.get("total_spend", 0),
     }
+
+
 # ── POST /guests/{guest_id}/loyalty/points ──
 @router.post("/guests/{guest_id}/loyalty/points")
 async def b2b_update_loyalty_points(
@@ -663,18 +603,20 @@ async def b2b_update_loyalty_points(
         {"$set": {"loyalty_points": new_points, "loyalty_tier": new_tier}},
     )
 
-    await db.loyalty_transactions.insert_one({
-        "id": _uuid(),
-        "tenant_id": tenant_id,
-        "guest_id": guest_id,
-        "points": data.points,
-        "operation": data.operation,
-        "reason": data.reason,
-        "previous_balance": current_points,
-        "new_balance": new_points,
-        "source": f"b2b_api:{agency['agency_id']}",
-        "created_at": _now_iso(),
-    })
+    await db.loyalty_transactions.insert_one(
+        {
+            "id": _uuid(),
+            "tenant_id": tenant_id,
+            "guest_id": guest_id,
+            "points": data.points,
+            "operation": data.operation,
+            "reason": data.reason,
+            "previous_balance": current_points,
+            "new_balance": new_points,
+            "source": f"b2b_api:{agency['agency_id']}",
+            "created_at": _now_iso(),
+        }
+    )
 
     return {
         "ok": True,
@@ -683,6 +625,8 @@ async def b2b_update_loyalty_points(
         "new_points": new_points,
         "new_tier": new_tier,
     }
+
+
 # ── GET /guests/{guest_id}/stays ──
 @router.get("/guests/{guest_id}/stays")
 async def b2b_get_guest_stays(
@@ -695,8 +639,12 @@ async def b2b_get_guest_stays(
     # v64 Bug DA: cross-agency IDOR guard
     if not await _agency_owns_guest(tenant_id, agency["agency_id"], guest_id):
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
-    bookings = await db.bookings.find(
-        {"tenant_id": tenant_id, "agency_id": agency["agency_id"], "guest_id": guest_id},
-        {"_id": 0, "tenant_id": 0, "guest_id": 0},
-    ).sort("check_in", -1).to_list(limit)
+    bookings = (
+        await db.bookings.find(
+            {"tenant_id": tenant_id, "agency_id": agency["agency_id"], "guest_id": guest_id},
+            {"_id": 0, "tenant_id": 0, "guest_id": 0},
+        )
+        .sort("check_in", -1)
+        .to_list(limit)
+    )
     return {"stays": bookings, "count": len(bookings)}

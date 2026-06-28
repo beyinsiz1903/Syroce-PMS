@@ -2,6 +2,7 @@
 Workers — Queue Monitor
 Monitors queue backlog, saturation, and stuck tasks. Emits alerts to observability.
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -35,10 +36,12 @@ class QueueMonitor:
 
         # Detect stuck tasks
         threshold = (datetime.now(UTC) - timedelta(seconds=cls._thresholds["stuck_timeout_seconds"])).isoformat()
-        stuck = await db.task_queue.count_documents({
-            "status": "processing",
-            "started_at": {"$lt": threshold},
-        })
+        stuck = await db.task_queue.count_documents(
+            {
+                "status": "processing",
+                "started_at": {"$lt": threshold},
+            }
+        )
 
         health = "healthy"
         if pending > cls._thresholds["backlog_critical"] or stuck > 0:

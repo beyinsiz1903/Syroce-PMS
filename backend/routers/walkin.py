@@ -1,6 +1,7 @@
 """
 Walk-in 30-saniye akisi: tek istekte misafir + rezervasyon + check-in.
 """
+
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -37,12 +38,15 @@ async def available_rooms(
     ).to_list(500)
 
     busy_ids = set()
-    cursor = db.bookings.find({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house"]},
-        "check_in": {"$lt": end_s},
-        "check_out": {"$gt": today_s},
-    }, {"_id": 0, "room_id": 1})
+    cursor = db.bookings.find(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house"]},
+            "check_in": {"$lt": end_s},
+            "check_out": {"$gt": today_s},
+        },
+        {"_id": 0, "room_id": 1},
+    )
     async for b in cursor:
         if b.get("room_id"):
             busy_ids.add(b["room_id"])
@@ -51,13 +55,15 @@ async def available_rooms(
     for r in rooms:
         if r["id"] in busy_ids:
             continue
-        out.append({
-            "id": r["id"],
-            "room_number": r.get("room_number"),
-            "room_type": r.get("room_type"),
-            "rate": float(r.get("base_rate") or r.get("rate") or 0),
-            "max_occupancy": r.get("max_occupancy") or 2,
-        })
+        out.append(
+            {
+                "id": r["id"],
+                "room_number": r.get("room_number"),
+                "room_type": r.get("room_type"),
+                "rate": float(r.get("base_rate") or r.get("rate") or 0),
+                "max_occupancy": r.get("max_occupancy") or 2,
+            }
+        )
     out.sort(key=lambda x: str(x.get("room_number") or ""))
     return {"rooms": out, "count": len(out), "nights": nights}
 
@@ -98,13 +104,15 @@ async def walkin_checkin(
     if not room:
         raise HTTPException(404, "Oda bulunamadi")
 
-    overlap = await db.bookings.find_one({
-        "tenant_id": tenant_id,
-        "room_id": payload.room_id,
-        "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house"]},
-        "check_in": {"$lt": co_date.isoformat()},
-        "check_out": {"$gt": today.isoformat()},
-    })
+    overlap = await db.bookings.find_one(
+        {
+            "tenant_id": tenant_id,
+            "room_id": payload.room_id,
+            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house"]},
+            "check_in": {"$lt": co_date.isoformat()},
+            "check_out": {"$gt": today.isoformat()},
+        }
+    )
     if overlap:
         raise HTTPException(409, "Oda secilen tarihte musait degil")
 
@@ -125,21 +133,22 @@ async def walkin_checkin(
         "created_at": now.isoformat(),
     }
     from security.search_normalize import apply_collection_normalized_fields
-    await db.guests.insert_one(
-        apply_collection_normalized_fields(_encrypt_guest(guest_plain.copy()), collection="guests")
-    )
+
+    await db.guests.insert_one(apply_collection_normalized_fields(_encrypt_guest(guest_plain.copy()), collection="guests"))
 
     # Booking — atomic checked_in. Conditional update ile son anda cakisma kontrolu:
     # ayni odaya ayni anda iki insert olursa, ikinci sorgu room_id+overlap'i tekrar gorur.
     booking_id = str(uuid.uuid4())
     # Re-check overlap right before insert (kucuk yaris penceresini daraltir)
-    overlap2 = await db.bookings.find_one({
-        "tenant_id": tenant_id,
-        "room_id": payload.room_id,
-        "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house"]},
-        "check_in": {"$lt": co_date.isoformat()},
-        "check_out": {"$gt": today.isoformat()},
-    })
+    overlap2 = await db.bookings.find_one(
+        {
+            "tenant_id": tenant_id,
+            "room_id": payload.room_id,
+            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house"]},
+            "check_in": {"$lt": co_date.isoformat()},
+            "check_out": {"$gt": today.isoformat()},
+        }
+    )
     if overlap2:
         # rollback guest
         await db.guests.delete_one({"id": guest_id, "tenant_id": tenant_id})
@@ -173,31 +182,35 @@ async def walkin_checkin(
 
     # Folyo + odeme
     folio_id = str(uuid.uuid4())
-    await db.folios.insert_one({
-        "id": folio_id,
-        "tenant_id": tenant_id,
-        "booking_id": booking_id,
-        "guest_id": guest_id,
-        "room_charge": float(payload.total_amount),
-        "total": float(payload.total_amount),
-        "balance": float(payload.total_amount) - float(payload.payment_amount or 0),
-        "status": "open",
-        "created_at": now.isoformat(),
-    })
+    await db.folios.insert_one(
+        {
+            "id": folio_id,
+            "tenant_id": tenant_id,
+            "booking_id": booking_id,
+            "guest_id": guest_id,
+            "room_charge": float(payload.total_amount),
+            "total": float(payload.total_amount),
+            "balance": float(payload.total_amount) - float(payload.payment_amount or 0),
+            "status": "open",
+            "created_at": now.isoformat(),
+        }
+    )
     paid = float(payload.payment_amount or 0)
     if paid > 0:
-        await db.folio_payments.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "folio_id": folio_id,
-            "booking_id": booking_id,
-            "amount": paid,
-            "method": payload.payment_method,
-            "payment_date": today.isoformat(),
-            "received_by_id": current_user.id,
-            "received_by_name": current_user.name or current_user.email,
-            "created_at": now.isoformat(),
-        })
+        await db.folio_payments.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "folio_id": folio_id,
+                "booking_id": booking_id,
+                "amount": paid,
+                "method": payload.payment_method,
+                "payment_date": today.isoformat(),
+                "received_by_id": current_user.id,
+                "received_by_name": current_user.name or current_user.email,
+                "created_at": now.isoformat(),
+            }
+        )
 
     # Oda durumu
     await db.rooms.update_one(

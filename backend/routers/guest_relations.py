@@ -4,6 +4,7 @@ Provides predictive analysis of guest preferences (pillow type, SPA choices, min
 and automates the generation of Room Preparation Directives (housekeeping task + frontdesk alerts)
 24 hours prior to guest arrival.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -37,20 +38,13 @@ async def _analyze_guest_preferences(db: Any, tenant_id: str, guest_id: str, gue
         pillow = guest["pillow_preference"]
     else:
         # Fallback: scan past bookings for this guest
-        past_booking = await db.bookings.find_one({
-            "guest_id": guest_id,
-            "tenant_id": tenant_id,
-            "pillow_type": {"$ne": None}
-        })
+        past_booking = await db.bookings.find_one({"guest_id": guest_id, "tenant_id": tenant_id, "pillow_type": {"$ne": None}})
         if past_booking and past_booking.get("pillow_type"):
             pillow = past_booking["pillow_type"]
 
     # 2. SPA preferences
     spa_pref = "SPA geçmişi bulunamadı. Genel aroma terapi önerilir."
-    spa_appts = await db.spa_appointments.find({
-        "tenant_id": tenant_id,
-        "guest_name": guest_name
-    }).to_list(100)
+    spa_appts = await db.spa_appointments.find({"tenant_id": tenant_id, "guest_name": guest_name}).to_list(100)
 
     if spa_appts:
         services: dict[str, int] = {}
@@ -70,10 +64,7 @@ async def _analyze_guest_preferences(db: Any, tenant_id: str, guest_id: str, gue
 
     # 3. Minibar preferences
     minibar_pref = "Standart minibar kurulumu."
-    postings = await db.folio_postings.find({
-        "tenant_id": tenant_id,
-        "description": {"$regex": "Minibar", "$options": "i"}
-    }).to_list(200)
+    postings = await db.folio_postings.find({"tenant_id": tenant_id, "description": {"$regex": "Minibar", "$options": "i"}}).to_list(200)
 
     if postings:
         counts = {"Soda": 0, "Bira": 0, "Kola": 0, "Çikolata": 0, "Su": 0}
@@ -87,11 +78,7 @@ async def _analyze_guest_preferences(db: Any, tenant_id: str, guest_id: str, gue
         if counts[dominant] > 0:
             minibar_pref = f"{dominant} ağırlıklı minibar kurulumu."
 
-    return {
-        "pillow_preference": pillow,
-        "spa_preference": spa_pref,
-        "minibar_preference": minibar_pref
-    }
+    return {"pillow_preference": pillow, "spa_preference": spa_pref, "minibar_preference": minibar_pref}
 
 
 @router.get("/profiles/{guest_id}/analysis", response_model=GuestAnalysisResponse)
@@ -109,11 +96,7 @@ async def get_guest_profile_analysis(
         raise HTTPException(status_code=404, detail="Misafir bulunamadı")
 
     pref = await _analyze_guest_preferences(db, tenant_id, guest_id, guest["name"])
-    return {
-        "guest_id": guest_id,
-        "guest_name": guest["name"],
-        **pref
-    }
+    return {"guest_id": guest_id, "guest_name": guest["name"], **pref}
 
 
 @router.get("/preparations/directives")
@@ -123,9 +106,7 @@ async def list_preparation_directives(
 ):
     """List generated guest room preparation directives."""
     db = get_system_db()
-    directives = await db.guest_prep_directives.find(
-        {"tenant_id": current_user.tenant_id}
-    ).sort("created_at", -1).to_list(200)
+    directives = await db.guest_prep_directives.find({"tenant_id": current_user.tenant_id}).sort("created_at", -1).to_list(200)
     return {"directives": directives}
 
 
@@ -144,10 +125,7 @@ async def trigger_room_preparations(
 
     # Find bookings arriving tomorrow
     # Query check_in timestamp range (supports ISO string)
-    bookings = await db.bookings.find({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["confirmed", "checked_in", "in_house"]}
-    }).to_list(1000)
+    bookings = await db.bookings.find({"tenant_id": tenant_id, "status": {"$in": ["confirmed", "checked_in", "in_house"]}}).to_list(1000)
 
     tomorrow_bookings = []
     for b in bookings:
@@ -168,10 +146,7 @@ async def trigger_room_preparations(
             continue
 
         # Check if directive already exists
-        existing = await db.guest_prep_directives.find_one({
-            "booking_id": booking["id"],
-            "tenant_id": tenant_id
-        })
+        existing = await db.guest_prep_directives.find_one({"booking_id": booking["id"], "tenant_id": tenant_id})
         if existing:
             continue
 
@@ -188,7 +163,7 @@ async def trigger_room_preparations(
             "room_id": booking.get("room_id"),
             "check_in": booking["check_in"],
             "created_at": datetime.now(UTC).isoformat(),
-            **pref
+            **pref,
         }
         await db.guest_prep_directives.insert_one(directive_doc)
 
@@ -199,37 +174,20 @@ async def trigger_room_preparations(
             "tenant_id": tenant_id,
             "room_id": booking.get("room_id"),
             "task_type": "special_setup",
-            "description": (
-                f"Misafir Odası Hazırlık Direktifi: "
-                f"Yastık Tercihi: {pref['pillow_preference']}, "
-                f"Minibar Alışkanlığı: {pref['minibar_preference']}, "
-                f"SPA Tercihi: {pref['spa_preference']}"
-            ),
+            "description": (f"Misafir Odası Hazırlık Direktifi: Yastık Tercihi: {pref['pillow_preference']}, Minibar Alışkanlığı: {pref['minibar_preference']}, SPA Tercihi: {pref['spa_preference']}"),
             "priority": "medium",
             "status": "pending",
             "assigned_to": "Housekeeping",
-            "created_at": datetime.now(UTC).isoformat()
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await db.housekeeping_tasks.insert_one(hk_task)
 
         # Update Booking Special Requests for Front Desk visibility
         existing_requests = booking.get("special_requests") or ""
-        directive_alert = (
-            f"[MİSAFİR İLİŞKİLERİ DİREKTİFİ] "
-            f"Yastık: {pref['pillow_preference']}, "
-            f"Minibar: {pref['minibar_preference']}, "
-            f"SPA: {pref['spa_preference']}"
-        )
+        directive_alert = f"[MİSAFİR İLİŞKİLERİ DİREKTİFİ] Yastık: {pref['pillow_preference']}, Minibar: {pref['minibar_preference']}, SPA: {pref['spa_preference']}"
         new_requests = f"{existing_requests}\n{directive_alert}".strip()
-        await db.bookings.update_one(
-            {"id": booking["id"], "tenant_id": tenant_id},
-            {"$set": {"special_requests": new_requests}}
-        )
+        await db.bookings.update_one({"id": booking["id"], "tenant_id": tenant_id}, {"$set": {"special_requests": new_requests}})
 
         generated_count += 1
 
-    return {
-        "success": True,
-        "processed_bookings": len(tomorrow_bookings),
-        "directives_generated": generated_count
-    }
+    return {"success": True, "processed_bookings": len(tomorrow_bookings), "directives_generated": generated_count}

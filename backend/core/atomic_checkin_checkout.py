@@ -11,6 +11,7 @@ Every code path that performs a check-in or check-out MUST call these functions.
 Direct db.bookings.update_one({status: "checked_in/checked_out"}) is FORBIDDEN
 outside this module.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -39,6 +40,7 @@ class CheckOutError(Exception):
 # ═══════════════════════════════════════════════════════════
 #  CHECK-IN (ATOMIC)
 # ═══════════════════════════════════════════════════════════
+
 
 async def check_in_booking_atomic(
     booking_id: str,
@@ -85,10 +87,7 @@ async def check_in_booking_atomic(
 
             current_status = booking.get("status", "")
             if current_status not in CHECKIN_ELIGIBLE_STATUSES:
-                raise CheckInError(
-                    f"Cannot check in booking with status '{current_status}'. "
-                    f"Eligible statuses: {CHECKIN_ELIGIBLE_STATUSES}"
-                )
+                raise CheckInError(f"Cannot check in booking with status '{current_status}'. Eligible statuses: {CHECKIN_ELIGIBLE_STATUSES}")
 
             room_id = booking.get("room_id")
             if not room_id:
@@ -106,14 +105,9 @@ async def check_in_booking_atomic(
             room_status = room.get("status", "")
             allowed_room_statuses = {"available", "inspected", "clean"}
             if room_status in ROOM_BLOCKED_STATUSES:
-                raise CheckInError(
-                    f"Room {room.get('room_number')} is {room_status} and cannot be used for check-in"
-                )
+                raise CheckInError(f"Room {room.get('room_number')} is {room_status} and cannot be used for check-in")
             if room_status not in allowed_room_statuses and not override_reason:
-                raise CheckInError(
-                    f"Room {room.get('room_number')} is not ready (status: {room_status}). "
-                    f"Provide override_reason to force check-in."
-                )
+                raise CheckInError(f"Room {room.get('room_number')} is not ready (status: {room_status}). Provide override_reason to force check-in.")
 
             # ── 3. Ensure folio exists ──
             folio = await db.folios.find_one(
@@ -123,9 +117,7 @@ async def check_in_booking_atomic(
             )
             if not folio:
                 folio_id = str(uuid.uuid4())
-                folio_count = await db.folios.count_documents(
-                    {"tenant_id": tenant_id}, session=session
-                )
+                folio_count = await db.folios.count_documents({"tenant_id": tenant_id}, session=session)
                 folio_number = f"F-{now.year}-{(folio_count + 1):05d}"
                 folio_doc = {
                     "id": folio_id,
@@ -184,10 +176,7 @@ async def check_in_booking_atomic(
                 session=session,
             )
             if room_update_result.modified_count == 0:
-                raise CheckInError(
-                    f"Room {room.get('room_number')} status changed during check-in "
-                    f"(concurrent state mutation; check-in aborted to prevent overbook)"
-                )
+                raise CheckInError(f"Room {room.get('room_number')} status changed during check-in (concurrent state mutation; check-in aborted to prevent overbook)")
 
             # ── 6. Audit log ──
             audit_doc = {
@@ -238,15 +227,20 @@ async def check_in_booking_atomic(
 
     logger.info(
         "Atomic check-in completed: booking=%s room=%s actor=%s",
-        booking_id, room_id, actor_id,
+        booking_id,
+        room_id,
+        actor_id,
     )
 
     # KBS auto-enqueue (transaction sonrası, non-blocking).
     # Hata olursa log'lar; check-in başarısız olmaz.
     try:
         from core.kbs_auto_enqueue import auto_enqueue_kbs
+
         await auto_enqueue_kbs(
-            tenant_id, booking_id, action="checkin",
+            tenant_id,
+            booking_id,
+            action="checkin",
             actor=f"system:checkin:{actor_id}",
         )
     except Exception as e:
@@ -264,6 +258,7 @@ async def check_in_booking_atomic(
 # ═══════════════════════════════════════════════════════════
 #  CHECK-OUT (ATOMIC)
 # ═══════════════════════════════════════════════════════════
+
 
 async def check_out_booking_atomic(
     booking_id: str,
@@ -311,10 +306,7 @@ async def check_out_booking_atomic(
 
             current_status = booking.get("status", "")
             if current_status != "checked_in":
-                raise CheckOutError(
-                    f"Cannot check out booking with status '{current_status}'. "
-                    f"Only 'checked_in' bookings can be checked out."
-                )
+                raise CheckOutError(f"Cannot check out booking with status '{current_status}'. Only 'checked_in' bookings can be checked out.")
 
             room_id = booking.get("room_id")
 
@@ -343,10 +335,7 @@ async def check_out_booking_atomic(
                     balance = round(total_charges - total_payments, 2)
 
                     if balance > 0.01:
-                        raise CheckOutError(
-                            f"Folio {folio.get('folio_number')} has unpaid balance of {balance}. "
-                            f"Use force=True to override."
-                        )
+                        raise CheckOutError(f"Folio {folio.get('folio_number')} has unpaid balance of {balance}. Use force=True to override.")
 
             # ── 3. Update booking → checked_out ──
             booking_update = {
@@ -368,13 +357,15 @@ async def check_out_booking_atomic(
             if room_id:
                 await db.rooms.update_one(
                     {"id": room_id, "tenant_id": tenant_id},
-                    {"$set": {
-                        "status": "dirty",
-                        "current_booking_id": None,
-                        "housekeeping_status": "dirty",
-                        "housekeeping_updated_at": now_iso,
-                        "housekeeping_updated_by": f"Sistem (Check-out by {actor_name or actor_id})",
-                    }},
+                    {
+                        "$set": {
+                            "status": "dirty",
+                            "current_booking_id": None,
+                            "housekeeping_status": "dirty",
+                            "housekeeping_updated_at": now_iso,
+                            "housekeeping_updated_by": f"Sistem (Check-out by {actor_name or actor_id})",
+                        }
+                    },
                     session=session,
                 )
 
@@ -474,6 +465,7 @@ async def check_out_booking_atomic(
     # Af-sadakat marketplace integration: outbound olay (transaction sonrası)
     try:
         from core.afsadakat_outbound import EV_GUEST_CHECKED_OUT, emit_event
+
         await emit_event(
             tenant_id,
             EV_GUEST_CHECKED_OUT,
@@ -491,8 +483,11 @@ async def check_out_booking_atomic(
     # KBS auto-enqueue (transaction sonrası, non-blocking).
     try:
         from core.kbs_auto_enqueue import auto_enqueue_kbs
+
         await auto_enqueue_kbs(
-            tenant_id, booking_id, action="checkout",
+            tenant_id,
+            booking_id,
+            action="checkout",
             actor=f"system:checkout:{actor_id}",
         )
     except Exception as e:
@@ -500,7 +495,10 @@ async def check_out_booking_atomic(
 
     logger.info(
         "Atomic check-out completed: booking=%s room=%s actor=%s forced=%s",
-        booking_id, room_id, actor_id, force,
+        booking_id,
+        room_id,
+        actor_id,
+        force,
     )
     return {
         "success": True,
@@ -513,6 +511,7 @@ async def check_out_booking_atomic(
 # ═══════════════════════════════════════════════════════════
 #  INDEX CREATION
 # ═══════════════════════════════════════════════════════════
+
 
 async def ensure_checkin_checkout_indexes() -> None:
     """Create indexes required for safe check-in/check-out operations."""
@@ -544,9 +543,7 @@ async def ensure_checkin_checkout_indexes() -> None:
     for idx in indexes:
         try:
             coll = db[idx["collection"]]
-            await coll.create_index(
-                idx["keys"], name=idx["name"], background=True, **idx["kwargs"]
-            )
+            await coll.create_index(idx["keys"], name=idx["name"], background=True, **idx["kwargs"])
         except Exception as e:
             if "IndexOptionsConflict" in str(e) or "already exists" in str(e):
                 logger.info("Index %s already exists, skipping", idx["name"])

@@ -7,6 +7,7 @@ Common functions used by both the webhook ingestion module and the sync/polling 
 - Raw payload storage
 - Persist & process pipeline entry point
 """
+
 import json
 import logging
 import uuid
@@ -29,41 +30,52 @@ logger = logging.getLogger(__name__)
 
 # ── Timeline Helper ───────────────────────────────────────────────────
 
+
 def _timeline_append(**kwargs):
     """Fire-and-forget timeline write. Returns a coroutine."""
     try:
         from controlplane.timeline_writer import get_timeline_writer
+
         return get_timeline_writer().append(**kwargs)
     except Exception:
+
         async def _noop():
             return None
+
         return _noop()
 
 
 # ── Raw Payload Storage ──────────────────────────────────────────────
 
+
 async def _store_raw_payload(
-    tenant_id: str, correlation_id: str, provider: str,
-    external_id: str, event_type: str, payload: dict,
+    tenant_id: str,
+    correlation_id: str,
+    provider: str,
+    external_id: str,
+    event_type: str,
+    payload: dict,
     source_ip: str,
 ) -> str:
     """Store raw webhook JSON payload for debugging. Returns payload_id."""
     payload_id = str(uuid.uuid4())
     try:
         raw_str = json.dumps(payload, default=str, ensure_ascii=False)
-        await db.webhook_raw_payloads.insert_one({
-            "id": payload_id,
-            "tenant_id": tenant_id,
-            "correlation_id": correlation_id,
-            "provider": provider,
-            "external_id": external_id,
-            "event_type": event_type,
-            "content_type": "application/json",
-            "raw_payload": raw_str,
-            "payload_size_bytes": len(raw_str.encode("utf-8")),
-            "source_ip": source_ip,
-            "received_at": datetime.now(UTC).isoformat(),
-        })
+        await db.webhook_raw_payloads.insert_one(
+            {
+                "id": payload_id,
+                "tenant_id": tenant_id,
+                "correlation_id": correlation_id,
+                "provider": provider,
+                "external_id": external_id,
+                "event_type": event_type,
+                "content_type": "application/json",
+                "raw_payload": raw_str,
+                "payload_size_bytes": len(raw_str.encode("utf-8")),
+                "source_ip": source_ip,
+                "received_at": datetime.now(UTC).isoformat(),
+            }
+        )
     except Exception as e:
         logger.warning("Raw payload storage failed (non-blocking): %s", e)
     return payload_id
@@ -71,12 +83,14 @@ async def _store_raw_payload(
 
 # ── Property ID Resolver ─────────────────────────────────────────────
 
+
 def _resolve_property_id(body: dict[str, Any]) -> str:
     """Extract property_id from payload."""
     return body.get("property_id", "prop-001")
 
 
 # ── Multi-room Reservation Exploder ──────────────────────────────────
+
 
 def explode_multi_room_reservation(raw_reservation: dict[str, Any]) -> list[dict[str, Any]]:
     """Explode a HotelRunner reservation with multiple rooms into per-room payloads.
@@ -159,8 +173,12 @@ def explode_multi_room_reservation(raw_reservation: dict[str, Any]) -> list[dict
 
 # ── Persist & Process Pipeline Entry ─────────────────────────────────
 
+
 async def _persist_and_process(
-    tenant_id: str, property_id: str, payload: dict[str, Any], event_type: str,
+    tenant_id: str,
+    property_id: str,
+    payload: dict[str, Any],
+    event_type: str,
     source_ip: str = "system",
 ):
     """Persist raw event and process through the unified ingest pipeline.
@@ -170,6 +188,7 @@ async def _persist_and_process(
       2. (normalized, deduplicated, validated — written by pipeline.process_event)
     """
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(tenant_id)
 
     t_start = datetime.now(UTC)
@@ -188,7 +207,9 @@ async def _persist_and_process(
     # same failed event on every cycle and the collection grows unbounded.
     if hr_number and last_mod:
         existing = await repo.check_provider_event_recorded(
-            tenant_id, "hotelrunner", identity["provider_event_id"],
+            tenant_id,
+            "hotelrunner",
+            identity["provider_event_id"],
         )
         if existing:
             logger.info(
@@ -199,10 +220,12 @@ async def _persist_and_process(
             )
             try:
                 from domains.channel_manager.monitoring.dedup_counter import record_skip
+
                 await record_skip(tenant_id, "hotelrunner")
             except Exception as e:
                 logger.warning(f"[CATCHUP-DEDUP] counter record failed (non-blocking): {e}")
             from domains.channel_manager.ingest.pipeline import IngestDecision, PipelineResult
+
             result = PipelineResult(existing.get("id", ""))
             result.decision = IngestDecision.SKIP
             result.reason = "Pre-insert duplicate (provider_event_id already recorded)"
@@ -214,19 +237,20 @@ async def _persist_and_process(
         # (read-then-insert race). The dedup ledger's atomic insert lets exactly
         # one win; the rest become no-op duplicates with the same SKIP result.
         claimed = await repo.claim_provider_event(
-            tenant_id, "hotelrunner", identity["provider_event_id"],
+            tenant_id,
+            "hotelrunner",
+            identity["provider_event_id"],
         )
         if not claimed:
-            logger.info(
-                f"[CM-DEDUP-CLAIM] skip insert: provider_event_id="
-                f"{identity['provider_event_id']} concurrently claimed"
-            )
+            logger.info(f"[CM-DEDUP-CLAIM] skip insert: provider_event_id={identity['provider_event_id']} concurrently claimed")
             try:
                 from domains.channel_manager.monitoring.dedup_counter import record_skip
+
                 await record_skip(tenant_id, "hotelrunner")
             except Exception as e:
                 logger.warning(f"[CM-DEDUP-CLAIM] counter record failed (non-blocking): {e}")
             from domains.channel_manager.ingest.pipeline import IngestDecision, PipelineResult
+
             result = PipelineResult("")
             result.decision = IngestDecision.SKIP
             result.reason = "Concurrent duplicate (provider_event_id claimed by parallel delivery)"

@@ -3,6 +3,7 @@ Guest / Messaging — Service Layer
 Orchestrates guest messaging, internal messaging, and templates.
 No FastAPI dependencies.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -19,6 +20,7 @@ class MessagingService:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     async def send_message(self, ctx: OperationContext, data: dict) -> ServiceResult:
@@ -38,9 +40,7 @@ class MessagingService:
         return ServiceResult.success(msg_copy)
 
     async def get_guest_messages(self, ctx: OperationContext, guest_id: str) -> ServiceResult:
-        messages = await self._db.sent_messages.find(
-            {"tenant_id": ctx.tenant_id, "guest_id": guest_id}, {"_id": 0}
-        ).sort("sent_at", -1).to_list(100)
+        messages = await self._db.sent_messages.find({"tenant_id": ctx.tenant_id, "guest_id": guest_id}, {"_id": 0}).sort("sent_at", -1).to_list(100)
         return ServiceResult.success({"messages": messages, "count": len(messages)})
 
     async def get_templates(self, ctx: OperationContext, message_type: str | None = None) -> ServiceResult:
@@ -84,7 +84,8 @@ class MessagingService:
         return ServiceResult.success(msg_copy)
 
     async def get_internal_messages(
-        self, ctx: OperationContext,
+        self,
+        ctx: OperationContext,
         department: str | None = None,
         unread_only: bool = False,
     ) -> ServiceResult:

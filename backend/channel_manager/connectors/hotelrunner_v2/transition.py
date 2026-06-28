@@ -14,6 +14,7 @@ Each phase defines:
   - exit_criteria: conditions to graduate to next phase
   - rollback_conditions: when to fall back to previous phase
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -142,6 +143,7 @@ PHASES = {
 
 # ── State Management ──────────────────────────────────────────────────
 
+
 async def get_current_phase(tenant_id: str) -> dict[str, Any]:
     """Get the current transition phase for a tenant."""
     state = await db[COLL_TRANSITION_STATE].find_one(
@@ -239,18 +241,21 @@ async def log_transition(
     # Update current state
     await db[COLL_TRANSITION_STATE].update_one(
         {"tenant_id": tenant_id, "provider": "hotelrunner_v2"},
-        {"$set": {
-            "current_phase": to_phase,
-            "phase_started_at": now,
-            "updated_at": now,
-        }, "$push": {
-            "transition_history": {
-                "from": from_phase,
-                "to": to_phase,
-                "reason": reason,
-                "timestamp": now,
+        {
+            "$set": {
+                "current_phase": to_phase,
+                "phase_started_at": now,
+                "updated_at": now,
             },
-        }},
+            "$push": {
+                "transition_history": {
+                    "from": from_phase,
+                    "to": to_phase,
+                    "reason": reason,
+                    "timestamp": now,
+                },
+            },
+        },
         upsert=True,
     )
 
@@ -260,7 +265,12 @@ async def log_transition(
 
 async def get_transition_history(tenant_id: str, limit: int = 20) -> list[dict[str, Any]]:
     """Get transition log entries."""
-    return await db[COLL_TRANSITION_LOG].find(
-        {"tenant_id": tenant_id, "provider": "hotelrunner_v2"},
-        _NO_ID,
-    ).sort("timestamp", -1).to_list(limit)
+    return (
+        await db[COLL_TRANSITION_LOG]
+        .find(
+            {"tenant_id": tenant_id, "provider": "hotelrunner_v2"},
+            _NO_ID,
+        )
+        .sort("timestamp", -1)
+        .to_list(limit)
+    )

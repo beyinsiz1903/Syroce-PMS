@@ -7,6 +7,7 @@ Provides:
   - Anomaly detection for excessive PII access
   - MongoDB-backed persistent audit trail with TTL
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -25,6 +26,7 @@ class PIIAuditLogger:
     def _get_db(self):
         if self._db is None:
             from core.database import db
+
             self._db = db
         return self._db
 
@@ -86,9 +88,7 @@ class PIIAuditLogger:
         db = self._get_db()
         coll = db[COLL_PII_AUDIT]
         total = await coll.count_documents(query)
-        items = await coll.find(
-            query, {"_id": 0}
-        ).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+        items = await coll.find(query, {"_id": 0}).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
 
         return {
             "items": items,
@@ -110,17 +110,21 @@ class PIIAuditLogger:
 
         # High-volume unmask requests
         pipeline = [
-            {"$match": {
-                "was_unmasked": True,
-                "timestamp": {"$gte": cutoff},
-                **({"tenant_id": tenant_id} if tenant_id else {}),
-            }},
-            {"$group": {
-                "_id": {"user_id": "$user_id", "user_role": "$user_role"},
-                "unmask_count": {"$sum": 1},
-                "unique_resources": {"$addToSet": "$resource_id"},
-                "last_access": {"$max": "$timestamp"},
-            }},
+            {
+                "$match": {
+                    "was_unmasked": True,
+                    "timestamp": {"$gte": cutoff},
+                    **({"tenant_id": tenant_id} if tenant_id else {}),
+                }
+            },
+            {
+                "$group": {
+                    "_id": {"user_id": "$user_id", "user_role": "$user_role"},
+                    "unmask_count": {"$sum": 1},
+                    "unique_resources": {"$addToSet": "$resource_id"},
+                    "last_access": {"$max": "$timestamp"},
+                }
+            },
             {"$match": {"unmask_count": {"$gt": 10}}},
             {"$sort": {"unmask_count": -1}},
             {"$limit": 20},
@@ -129,14 +133,16 @@ class PIIAuditLogger:
         anomalies = []
         try:
             async for doc in coll.aggregate(pipeline):
-                anomalies.append({
-                    "user_id": doc["_id"]["user_id"],
-                    "user_role": doc["_id"]["user_role"],
-                    "unmask_count": doc["unmask_count"],
-                    "unique_resources_accessed": len(doc["unique_resources"]),
-                    "last_access": doc["last_access"],
-                    "severity": "critical" if doc["unmask_count"] > 50 else "warning",
-                })
+                anomalies.append(
+                    {
+                        "user_id": doc["_id"]["user_id"],
+                        "user_role": doc["_id"]["user_role"],
+                        "unmask_count": doc["unmask_count"],
+                        "unique_resources_accessed": len(doc["unique_resources"]),
+                        "last_access": doc["last_access"],
+                        "severity": "critical" if doc["unmask_count"] > 50 else "warning",
+                    }
+                )
         except Exception:
             logger.exception("PII anomaly detection failed")
 

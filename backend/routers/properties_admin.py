@@ -22,6 +22,7 @@ Chain otomasyonu:
 Cross-tenant okuma/yazma için `_sys_db` (raw motor) kullanılır; her işlemden önce
 hedef tenant'ın chain üyeliği `_chain_tenant_ids` ile kontrol edilir.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -41,6 +42,7 @@ _sys_db = get_system_db()
 
 
 # ── Pydantic models ─────────────────────────────────────────────────
+
 
 class PropertyCreate(BaseModel):
     property_name: str = Field(..., min_length=2, max_length=120)
@@ -66,6 +68,7 @@ class PropertyUpdate(BaseModel):
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
+
 def _require_admin(user: User):
     """Sadece admin/super_admin/owner rolleri otel yönetimi yapabilir."""
     if _is_super_admin(user):
@@ -73,10 +76,7 @@ def _require_admin(user: User):
     role = getattr(user, "role", None)
     role_name = role.value if hasattr(role, "value") else str(role or "").lower()
     allowed = {"admin", "owner", "super_admin"}
-    roles_list = [
-        (r.value if hasattr(r, "value") else str(r)).lower()
-        for r in (getattr(user, "roles", None) or [])
-    ]
+    roles_list = [(r.value if hasattr(r, "value") else str(r)).lower() for r in (getattr(user, "roles", None) or [])]
     if role_name in allowed or any(r in allowed for r in roles_list):
         return
     raise HTTPException(
@@ -141,6 +141,7 @@ def _serialize_tenant(doc: dict, current_tid: str) -> dict:
 async def _generate_unique_hotel_id() -> str:
     """6-haneli unique hotel_id üret (auth.py'deki helper'ın yalın versiyonu)."""
     import random
+
     for _ in range(50):
         candidate = str(random.randint(100000, 999999))
         existing = await _sys_db.tenants.find_one({"hotel_id": candidate}, {"_id": 1})
@@ -152,6 +153,7 @@ async def _generate_unique_hotel_id() -> str:
 
 # ── Endpoints ───────────────────────────────────────────────────────
 
+
 @router.get("/chain")
 async def list_chain_properties(current_user: User = Depends(get_current_user)):
     """Kullanıcının zincirindeki tüm otelleri döndür.
@@ -162,10 +164,12 @@ async def list_chain_properties(current_user: User = Depends(get_current_user)):
     """
     tenant_ids = await _chain_tenant_ids(current_user)
     cursor = _sys_db.tenants.find(
-        {"$or": [
-            {"tenant_id": {"$in": tenant_ids}},
-            {"id": {"$in": tenant_ids}},
-        ]},
+        {
+            "$or": [
+                {"tenant_id": {"$in": tenant_ids}},
+                {"id": {"$in": tenant_ids}},
+            ]
+        },
         {"_id": 0},
     )
     docs = [d async for d in cursor]
@@ -174,9 +178,7 @@ async def list_chain_properties(current_user: User = Depends(get_current_user)):
     properties.sort(key=lambda p: (not p.get("is_current"), p.get("property_name") or ""))
     own = next((p for p in properties if p.get("is_current")), None)
     chain_id = own.get("chain_id") if own else None
-    active_count = sum(
-        1 for p in properties if p.get("subscription_status") != "archived"
-    )
+    active_count = sum(1 for p in properties if p.get("subscription_status") != "archived")
     return {
         "current_tenant_id": current_user.tenant_id,
         "chain_id": chain_id,
@@ -339,10 +341,12 @@ async def archive_property(
 
     res = await _sys_db.tenants.update_one(
         {"$or": [{"tenant_id": tenant_id}, {"id": tenant_id}]},
-        {"$set": {
-            "subscription_status": "archived",
-            "archived_at": datetime.now(UTC).isoformat(),
-        }},
+        {
+            "$set": {
+                "subscription_status": "archived",
+                "archived_at": datetime.now(UTC).isoformat(),
+            }
+        },
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Otel bulunamadı")

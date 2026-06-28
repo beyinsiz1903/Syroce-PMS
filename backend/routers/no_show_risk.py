@@ -1,6 +1,7 @@
 """
 No-Show Risk Skoru — booking ozelliklerine gore 0-100 risk skoru hesaplar.
 """
+
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -133,7 +134,8 @@ async def bulk_risk(
     tenant_id = current_user.tenant_id
     ids = payload.booking_ids[:200]
     bookings = await db.bookings.find(
-        {"tenant_id": tenant_id, "id": {"$in": ids}}, {"_id": 0},
+        {"tenant_id": tenant_id, "id": {"$in": ids}},
+        {"_id": 0},
     ).to_list(len(ids))
 
     # N+1 onleyici: tum guest history'leri tek aggregation ile cek
@@ -142,12 +144,14 @@ async def bulk_risk(
     if guest_ids:
         pipeline = [
             {"$match": {"tenant_id": tenant_id, "guest_id": {"$in": guest_ids}}},
-            {"$group": {
-                "_id": "$guest_id",
-                "total": {"$sum": 1},
-                "no_show": {"$sum": {"$cond": [{"$eq": ["$status", "no_show"]}, 1, 0]}},
-                "cancel": {"$sum": {"$cond": [{"$eq": ["$status", "cancelled"]}, 1, 0]}},
-            }},
+            {
+                "$group": {
+                    "_id": "$guest_id",
+                    "total": {"$sum": 1},
+                    "no_show": {"$sum": {"$cond": [{"$eq": ["$status", "no_show"]}, 1, 0]}},
+                    "cancel": {"$sum": {"$cond": [{"$eq": ["$status", "cancelled"]}, 1, 0]}},
+                }
+            },
         ]
         async for h in db.bookings.aggregate(pipeline):
             hist_map[h["_id"]] = {"total": h["total"], "no_show": h["no_show"], "cancel": h["cancel"]}
@@ -166,9 +170,11 @@ async def _score_with_history(tenant_id: str, b: dict, hist: dict) -> dict:
     factors: list[dict] = []
     if hist["no_show"] >= 1:
         delta = min(40, 25 + (hist["no_show"] - 1) * 10)
-        score += delta; factors.append({"label": f"Gecmiste {hist['no_show']} no-show", "delta": delta})
+        score += delta
+        factors.append({"label": f"Gecmiste {hist['no_show']} no-show", "delta": delta})
     if hist["cancel"] >= 2:
-        score += 10; factors.append({"label": f"Gecmiste {hist['cancel']} iptal", "delta": 10})
+        score += 10
+        factors.append({"label": f"Gecmiste {hist['cancel']} iptal", "delta": 10})
     if (b.get("payment_status") or "").lower() in ("unpaid", "pending", ""):
         score += 20
     if float(b.get("deposit_amount") or 0) <= 0:

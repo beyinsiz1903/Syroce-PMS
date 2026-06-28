@@ -26,6 +26,7 @@ Overlap rule:
 
 If room_id is None (unassigned OTA import), lock is skipped.
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -52,8 +53,7 @@ MAINTENANCE_PREFIX = "MAINT:"
 class BookingConflictError(Exception):
     """Raised when a booking conflicts with an existing reservation."""
 
-    def __init__(self, message: str, conflicting_booking_id: str | None = None,
-                 conflict_type: str = "booking", conflicting_nights: list[str] | None = None):
+    def __init__(self, message: str, conflicting_booking_id: str | None = None, conflict_type: str = "booking", conflicting_nights: list[str] | None = None):
         super().__init__(message)
         self.conflicting_booking_id = conflicting_booking_id
         self.conflict_type = conflict_type
@@ -74,13 +74,11 @@ def _night_dates(check_in: str, check_out: str) -> list[str]:
     return nights
 
 
-async def _timeline_event(tenant_id: str, stage: str, status: str,
-                          booking_id: str, room_id: str,
-                          metadata: dict[str, Any] | None = None,
-                          correlation_id: str | None = None):
+async def _timeline_event(tenant_id: str, stage: str, status: str, booking_id: str, room_id: str, metadata: dict[str, Any] | None = None, correlation_id: str | None = None):
     """Fire-and-forget timeline event for booking lock operations."""
     try:
         from controlplane.timeline_writer import get_timeline_writer
+
         writer = get_timeline_writer()
         await writer.append(
             tenant_id=tenant_id,
@@ -150,36 +148,38 @@ async def _emit_overbooking_alert(
             "booking": "Mevcut Rezervasyon",
         }.get(conflict_type, "Çakışma")
 
-        await db.notifications.insert_one({
-            "id": str(_uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "type": "overbooking_risk",
-            "severity": "warning",
-            "title": f"Overbooking Engellendi - {title_room}",
-            "message": (
-                f"{conflict_night} gecesi için {title_room} talebi reddedildi "
-                f"(çakışma kaynağı: {type_label}"
-                + (f", booking {conflicting_booking_id}" if conflicting_booking_id else "")
-                + "). "
-                "OTA kaynaklı bookingler 'pending_assignment' kuyruğuna düşmüş olabilir — kontrol edin."
-            ),
-            "related_entity": "booking",
-            "related_id": booking_id or "",
-            "read": False,
-            "created_at": datetime.now(UTC).isoformat(),
-            "metadata": {
-                "conflict_type": conflict_type,
-                "conflict_night": conflict_night,
-                "conflicting_booking_id": conflicting_booking_id,
-                "correlation_id": correlation_id,
-                "rejected_room_id": room_id,
-                "rejected_booking_id": booking_id,
-            },
-        })
+        await db.notifications.insert_one(
+            {
+                "id": str(_uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "type": "overbooking_risk",
+                "severity": "warning",
+                "title": f"Overbooking Engellendi - {title_room}",
+                "message": (
+                    f"{conflict_night} gecesi için {title_room} talebi reddedildi "
+                    f"(çakışma kaynağı: {type_label}" + (f", booking {conflicting_booking_id}" if conflicting_booking_id else "") + "). "
+                    "OTA kaynaklı bookingler 'pending_assignment' kuyruğuna düşmüş olabilir — kontrol edin."
+                ),
+                "related_entity": "booking",
+                "related_id": booking_id or "",
+                "read": False,
+                "created_at": datetime.now(UTC).isoformat(),
+                "metadata": {
+                    "conflict_type": conflict_type,
+                    "conflict_night": conflict_night,
+                    "conflicting_booking_id": conflicting_booking_id,
+                    "correlation_id": correlation_id,
+                    "rejected_room_id": room_id,
+                    "rejected_booking_id": booking_id,
+                },
+            }
+        )
     except Exception as exc:
         logger.warning(
             "Overbooking notification insert failed (booking=%s, room=%s): %s",
-            booking_id, room_id, exc,
+            booking_id,
+            room_id,
+            exc,
         )
 
     # Best-effort out-of-band delivery (email/Slack/Teams/webhook).
@@ -207,7 +207,9 @@ async def _emit_overbooking_alert(
     except Exception as exc:
         logger.warning(
             "AlertDeliveryService dispatch failed (booking=%s, room=%s): %s",
-            booking_id, room_id, exc,
+            booking_id,
+            room_id,
+            exc,
         )
 
 
@@ -224,9 +226,7 @@ def assert_pending_assignment(booking: dict[str, Any]) -> None:
     atomic-guard bypass that caused Bug DAE.
     """
     if booking.get("room_id") is not None:
-        raise RuntimeError(
-            "pending_assignment fallback must have room_id=None to avoid atomic guard bypass"
-        )
+        raise RuntimeError("pending_assignment fallback must have room_id=None to avoid atomic guard bypass")
 
 
 async def _find_overlapping_active_booking(
@@ -254,9 +254,7 @@ async def _find_overlapping_active_booking(
     }
     if exclude_booking_id:
         query["id"] = {"$ne": exclude_booking_id}
-    return await db.bookings.find_one(
-        query, {"_id": 0, "id": 1, "room_id": 1, "check_in": 1, "check_out": 1, "status": 1}
-    )
+    return await db.bookings.find_one(query, {"_id": 0, "id": 1, "room_id": 1, "check_in": 1, "check_out": 1, "status": 1})
 
 
 async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
@@ -274,6 +272,7 @@ async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
     # Encrypt PII fields before persistence
     try:
         from security.encrypted_lookup import encrypt_booking_doc
+
         booking_doc = encrypt_booking_doc(booking_doc)
     except ImportError:
         logger.warning(
@@ -283,7 +282,8 @@ async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
     except Exception as enc_err:
         logger.error(
             "PII encryption failed for booking %s — aborting to prevent unencrypted storage: %s",
-            booking_doc.get("id", "unknown"), enc_err,
+            booking_doc.get("id", "unknown"),
+            enc_err,
         )
         raise RuntimeError(f"PII encryption failed, booking not saved: {enc_err}") from enc_err
     # Index-serviceable search companions for plaintext guest_name/booking_number
@@ -291,6 +291,7 @@ async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
     # insert so every new booking is prefix-searchable without a regex scan.
     try:
         from security.search_normalize import apply_collection_normalized_fields
+
         apply_collection_normalized_fields(booking_doc, collection="bookings")
     except Exception:  # pragma: no cover - never block a booking on this
         pass
@@ -325,10 +326,7 @@ async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
             exclude_booking_id=booking_id,
         )
         if overlap is not None:
-            conflict_msg = (
-                f"Room {room_id} already booked for {check_in}..{check_out} "
-                f"by {overlap.get('id')}"
-            )
+            conflict_msg = f"Room {room_id} already booked for {check_in}..{check_out} by {overlap.get('id')}"
             await _emit_overbooking_alert(
                 tenant_id=tenant_id,
                 booking_id=booking_id,
@@ -394,11 +392,7 @@ async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
                     conflict_msg = f"Room {room_id} is under Maintenance for {night}"
                 else:
                     conflict_type = "booking"
-                    conflict_msg = (
-                        f"Room not available for {check_in} to {check_out}. "
-                        f"Night {night} already booked"
-                        + (f" by {conflicting_id}" if conflicting_id else "")
-                    )
+                    conflict_msg = f"Room not available for {check_in} to {check_out}. Night {night} already booked" + (f" by {conflicting_id}" if conflicting_id else "")
 
                 # INV-6: Log the conflict
                 await _timeline_event(
@@ -420,12 +414,14 @@ async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
 
                 # INV-2: Full compensation — release all claimed nights
                 if claimed_nights:
-                    await db.room_night_locks.delete_many({
-                        "tenant_id": tenant_id,
-                        "room_id": room_id,
-                        "night_date": {"$in": claimed_nights},
-                        "booking_id": booking_id,
-                    })
+                    await db.room_night_locks.delete_many(
+                        {
+                            "tenant_id": tenant_id,
+                            "room_id": room_id,
+                            "night_date": {"$in": claimed_nights},
+                            "booking_id": booking_id,
+                        }
+                    )
 
                     # INV-6: Log the compensation
                     await _timeline_event(
@@ -489,12 +485,14 @@ async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         # Rollback: release claimed nights on any failure
         if claimed_nights:
-            await db.room_night_locks.delete_many({
-                "tenant_id": tenant_id,
-                "room_id": room_id,
-                "night_date": {"$in": claimed_nights},
-                "booking_id": booking_id,
-            })
+            await db.room_night_locks.delete_many(
+                {
+                    "tenant_id": tenant_id,
+                    "room_id": room_id,
+                    "night_date": {"$in": claimed_nights},
+                    "booking_id": booking_id,
+                }
+            )
             # INV-6: Log the compensation
             await _timeline_event(
                 tenant_id=tenant_id,
@@ -513,14 +511,16 @@ async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
     booking_doc.pop("_id", None)
     logger.info(
         "Atomic booking created: %s room=%s %s->%s (%d nights locked)",
-        booking_id, room_id, check_in, check_out, len(nights),
+        booking_id,
+        room_id,
+        check_in,
+        check_out,
+        len(nights),
     )
     return booking_doc
 
 
-async def release_booking_nights(tenant_id: str, booking_id: str,
-                                 reason: str = "cancelled",
-                                 correlation_id: str | None = None) -> int:
+async def release_booking_nights(tenant_id: str, booking_id: str, reason: str = "cancelled", correlation_id: str | None = None) -> int:
     """Release room-night locks when a booking is cancelled/no-show.
 
     INV-6: Logs the release event to timeline.
@@ -531,10 +531,12 @@ async def release_booking_nights(tenant_id: str, booking_id: str,
         {"_id": 0, "room_id": 1, "night_date": 1},
     ).to_list(365)
 
-    result = await db.room_night_locks.delete_many({
-        "tenant_id": tenant_id,
-        "booking_id": booking_id,
-    })
+    result = await db.room_night_locks.delete_many(
+        {
+            "tenant_id": tenant_id,
+            "booking_id": booking_id,
+        }
+    )
     deleted = result.deleted_count
 
     if deleted > 0:
@@ -605,10 +607,7 @@ async def assign_room_atomic(
         exclude_booking_id=booking_id,
     )
     if overlap is not None:
-        conflict_msg = (
-            f"Room {room_id} already booked for {check_in}..{check_out} "
-            f"by {overlap.get('id')}"
-        )
+        conflict_msg = f"Room {room_id} already booked for {check_in}..{check_out} by {overlap.get('id')}"
         raise BookingConflictError(
             conflict_msg,
             conflicting_booking_id=overlap.get("id"),
@@ -642,12 +641,14 @@ async def assign_room_atomic(
                 continue
             # Conflict — roll back only the nights claimed in THIS call.
             if claimed_nights:
-                await db.room_night_locks.delete_many({
-                    "tenant_id": tenant_id,
-                    "room_id": room_id,
-                    "night_date": {"$in": claimed_nights},
-                    "booking_id": booking_id,
-                })
+                await db.room_night_locks.delete_many(
+                    {
+                        "tenant_id": tenant_id,
+                        "room_id": room_id,
+                        "night_date": {"$in": claimed_nights},
+                        "booking_id": booking_id,
+                    }
+                )
             lock_type = existing.get("lock_type", "booking") if existing else "booking"
             if existing_owner and existing_owner.startswith(OOO_PREFIX):
                 conflict_type = "ooo"
@@ -660,11 +661,7 @@ async def assign_room_atomic(
                 conflict_msg = f"Room {room_id} is under Maintenance for {night}"
             else:
                 conflict_type = "booking"
-                conflict_msg = (
-                    f"Room not available for {check_in} to {check_out}. "
-                    f"Night {night} already booked"
-                    + (f" by {existing_owner}" if existing_owner else "")
-                )
+                conflict_msg = f"Room not available for {check_in} to {check_out}. Night {night} already booked" + (f" by {existing_owner}" if existing_owner else "")
             await _timeline_event(
                 tenant_id=tenant_id,
                 stage="assign_lock_conflict",
@@ -687,11 +684,13 @@ async def assign_room_atomic(
             )
 
     # Step 3 — release this booking's locks on any other room (room change).
-    await db.room_night_locks.delete_many({
-        "tenant_id": tenant_id,
-        "booking_id": booking_id,
-        "room_id": {"$ne": room_id},
-    })
+    await db.room_night_locks.delete_many(
+        {
+            "tenant_id": tenant_id,
+            "booking_id": booking_id,
+            "room_id": {"$ne": room_id},
+        }
+    )
 
     await _timeline_event(
         tenant_id=tenant_id,
@@ -708,16 +707,17 @@ async def assign_room_atomic(
     )
     logger.info(
         "Atomic room assign: booking=%s room=%s (%d nights locked)",
-        booking_id, room_id, len(nights),
+        booking_id,
+        room_id,
+        len(nights),
     )
     return {"success": True, "nights_locked": nights, "room_id": room_id}
 
 
 # ── OOO / OOS / Maintenance Lock Management (INV-5) ─────────────────
 
-async def apply_room_block(tenant_id: str, room_id: str,
-                           block_type: str, start_date: str, end_date: str,
-                           reason: str = "", actor: str = "system") -> dict[str, Any]:
+
+async def apply_room_block(tenant_id: str, room_id: str, block_type: str, start_date: str, end_date: str, reason: str = "", actor: str = "system") -> dict[str, Any]:
     """Block a room for OOO/OOS/maintenance by inserting night locks.
 
     INV-5: Uses the same room_night_locks collection as bookings.
@@ -762,11 +762,13 @@ async def apply_room_block(tenant_id: str, room_id: str,
                 {"tenant_id": tenant_id, "room_id": room_id, "night_date": night},
                 {"_id": 0, "booking_id": 1, "lock_type": 1},
             )
-            conflicts.append({
-                "night": night,
-                "held_by": existing.get("booking_id") if existing else "unknown",
-                "lock_type": existing.get("lock_type", "unknown") if existing else "unknown",
-            })
+            conflicts.append(
+                {
+                    "night": night,
+                    "held_by": existing.get("booking_id") if existing else "unknown",
+                    "lock_type": existing.get("lock_type", "unknown") if existing else "unknown",
+                }
+            )
 
     # INV-6: Audit
     if blocked:
@@ -793,10 +795,7 @@ async def apply_room_block(tenant_id: str, room_id: str,
     }
 
 
-async def release_room_block(tenant_id: str, room_id: str,
-                              block_type: str, start_date: str | None = None,
-                              end_date: str | None = None,
-                              actor: str = "system") -> dict[str, Any]:
+async def release_room_block(tenant_id: str, room_id: str, block_type: str, start_date: str | None = None, end_date: str | None = None, actor: str = "system") -> dict[str, Any]:
     """Remove OOO/OOS/maintenance locks for a room.
 
     If start_date/end_date provided, only release those nights.
@@ -844,8 +843,7 @@ async def release_room_block(tenant_id: str, room_id: str,
     }
 
 
-async def get_room_blocks(tenant_id: str, room_id: str | None = None,
-                           block_type: str | None = None) -> list[dict[str, Any]]:
+async def get_room_blocks(tenant_id: str, room_id: str | None = None, block_type: str | None = None) -> list[dict[str, Any]]:
     """Get active OOO/OOS/maintenance blocks."""
     query: dict[str, Any] = {"tenant_id": tenant_id}
 
@@ -874,11 +872,13 @@ async def scan_room_night_lock_duplicates(limit: int = 100) -> list[dict[str, An
     """
     try:
         pipeline = [
-            {"$group": {
-                "_id": {"tenant_id": "$tenant_id", "room_id": "$room_id", "night_date": "$night_date"},
-                "count": {"$sum": 1},
-                "booking_ids": {"$addToSet": "$booking_id"},
-            }},
+            {
+                "$group": {
+                    "_id": {"tenant_id": "$tenant_id", "room_id": "$room_id", "night_date": "$night_date"},
+                    "count": {"$sum": 1},
+                    "booking_ids": {"$addToSet": "$booking_id"},
+                }
+            },
             {"$match": {"count": {"$gt": 1}}},
             {"$limit": limit},
         ]
@@ -903,8 +903,7 @@ async def _classify_lock_owner(tenant_id: str, booking_id: str) -> dict[str, Any
     try:
         doc = await db.bookings.find_one(
             {"tenant_id": tenant_id, "id": booking_id},
-            {"_id": 0, "id": 1, "status": 1, "created_at": 1,
-             "check_in": 1, "check_out": 1},
+            {"_id": 0, "id": 1, "status": 1, "created_at": 1, "check_in": 1, "check_out": 1},
         )
     except Exception as exc:
         logger.warning("F8N classify lookup failed for %s: %s", booking_id, exc)
@@ -962,20 +961,21 @@ async def list_room_night_lock_duplicate_groups(
                 {"_id": 0, "booking_id": 1, "lock_type": 1, "created_at": 1},
             ).to_list(100)
         except Exception as exc:
-            logger.warning("F8N owner-lock fetch failed (%s/%s/%s): %s",
-                           tenant_id, room_id, night, exc)
+            logger.warning("F8N owner-lock fetch failed (%s/%s/%s): %s", tenant_id, room_id, night, exc)
             owner_locks = []
 
         owners: list[dict[str, Any]] = []
         for lk in owner_locks:
             bid = lk.get("booking_id")
             cls = await _classify_lock_owner(tenant_id, bid)
-            owners.append({
-                "booking_id": bid,
-                "lock_type": lk.get("lock_type"),
-                "lock_created_at": lk.get("created_at"),
-                **cls,
-            })
+            owners.append(
+                {
+                    "booking_id": bid,
+                    "lock_type": lk.get("lock_type"),
+                    "lock_created_at": lk.get("created_at"),
+                    **cls,
+                }
+            )
 
         keepers = [o for o in owners if o["kind"] in ("block", "active")]
         unknowns = [o for o in owners if o["kind"] == "unknown"]
@@ -1012,18 +1012,20 @@ async def list_room_night_lock_duplicate_groups(
             keep_booking_id = None
             retire_booking_ids = []
 
-        annotated.append({
-            "tenant_id": tenant_id,
-            "room_id": room_id,
-            "night_date": night,
-            "count": grp.get("count"),
-            "booking_ids": booking_ids,
-            "owners": owners,
-            "recommendation": recommendation,
-            "reason": reason,
-            "keep_booking_id": keep_booking_id,
-            "retire_booking_ids": retire_booking_ids,
-        })
+        annotated.append(
+            {
+                "tenant_id": tenant_id,
+                "room_id": room_id,
+                "night_date": night,
+                "count": grp.get("count"),
+                "booking_ids": booking_ids,
+                "owners": owners,
+                "recommendation": recommendation,
+                "reason": reason,
+                "keep_booking_id": keep_booking_id,
+                "retire_booking_ids": retire_booking_ids,
+            }
+        )
     return annotated
 
 
@@ -1074,54 +1076,65 @@ async def resolve_room_night_lock_duplicates(
         night = grp["night_date"]
 
         try:
-            del_res = await db.room_night_locks.delete_many({
-                "tenant_id": tenant_id,
-                "room_id": room_id,
-                "night_date": night,
-                "booking_id": {"$in": grp["retire_booking_ids"]},
-            })
-            remaining = await db.room_night_locks.count_documents({
-                "tenant_id": tenant_id,
-                "room_id": room_id,
-                "night_date": night,
-            })
+            del_res = await db.room_night_locks.delete_many(
+                {
+                    "tenant_id": tenant_id,
+                    "room_id": room_id,
+                    "night_date": night,
+                    "booking_id": {"$in": grp["retire_booking_ids"]},
+                }
+            )
+            remaining = await db.room_night_locks.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "room_id": room_id,
+                    "night_date": night,
+                }
+            )
         except Exception as exc:
             logger.warning(
                 "F8N auto-resolve delete failed (%s/%s/%s): %s",
-                tenant_id, room_id, night, exc,
+                tenant_id,
+                room_id,
+                night,
+                exc,
             )
             skipped.append({**grp, "skip_reason": f"delete error: {exc}"})
             continue
 
         if remaining != 1:
             logger.warning(
-                "F8N auto-resolve post-check: %s rows remain on %s/%s/%s — "
-                "skipping audit (expected 1)",
-                remaining, tenant_id, room_id, night,
+                "F8N auto-resolve post-check: %s rows remain on %s/%s/%s — skipping audit (expected 1)",
+                remaining,
+                tenant_id,
+                room_id,
+                night,
             )
             skipped.append({**grp, "skip_reason": f"post_check rows={remaining}"})
             continue
 
         try:
-            await db.audit_logs.insert_one({
-                "id": f"rnl-resolve-{tenant_id}-{room_id}-{night}-{int(datetime.now(UTC).timestamp())}",
-                "tenant_id": tenant_id,
-                "user_id": actor_id,
-                "user_name": actor_name,
-                "user_role": actor_role,
-                "action": "AUTO_RESOLVE_RNL_DUPLICATE",
-                "entity_type": "room_night_lock",
-                "entity_id": f"{tenant_id}:{room_id}:{night}",
-                "changes": {
-                    "recommendation": grp["recommendation"],
-                    "reason": grp["reason"],
-                    "keep_booking_id": grp["keep_booking_id"],
-                    "retire_booking_ids": grp["retire_booking_ids"],
-                    "owners": grp["owners"],
-                    "deleted_count": del_res.deleted_count,
-                },
-                "timestamp": now_iso,
-            })
+            await db.audit_logs.insert_one(
+                {
+                    "id": f"rnl-resolve-{tenant_id}-{room_id}-{night}-{int(datetime.now(UTC).timestamp())}",
+                    "tenant_id": tenant_id,
+                    "user_id": actor_id,
+                    "user_name": actor_name,
+                    "user_role": actor_role,
+                    "action": "AUTO_RESOLVE_RNL_DUPLICATE",
+                    "entity_type": "room_night_lock",
+                    "entity_id": f"{tenant_id}:{room_id}:{night}",
+                    "changes": {
+                        "recommendation": grp["recommendation"],
+                        "reason": grp["reason"],
+                        "keep_booking_id": grp["keep_booking_id"],
+                        "retire_booking_ids": grp["retire_booking_ids"],
+                        "owners": grp["owners"],
+                        "deleted_count": del_res.deleted_count,
+                    },
+                    "timestamp": now_iso,
+                }
+            )
         except Exception as exc:
             logger.warning("F8N auto-resolve audit_log insert failed: %s", exc)
 
@@ -1141,11 +1154,13 @@ async def resolve_room_night_lock_duplicates(
             },
         )
 
-        resolved.append({
-            **grp,
-            "applied": True,
-            "deleted_count": del_res.deleted_count,
-        })
+        resolved.append(
+            {
+                **grp,
+                "applied": True,
+                "deleted_count": del_res.deleted_count,
+            }
+        )
 
     return {
         "applied": apply,
@@ -1208,7 +1223,10 @@ async def manual_resolve_room_night_lock_duplicate(
     except Exception as exc:
         logger.warning(
             "F8N manual-resolve lock fetch failed (%s/%s/%s): %s",
-            tenant_id, room_id, night_date, exc,
+            tenant_id,
+            room_id,
+            night_date,
+            exc,
         )
         return {"applied": False, "skip_reason": f"lock fetch error: {exc}"}
 
@@ -1226,29 +1244,38 @@ async def manual_resolve_room_night_lock_duplicate(
         }
 
     try:
-        del_res = await db.room_night_locks.delete_many({
-            "tenant_id": tenant_id,
-            "room_id": room_id,
-            "night_date": night_date,
-            "booking_id": {"$in": retire_ids},
-        })
-        remaining = await db.room_night_locks.count_documents({
-            "tenant_id": tenant_id,
-            "room_id": room_id,
-            "night_date": night_date,
-        })
+        del_res = await db.room_night_locks.delete_many(
+            {
+                "tenant_id": tenant_id,
+                "room_id": room_id,
+                "night_date": night_date,
+                "booking_id": {"$in": retire_ids},
+            }
+        )
+        remaining = await db.room_night_locks.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "room_id": room_id,
+                "night_date": night_date,
+            }
+        )
     except Exception as exc:
         logger.warning(
             "F8N manual-resolve delete failed (%s/%s/%s): %s",
-            tenant_id, room_id, night_date, exc,
+            tenant_id,
+            room_id,
+            night_date,
+            exc,
         )
         return {"applied": False, "skip_reason": f"delete error: {exc}"}
 
     if remaining != 1:
         logger.warning(
-            "F8N manual-resolve post-check: %s rows remain on %s/%s/%s — "
-            "expected 1; skipping audit",
-            remaining, tenant_id, room_id, night_date,
+            "F8N manual-resolve post-check: %s rows remain on %s/%s/%s — expected 1; skipping audit",
+            remaining,
+            tenant_id,
+            room_id,
+            night_date,
         )
         return {
             "applied": False,
@@ -1258,27 +1285,26 @@ async def manual_resolve_room_night_lock_duplicate(
 
     now_iso = datetime.now(UTC).isoformat()
     try:
-        await db.audit_logs.insert_one({
-            "id": (
-                f"rnl-manual-{tenant_id}-{room_id}-{night_date}-"
-                f"{int(datetime.now(UTC).timestamp())}"
-            ),
-            "tenant_id": tenant_id,
-            "user_id": actor_id,
-            "user_name": actor_name,
-            "user_role": actor_role,
-            "action": "MANUAL_RESOLVE_RNL_DUPLICATE",
-            "entity_type": "room_night_lock",
-            "entity_id": f"{tenant_id}:{room_id}:{night_date}",
-            "changes": {
-                "keep_booking_id": keep_booking_id,
-                "retire_booking_ids": retire_ids,
-                "owners_before": existing_locks,
-                "deleted_count": del_res.deleted_count,
-                "decision": "manual",
-            },
-            "timestamp": now_iso,
-        })
+        await db.audit_logs.insert_one(
+            {
+                "id": (f"rnl-manual-{tenant_id}-{room_id}-{night_date}-{int(datetime.now(UTC).timestamp())}"),
+                "tenant_id": tenant_id,
+                "user_id": actor_id,
+                "user_name": actor_name,
+                "user_role": actor_role,
+                "action": "MANUAL_RESOLVE_RNL_DUPLICATE",
+                "entity_type": "room_night_lock",
+                "entity_id": f"{tenant_id}:{room_id}:{night_date}",
+                "changes": {
+                    "keep_booking_id": keep_booking_id,
+                    "retire_booking_ids": retire_ids,
+                    "owners_before": existing_locks,
+                    "deleted_count": del_res.deleted_count,
+                    "decision": "manual",
+                },
+                "timestamp": now_iso,
+            }
+        )
     except Exception as exc:
         logger.warning("F8N manual-resolve audit_log insert failed: %s", exc)
 
@@ -1329,9 +1355,9 @@ async def ensure_booking_indexes() -> None:
     dupes = await scan_room_night_lock_duplicates(limit=50)
     if dupes:
         logger.warning(
-            "F8N: %d duplicate (tenant,room,night_date) groups in room_night_locks; "
-            "unique index creation may fail until operator resolves. Sample: %s",
-            len(dupes), dupes[:5],
+            "F8N: %d duplicate (tenant,room,night_date) groups in room_night_locks; unique index creation may fail until operator resolves. Sample: %s",
+            len(dupes),
+            dupes[:5],
         )
 
     # F8N: drop existing ux_room_night if it isn't unique — name collision
@@ -1393,9 +1419,8 @@ async def ensure_booking_indexes() -> None:
         ux = info.get("ux_room_night")
         if ux is None or not ux.get("unique"):
             logger.critical(
-                "F8N: ux_room_night UNIQUE index missing on room_night_locks; "
-                "primary oversell barrier degraded. defense-in-depth bookings "
-                "overlap check is the only remaining guard. info=%s", ux,
+                "F8N: ux_room_night UNIQUE index missing on room_night_locks; primary oversell barrier degraded. defense-in-depth bookings overlap check is the only remaining guard. info=%s",
+                ux,
             )
     except Exception as exc:
         logger.warning("F8N: ux_room_night post-create verification failed: %s", exc)

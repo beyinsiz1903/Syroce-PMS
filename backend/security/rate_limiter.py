@@ -2,6 +2,7 @@
 Security — Rate Limiter
 Configurable per-tenant and per-endpoint rate limiting.
 """
+
 import logging
 import time
 from collections import defaultdict
@@ -14,7 +15,7 @@ class TokenBucket:
     """Token bucket rate limiter."""
 
     def __init__(self, rate: float, capacity: int):
-        self.rate = rate          # tokens per second
+        self.rate = rate  # tokens per second
         self.capacity = capacity  # max burst
         self.tokens = capacity
         self.last_refill = time.time()
@@ -35,9 +36,9 @@ class TenantRateLimiter:
     """Per-tenant rate limiting with configurable tiers."""
 
     _TIER_LIMITS = {
-        "basic":       {"rate": 10, "capacity": 50},    # 10 req/s, burst 50
+        "basic": {"rate": 10, "capacity": 50},  # 10 req/s, burst 50
         "professional": {"rate": 50, "capacity": 200},  # 50 req/s, burst 200
-        "enterprise":  {"rate": 200, "capacity": 1000},  # 200 req/s, burst 1000
+        "enterprise": {"rate": 200, "capacity": 1000},  # 200 req/s, burst 1000
     }
 
     def __init__(self):

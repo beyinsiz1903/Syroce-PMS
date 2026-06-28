@@ -3,6 +3,7 @@ ml_training
 
 Auto-split sub-router (shared imports/classes inlined).
 """
+
 """
 AI / ML Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 class GuestPersona(BaseModel):
-    id: str = _PydField(default_factory=lambda: __import__('uuid').uuid4().hex)
+    id: str = _PydField(default_factory=lambda: __import__("uuid").uuid4().hex)
     tenant_id: str
     guest_id: str
     persona_type: str
@@ -39,7 +40,7 @@ class GuestPersona(BaseModel):
 
 
 class MaintenanceAlert(BaseModel):
-    id: str = _PydField(default_factory=lambda: __import__('uuid').uuid4().hex)
+    id: str = _PydField(default_factory=lambda: __import__("uuid").uuid4().hex)
     tenant_id: str
     room_id: str
     equipment_type: str
@@ -51,68 +52,70 @@ class MaintenanceAlert(BaseModel):
     created_at: datetime = _PydField(default_factory=lambda: datetime.now(UTC))
 
 
-async def create_predictive_maintenance_task(
-    tenant_id: str, room_id: str, room_number: str, title: str, severity: str, alert_id: str
-) -> None:
+async def create_predictive_maintenance_task(tenant_id: str, room_id: str, room_number: str, title: str, severity: str, alert_id: str) -> None:
     try:
-        await db.maintenance_tasks.insert_one({
-            'id': uuid.uuid4().hex,
-            'tenant_id': tenant_id,
-            'room_id': room_id,
-            'room_number': room_number,
-            'title': title,
-            'severity': severity,
-            'source_alert_id': alert_id,
-            'status': 'pending',
-            'source': 'predictive_ai',
-            'created_at': datetime.now(UTC).isoformat(),
-        })
+        await db.maintenance_tasks.insert_one(
+            {
+                "id": uuid.uuid4().hex,
+                "tenant_id": tenant_id,
+                "room_id": room_id,
+                "room_number": room_number,
+                "title": title,
+                "severity": severity,
+                "source_alert_id": alert_id,
+                "status": "pending",
+                "source": "predictive_ai",
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
     except Exception:
-        logger.exception('[ai] failed to create predictive maintenance task')
+        logger.exception("[ai] failed to create predictive maintenance task")
 
 
 def distribute_tasks(rooms: list[dict], staff: list[dict], task_type: str) -> list[dict]:
     """Round-robin task distribution across staff members."""
     if not staff:
         return []
-    minutes_per_task = 30 if task_type == 'checkout' else 20
+    minutes_per_task = 30 if task_type == "checkout" else 20
     out = []
     for idx, room in enumerate(rooms):
         member = staff[idx % len(staff)]
-        out.append({
-            'staff_id': member.get('id') or member.get('staff_id'),
-            'staff_name': member.get('name') or member.get('staff_name') or 'Staff',
-            'task': {
-                'room_id': room.get('id') or room.get('room_id'),
-                'type': task_type,
-                'priority': 'high' if task_type == 'checkout' else 'normal',
-                'estimated_minutes': minutes_per_task,
-            },
-            'estimated_minutes': minutes_per_task,
-        })
+        out.append(
+            {
+                "staff_id": member.get("id") or member.get("staff_id"),
+                "staff_name": member.get("name") or member.get("staff_name") or "Staff",
+                "task": {
+                    "room_id": room.get("id") or room.get("room_id"),
+                    "type": task_type,
+                    "priority": "high" if task_type == "checkout" else "normal",
+                    "estimated_minutes": minutes_per_task,
+                },
+                "estimated_minutes": minutes_per_task,
+            }
+        )
     return out
 
 
 def generate_scheduling_recommendations(capacity_pct: float, staff_count: int, total_rooms: int) -> list[str]:
     recs = []
     if capacity_pct >= 110:
-        recs.append('Schedule additional housekeeping staff or extend shifts.')
+        recs.append("Schedule additional housekeeping staff or extend shifts.")
     elif capacity_pct >= 90:
-        recs.append('Capacity is tight — monitor task completion closely.')
+        recs.append("Capacity is tight — monitor task completion closely.")
     else:
-        recs.append('Workload is healthy.')
+        recs.append("Workload is healthy.")
     if staff_count and total_rooms / max(staff_count, 1) > 18:
-        recs.append('Consider rebalancing room-to-staff ratio.')
+        recs.append("Consider rebalancing room-to-staff ratio.")
     return recs
 
 
 def get_tier_benefits(tier: str) -> list[str]:
     matrix = {
-        'silver': ['Welcome drink', 'Late checkout 1h'],
-        'gold': ['Room upgrade subject to availability', 'Late checkout 2h', '10% F&B discount'],
-        'platinum': ['Guaranteed upgrade', 'Late checkout 4h', '20% F&B discount', 'Lounge access'],
+        "silver": ["Welcome drink", "Late checkout 1h"],
+        "gold": ["Room upgrade subject to availability", "Late checkout 2h", "10% F&B discount"],
+        "platinum": ["Guaranteed upgrade", "Late checkout 4h", "20% F&B discount", "Lounge access"],
     }
-    return matrix.get((tier or '').lower(), [])
+    return matrix.get((tier or "").lower(), [])
 
 
 logger = logging.getLogger(__name__)
@@ -120,182 +123,51 @@ logger = logging.getLogger(__name__)
 try:
     from cache_manager import cached
 except ImportError:
+
     def cached(ttl=300, key_prefix=""):
-        def decorator(func): return func
+        def decorator(func):
+            return func
+
         return decorator
-
-
-
-
-
-
 
 
 # ============= AI DYNAMIC PRICING (MARKET LEADER FEATURE) =============
 
 
-
-
-
-
-
 # ============= WHATSAPP BUSINESS INTEGRATION =============
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ============= HOUSEKEEPING AI PREDICTIONS =============
 
 
-
-
-
-
-
 # ============= PREDICTIVE ANALYTICS (GAME-CHANGER #2) =============
-
-
-
-
-
-
-
-
 
 
 # ============= SOCIAL MEDIA COMMAND CENTER (GAME-CHANGER #3) =============
 
 
-
-
-
-
-
-
-
-
 # ============= REVENUE AUTOPILOT (GAME-CHANGER #4) =============
-
-
-
-
-
-
-
-
 
 
 # ============= GUEST DNA PROFILE (GAME-CHANGER #5) =============
 
 
-
-
 # ============= DYNAMIC STAFFING AI (GAME-CHANGER #6) =============
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ============= DELUXE+ ENTERPRISE FEATURES =============
 
 
-
-
-
 # ============= MAINTENANCE WORK ORDERS =============
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ============= LOYALTY PROGRAM ENHANCEMENTS =============
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ============= AI HOUSEKEEPING SCHEDULER =============
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ============= MONITORING & LOGGING ENDPOINTS =============
-
-
-
 
 
 # ============= NEW ENHANCEMENTS: OTA, GUEST PROFILE, HK MOBILE, RMS, MESSAGING, POS =============
@@ -322,6 +194,7 @@ def _dispatch_ml_training(model: str, params: dict) -> dict:
     """
     try:
         from celery_app import celery_app
+
         async_result = celery_app.send_task(
             "celery_tasks.ml_training_task",
             args=[model, params],
@@ -435,6 +308,7 @@ async def get_ml_training_job(
     """
     try:
         from celery_app import celery_app
+
         async_result = celery_app.AsyncResult(task_id)
         state = async_result.state
         ready = async_result.ready()
@@ -457,9 +331,7 @@ async def get_ml_training_job(
 
 # ── GET /ml/models/status ──
 @router.get("/ml/models/status")
-async def get_ml_models_status(
-    current_user: User = Depends(get_current_user)
-):
+async def get_ml_models_status(current_user: User = Depends(get_current_user)):
     """
     Get status of all ML models
     - Check if models are trained and available
@@ -467,59 +339,39 @@ async def get_ml_models_status(
     """
     import json
 
-    model_dir = 'ml_models'
+    model_dir = "ml_models"
 
     models_status = {
-        'rms': {
-            'trained': False,
-            'files': ['rms_occupancy_model.pkl', 'rms_pricing_model.pkl', 'rms_metrics.json']
+        "rms": {"trained": False, "files": ["rms_occupancy_model.pkl", "rms_pricing_model.pkl", "rms_metrics.json"]},
+        "persona": {"trained": False, "files": ["persona_model.pkl", "persona_label_encoder.pkl", "persona_metrics.json"]},
+        "predictive_maintenance": {
+            "trained": False,
+            "files": ["maintenance_risk_model.pkl", "maintenance_days_model.pkl", "maintenance_label_encoder.pkl", "maintenance_equipment_encoder.pkl", "maintenance_metrics.json"],
         },
-        'persona': {
-            'trained': False,
-            'files': ['persona_model.pkl', 'persona_label_encoder.pkl', 'persona_metrics.json']
-        },
-        'predictive_maintenance': {
-            'trained': False,
-            'files': ['maintenance_risk_model.pkl', 'maintenance_days_model.pkl', 'maintenance_label_encoder.pkl', 'maintenance_equipment_encoder.pkl', 'maintenance_metrics.json']
-        },
-        'hk_scheduler': {
-            'trained': False,
-            'files': ['hk_staff_model.pkl', 'hk_hours_model.pkl', 'hk_scheduler_metrics.json']
-        }
+        "hk_scheduler": {"trained": False, "files": ["hk_staff_model.pkl", "hk_hours_model.pkl", "hk_scheduler_metrics.json"]},
     }
 
     # Check each model
     for model_name, info in models_status.items():
-        all_files_exist = all(
-            os.path.exists(os.path.join(model_dir, file))
-            for file in info['files']
-        )
+        all_files_exist = all(os.path.exists(os.path.join(model_dir, file)) for file in info["files"])
 
-        info['trained'] = all_files_exist
-        info['files_status'] = {
-            file: os.path.exists(os.path.join(model_dir, file))
-            for file in info['files']
-        }
+        info["trained"] = all_files_exist
+        info["files_status"] = {file: os.path.exists(os.path.join(model_dir, file)) for file in info["files"]}
 
         # Load metrics if available
-        metrics_file = [f for f in info['files'] if f.endswith('_metrics.json')]
+        metrics_file = [f for f in info["files"] if f.endswith("_metrics.json")]
         if metrics_file and all_files_exist:
             try:
                 with open(os.path.join(model_dir, metrics_file[0])) as f:
-                    info['metrics'] = json.load(f)
+                    info["metrics"] = json.load(f)
             except Exception:
-                info['metrics'] = None
+                info["metrics"] = None
 
     # Overall summary
-    trained_count = sum(1 for info in models_status.values() if info['trained'])
+    trained_count = sum(1 for info in models_status.values() if info["trained"])
     total_count = len(models_status)
 
     return {
-        'models': models_status,
-        'summary': {
-            'total_models': total_count,
-            'trained_models': trained_count,
-            'untrained_models': total_count - trained_count,
-            'all_ready': trained_count == total_count
-        }
+        "models": models_status,
+        "summary": {"total_models": total_count, "trained_models": trained_count, "untrained_models": total_count - trained_count, "all_ready": trained_count == total_count},
     }

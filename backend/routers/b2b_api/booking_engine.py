@@ -3,6 +3,7 @@ booking_engine
 
 Auto-split sub-router (shared imports/classes inlined).
 """
+
 """
 Syroce Open API — Kapsamli Otel PMS Entegrasyon API'si
 ======================================================
@@ -112,8 +113,8 @@ from services.b2b_partner_contract import build_snapshot
 logger = logging.getLogger(__name__)
 
 
-
 # ── Helpers ──────────────────────────────────────────────────────
+
 
 def _now_iso():
     return datetime.now(UTC).isoformat()
@@ -163,13 +164,16 @@ async def _agency_owns_block(tenant_id: str, agency_id: str, block_id: str) -> d
 
 # ── API Key Auth Dependency ──────────────────────────────────────
 
+
 async def get_b2b_agency(x_api_key: str | None = Header(None, alias="X-API-Key")):
     """API key ile acente kimlik dogrulamasi + per-subrouter scope kontrolu."""
     from ._scope import authenticate_b2b_agency
+
     return await authenticate_b2b_agency(x_api_key, required_scope="booking_engine")
 
 
 # ── Request Models ───────────────────────────────────────────────
+
 
 class B2BReservationCreate(BaseModel):
     room_type: str
@@ -215,29 +219,9 @@ async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
 # ═════════════════════════════════════════════════════════════════
 
 
-
-
-
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # B2B ENDPOINTS — Syroce Acente Sistemi (API Key Auth)
 # ═════════════════════════════════════════════════════════════════
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -247,22 +231,9 @@ async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
 VALID_WEBHOOK_EVENTS = {"reservation.created", "reservation.cancelled", "reservation.updated", "rates.updated", "availability.updated"}
 
 
-
-
-
-
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # GUEST & LOYALTY — Misafir ve Sadakat Programi
 # ═════════════════════════════════════════════════════════════════
-
-
-
-
-
 
 
 class LoyaltyPointsUpdate(BaseModel):
@@ -271,14 +242,9 @@ class LoyaltyPointsUpdate(BaseModel):
     operation: str = "add"
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # HOUSEKEEPING — Kat Hizmetleri
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class HousekeepingStatusUpdate(BaseModel):
@@ -286,12 +252,9 @@ class HousekeepingStatusUpdate(BaseModel):
     notes: str = ""
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # KBS / POLICE NOTIFICATION — Emniyet Bildirim Sistemi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class KBSReportCreate(BaseModel):
@@ -300,13 +263,10 @@ class KBSReportCreate(BaseModel):
     notes: str = ""
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # PASSPORT / ID — Kimlik ve Pasaport Okuma
 # ═════════════════════════════════════════════════════════════════
+
 
 class IdentityScanData(BaseModel):
     guest_id: str
@@ -325,14 +285,9 @@ class IdentityScanData(BaseModel):
     raw_ocr_data: dict | None = None
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # LOST & FOUND — Kayip Esya
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class LostFoundCreate(BaseModel):
@@ -345,8 +300,6 @@ class LostFoundCreate(BaseModel):
     room_number: str = ""
 
 
-
-
 class LostFoundUpdate(BaseModel):
     status: str | None = None
     guest_name: str | None = None
@@ -354,12 +307,9 @@ class LostFoundUpdate(BaseModel):
     claimed_by: str | None = None
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # WAKE-UP CALLS — Uyandirma Servisi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class WakeUpCallCreate(BaseModel):
@@ -372,21 +322,16 @@ class WakeUpCallCreate(BaseModel):
     recurring_until: str = ""  # YYYY-MM-DD
 
 
-
-
 class WakeUpCallUpdate(BaseModel):
     wake_time: str | None = None
     status: str | None = None
     notes: str | None = None
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # GUEST JOURNEY — Misafir Yolculugu
 # ═════════════════════════════════════════════════════════════════
+
 
 class B2BOnlineCheckin(BaseModel):
     booking_id: str
@@ -398,10 +343,6 @@ class B2BOnlineCheckin(BaseModel):
     nationality: str | None = None
 
 
-
-
-
-
 class B2BGuestRequest(BaseModel):
     booking_id: str
     request_type: str  # concierge, spa, room_service, maintenance, transport, other
@@ -409,14 +350,9 @@ class B2BGuestRequest(BaseModel):
     priority: str = "normal"
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # CONCIERGE & SPA — Concierge ve Spa Hizmetleri
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class ConciergeRequest(BaseModel):
@@ -428,10 +364,6 @@ class ConciergeRequest(BaseModel):
     guest_count: int = 1
 
 
-
-
-
-
 class SpaBookingCreate(BaseModel):
     booking_id: str
     service_id: str
@@ -441,12 +373,9 @@ class SpaBookingCreate(BaseModel):
     notes: str = ""
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # MICE & GROUPS — Grup ve Toplanti Yonetimi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class GroupBlockCreate(BaseModel):
@@ -463,10 +392,6 @@ class GroupBlockCreate(BaseModel):
     notes: str = ""
 
 
-
-
-
-
 class RoomingListEntry(BaseModel):
     guest_name: str
     room_type: str = ""
@@ -479,12 +404,9 @@ class RoomingListUpload(BaseModel):
     guests: list[RoomingListEntry]
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # FOLIO & BILLING — Folio ve Fatura
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class FolioChargeCreate(BaseModel):
@@ -492,6 +414,7 @@ class FolioChargeCreate(BaseModel):
     description: str = Field(..., min_length=1)
     amount: float = Field(..., gt=0, le=1000000)
     quantity: int = Field(1, ge=1, le=9999)
+
 
 router = APIRouter(prefix="/api/b2b", tags=["B2B API - Syroce"])
 
@@ -507,12 +430,13 @@ async def b2b_get_hotel_info(agency: dict = Depends(get_b2b_agency)):
     """
     tenant_id = agency["tenant_id"]
 
-    tenant = await db.tenants.find_one(
-        {"id": tenant_id},
-        {"_id": 0, "name": 1, "currency": 1, "country": 1, "city": 1,
-         "address": 1, "phone": 1, "email": 1, "website": 1, "timezone": 1,
-         "property_type": 1, "star_rating": 1},
-    ) or {}
+    tenant = (
+        await db.tenants.find_one(
+            {"id": tenant_id},
+            {"_id": 0, "name": 1, "currency": 1, "country": 1, "city": 1, "address": 1, "phone": 1, "email": 1, "website": 1, "timezone": 1, "property_type": 1, "star_rating": 1},
+        )
+        or {}
+    )
 
     # Lightweight room type catalog (no rates, no availability)
     rooms = await db.rooms.find(
@@ -555,8 +479,7 @@ async def b2b_get_hotel_info(agency: dict = Depends(get_b2b_agency)):
         "room_types": list(rt_summary.values()),
         "content_published": bool(
             await db.agencies.find_one(
-                {"id": agency.get("agency_id"), "tenant_id": tenant_id,
-                 "published_content": True},
+                {"id": agency.get("agency_id"), "tenant_id": tenant_id, "published_content": True},
                 {"_id": 1},
             )
         ),
@@ -571,9 +494,7 @@ async def b2b_get_content(agency: dict = Depends(get_b2b_agency)):
     agency_id = agency["agency_id"]
 
     # Check if content is published to this agency
-    agency_doc = await db.agencies.find_one(
-        {"id": agency_id, "tenant_id": tenant_id}, {"_id": 0}
-    )
+    agency_doc = await db.agencies.find_one({"id": agency_id, "tenant_id": tenant_id}, {"_id": 0})
     if not agency_doc or not agency_doc.get("published_content"):
         return {
             "published": False,
@@ -581,14 +502,14 @@ async def b2b_get_content(agency: dict = Depends(get_b2b_agency)):
             "hotel_content": None,
         }
 
-    content = await db.hotel_content.find_one(
-        {"tenant_id": tenant_id}, {"_id": 0, "id": 0}
-    )
+    content = await db.hotel_content.find_one({"tenant_id": tenant_id}, {"_id": 0, "id": 0})
     if not content:
         return {"published": False, "hotel_content": None}
 
     content.pop("tenant_id", None)
     return {"published": True, "hotel_content": content}
+
+
 # ── GET /availability ──
 @router.get("/availability")
 async def b2b_get_availability(
@@ -632,13 +553,15 @@ async def b2b_get_availability(
         room_types[rt]["room_ids"].append(r.get("id"))
 
     for rt_data in room_types.values():
-        booked = await db.bookings.count_documents({
-            "tenant_id": tenant_id,
-            "room_id": {"$in": rt_data["room_ids"]},
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-            "check_in": {"$lt": check_out + "T23:59:59"},
-            "check_out": {"$gt": check_in + "T00:00:00"},
-        })
+        booked = await db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "room_id": {"$in": rt_data["room_ids"]},
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+                "check_in": {"$lt": check_out + "T23:59:59"},
+                "check_out": {"$gt": check_in + "T00:00:00"},
+            }
+        )
         rt_data["available_rooms"] = max(0, rt_data["total_rooms"] - booked)
         del rt_data["room_ids"]
 
@@ -648,6 +571,8 @@ async def b2b_get_availability(
         "check_out": check_out,
         "room_types": results,
     }
+
+
 # ── GET /rates ──
 @router.get("/rates")
 async def b2b_get_rates(
@@ -668,9 +593,7 @@ async def b2b_get_rates(
     if room_type:
         query["room_type_code"] = room_type
 
-    rates = await db.agency_rate_calendar.find(
-        query, {"_id": 0, "tenant_id": 0, "agency_id": 0, "updated_by": 0}
-    ).sort("date", 1).to_list(5000)
+    rates = await db.agency_rate_calendar.find(query, {"_id": 0, "tenant_id": 0, "agency_id": 0, "updated_by": 0}).sort("date", 1).to_list(5000)
 
     # If no agency-specific rates, fall back to base hotel rates
     if not rates:
@@ -683,14 +606,10 @@ async def b2b_get_rates(
             base_query["room_type_code"] = room_type
 
         # Try HR calendar first, then Exely calendar
-        rates = await db.hr_rate_calendar.find(
-            base_query, {"_id": 0, "tenant_id": 0, "updated_by": 0}
-        ).sort("date", 1).to_list(5000)
+        rates = await db.hr_rate_calendar.find(base_query, {"_id": 0, "tenant_id": 0, "updated_by": 0}).sort("date", 1).to_list(5000)
 
         if not rates:
-            rates = await db.rate_calendar.find(
-                base_query, {"_id": 0, "tenant_id": 0, "updated_by": 0}
-            ).sort("date", 1).to_list(5000)
+            rates = await db.rate_calendar.find(base_query, {"_id": 0, "tenant_id": 0, "updated_by": 0}).sort("date", 1).to_list(5000)
 
         return {
             "start_date": start_date,
@@ -705,6 +624,8 @@ async def b2b_get_rates(
         "source": "agency_rates",
         "rates": rates,
     }
+
+
 # ── POST /reservations ──
 async def _b2b_create_reservation_impl(
     data: B2BReservationCreate,
@@ -744,22 +665,22 @@ async def _b2b_create_reservation_impl(
             detail=f"Oda tipi '{data.room_type}' sozlesme kapsaminda degil",
         )
 
-    rooms = await db.rooms.find(
-        {"tenant_id": tenant_id, "room_type": data.room_type}, {"_id": 0}
-    ).to_list(500)
+    rooms = await db.rooms.find({"tenant_id": tenant_id, "room_type": data.room_type}, {"_id": 0}).to_list(500)
 
     if not rooms:
         raise HTTPException(status_code=404, detail="Oda tipi bulunamadi")
 
     available_room = None
     for room in rooms:
-        conflict = await db.bookings.count_documents({
-            "tenant_id": tenant_id,
-            "room_id": room["id"],
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
-            "check_in": {"$lt": data.check_out + "T23:59:59"},
-            "check_out": {"$gt": data.check_in + "T00:00:00"},
-        })
+        conflict = await db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "room_id": room["id"],
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+                "check_in": {"$lt": data.check_out + "T23:59:59"},
+                "check_out": {"$gt": data.check_in + "T00:00:00"},
+            }
+        )
         if conflict == 0:
             available_room = room
             break
@@ -795,19 +716,24 @@ async def _b2b_create_reservation_impl(
         # Create guest
         guest_id = _uuid()
         from security.guest_write import encrypt_guest_insert
-        await db.guests.insert_one(encrypt_guest_insert({
-            "id": guest_id,
-            "tenant_id": tenant_id,
-            "name": data.guest_name.strip(),
-            "email": data.guest_email.strip() or f"b2b-{guest_id[:8]}@placeholder.local",
-            "phone": data.guest_phone.strip(),
-            "id_number": "",
-            "vip_status": False,
-            "loyalty_points": 0,
-            "total_stays": 0,
-            "total_spend": 0.0,
-            "created_at": _now_iso(),
-        }))
+
+        await db.guests.insert_one(
+            encrypt_guest_insert(
+                {
+                    "id": guest_id,
+                    "tenant_id": tenant_id,
+                    "name": data.guest_name.strip(),
+                    "email": data.guest_email.strip() or f"b2b-{guest_id[:8]}@placeholder.local",
+                    "phone": data.guest_phone.strip(),
+                    "id_number": "",
+                    "vip_status": False,
+                    "loyalty_points": 0,
+                    "total_stays": 0,
+                    "total_spend": 0.0,
+                    "created_at": _now_iso(),
+                }
+            )
+        )
 
         booking_doc = {
             "id": booking_id,
@@ -973,7 +899,11 @@ async def b2b_create_reservation(
     # Geriye uyumlu yol: Idempotency-Key yoksa eski davranis.
     if not idempotency_key:
         return await _b2b_create_reservation_impl(
-            data, background_tasks, tenant_id, agency_id, agency,
+            data,
+            background_tasks,
+            tenant_id,
+            agency_id,
+            agency,
         )
 
     from services.b2b_booking_idempotency import (
@@ -1019,7 +949,11 @@ async def b2b_create_reservation(
         if existing is not None:
             response = _b2b_reservation_response_from_booking(existing)
             await _idem_ok(
-                tenant_id, agency_id, idempotency_key, 200, response,
+                tenant_id,
+                agency_id,
+                idempotency_key,
+                200,
+                response,
                 booking_id=existing.get("id"),
             )
             return response
@@ -1029,30 +963,47 @@ async def b2b_create_reservation(
     # action in ("proceed", "recover-without-existing-booking"): bu istek anahtarin sahibi.
     try:
         response = await _b2b_create_reservation_impl(
-            data, background_tasks, tenant_id, agency_id, agency,
+            data,
+            background_tasks,
+            tenant_id,
+            agency_id,
+            agency,
             idempotency_key=idempotency_key,
         )
     except HTTPException as he:
         # Is-kurali 4xx -> kalici (ayni anahtarla yeniden deneme ayni hatayi alir).
         # Beklenmeyen 5xx -> tekrar denenebilir (sentinel silinir).
         await _idem_fail(
-            tenant_id, agency_id, idempotency_key,
-            he.status_code, {"ok": False, "detail": he.detail},
+            tenant_id,
+            agency_id,
+            idempotency_key,
+            he.status_code,
+            {"ok": False, "detail": he.detail},
             terminal=(400 <= he.status_code < 500),
         )
         raise
     except Exception:
         await _idem_fail(
-            tenant_id, agency_id, idempotency_key,
-            500, {"ok": False, "detail": "Sunucu hatasi"}, terminal=False,
+            tenant_id,
+            agency_id,
+            idempotency_key,
+            500,
+            {"ok": False, "detail": "Sunucu hatasi"},
+            terminal=False,
         )
         raise
 
     await _idem_ok(
-        tenant_id, agency_id, idempotency_key, 200, response,
+        tenant_id,
+        agency_id,
+        idempotency_key,
+        200,
+        response,
         booking_id=response.get("reservation", {}).get("id"),
     )
     return response
+
+
 # ── GET /reservations ──
 @router.get("/reservations")
 async def b2b_list_reservations(
@@ -1078,15 +1029,24 @@ async def b2b_list_reservations(
     if check_in_to:
         query.setdefault("check_in", {})["$lte"] = check_in_to + "T23:59:59"
 
-    docs = await db.bookings.find(
-        query,
-        {
-            "_id": 0, "tenant_id": 0, "guest_id": 0, "room_id": 0,
-            "updated_by": 0,
-        },
-    ).sort("created_at", -1).to_list(limit)
+    docs = (
+        await db.bookings.find(
+            query,
+            {
+                "_id": 0,
+                "tenant_id": 0,
+                "guest_id": 0,
+                "room_id": 0,
+                "updated_by": 0,
+            },
+        )
+        .sort("created_at", -1)
+        .to_list(limit)
+    )
 
     return {"reservations": docs, "count": len(docs)}
+
+
 # ── GET /reservations/{reservation_id} ──
 @router.get("/reservations/{reservation_id}")
 async def b2b_get_reservation(
@@ -1109,6 +1069,8 @@ async def b2b_get_reservation(
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
     return {"reservation": doc}
+
+
 # ── PUT /reservations/{reservation_id}/cancel ──
 @router.put("/reservations/{reservation_id}/cancel")
 async def b2b_cancel_reservation(
@@ -1139,12 +1101,14 @@ async def b2b_cancel_reservation(
 
     await db.bookings.update_one(
         {"id": doc["id"], "tenant_id": tenant_id},
-        {"$set": {
-            "status": "cancelled",
-            "cancelled_at": _now_iso(),
-            "cancelled_by": f"b2b_api:{agency_id}",
-            "updated_at": _now_iso(),
-        }},
+        {
+            "$set": {
+                "status": "cancelled",
+                "cancelled_at": _now_iso(),
+                "cancelled_by": f"b2b_api:{agency_id}",
+                "updated_at": _now_iso(),
+            }
+        },
     )
 
     # Fire webhook: reservation.cancelled

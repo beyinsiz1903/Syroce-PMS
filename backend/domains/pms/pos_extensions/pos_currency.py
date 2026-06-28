@@ -5,6 +5,7 @@ yan tablo (`pos_payments_multi`) tutar ve kur snapshot'larını
 (`pos_exchange_rates`) saklar. Mevcut close_order/post_to_folio
 akışı tenant currency'sinde çalışmaya devam eder.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -100,9 +101,7 @@ async def record_foreign_payment(body: ForeignPayment, current_user: User = Depe
         rate_used = float(rate_doc["rate_to_base"])
 
     # Verify the order belongs to this tenant (do not mutate it).
-    order = await db.pos_orders.find_one(
-        {"id": body.order_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1}
-    )
+    order = await db.pos_orders.find_one({"id": body.order_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found in this tenant")
 
@@ -120,9 +119,7 @@ async def record_foreign_payment(body: ForeignPayment, current_user: User = Depe
         "created_at": datetime.now(UTC),
         "created_by": current_user.id,
     }
-    saved, replayed = await idempotent_insert(
-        db.pos_payments_multi, current_user.tenant_id, body.idempotency_key, doc
-    )
+    saved, replayed = await idempotent_insert(db.pos_payments_multi, current_user.tenant_id, body.idempotency_key, doc)
     return {"success": True, "payment": saved, "idempotent": replayed}
 
 
@@ -142,9 +139,7 @@ async def list_payments(
 
 @router.delete("/payments/{payment_id}")
 async def void_payment(payment_id: str, current_user: User = Depends(get_current_user)):
-    res = await db.pos_payments_multi.delete_one(
-        {"id": payment_id, "tenant_id": current_user.tenant_id}
-    )
+    res = await db.pos_payments_multi.delete_one({"id": payment_id, "tenant_id": current_user.tenant_id})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Payment not found")
     return {"success": True, "deleted": payment_id}
@@ -152,9 +147,7 @@ async def void_payment(payment_id: str, current_user: User = Depends(get_current
 
 @router.delete("/rates/{rate_id}")
 async def delete_rate(rate_id: str, current_user: User = Depends(get_current_user)):
-    res = await db.pos_exchange_rates.delete_one(
-        {"id": rate_id, "tenant_id": current_user.tenant_id}
-    )
+    res = await db.pos_exchange_rates.delete_one({"id": rate_id, "tenant_id": current_user.tenant_id})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Rate not found")
     return {"success": True, "deleted": rate_id}

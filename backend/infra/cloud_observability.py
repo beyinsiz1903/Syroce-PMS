@@ -8,6 +8,7 @@ Environment:
     SENTRY_DSN             — Sentry DSN for error tracking
     SENTRY_ENVIRONMENT     — Sentry environment tag (development/pilot/production)
 """
+
 import logging
 import os
 import re
@@ -58,6 +59,7 @@ def _scrub_event_inplace(event: Any) -> None:
     is always safer than dropping the event entirely (we still want to
     see the error class / stack frame).
     """
+
     def _walk(node: Any, depth: int = 0) -> Any:
         if depth > 6:
             return node
@@ -245,13 +247,10 @@ def _is_graphql_introspection_denied(event: dict) -> bool:
             ev_msg if isinstance(ev_msg, str) else None,
         ]
         exc = event.get("exception") or {}
-        for val in (exc.get("values") or []):
+        for val in exc.get("values") or []:
             if isinstance(val, dict):
                 candidates.append(val.get("value"))
-        return any(
-            isinstance(c, str) and _GRAPHQL_INTROSPECTION_DENIED_RE.search(c)
-            for c in candidates
-        )
+        return any(isinstance(c, str) and _GRAPHQL_INTROSPECTION_DENIED_RE.search(c) for c in candidates)
     except Exception:
         return False
 
@@ -270,9 +269,7 @@ _GRAPHQL_FIELD_VALIDATION_DROP_COUNT = 0
 # scanner, or a bad integration), not a server fault — it must never page in ANY
 # environment. We anchor on the FULL graphql-core template so a genuine error
 # that merely mentions a field name is never dropped.
-_GRAPHQL_FIELD_VALIDATION_RE = re.compile(
-    r"Cannot query field '[^']*' on type '[^']*'\."
-)
+_GRAPHQL_FIELD_VALIDATION_RE = re.compile(r"Cannot query field '[^']*' on type '[^']*'\.")
 
 
 def _is_graphql_field_validation_error(event: dict) -> bool:
@@ -286,13 +283,10 @@ def _is_graphql_field_validation_error(event: dict) -> bool:
             ev_msg if isinstance(ev_msg, str) else None,
         ]
         exc = event.get("exception") or {}
-        for val in (exc.get("values") or []):
+        for val in exc.get("values") or []:
             if isinstance(val, dict):
                 candidates.append(val.get("value"))
-        return any(
-            isinstance(c, str) and _GRAPHQL_FIELD_VALIDATION_RE.search(c)
-            for c in candidates
-        )
+        return any(isinstance(c, str) and _GRAPHQL_FIELD_VALIDATION_RE.search(c) for c in candidates)
     except Exception:
         return False
 
@@ -312,9 +306,7 @@ _HOTELRUNNER_PULL_RATE_LIMIT_DROP_COUNT = 0
 # sequence (``re.search`` tolerates a logger prefix) so a genuine non-429 PULL
 # failure (auth / parse / 5xx) still pages. We never lower the source log level
 # — the ERROR stays visible in the workflow console.
-_HOTELRUNNER_PULL_RATE_LIMIT_RE = re.compile(
-    r"\[PULL\] Failed for tenant .+ page \d+:.*Rate limit exceeded \(429\)"
-)
+_HOTELRUNNER_PULL_RATE_LIMIT_RE = re.compile(r"\[PULL\] Failed for tenant .+ page \d+:.*Rate limit exceeded \(429\)")
 
 
 def _is_hotelrunner_pull_rate_limited(event: dict) -> bool:
@@ -328,13 +320,10 @@ def _is_hotelrunner_pull_rate_limited(event: dict) -> bool:
             ev_msg if isinstance(ev_msg, str) else None,
         ]
         exc = event.get("exception") or {}
-        for val in (exc.get("values") or []):
+        for val in exc.get("values") or []:
             if isinstance(val, dict):
                 candidates.append(val.get("value"))
-        return any(
-            isinstance(c, str) and _HOTELRUNNER_PULL_RATE_LIMIT_RE.search(c)
-            for c in candidates
-        )
+        return any(isinstance(c, str) and _HOTELRUNNER_PULL_RATE_LIMIT_RE.search(c) for c in candidates)
     except Exception:
         return False
 
@@ -356,9 +345,7 @@ _HOTELRUNNER_OBS_RATE_LIMIT_DROP_COUNT = 0
 # HotelRunnerRateLimitError type AND the literal ``(429)`` status the client
 # embeds in the message, so the predicate is anchored to the real 429 path and
 # cannot swallow a same-typed error that lacks the status token.
-_HOTELRUNNER_OBS_RATE_LIMIT_RE = re.compile(
-    r"\[HR-OBS\] FAILURE HotelRunnerRateLimitError:.*Rate limit exceeded \(429\)"
-)
+_HOTELRUNNER_OBS_RATE_LIMIT_RE = re.compile(r"\[HR-OBS\] FAILURE HotelRunnerRateLimitError:.*Rate limit exceeded \(429\)")
 
 
 def _is_hotelrunner_obs_rate_limited(event: dict) -> bool:
@@ -372,13 +359,10 @@ def _is_hotelrunner_obs_rate_limited(event: dict) -> bool:
             ev_msg if isinstance(ev_msg, str) else None,
         ]
         exc = event.get("exception") or {}
-        for val in (exc.get("values") or []):
+        for val in exc.get("values") or []:
             if isinstance(val, dict):
                 candidates.append(val.get("value"))
-        return any(
-            isinstance(c, str) and _HOTELRUNNER_OBS_RATE_LIMIT_RE.search(c)
-            for c in candidates
-        )
+        return any(isinstance(c, str) and _HOTELRUNNER_OBS_RATE_LIMIT_RE.search(c) for c in candidates)
     except Exception:
         return False
 
@@ -450,7 +434,7 @@ def _is_static_client_disconnect(event: dict, hint: dict) -> bool:
         if _CONTENT_LENGTH_SHORT_MSG not in msg:
             candidates = []
             exc = event.get("exception") or {}
-            for val in (exc.get("values") or []):
+            for val in exc.get("values") or []:
                 if isinstance(val, dict):
                     candidates.append(val.get("value"))
             le = event.get("logentry") or {}
@@ -458,10 +442,7 @@ def _is_static_client_disconnect(event: dict, hint: dict) -> bool:
             candidates.append(le.get("formatted"))
             em = event.get("message")
             candidates.append(em if isinstance(em, str) else None)
-            if not any(
-                isinstance(c, str) and _CONTENT_LENGTH_SHORT_MSG in c
-                for c in candidates
-            ):
+            if not any(isinstance(c, str) and _CONTENT_LENGTH_SHORT_MSG in c for c in candidates):
                 return False
         method, path = _event_request_target(event)
         return _is_static_asset_target(method, path)
@@ -488,9 +469,7 @@ _ASGI_INCOMPLETE_RESPONSE_DROP_COUNT = 0
 # sibling "...without STARTING response." is a real no-response condition and is
 # NOT matched) and, when a logger field is present, require ``uvicorn.error``.
 # The ERROR still prints to the workflow console; only the Sentry page is dropped.
-_ASGI_INCOMPLETE_RESPONSE_RE = re.compile(
-    r"ASGI callable returned without completing response\."
-)
+_ASGI_INCOMPLETE_RESPONSE_RE = re.compile(r"ASGI callable returned without completing response\.")
 
 
 def _is_asgi_incomplete_response_noise(event: dict) -> bool:
@@ -524,13 +503,10 @@ def _is_asgi_incomplete_response_noise(event: dict) -> bool:
             ev_msg if isinstance(ev_msg, str) else None,
         ]
         exc = event.get("exception") or {}
-        for val in (exc.get("values") or []):
+        for val in exc.get("values") or []:
             if isinstance(val, dict):
                 candidates.append(val.get("value"))
-        return any(
-            isinstance(c, str) and _ASGI_INCOMPLETE_RESPONSE_RE.search(c)
-            for c in candidates
-        )
+        return any(isinstance(c, str) and _ASGI_INCOMPLETE_RESPONSE_RE.search(c) for c in candidates)
     except Exception:
         return False
 
@@ -556,80 +532,56 @@ def _sentry_before_send(event: dict, hint: dict) -> dict | None:
     try:
         if _is_graphql_introspection_denied(event):
             _GRAPHQL_INTROSPECTION_DENIED_DROP_COUNT += 1
-            logger.info(
-                "sentry before_send dropped expected graphql introspection-denied "
-                f"(cumulative={_GRAPHQL_INTROSPECTION_DENIED_DROP_COUNT})"
-            )
+            logger.info(f"sentry before_send dropped expected graphql introspection-denied (cumulative={_GRAPHQL_INTROSPECTION_DENIED_DROP_COUNT})")
             return None
     except Exception:
         pass
     try:
         if _is_graphql_field_validation_error(event):
             _GRAPHQL_FIELD_VALIDATION_DROP_COUNT += 1
-            logger.info(
-                "sentry before_send dropped expected graphql field-validation client error "
-                f"(cumulative={_GRAPHQL_FIELD_VALIDATION_DROP_COUNT})"
-            )
+            logger.info(f"sentry before_send dropped expected graphql field-validation client error (cumulative={_GRAPHQL_FIELD_VALIDATION_DROP_COUNT})")
             return None
     except Exception:
         pass
     try:
         if _is_hotelrunner_pull_rate_limited(event):
             _HOTELRUNNER_PULL_RATE_LIMIT_DROP_COUNT += 1
-            logger.info(
-                "sentry before_send dropped expected hotelrunner PULL 429 backpressure "
-                f"(cumulative={_HOTELRUNNER_PULL_RATE_LIMIT_DROP_COUNT})"
-            )
+            logger.info(f"sentry before_send dropped expected hotelrunner PULL 429 backpressure (cumulative={_HOTELRUNNER_PULL_RATE_LIMIT_DROP_COUNT})")
             return None
     except Exception:
         pass
     try:
         if _is_hotelrunner_obs_rate_limited(event):
             _HOTELRUNNER_OBS_RATE_LIMIT_DROP_COUNT += 1
-            logger.info(
-                "sentry before_send dropped expected hotelrunner [HR-OBS] 429 backpressure "
-                f"(cumulative={_HOTELRUNNER_OBS_RATE_LIMIT_DROP_COUNT})"
-            )
+            logger.info(f"sentry before_send dropped expected hotelrunner [HR-OBS] 429 backpressure (cumulative={_HOTELRUNNER_OBS_RATE_LIMIT_DROP_COUNT})")
             return None
     except Exception:
         pass
     try:
         if _is_static_client_disconnect(event, hint):
             _STATIC_CLIENT_DISCONNECT_DROP_COUNT += 1
-            logger.info(
-                "sentry before_send dropped benign static client-disconnect "
-                f"(cumulative={_STATIC_CLIENT_DISCONNECT_DROP_COUNT})"
-            )
+            logger.info(f"sentry before_send dropped benign static client-disconnect (cumulative={_STATIC_CLIENT_DISCONNECT_DROP_COUNT})")
             return None
     except Exception:
         pass
     try:
         if _is_asgi_incomplete_response_noise(event):
             _ASGI_INCOMPLETE_RESPONSE_DROP_COUNT += 1
-            logger.info(
-                "sentry before_send dropped benign uvicorn incomplete-response "
-                f"client-disconnect (cumulative={_ASGI_INCOMPLETE_RESPONSE_DROP_COUNT})"
-            )
+            logger.info(f"sentry before_send dropped benign uvicorn incomplete-response client-disconnect (cumulative={_ASGI_INCOMPLETE_RESPONSE_DROP_COUNT})")
             return None
     except Exception:
         pass
     try:
         if _is_workflow_restart_port_bind(event, hint):
             _RESTART_BIND_DROP_COUNT += 1
-            logger.info(
-                "sentry before_send dropped restart-bind noise "
-                f"(cumulative={_RESTART_BIND_DROP_COUNT})"
-            )
+            logger.info(f"sentry before_send dropped restart-bind noise (cumulative={_RESTART_BIND_DROP_COUNT})")
             return None
     except Exception:
         pass
     try:
         if _is_nonprod_sustained_transient_db(event):
             _TRANSIENT_DB_NONPROD_DROP_COUNT += 1
-            logger.info(
-                "sentry before_send dropped non-prod sustained-transient-db noise "
-                f"(cumulative={_TRANSIENT_DB_NONPROD_DROP_COUNT})"
-            )
+            logger.info(f"sentry before_send dropped non-prod sustained-transient-db noise (cumulative={_TRANSIENT_DB_NONPROD_DROP_COUNT})")
             return None
     except Exception:
         pass
@@ -641,6 +593,7 @@ def _sentry_before_send(event: dict, hint: dict) -> dict | None:
 
 
 # ── OpenTelemetry Integration ──────────────────────────────────────
+
 
 class OTelTracer:
     """OpenTelemetry tracing abstraction with graceful fallback."""
@@ -702,14 +655,25 @@ class OTelTracer:
 
 class _NoOpSpan:
     """No-op span for when tracing is disabled."""
-    def set_attribute(self, key, value): pass
-    def set_status(self, status): pass
-    def end(self): pass
-    def __enter__(self): return self
-    def __exit__(self, *args): pass
+
+    def set_attribute(self, key, value):
+        pass
+
+    def set_status(self, status):
+        pass
+
+    def end(self):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
 
 
 # ── Sentry Integration ──────────────────────────────────────────────
+
 
 class SentryIntegration:
     """Sentry error tracking abstraction."""
@@ -734,6 +698,7 @@ class SentryIntegration:
             integrations = [StarletteIntegration(), FastApiIntegration()]
             try:
                 from sentry_sdk.integrations.celery import CeleryIntegration
+
                 integrations.append(CeleryIntegration())
             except (ImportError, Exception):
                 pass
@@ -760,6 +725,7 @@ class SentryIntegration:
             return
         try:
             import sentry_sdk
+
             with sentry_sdk.push_scope() as scope:
                 if tags:
                     for k, v in tags.items():
@@ -769,12 +735,12 @@ class SentryIntegration:
         except Exception:
             pass
 
-    def capture_message(self, message: str, level: str = "info",
-                        tags: dict | None = None):
+    def capture_message(self, message: str, level: str = "info", tags: dict | None = None):
         if not self._active:
             return
         try:
             import sentry_sdk
+
             with sentry_sdk.push_scope() as scope:
                 if tags:
                     for k, v in tags.items():
@@ -796,6 +762,7 @@ class SentryIntegration:
 
 # ── Enhanced Metrics Collector ─────────────────────────────────────
 
+
 class CloudMetricsCollector:
     """Extended metrics for cloud observability."""
 
@@ -809,7 +776,7 @@ class CloudMetricsCollector:
         """Record latency histogram sample."""
         self._histograms[name].append(duration_sec)
         if len(self._histograms[name]) > self._max_histogram_size:
-            self._histograms[name] = self._histograms[name][-self._max_histogram_size:]
+            self._histograms[name] = self._histograms[name][-self._max_histogram_size :]
 
     def increment(self, name: str, value: int = 1):
         self._counters[name] += value

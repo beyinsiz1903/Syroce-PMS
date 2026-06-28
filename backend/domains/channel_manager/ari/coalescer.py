@@ -10,6 +10,7 @@ Rules:
   - Consecutive dates with same value → date range merge
   - Restriction precedence: close > open, explicit values override old
 """
+
 import logging
 from datetime import date, timedelta
 
@@ -114,11 +115,13 @@ def coalesce_events(
     # For restrictions, apply precedence rules
     if event_type == "restriction":
         merged_payload = _apply_restriction_precedence([e.payload for e in events])
-        merged_ranges = [{
-            "date_from": _parse_date(ref.date_from),
-            "date_to": _parse_date(ref.date_to),
-            "payload": merged_payload,
-        }]
+        merged_ranges = [
+            {
+                "date_from": _parse_date(ref.date_from),
+                "date_to": _parse_date(ref.date_to),
+                "payload": merged_payload,
+            }
+        ]
     else:
         # For availability/rate: last write wins, then merge date ranges
         merged_ranges = _merge_date_ranges(events)
@@ -154,8 +157,5 @@ def coalesce_events(
             }
             change_sets.append(cs)
 
-    logger.info(
-        f"Coalesced {len(events)} events → {len(change_sets)} change sets "
-        f"for key={coalescing_key}"
-    )
+    logger.info(f"Coalesced {len(events)} events → {len(change_sets)} change sets for key={coalescing_key}")
     return change_sets

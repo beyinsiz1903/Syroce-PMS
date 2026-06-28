@@ -2,6 +2,7 @@
 Exely SOAP API Client
 Handles HTTP transport for SOAP messages with retry and logging.
 """
+
 import logging
 import time
 from typing import Any
@@ -55,6 +56,7 @@ class ExelyClient:
         start = time.time()
         try:
             from datetime import datetime, timedelta
+
             checkin = datetime.now().strftime("%Y-%m-%d")
             checkout = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
             xml = build_hotel_avail_rq(self.username, self.password, self.hotel_code, checkin, checkout)
@@ -115,8 +117,10 @@ class ExelyClient:
 
     async def push_ari(
         self,
-        room_type_code: str, rate_plan_code: str,
-        start_date: str, end_date: str,
+        room_type_code: str,
+        rate_plan_code: str,
+        start_date: str,
+        end_date: str,
         availability: int | None = None,
         rate_amount: float | None = None,
         currency: str = "TRY",
@@ -127,9 +131,18 @@ class ExelyClient:
         start = time.time()
         try:
             xml = build_ari_update_rq(
-                self.username, self.password, self.hotel_code,
-                room_type_code, rate_plan_code, start_date, end_date,
-                availability, rate_amount, currency, stop_sell, min_stay,
+                self.username,
+                self.password,
+                self.hotel_code,
+                room_type_code,
+                rate_plan_code,
+                start_date,
+                end_date,
+                availability,
+                rate_amount,
+                currency,
+                stop_sell,
+                min_stay,
             )
             raw = await self._send_soap(xml, "OTA_HotelAvailNotifRQ")
             result = parse_ari_update_rs(raw)

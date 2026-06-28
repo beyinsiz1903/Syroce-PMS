@@ -4,6 +4,7 @@ Super-admin only. Exposes status, manual sync, test-event, counter-offer ops,
 and tenant credential management.
 Booking lifecycle hooks (auto-push) live in integrations/capx/lifecycle.py.
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,6 +41,7 @@ router = APIRouter(
 
 
 # ── Pydantic models ──────────────────────────────────────────────
+
 
 class AvailabilityPayload(BaseModel):
     room_type: str
@@ -90,14 +92,12 @@ class CallbackRegisterPayload(BaseModel):
     )
     jwt_token: str | None = Field(
         default=None,
-        description=(
-            "Otelin CapX hesabı için JWT (login token). Verilmezse Bearer api_key "
-            "fallback denenir; spec §1 JWT bekliyor."
-        ),
+        description=("Otelin CapX hesabı için JWT (login token). Verilmezse Bearer api_key fallback denenir; spec §1 JWT bekliyor."),
     )
 
 
 # ── Status / Ping / Manual sync ──────────────────────────────────
+
 
 @router.get("/status")
 async def get_status() -> dict[str, Any]:
@@ -144,7 +144,8 @@ async def ping_capx(user=Depends(get_current_user)) -> dict[str, Any]:
 
 @router.post("/sync/availability")
 async def sync_availability(
-    payload: AvailabilityPayload, user=Depends(get_current_user),
+    payload: AvailabilityPayload,
+    user=Depends(get_current_user),
 ) -> dict[str, Any]:
     """Manual availability push (testing / one-off corrections)."""
     tenant_id = getattr(user, "tenant_id", None)
@@ -163,7 +164,8 @@ async def sync_availability(
 
 @router.post("/test-event")
 async def test_reservation_event(
-    payload: ReservationEventPayload, user=Depends(get_current_user),
+    payload: ReservationEventPayload,
+    user=Depends(get_current_user),
 ) -> dict[str, Any]:
     """Manual reservation event push (testing HMAC signing)."""
     tenant_id = getattr(user, "tenant_id", None)
@@ -184,6 +186,7 @@ async def test_reservation_event(
 
 # ── Counter-offer ops (Faz 3) ────────────────────────────────────
 
+
 @router.get("/counter-offers")
 async def list_offers(
     tenant_id: str | None = Query(default=None),
@@ -203,7 +206,9 @@ async def get_offer(offer_id: str) -> dict[str, Any]:
 
 
 async def _push_counter_decision(
-    *, offer: dict[str, Any], decision: str,
+    *,
+    offer: dict[str, Any],
+    decision: str,
 ) -> dict[str, Any]:
     """Karar verildikten sonra CapX'e push (best-effort, hata yutulur)."""
     tenant_id = offer.get("tenant_id")
@@ -216,8 +221,7 @@ async def _push_counter_decision(
         "pms_external_ref": offer.get("pms_external_ref"),
         "booking_id": offer.get("booking_id"),
         "counter_offer_id": offer.get("id"),
-        "amount": offer.get("counter_amount") if decision == "accepted"
-                  else offer.get("original_amount"),
+        "amount": offer.get("counter_amount") if decision == "accepted" else offer.get("original_amount"),
         "currency": offer.get("currency", "TRY"),
         "occurred_at": datetime.now(UTC).isoformat(),
     }
@@ -238,8 +242,10 @@ async def accept_offer(
 ) -> dict[str, Any]:
     try:
         updated = await transition(
-            offer_id=offer_id, new_status="accepted",
-            actor_id=getattr(user, "id", "unknown"), notes=payload.notes,
+            offer_id=offer_id,
+            new_status="accepted",
+            actor_id=getattr(user, "id", "unknown"),
+            notes=payload.notes,
         )
     except LookupError as exc:
         raise HTTPException(404, str(exc))
@@ -258,8 +264,10 @@ async def reject_offer(
 ) -> dict[str, Any]:
     try:
         updated = await transition(
-            offer_id=offer_id, new_status="rejected",
-            actor_id=getattr(user, "id", "unknown"), notes=payload.notes,
+            offer_id=offer_id,
+            new_status="rejected",
+            actor_id=getattr(user, "id", "unknown"),
+            notes=payload.notes,
         )
     except LookupError as exc:
         raise HTTPException(404, str(exc))
@@ -271,6 +279,7 @@ async def reject_offer(
 
 
 # ── Tenant credentials (Faz 3) ───────────────────────────────────
+
 
 @router.get("/tenant-credentials")
 async def list_tenant_creds() -> dict[str, Any]:
@@ -292,8 +301,11 @@ async def upsert_tenant_creds(
     if payload.tenant_id != tenant_id:
         raise HTTPException(400, "tenant_id mismatch between path and body")
     return await upsert_tenant_credentials(
-        tenant_id=tenant_id, base_url=payload.base_url, api_key=payload.api_key,
-        webhook_secret=payload.webhook_secret, actor_id=getattr(user, "id", "unknown"),
+        tenant_id=tenant_id,
+        base_url=payload.base_url,
+        api_key=payload.api_key,
+        webhook_secret=payload.webhook_secret,
+        actor_id=getattr(user, "id", "unknown"),
     )
 
 
@@ -304,12 +316,14 @@ async def delete_tenant_creds(tenant_id: str) -> dict[str, Any]:
 
 # ── Callback URL register (CapX → PMS yönü) ──────────────────────
 
+
 def _build_callback_url(tenant_id: str) -> str:
     """Public callback URL'i ortam değişkenlerinden üretir.
 
     Öncelik: PUBLIC_BASE_URL > REPLIT_DEV_DOMAIN (https eklenir) > localhost.
     """
     import os as _os
+
     base = _os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
     if not base:
         dev = _os.getenv("REPLIT_DEV_DOMAIN", "").strip()
@@ -342,11 +356,14 @@ async def register_callback(
 
     try:
         resp = await client.register_callback(
-            callback_url, jwt_token=payload.jwt_token,
+            callback_url,
+            jwt_token=payload.jwt_token,
         )
         return {
-            "ok": True, "callback_url": callback_url,
-            "tenant_id": tenant_id, "response": resp,
+            "ok": True,
+            "callback_url": callback_url,
+            "tenant_id": tenant_id,
+            "response": resp,
         }
     except CapXError as exc:
         raise HTTPException(

@@ -29,6 +29,7 @@ shared, restart-safe counts. The in-memory deque is consulted only as
 a last resort, which keeps single-instance dev setups working without
 Redis configured.
 """
+
 import asyncio
 import logging
 import time
@@ -98,9 +99,7 @@ def _parse_member(member: str) -> tuple[str, str] | None:
     return parts[1], parts[2]
 
 
-async def _record_redis(
-    client: Any, now: float, tenant_id: str, provider: str
-) -> bool:
+async def _record_redis(client: Any, now: float, tenant_id: str, provider: str) -> bool:
     """Append to the Redis ZSET and prune. Returns True on success."""
     try:
         cutoff = now - _RETENTION_SECONDS
@@ -158,7 +157,10 @@ async def _get_counts_redis(client: Any) -> dict[str, Any] | None:
         # ``withscores=True`` lets us split 1h vs 24h locally without
         # issuing a second ZRANGEBYSCORE round-trip.
         raw = await client.zrangebyscore(
-            _REDIS_KEY, cutoff, "+inf", withscores=True,
+            _REDIS_KEY,
+            cutoff,
+            "+inf",
+            withscores=True,
         )
         snapshot_24h: list[tuple[float, str, str]] = []
         for member, score in raw:

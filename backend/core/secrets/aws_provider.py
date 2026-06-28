@@ -5,6 +5,7 @@ Uses boto3 to store/retrieve JSON secrets with deterministic naming.
 Handles: throttling (via retry), not-found, permission errors.
 Never logs secret values.
 """
+
 import json
 import logging
 from datetime import UTC, datetime
@@ -159,7 +160,9 @@ class AWSSecretsProvider(SecretsProviderBase):
 
         logger.info(
             "Secret rotated: %s (v%s, rotation #%d)",
-            path, new_version, new_count,
+            path,
+            new_version,
+            new_count,
         )
         return SecretMetadata(
             secret_path=path,
@@ -177,10 +180,7 @@ class AWSSecretsProvider(SecretsProviderBase):
         except self._client.exceptions.ResourceNotFoundException:
             return None
 
-        tags_dict = {
-            t["Key"]: t["Value"]
-            for t in response.get("Tags", [])
-        }
+        tags_dict = {t["Key"]: t["Value"] for t in response.get("Tags", [])}
 
         # We need the payload for version/rotation info
         payload = await self.get_secret(path)

@@ -79,10 +79,10 @@ async def record_cash_transaction(
     tenant_id: str,
     amount: float,
     method: str,
-    direction: str,                       # "in" | "out"
+    direction: str,  # "in" | "out"
     description: str,
-    txn_type: str = "folio_payment",      # folio_payment|paid_out|manual_in|manual_out|refund|bank_deposit
-    ref_type: str | None = None,       # folio|booking|payment|manual|bank
+    txn_type: str = "folio_payment",  # folio_payment|paid_out|manual_in|manual_out|refund|bank_deposit
+    ref_type: str | None = None,  # folio|booking|payment|manual|bank
     ref_id: str | None = None,
     created_by: str | None = None,
     created_by_name: str | None = None,
@@ -130,10 +130,7 @@ async def record_cash_transaction(
                 status_code=409,
                 detail="Aktif kasa vardiyası yok. Önce 'Vardiya Aç' işlemini yapın.",
             )
-        logger.info(
-            f"cashier txn skipped (no open shift) tenant={tenant_id} "
-            f"method={method_l} amount={amount_f} ref={ref_type}:{ref_id}"
-        )
+        logger.info(f"cashier txn skipped (no open shift) tenant={tenant_id} method={method_l} amount={amount_f} ref={ref_type}:{ref_id}")
         return None
 
     now = datetime.utcnow()
@@ -190,15 +187,12 @@ async def record_cash_transaction(
                 {"_id": 0, "transactions": 1},
             )
             if existing_shift:
-                for t in (existing_shift.get("transactions") or []):
+                for t in existing_shift.get("transactions") or []:
                     if t.get("idempotency_key") == idempotency_key:
                         logger.info(f"cashier txn idempotent hit key={idempotency_key}")
                         return t
         # Mevcut kayıt yok → race condition (vardiya bu arada kapandı/devredildi)
-        logger.warning(
-            f"cashier txn race: shift no longer open tenant={tenant_id} "
-            f"shift={shift.get('_id')} method={method_l}"
-        )
+        logger.warning(f"cashier txn race: shift no longer open tenant={tenant_id} shift={shift.get('_id')} method={method_l}")
         if require_open_shift and method_l in CASH_METHODS:
             raise HTTPException(
                 status_code=409,

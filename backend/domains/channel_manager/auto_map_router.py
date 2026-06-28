@@ -3,6 +3,7 @@ Auto-Map Router — Otomatik Oda Esleme
 PMS oda tipleri ile provider (Exely/HotelRunner) oda tiplerini
 isim benzerligine gore otomatik eslestirme.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -82,9 +83,7 @@ async def _get_pms_room_types(tenant_id: str) -> list[dict]:
 
 async def _get_exely_provider_rooms(tenant_id: str) -> tuple[list[dict], list[dict]]:
     """Get Exely provider room types and rate plans."""
-    conn = await db.exely_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    )
+    conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
     if not conn:
         return [], []
     room_types = conn.get("room_types", [])
@@ -118,13 +117,9 @@ async def _get_hr_provider_rooms(tenant_id: str) -> tuple[list[dict], list[dict]
 async def _get_existing_mappings(tenant_id: str, provider: str) -> list[dict]:
     """Get existing mappings for a provider."""
     if provider == "exely":
-        return await db.exely_room_mappings.find(
-            {"tenant_id": tenant_id}, {"_id": 0}
-        ).to_list(200)
+        return await db.exely_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
     elif provider == "hotelrunner":
-        return await db.hotelrunner_room_mappings.find(
-            {"tenant_id": tenant_id}, {"_id": 0}
-        ).to_list(200)
+        return await db.hotelrunner_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
     return []
 
 
@@ -204,11 +199,13 @@ async def suggest_auto_mappings(
     suggested_pms = {s["pms_room_type"] for s in suggestions}
     for pms in pms_types:
         if pms["code"] not in mapped_pms_types and pms["code"] not in suggested_pms:
-            unmapped_pms.append({
-                "code": pms["code"],
-                "name": pms["name"],
-                "room_count": pms["room_count"],
-            })
+            unmapped_pms.append(
+                {
+                    "code": pms["code"],
+                    "name": pms["name"],
+                    "room_count": pms["room_count"],
+                }
+            )
 
     # Unmapped provider rooms
     unmapped_provider = []
@@ -260,11 +257,13 @@ async def apply_auto_mappings(
                     "created_by": current_user.name,
                 }
                 # Check for duplicate
-                existing = await db.exely_room_mappings.find_one({
-                    "tenant_id": current_user.tenant_id,
-                    "pms_room_type": m.pms_room_type,
-                    "exely_room_code": m.provider_room_code,
-                })
+                existing = await db.exely_room_mappings.find_one(
+                    {
+                        "tenant_id": current_user.tenant_id,
+                        "pms_room_type": m.pms_room_type,
+                        "exely_room_code": m.provider_room_code,
+                    }
+                )
                 if existing:
                     errors.append(f"{m.pms_room_type} -> {m.provider_room_name} zaten eslenmis")
                     continue
@@ -285,10 +284,12 @@ async def apply_auto_mappings(
                     "created_at": datetime.now(UTC).isoformat(),
                     "created_by": current_user.name,
                 }
-                existing = await db.hotelrunner_room_mappings.find_one({
-                    "tenant_id": current_user.tenant_id,
-                    "hr_inv_code": m.provider_room_code,
-                })
+                existing = await db.hotelrunner_room_mappings.find_one(
+                    {
+                        "tenant_id": current_user.tenant_id,
+                        "hr_inv_code": m.provider_room_code,
+                    }
+                )
                 if existing:
                     errors.append(f"{m.pms_room_type} -> {m.provider_room_name} zaten eslenmis")
                     continue

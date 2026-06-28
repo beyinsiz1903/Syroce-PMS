@@ -2,6 +2,7 @@
 Deployment Orchestrator — Production deployment risk assessment, config generation,
 deployment strategy recommendation, and infrastructure readiness scoring.
 """
+
 import logging
 import os
 from datetime import UTC, datetime
@@ -207,15 +208,17 @@ class DeploymentOrchestrator:
         batches = []
         for i, component in enumerate(batch_order):
             comp = DEPLOYMENT_COMPONENTS.get(component, {})
-            batches.append({
-                "order": i + 1,
-                "component": component,
-                "type": comp.get("type", "unknown"),
-                "replicas": comp.get("replicas_min", 1),
-                "critical": comp.get("critical", False),
-                "health_check": comp.get("health_endpoint"),
-                "rollback_on_failure": comp.get("critical", False),
-            })
+            batches.append(
+                {
+                    "order": i + 1,
+                    "component": component,
+                    "type": comp.get("type", "unknown"),
+                    "replicas": comp.get("replicas_min", 1),
+                    "critical": comp.get("critical", False),
+                    "health_check": comp.get("health_endpoint"),
+                    "rollback_on_failure": comp.get("critical", False),
+                }
+            )
 
         return {
             "strategy": strategy,

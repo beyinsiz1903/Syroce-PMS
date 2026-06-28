@@ -4,6 +4,7 @@ Channel Connections Overview Router
 Tüm kanal sağlayıcılarının (HotelRunner, Exely) bağlantı durumunu
 tek bir endpoint'ten döndürür. Yeni otel onboarding akışı için.
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -54,8 +55,7 @@ async def get_connections_overview(current_user: User = Depends(get_current_user
                 "channels": [],
                 "connected_at": prov_hr.get("created_at"),
                 "last_sync_at": None,
-                "auto_sync_reservations": prov_hr.get(
-                    "sync_reservations", False),
+                "auto_sync_reservations": prov_hr.get("sync_reservations", False),
             }
         else:
             # Legacy doc var ama is_active eksik/false → provider_connections
@@ -64,14 +64,10 @@ async def get_connections_overview(current_user: User = Depends(get_current_user
             if not hr_conn.get("hr_id") and creds.get("hr_id"):
                 hr_conn["hr_id"] = creds["hr_id"]
             if not hr_conn.get("property_name"):
-                hr_conn["property_name"] = prov_hr.get(
-                    "display_name", "HotelRunner")
+                hr_conn["property_name"] = prov_hr.get("display_name", "HotelRunner")
     hr_mappings = await db.hotelrunner_room_mappings.count_documents({"tenant_id": tid})
     if hr_mappings == 0:
-        hr_mappings = await db.cm_mappings.count_documents(
-            {"tenant_id": tid, "entity_type": "room_type",
-             "connector_id": {"$regex": "hr"}, "status": "active"}
-        )
+        hr_mappings = await db.cm_mappings.count_documents({"tenant_id": tid, "entity_type": "room_type", "connector_id": {"$regex": "hr"}, "status": "active"})
 
     hr_status = {
         "provider": "hotelrunner",
@@ -109,22 +105,17 @@ async def get_connections_overview(current_user: User = Depends(get_current_user
                 "rate_plans": [],
                 "connected_at": prov_ex.get("created_at"),
                 "last_sync_at": None,
-                "auto_sync_reservations": prov_ex.get(
-                    "sync_reservations", False),
+                "auto_sync_reservations": prov_ex.get("sync_reservations", False),
             }
         else:
             exely_conn["is_active"] = True
             if not exely_conn.get("hotel_code") and ex_creds.get("hotel_code"):
                 exely_conn["hotel_code"] = ex_creds["hotel_code"]
             if not exely_conn.get("property_name"):
-                exely_conn["property_name"] = prov_ex.get(
-                    "display_name", "Exely")
+                exely_conn["property_name"] = prov_ex.get("display_name", "Exely")
     exely_mappings = await db.exely_room_mappings.count_documents({"tenant_id": tid})
     if exely_mappings == 0:
-        exely_mappings = await db.cm_mappings.count_documents(
-            {"tenant_id": tid, "entity_type": "room_type",
-             "connector_id": {"$regex": "ex"}, "status": "active"}
-        )
+        exely_mappings = await db.cm_mappings.count_documents({"tenant_id": tid, "entity_type": "room_type", "connector_id": {"$regex": "ex"}, "status": "active"})
 
     exely_status = {
         "provider": "exely",

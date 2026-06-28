@@ -2,6 +2,7 @@
 Oda Haritasi: bir tarih icin oda durumlarini ve booking eslemelerini ver,
 suruk-birak ile oda degistir.
 """
+
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -31,10 +32,14 @@ async def get_map(
     bd = business_date or _today()
     next_day = (datetime.fromisoformat(bd) + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    rooms = await db.rooms.find(
-        {"tenant_id": tenant_id, "is_active": {"$ne": False}},
-        {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "floor": 1, "status": 1, "max_occupancy": 1},
-    ).sort("room_number", 1).to_list(500)
+    rooms = (
+        await db.rooms.find(
+            {"tenant_id": tenant_id, "is_active": {"$ne": False}},
+            {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "floor": 1, "status": 1, "max_occupancy": 1},
+        )
+        .sort("room_number", 1)
+        .to_list(500)
+    )
 
     bookings_cursor = db.bookings.find(
         {
@@ -110,14 +115,16 @@ async def assign(
     # Cakisma kontrolu
     ci = booking.get("check_in") or bd
     co = booking.get("check_out") or next_day
-    overlap = await db.bookings.find_one({
-        "tenant_id": tenant_id,
-        "room_id": payload.room_id,
-        "id": {"$ne": payload.booking_id},
-        "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house"]},
-        "check_in": {"$lt": co},
-        "check_out": {"$gt": ci},
-    })
+    overlap = await db.bookings.find_one(
+        {
+            "tenant_id": tenant_id,
+            "room_id": payload.room_id,
+            "id": {"$ne": payload.booking_id},
+            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "in_house"]},
+            "check_in": {"$lt": co},
+            "check_out": {"$gt": ci},
+        }
+    )
     if overlap:
         raise HTTPException(409, f"Oda {new_room.get('room_number')} bu tarihlerde dolu")
 
@@ -130,15 +137,17 @@ async def assign(
     )
     if res.matched_count == 0:
         raise HTTPException(409, "Rezervasyon bu sirada degistirilmis, lutfen yenileyin")
-    await db.room_move_history.insert_one({
-        "tenant_id": tenant_id,
-        "booking_id": payload.booking_id,
-        "from_room_id": old_room_id,
-        "to_room_id": payload.room_id,
-        "to_room_number": new_room.get("room_number"),
-        "moved_by_id": current_user.id,
-        "moved_by_name": current_user.name or current_user.email,
-        "moved_at": now,
-        "reason": "room_map_drag_drop",
-    })
+    await db.room_move_history.insert_one(
+        {
+            "tenant_id": tenant_id,
+            "booking_id": payload.booking_id,
+            "from_room_id": old_room_id,
+            "to_room_id": payload.room_id,
+            "to_room_number": new_room.get("room_number"),
+            "moved_by_id": current_user.id,
+            "moved_by_name": current_user.name or current_user.email,
+            "moved_at": now,
+            "reason": "room_map_drag_drop",
+        }
+    )
     return {"ok": True, "booking_id": payload.booking_id, "room_id": payload.room_id, "room_number": new_room.get("room_number")}

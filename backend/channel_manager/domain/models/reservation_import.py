@@ -9,6 +9,7 @@ Indexes:
                        (tenant_id, ack_status)
                        (batch_id)
 """
+
 import hashlib
 import json
 import uuid

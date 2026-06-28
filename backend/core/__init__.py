@@ -1,4 +1,5 @@
 """Core module - database and security."""
+
 from core.database import client as client
 from core.database import db as db
 from core.database import db_name as db_name

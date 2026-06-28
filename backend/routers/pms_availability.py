@@ -19,6 +19,7 @@ Dependencies:
   - ReleaseRoomBlockService (block cancellation)
   - Shadow compare (legacy parity validation)
 """
+
 import asyncio
 import uuid
 from datetime import UTC, datetime
@@ -43,10 +44,13 @@ from shared_kernel.shadow_metrics import compare_availability_payloads, run_shad
 try:
     from cache_manager import cached
 except ImportError:
+
     def cached(ttl=300, key_prefix=""):
         def decorator(func):
             return func
+
         return decorator
+
 
 router = APIRouter(prefix="/api", tags=["pms-availability"])
 
@@ -59,43 +63,35 @@ availability_read_service = AvailabilityReadService()
 # Room Blocks (mutation paths that affect availability)
 # ═══════════════════════════════════════════════════════════════════
 
+
 @router.get("/pms/room-blocks")
-async def get_room_blocks(
-    room_id: str | None = None,
-    status: str | None = None,
-    from_date: str | None = None,
-    to_date: str | None = None,
-    current_user: User = Depends(get_current_user)
-):
+async def get_room_blocks(room_id: str | None = None, status: str | None = None, from_date: str | None = None, to_date: str | None = None, current_user: User = Depends(get_current_user)):
     """Get room blocks with optional filters"""
-    query = {'tenant_id': current_user.tenant_id}
+    query = {"tenant_id": current_user.tenant_id}
 
     if room_id:
-        query['room_id'] = room_id
+        query["room_id"] = room_id
 
     if status:
-        query['status'] = status
+        query["status"] = status
 
     if from_date or to_date:
         date_query = {}
         if from_date:
-            date_query['$gte'] = from_date
+            date_query["$gte"] = from_date
         if to_date:
-            date_query['$lte'] = to_date
-        query['start_date'] = date_query
+            date_query["$lte"] = to_date
+        query["start_date"] = date_query
 
-    blocks = await db.room_blocks.find(query, {'_id': 0}).to_list(1000)
+    blocks = await db.room_blocks.find(query, {"_id": 0}).to_list(1000)
 
     # Filter expired blocks
     today = datetime.now(UTC).date().isoformat()
     for block in blocks:
-        if block.get('end_date') and block['end_date'] < today and block['status'] == 'active':
+        if block.get("end_date") and block["end_date"] < today and block["status"] == "active":
             # Auto-expire
-            await db.room_blocks.update_one(
-                {'id': block['id']},
-                {'$set': {'status': 'expired'}}
-            )
-            block['status'] = 'expired'
+            await db.room_blocks.update_one({"id": block["id"]}, {"$set": {"status": "expired"}})
+            block["status"] = "expired"
 
     return blocks
 
@@ -119,44 +115,40 @@ async def update_room_block(
     _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Update a room block"""
-    existing = await db.room_blocks.find_one({
-        'tenant_id': current_user.tenant_id,
-        'id': block_id
-    })
+    existing = await db.room_blocks.find_one({"tenant_id": current_user.tenant_id, "id": block_id})
 
     if not existing:
         raise HTTPException(404, "Block not found")
 
     # Only allow updates to active blocks
-    if existing['status'] != 'active':
+    if existing["status"] != "active":
         raise HTTPException(400, "Cannot update cancelled or expired blocks")
 
     update_data = {}
-    allowed_fields = ['reason', 'details', 'start_date', 'end_date', 'allow_sell']
+    allowed_fields = ["reason", "details", "start_date", "end_date", "allow_sell"]
 
     for field in allowed_fields:
         if field in updates:
             update_data[field] = updates[field]
 
     if update_data:
-        await db.room_blocks.update_one(
-            {'id': block_id},
-            {'$set': update_data}
-        )
+        await db.room_blocks.update_one({"id": block_id}, {"$set": update_data})
 
         # Audit log
-        await db.audit_logs.insert_one({
-            'id': str(uuid.uuid4()),
-            'tenant_id': current_user.tenant_id,
-            'action': 'room_block_updated',
-            'entity_type': 'room_block',
-            'entity_id': block_id,
-            'user': current_user.name,
-            'timestamp': datetime.now(UTC).isoformat(),
-            'details': update_data
-        })
+        await db.audit_logs.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": current_user.tenant_id,
+                "action": "room_block_updated",
+                "entity_type": "room_block",
+                "entity_id": block_id,
+                "user": current_user.name,
+                "timestamp": datetime.now(UTC).isoformat(),
+                "details": update_data,
+            }
+        )
 
-    updated = await db.room_blocks.find_one({'id': block_id}, {'_id': 0})
+    updated = await db.room_blocks.find_one({"id": block_id}, {"_id": 0})
     return updated
 
 
@@ -176,20 +168,16 @@ async def cancel_room_block(
 # Availability (read path — queries blocks + bookings)
 # ═══════════════════════════════════════════════════════════════════
 
+
 # rbac-allow: cache-rbac — operasyonel oda müsaitliği tüm rolelere açık (sat-bil + servis koordinasyon)
 @router.get("/pms/rooms/availability")
 @cached(ttl=120, key_prefix="rooms_availability")  # Cache for 2 min
-async def check_room_availability(
-    request: Request,
-    check_in: str | None = None,
-    check_out: str | None = None,
-    room_type: str | None = None,
-    current_user: User = Depends(get_current_user)
-):
+async def check_room_availability(request: Request, check_in: str | None = None, check_out: str | None = None, room_type: str | None = None, current_user: User = Depends(get_current_user)):
     """Check room availability including blocks"""
     # Tur 3: defaults — today / today+1 when omitted
     from datetime import date as _d
     from datetime import timedelta as _td
+
     if not check_in:
         check_in = _d.today().isoformat()
     if not check_out:
@@ -226,55 +214,36 @@ async def _legacy_check_room_availability(
     check_out: str,
     room_type: str | None = None,
 ):
-    query = {'tenant_id': tenant_id}
+    query = {"tenant_id": tenant_id}
 
     if room_type:
-        query['room_type'] = room_type
+        query["room_type"] = room_type
 
-    rooms = await db.rooms.find(query, {'_id': 0}).to_list(1000)
-    bookings = await db.bookings.find({
-        'tenant_id': tenant_id,
-        'status': {'$in': ['confirmed', 'checked_in', 'guaranteed']},
-        'check_in': {'$lt': check_out},
-        'check_out': {'$gt': check_in}
-    }, {'_id': 0}).to_list(1000)
-    blocks = await db.room_blocks.find({
-        'tenant_id': tenant_id,
-        'status': 'active',
-        'start_date': {'$lt': check_out},
-        '$or': [
-            {'end_date': {'$gt': check_in}},
-            {'end_date': None}
-        ]
-    }, {'_id': 0}).to_list(1000)
+    rooms = await db.rooms.find(query, {"_id": 0}).to_list(1000)
+    bookings = await db.bookings.find(
+        {"tenant_id": tenant_id, "status": {"$in": ["confirmed", "checked_in", "guaranteed"]}, "check_in": {"$lt": check_out}, "check_out": {"$gt": check_in}}, {"_id": 0}
+    ).to_list(1000)
+    blocks = await db.room_blocks.find(
+        {"tenant_id": tenant_id, "status": "active", "start_date": {"$lt": check_out}, "$or": [{"end_date": {"$gt": check_in}}, {"end_date": None}]}, {"_id": 0}
+    ).to_list(1000)
 
     available = []
     for room in rooms:
-        is_booked = any(b['room_id'] == room['id'] for b in bookings)
-        room_blocks = [b for b in blocks if b['room_id'] == room['id']]
-        is_blocked = any(not b.get('allow_sell', False) for b in room_blocks)
+        is_booked = any(b["room_id"] == room["id"] for b in bookings)
+        room_blocks = [b for b in blocks if b["room_id"] == room["id"]]
+        is_blocked = any(not b.get("allow_sell", False) for b in room_blocks)
 
         if not is_booked and not is_blocked:
-            available.append({
-                **room,
-                'available': True,
-                'occupancy_status': 'free'
-            })
+            available.append({**room, "available": True, "occupancy_status": "free"})
         else:
             unavailable_reason = []
             if is_booked:
-                unavailable_reason.append('booked')
+                unavailable_reason.append("booked")
             if is_blocked:
-                block_info = [b for b in room_blocks if not b.get('allow_sell')]
+                block_info = [b for b in room_blocks if not b.get("allow_sell")]
                 if block_info:
                     unavailable_reason.append(f"{block_info[0]['type']}")
 
-            available.append({
-                **room,
-                'available': False,
-                'reason': ', '.join(unavailable_reason),
-                'blocks': room_blocks,
-                'occupancy_status': 'occupied' if is_booked else 'blocked'
-            })
+            available.append({**room, "available": False, "reason": ", ".join(unavailable_reason), "blocks": room_blocks, "occupancy_status": "occupied" if is_booked else "blocked"})
 
     return available

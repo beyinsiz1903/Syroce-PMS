@@ -9,6 +9,7 @@ Provides a unified view of:
 
 Supports: retry, send_to_review, dismiss, escalate, bulk operations.
 """
+
 import logging
 from typing import Any
 
@@ -40,58 +41,104 @@ class ErrorQueueService:
         }
 
     async def retry_item(
-        self, tenant_id: str, item_id: str, error_type: str,
+        self,
+        tenant_id: str,
+        item_id: str,
+        error_type: str,
         actor_id: str | None = None,
     ) -> dict[str, Any]:
         """Retry a single error queue item."""
         if error_type == "sync_failed":
-            await self._repo.update_sync_job(item_id, {
-                "status": "pending",
-                "last_error": None,
-                "completed_at": None,
-            })
+            await self._repo.update_sync_job(
+                item_id,
+                {
+                    "status": "pending",
+                    "last_error": None,
+                    "completed_at": None,
+                },
+            )
         elif error_type == "import_failed":
-            await self._repo.update_imported_reservation(tenant_id, item_id, {
-                "import_status": "review",
-            })
+            await self._repo.update_imported_reservation(
+                tenant_id,
+                item_id,
+                {
+                    "import_status": "review",
+                },
+            )
         elif error_type == "ack_failed":
-            await self._repo.update_imported_reservation(tenant_id, item_id, {
-                "ack_status": "ack_pending",
-            })
+            await self._repo.update_imported_reservation(
+                tenant_id,
+                item_id,
+                {
+                    "ack_status": "ack_pending",
+                },
+            )
         else:
             return {"success": False, "reason": f"Unknown error type: {error_type}"}
 
-        await self._audit(tenant_id, "", "", AuditAction.MANUAL_RETRY, actor_id, {
-            "item_id": item_id, "error_type": error_type,
-        })
+        await self._audit(
+            tenant_id,
+            "",
+            "",
+            AuditAction.MANUAL_RETRY,
+            actor_id,
+            {
+                "item_id": item_id,
+                "error_type": error_type,
+            },
+        )
         return {"success": True, "item_id": item_id, "action": "retried"}
 
     async def dismiss_item(
-        self, tenant_id: str, item_id: str, error_type: str,
-        reason: str = "", actor_id: str | None = None,
+        self,
+        tenant_id: str,
+        item_id: str,
+        error_type: str,
+        reason: str = "",
+        actor_id: str | None = None,
     ) -> dict[str, Any]:
         """Dismiss a single error queue item."""
         if error_type == "sync_failed":
-            await self._repo.update_sync_job(item_id, {
-                "status": "dismissed",
-                "dismiss_reason": reason,
-            })
+            await self._repo.update_sync_job(
+                item_id,
+                {
+                    "status": "dismissed",
+                    "dismiss_reason": reason,
+                },
+            )
         elif error_type in ("import_failed", "ack_failed"):
-            await self._repo.update_imported_reservation(tenant_id, item_id, {
-                "import_status": "dismissed",
-                "dismiss_reason": reason,
-            })
-        await self._audit(tenant_id, "", "", AuditAction.MANUAL_REVIEW_DISMISSED, actor_id, {
-            "item_id": item_id, "error_type": error_type, "reason": reason,
-        })
+            await self._repo.update_imported_reservation(
+                tenant_id,
+                item_id,
+                {
+                    "import_status": "dismissed",
+                    "dismiss_reason": reason,
+                },
+            )
+        await self._audit(
+            tenant_id,
+            "",
+            "",
+            AuditAction.MANUAL_REVIEW_DISMISSED,
+            actor_id,
+            {
+                "item_id": item_id,
+                "error_type": error_type,
+                "reason": reason,
+            },
+        )
         return {"success": True, "item_id": item_id, "action": "dismissed"}
 
     async def escalate_item(
-        self, tenant_id: str, item_id: str, error_type: str,
+        self,
+        tenant_id: str,
+        item_id: str,
+        error_type: str,
         actor_id: str | None = None,
     ) -> dict[str, Any]:
         """Escalate an error item by creating a reconciliation issue."""
         from ..application.reconciliation_service import ReconciliationService
+
         recon = ReconciliationService(self._repo)
 
         connector_id = ""
@@ -121,13 +168,24 @@ class ErrorQueueService:
             suggested_actions=["retry_sync"],
         )
 
-        await self._audit(tenant_id, property_id, connector_id, AuditAction.ERROR_ESCALATED, actor_id, {
-            "item_id": item_id, "error_type": error_type,
-        })
+        await self._audit(
+            tenant_id,
+            property_id,
+            connector_id,
+            AuditAction.ERROR_ESCALATED,
+            actor_id,
+            {
+                "item_id": item_id,
+                "error_type": error_type,
+            },
+        )
         return {"success": True, "item_id": item_id, "action": "escalated"}
 
     async def bulk_retry(
-        self, tenant_id: str, item_ids: list[str], error_type: str,
+        self,
+        tenant_id: str,
+        item_ids: list[str],
+        error_type: str,
         actor_id: str | None = None,
     ) -> dict[str, Any]:
         """Bulk retry multiple error queue items."""
@@ -139,14 +197,26 @@ class ErrorQueueService:
                 r = await self.retry_item(tenant_id, item_id, error_type, actor_id)
                 if r.get("success"):
                     count += 1
-        await self._audit(tenant_id, "", "", AuditAction.BULK_RETRY, actor_id, {
-            "count": count, "error_type": error_type,
-        })
+        await self._audit(
+            tenant_id,
+            "",
+            "",
+            AuditAction.BULK_RETRY,
+            actor_id,
+            {
+                "count": count,
+                "error_type": error_type,
+            },
+        )
         return {"success": True, "retried_count": count, "requested": len(item_ids)}
 
     async def bulk_dismiss(
-        self, tenant_id: str, item_ids: list[str], error_type: str,
-        reason: str = "", actor_id: str | None = None,
+        self,
+        tenant_id: str,
+        item_ids: list[str],
+        error_type: str,
+        reason: str = "",
+        actor_id: str | None = None,
     ) -> dict[str, Any]:
         """Bulk dismiss multiple error queue items."""
         count = 0
@@ -154,14 +224,27 @@ class ErrorQueueService:
             r = await self.dismiss_item(tenant_id, item_id, error_type, reason, actor_id)
             if r.get("success"):
                 count += 1
-        await self._audit(tenant_id, "", "", AuditAction.BULK_DISMISS, actor_id, {
-            "count": count, "error_type": error_type, "reason": reason,
-        })
+        await self._audit(
+            tenant_id,
+            "",
+            "",
+            AuditAction.BULK_DISMISS,
+            actor_id,
+            {
+                "count": count,
+                "error_type": error_type,
+                "reason": reason,
+            },
+        )
         return {"success": True, "dismissed_count": count, "requested": len(item_ids)}
 
     async def _audit(self, tenant_id, property_id, connector_id, action, actor_id=None, metadata=None):
         log = IntegrationAuditLog(
-            tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-            action=action, actor_id=actor_id, metadata=metadata or {},
+            tenant_id=tenant_id,
+            property_id=property_id,
+            connector_id=connector_id,
+            action=action,
+            actor_id=actor_id,
+            metadata=metadata or {},
         )
         await self._repo.create_audit_log(log.to_doc())

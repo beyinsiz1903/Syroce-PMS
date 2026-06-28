@@ -3,6 +3,7 @@ Domain Router: Channel Manager
 
 Extracted from legacy_routes.py — CM ARI endpoints + Admin API key management.
 """
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -33,18 +34,22 @@ from models.schemas import User
 try:
     from models.enums import BlockStatus
 except ImportError:
+
     class BlockStatus:
         ACTIVE = "active"
+
 
 router = APIRouter(prefix="/api", tags=["channel-manager-domain"])
 
 
 # ── CM Models ───────────────────────────────────────────────────────
 
+
 class CMActorType(str, Enum):
     user = "user"
     agency = "agency"
     system = "system"
+
 
 class CMOrigin(str, Enum):
     ui = "ui"
@@ -52,11 +57,13 @@ class CMOrigin(str, Enum):
     webhook = "webhook"
     system = "system"
 
+
 class CMScope(str, Enum):
     room = "room"
     booking = "booking"
     rate = "rate"
     availability = "availability"
+
 
 class CMAction(str, Enum):
     create = "create"
@@ -64,6 +71,7 @@ class CMAction(str, Enum):
     delete = "delete"
     confirm = "confirm"
     cancel = "cancel"
+
 
 class APIKeyModel(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -79,12 +87,14 @@ class APIKeyModel(BaseModel):
     last_used_at: str | None = None
     scopes: list[str] = ["cm:read", "cm:write"]
 
+
 class CMRestrictions(BaseModel):
     stop_sell: bool = False
     min_stay: int = 1
     cta: bool = False
     ctd: bool = False
     max_stay: int | None = None
+
 
 class CMRateInfo(BaseModel):
     amount: float | None = None
@@ -94,6 +104,7 @@ class CMRateInfo(BaseModel):
     rate_plan_id: str | None = None
     board_code: str | None = None
 
+
 class CMARIDay(BaseModel):
     date: str
     available: int
@@ -101,10 +112,12 @@ class CMARIDay(BaseModel):
     restrictions: CMRestrictions
     rate: CMRateInfo
 
+
 class CMARIRoomType(BaseModel):
     room_type_id: str
     name: str
     days: list[CMARIDay]
+
 
 class CMARIV2Response(BaseModel):
     hotel_id: str
@@ -112,6 +125,7 @@ class CMARIV2Response(BaseModel):
     date_from: str
     date_to: str
     room_types: list[CMARIRoomType]
+
 
 class CMARIResponseDay(BaseModel):
     date: str
@@ -123,6 +137,7 @@ class CMARIResponseDay(BaseModel):
     currency: str = "TRY"
     rate_source: str | None = None
 
+
 class CMARIResponse(BaseModel):
     tenant_id: str
     start_date: str
@@ -132,9 +147,7 @@ class CMARIResponse(BaseModel):
 
 # ── CM Helpers ──────────────────────────────────────────────────────
 
-CM_PARTNER_WEBHOOK_URL = os.environ.get(
-    "CM_PARTNER_WEBHOOK_URL", "https://agency.syroce.com/webhooks/cm"
-)
+CM_PARTNER_WEBHOOK_URL = os.environ.get("CM_PARTNER_WEBHOOK_URL", "https://agency.syroce.com/webhooks/cm")
 
 
 def _hash_api_key(raw: str) -> str:
@@ -157,6 +170,7 @@ async def cm_push_event(event: dict):
     """Push CM events to partner webhook (best-effort)."""
     try:
         import httpx
+
         async with httpx.AsyncClient(timeout=10.0) as client:
             await client.post(CM_PARTNER_WEBHOOK_URL, json=event)
     except Exception as e:
@@ -178,9 +192,7 @@ async def get_cm_actor(
     request: Request,
     key_ctx: dict = Depends(require_cm_api_key),
 ) -> dict:
-    api_key = await db.api_keys.find_one(
-        {"key_hash": key_ctx["hash"], "is_active": True}, {"_id": 0}
-    )
+    api_key = await db.api_keys.find_one({"key_hash": key_ctx["hash"], "is_active": True}, {"_id": 0})
     if not api_key:
         raise HTTPException(status_code=401, detail="Invalid API key")
 
@@ -213,9 +225,7 @@ async def _temp_require_super_admin(
         user_id = payload.get("user_id")
         if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-        user_doc = await db.users.find_one(
-            {"$or": [{"id": user_id}, {"user_id": user_id}]}, {"_id": 0}
-        )
+        user_doc = await db.users.find_one({"$or": [{"id": user_id}, {"user_id": user_id}]}, {"_id": 0})
         if not user_doc:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
         user = User(**user_doc)
@@ -230,6 +240,7 @@ async def _temp_require_super_admin(
 
 # ── Day-overlap helpers ─────────────────────────────────────────────
 
+
 def _overlaps_day(check_in_s: str, check_out_s: str, day_s: str) -> bool:
     return check_in_s <= day_s < check_out_s
 
@@ -241,6 +252,7 @@ def _block_overlaps_day(start_s: str, end_s: str | None, day_s: str) -> bool:
 
 
 # ── CM ARI Endpoints ────────────────────────────────────────────────
+
 
 @router.get("/cm/ari", response_model=CMARIResponse)
 async def cm_get_ari(
@@ -294,7 +306,7 @@ async def cm_get_ari(
     blocks = await db.room_blocks.find(
         {
             "tenant_id": tenant_id,
-            "status": BlockStatus.ACTIVE if isinstance(BlockStatus.ACTIVE, str) else BlockStatus.ACTIVE.value if hasattr(BlockStatus.ACTIVE, 'value') else "active",
+            "status": BlockStatus.ACTIVE if isinstance(BlockStatus.ACTIVE, str) else BlockStatus.ACTIVE.value if hasattr(BlockStatus.ACTIVE, "value") else "active",
             "start_date": {"$lt": end_date},
             "$or": [{"end_date": None}, {"end_date": {"$gt": start_date}}],
         },
@@ -303,22 +315,22 @@ async def cm_get_ari(
 
     stop_sell = False
     if operator_id:
-        ss = await db.stop_sales.find_one(
-            {"tenant_id": tenant_id, "operator_id": operator_id, "active": True}, {"_id": 0}
-        )
+        ss = await db.stop_sales.find_one({"tenant_id": tenant_id, "operator_id": operator_id, "active": True}, {"_id": 0})
         stop_sell = bool(ss)
 
     periods = []
     if operator_id:
         room_type_id = room_type or rooms[0].get("room_type")
-        periods = await db.rate_periods.find(
-            {"tenant_id": tenant_id, "operator_id": operator_id, "room_type_id": room_type_id},
-            {"_id": 0},
-        ).sort("start_date", 1).to_list(200)
+        periods = (
+            await db.rate_periods.find(
+                {"tenant_id": tenant_id, "operator_id": operator_id, "room_type_id": room_type_id},
+                {"_id": 0},
+            )
+            .sort("start_date", 1)
+            .to_list(200)
+        )
 
-    rate_plans = await db.rate_plans.find(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    ).to_list(200)
+    rate_plans = await db.rate_plans.find({"tenant_id": tenant_id, "is_active": True}, {"_id": 0}).to_list(200)
 
     rooms_by_type: dict[str, list[str]] = {}
     for r in rooms:
@@ -371,23 +383,29 @@ async def cm_get_ari(
                 rate_source = "rate_plans"
 
             if rate_val is None:
-                room_doc = await db.rooms.find_one(
-                    {"tenant_id": tenant_id, "room_type": rt}, {"_id": 0, "base_price": 1}
-                )
+                room_doc = await db.rooms.find_one({"tenant_id": tenant_id, "room_type": rt}, {"_id": 0, "base_price": 1})
                 rate_val = room_doc.get("base_price") if room_doc else None
                 rate_source = "rooms.base_price"
 
             days.append(
                 CMARIResponseDay(
-                    date=day_s, room_type=rt, available=available, sold=sold,
-                    stop_sell=stop_sell, rate=rate_val, currency=currency, rate_source=rate_source,
+                    date=day_s,
+                    room_type=rt,
+                    available=available,
+                    sold=sold,
+                    stop_sell=stop_sell,
+                    rate=rate_val,
+                    currency=currency,
+                    rate_source=rate_source,
                 )
             )
         cur = cur + timedelta(days=1)
 
     await log_audit_event(
-        tenant_id=tenant_id, user_id=actor["actor_id"],
-        action="cm_read_ari", entity_type="cm",
+        tenant_id=tenant_id,
+        user_id=actor["actor_id"],
+        action="cm_read_ari",
+        entity_type="cm",
         entity_id=f"{start_date}:{end_date}",
         details=f"CM ARI read (room_type={room_type}, operator_id={operator_id})",
         db=db,
@@ -454,7 +472,7 @@ async def cm_get_ari_v2(
     blocks = await db.room_blocks.find(
         {
             "tenant_id": tenant_id,
-            "status": BlockStatus.ACTIVE if isinstance(BlockStatus.ACTIVE, str) else BlockStatus.ACTIVE.value if hasattr(BlockStatus.ACTIVE, 'value') else "active",
+            "status": BlockStatus.ACTIVE if isinstance(BlockStatus.ACTIVE, str) else BlockStatus.ACTIVE.value if hasattr(BlockStatus.ACTIVE, "value") else "active",
             "start_date": {"$lt": end_date},
             "$or": [{"end_date": None}, {"end_date": {"$gt": start_date}}],
         },
@@ -463,22 +481,22 @@ async def cm_get_ari_v2(
 
     stop_sell = False
     if operator_id:
-        ss = await db.stop_sales.find_one(
-            {"tenant_id": tenant_id, "operator_id": operator_id, "active": True}, {"_id": 0}
-        )
+        ss = await db.stop_sales.find_one({"tenant_id": tenant_id, "operator_id": operator_id, "active": True}, {"_id": 0})
         stop_sell = bool(ss)
 
     periods = []
     if operator_id:
         room_type_id = room_type or rooms[0].get("room_type")
-        periods = await db.rate_periods.find(
-            {"tenant_id": tenant_id, "operator_id": operator_id, "room_type_id": room_type_id},
-            {"_id": 0},
-        ).sort("start_date", 1).to_list(500)
+        periods = (
+            await db.rate_periods.find(
+                {"tenant_id": tenant_id, "operator_id": operator_id, "room_type_id": room_type_id},
+                {"_id": 0},
+            )
+            .sort("start_date", 1)
+            .to_list(500)
+        )
 
-    rate_plans = await db.rate_plans.find(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    ).to_list(200)
+    rate_plans = await db.rate_plans.find({"tenant_id": tenant_id, "is_active": True}, {"_id": 0}).to_list(200)
     default_plan = rate_plans[0] if rate_plans else {}
 
     def _resolve_period(day_s: str) -> dict | None:
@@ -541,15 +559,17 @@ async def cm_get_ari_v2(
                 board_code = default_plan.get("meal_plan") or default_plan.get("board_code")
 
             if rate_amount is None:
-                room_doc = await db.rooms.find_one(
-                    {"tenant_id": tenant_id, "room_type": rt}, {"_id": 0, "base_price": 1}
-                )
+                room_doc = await db.rooms.find_one({"tenant_id": tenant_id, "room_type": rt}, {"_id": 0, "base_price": 1})
                 rate_amount = room_doc.get("base_price") if room_doc else None
                 rate_source = "rooms.base_price"
 
             rate_info = CMRateInfo(
-                amount=rate_amount, currency=currency, tax_included=True,
-                source=rate_source, rate_plan_id=rate_plan_id, board_code=board_code,
+                amount=rate_amount,
+                currency=currency,
+                tax_included=True,
+                source=rate_source,
+                rate_plan_id=rate_plan_id,
+                board_code=board_code,
             )
 
             existing = next((x for x in room_types_out if x.room_type_id == rt), None)
@@ -557,27 +577,31 @@ async def cm_get_ari_v2(
                 existing = CMARIRoomType(room_type_id=rt, name=rt.title(), days=[])
                 room_types_out.append(existing)
 
-            existing.days.append(
-                CMARIDay(date=day_s, available=available, sold=sold, restrictions=restrictions, rate=rate_info)
-            )
+            existing.days.append(CMARIDay(date=day_s, available=available, sold=sold, restrictions=restrictions, rate=rate_info))
 
         cur = cur + timedelta(days=1)
 
     await log_audit_event(
-        tenant_id=tenant_id, user_id=actor["actor_id"],
-        action="cm_read_ari_v2", entity_type="cm",
+        tenant_id=tenant_id,
+        user_id=actor["actor_id"],
+        action="cm_read_ari_v2",
+        entity_type="cm",
         entity_id=f"{start_date}:{end_date}",
         details=f"CM ARI v2 read (room_type={room_type}, operator_id={operator_id})",
         db=db,
     )
 
     return CMARIV2Response(
-        hotel_id=tenant_id, currency=currency,
-        date_from=start_date, date_to=end_date, room_types=room_types_out,
+        hotel_id=tenant_id,
+        currency=currency,
+        date_from=start_date,
+        date_to=end_date,
+        room_types=room_types_out,
     )
 
 
 # ── Admin API Key Management ────────────────────────────────────────
+
 
 @router.post("/admin/api-keys")
 async def create_partner_api_key(
@@ -619,16 +643,12 @@ async def create_partner_api_key(
 
 @router.get("/admin/api-keys")
 async def list_partner_api_keys(current_user: Any = Depends(_temp_require_super_admin)):
-    keys = await db.api_keys.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0, "key_hash": 0}
-    ).sort("created_at", -1).to_list(200)
+    keys = await db.api_keys.find({"tenant_id": current_user.tenant_id}, {"_id": 0, "key_hash": 0}).sort("created_at", -1).to_list(200)
     return {"keys": keys, "count": len(keys)}
 
 
 @router.post("/admin/api-keys/{key_id}/revoke")
-async def revoke_partner_api_key(
-    key_id: str, current_user: Any = Depends(_temp_require_super_admin)
-):
+async def revoke_partner_api_key(key_id: str, current_user: Any = Depends(_temp_require_super_admin)):
     res = await db.api_keys.update_one(
         {"tenant_id": current_user.tenant_id, "id": key_id},
         {"$set": {"is_active": False}},

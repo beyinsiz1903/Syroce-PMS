@@ -2,6 +2,7 @@
 Live Ops Alert Integration — Production alert management with webhook delivery,
 severity mapping, cooldown/dedup, runbook hints, and PagerDuty/Slack abstraction.
 """
+
 import hashlib
 import logging
 import os
@@ -102,16 +103,18 @@ class LiveOpsAlertManager:
         last = self._last_fired.get(alert_type, 0)
         return (time.time() - last) < cooldown
 
-    async def fire_alert(self, alert_type: str, context: dict[str, Any] | None = None,
-                         user_id: str = "system") -> dict[str, Any]:
+    async def fire_alert(self, alert_type: str, context: dict[str, Any] | None = None, user_id: str = "system") -> dict[str, Any]:
         """Fire a production alert with dedup and cooldown."""
         context = context or {}
-        defn = ALERT_DEFINITIONS.get(alert_type, {
-            "severity": AlertSeverity.MEDIUM,
-            "description": alert_type,
-            "runbook": "No runbook available",
-            "cooldown_sec": 60,
-        })
+        defn = ALERT_DEFINITIONS.get(
+            alert_type,
+            {
+                "severity": AlertSeverity.MEDIUM,
+                "description": alert_type,
+                "runbook": "No runbook available",
+                "cooldown_sec": 60,
+            },
+        )
 
         # Cooldown check
         if self._is_cooled_down(alert_type):
@@ -143,7 +146,7 @@ class LiveOpsAlertManager:
 
         self._alert_history.append(alert)
         if len(self._alert_history) > self._max_history:
-            self._alert_history = self._alert_history[-self._max_history:]
+            self._alert_history = self._alert_history[-self._max_history :]
 
         return {"status": "fired", "alert": alert}
 
@@ -169,8 +172,7 @@ class LiveOpsAlertManager:
                 payload = {
                     "text": f":rotating_light: *{alert['severity'].upper()}* — {alert['description']}",
                     "blocks": [
-                        {"type": "section", "text": {"type": "mrkdwn",
-                            "text": f"*Alert:* {alert['description']}\n*Severity:* {alert['severity']}\n*Runbook:* {alert.get('runbook', 'N/A')}"}},
+                        {"type": "section", "text": {"type": "mrkdwn", "text": f"*Alert:* {alert['description']}\n*Severity:* {alert['severity']}\n*Runbook:* {alert.get('runbook', 'N/A')}"}},
                     ],
                 }
             elif target_name == "pagerduty":
@@ -188,6 +190,7 @@ class LiveOpsAlertManager:
             delivery = {"target": target_name, "url_prefix": url[:30] + "...", "status": "pending"}
             try:
                 import httpx
+
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     resp = await client.post(url, json=payload)
                     delivery["status"] = "delivered" if resp.status_code < 400 else "failed"
@@ -200,8 +203,7 @@ class LiveOpsAlertManager:
                 delivery["error"] = str(e)[:100]
 
             results.append(delivery)
-            self._delivery_log.append({**delivery, "alert_id": alert["alert_id"],
-                                        "timestamp": datetime.now(UTC).isoformat()})
+            self._delivery_log.append({**delivery, "alert_id": alert["alert_id"], "timestamp": datetime.now(UTC).isoformat()})
 
         return results
 

@@ -4,6 +4,7 @@ Phase 7 — Pilot Monitoring Pack Service
 Provides tenant-specific monitoring dashboards, operational alerts,
 and daily/weekly reports for pilot hotels.
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -29,6 +30,7 @@ class PilotMonitoringService:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     async def get_tenant_dashboard(self, ctx: OperationContext) -> ServiceResult:
@@ -79,18 +81,18 @@ class PilotMonitoringService:
             "generated_at": now.isoformat(),
         }
 
-        await self._db.pilot_reports.insert_one({
-            "tenant_id": ctx.tenant_id,
-            "report": report,
-            "generated_at": now.isoformat(),
-        })
+        await self._db.pilot_reports.insert_one(
+            {
+                "tenant_id": ctx.tenant_id,
+                "report": report,
+                "generated_at": now.isoformat(),
+            }
+        )
 
         return ServiceResult.success(report)
 
     async def get_report_history(self, ctx: OperationContext, limit: int = 10) -> ServiceResult:
-        reports = await self._db.pilot_reports.find(
-            {"tenant_id": ctx.tenant_id}, {"_id": 0}
-        ).sort("generated_at", -1).limit(limit).to_list(limit)
+        reports = await self._db.pilot_reports.find({"tenant_id": ctx.tenant_id}, {"_id": 0}).sort("generated_at", -1).limit(limit).to_list(limit)
         return ServiceResult.success({"reports": reports, "count": len(reports)})
 
     async def _get_reservation_metrics(self, ctx: OperationContext, since: str) -> dict:
@@ -117,7 +119,8 @@ class PilotMonitoringService:
 
     async def _get_night_audit_status(self, ctx: OperationContext) -> dict:
         latest = await self._db.night_audit_runs.find_one(
-            {"tenant_id": ctx.tenant_id}, {"_id": 0, "status": 1, "business_date": 1, "duration_ms": 1},
+            {"tenant_id": ctx.tenant_id},
+            {"_id": 0, "status": 1, "business_date": 1, "duration_ms": 1},
             sort=[("started_at", -1)],
         )
         return latest or {"status": "no_runs", "business_date": None}
@@ -127,9 +130,7 @@ class PilotMonitoringService:
         return {"orders_24h": orders}
 
     async def _get_active_alerts(self, ctx: OperationContext) -> list:
-        alerts = await self._db.enriched_alerts.find(
-            {"tenant_id": ctx.tenant_id, "status": {"$ne": "resolved"}}, {"_id": 0}
-        ).sort("fired_at", -1).limit(10).to_list(10)
+        alerts = await self._db.enriched_alerts.find({"tenant_id": ctx.tenant_id, "status": {"$ne": "resolved"}}, {"_id": 0}).sort("fired_at", -1).limit(10).to_list(10)
         return alerts
 
 

@@ -6,6 +6,7 @@ runtime validation, provider validation, incident drills,
 tenant isolation, observability, audit timeline, pilot checklist.
 Produces final go-live score with breakdown.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -17,13 +18,13 @@ logger = logging.getLogger(__name__)
 
 # Weight allocation per category (total = 100)
 CATEGORY_WEIGHTS = {
-    "runtime_validation": 20,    # load/stress/soak/chaos
-    "provider_validation": 15,   # CM provider contract
-    "incident_response": 15,     # drill results + recovery tools
-    "tenant_isolation": 10,      # isolation score
-    "observability": 15,         # metrics/logs/alerts/traces
-    "audit_timeline": 10,        # compliance readiness
-    "pilot_checklist": 15,       # operational readiness
+    "runtime_validation": 20,  # load/stress/soak/chaos
+    "provider_validation": 15,  # CM provider contract
+    "incident_response": 15,  # drill results + recovery tools
+    "tenant_isolation": 10,  # isolation score
+    "observability": 15,  # metrics/logs/alerts/traces
+    "audit_timeline": 10,  # compliance readiness
+    "pilot_checklist": 15,  # operational readiness
 }
 
 MATURITY_LEVELS = {
@@ -40,6 +41,7 @@ class GoLiveReadinessScorer:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     async def compute_score(self, ctx: OperationContext) -> ServiceResult:
@@ -88,11 +90,13 @@ class GoLiveReadinessScorer:
         blockers = []
         for cat, data in categories.items():
             if data.get("score", 0) < 50:
-                blockers.append({
-                    "category": cat,
-                    "score": data["score"],
-                    "issues": data.get("issues", []),
-                })
+                blockers.append(
+                    {
+                        "category": cat,
+                        "score": data["score"],
+                        "issues": data.get("issues", []),
+                    }
+                )
 
         result = {
             "overall_score": overall,
@@ -113,11 +117,13 @@ class GoLiveReadinessScorer:
         }
 
         # Persist score
-        await self._db.golive_scores.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": ctx.tenant_id,
-            **result,
-        })
+        await self._db.golive_scores.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": ctx.tenant_id,
+                **result,
+            }
+        )
 
         return ServiceResult.success(result)
 
@@ -155,9 +161,7 @@ class GoLiveReadinessScorer:
         return {"score": score, "issues": issues}
 
     async def _score_incident_response(self, ctx: OperationContext) -> dict:
-        drills = await self._db.incident_drills.find(
-            {"tenant_id": ctx.tenant_id}, {"_id": 0}
-        ).to_list(20)
+        drills = await self._db.incident_drills.find({"tenant_id": ctx.tenant_id}, {"_id": 0}).to_list(20)
         if not drills:
             return {"score": 40, "issues": ["No incident drills executed"]}
         within_threshold = sum(1 for d in drills if d.get("detection_within_threshold"))
@@ -178,6 +182,7 @@ class GoLiveReadinessScorer:
 
     async def _score_observability(self, ctx: OperationContext) -> dict:
         from modules.observability.alert_enrichment import ALERT_RULES
+
         checks = 0
         passed = 0
 
@@ -207,9 +212,7 @@ class GoLiveReadinessScorer:
     async def _score_audit_timeline(self, ctx: OperationContext) -> dict:
         # Check if audit timeline has data
         audit_count = await self._db.audit_logs.count_documents({"tenant_id": ctx.tenant_id})
-        has_snapshots = await self._db.audit_logs.count_documents(
-            {"tenant_id": ctx.tenant_id, "before_snapshot": {"$exists": True}}
-        )
+        has_snapshots = await self._db.audit_logs.count_documents({"tenant_id": ctx.tenant_id, "before_snapshot": {"$exists": True}})
         score = 70
         issues = []
         if audit_count > 0:
@@ -222,6 +225,7 @@ class GoLiveReadinessScorer:
 
     async def _score_pilot_checklist(self, ctx: OperationContext) -> dict:
         from ops.pilot_readiness import PilotReadinessService
+
         svc = PilotReadinessService()
         result = await svc.run_readiness_check(ctx)
         if not result.ok:
@@ -231,13 +235,9 @@ class GoLiveReadinessScorer:
         issues = [b["name"] for b in data.get("critical_blockers", [])]
         return {"score": score, "issues": issues}
 
-    async def get_score_history(
-        self, ctx: OperationContext, limit: int = 10
-    ) -> ServiceResult:
+    async def get_score_history(self, ctx: OperationContext, limit: int = 10) -> ServiceResult:
         """Get historical go-live scores."""
-        scores = await self._db.golive_scores.find(
-            {"tenant_id": ctx.tenant_id}, {"_id": 0}
-        ).sort("computed_at", -1).limit(limit).to_list(limit)
+        scores = await self._db.golive_scores.find({"tenant_id": ctx.tenant_id}, {"_id": 0}).sort("computed_at", -1).limit(limit).to_list(limit)
         return ServiceResult.success({"scores": scores, "count": len(scores)})
 
 

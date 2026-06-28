@@ -4,6 +4,7 @@ Pilot Hotel Readiness — Checklist & Validation
 Pre-pilot validation, feature toggles, onboarding runbook,
 rollback plan, tenant monitoring pack, success metrics.
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -47,11 +48,10 @@ class PilotReadinessService:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
-    async def run_readiness_check(
-        self, ctx: OperationContext
-    ) -> ServiceResult:
+    async def run_readiness_check(self, ctx: OperationContext) -> ServiceResult:
         """Execute automated readiness checks and return combined checklist."""
         now = datetime.now(UTC)
         results = []
@@ -61,17 +61,17 @@ class PilotReadinessService:
                 passed = await self._auto_check(ctx, item["id"])
             else:
                 # Check manual sign-off
-                signoff = await self._db.pilot_signoffs.find_one(
-                    {"check_id": item["id"], "tenant_id": ctx.tenant_id}
-                )
+                signoff = await self._db.pilot_signoffs.find_one({"check_id": item["id"], "tenant_id": ctx.tenant_id})
                 passed = signoff is not None and signoff.get("signed_off", False)
 
-            results.append({
-                **item,
-                "passed": passed,
-                "checked_at": now.isoformat(),
-                "auto_check": item["auto_check"],
-            })
+            results.append(
+                {
+                    **item,
+                    "passed": passed,
+                    "checked_at": now.isoformat(),
+                    "auto_check": item["auto_check"],
+                }
+            )
 
         passed_count = sum(1 for r in results if r["passed"])
         total = len(results)
@@ -80,19 +80,18 @@ class PilotReadinessService:
 
         score = round(passed_count / total * 100, 1) if total > 0 else 0
 
-        return ServiceResult.success({
-            "tenant_id": ctx.tenant_id,
-            "ready_for_pilot": ready,
-            "score": score,
-            "passed": passed_count,
-            "total": total,
-            "critical_blockers": [
-                {"id": c["id"], "name": c["name"], "category": c["category"]}
-                for c in critical_failed
-            ],
-            "checklist": results,
-            "checked_at": now.isoformat(),
-        })
+        return ServiceResult.success(
+            {
+                "tenant_id": ctx.tenant_id,
+                "ready_for_pilot": ready,
+                "score": score,
+                "passed": passed_count,
+                "total": total,
+                "critical_blockers": [{"id": c["id"], "name": c["name"], "category": c["category"]} for c in critical_failed],
+                "checklist": results,
+                "checked_at": now.isoformat(),
+            }
+        )
 
     async def _auto_check(self, ctx: OperationContext, check_id: str) -> bool:
         """Run automated checks for known check_ids."""
@@ -100,32 +99,22 @@ class PilotReadinessService:
         now = datetime.now(UTC)
 
         if check_id == "cm_connection":
-            conn = await self._db.channel_connections.find_one(
-                {"tenant_id": tid, "status": "active"}
-            )
+            conn = await self._db.channel_connections.find_one({"tenant_id": tid, "status": "active"})
             return conn is not None
 
         if check_id == "cm_ari_sync":
             since = (now - timedelta(hours=24)).isoformat()
-            total = await self._db.channel_sync_logs.count_documents(
-                {"tenant_id": tid, "sync_type": "ari", "timestamp": {"$gte": since}}
-            )
-            success = await self._db.channel_sync_logs.count_documents(
-                {"tenant_id": tid, "sync_type": "ari", "status": "success", "timestamp": {"$gte": since}}
-            )
+            total = await self._db.channel_sync_logs.count_documents({"tenant_id": tid, "sync_type": "ari", "timestamp": {"$gte": since}})
+            success = await self._db.channel_sync_logs.count_documents({"tenant_id": tid, "sync_type": "ari", "status": "success", "timestamp": {"$gte": since}})
             return (success / total > 0.95) if total > 0 else True  # No syncs = pass
 
         if check_id == "cm_reservation_import":
             since = (now - timedelta(hours=24)).isoformat()
-            failures = await self._db.channel_sync_logs.count_documents(
-                {"tenant_id": tid, "sync_type": "reservation_import", "status": "failed", "timestamp": {"$gte": since}}
-            )
+            failures = await self._db.channel_sync_logs.count_documents({"tenant_id": tid, "sync_type": "reservation_import", "status": "failed", "timestamp": {"$gte": since}})
             return failures == 0
 
         if check_id == "cm_drift_clear":
-            latest = await self._db.drift_scan_results.find_one(
-                {"tenant_id": tid}, sort=[("timestamp", -1)]
-            )
+            latest = await self._db.drift_scan_results.find_one({"tenant_id": tid}, sort=[("timestamp", -1)])
             return (latest.get("critical_drifts", 0) == 0) if latest else True
 
         if check_id == "pms_night_audit_dry":
@@ -136,21 +125,18 @@ class PilotReadinessService:
             return last_dry is not None
 
         if check_id == "queue_health":
-            pending = await self._db.task_queue.count_documents(
-                {"tenant_id": tid, "status": "pending"}
-            )
+            pending = await self._db.task_queue.count_documents({"tenant_id": tid, "status": "pending"})
             return pending < 500
 
         if check_id == "worker_heartbeat":
             since = (now - timedelta(minutes=5)).isoformat()
-            recent = await self._db.task_queue.count_documents(
-                {"tenant_id": tid, "status": "completed", "completed_at": {"$gte": since}}
-            )
+            recent = await self._db.task_queue.count_documents({"tenant_id": tid, "status": "completed", "completed_at": {"$gte": since}})
             return recent > 0 or True  # Pass if no tasks or recent completion
 
         if check_id == "tenant_isolation":
             try:
                 from core.database import _raw_db
+
                 unscoped = await _raw_db["bookings"].count_documents({"tenant_id": {"$exists": False}})
                 return unscoped == 0
             except Exception:
@@ -164,9 +150,7 @@ class PilotReadinessService:
 
         return False
 
-    async def sign_off_check(
-        self, ctx: OperationContext, check_id: str, notes: str = ""
-    ) -> ServiceResult:
+    async def sign_off_check(self, ctx: OperationContext, check_id: str, notes: str = "") -> ServiceResult:
         """Manually sign off a readiness check."""
         valid_ids = {c["id"] for c in PILOT_CHECKLIST}
         if check_id not in valid_ids:
@@ -185,19 +169,17 @@ class PilotReadinessService:
             },
             upsert=True,
         )
-        return ServiceResult.success({
-            "check_id": check_id,
-            "signed_off": True,
-            "signed_off_by": ctx.actor_id,
-        })
+        return ServiceResult.success(
+            {
+                "check_id": check_id,
+                "signed_off": True,
+                "signed_off_by": ctx.actor_id,
+            }
+        )
 
-    async def get_feature_toggles(
-        self, ctx: OperationContext
-    ) -> ServiceResult:
+    async def get_feature_toggles(self, ctx: OperationContext) -> ServiceResult:
         """Get feature toggle state for tenant."""
-        toggles = await self._db.feature_toggles.find(
-            {"tenant_id": ctx.tenant_id}, {"_id": 0}
-        ).to_list(100)
+        toggles = await self._db.feature_toggles.find({"tenant_id": ctx.tenant_id}, {"_id": 0}).to_list(100)
         if not toggles:
             # Default toggles
             toggles = [
@@ -209,9 +191,7 @@ class PilotReadinessService:
             ]
         return ServiceResult.success({"toggles": toggles, "count": len(toggles)})
 
-    async def set_feature_toggle(
-        self, ctx: OperationContext, feature: str, enabled: bool
-    ) -> ServiceResult:
+    async def set_feature_toggle(self, ctx: OperationContext, feature: str, enabled: bool) -> ServiceResult:
         if not getattr(ctx, "actor_is_super_admin", False) and ctx.actor_role not in ("admin", "super_admin"):
             return ServiceResult.fail("Admin only", "FORBIDDEN")
 
@@ -226,10 +206,12 @@ class PilotReadinessService:
             },
             upsert=True,
         )
-        return ServiceResult.success({
-            "feature": feature,
-            "enabled": enabled,
-        })
+        return ServiceResult.success(
+            {
+                "feature": feature,
+                "enabled": enabled,
+            }
+        )
 
 
 pilot_readiness_service = PilotReadinessService()

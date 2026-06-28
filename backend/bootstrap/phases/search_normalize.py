@@ -12,6 +12,7 @@ Wires the ``<field>_lower`` companion fields (see
 Both are PII-safe: they only touch the plaintext fields configured in
 ``NORMALIZED_SEARCH_FIELDS`` (never an encrypted field).
 """
+
 from __future__ import annotations
 
 import logging
@@ -53,14 +54,14 @@ async def ensure_search_normalize_indexes(raw_db) -> list[str]:
             # Stable, descriptive name; dotted paths -> underscores.
             name = f"sn_{leading}_{companion.replace('.', '_')}"
             try:
-                await raw_db[collection].create_index(
-                    [(leading, 1), (companion, 1)], name=name, background=True
-                )
+                await raw_db[collection].create_index([(leading, 1), (companion, 1)], name=name, background=True)
                 created.append(f"{collection}.{name}")
             except Exception as e:  # pragma: no cover - defensive
                 logger.warning(
                     "search-normalize index %s on %s failed: %s",
-                    name, collection, e,
+                    name,
+                    collection,
+                    e,
                 )
     return created
 
@@ -69,9 +70,7 @@ async def _backfill_collection(raw_db, collection: str, fields: list[str]) -> in
     coll = raw_db[collection]
     # Only visit docs missing at least one companion field (one-time scan; cheap
     # no-op once complete because the match set becomes empty).
-    missing_filter = {
-        "$or": [{companion_field(f): {"$exists": False}} for f in fields]
-    }
+    missing_filter = {"$or": [{companion_field(f): {"$exists": False}} for f in fields]}
     projection = {"_id": 1}
     for f in fields:
         # project the source path so we can normalize without a 2nd read
@@ -115,9 +114,7 @@ async def backfill_search_normalize_fields(raw_db) -> dict[str, int]:
             )
             ran[collection] = updated
         except Exception as e:  # pragma: no cover - defensive
-            logger.warning(
-                "search-normalize backfill for %s failed: %s", collection, e
-            )
+            logger.warning("search-normalize backfill for %s failed: %s", collection, e)
     return ran
 
 
@@ -143,20 +140,14 @@ async def ensure_ngram_indexes(raw_db) -> list[str]:
         target = NGRAM_TARGET_FIELD[collection]
         name = ngram_index_name(collection)
         try:
-            await raw_db[collection].create_index(
-                [(leading, 1), (target, 1)], name=name, background=True
-            )
+            await raw_db[collection].create_index([(leading, 1), (target, 1)], name=name, background=True)
             created.append(f"{collection}.{name}")
         except Exception as e:  # pragma: no cover - defensive
-            logger.warning(
-                "ngram index %s on %s failed: %s", name, collection, e
-            )
+            logger.warning("ngram index %s on %s failed: %s", name, collection, e)
     return created
 
 
-async def _backfill_ngram_collection(
-    raw_db, collection: str, source_fields: list[str]
-) -> int:
+async def _backfill_ngram_collection(raw_db, collection: str, source_fields: list[str]) -> int:
     coll = raw_db[collection]
     target = NGRAM_TARGET_FIELD[collection]
     missing_filter = {target: {"$exists": False}}
@@ -191,9 +182,7 @@ async def backfill_ngram_fields(raw_db) -> dict[str, int]:
         if await progress.find_one({"_id": marker_id, "done": True}):
             continue
         try:
-            updated = await _backfill_ngram_collection(
-                raw_db, collection, source_fields
-            )
+            updated = await _backfill_ngram_collection(raw_db, collection, source_fields)
             await progress.update_one(
                 {"_id": marker_id},
                 {"$set": {"done": True, "updated": updated}},
@@ -201,7 +190,5 @@ async def backfill_ngram_fields(raw_db) -> dict[str, int]:
             )
             ran[collection] = updated
         except Exception as e:  # pragma: no cover - defensive
-            logger.warning(
-                "ngram backfill for %s failed: %s", collection, e
-            )
+            logger.warning("ngram backfill for %s failed: %s", collection, e)
     return ran

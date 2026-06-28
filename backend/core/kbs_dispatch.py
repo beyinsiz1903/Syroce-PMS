@@ -15,6 +15,7 @@ Celery, her task gövdesini ``asyncio.run()`` ile yürütür; bu yüzden bu mod�
 modül-seviyesi Motor client'a DOKUNMAZ — çağıran taze, loop'a bağlı bir db
 geçirir (``celery_tasks._fresh_mongo``).
 """
+
 from __future__ import annotations
 
 import logging
@@ -61,24 +62,29 @@ def _backoff_seconds(attempts: int) -> int:
 async def _raise_alert(db, tenant_id: str, *, kind: str, job: dict, error: str = "") -> None:
     """db.kbs_alerts'e alarm yaz (router._raise_kbs_alert ile aynı şema)."""
     try:
-        await db.kbs_alerts.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "kind": kind,
-            "job_id": job.get("id"),
-            "booking_id": job.get("booking_id"),
-            "guest_name": (job.get("payload") or {}).get("guest_name", ""),
-            "room_number": (job.get("payload") or {}).get("room_number", ""),
-            "action": job.get("action"),
-            "attempts": job.get("attempts"),
-            "last_error": error or job.get("last_error"),
-            "worker_id": job.get("worker_id"),
-            "created_at": _iso(_now()),
-            "acknowledged": False,
-        })
+        await db.kbs_alerts.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "kind": kind,
+                "job_id": job.get("id"),
+                "booking_id": job.get("booking_id"),
+                "guest_name": (job.get("payload") or {}).get("guest_name", ""),
+                "room_number": (job.get("payload") or {}).get("room_number", ""),
+                "action": job.get("action"),
+                "attempts": job.get("attempts"),
+                "last_error": error or job.get("last_error"),
+                "worker_id": job.get("worker_id"),
+                "created_at": _iso(_now()),
+                "acknowledged": False,
+            }
+        )
         logger.warning(
             "KBS dispatch alert: tenant=%s kind=%s booking=%s err=%s",
-            tenant_id, kind, job.get("booking_id"), error,
+            tenant_id,
+            kind,
+            job.get("booking_id"),
+            error,
         )
     except Exception as e:  # noqa: BLE001 — alarm ana akışı etkilememeli
         logger.warning("KBS dispatch alert insert failed: %s", e)
@@ -108,18 +114,17 @@ async def _maybe_alert_unconfigured(db, pending_count: int) -> None:
                     return
             except (TypeError, ValueError):
                 pass
-        await db.kbs_alerts.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": "_system",
-            "kind": "send_unconfigured",
-            "last_error": (
-                "KBS otomatik gönderim yapılandırılmamış (KBS_API_URL/"
-                "KBS_API_TOKEN yok) — bekleyen bildirimler iletilemiyor"
-            ),
-            "pending_count": pending_count,
-            "created_at": _iso(now),
-            "acknowledged": False,
-        })
+        await db.kbs_alerts.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": "_system",
+                "kind": "send_unconfigured",
+                "last_error": ("KBS otomatik gönderim yapılandırılmamış (KBS_API_URL/KBS_API_TOKEN yok) — bekleyen bildirimler iletilemiyor"),
+                "pending_count": pending_count,
+                "created_at": _iso(now),
+                "acknowledged": False,
+            }
+        )
         logger.warning(
             "KBS dispatch: gönderici yapılandırılmamış, %d bekleyen iş var",
             pending_count,
@@ -130,15 +135,17 @@ async def _maybe_alert_unconfigured(db, pending_count: int) -> None:
 
 async def _count_claimable(db, now_iso: str) -> int:
     """Şu an claim edilebilir (backoff penceresi geçmiş) bekleyen iş sayısı."""
-    return await db.kbs_reports.count_documents({
-        "_kind": QUEUE_KIND,
-        "status": "pending",
-        "$or": [
-            {"next_retry_at": None},
-            {"next_retry_at": {"$exists": False}},
-            {"next_retry_at": {"$lte": now_iso}},
-        ],
-    })
+    return await db.kbs_reports.count_documents(
+        {
+            "_kind": QUEUE_KIND,
+            "status": "pending",
+            "$or": [
+                {"next_retry_at": None},
+                {"next_retry_at": {"$exists": False}},
+                {"next_retry_at": {"$lte": now_iso}},
+            ],
+        }
+    )
 
 
 async def _claim_one(db, now: datetime) -> dict | None:
@@ -154,14 +161,18 @@ async def _claim_one(db, now: datetime) -> dict | None:
     query = {
         "_kind": QUEUE_KIND,
         "$or": [
-            {"$and": [
-                {"status": "pending"},
-                {"$or": [
-                    {"next_retry_at": None},
-                    {"next_retry_at": {"$exists": False}},
-                    {"next_retry_at": {"$lte": now_iso}},
-                ]},
-            ]},
+            {
+                "$and": [
+                    {"status": "pending"},
+                    {
+                        "$or": [
+                            {"next_retry_at": None},
+                            {"next_retry_at": {"$exists": False}},
+                            {"next_retry_at": {"$lte": now_iso}},
+                        ]
+                    },
+                ]
+            },
             {"status": "in_progress", "leased_until": {"$lt": now_iso}},
         ],
     }
@@ -176,7 +187,8 @@ async def _claim_one(db, now: datetime) -> dict | None:
         "$inc": {"attempts": 1},
     }
     job = await db.kbs_reports.find_one_and_update(
-        query, update,
+        query,
+        update,
         sort=[("created_at", 1)],
         return_document=ReturnDocument.AFTER,
         projection={"_id": 0},
@@ -193,8 +205,11 @@ async def _complete(db, job: dict, reference: str) -> None:
 
     cas = await db.kbs_reports.update_one(
         {
-            "_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id,
-            "status": "in_progress", "worker_id": WORKER_ID,
+            "_kind": QUEUE_KIND,
+            "tenant_id": tenant_id,
+            "id": job_id,
+            "status": "in_progress",
+            "worker_id": WORKER_ID,
         },
         {
             "$set": {
@@ -222,22 +237,24 @@ async def _complete(db, job: dict, reference: str) -> None:
         {"tenant_id": tenant_id, "id": job["booking_id"]},
         {"$set": booking_update},
     )
-    await db.kbs_reports.insert_one({
-        "_kind": REPORT_KIND,
-        "id": str(uuid.uuid4()),
-        "tenant_id": tenant_id,
-        "date": (job.get("payload", {}).get("check_in") or now_iso)[:10],
-        "status": "submitted",
-        "guest_count": 1,
-        "guest_ids": [job["booking_id"]],
-        "submission_reference": reference,
-        "notes": "via auto-dispatch",
-        "submitted_by": f"worker:{WORKER_ID}",
-        "submitted_by_email": "system",
-        "queue_job_id": job_id,
-        "kbs_test": is_test_ref,
-        "created_at": now_iso,
-    })
+    await db.kbs_reports.insert_one(
+        {
+            "_kind": REPORT_KIND,
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "date": (job.get("payload", {}).get("check_in") or now_iso)[:10],
+            "status": "submitted",
+            "guest_count": 1,
+            "guest_ids": [job["booking_id"]],
+            "submission_reference": reference,
+            "notes": "via auto-dispatch",
+            "submitted_by": f"worker:{WORKER_ID}",
+            "submitted_by_email": "system",
+            "queue_job_id": job_id,
+            "kbs_test": is_test_ref,
+            "created_at": now_iso,
+        }
+    )
 
 
 async def _fail(db, job: dict, error: str) -> bool:
@@ -276,8 +293,11 @@ async def _fail(db, job: dict, error: str) -> bool:
         }
     cas = await db.kbs_reports.update_one(
         {
-            "_kind": QUEUE_KIND, "tenant_id": tenant_id, "id": job_id,
-            "status": "in_progress", "worker_id": WORKER_ID,
+            "_kind": QUEUE_KIND,
+            "tenant_id": tenant_id,
+            "id": job_id,
+            "status": "in_progress",
+            "worker_id": WORKER_ID,
         },
         update,
     )
@@ -315,24 +335,27 @@ async def _handle_missing_data(db, job: dict, missing: list[str]) -> None:
         },
     )
     try:
-        await db.kbs_alerts.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "kind": "missing_data",
-            "job_id": job_id,
-            "booking_id": job.get("booking_id"),
-            "action": job.get("action"),
-            "missing_fields": missing,
-            "guest_name": (job.get("payload") or {}).get("guest_name", ""),
-            "room_number": (job.get("payload") or {}).get("room_number", ""),
-            "created_at": now_iso,
-            "acknowledged": False,
-        })
+        await db.kbs_alerts.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "kind": "missing_data",
+                "job_id": job_id,
+                "booking_id": job.get("booking_id"),
+                "action": job.get("action"),
+                "missing_fields": missing,
+                "guest_name": (job.get("payload") or {}).get("guest_name", ""),
+                "room_number": (job.get("payload") or {}).get("room_number", ""),
+                "created_at": now_iso,
+                "acknowledged": False,
+            }
+        )
     except Exception as e:  # noqa: BLE001
         logger.warning("KBS missing_data alert failed: %s", e)
     logger.warning(
         "KBS dispatch blocked (missing fields): booking=%s missing=%s",
-        job.get("booking_id"), missing,
+        job.get("booking_id"),
+        missing,
     )
 
 
@@ -371,14 +394,19 @@ async def dispatch_pending_kbs_jobs(db, *, limit: int = 50) -> dict:
                 {"_kind": QUEUE_KIND, "tenant_id": job["tenant_id"], "id": job["id"]},
                 {
                     "$set": {
-                        "status": "dead", "failed_at": now_iso, "updated_at": now_iso,
+                        "status": "dead",
+                        "failed_at": now_iso,
+                        "updated_at": now_iso,
                         "last_error": "max_attempts exceeded on claim",
                     },
                     "$unset": {"_open_lock": ""},
                 },
             )
             await _raise_alert(
-                db, job["tenant_id"], kind="dead_letter", job=job,
+                db,
+                job["tenant_id"],
+                kind="dead_letter",
+                job=job,
                 error="max_attempts exceeded on claim",
             )
             dead += 1
@@ -397,11 +425,12 @@ async def dispatch_pending_kbs_jobs(db, *, limit: int = 50) -> dict:
             # Yarış: dispatch_active true iken kimlik bilgisi kayboldu. İşi
             # bekleyene geri bırak (attempts'i geri al), gönderim denenmemiş say.
             await db.kbs_reports.update_one(
-                {"_kind": QUEUE_KIND, "tenant_id": job["tenant_id"], "id": job["id"],
-                 "worker_id": WORKER_ID},
+                {"_kind": QUEUE_KIND, "tenant_id": job["tenant_id"], "id": job["id"], "worker_id": WORKER_ID},
                 {
                     "$set": {
-                        "status": "pending", "worker_id": None, "leased_until": None,
+                        "status": "pending",
+                        "worker_id": None,
+                        "leased_until": None,
                         "updated_at": _iso(_now()),
                     },
                     "$inc": {"attempts": -1},

@@ -92,7 +92,11 @@ def _aad(tenant_id: str, booking_id: str, photo_id: str) -> AADContext:
 
 
 def _encrypt_blob(
-    plaintext: bytes, *, tenant_id: str, booking_id: str, photo_id: str,
+    plaintext: bytes,
+    *,
+    tenant_id: str,
+    booking_id: str,
+    photo_id: str,
 ) -> bytes:
     """AES-256-GCM encrypt arbitrary bytes with AAD binding.
 
@@ -116,17 +120,15 @@ def _encrypt_blob(
     aad = _aad(tenant_id, booking_id, photo_id).to_bytes()
     aesgcm = AESGCM(key)
     ciphertext = aesgcm.encrypt(nonce, plaintext, aad)
-    return (
-        _BLOB_MAGIC
-        + len(kid_bytes).to_bytes(2, "big")
-        + kid_bytes
-        + nonce
-        + ciphertext
-    )
+    return _BLOB_MAGIC + len(kid_bytes).to_bytes(2, "big") + kid_bytes + nonce + ciphertext
 
 
 def _decrypt_blob(
-    blob: bytes, *, tenant_id: str, booking_id: str, photo_id: str,
+    blob: bytes,
+    *,
+    tenant_id: str,
+    booking_id: str,
+    photo_id: str,
 ) -> bytes:
     from cryptography.exceptions import InvalidTag
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -175,25 +177,17 @@ def _secure_root() -> Path:
     co-locates the two roots.
     """
     backend_dir = _backend_dir()
-    secure_root = Path(
-        os.environ.get("SECURE_UPLOAD_DIR", str(backend_dir / "secure_storage"))
-    ).resolve()
+    secure_root = Path(os.environ.get("SECURE_UPLOAD_DIR", str(backend_dir / "secure_storage"))).resolve()
 
     upload_dir_env = os.environ.get("UPLOAD_DIR", str(backend_dir / "uploads"))
     upload_dir = Path(upload_dir_env).resolve()
     try:
         # PurePath.is_relative_to was added in Python 3.9 — supported here.
         if secure_root == upload_dir or secure_root.is_relative_to(upload_dir):
-            raise RuntimeError(
-                "SECURE_UPLOAD_DIR must NOT be inside UPLOAD_DIR — the latter "
-                "is publicly served at /api/uploads and would leak the "
-                "encrypted ID-photo blobs over HTTP."
-            )
+            raise RuntimeError("SECURE_UPLOAD_DIR must NOT be inside UPLOAD_DIR — the latter is publicly served at /api/uploads and would leak the encrypted ID-photo blobs over HTTP.")
     except AttributeError:  # pragma: no cover — Python < 3.9 fallback
         if str(secure_root).startswith(str(upload_dir) + os.sep) or secure_root == upload_dir:
-            raise RuntimeError(
-                "SECURE_UPLOAD_DIR must NOT be inside UPLOAD_DIR."
-            )
+            raise RuntimeError("SECURE_UPLOAD_DIR must NOT be inside UPLOAD_DIR.")
 
     return secure_root / "checkin_id_photos"
 
@@ -243,15 +237,16 @@ def save_id_photo(
     invalid / oversized input.  The plaintext bytes are NEVER persisted — only
     the AES-256-GCM ciphertext (with AAD bound to tenant + booking + photo).
     """
-    safe_ct, safe_ext = validate_image_bytes(
-        image_bytes, max_bytes=MAX_IMAGE_BYTES, field_label=field_label
-    )
+    safe_ct, safe_ext = validate_image_bytes(image_bytes, max_bytes=MAX_IMAGE_BYTES, field_label=field_label)
 
     photo_id = uuid.uuid4().hex
     sha256 = hashlib.sha256(image_bytes).hexdigest()
 
     blob = _encrypt_blob(
-        image_bytes, tenant_id=tenant_id, booking_id=booking_id, photo_id=photo_id,
+        image_bytes,
+        tenant_id=tenant_id,
+        booking_id=booking_id,
+        photo_id=photo_id,
     )
 
     dest = _photo_path(tenant_id, photo_id)
@@ -316,12 +311,18 @@ def load_id_photo(
 
     try:
         return _decrypt_blob(
-            blob, tenant_id=tenant_id, booking_id=booking_id, photo_id=photo_id,
+            blob,
+            tenant_id=tenant_id,
+            booking_id=booking_id,
+            photo_id=photo_id,
         )
     except (TamperDetectedError, DecryptionError, CryptoError) as exc:
         logger.error(
             "ID photo decryption failed (tenant=%s booking=%s photo=%s): %s",
-            tenant_id, booking_id, photo_id, exc,
+            tenant_id,
+            booking_id,
+            photo_id,
+            exc,
         )
         raise HTTPException(
             status_code=500,

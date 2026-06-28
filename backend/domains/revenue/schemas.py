@@ -2,6 +2,7 @@
 Revenue Domain — Schemas
 Request/response models extracted from revenue/pricing routers.
 """
+
 import datetime as _datetime
 import uuid
 from datetime import UTC, date, datetime

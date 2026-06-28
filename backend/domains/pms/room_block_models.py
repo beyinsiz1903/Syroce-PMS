@@ -20,6 +20,7 @@ class RoomBlock(BaseModel):
     created_at: str
     status: BlockStatus = BlockStatus.ACTIVE
 
+
 class RoomBlockCreate(BaseModel):
     room_id: str
     type: BlockType
@@ -28,6 +29,7 @@ class RoomBlockCreate(BaseModel):
     start_date: str
     end_date: str | None = None
     allow_sell: bool = False
+
 
 class RoomBlockUpdate(BaseModel):
     reason: str | None = None

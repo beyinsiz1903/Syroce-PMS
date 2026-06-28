@@ -5,21 +5,35 @@ Masks PII and sensitive fields in API responses.
 Now delegates to the centralized PII Registry for field definitions
 and masking rules, providing role-based access control.
 """
+
 from typing import Any
 
 from security.pii_registry import mask_dict as pii_mask_dict
 
 # Fields that should always be masked in output (kept for backward compat)
 _MASK_FIELDS = {
-    "hashed_password", "password", "api_key", "api_secret",
-    "secret_key", "token", "access_token", "refresh_token",
-    "credit_card", "card_number", "cvv", "ssn", "id_number",
-    "passport_number", "tax_id",
+    "hashed_password",
+    "password",
+    "api_key",
+    "api_secret",
+    "secret_key",
+    "token",
+    "access_token",
+    "refresh_token",
+    "credit_card",
+    "card_number",
+    "cvv",
+    "ssn",
+    "id_number",
+    "passport_number",
+    "tax_id",
 }
 
 # Fields to partially mask (show last 4 chars) — kept for backward compat
 _PARTIAL_MASK_FIELDS = {
-    "email", "phone", "iban",
+    "email",
+    "phone",
+    "iban",
 }
 
 

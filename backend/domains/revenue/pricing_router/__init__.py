@@ -3,6 +3,7 @@
 Auto-generated split of legacy pricing_router.py into sub-modules.
 External imports (`from domains.revenue.pricing_router import router`) continue to work.
 """
+
 from fastapi import APIRouter
 
 from .ai_pricing import router as _ai_pricing_router
@@ -22,4 +23,4 @@ router.include_router(_revenue_mobile_router)
 router.include_router(_revenue_analysis_router)
 router.include_router(_anomaly_router)
 
-__all__ = ['router']
+__all__ = ["router"]

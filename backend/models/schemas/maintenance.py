@@ -1,4 +1,5 @@
 """Auto-split from schemas.py — domain: maintenance."""
+
 import uuid
 from datetime import UTC, datetime
 
@@ -24,6 +25,7 @@ class SLAConfiguration(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class SparePart(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -43,6 +45,7 @@ class SparePart(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class SparePartUsage(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -57,6 +60,7 @@ class SparePartUsage(BaseModel):
     used_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     notes: str | None = None
 
+
 class TaskPhoto(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -67,6 +71,7 @@ class TaskPhoto(BaseModel):
     description: str | None = None
     uploaded_by: str
     uploaded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
 
 class AssetMaintenanceHistory(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -86,6 +91,7 @@ class AssetMaintenanceHistory(BaseModel):
     notes: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class PlannedMaintenance(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -103,8 +109,10 @@ class PlannedMaintenance(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC()))
 
+
 class MaintenanceTaskExtended(BaseModel):
     """Extended maintenance task with all new fields"""
+
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
@@ -132,6 +140,3 @@ class MaintenanceTaskExtended(BaseModel):
     photos: list[str] = []  # Photo IDs
     notes: str | None = None
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
-
-

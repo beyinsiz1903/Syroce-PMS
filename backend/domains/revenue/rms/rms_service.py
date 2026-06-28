@@ -3,6 +3,7 @@ Revenue / RMS — Service Layer
 Orchestrates group bookings, corporate contracts, OTA promotions,
 inventory management, and yield analysis. No FastAPI dependencies.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -20,6 +21,7 @@ class RmsService:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     @audited("rms.create_group_booking", "group_booking", severity=SEVERITY_INFO)
@@ -133,11 +135,14 @@ class RmsService:
         if not end_date:
             end_date = today.strftime("%Y-%m-%d")
 
-        bookings = await self._db.bookings.find({
-            "tenant_id": ctx.tenant_id,
-            "check_in": {"$gte": start_date, "$lte": end_date},
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
-        }, {"_id": 0}).to_list(10000)
+        bookings = await self._db.bookings.find(
+            {
+                "tenant_id": ctx.tenant_id,
+                "check_in": {"$gte": start_date, "$lte": end_date},
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
+            },
+            {"_id": 0},
+        ).to_list(10000)
 
         total_rooms = await self._db.rooms.count_documents({"tenant_id": ctx.tenant_id})
         days = (datetime.fromisoformat(end_date) - datetime.fromisoformat(start_date)).days or 1
@@ -145,15 +150,17 @@ class RmsService:
         sold_room_nights = len(bookings)
         total_revenue = sum(b.get("total_amount", 0) for b in bookings)
 
-        return ServiceResult.success({
-            "period": {"start": start_date, "end": end_date, "days": days},
-            "total_room_nights": total_room_nights,
-            "sold_room_nights": sold_room_nights,
-            "occupancy_rate": round(sold_room_nights / total_room_nights * 100, 1) if total_room_nights > 0 else 0,
-            "total_revenue": round(total_revenue, 2),
-            "adr": round(total_revenue / sold_room_nights, 2) if sold_room_nights > 0 else 0,
-            "rev_par": round(total_revenue / total_room_nights, 2) if total_room_nights > 0 else 0,
-        })
+        return ServiceResult.success(
+            {
+                "period": {"start": start_date, "end": end_date, "days": days},
+                "total_room_nights": total_room_nights,
+                "sold_room_nights": sold_room_nights,
+                "occupancy_rate": round(sold_room_nights / total_room_nights * 100, 1) if total_room_nights > 0 else 0,
+                "total_revenue": round(total_revenue, 2),
+                "adr": round(total_revenue / sold_room_nights, 2) if sold_room_nights > 0 else 0,
+                "rev_par": round(total_revenue / total_room_nights, 2) if total_room_nights > 0 else 0,
+            }
+        )
 
 
 rms_service = RmsService()

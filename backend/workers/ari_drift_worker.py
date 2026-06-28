@@ -10,6 +10,7 @@ flipping into recovery does NOT affect other tenants — fixes the prior
 multi-tenant violation where a process-level global flag forced every
 tenant's worker into 30s full-scan.
 """
+
 import asyncio
 import logging
 
@@ -68,9 +69,14 @@ async def ari_drift_worker_loop():
     while True:
         try:
             now = loop.time()
-            connections = await db["provider_connections"].find(
-                {"status": "active"}, {"_id": 0},
-            ).to_list(500)
+            connections = (
+                await db["provider_connections"]
+                .find(
+                    {"status": "active"},
+                    {"_id": 0},
+                )
+                .to_list(500)
+            )
 
             for conn in connections:
                 tenant_id = conn.get("tenant_id")
@@ -100,14 +106,20 @@ async def ari_drift_worker_loop():
                         pass  # incremental — populated by event-driven coalescer
                     if pms_snapshot or provider_snapshot:
                         await check_drift(
-                            tenant_id, property_id, provider,
-                            pms_snapshot, provider_snapshot,
+                            tenant_id,
+                            property_id,
+                            provider,
+                            pms_snapshot,
+                            provider_snapshot,
                         )
                     _last_run[key] = now
                 except Exception as e:
                     logger.error(
                         "Drift check error [%s/%s/%s]: %s",
-                        tenant_id, provider, property_id, e,
+                        tenant_id,
+                        provider,
+                        property_id,
+                        e,
                     )
 
             await asyncio.sleep(_TICK_SECONDS)

@@ -2,6 +2,7 @@
 Cache Warmer - Pre-warm critical endpoints for instant response
 Runs on startup and periodically refreshes cache
 """
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ class CacheWarmer:
             self.warm_dashboard_cache(tenant_id),
             self.warm_housekeeping_endpoints(tenant_id),
             self.warm_frontdesk_endpoints(tenant_id),
-            return_exceptions=True
+            return_exceptions=True,
         )
 
         logger.info(f"✅ Cache warming complete for tenant: {tenant_id}")
@@ -53,32 +54,33 @@ class CacheWarmer:
             # Guests: project the minimum we need to compute a display name
             guest_map: dict[str, str] = {}
             async for g in self.db.guests.find(
-                {'tenant_id': tenant_id},
-                {'_id': 0, 'id': 1, 'name': 1, 'first_name': 1, 'last_name': 1},
+                {"tenant_id": tenant_id},
+                {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1},
             ):
-                gid = g.get('id')
+                gid = g.get("id")
                 if not gid:
                     continue
-                nm = g.get('name') or f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
+                nm = g.get("name") or f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
                 # Walk-in placeholder ("C4", "V4 Refund", "X" gibi) reddet — caller
                 # boyle bir id icin map'te bulamadiginda display fallback ("Misafir
                 # <SHORTID>") devreye girer.
                 from core.guest_name_utils import is_placeholder_guest_name
+
                 if nm and not is_placeholder_guest_name(nm):
                     guest_map[gid] = nm
 
             # Rooms: project number + type for the booking row
             room_map: dict[str, dict] = {}
             async for r in self.db.rooms.find(
-                {'tenant_id': tenant_id},
-                {'_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1},
+                {"tenant_id": tenant_id},
+                {"_id": 0, "id": 1, "room_number": 1, "room_type": 1},
             ):
-                rid = r.get('id')
+                rid = r.get("id")
                 if not rid:
                     continue
                 room_map[rid] = {
-                    'room_number': r.get('room_number'),
-                    'room_type': r.get('room_type'),
+                    "room_number": r.get("room_number"),
+                    "room_type": r.get("room_type"),
                 }
 
             # TTL is generous (180s) so the entry stays warm BETWEEN the
@@ -87,17 +89,14 @@ class CacheWarmer:
             # cache and fall back to a slow Atlas round-trip — which is
             # exactly the regression we just fixed for the bookings list.
             self.cache[f"guest_map:{tenant_id}"] = {
-                'data': guest_map,
-                'expires_at': datetime.utcnow() + timedelta(seconds=180),
+                "data": guest_map,
+                "expires_at": datetime.utcnow() + timedelta(seconds=180),
             }
             self.cache[f"room_map:{tenant_id}"] = {
-                'data': room_map,
-                'expires_at': datetime.utcnow() + timedelta(seconds=180),
+                "data": room_map,
+                "expires_at": datetime.utcnow() + timedelta(seconds=180),
             }
-            logger.info(
-                f"  ✅ Guest/Room maps warmed for tenant {tenant_id[:8]}: "
-                f"{len(guest_map)} guests, {len(room_map)} rooms"
-            )
+            logger.info(f"  ✅ Guest/Room maps warmed for tenant {tenant_id[:8]}: {len(guest_map)} guests, {len(room_map)} rooms")
         except Exception as e:
             logger.info(f"  ❌ Guest/Room map warming failed: {e}")
 
@@ -120,7 +119,7 @@ class CacheWarmer:
         First user click on the Housekeeping tab returns from cache instantly."""
         try:
             # Lightweight user shim — cached() only reads .tenant_id from current_user
-            fake_user = type('CacheWarmUser', (), {'tenant_id': tenant_id, 'role': 'admin'})()
+            fake_user = type("CacheWarmUser", (), {"tenant_id": tenant_id, "role": "admin"})()
 
             # Lazy imports to avoid circular dependencies at module load
             from routers.housekeeping import (
@@ -138,7 +137,7 @@ class CacheWarmer:
                 get_due_out_rooms(current_user=fake_user),
                 get_stayover_rooms(current_user=fake_user),
                 get_arrival_rooms(current_user=fake_user),
-                get_room_blocks(room_id=None, status='active', from_date=None, to_date=None, current_user=fake_user),
+                get_room_blocks(room_id=None, status="active", from_date=None, to_date=None, current_user=fake_user),
                 return_exceptions=True,
             )
             logger.info("  ✅ Housekeeping endpoints pre-warmed")
@@ -148,10 +147,17 @@ class CacheWarmer:
     async def warm_frontdesk_endpoints(self, tenant_id: str):
         """Pre-call front desk endpoints (arrivals, departures, inhouse)."""
         try:
-            fake_user = type('CacheWarmUser', (), {
-                'tenant_id': tenant_id, 'role': 'admin',
-                'id': 'cache-warmer', 'email': '', 'property_id': None,
-            })()
+            fake_user = type(
+                "CacheWarmUser",
+                (),
+                {
+                    "tenant_id": tenant_id,
+                    "role": "admin",
+                    "id": "cache-warmer",
+                    "email": "",
+                    "property_id": None,
+                },
+            )()
 
             from domains.pms.frontdesk_router import (
                 get_arrivals,
@@ -172,29 +178,30 @@ class CacheWarmer:
     async def warm_rooms_cache(self, tenant_id: str):
         """Pre-warm rooms cache"""
         try:
-            projection = {
-                '_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1,
-                'status': 1, 'floor': 1, 'capacity': 1, 'base_price': 1, 'max_occupancy': 1, 'tenant_id': 1, 'is_virtual': 1
-            }
+            projection = {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "status": 1, "floor": 1, "capacity": 1, "base_price": 1, "max_occupancy": 1, "tenant_id": 1, "is_virtual": 1}
             # First, check total count
             total_rooms = await self.db.rooms.count_documents({})
             logger.info(f"  🔍 Total rooms in DB: {total_rooms}")
 
             # Try without tenant filter if none found — exclude virtual rooms
-            rooms = await self.db.rooms.find(
-                {'$or': [{'is_virtual': False}, {'is_virtual': {'$exists': False}}]},
-                projection,
-            ).limit(100).to_list(100)
+            rooms = (
+                await self.db.rooms.find(
+                    {"$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}]},
+                    projection,
+                )
+                .limit(100)
+                .to_list(100)
+            )
 
             if rooms and len(rooms) > 0:
                 # Cache for all tenants found
-                tenants = {room.get('tenant_id') for room in rooms if room.get('tenant_id')}
+                tenants = {room.get("tenant_id") for room in rooms if room.get("tenant_id")}
                 for t_id in tenants:
-                    tenant_rooms = [r for r in rooms if r.get('tenant_id') == t_id]
+                    tenant_rooms = [r for r in rooms if r.get("tenant_id") == t_id]
                     cache_key = f"rooms:{t_id}"
                     self.cache[cache_key] = {
-                        'data': tenant_rooms,
-                        'expires_at': datetime.utcnow() + timedelta(seconds=20)  # Shorter expiry for fresh data
+                        "data": tenant_rooms,
+                        "expires_at": datetime.utcnow() + timedelta(seconds=20),  # Shorter expiry for fresh data
                     }
                     logger.info(f"  ✅ Rooms cache warmed for tenant {t_id[:8]}: {len(tenant_rooms)} rooms")
             else:
@@ -214,12 +221,29 @@ class CacheWarmer:
             (today + timedelta(days=30)).isoformat()
 
             projection = {
-                '_id': 0, 'id': 1, 'guest_id': 1, 'room_id': 1,
-                'check_in': 1, 'check_out': 1, 'status': 1, 'total_amount': 1,
-                'rate_type': 1, 'market_segment': 1, 'booking_source': 1, 'tenant_id': 1,
-                'guest_name': 1, 'room_number': 1, 'source_channel': 1, 'channel': 1,
-                'origin': 1, 'adults': 1, 'children': 1, 'ota_confirmation': 1,
-                'special_requests': 1, 'base_rate': 1, 'paid_amount': 1,
+                "_id": 0,
+                "id": 1,
+                "guest_id": 1,
+                "room_id": 1,
+                "check_in": 1,
+                "check_out": 1,
+                "status": 1,
+                "total_amount": 1,
+                "rate_type": 1,
+                "market_segment": 1,
+                "booking_source": 1,
+                "tenant_id": 1,
+                "guest_name": 1,
+                "room_number": 1,
+                "source_channel": 1,
+                "channel": 1,
+                "origin": 1,
+                "adults": 1,
+                "children": 1,
+                "ota_confirmation": 1,
+                "special_requests": 1,
+                "base_rate": 1,
+                "paid_amount": 1,
             }
 
             # Get all bookings without date filter if none found
@@ -227,17 +251,17 @@ class CacheWarmer:
 
             if bookings and len(bookings) > 0:
                 # Cache for all tenants
-                tenants = {b.get('tenant_id') for b in bookings if b.get('tenant_id')}
+                tenants = {b.get("tenant_id") for b in bookings if b.get("tenant_id")}
                 for t_id in tenants:
-                    tenant_bookings = [b for b in bookings if b.get('tenant_id') == t_id]
+                    tenant_bookings = [b for b in bookings if b.get("tenant_id") == t_id]
                     cache_key = f"bookings:{t_id}"
                     self.cache[cache_key] = {
-                        'data': tenant_bookings,
+                        "data": tenant_bookings,
                         # TTL=180s lives ONE refresh cycle longer than the
                         # 120s background interval, so the entry never goes
                         # cold between refreshes. Without this, every ~6th
                         # request would fall back to a 1.8s Atlas query.
-                        'expires_at': datetime.utcnow() + timedelta(seconds=180)
+                        "expires_at": datetime.utcnow() + timedelta(seconds=180),
                     }
                     logger.info(f"  ✅ Bookings cache warmed for tenant {t_id[:8]}: {len(tenant_bookings)} bookings")
             else:
@@ -250,29 +274,27 @@ class CacheWarmer:
         try:
             # Room stats — exclude virtual rooms
             pipeline = [
-                {'$match': {
-                    'tenant_id': tenant_id,
-                    '$or': [{'is_virtual': False}, {'is_virtual': {'$exists': False}}],
-                }},
-                {'$group': {
-                    '_id': None,
-                    'total_rooms': {'$sum': 1},
-                    'occupied_rooms': {'$sum': {'$cond': [{'$eq': ['$status', 'occupied']}, 1, 0]}}
-                }}
+                {
+                    "$match": {
+                        "tenant_id": tenant_id,
+                        "$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}],
+                    }
+                },
+                {"$group": {"_id": None, "total_rooms": {"$sum": 1}, "occupied_rooms": {"$sum": {"$cond": [{"$eq": ["$status", "occupied"]}, 1, 0]}}}},
             ]
             room_stats = await self.db.rooms.aggregate(pipeline).to_list(1)
 
-            total_rooms = room_stats[0]['total_rooms'] if room_stats else 0
-            physically_occupied = room_stats[0]['occupied_rooms'] if room_stats else 0
+            total_rooms = room_stats[0]["total_rooms"] if room_stats else 0
+            physically_occupied = room_stats[0]["occupied_rooms"] if room_stats else 0
 
             # Date-only overlap (matches AI briefing) — single source of truth.
             today = datetime.now(UTC).strftime("%Y-%m-%d")
             bookings_today = await self.db.bookings.find(
                 {
-                    'tenant_id': tenant_id,
-                    'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+                    "tenant_id": tenant_id,
+                    "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
                 },
-                {'_id': 0, 'check_in': 1, 'check_out': 1}
+                {"_id": 0, "check_in": 1, "check_out": 1},
             ).to_list(5000)
 
             # v95 — Track unique active rooms (not booking count) so that
@@ -281,9 +303,9 @@ class CacheWarmer:
             booking_occupied_count = 0  # for total_guests display
             today_checkins = 0
             for _i, b in enumerate(bookings_today):
-                ci = str(b.get('check_in', ''))[:10]
-                co = str(b.get('check_out', ''))[:10]
-                rid = b.get('room_id')
+                ci = str(b.get("check_in", ""))[:10]
+                co = str(b.get("check_out", ""))[:10]
+                rid = b.get("room_id")
                 if ci <= today and co > today:
                     booking_occupied_count += 1
                     if rid:
@@ -310,56 +332,59 @@ class CacheWarmer:
                     if active_room_ids:
                         await self.db.rooms.update_many(
                             {
-                                'tenant_id': tenant_id,
-                                'id': {'$in': list(active_room_ids)},
-                                'status': {'$ne': 'occupied'},
+                                "tenant_id": tenant_id,
+                                "id": {"$in": list(active_room_ids)},
+                                "status": {"$ne": "occupied"},
                             },
-                            {'$set': {'status': 'occupied',
-                                      'status_synced_at': datetime.now(UTC).isoformat()}},
+                            {"$set": {"status": "occupied", "status_synced_at": datetime.now(UTC).isoformat()}},
                         )
                     # Free rooms previously marked occupied that are no longer in any booking
                     await self.db.rooms.update_many(
                         {
-                            'tenant_id': tenant_id,
-                            'status': 'occupied',
-                            'id': {'$nin': list(active_room_ids)} if active_room_ids else {'$exists': True},
-                            '$or': [{'is_virtual': False}, {'is_virtual': {'$exists': False}}],
+                            "tenant_id": tenant_id,
+                            "status": "occupied",
+                            "id": {"$nin": list(active_room_ids)} if active_room_ids else {"$exists": True},
+                            "$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}],
                         },
-                        {'$set': {'status': 'available',
-                                  'status_synced_at': datetime.now(UTC).isoformat()}},
+                        {"$set": {"status": "available", "status_synced_at": datetime.now(UTC).isoformat()}},
                     )
                     logger.info(
                         "[OCCUPANCY-RECONCILE] tenant=%s reconciled rooms.status to %d active bookings (was %d marked occupied)",
-                        tenant_id, len(active_room_ids), physically_occupied,
+                        tenant_id,
+                        len(active_room_ids),
+                        physically_occupied,
                     )
                 except Exception as recon_err:
                     logger.warning(
                         "[OCCUPANCY-DRIFT] tenant=%s drift=%d but auto-reconcile failed: %s",
-                        tenant_id, abs(physically_occupied - booking_occupied), recon_err,
+                        tenant_id,
+                        abs(physically_occupied - booking_occupied),
+                        recon_err,
                     )
 
             # Tenant currency for unified display.
             try:
                 from core.tenant_currency import get_tenant_currency
+
                 cur_code, cur_sym = await get_tenant_currency(tenant_id)
             except Exception:
-                cur_code, cur_sym = 'TRY', '\u20ba'
+                cur_code, cur_sym = "TRY", "\u20ba"
 
             dashboard_data = {
-                'total_rooms': total_rooms,
-                'occupied_rooms': occupied_rooms,
-                'available_rooms': max(0, total_rooms - occupied_rooms),
-                'occupancy_rate': round((occupied_rooms / total_rooms * 100), 2) if total_rooms > 0 else 0,
-                'today_checkins': today_checkins,
-                'total_guests': total_guests,
-                'currency': cur_code,
-                'currency_symbol': cur_sym,
+                "total_rooms": total_rooms,
+                "occupied_rooms": occupied_rooms,
+                "available_rooms": max(0, total_rooms - occupied_rooms),
+                "occupancy_rate": round((occupied_rooms / total_rooms * 100), 2) if total_rooms > 0 else 0,
+                "today_checkins": today_checkins,
+                "total_guests": total_guests,
+                "currency": cur_code,
+                "currency_symbol": cur_sym,
             }
 
             cache_key = f"dashboard:{tenant_id}"
             self.cache[cache_key] = {
-                'data': dashboard_data,
-                'expires_at': datetime.utcnow() + timedelta(seconds=20)  # Aggressive refresh
+                "data": dashboard_data,
+                "expires_at": datetime.utcnow() + timedelta(seconds=20),  # Aggressive refresh
             }
             logger.info("  ✅ Dashboard cache warmed")
         except Exception as e:
@@ -376,8 +401,8 @@ class CacheWarmer:
         """Get data from warmed cache"""
         if cache_key in self.cache:
             entry = self.cache[cache_key]
-            if datetime.utcnow() < entry['expires_at']:
-                return entry['data']
+            if datetime.utcnow() < entry["expires_at"]:
+                return entry["data"]
             else:
                 del self.cache[cache_key]
         return None
@@ -391,6 +416,7 @@ class CacheWarmer:
         diger turlarda sadece KPI dashboard.
         """
         import os
+
         interval = int(os.getenv("CACHE_WARMER_INTERVAL_SEC", "120"))
         full_every = int(os.getenv("CACHE_WARMER_FULL_EVERY_N", "5"))
         cycle = 0
@@ -414,6 +440,7 @@ class CacheWarmer:
             except Exception as e:
                 logger.info(f"Background cache refresh error: {e}")
 
+
 # Global cache warmer
 cache_warmer = None
 # Single background-refresh task per process. initialize_cache_warmer is
@@ -427,6 +454,7 @@ cache_warmer = None
 # starve the event loop: the edge proxy can't reach the worker and the SPA
 # entry chunk 502s -> production white screen. Keep exactly one loop.
 _cache_warmer_task = None
+
 
 async def initialize_cache_warmer(db, tenant_id: str = None):
     """Initialize and start cache warmer (idempotent across bootstrap phases)."""
@@ -443,7 +471,7 @@ async def initialize_cache_warmer(db, tenant_id: str = None):
     if not tenant_id:
         tenant = await db.users.find_one({})
         if tenant:
-            tenant_id = tenant.get('tenant_id')
+            tenant_id = tenant.get("tenant_id")
 
     if tenant_id:
         # Warm caches immediately

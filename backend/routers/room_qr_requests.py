@@ -14,6 +14,7 @@ Veri modeli (MongoDB `room_qr_requests` koleksiyonu):
 
 QR token: HMAC-SHA256(tenant_id|room_id, JWT_SECRET) — DB'de ekstra state yok.
 """
+
 import hashlib
 import hmac
 import ipaddress
@@ -40,8 +41,8 @@ logger = logging.getLogger("room_qr_requests")
 _QR_SECRET = os.environ.get("ROOM_QR_SECRET") or JWT_SECRET
 
 # IP-bazlı rate limit (Redis-backed → multi-instance dağıtık koruma)
-_RL_WINDOW_SEC = 600   # 10 dakika
-_RL_MAX_HITS = 20      # 10 dakikada 20 submit / IP+oda
+_RL_WINDOW_SEC = 600  # 10 dakika
+_RL_MAX_HITS = 20  # 10 dakikada 20 submit / IP+oda
 
 # Per-room/day complaint mirror kotası (DoS / spam guard'ı için)
 # Aşıldığında room_qr_requests kaydı YİNE oluşur (talep iletilir) ama
@@ -123,9 +124,7 @@ def _complaint_quota_check(tenant_id: str, room_id: str) -> tuple:
     count = _cache.incr_with_ttl(full_key, 86400)
     if count == 0:
         # Cache fail → fail-CLOSED (mirror'ı engelle, warn + denied flag)
-        logger.warning(
-            "[room_qr] complaint quota counter unavailable — mirror DENIED "
-            "(fail-closed) for %s/%s", tenant_id, room_id)
+        logger.warning("[room_qr] complaint quota counter unavailable — mirror DENIED (fail-closed) for %s/%s", tenant_id, room_id)
         return False, 0
     return count <= _COMPLAINT_QUOTA_PER_ROOM_DAY, count
 
@@ -138,6 +137,7 @@ def _mask_name(name: str | None) -> str | None:
     if not parts:
         return None
     return " ".join((p[0] + "***") if len(p) >= 1 else "*" for p in parts)
+
 
 router = APIRouter(tags=["Room QR Requests"])
 
@@ -155,42 +155,35 @@ async def _ensure_indexes() -> None:
     if _INDEXES_READY:
         return
     try:
-        await raw_db[COLL].create_index(
-            [("tenant_id", 1), ("created_at", -1)],
-            name="rqr_tenant_created")
-        await raw_db[COLL].create_index(
-            [("tenant_id", 1), ("status", 1), ("created_at", -1)],
-            name="rqr_tenant_status_created")
-        await raw_db[COLL].create_index(
-            [("tenant_id", 1), ("department", 1), ("status", 1)],
-            name="rqr_tenant_dept_status")
-        await raw_db[COLL].create_index(
-            [("tenant_id", 1), ("room_id", 1)],
-            name="rqr_tenant_room")
+        await raw_db[COLL].create_index([("tenant_id", 1), ("created_at", -1)], name="rqr_tenant_created")
+        await raw_db[COLL].create_index([("tenant_id", 1), ("status", 1), ("created_at", -1)], name="rqr_tenant_status_created")
+        await raw_db[COLL].create_index([("tenant_id", 1), ("department", 1), ("status", 1)], name="rqr_tenant_dept_status")
+        await raw_db[COLL].create_index([("tenant_id", 1), ("room_id", 1)], name="rqr_tenant_room")
         _INDEXES_READY = True
     except Exception as e:
         # Atlas may reject new collections (cluster limit reached); we skip
         # silently — query still works on tenant_id full scan for empty data.
         logger.debug(f"room_qr_requests index setup skipped: {e}")
 
+
 # Kategori → Departman eşlemesi (DepartmentType enum değerleriyle uyumlu)
 CATEGORY_CATALOG = [
-    {"id": "cleaning",     "department": "rooms",         "icon": "sparkles",  "default_priority": "normal"},
-    {"id": "towels",       "department": "rooms",         "icon": "shirt",     "default_priority": "normal"},
-    {"id": "amenities",    "department": "rooms",         "icon": "package",   "default_priority": "low"},
-    {"id": "maintenance",  "department": "technical",     "icon": "wrench",    "default_priority": "normal"},
-    {"id": "wifi",         "department": "technical",     "icon": "wifi",      "default_priority": "normal"},
-    {"id": "tv",           "department": "technical",     "icon": "tv",        "default_priority": "low"},
-    {"id": "ac_heating",   "department": "technical",     "icon": "thermometer","default_priority": "normal"},
-    {"id": "food_order",   "department": "fnb",           "icon": "utensils",  "default_priority": "normal"},
-    {"id": "drinks",       "department": "fnb",           "icon": "wine",      "default_priority": "normal"},
-    {"id": "minibar",      "department": "minibar",       "icon": "beer",      "default_priority": "low"},
-    {"id": "laundry",      "department": "laundry",       "icon": "shirt",     "default_priority": "normal"},
-    {"id": "transport",    "department": "transportation","icon": "car",       "default_priority": "normal"},
-    {"id": "reception",    "department": "other",         "icon": "bell",      "default_priority": "normal"},
-    {"id": "spa",          "department": "spa",           "icon": "heart",     "default_priority": "low"},
-    {"id": "complaint",    "department": "other",         "icon": "alert",     "default_priority": "high"},
-    {"id": "other",        "department": "other",         "icon": "message",   "default_priority": "normal"},
+    {"id": "cleaning", "department": "rooms", "icon": "sparkles", "default_priority": "normal"},
+    {"id": "towels", "department": "rooms", "icon": "shirt", "default_priority": "normal"},
+    {"id": "amenities", "department": "rooms", "icon": "package", "default_priority": "low"},
+    {"id": "maintenance", "department": "technical", "icon": "wrench", "default_priority": "normal"},
+    {"id": "wifi", "department": "technical", "icon": "wifi", "default_priority": "normal"},
+    {"id": "tv", "department": "technical", "icon": "tv", "default_priority": "low"},
+    {"id": "ac_heating", "department": "technical", "icon": "thermometer", "default_priority": "normal"},
+    {"id": "food_order", "department": "fnb", "icon": "utensils", "default_priority": "normal"},
+    {"id": "drinks", "department": "fnb", "icon": "wine", "default_priority": "normal"},
+    {"id": "minibar", "department": "minibar", "icon": "beer", "default_priority": "low"},
+    {"id": "laundry", "department": "laundry", "icon": "shirt", "default_priority": "normal"},
+    {"id": "transport", "department": "transportation", "icon": "car", "default_priority": "normal"},
+    {"id": "reception", "department": "other", "icon": "bell", "default_priority": "normal"},
+    {"id": "spa", "department": "spa", "icon": "heart", "default_priority": "low"},
+    {"id": "complaint", "department": "other", "icon": "alert", "default_priority": "high"},
+    {"id": "other", "department": "other", "icon": "message", "default_priority": "normal"},
 ]
 
 CATEGORY_MAP = {c["id"]: c for c in CATEGORY_CATALOG}
@@ -199,22 +192,22 @@ VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
 
 # Çoklu dil etiketleri (10 dil için başlangıç seti — eklenebilir)
 CATEGORY_LABELS = {
-    "cleaning":    {"tr": "Oda Temizliği",       "en": "Room Cleaning",     "de": "Zimmerreinigung",    "ru": "Уборка номера",     "ar": "تنظيف الغرفة"},
-    "towels":      {"tr": "Havlu / Çarşaf",      "en": "Towels / Linens",   "de": "Handtücher",         "ru": "Полотенца",         "ar": "مناشف"},
-    "amenities":   {"tr": "Amenity (Sabun vb.)", "en": "Amenities",         "de": "Pflegeprodukte",     "ru": "Косметика",         "ar": "مستلزمات"},
-    "maintenance": {"tr": "Arıza / Tamir",       "en": "Maintenance",       "de": "Wartung",            "ru": "Ремонт",            "ar": "صيانة"},
-    "wifi":        {"tr": "İnternet / Wi-Fi",    "en": "Internet / Wi-Fi",  "de": "WLAN",               "ru": "Wi-Fi",             "ar": "واي فاي"},
-    "tv":          {"tr": "Televizyon",          "en": "Television",        "de": "Fernseher",          "ru": "Телевизор",         "ar": "تلفاز"},
-    "ac_heating":  {"tr": "Klima / Isıtma",      "en": "AC / Heating",      "de": "Klima / Heizung",    "ru": "Кондиционер",       "ar": "تكييف/تدفئة"},
-    "food_order":  {"tr": "Oda Servisi (Yemek)", "en": "Room Service (Food)","de": "Zimmerservice",     "ru": "Обслуживание",      "ar": "خدمة الغرف"},
-    "drinks":      {"tr": "İçecek",              "en": "Drinks",            "de": "Getränke",           "ru": "Напитки",           "ar": "مشروبات"},
-    "minibar":     {"tr": "Minibar",             "en": "Minibar",           "de": "Minibar",            "ru": "Минибар",           "ar": "ميني بار"},
-    "laundry":     {"tr": "Çamaşır / Kuru Tem.", "en": "Laundry",           "de": "Wäscherei",          "ru": "Прачечная",         "ar": "غسيل"},
-    "transport":   {"tr": "Transfer / Ulaşım",   "en": "Transport",         "de": "Transport",          "ru": "Транспорт",         "ar": "نقل"},
-    "reception":   {"tr": "Resepsiyon",          "en": "Reception",         "de": "Rezeption",          "ru": "Стойка",            "ar": "استقبال"},
-    "spa":         {"tr": "SPA / Wellness",      "en": "SPA / Wellness",    "de": "SPA",                "ru": "СПА",               "ar": "سبا"},
-    "complaint":   {"tr": "Şikayet / Geri Bildirim","en": "Complaint / Feedback","de": "Beschwerde",      "ru": "Жалоба",            "ar": "شكوى"},
-    "other":       {"tr": "Diğer",               "en": "Other",             "de": "Andere",             "ru": "Другое",            "ar": "أخرى"},
+    "cleaning": {"tr": "Oda Temizliği", "en": "Room Cleaning", "de": "Zimmerreinigung", "ru": "Уборка номера", "ar": "تنظيف الغرفة"},
+    "towels": {"tr": "Havlu / Çarşaf", "en": "Towels / Linens", "de": "Handtücher", "ru": "Полотенца", "ar": "مناشف"},
+    "amenities": {"tr": "Amenity (Sabun vb.)", "en": "Amenities", "de": "Pflegeprodukte", "ru": "Косметика", "ar": "مستلزمات"},
+    "maintenance": {"tr": "Arıza / Tamir", "en": "Maintenance", "de": "Wartung", "ru": "Ремонт", "ar": "صيانة"},
+    "wifi": {"tr": "İnternet / Wi-Fi", "en": "Internet / Wi-Fi", "de": "WLAN", "ru": "Wi-Fi", "ar": "واي فاي"},
+    "tv": {"tr": "Televizyon", "en": "Television", "de": "Fernseher", "ru": "Телевизор", "ar": "تلفاز"},
+    "ac_heating": {"tr": "Klima / Isıtma", "en": "AC / Heating", "de": "Klima / Heizung", "ru": "Кондиционер", "ar": "تكييف/تدفئة"},
+    "food_order": {"tr": "Oda Servisi (Yemek)", "en": "Room Service (Food)", "de": "Zimmerservice", "ru": "Обслуживание", "ar": "خدمة الغرف"},
+    "drinks": {"tr": "İçecek", "en": "Drinks", "de": "Getränke", "ru": "Напитки", "ar": "مشروبات"},
+    "minibar": {"tr": "Minibar", "en": "Minibar", "de": "Minibar", "ru": "Минибар", "ar": "ميني بار"},
+    "laundry": {"tr": "Çamaşır / Kuru Tem.", "en": "Laundry", "de": "Wäscherei", "ru": "Прачечная", "ar": "غسيل"},
+    "transport": {"tr": "Transfer / Ulaşım", "en": "Transport", "de": "Transport", "ru": "Транспорт", "ar": "نقل"},
+    "reception": {"tr": "Resepsiyon", "en": "Reception", "de": "Rezeption", "ru": "Стойка", "ar": "استقبال"},
+    "spa": {"tr": "SPA / Wellness", "en": "SPA / Wellness", "de": "SPA", "ru": "СПА", "ar": "سبا"},
+    "complaint": {"tr": "Şikayet / Geri Bildirim", "en": "Complaint / Feedback", "de": "Beschwerde", "ru": "Жалоба", "ar": "شكوى"},
+    "other": {"tr": "Diğer", "en": "Other", "de": "Andere", "ru": "Другое", "ar": "أخرى"},
 }
 
 
@@ -289,13 +282,34 @@ def _public_url_base(request: Request) -> str:
 # Otel adindan URL-guvenli slug uretimi (YALNIZCA dekoratif — QR token
 # tenant_id|room_id|salt uzerinde dogrulanir; slug dogrulamaya GIRMEZ).
 # Turkce karakterler ASCII'ye indirgenir; slug bossa slug'siz URL'ye dusulur.
-_TR_SLUG_MAP = str.maketrans({
-    "s": "s", "S": "s", "c": "c", "C": "c", "g": "g", "G": "g",
-    "i": "i", "I": "i", "o": "o", "O": "o", "u": "u", "U": "u",
-    "\u015f": "s", "\u015e": "s", "\u00e7": "c", "\u00c7": "c",
-    "\u011f": "g", "\u011e": "g", "\u0131": "i", "\u0130": "i",
-    "\u00f6": "o", "\u00d6": "o", "\u00fc": "u", "\u00dc": "u",
-})
+_TR_SLUG_MAP = str.maketrans(
+    {
+        "s": "s",
+        "S": "s",
+        "c": "c",
+        "C": "c",
+        "g": "g",
+        "G": "g",
+        "i": "i",
+        "I": "i",
+        "o": "o",
+        "O": "o",
+        "u": "u",
+        "U": "u",
+        "\u015f": "s",
+        "\u015e": "s",
+        "\u00e7": "c",
+        "\u00c7": "c",
+        "\u011f": "g",
+        "\u011e": "g",
+        "\u0131": "i",
+        "\u0130": "i",
+        "\u00f6": "o",
+        "\u00d6": "o",
+        "\u00fc": "u",
+        "\u00dc": "u",
+    }
+)
 
 
 def _slugify_hotel(name: str | None) -> str:
@@ -310,16 +324,17 @@ def _slugify_hotel(name: str | None) -> str:
 async def _hotel_slug(tenant_id: str) -> str:
     """Tenant'in otel adindan dekoratif slug (QR URL'sinde marka gorunurlugu)."""
     try:
-        tenant = await raw_db["tenants"].find_one(
-            {"id": tenant_id}, {"_id": 0, "name": 1, "display_name": 1}
-        ) or {}
+        tenant = await raw_db["tenants"].find_one({"id": tenant_id}, {"_id": 0, "name": 1, "display_name": 1}) or {}
     except Exception:
         return ""
     return _slugify_hotel(tenant.get("name") or tenant.get("display_name"))
 
 
 def _guest_url_with_salt(
-    request: Request, tenant_id: str, room_id: str, salt: str | None,
+    request: Request,
+    tenant_id: str,
+    room_id: str,
+    salt: str | None,
     slug: str | None = None,
 ) -> str:
     base = _public_url_base(request)
@@ -340,11 +355,13 @@ async def _guest_url(request: Request, tenant_id: str, room_id: str) -> str:
 async def _find_active_booking(tenant_id: str, room_id: str) -> dict | None:
     """Odadaki aktif rezervasyonu bulur (check-in yapmış misafir)."""
     try:
-        b = await raw_db["bookings"].find_one({
-            "tenant_id": tenant_id,
-            "room_id": room_id,
-            "status": {"$in": ["checked_in", "in_house"]},
-        })
+        b = await raw_db["bookings"].find_one(
+            {
+                "tenant_id": tenant_id,
+                "room_id": room_id,
+                "status": {"$in": ["checked_in", "in_house"]},
+            }
+        )
         return b
     except Exception:
         return None
@@ -353,6 +370,7 @@ async def _find_active_booking(tenant_id: str, room_id: str) -> dict | None:
 # ═══════════════════════════════════════════════════════════════
 # PUBLIC ENDPOINTS (misafir — auth yok)
 # ═══════════════════════════════════════════════════════════════
+
 
 @router.get("/api/public/room-qr/{tenant_id}/{room_id}")
 async def public_room_info(tenant_id: str, room_id: str, t: str = Query(...)):
@@ -467,9 +485,7 @@ async def public_submit_request(
         "updated_at": now,
         "completed_at": None,
         "source": "qr",
-        "status_history": [
-            {"status": "new", "by": "guest", "at": now, "note": "QR üzerinden gönderildi"}
-        ],
+        "status_history": [{"status": "new", "by": "guest", "at": now, "note": "QR üzerinden gönderildi"}],
     }
     await raw_db[COLL].insert_one(doc)
 
@@ -482,17 +498,20 @@ async def public_submit_request(
         quota_ok, quota_count = _complaint_quota_check(tenant_id, room_id)
         if not quota_ok:
             logger.warning(
-                "[room_qr] complaint mirror quota exceeded for room=%s "
-                "(today=%d, limit=%d)",
-                room_id, quota_count, _COMPLAINT_QUOTA_PER_ROOM_DAY,
+                "[room_qr] complaint mirror quota exceeded for room=%s (today=%d, limit=%d)",
+                room_id,
+                quota_count,
+                _COMPLAINT_QUOTA_PER_ROOM_DAY,
             )
         else:
             try:
                 desc = payload.description.strip()
                 subject = desc[:80] + ("..." if len(desc) > 80 else "")
                 severity_map = {
-                    "urgent": "critical", "high": "high",
-                    "normal": "medium", "low": "low",
+                    "urgent": "critical",
+                    "high": "high",
+                    "normal": "medium",
+                    "low": "low",
                 }
                 complaint_doc = {
                     "id": str(uuid.uuid4()),
@@ -513,19 +532,18 @@ async def public_submit_request(
                     "created_by": None,
                     "created_at": now.isoformat(),
                     "updated_at": now.isoformat(),
-                    "history": [{
-                        "action": "created",
-                        "actor_id": None,
-                        "actor_name": doc.get("guest_name") or "Misafir",
-                        "at": now.isoformat(),
-                        "notes": "Misafir tarafından oda QR üzerinden iletildi",
-                    }],
+                    "history": [
+                        {
+                            "action": "created",
+                            "actor_id": None,
+                            "actor_name": doc.get("guest_name") or "Misafir",
+                            "at": now.isoformat(),
+                            "notes": "Misafir tarafından oda QR üzerinden iletildi",
+                        }
+                    ],
                 }
                 await raw_db["service_complaints"].insert_one(complaint_doc)
-                logger.info(
-                    f"[room_qr] guest complaint mirrored: {complaint_doc['id']} "
-                    f"(quota_today={quota_count}/{_COMPLAINT_QUOTA_PER_ROOM_DAY})"
-                )
+                logger.info(f"[room_qr] guest complaint mirrored: {complaint_doc['id']} (quota_today={quota_count}/{_COMPLAINT_QUOTA_PER_ROOM_DAY})")
             except Exception as exc:
                 logger.warning(f"[room_qr] complaint mirror failed: {exc}")
 
@@ -536,6 +554,7 @@ async def public_submit_request(
     # entegrasyon hata verse bile talep zaten kalıcı (yukarıda insert edildi).
     try:
         from domains.guest.messaging import guest_requests as _gr
+
         await _gr.add_guest_message(
             tenant_id=tenant_id,
             room_id=room_id,
@@ -564,17 +583,22 @@ async def public_submit_request(
     try:
         from core.ws_rooms import tenant_broadcast_room
         from websocket_server import sio  # type: ignore
+
         # Task #367: route to the tenant broadcast room that authenticated
         # sockets are auto-enrolled into at connect (pms:{tenant_id}), not the
         # legacy hand-built `tenant:{id}` room that no client ever joins.
-        await sio.emit("room_request:new", {
-            "id": doc["_id"],
-            "tenant_id": tenant_id,
-            "room_number": doc["room_number"],
-            "category": doc["category"],
-            "department": doc["department"],
-            "priority": doc["priority"],
-        }, room=tenant_broadcast_room(tenant_id))
+        await sio.emit(
+            "room_request:new",
+            {
+                "id": doc["_id"],
+                "tenant_id": tenant_id,
+                "room_number": doc["room_number"],
+                "category": doc["category"],
+                "department": doc["department"],
+                "priority": doc["priority"],
+            },
+            room=tenant_broadcast_room(tenant_id),
+        )
     except Exception as e:
         logger.debug(f"WS emit atlandı: {e}")
 
@@ -589,6 +613,7 @@ async def public_submit_request(
 # ═══════════════════════════════════════════════════════════════
 # GUEST THREAD ENDPOINTS (public, QR token'lı — iki yönlü sohbet)
 # ═══════════════════════════════════════════════════════════════
+
 
 class GuestThreadMessage(BaseModel):
     body: str = Field(..., min_length=1, max_length=2000)
@@ -630,16 +655,10 @@ async def public_get_thread(
 
     booking = await _find_active_booking(tenant_id, room_id)
     if booking and booking.get("id"):
-        messages = await _gr.get_thread_messages(
-            tenant_id, room_id, booking_id=booking["id"]
-        )
+        messages = await _gr.get_thread_messages(tenant_id, room_id, booking_id=booking["id"])
     else:
-        since = datetime.now(UTC) - timedelta(
-            hours=_gr.GUEST_THREAD_FALLBACK_WINDOW_HOURS
-        )
-        messages = await _gr.get_thread_messages(
-            tenant_id, room_id, null_booking_only=True, since=since
-        )
+        since = datetime.now(UTC) - timedelta(hours=_gr.GUEST_THREAD_FALLBACK_WINDOW_HOURS)
+        messages = await _gr.get_thread_messages(tenant_id, room_id, null_booking_only=True, since=since)
     return {"messages": _guest_facing_messages(messages)}
 
 
@@ -700,6 +719,7 @@ async def public_post_thread_message(
 # STAFF ENDPOINTS (auth'lu)
 # ═══════════════════════════════════════════════════════════════
 
+
 def _tenant_of(user) -> str:
     tid = getattr(user, "tenant_id", None)
     if not tid:
@@ -744,7 +764,7 @@ async def list_requests(
         q["room_id"] = room_id
 
     cursor = raw_db[COLL].find(q).sort("created_at", -1).limit(min(limit, 500))
-    items = [ _serialize(d) async for d in cursor ]
+    items = [_serialize(d) async for d in cursor]
     return {"items": items, "count": len(items)}
 
 
@@ -754,10 +774,12 @@ async def stats_summary(current_user=Depends(get_current_user)):
     tenant_id = _tenant_of(current_user)
     pipeline = [
         {"$match": {"tenant_id": tenant_id}},
-        {"$group": {
-            "_id": {"status": "$status", "department": "$department"},
-            "count": {"$sum": 1},
-        }},
+        {
+            "$group": {
+                "_id": {"status": "$status", "department": "$department"},
+                "count": {"$sum": 1},
+            }
+        },
     ]
     by_status: dict = {}
     by_department: dict = {}
@@ -845,10 +867,16 @@ async def update_request(
     try:
         from core.ws_rooms import tenant_broadcast_room
         from websocket_server import sio  # type: ignore
+
         # Task #367: same tenant broadcast room as the room_request:new emit.
-        await sio.emit("room_request:update", {
-            "id": request_id, "status": update.get("status"),
-        }, room=tenant_broadcast_room(tenant_id))
+        await sio.emit(
+            "room_request:update",
+            {
+                "id": request_id,
+                "status": update.get("status"),
+            },
+            room=tenant_broadcast_room(tenant_id),
+        )
     except Exception:
         pass
 
@@ -859,6 +887,7 @@ async def update_request(
 # ═══════════════════════════════════════════════════════════════
 # QR KOD ÜRETİMİ (staff)
 # ═══════════════════════════════════════════════════════════════
+
 
 @router.get("/api/rooms/{room_id}/qr-code")
 async def room_qr_code(
@@ -895,19 +924,27 @@ async def all_room_qr_codes(
     v95 — Projection (sadece gerekli alanlar) + tek to_list batch fetch.
     """
     tenant_id = _tenant_of(current_user)
-    rooms = await raw_db["rooms"].find(
-        {"tenant_id": tenant_id, "is_active": {"$ne": False}},
-        {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "floor": 1},
-    ).sort("room_number", 1).to_list(2000)
+    rooms = (
+        await raw_db["rooms"]
+        .find(
+            {"tenant_id": tenant_id, "is_active": {"$ne": False}},
+            {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "floor": 1},
+        )
+        .sort("room_number", 1)
+        .to_list(2000)
+    )
     salt = await _get_qr_salt(tenant_id)
     slug = await _hotel_slug(tenant_id)
-    items = [{
-        "room_id": room.get("id"),
-        "room_number": room.get("room_number"),
-        "room_type": room.get("room_type"),
-        "floor": room.get("floor"),
-        "url": _guest_url_with_salt(request, tenant_id, room.get("id"), salt, slug),
-    } for room in rooms]
+    items = [
+        {
+            "room_id": room.get("id"),
+            "room_number": room.get("room_number"),
+            "room_type": room.get("room_type"),
+            "floor": room.get("floor"),
+            "url": _guest_url_with_salt(request, tenant_id, room.get("id"), salt, slug),
+        }
+        for room in rooms
+    ]
     return {"items": items, "count": len(items)}
 
 
@@ -930,13 +967,15 @@ async def rotate_room_qr_secret(
     version = int((existing or {}).get("version") or 0) + 1
     await raw_db[_QR_SALT_COLL].update_one(
         {"tenant_id": tenant_id},
-        {"$set": {
-            "tenant_id": tenant_id,
-            "salt": new_salt,
-            "version": version,
-            "rotated_at": now,
-            "rotated_by": getattr(current_user, "id", None),
-        }},
+        {
+            "$set": {
+                "tenant_id": tenant_id,
+                "salt": new_salt,
+                "version": version,
+                "rotated_at": now,
+                "rotated_by": getattr(current_user, "id", None),
+            }
+        },
         upsert=True,
     )
     # Cache'i hemen güncelle → yeni tuz aynı instance'ta anında etkin.

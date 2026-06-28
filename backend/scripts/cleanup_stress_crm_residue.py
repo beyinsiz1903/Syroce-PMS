@@ -63,6 +63,7 @@ dashboard / alerting can poll this collection: any row with ``found_total > 0``
 after the next nightly run is an actionable signal that stress residue is
 accumulating and the CRM uniqueness backstop is at risk of being disabled.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -78,9 +79,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from core.database import db  # noqa: E402
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("cleanup_stress_crm_residue")
 
 E2E_PREFIX_REGEX = r"^E2E_"
@@ -143,12 +142,8 @@ async def _scan_kind(
 
 async def scan(tenant_id: str, hours: int) -> dict:
     cutoff = datetime.now(UTC) - timedelta(hours=hours)
-    contracts = await _scan_kind(
-        "corporate_contracts", tenant_id, cutoff, CONTRACT_FIELDS
-    )
-    accounts = await _scan_kind(
-        "mice_accounts", tenant_id, cutoff, MICE_ACCOUNT_FIELDS
-    )
+    contracts = await _scan_kind("corporate_contracts", tenant_id, cutoff, CONTRACT_FIELDS)
+    accounts = await _scan_kind("mice_accounts", tenant_id, cutoff, MICE_ACCOUNT_FIELDS)
     return {
         "cutoff": cutoff.isoformat(),
         "corporate_contracts": contracts,
@@ -166,9 +161,7 @@ async def apply(tenant_id: str, found: dict) -> dict:
     for coll_name in ("corporate_contracts", "mice_accounts"):
         ids = [d.get("id") for d in found[coll_name] if d.get("id")]
         if ids:
-            res = await db[coll_name].delete_many(
-                {"tenant_id": tenant_id, "id": {"$in": ids}}
-            )
+            res = await db[coll_name].delete_many({"tenant_id": tenant_id, "id": {"$in": ids}})
             deleted[coll_name] = res.deleted_count
     return deleted
 
@@ -182,10 +175,7 @@ async def record_scan(summary: dict) -> None:
 
 
 async def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Stress tenant CRM residue sweep (corporate_contracts + "
-                    "mice_accounts)."
-    )
+    parser = argparse.ArgumentParser(description="Stress tenant CRM residue sweep (corporate_contracts + mice_accounts).")
     parser.add_argument(
         "--hours",
         type=int,
@@ -201,10 +191,7 @@ async def main() -> int:
 
     tenant_id = os.environ.get("E2E_STRESS_TENANT_ID", "").strip()
     if not tenant_id:
-        logger.error(
-            "E2E_STRESS_TENANT_ID env var tanımlı değil — fail-closed; "
-            "production guard tetiklendi."
-        )
+        logger.error("E2E_STRESS_TENANT_ID env var tanımlı değil — fail-closed; production guard tetiklendi.")
         return 2
 
     # Pilot exclusion guard: refuse if the resolved tenant is the pilot, via
@@ -212,16 +199,13 @@ async def main() -> int:
     pilot_tid = os.environ.get("PILOT_TENANT_ID", "").strip()
     if tenant_id == PILOT_TENANT_UUID or (pilot_tid and tenant_id == pilot_tid):
         logger.error(
-            "E2E_STRESS_TENANT_ID pilot tenant'a (%s) eşit — fail-closed; "
-            "stress residue sweep pilot'a dokunamaz.",
+            "E2E_STRESS_TENANT_ID pilot tenant'a (%s) eşit — fail-closed; stress residue sweep pilot'a dokunamaz.",
             tenant_id,
         )
         return 2
 
     if args.apply and os.environ.get("E2E_ALLOW_STRESS_CLEANUP", "").lower() != "true":
-        logger.error(
-            "--apply için E2E_ALLOW_STRESS_CLEANUP=true gerekli — fail-closed."
-        )
+        logger.error("--apply için E2E_ALLOW_STRESS_CLEANUP=true gerekli — fail-closed.")
         return 2
 
     logger.info(
@@ -251,20 +235,13 @@ async def main() -> int:
         "found": counts,
         "found_total": total,
         "applied": applied,
-        "sample_contract_ids": [
-            c.get("id") for c in found["corporate_contracts"][:10]
-        ],
-        "sample_account_ids": [
-            a.get("id") for a in found["mice_accounts"][:10]
-        ],
+        "sample_contract_ids": [c.get("id") for c in found["corporate_contracts"][:10]],
+        "sample_account_ids": [a.get("id") for a in found["mice_accounts"][:10]],
     }
     await record_scan(summary)
 
     print("=" * 60)
-    print(
-        f"Stress CRM residue sweep "
-        f"({'APPLY' if args.apply else 'DRY-RUN'}) tenant={tenant_id}"
-    )
+    print(f"Stress CRM residue sweep ({'APPLY' if args.apply else 'DRY-RUN'}) tenant={tenant_id}")
     print("=" * 60)
     for k, v in counts.items():
         print(f"  {k:20s} -> {v}")
@@ -277,9 +254,7 @@ async def main() -> int:
 
     if total > 0:
         logger.warning(
-            "[stress-crm-residue] %d artık CRM kaydı bulundu "
-            "(corporate_contracts=%d mice_accounts=%d) — uniqueness backstop "
-            "riski; stress cleanup'ı kontrol et.",
+            "[stress-crm-residue] %d artık CRM kaydı bulundu (corporate_contracts=%d mice_accounts=%d) — uniqueness backstop riski; stress cleanup'ı kontrol et.",
             total,
             counts["corporate_contracts"],
             counts["mice_accounts"],

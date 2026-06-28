@@ -2,6 +2,7 @@
 Workers — Task Guard
 Provides idempotency and deduplication for background tasks.
 """
+
 import hashlib
 import logging
 from datetime import UTC, datetime, timedelta
@@ -21,10 +22,12 @@ class TaskGuard:
     async def is_duplicate(cls, task_key: str) -> bool:
         """Check if a task with this key was already processed recently."""
         threshold = (datetime.now(UTC) - timedelta(seconds=cls.DEDUP_TTL_SECONDS)).isoformat()
-        existing = await db.task_dedup_log.find_one({
-            "task_key": task_key,
-            "processed_at": {"$gt": threshold},
-        })
+        existing = await db.task_dedup_log.find_one(
+            {
+                "task_key": task_key,
+                "processed_at": {"$gt": threshold},
+            }
+        )
         return existing is not None
 
     @classmethod
@@ -32,11 +35,13 @@ class TaskGuard:
         """Mark a task key as processed for deduplication."""
         await db.task_dedup_log.update_one(
             {"task_key": task_key},
-            {"$set": {
-                "task_key": task_key,
-                "processed_at": datetime.now(UTC).isoformat(),
-                "result": result,
-            }},
+            {
+                "$set": {
+                    "task_key": task_key,
+                    "processed_at": datetime.now(UTC).isoformat(),
+                    "result": result,
+                }
+            },
             upsert=True,
         )
 

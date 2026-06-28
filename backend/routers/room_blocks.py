@@ -9,6 +9,7 @@ Endpoints:
   DELETE /api/room-blocks      — Release a room block
   GET /api/room-blocks         — List active blocks
 """
+
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -26,12 +27,14 @@ class RoomBlockRequest(BaseModel):
     room_id: str
     block_type: str  # "ooo", "oos", "maintenance"
     start_date: str  # YYYY-MM-DD
-    end_date: str    # YYYY-MM-DD (exclusive)
+    end_date: str  # YYYY-MM-DD (exclusive)
     reason: str = ""
 
 
 @router.post("")
-async def apply_room_block(req: RoomBlockRequest, current_user=Depends(get_current_user),
+async def apply_room_block(
+    req: RoomBlockRequest,
+    current_user=Depends(get_current_user),
     _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     """Block a room for OOO/OOS/Maintenance.
@@ -40,6 +43,7 @@ async def apply_room_block(req: RoomBlockRequest, current_user=Depends(get_curre
         raise HTTPException(status_code=400, detail="block_type must be ooo, oos, or maintenance")
 
     from core.atomic_booking import apply_room_block
+
     result = await apply_room_block(
         tenant_id=current_user.tenant_id,
         room_id=req.room_id,
@@ -66,6 +70,7 @@ async def release_room_block(
         raise HTTPException(status_code=400, detail="block_type must be ooo, oos, or maintenance")
 
     from core.atomic_booking import release_room_block
+
     result = await release_room_block(
         tenant_id=current_user.tenant_id,
         room_id=room_id,
@@ -85,6 +90,7 @@ async def list_room_blocks(
 ):
     """List active room blocks."""
     from core.atomic_booking import get_room_blocks
+
     blocks = await get_room_blocks(
         tenant_id=current_user.tenant_id,
         room_id=room_id,

@@ -1,4 +1,5 @@
 """Auto-split from schemas.py — domain: rooms."""
+
 import uuid
 from datetime import UTC, datetime
 
@@ -21,6 +22,7 @@ class RoomCreate(BaseModel):
     # Extended fields
     view: str | None = None  # e.g. sea, city, garden, mountain
     bed_type: str | None = None
+
 
 class Room(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -51,6 +53,7 @@ class Room(BaseModel):
     last_cleaned: datetime | None = None
     notes: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
 
 class HousekeepingTask(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -89,6 +92,7 @@ class MaintenanceWorkOrder(BaseModel):
 
 class SensorAlert(BaseModel):
     """IoT sensör uyarısı modeli - sensörden gelen ham veriyi ve bağlamı temsil eder"""
+
     id: str | None = None
     tenant_id: str | None = None
     sensor_id: str
@@ -139,6 +143,3 @@ class PreventiveMaintenancePlan(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     completed_at: datetime | None = None
-
-
-

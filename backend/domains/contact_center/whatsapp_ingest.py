@@ -17,6 +17,7 @@ Doktrin:
 - İdempotent: mesaj upsert'i ``(tenant_id, channel, provider_message_id)`` ile
   anahtarlanır; ``unread_count`` YALNIZCA yeni eklenen gelen mesajda artar.
 """
+
 from __future__ import annotations
 
 import logging
@@ -113,9 +114,7 @@ async def ingest_whatsapp_inbound(
         msg_type = (wa_message or {}).get("type") or ""
         text_body = ((wa_message or {}).get("text") or {}).get("body", "") or ""
         if not tenant_id or not wa_msg_id or not from_phone:
-            logger.warning(
-                "contact-center ingest: tenant/msg-id/from eksik; atlanıyor"
-            )
+            logger.warning("contact-center ingest: tenant/msg-id/from eksik; atlanıyor")
             return
 
         # 0) provider_message_id idempotency PRE-CHECK (konuşma upsert'inden ÖNCE):
@@ -169,9 +168,7 @@ async def ingest_whatsapp_inbound(
                 # TOCTOU: kazanan konuşma bu dar pencerede kapanmış olabilir;
                 # var olmayan bir id'ye mesaj yazmaktansa güvenli çık (Meta yine
                 # retry eder, pre-check sonraki turda devreye girer).
-                logger.warning(
-                    "contact-center ingest: yarış sonrası açık konuşma yok; atlanıyor"
-                )
+                logger.warning("contact-center ingest: yarış sonrası açık konuşma yok; atlanıyor")
                 return
         conversation_id = (conv or {}).get("id") or set_on_insert["id"]
 
@@ -265,6 +262,4 @@ async def sync_whatsapp_status(
             {"$set": update},
         )
     except Exception:
-        logger.exception(
-            "contact-center WhatsApp status sync başarısız (bastırıldı)"
-        )
+        logger.exception("contact-center WhatsApp status sync başarısız (bastırıldı)")

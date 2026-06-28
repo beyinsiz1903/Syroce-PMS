@@ -15,6 +15,7 @@ sees only itself even when the caller is a super_admin. This avoids
 the F8AH P0 leak where a super_admin on an unchained ops/pilot tenant
 saw every tenant in the system.
 """
+
 from __future__ import annotations
 
 import re
@@ -48,6 +49,7 @@ async def _chain_tenant_ids(current_user: User) -> list[str]:
     chain (matching `chain_id` on the tenants doc). If no chain_id is set,
     they see only their own tenant.
     """
+
     # v97 fix — tenants koleksiyonu üyelerin büyük kısmı `id` field'ı
     # kullanıyor (sadece 1/40 doc'ta `tenant_id` mevcut). İkisini birden
     # destekle ki super_admin chain view ve chain_id resolution çalışsın.
@@ -63,8 +65,7 @@ async def _chain_tenant_ids(current_user: User) -> list[str]:
     # for everyone; the super_admin role only widens scope WITHIN the
     # chain (and is otherwise a no-op for unchained tenants).
     own = await db.tenants.find_one(
-        {"$or": [{"tenant_id": current_user.tenant_id},
-                 {"id": current_user.tenant_id}]},
+        {"$or": [{"tenant_id": current_user.tenant_id}, {"id": current_user.tenant_id}]},
         {"_id": 0, "chain_id": 1},
     )
     chain_id = (own or {}).get("chain_id")
@@ -83,8 +84,7 @@ async def _chain_tenant_ids(current_user: User) -> list[str]:
 async def _tenant_name_map(tenant_ids: list[str]) -> dict[str, str]:
     # v97 fix — match by either tenant_id or id (see above).
     cursor = db.tenants.find(
-        {"$or": [{"tenant_id": {"$in": tenant_ids}},
-                 {"id": {"$in": tenant_ids}}]},
+        {"$or": [{"tenant_id": {"$in": tenant_ids}}, {"id": {"$in": tenant_ids}}]},
         {"_id": 0, "tenant_id": 1, "id": 1, "hotel_name": 1, "name": 1},
     )
     out: dict[str, str] = {}
@@ -108,6 +108,7 @@ async def search_chain_guests(
     rx = {"$regex": safe, "$options": "i"}
 
     from security.encrypted_lookup import decrypt_guest_doc, guest_pii_regex_or_conditions
+
     # Dual-read: email/phone are encrypted at-rest, so a plaintext regex alone can
     # never match an encrypted row. guest_pii_regex_or_conditions adds the exact
     # blind-index hash branch (full-value match) while keeping the legacy regex
@@ -126,9 +127,15 @@ async def search_chain_guests(
         query,
         {
             "_id": 0,
-            "id": 1, "guest_id": 1, "tenant_id": 1,
-            "name": 1, "first_name": 1, "last_name": 1,
-            "email": 1, "phone": 1, "loyalty_tier": 1,
+            "id": 1,
+            "guest_id": 1,
+            "tenant_id": 1,
+            "name": 1,
+            "first_name": 1,
+            "last_name": 1,
+            "email": 1,
+            "phone": 1,
+            "loyalty_tier": 1,
         },
     ).limit(limit)
 
@@ -143,24 +150,24 @@ async def search_chain_guests(
     guests_out: list[dict[str, Any]] = []
     for g in raw:
         gid = g.get("id") or g.get("guest_id")
-        full_name = g.get("name") or " ".join(
-            x for x in [g.get("first_name"), g.get("last_name")] if x
-        ).strip() or "(isimsiz)"
+        full_name = g.get("name") or " ".join(x for x in [g.get("first_name"), g.get("last_name")] if x).strip() or "(isimsiz)"
         email = (g.get("email") or "").lower().strip()
         phone = (g.get("phone") or "").strip()
         key = email or phone
         tid = g.get("tenant_id")
         if key and tid:
             by_key.setdefault(key, set()).add(tid)
-        guests_out.append({
-            "id": gid,
-            "name": full_name,
-            "email": g.get("email"),
-            "phone": g.get("phone"),
-            "tenant_id": tid,
-            "property_name": name_map.get(tid, tid),
-            "loyalty_tier": g.get("loyalty_tier"),
-        })
+        guests_out.append(
+            {
+                "id": gid,
+                "name": full_name,
+                "email": g.get("email"),
+                "phone": g.get("phone"),
+                "tenant_id": tid,
+                "property_name": name_map.get(tid, tid),
+                "loyalty_tier": g.get("loyalty_tier"),
+            }
+        )
 
     cross_matches = sum(1 for tids in by_key.values() if len(tids) > 1)
     return {
@@ -193,6 +200,7 @@ async def get_unified_profile(
         raise HTTPException(status_code=404, detail="Guest not found in chain")
 
     from security.encrypted_lookup import decrypt_guest_doc, guest_pii_or_conditions
+
     # email/phone are encrypted at-rest; decrypt the seed before deriving the
     # equality keys, then dual-read (exact blind-index hash + plaintext) so the
     # same person's encrypted records elsewhere in the chain are still located.
@@ -229,19 +237,28 @@ async def get_unified_profile(
         "tenant_id": {"$in": tenant_ids},
         "$or": [
             {"guest_id": {"$in": related_ids}} if related_ids else {"guest_id": guest_id},
-            {"guest_email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}}
-            if email else {"_no_op": True},
+            {"guest_email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}} if email else {"_no_op": True},
         ],
     }
-    bookings_cursor = db.bookings.find(
-        booking_query,
-        {
-            "_id": 0,
-            "id": 1, "tenant_id": 1, "check_in": 1, "check_out": 1,
-            "room_number": 1, "room_type": 1, "status": 1, "total_amount": 1,
-            "nights": 1,
-        },
-    ).sort("check_in", -1).limit(200)
+    bookings_cursor = (
+        db.bookings.find(
+            booking_query,
+            {
+                "_id": 0,
+                "id": 1,
+                "tenant_id": 1,
+                "check_in": 1,
+                "check_out": 1,
+                "room_number": 1,
+                "room_type": 1,
+                "status": 1,
+                "total_amount": 1,
+                "nights": 1,
+            },
+        )
+        .sort("check_in", -1)
+        .limit(200)
+    )
 
     stay_history: list[dict[str, Any]] = []
     total_spent = 0.0
@@ -254,21 +271,21 @@ async def get_unified_profile(
         nights = int(b.get("nights") or 0)
         total_spent += amt
         total_nights += nights
-        stay_history.append({
-            "tenant_id": tid,
-            "property_name": name_map.get(tid, tid),
-            "check_in": b.get("check_in"),
-            "check_out": b.get("check_out"),
-            "room_number": b.get("room_number"),
-            "room_type": b.get("room_type"),
-            "status": b.get("status"),
-            "total_amount": amt,
-            "nights": nights,
-        })
+        stay_history.append(
+            {
+                "tenant_id": tid,
+                "property_name": name_map.get(tid, tid),
+                "check_in": b.get("check_in"),
+                "check_out": b.get("check_out"),
+                "room_number": b.get("room_number"),
+                "room_type": b.get("room_type"),
+                "status": b.get("status"),
+                "total_amount": amt,
+                "nights": nights,
+            }
+        )
 
-    full_name = seed.get("name") or " ".join(
-        x for x in [seed.get("first_name"), seed.get("last_name")] if x
-    ).strip()
+    full_name = seed.get("name") or " ".join(x for x in [seed.get("first_name"), seed.get("last_name")] if x).strip()
 
     return {
         "guest": {
@@ -303,49 +320,61 @@ async def loyalty_summary(
     name_map = await _tenant_name_map(tenant_ids)
 
     pipeline = [
-        {"$match": {
-            "tenant_id": {"$in": tenant_ids},
-            "email": {"$nin": [None, ""]},
-        }},
-        {"$group": {
-            # Group encrypted rows by their deterministic _hash_email blind index
-            # (AES-GCM ciphertexts never collide), falling back to lowercased
-            # plaintext email for legacy/unmigrated rows.
-            "_id": {"$ifNull": ["$_hash_email", {"$toLower": "$email"}]},
-            "name": {"$first": "$name"},
-            "first_name": {"$first": "$first_name"},
-            "last_name": {"$first": "$last_name"},
-            "email": {"$first": "$email"},
-            "tenants": {"$addToSet": "$tenant_id"},
-            "total_records": {"$sum": 1},
-            "tier": {"$max": "$loyalty_tier"},
-        }},
+        {
+            "$match": {
+                "tenant_id": {"$in": tenant_ids},
+                "email": {"$nin": [None, ""]},
+            }
+        },
+        {
+            "$group": {
+                # Group encrypted rows by their deterministic _hash_email blind index
+                # (AES-GCM ciphertexts never collide), falling back to lowercased
+                # plaintext email for legacy/unmigrated rows.
+                "_id": {"$ifNull": ["$_hash_email", {"$toLower": "$email"}]},
+                "name": {"$first": "$name"},
+                "first_name": {"$first": "$first_name"},
+                "last_name": {"$first": "$last_name"},
+                "email": {"$first": "$email"},
+                "tenants": {"$addToSet": "$tenant_id"},
+                "total_records": {"$sum": 1},
+                "tier": {"$max": "$loyalty_tier"},
+            }
+        },
         {"$match": {"$expr": {"$gt": [{"$size": "$tenants"}, 1]}}},
-        {"$project": {
-            "_id": 0,
-            "email": 1,
-            "name": {"$ifNull": ["$name", {"$concat": [
-                {"$ifNull": ["$first_name", ""]}, " ",
-                {"$ifNull": ["$last_name", ""]},
-            ]}]},
-            "tier": 1,
-            "properties_count": {"$size": "$tenants"},
-            "tenants": 1,
-            "total_records": 1,
-        }},
+        {
+            "$project": {
+                "_id": 0,
+                "email": 1,
+                "name": {
+                    "$ifNull": [
+                        "$name",
+                        {
+                            "$concat": [
+                                {"$ifNull": ["$first_name", ""]},
+                                " ",
+                                {"$ifNull": ["$last_name", ""]},
+                            ]
+                        },
+                    ]
+                },
+                "tier": 1,
+                "properties_count": {"$size": "$tenants"},
+                "tenants": 1,
+                "total_records": 1,
+            }
+        },
         {"$sort": {"properties_count": -1, "total_records": -1}},
         {"$limit": 100},
     ]
 
     from security.encrypted_lookup import decrypt_guest_doc
+
     cursor = db.guests.aggregate(pipeline)
     out: list[dict[str, Any]] = []
     async for row in cursor:
         row = decrypt_guest_doc(row)  # email may be ciphertext from the $group $first
-        row["properties"] = [
-            {"tenant_id": t, "name": name_map.get(t, t)}
-            for t in row.pop("tenants", [])
-        ]
+        row["properties"] = [{"tenant_id": t, "name": name_map.get(t, t)} for t in row.pop("tenants", [])]
         out.append(row)
 
     return {
@@ -378,19 +407,22 @@ async def merge_guest_profiles(
         raise HTTPException(status_code=400, detail="Cannot merge a guest into itself")
 
     # Privilege gate — destructive cross-tenant op restricted to elevated roles
-    require_roles(current_user, {
-        UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUPERVISOR,
-    })
+    require_roles(
+        current_user,
+        {
+            UserRole.SUPER_ADMIN,
+            UserRole.ADMIN,
+            UserRole.SUPERVISOR,
+        },
+    )
 
     tenant_ids = await _chain_tenant_ids(current_user)
     primary = await db.guests.find_one(
-        {"$or": [{"id": primary_id}, {"guest_id": primary_id}],
-         "tenant_id": {"$in": tenant_ids}},
+        {"$or": [{"id": primary_id}, {"guest_id": primary_id}], "tenant_id": {"$in": tenant_ids}},
         {"_id": 1, "tenant_id": 1, "id": 1, "guest_id": 1},
     )
     duplicate = await db.guests.find_one(
-        {"$or": [{"id": payload.target_guest_id}, {"guest_id": payload.target_guest_id}],
-         "tenant_id": {"$in": tenant_ids}},
+        {"$or": [{"id": payload.target_guest_id}, {"guest_id": payload.target_guest_id}], "tenant_id": {"$in": tenant_ids}},
         {"_id": 1, "tenant_id": 1, "id": 1, "guest_id": 1},
     )
     if not primary or not duplicate:
@@ -402,8 +434,7 @@ async def merge_guest_profiles(
     # Canonicalize identifiers — guest docs may carry both `id` and `guest_id`,
     # and dependent records may reference either. Repoint by $in over every
     # known alias of the duplicate, set canonical primary id (prefer guest.id).
-    dup_aliases = [v for v in {duplicate.get("id"), duplicate.get("guest_id"),
-                                payload.target_guest_id} if v]
+    dup_aliases = [v for v in {duplicate.get("id"), duplicate.get("guest_id"), payload.target_guest_id} if v]
     primary_canonical = primary.get("id") or primary.get("guest_id") or primary_id
 
     repoint_q = {
@@ -412,25 +443,18 @@ async def merge_guest_profiles(
     }
     booking_res = await db.bookings.update_many(
         repoint_q,
-        {"$set": {"guest_id": primary_canonical,
-                  "merged_from": payload.target_guest_id}},
+        {"$set": {"guest_id": primary_canonical, "merged_from": payload.target_guest_id}},
     )
     folio_res = await db.folios.update_many(
         repoint_q,
-        {"$set": {"guest_id": primary_canonical,
-                  "merged_from": payload.target_guest_id}},
+        {"$set": {"guest_id": primary_canonical, "merged_from": payload.target_guest_id}},
     )
 
     # Safety guard: if linked records exist under any alias but nothing was
     # repointed, abort archive to prevent orphaning.
-    expected_bookings = await db.bookings.count_documents(
-        {"tenant_id": dup_tenant, "guest_id": {"$in": dup_aliases}}
-    )
-    expected_folios = await db.folios.count_documents(
-        {"tenant_id": dup_tenant, "guest_id": {"$in": dup_aliases}}
-    )
-    if (expected_bookings > 0 or expected_folios > 0) and \
-       booking_res.modified_count == 0 and folio_res.modified_count == 0:
+    expected_bookings = await db.bookings.count_documents({"tenant_id": dup_tenant, "guest_id": {"$in": dup_aliases}})
+    expected_folios = await db.folios.count_documents({"tenant_id": dup_tenant, "guest_id": {"$in": dup_aliases}})
+    if (expected_bookings > 0 or expected_folios > 0) and booking_res.modified_count == 0 and folio_res.modified_count == 0:
         raise HTTPException(
             status_code=409,
             detail="Repoint produced no updates while linked records exist; aborted",
@@ -440,23 +464,24 @@ async def merge_guest_profiles(
     # v109 round-9 IDOR DiD: also assert tenant on the update filter.
     await db.guests.update_one(
         {"_id": duplicate["_id"], "tenant_id": dup_tenant},
-        {"$set": {
-            "archived": True,
-            "archived_at": datetime.now(UTC).isoformat(),
-            "merged_into": primary_id,
-        }},
+        {
+            "$set": {
+                "archived": True,
+                "archived_at": datetime.now(UTC).isoformat(),
+                "merged_into": primary_id,
+            }
+        },
     )
 
     # Apply optional field overrides on primary — pin to its immutable _id
     if payload.keep_field_overrides:
-        safe = {k: v for k, v in payload.keep_field_overrides.items()
-                if k in {"name", "first_name", "last_name", "email", "phone",
-                         "loyalty_tier", "preferences", "vip", "company"}}
+        safe = {k: v for k, v in payload.keep_field_overrides.items() if k in {"name", "first_name", "last_name", "email", "phone", "loyalty_tier", "preferences", "vip", "company"}}
         if safe:
             # encrypt_guest_update recomputes the plaintext name companions
             # (normalized + merged _ng_name from `primary`) AND encrypts PII
             # fields (email/phone) with their _hash_ tokens before persistence.
             from security.guest_write import encrypt_guest_update
+
             safe = encrypt_guest_update(safe, primary)
             await db.guests.update_one(
                 {"_id": primary["_id"], "tenant_id": primary.get("tenant_id")},
@@ -572,21 +597,24 @@ async def scan_duplicates(
     elenir. Sonuç merge UI'sındaki 'Önerilen birleştirmeler' listesine
     direkt beslenir.
     """
-    require_roles(current_user, {
-        UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SUPERVISOR,
-    })
+    require_roles(
+        current_user,
+        {
+            UserRole.SUPER_ADMIN,
+            UserRole.ADMIN,
+            UserRole.SUPERVISOR,
+        },
+    )
     tenant_ids = await _chain_tenant_ids(current_user)
     name_map = await _tenant_name_map(tenant_ids)
 
     # 1) Tüm guest'leri tek pass çek (sınırlı projeksiyon, archived hariç)
     cursor = db.guests.find(
-        {"tenant_id": {"$in": tenant_ids},
-         "$or": [{"archived": {"$exists": False}}, {"archived": False}]},
-        {"_id": 0, "id": 1, "guest_id": 1, "tenant_id": 1,
-         "name": 1, "first_name": 1, "last_name": 1,
-         "email": 1, "phone": 1, "loyalty_tier": 1},
+        {"tenant_id": {"$in": tenant_ids}, "$or": [{"archived": {"$exists": False}}, {"archived": False}]},
+        {"_id": 0, "id": 1, "guest_id": 1, "tenant_id": 1, "name": 1, "first_name": 1, "last_name": 1, "email": 1, "phone": 1, "loyalty_tier": 1},
     ).limit(20000)
     from security.encrypted_lookup import decrypt_guest_doc
+
     # Decrypt before the _norm_email/_norm_phone blocking + _score_pair + output:
     # AES-GCM ciphertexts differ per row, so bucketing on ciphertext would make
     # the cross-property dedupe blind to every migrated guest.
@@ -619,35 +647,38 @@ async def scan_duplicates(
 
     # 4) Çiftleri puanla, min_score üstündekileri tut
     scored: list[dict[str, Any]] = []
-    for (i, j) in candidate_pairs:
+    for i, j in candidate_pairs:
         a, b = all_guests[i], all_guests[j]
-        if a.get("tenant_id") == b.get("tenant_id") and \
-           (a.get("id") or a.get("guest_id")) == (b.get("id") or b.get("guest_id")):
+        if a.get("tenant_id") == b.get("tenant_id") and (a.get("id") or a.get("guest_id")) == (b.get("id") or b.get("guest_id")):
             continue
         score, reasons = _score_pair(a, b)
         if score < min_score:
             continue
-        scored.append({
-            "score": round(score, 3),
-            "reasons": reasons,
-            "cross_property": a.get("tenant_id") != b.get("tenant_id"),
-            "left": {
-                "id": a.get("id") or a.get("guest_id"),
-                "tenant_id": a.get("tenant_id"),
-                "property_name": name_map.get(a.get("tenant_id"), a.get("tenant_id")),
-                "name": _full_name(a) or "(isimsiz)",
-                "email": a.get("email"), "phone": a.get("phone"),
-                "loyalty_tier": a.get("loyalty_tier"),
-            },
-            "right": {
-                "id": b.get("id") or b.get("guest_id"),
-                "tenant_id": b.get("tenant_id"),
-                "property_name": name_map.get(b.get("tenant_id"), b.get("tenant_id")),
-                "name": _full_name(b) or "(isimsiz)",
-                "email": b.get("email"), "phone": b.get("phone"),
-                "loyalty_tier": b.get("loyalty_tier"),
-            },
-        })
+        scored.append(
+            {
+                "score": round(score, 3),
+                "reasons": reasons,
+                "cross_property": a.get("tenant_id") != b.get("tenant_id"),
+                "left": {
+                    "id": a.get("id") or a.get("guest_id"),
+                    "tenant_id": a.get("tenant_id"),
+                    "property_name": name_map.get(a.get("tenant_id"), a.get("tenant_id")),
+                    "name": _full_name(a) or "(isimsiz)",
+                    "email": a.get("email"),
+                    "phone": a.get("phone"),
+                    "loyalty_tier": a.get("loyalty_tier"),
+                },
+                "right": {
+                    "id": b.get("id") or b.get("guest_id"),
+                    "tenant_id": b.get("tenant_id"),
+                    "property_name": name_map.get(b.get("tenant_id"), b.get("tenant_id")),
+                    "name": _full_name(b) or "(isimsiz)",
+                    "email": b.get("email"),
+                    "phone": b.get("phone"),
+                    "loyalty_tier": b.get("loyalty_tier"),
+                },
+            }
+        )
 
     scored.sort(key=lambda r: r["score"], reverse=True)
     truncated = len(scored) > limit
@@ -678,8 +709,7 @@ async def suggest_duplicates_for(
     """
     tenant_ids = await _chain_tenant_ids(current_user)
     seed = await db.guests.find_one(
-        {"$or": [{"id": guest_id}, {"guest_id": guest_id}],
-         "tenant_id": {"$in": tenant_ids}},
+        {"$or": [{"id": guest_id}, {"guest_id": guest_id}], "tenant_id": {"$in": tenant_ids}},
         {"_id": 0},
     )
     if not seed:
@@ -687,6 +717,7 @@ async def suggest_duplicates_for(
     name_map = await _tenant_name_map(tenant_ids)
 
     from security.encrypted_lookup import decrypt_guest_doc, guest_pii_or_conditions
+
     # email/phone are encrypted at-rest; decrypt the seed before deriving blocking
     # keys so the candidate query is built from plaintext, not ciphertext.
     seed = decrypt_guest_doc(seed)
@@ -706,21 +737,20 @@ async def suggest_duplicates_for(
         suffix = sp[-7:]
         or_clauses.append({"phone": {"$regex": re.escape(suffix)}})
     if sl and len(sl) >= 3:
-        or_clauses.append({"last_name": {"$regex": f"^{re.escape(sl)}",
-                                          "$options": "i"}})
+        or_clauses.append({"last_name": {"$regex": f"^{re.escape(sl)}", "$options": "i"}})
     if not or_clauses:
         return {"seed_id": guest_id, "candidates": [], "checked": 0}
 
     seed_id = seed.get("id") or seed.get("guest_id")
     cursor = db.guests.find(
-        {"tenant_id": {"$in": tenant_ids},
-         "$or": or_clauses,
-         "$and": [
-             {"$or": [{"archived": {"$exists": False}}, {"archived": False}]},
-         ]},
-        {"_id": 0, "id": 1, "guest_id": 1, "tenant_id": 1,
-         "name": 1, "first_name": 1, "last_name": 1,
-         "email": 1, "phone": 1, "loyalty_tier": 1},
+        {
+            "tenant_id": {"$in": tenant_ids},
+            "$or": or_clauses,
+            "$and": [
+                {"$or": [{"archived": {"$exists": False}}, {"archived": False}]},
+            ],
+        },
+        {"_id": 0, "id": 1, "guest_id": 1, "tenant_id": 1, "name": 1, "first_name": 1, "last_name": 1, "email": 1, "phone": 1, "loyalty_tier": 1},
     ).limit(500)
     candidates_raw = [decrypt_guest_doc(g) async for g in cursor]
 
@@ -732,17 +762,20 @@ async def suggest_duplicates_for(
         score, reasons = _score_pair(seed, c)
         if score < min_score:
             continue
-        candidates.append({
-            "score": round(score, 3),
-            "reasons": reasons,
-            "cross_property": c.get("tenant_id") != seed.get("tenant_id"),
-            "id": cid,
-            "tenant_id": c.get("tenant_id"),
-            "property_name": name_map.get(c.get("tenant_id"), c.get("tenant_id")),
-            "name": _full_name(c) or "(isimsiz)",
-            "email": c.get("email"), "phone": c.get("phone"),
-            "loyalty_tier": c.get("loyalty_tier"),
-        })
+        candidates.append(
+            {
+                "score": round(score, 3),
+                "reasons": reasons,
+                "cross_property": c.get("tenant_id") != seed.get("tenant_id"),
+                "id": cid,
+                "tenant_id": c.get("tenant_id"),
+                "property_name": name_map.get(c.get("tenant_id"), c.get("tenant_id")),
+                "name": _full_name(c) or "(isimsiz)",
+                "email": c.get("email"),
+                "phone": c.get("phone"),
+                "loyalty_tier": c.get("loyalty_tier"),
+            }
+        )
 
     candidates.sort(key=lambda r: r["score"], reverse=True)
     return {

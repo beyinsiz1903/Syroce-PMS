@@ -11,6 +11,7 @@ Why a class (instead of free functions): existing call sites do
 `pwd_context.verify(...)`. Keeping the same shape means a one-line import
 swap per file with no behavioral change.
 """
+
 from __future__ import annotations
 
 import bcrypt

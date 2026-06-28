@@ -9,6 +9,7 @@ helpers in `bootstrap.startup_phases` for readability/maintainability.
 Execution order and fail-closed semantics (security/KBS/prod-validator
 blocks still raise) are preserved EXACTLY as before.
 """
+
 import logging
 
 from bootstrap.startup_phases import (

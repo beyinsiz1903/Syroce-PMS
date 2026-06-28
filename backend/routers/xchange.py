@@ -1,4 +1,5 @@
 """Syroce Xchange admin router — partner config, message log, replay."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -54,9 +55,7 @@ async def list_configs(current_user: User = Depends(get_current_user)) -> dict:
     tenant_id = _require_tenant(current_user)
     db = get_system_db()
     # P1 #7: deterministik sıra (en son güncellenen önce, sonra partner_code).
-    cur = db.xchange_partner_configs.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).sort([("updated_at", -1), ("partner_code", 1)])
+    cur = db.xchange_partner_configs.find({"tenant_id": tenant_id}, {"_id": 0}).sort([("updated_at", -1), ("partner_code", 1)])
     docs = [doc async for doc in cur]
     # Mask secret fields in response
     for d in docs:
@@ -80,18 +79,14 @@ async def upsert_config(
         raise HTTPException(status_code=404, detail="Bilinmeyen partner")
     # If a secret field arrives masked, keep the existing value.
     db = get_system_db()
-    existing = await db.xchange_partner_configs.find_one(
-        {"tenant_id": tenant_id, "partner_code": partner_code}
-    )
+    existing = await db.xchange_partner_configs.find_one({"tenant_id": tenant_id, "partner_code": partner_code})
     partner = PARTNERS[partner_code]
     config = dict(body.config or {})
     for fname, fmeta in partner.config_schema.items():
         if fmeta.get("type") == "secret":
             if config.get(fname) in (None, "", "***masked***") and existing:
                 config[fname] = (existing.get("config") or {}).get(fname, "")
-    doc = await bus.upsert_partner_config(
-        tenant_id, partner_code, config=config, enabled=body.enabled
-    )
+    doc = await bus.upsert_partner_config(tenant_id, partner_code, config=config, enabled=body.enabled)
     doc.pop("_id", None)
     return {"ok": True, "config": doc}
 
@@ -104,9 +99,7 @@ async def delete_config(
     _require_admin(current_user)
     tenant_id = _require_tenant(current_user)
     db = get_system_db()
-    res = await db.xchange_partner_configs.delete_one(
-        {"tenant_id": tenant_id, "partner_code": partner_code}
-    )
+    res = await db.xchange_partner_configs.delete_one({"tenant_id": tenant_id, "partner_code": partner_code})
     return {"ok": True, "deleted": res.deleted_count}
 
 
@@ -134,10 +127,7 @@ async def list_deliveries(
         # cursor = en son görülen created_at (ISO) — keyset pagination
         q["created_at"] = {"$lt": cursor}
     cur = (
-        db.xchange_deliveries
-        .find(q, {"_id": 0, "envelope": 0})
-        .sort("created_at", -1)
-        .limit(limit + 1)  # extra row → next_cursor varsa belirle
+        db.xchange_deliveries.find(q, {"_id": 0, "envelope": 0}).sort("created_at", -1).limit(limit + 1)  # extra row → next_cursor varsa belirle
     )
     items = [doc async for doc in cur]
     next_cursor = None
@@ -161,8 +151,19 @@ async def list_deliveries(
 # P1 #13: envelope içindeki Authorization header / API key / partner secret
 # alanları detail response'unda maskelenir (operatör görüntülerken plaintext sızmasın).
 _SECRET_KEY_HINTS = (
-    "authorization", "auth_token", "token", "secret", "api_key", "apikey",
-    "password", "pass", "x-api-key", "bearer", "session", "cookie", "private_key",
+    "authorization",
+    "auth_token",
+    "token",
+    "secret",
+    "api_key",
+    "apikey",
+    "password",
+    "pass",
+    "x-api-key",
+    "bearer",
+    "session",
+    "cookie",
+    "private_key",
 )
 
 
@@ -194,9 +195,7 @@ async def get_delivery(
     _require_admin(current_user)
     tenant_id = _require_tenant(current_user)
     db = get_system_db()
-    doc = await db.xchange_deliveries.find_one(
-        {"id": delivery_id, "tenant_id": tenant_id}, {"_id": 0}
-    )
+    doc = await db.xchange_deliveries.find_one({"id": delivery_id, "tenant_id": tenant_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Delivery bulunamadı")
     if "envelope" in doc:
@@ -225,10 +224,7 @@ async def replay(
     if cur_status not in _REPLAYABLE_STATUSES:
         raise HTTPException(
             status_code=409,
-            detail=(
-                f"Replay yalnız failed/dead_letter durumdaki mesajlar için yapılabilir "
-                f"(mevcut durum: {cur_status or 'bilinmiyor'}). Çift gönderim riski engellendi."
-            ),
+            detail=(f"Replay yalnız failed/dead_letter durumdaki mesajlar için yapılabilir (mevcut durum: {cur_status or 'bilinmiyor'}). Çift gönderim riski engellendi."),
         )
     try:
         return await bus.replay_delivery(delivery_id)
@@ -258,9 +254,7 @@ async def replay_bulk(
     ok_count = 0
     skipped_count = 0
     for did in body.delivery_ids:
-        d = await db.xchange_deliveries.find_one(
-            {"id": did, "tenant_id": tenant_id}, {"_id": 0, "status": 1}
-        )
+        d = await db.xchange_deliveries.find_one({"id": did, "tenant_id": tenant_id}, {"_id": 0, "status": 1})
         if not d:
             results.append({"id": did, "ok": False, "skipped": True, "reason": "not_found"})
             skipped_count += 1
@@ -295,6 +289,4 @@ async def test_publish(
         mt = MessageType(body.message_type)
     except ValueError:
         raise HTTPException(status_code=400, detail="Geçersiz mesaj tipi")
-    return await bus.publish(
-        tenant_id=tenant_id, message_type=mt, payload=body.payload
-    )
+    return await bus.publish(tenant_id=tenant_id, message_type=mt, payload=body.payload)

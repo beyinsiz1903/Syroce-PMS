@@ -1,4 +1,5 @@
 """Auto-split from hotel_services.py — backward-compatible sub-router."""
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -58,6 +59,7 @@ async def get_wake_up_calls(
     # matches what the front-desk operator considers "today" near midnight.
     try:
         from zoneinfo import ZoneInfo
+
         today = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%Y-%m-%d")
     except Exception:
         today = (datetime.now(UTC) + timedelta(hours=3)).strftime("%Y-%m-%d")
@@ -75,7 +77,7 @@ async def get_wake_up_calls(
             "completed": completed,
             "missed": missed,
             "due_now": due_now,
-        }
+        },
     }
 
 
@@ -142,10 +144,7 @@ async def update_wake_up_call(
 
     updates["updated_at"] = datetime.now(UTC).isoformat()
 
-    result = await db.wake_up_calls.update_one(
-        {"id": call_id, "tenant_id": tid},
-        {"$set": updates}
-    )
+    result = await db.wake_up_calls.update_one({"id": call_id, "tenant_id": tid}, {"$set": updates})
 
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Wake-up call bulunamadi")
@@ -197,9 +196,11 @@ async def get_lost_found_items(
     async for item in db.lost_found.find(query, {"_id": 0}).sort("created_at", -1):
         if search:
             search_lower = search.lower()
-            if (search_lower not in (item.get("item_name", "").lower()) and
-                search_lower not in (item.get("description", "") or "").lower() and
-                search_lower not in (item.get("guest_name", "") or "").lower()):
+            if (
+                search_lower not in (item.get("item_name", "").lower())
+                and search_lower not in (item.get("description", "") or "").lower()
+                and search_lower not in (item.get("guest_name", "") or "").lower()
+            ):
                 continue
         items.append(item)
 
@@ -278,10 +279,7 @@ async def update_lost_found_item(
     if data.guest_contact:
         updates["guest_contact"] = data.guest_contact
 
-    result = await db.lost_found.update_one(
-        {"id": item_id, "tenant_id": tid},
-        {"$set": updates}
-    )
+    result = await db.lost_found.update_one({"id": item_id, "tenant_id": tid}, {"$set": updates})
 
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Kayit bulunamadi")
@@ -333,10 +331,7 @@ async def match_guest_to_item(
             updates["guest_name"] = booking.get("guest_name", guest_name)
             updates["room_number"] = booking.get("room_number")
 
-    result = await db.lost_found.update_one(
-        {"id": item_id, "tenant_id": tid},
-        {"$set": updates}
-    )
+    result = await db.lost_found.update_one({"id": item_id, "tenant_id": tid}, {"$set": updates})
 
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Kayit bulunamadi")
@@ -348,4 +343,3 @@ async def match_guest_to_item(
 # ═══════════════════════════════════════════════════
 # 4. HOTEL SETTINGS - Logo & Invoice Template
 # ═══════════════════════════════════════════════════
-

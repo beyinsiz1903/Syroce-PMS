@@ -26,6 +26,7 @@ Sentry routing (recommended):
 Privacy: stdout/stderr never include tenant_ids, IPs, or event payloads
 — only counts + threshold reasons. Safe to log to public CI sinks.
 """
+
 import argparse
 import asyncio
 import json
@@ -46,11 +47,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--sentry-capture",
         action="store_true",
-        help=(
-            "If SENTRY_DSN is set, push FAIL verdict and sampler errors as "
-            "Sentry events with subsystem=cm-backlog tag (in-process "
-            "alternative to sentry-cli monitor wrap; both can coexist)."
-        ),
+        help=("If SENTRY_DSN is set, push FAIL verdict and sampler errors as Sentry events with subsystem=cm-backlog tag (in-process alternative to sentry-cli monitor wrap; both can coexist)."),
     )
     return p
 
@@ -133,9 +130,7 @@ async def _run(args) -> int:
             cb = snapshot.get("circuit_breakers", {})
             _sentry_capture(
                 "error",
-                "CM backlog FAIL: " + "; ".join(
-                    (outbox.get("reasons") or []) + (cb.get("reasons") or [])
-                )[:500],
+                "CM backlog FAIL: " + "; ".join((outbox.get("reasons") or []) + (cb.get("reasons") or []))[:500],
                 extra={
                     "verdict": verdict,
                     "backlog": outbox.get("backlog"),
@@ -156,10 +151,7 @@ async def _run(args) -> int:
         outbox_err = (snapshot.get("outbox") or {}).get("error_type")
         cb_err = (snapshot.get("circuit_breakers") or {}).get("error_type")
         if outbox_err or cb_err:
-            sys.stderr.write(
-                f"[FATAL] sampler error — outbox={outbox_err} "
-                f"breakers={cb_err}\n"
-            )
+            sys.stderr.write(f"[FATAL] sampler error — outbox={outbox_err} breakers={cb_err}\n")
             if args.sentry_capture:
                 _sentry_capture(
                     "fatal",

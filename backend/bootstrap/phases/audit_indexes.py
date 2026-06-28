@@ -9,6 +9,7 @@ Audit (DB_NAME=syroce-pms, 2026-05-03) sonucunda kapsamayan 11 index tespit edil
 
 Idempotent: zaten varsa sessizce geçer; oluşturulan adet döner.
 """
+
 import logging
 
 from core.database import _raw_db

@@ -7,6 +7,7 @@ and route-level performance stats.
 Uses pure ASGI middleware (not BaseHTTPMiddleware) to avoid event-loop
 conflicts in async test runners and improve performance.
 """
+
 import logging
 import time
 import uuid
@@ -60,6 +61,7 @@ class RequestTracingMiddleware:
                         import os
 
                         import jwt as pyjwt
+
                         token = auth_val[7:]
                         secret = os.environ.get("JWT_SECRET", "")
                         if secret:
@@ -78,6 +80,7 @@ class RequestTracingMiddleware:
         trace_id = None
         try:
             from modules.observability.distributed_tracing import tracing
+
             trace_id = tracing.start_trace(
                 request_path=path,
                 method=method,
@@ -113,6 +116,7 @@ class RequestTracingMiddleware:
             if trace_id:
                 try:
                     from modules.observability.distributed_tracing import tracing
+
                     tracing.end_trace(trace_id, status_code=status_code, error=error_msg)
                 except Exception:
                     pass
@@ -120,18 +124,14 @@ class RequestTracingMiddleware:
             # Record metrics
             try:
                 from modules.observability.metrics_collector import metrics
-                metrics.histogram("http_request_duration_ms", elapsed_ms,
-                                  {"method": method, "path": _normalize_path(path)})
-                metrics.increment("http_requests_total",
-                                  tags={"method": method, "status": str(status_code)})
+
+                metrics.histogram("http_request_duration_ms", elapsed_ms, {"method": method, "path": _normalize_path(path)})
+                metrics.increment("http_requests_total", tags={"method": method, "status": str(status_code)})
 
                 if is_error:
-                    metrics.increment("http_errors_total",
-                                      tags={"method": method, "path": _normalize_path(path),
-                                            "status": str(status_code)})
+                    metrics.increment("http_errors_total", tags={"method": method, "path": _normalize_path(path), "status": str(status_code)})
                 if is_slow:
-                    metrics.increment("http_slow_requests",
-                                      tags={"path": _normalize_path(path)})
+                    metrics.increment("http_slow_requests", tags={"path": _normalize_path(path)})
             except Exception:
                 pass
 
@@ -141,13 +141,16 @@ class RequestTracingMiddleware:
                     import asyncio
 
                     from modules.observability.error_tracker import error_tracker
-                    asyncio.create_task(error_tracker.track_error(
-                        error_type="http_500",
-                        message=error_msg[:300],
-                        module=_normalize_path(path),
-                        tenant_id=tenant_id,
-                        severity="high",
-                    ))
+
+                    asyncio.create_task(
+                        error_tracker.track_error(
+                            error_type="http_500",
+                            message=error_msg[:300],
+                            module=_normalize_path(path),
+                            tenant_id=tenant_id,
+                            severity="high",
+                        )
+                    )
                 except Exception:
                     pass
 

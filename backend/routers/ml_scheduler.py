@@ -19,6 +19,7 @@ def _get_service():
     if _service is None:
         from modules.ml_scheduler.service import MLSchedulerService
         from server import db
+
         _service = MLSchedulerService(db)
     return _service
 
@@ -42,8 +43,10 @@ class UpdateScheduleReq(BaseModel):
 
 
 @router.put("/policies/{model_type}")
-async def update_schedule(model_type: str, req: UpdateScheduleReq,
-                           current_user: User = Depends(get_current_user),
+async def update_schedule(
+    model_type: str,
+    req: UpdateScheduleReq,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     svc = _get_service()
@@ -56,13 +59,13 @@ class TriggerReq(BaseModel):
 
 
 @router.post("/trigger")
-async def trigger_execution(req: TriggerReq, current_user: User = Depends(get_current_user),
+async def trigger_execution(
+    req: TriggerReq,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     svc = _get_service()
-    return await svc.trigger_execution(
-        current_user.tenant_id, req.model_type, req.property_id, triggered_by=current_user.id
-    )
+    return await svc.trigger_execution(current_user.tenant_id, req.model_type, req.property_id, triggered_by=current_user.id)
 
 
 @router.get("/history")

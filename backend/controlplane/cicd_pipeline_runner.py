@@ -12,6 +12,7 @@ Each run produces:
   - deploy gate verdict (PASS / BLOCK)
   - runbook links for every failure
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -26,8 +27,11 @@ CICD_RUNS = "cicd_pipeline_runs"
 
 # ── Scenario → Acceptance mapping ──────────────────────────────────
 CRITICAL_SCENARIOS = {
-    "duplicate_delivery", "retry_storm", "modify_cancel_race",
-    "stale_provider_state", "delayed_ack",
+    "duplicate_delivery",
+    "retry_storm",
+    "modify_cancel_race",
+    "stale_provider_state",
+    "delayed_ack",
 }
 
 HARD_FAIL_SCENARIOS = {
@@ -131,7 +135,10 @@ class CICDPipelineRunner:
 
         logger.info(
             "CI/CD Pipeline [%s] starting — run=%s build=%s commit=%s",
-            tier, run_id, build_id, commit_sha,
+            tier,
+            run_id,
+            build_id,
+            commit_sha,
         )
 
         # Run the sandbox simulation
@@ -178,7 +185,9 @@ class CICDPipelineRunner:
 
         logger.info(
             "CI/CD Pipeline [%s] complete — run=%s verdict=%s",
-            tier, run_id, pipeline_result["deploy_gate"]["verdict"],
+            tier,
+            run_id,
+            pipeline_result["deploy_gate"]["verdict"],
         )
 
         return pipeline_result
@@ -193,13 +202,15 @@ class CICDPipelineRunner:
         # Per-provider all-pass check
         for provider, data in provider_results.items():
             all_pass = data.get("failed", 1) == 0
-            criteria.append({
-                "id": f"{provider}_all_pass",
-                "name": f"{data.get('display_name', provider)} sandbox: all critical PASS",
-                "passed": all_pass,
-                "severity": "critical",
-                "value": data.get("pass_rate", "N/A"),
-            })
+            criteria.append(
+                {
+                    "id": f"{provider}_all_pass",
+                    "name": f"{data.get('display_name', provider)} sandbox: all critical PASS",
+                    "passed": all_pass,
+                    "severity": "critical",
+                    "value": data.get("pass_rate", "N/A"),
+                }
+            )
 
         # Per-scenario checks with assertions
         oversell_total = 0
@@ -230,50 +241,52 @@ class CICDPipelineRunner:
                     if not assertions.get("deterministic_sequence", True):
                         deterministic = False
 
-        criteria.extend([
-            {
-                "id": "zero_oversell",
-                "name": "oversell: 0",
-                "passed": oversell_total == 0,
-                "severity": "critical",
-                "value": str(oversell_total),
-            },
-            {
-                "id": "zero_duplicate_consumption",
-                "name": "duplicate inventory consumption: 0",
-                "passed": duplicate_consumption_total == 0,
-                "severity": "critical",
-                "value": str(duplicate_consumption_total),
-            },
-            {
-                "id": "zero_inconsistent_state",
-                "name": "inconsistent state: 0",
-                "passed": not inconsistent_state,
-                "severity": "critical",
-                "value": "0" if not inconsistent_state else "DETECTED",
-            },
-            {
-                "id": "stale_provider_recovery",
-                "name": "stale provider recovery: PASS",
-                "passed": stale_recovery,
-                "severity": "critical",
-                "value": "PASS" if stale_recovery else "FAIL",
-            },
-            {
-                "id": "reconciliation_recovery",
-                "name": "drift reconciliation recovery: PASS",
-                "passed": reconciliation_recovery,
-                "severity": "critical",
-                "value": "PASS" if reconciliation_recovery else "FAIL",
-            },
-            {
-                "id": "deterministic_modify_cancel",
-                "name": "deterministic modify/cancel: PASS",
-                "passed": deterministic,
-                "severity": "critical",
-                "value": "PASS" if deterministic else "FAIL",
-            },
-        ])
+        criteria.extend(
+            [
+                {
+                    "id": "zero_oversell",
+                    "name": "oversell: 0",
+                    "passed": oversell_total == 0,
+                    "severity": "critical",
+                    "value": str(oversell_total),
+                },
+                {
+                    "id": "zero_duplicate_consumption",
+                    "name": "duplicate inventory consumption: 0",
+                    "passed": duplicate_consumption_total == 0,
+                    "severity": "critical",
+                    "value": str(duplicate_consumption_total),
+                },
+                {
+                    "id": "zero_inconsistent_state",
+                    "name": "inconsistent state: 0",
+                    "passed": not inconsistent_state,
+                    "severity": "critical",
+                    "value": "0" if not inconsistent_state else "DETECTED",
+                },
+                {
+                    "id": "stale_provider_recovery",
+                    "name": "stale provider recovery: PASS",
+                    "passed": stale_recovery,
+                    "severity": "critical",
+                    "value": "PASS" if stale_recovery else "FAIL",
+                },
+                {
+                    "id": "reconciliation_recovery",
+                    "name": "drift reconciliation recovery: PASS",
+                    "passed": reconciliation_recovery,
+                    "severity": "critical",
+                    "value": "PASS" if reconciliation_recovery else "FAIL",
+                },
+                {
+                    "id": "deterministic_modify_cancel",
+                    "name": "deterministic modify/cancel: PASS",
+                    "passed": deterministic,
+                    "severity": "critical",
+                    "value": "PASS" if deterministic else "FAIL",
+                },
+            ]
+        )
 
         # Regression check vs baseline
         regression_check = {
@@ -315,19 +328,23 @@ class CICDPipelineRunner:
             scenario_key = fail_id.replace("_all_pass", "").split("_")[0]
             for s_key, rb in RUNBOOKS.items():
                 if s_key in fail_id or scenario_key in s_key:
-                    fail_details.append({
-                        "criteria_id": fail_id,
-                        **rb,
-                    })
+                    fail_details.append(
+                        {
+                            "criteria_id": fail_id,
+                            **rb,
+                        }
+                    )
                     break
             else:
-                fail_details.append({
-                    "criteria_id": fail_id,
-                    "severity": "critical",
-                    "impact": f"Acceptance criteria '{fail_id}' failed",
-                    "runbook": "/api/ops/runbooks/general",
-                    "rollback": "Investigate the failing criteria and fix before deploying.",
-                })
+                fail_details.append(
+                    {
+                        "criteria_id": fail_id,
+                        "severity": "critical",
+                        "impact": f"Acceptance criteria '{fail_id}' failed",
+                        "runbook": "/api/ops/runbooks/general",
+                        "rollback": "Investigate the failing criteria and fix before deploying.",
+                    }
+                )
 
         return {
             "verdict": "BLOCK" if blocks else "WARN",
@@ -378,15 +395,23 @@ class CICDPipelineRunner:
             query["tenant_id"] = tenant_id
         if tier:
             query["tier"] = tier
-        runs = await db[CICD_RUNS].find(
-            query, {"_id": 0, "_persist": 0},
-        ).sort("started_at", -1).limit(limit).to_list(limit)
+        runs = (
+            await db[CICD_RUNS]
+            .find(
+                query,
+                {"_id": 0, "_persist": 0},
+            )
+            .sort("started_at", -1)
+            .limit(limit)
+            .to_list(limit)
+        )
         return runs
 
     async def get_run(self, run_id: str) -> dict[str, Any] | None:
         """Get a specific pipeline run."""
         return await db[CICD_RUNS].find_one(
-            {"run_id": run_id}, {"_id": 0, "_persist": 0},
+            {"run_id": run_id},
+            {"_id": 0, "_persist": 0},
         )
 
     async def get_baseline(self, tenant_id: str | None = None) -> dict[str, Any]:
@@ -397,7 +422,8 @@ class CICDPipelineRunner:
             if tenant_id:
                 query["tenant_id"] = tenant_id
             last_pass = await db[CICD_RUNS].find_one(
-                query, {"_id": 0, "_persist": 0},
+                query,
+                {"_id": 0, "_persist": 0},
                 sort=[("started_at", -1)],
             )
             if last_pass:
@@ -424,7 +450,8 @@ class CICDPipelineRunner:
             if tenant_id:
                 query["tenant_id"] = tenant_id
             last_run = await db[CICD_RUNS].find_one(
-                query, {"_id": 0, "_persist": 0},
+                query,
+                {"_id": 0, "_persist": 0},
                 sort=[("started_at", -1)],
             )
             if last_run:
@@ -462,34 +489,47 @@ class CICDPipelineRunner:
         if tier:
             query["tier"] = tier
 
-        runs = await db[CICD_RUNS].find(
-            query,
-            {
-                "_id": 0, "run_id": 1, "tier": 1, "started_at": 1,
-                "simulation_summary": 1, "acceptance_criteria.all_passed": 1,
-                "deploy_gate.verdict": 1, "build_context": 1,
-                "provider_results": 1,
-            },
-        ).sort("started_at", -1).limit(limit).to_list(limit)
+        runs = (
+            await db[CICD_RUNS]
+            .find(
+                query,
+                {
+                    "_id": 0,
+                    "run_id": 1,
+                    "tier": 1,
+                    "started_at": 1,
+                    "simulation_summary": 1,
+                    "acceptance_criteria.all_passed": 1,
+                    "deploy_gate.verdict": 1,
+                    "build_context": 1,
+                    "provider_results": 1,
+                },
+            )
+            .sort("started_at", -1)
+            .limit(limit)
+            .to_list(limit)
+        )
 
         runs.reverse()  # chronological
 
         trend_data = []
         for run in runs:
             summary = run.get("simulation_summary", {})
-            trend_data.append({
-                "run_id": run.get("run_id"),
-                "tier": run.get("tier"),
-                "date": run.get("started_at"),
-                "pass_rate": _parse_rate(summary.get("pass_rate", "0%")),
-                "passed": summary.get("passed", 0),
-                "failed": summary.get("failed", 0),
-                "total": summary.get("total_scenarios", 0),
-                "verdict": run.get("deploy_gate", {}).get("verdict", "UNKNOWN"),
-                "all_criteria_met": run.get("acceptance_criteria", {}).get("all_passed", False),
-                "build_id": run.get("build_context", {}).get("build_id"),
-                "commit_sha": run.get("build_context", {}).get("commit_sha"),
-            })
+            trend_data.append(
+                {
+                    "run_id": run.get("run_id"),
+                    "tier": run.get("tier"),
+                    "date": run.get("started_at"),
+                    "pass_rate": _parse_rate(summary.get("pass_rate", "0%")),
+                    "passed": summary.get("passed", 0),
+                    "failed": summary.get("failed", 0),
+                    "total": summary.get("total_scenarios", 0),
+                    "verdict": run.get("deploy_gate", {}).get("verdict", "UNKNOWN"),
+                    "all_criteria_met": run.get("acceptance_criteria", {}).get("all_passed", False),
+                    "build_id": run.get("build_context", {}).get("build_id"),
+                    "commit_sha": run.get("build_context", {}).get("commit_sha"),
+                }
+            )
 
         # Provider-level trends
         provider_trends = {}
@@ -497,13 +537,15 @@ class CICDPipelineRunner:
             for provider, data in run.get("provider_results", {}).items():
                 if provider not in provider_trends:
                     provider_trends[provider] = []
-                provider_trends[provider].append({
-                    "run_id": run.get("run_id"),
-                    "date": run.get("started_at"),
-                    "pass_rate": _parse_rate(data.get("pass_rate", "0%")),
-                    "passed": data.get("passed", 0),
-                    "failed": data.get("failed", 0),
-                })
+                provider_trends[provider].append(
+                    {
+                        "run_id": run.get("run_id"),
+                        "date": run.get("started_at"),
+                        "pass_rate": _parse_rate(data.get("pass_rate", "0%")),
+                        "passed": data.get("passed", 0),
+                        "failed": data.get("failed", 0),
+                    }
+                )
 
         return {
             "overall_trend": trend_data,

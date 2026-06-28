@@ -2,6 +2,7 @@
 Syroce PMS - Security & Authentication Helpers
 JWT token management, password hashing, and user authentication.
 """
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -87,6 +88,7 @@ def invalidate_user_doc_cache(user_id: str | None = None) -> None:
     # avoid a load-time cycle (security ↔ entitlement ↔ database).
     try:
         from core.entitlement import _local_evict_super_admin
+
         _local_evict_super_admin(user_id)
     except Exception:
         pass
@@ -95,35 +97,33 @@ def invalidate_user_doc_cache(user_id: str | None = None) -> None:
     # it at module-load time (circular).
     try:
         from infra.auth_cache_pubsub import auth_cache_pubsub
+
         auth_cache_pubsub.schedule_publish_user(user_id)
     except Exception:
         # Any failure here must not block the mutation result; local
         # eviction has already happened so this worker is correct.
         pass
 
+
 # Password hashing — direct bcrypt (passlib retired, see core/_pwd.py)
 pwd_context = BcryptContext()
 
 # JWT Configuration
-JWT_SECRET = os.environ.get('JWT_SECRET')
+JWT_SECRET = os.environ.get("JWT_SECRET")
 if not JWT_SECRET:
     # v107 (Bug DAG, architect P0 follow-up): tutarlılık için 5 fail-open noktasının
     # SONUNCUSU. Önceki davranış: random fallback + INFO log → multi-worker prod'da
     # her worker farklı secret → cross-worker token reject + INFO seviyesi log
     # gözden kaçar. Şimdi 5 yer hepsi aynı opt-in pattern.
-    if os.environ.get('STRICT_JWT_SECRET') == '1' or os.environ.get('ENV', '').lower() == 'production':
+    if os.environ.get("STRICT_JWT_SECRET") == "1" or os.environ.get("ENV", "").lower() == "production":
         raise RuntimeError(
-            "JWT_SECRET environment variable is required in production "
-            "(STRICT_JWT_SECRET=1 or ENV=production set). "
-            "Without it, multi-worker deployments would have inconsistent token verification."
+            "JWT_SECRET environment variable is required in production (STRICT_JWT_SECRET=1 or ENV=production set). Without it, multi-worker deployments would have inconsistent token verification."
         )
     JWT_SECRET = secrets.token_urlsafe(64)
     logger.warning(
-        "⚠️ JWT_SECRET unset; core/security using random per-process secret "
-        "(DEV ONLY — tokens invalidate on restart, multi-worker inconsistent). "
-        "For production set JWT_SECRET + STRICT_JWT_SECRET=1."
+        "⚠️ JWT_SECRET unset; core/security using random per-process secret (DEV ONLY — tokens invalidate on restart, multi-worker inconsistent). For production set JWT_SECRET + STRICT_JWT_SECRET=1."
     )
-JWT_ALGORITHM = 'HS256'
+JWT_ALGORITHM = "HS256"
 # v44 (Bug BJ): default lowered 168h → 24h. 7-day tokens are way too long for
 # a stolen-token blast radius given there was previously no revocation path.
 # Override via env if a deployment really needs longer-lived tokens.
@@ -141,13 +141,13 @@ _V3_DEFAULT_ACCESS_MINUTES = 15
 
 
 def _resolve_jwt_lifetime_minutes() -> int:
-    raw_minutes = os.environ.get('JWT_EXPIRATION_MINUTES')
+    raw_minutes = os.environ.get("JWT_EXPIRATION_MINUTES")
     if raw_minutes:
         try:
             return max(1, int(raw_minutes))
         except (TypeError, ValueError):
             pass
-    raw_hours = os.environ.get('JWT_EXPIRATION_HOURS')
+    raw_hours = os.environ.get("JWT_EXPIRATION_HOURS")
     if raw_hours is not None:
         try:
             return max(1, int(round(float(raw_hours) * 60)))
@@ -169,9 +169,7 @@ JWT_EXPIRATION_HOURS = max(1, round(JWT_EXPIRATION_MINUTES / 60))
 # explicitly in the body of `/api/auth/refresh-token`, and are rotated
 # (old jti revoked) on every successful refresh. This decouples the
 # 15-minute access-token lifetime from the user's session lifetime.
-REFRESH_TOKEN_EXPIRATION_DAYS = max(
-    1, int(os.environ.get('REFRESH_TOKEN_EXPIRATION_DAYS', '30'))
-)
+REFRESH_TOKEN_EXPIRATION_DAYS = max(1, int(os.environ.get("REFRESH_TOKEN_EXPIRATION_DAYS", "30")))
 
 security = HTTPBearer()
 
@@ -191,6 +189,7 @@ async def _ensure_revoked_tokens_index():
     if _revoked_index_ready:
         return
     from core.tenant_db import get_system_db
+
     sys_db = get_system_db()
     await sys_db.revoked_tokens.create_index("jti", unique=True)
     await sys_db.revoked_tokens.create_index("expires_at", expireAfterSeconds=0)
@@ -203,8 +202,7 @@ async def _ensure_revoked_tokens_index():
     _revoked_index_ready = True
 
 
-async def revoke_jti(jti: str, exp_ts: int, *, user_id: str | None = None,
-                     tenant_id: str | None = None, reason: str = "logout") -> bool:
+async def revoke_jti(jti: str, exp_ts: int, *, user_id: str | None = None, tenant_id: str | None = None, reason: str = "logout") -> bool:
     """Insert jti into the revocation set with TTL aligned to token exp.
 
     Returns True if THIS call inserted the jti (winner), False if it was
@@ -217,16 +215,19 @@ async def revoke_jti(jti: str, exp_ts: int, *, user_id: str | None = None,
     from pymongo.errors import DuplicateKeyError
 
     from core.tenant_db import get_system_db
+
     sys_db = get_system_db()
     try:
-        await sys_db.revoked_tokens.insert_one({
-            "jti": jti,
-            "expires_at": datetime.fromtimestamp(int(exp_ts), tz=UTC),
-            "user_id": user_id,
-            "tenant_id": tenant_id,
-            "reason": reason,
-            "revoked_at": datetime.now(UTC),
-        })
+        await sys_db.revoked_tokens.insert_one(
+            {
+                "jti": jti,
+                "expires_at": datetime.fromtimestamp(int(exp_ts), tz=UTC),
+                "user_id": user_id,
+                "tenant_id": tenant_id,
+                "reason": reason,
+                "revoked_at": datetime.now(UTC),
+            }
+        )
         return True
     except DuplicateKeyError:
         # Already revoked → idempotent for logout, but the caller of refresh
@@ -239,6 +240,7 @@ async def is_jti_revoked(jti: str) -> bool:
         return False
     await _ensure_revoked_tokens_index()
     from core.tenant_db import get_system_db
+
     sys_db = get_system_db()
     try:
         doc = await sys_db.revoked_tokens.find_one({"jti": jti}, {"_id": 0, "jti": 1})
@@ -264,14 +266,14 @@ def verify_password(password: str, hashed: str) -> bool:
 def create_token(user_id: str, tenant_id: str | None = None) -> str:
     now = datetime.now(UTC)
     payload = {
-        'user_id': user_id,
-        'tenant_id': tenant_id,
-        'iat': now,
-        'jti': secrets.token_urlsafe(16),  # v44: revocable token id
-        'exp': now + timedelta(minutes=JWT_EXPIRATION_MINUTES),
+        "user_id": user_id,
+        "tenant_id": tenant_id,
+        "iat": now,
+        "jti": secrets.token_urlsafe(16),  # v44: revocable token id
+        "exp": now + timedelta(minutes=JWT_EXPIRATION_MINUTES),
         # V3: explicit token type so refresh tokens (which decode under the
         # same JWT_SECRET) can't be silently used as access tokens.
-        'type': 'access',
+        "type": "access",
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -291,12 +293,12 @@ def create_refresh_token(user_id: str, tenant_id: str | None = None) -> tuple[st
     now = datetime.now(UTC)
     exp = now + timedelta(days=REFRESH_TOKEN_EXPIRATION_DAYS)
     payload = {
-        'user_id': user_id,
-        'tenant_id': tenant_id,
-        'iat': now,
-        'jti': secrets.token_urlsafe(24),
-        'exp': exp,
-        'type': 'refresh',
+        "user_id": user_id,
+        "tenant_id": tenant_id,
+        "iat": now,
+        "jti": secrets.token_urlsafe(24),
+        "exp": exp,
+        "type": "refresh",
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM), int(exp.timestamp())
 
@@ -313,7 +315,7 @@ async def get_current_user(
     try:
         token = credentials.credentials
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        user_id = payload.get('user_id')
+        user_id = payload.get("user_id")
 
         if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token: missing user_id")
@@ -325,8 +327,8 @@ async def get_current_user(
         # Tokens minted before V3 lack the `type` claim entirely; those are
         # accepted (backwards-compat) but every newly-minted access token
         # carries `type="access"` explicitly via `create_token()`.
-        token_type = payload.get('type')
-        if token_type and token_type != 'access':
+        token_type = payload.get("type")
+        if token_type and token_type != "access":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Wrong token type — refresh tokens cannot access API endpoints",
@@ -335,7 +337,7 @@ async def get_current_user(
         # v44: revoked-token check (logout/refresh-rotation enforcement).
         # Tokens issued before v44 lack `jti` → treated as non-revocable but
         # still expire naturally; new tokens always carry a jti.
-        jti = payload.get('jti')
+        jti = payload.get("jti")
         if jti and await is_jti_revoked(jti):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked - please login again")
 
@@ -344,9 +346,7 @@ async def get_current_user(
         # security tradeoffs (30 s grace after logout / password change).
         user_doc = _user_doc_cache_get(user_id)
         if user_doc is None:
-            user_doc = await db.users.find_one(
-                {'$or': [{'id': user_id}, {'user_id': user_id}]}, {'_id': 0}
-            )
+            user_doc = await db.users.find_one({"$or": [{"id": user_id}, {"user_id": user_id}]}, {"_id": 0})
             if user_doc:
                 _user_doc_cache_set(user_id, user_doc)
 
@@ -358,9 +358,9 @@ async def get_current_user(
         # is older must be rejected — covers all parallel sessions without
         # tracking each jti individually. Tokens lacking `iat` (pre-v44) are
         # treated as invalid once this watermark is set (fail-closed).
-        invalid_before = user_doc.get('tokens_invalid_before')
+        invalid_before = user_doc.get("tokens_invalid_before")
         if invalid_before:
-            iat = payload.get('iat')
+            iat = payload.get("iat")
             if not iat or int(iat) < int(invalid_before):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -373,12 +373,10 @@ async def get_current_user(
         # gets auto-scoped and returns nothing), a future raw query that
         # bypasses the proxy would lose that protection. This explicit check
         # rejects any token whose tenant_id does not match the user's record.
-        jwt_tenant = payload.get('tenant_id')
-        doc_tenant = user_doc.get('tenant_id')
+        jwt_tenant = payload.get("tenant_id")
+        doc_tenant = user_doc.get("tenant_id")
         if jwt_tenant and doc_tenant and jwt_tenant != doc_tenant:
-            logger.warning(
-                f"JWT tenant mismatch: user={user_id} jwt_tenant={jwt_tenant} doc_tenant={doc_tenant}"
-            )
+            logger.warning(f"JWT tenant mismatch: user={user_id} jwt_tenant={jwt_tenant} doc_tenant={doc_tenant}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token-tenant mismatch - please login again",
@@ -390,14 +388,17 @@ async def get_current_user(
         # sifresini degistirene kadar yalnizca sifre-degistirme / cikis / profil
         # uclarina erisebilir. Diger her sey fail-closed 403. Istek yolu
         # belirlenemiyorsa (dogrudan, non-Depends cagri) yine reddedilir.
-        if user_doc.get('requires_password_change'):
+        if user_doc.get("requires_password_change"):
             # Exact-path allowlist (suffix degil) — gelecekte ayni son-eke sahip
             # yeni bir route'un yanlislikla izin acmasini onler. Hem /api on-ekli
             # hem on-eksiz mount varyantlari kapsanir.
             _allowed = {
-                "/api/auth/change-password", "/auth/change-password",
-                "/api/auth/logout", "/auth/logout",
-                "/api/auth/me", "/auth/me",
+                "/api/auth/change-password",
+                "/auth/change-password",
+                "/api/auth/logout",
+                "/auth/logout",
+                "/api/auth/me",
+                "/auth/me",
             }
             _path = request.url.path.rstrip("/") if request is not None else None
             if not _path or _path not in _allowed:
@@ -406,10 +407,10 @@ async def get_current_user(
                     detail="Devam etmeden once sifrenizi degistirmelisiniz.",
                 )
 
-        if 'id' not in user_doc:
-            user_doc['id'] = user_doc.get('user_id', user_id)
-        if 'user_id' not in user_doc:
-            user_doc['user_id'] = user_doc.get('id', user_id)
+        if "id" not in user_doc:
+            user_doc["id"] = user_doc.get("user_id", user_id)
+        if "user_id" not in user_doc:
+            user_doc["user_id"] = user_doc.get("id", user_id)
 
         return User(**user_doc)
     except jwt.ExpiredSignatureError:
@@ -433,13 +434,14 @@ def _is_super_admin(current_user) -> bool:
 
 def generate_qr_code(data: str) -> str:
     import qrcode
+
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(data)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
 
     buffer = io.BytesIO()
-    img.save(buffer, format='PNG')
+    img.save(buffer, format="PNG")
     buffer.seek(0)
     img_base64 = base64.b64encode(buffer.getvalue()).decode()
     return f"data:image/png;base64,{img_base64}"
@@ -448,8 +450,4 @@ def generate_qr_code(data: str) -> str:
 def generate_time_based_qr_token(booking_id: str, expiry_hours: int = 72) -> str:
     expiry = datetime.now(UTC) + timedelta(hours=expiry_hours)
     token = secrets.token_urlsafe(32)
-    return jwt.encode({
-        'booking_id': booking_id,
-        'token': token,
-        'exp': expiry
-    }, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return jwt.encode({"booking_id": booking_id, "token": token, "exp": expiry}, JWT_SECRET, algorithm=JWT_ALGORITHM)

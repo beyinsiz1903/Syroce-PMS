@@ -2,6 +2,7 @@
 Shared utilities for Rate Manager routers (Exely + HotelRunner).
 Extracted from hr_rate_manager_router.py and rate_manager_router.py to eliminate duplication.
 """
+
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -12,6 +13,7 @@ from pydantic import BaseModel
 # ══════════════════════════════════════════════════════════════════════
 # Shared Pydantic Models
 # ══════════════════════════════════════════════════════════════════════
+
 
 class RoomTypeValuesItem(BaseModel):
     room_type_code: str
@@ -78,6 +80,7 @@ class StopSaleScheduleUpdate(BaseModel):
 # Date Grouping
 # ══════════════════════════════════════════════════════════════════════
 
+
 def group_consecutive_dates(date_strings: list[str]) -> list[tuple[str, str]]:
     """Group sorted date strings into consecutive ranges.
 
@@ -136,34 +139,44 @@ def get_holiday_periods(year: int) -> list:
         sorted_dates = sorted(dates)
         tr_name = TR_HOLIDAY_NAMES.get(en_name, en_name)
         key = en_name.lower().replace(" ", "_").replace("'", "")
-        periods.append({
-            "key": f"tr_{key}_{year}",
-            "name": tr_name,
-            "category": "turkey",
-            "start_date": sorted_dates[0].isoformat(),
-            "end_date": sorted_dates[-1].isoformat(),
-            "days": len(sorted_dates),
-            "year": year,
-        })
+        periods.append(
+            {
+                "key": f"tr_{key}_{year}",
+                "name": tr_name,
+                "category": "turkey",
+                "start_date": sorted_dates[0].isoformat(),
+                "end_date": sorted_dates[-1].isoformat(),
+                "days": len(sorted_dates),
+                "year": year,
+            }
+        )
 
     easter_date = easter(year)
     orthodox_easter = easter(year, method=2)
 
     intl = [
-        {"key": f"easter_{year}", "name": "Paskalya (Bati)", "category": "international",
-         "start_date": (easter_date - timedelta(days=2)).isoformat(),
-         "end_date": (easter_date + timedelta(days=1)).isoformat(), "days": 4, "year": year},
-        {"key": f"orthodox_easter_{year}", "name": "Ortodoks Paskalya", "category": "international",
-         "start_date": (orthodox_easter - timedelta(days=2)).isoformat(),
-         "end_date": (orthodox_easter + timedelta(days=1)).isoformat(), "days": 4, "year": year},
-        {"key": f"christmas_{year}", "name": "Noel Tatili", "category": "international",
-         "start_date": f"{year}-12-23", "end_date": f"{year}-12-26", "days": 4, "year": year},
-        {"key": f"russian_newyear_{year}", "name": "Rus Yilbasi Tatili", "category": "international",
-         "start_date": f"{year}-01-01", "end_date": f"{year}-01-08", "days": 8, "year": year},
-        {"key": f"summer_peak_{year}", "name": "Yaz Sezonu (Yuksek)", "category": "season",
-         "start_date": f"{year}-07-01", "end_date": f"{year}-08-31", "days": 62, "year": year},
-        {"key": f"winter_break_{year}", "name": "Soemestr Tatili", "category": "season",
-         "start_date": f"{year}-01-20", "end_date": f"{year}-02-03", "days": 15, "year": year},
+        {
+            "key": f"easter_{year}",
+            "name": "Paskalya (Bati)",
+            "category": "international",
+            "start_date": (easter_date - timedelta(days=2)).isoformat(),
+            "end_date": (easter_date + timedelta(days=1)).isoformat(),
+            "days": 4,
+            "year": year,
+        },
+        {
+            "key": f"orthodox_easter_{year}",
+            "name": "Ortodoks Paskalya",
+            "category": "international",
+            "start_date": (orthodox_easter - timedelta(days=2)).isoformat(),
+            "end_date": (orthodox_easter + timedelta(days=1)).isoformat(),
+            "days": 4,
+            "year": year,
+        },
+        {"key": f"christmas_{year}", "name": "Noel Tatili", "category": "international", "start_date": f"{year}-12-23", "end_date": f"{year}-12-26", "days": 4, "year": year},
+        {"key": f"russian_newyear_{year}", "name": "Rus Yilbasi Tatili", "category": "international", "start_date": f"{year}-01-01", "end_date": f"{year}-01-08", "days": 8, "year": year},
+        {"key": f"summer_peak_{year}", "name": "Yaz Sezonu (Yuksek)", "category": "season", "start_date": f"{year}-07-01", "end_date": f"{year}-08-31", "days": 62, "year": year},
+        {"key": f"winter_break_{year}", "name": "Soemestr Tatili", "category": "season", "start_date": f"{year}-01-20", "end_date": f"{year}-02-03", "days": 15, "year": year},
     ]
     periods.extend(intl)
     periods.sort(key=lambda x: x["start_date"])

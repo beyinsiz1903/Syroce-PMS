@@ -30,6 +30,7 @@ process, so plain dict mutations under the event-loop thread are safe.
 If a worker is ever sharded across tasks, wrap mutations in an
 `asyncio.Lock` or move state into an instance attribute.
 """
+
 from __future__ import annotations
 
 import logging
@@ -120,10 +121,16 @@ class TransientFailureTracker:
         if streak >= self.threshold:
             logger.error(
                 "%s sustained transient db error (key=%s streak=%d): %s",
-                prefix, key, streak, exc.__class__.__name__,
+                prefix,
+                key,
+                streak,
+                exc.__class__.__name__,
             )
         else:
             logger.warning(
                 "%s transient db error (key=%s streak=%d, will retry next tick): %s",
-                prefix, key, streak, exc.__class__.__name__,
+                prefix,
+                key,
+                streak,
+                exc.__class__.__name__,
             )

@@ -3,6 +3,7 @@ Redis Pub/Sub Backend for Event Bus — Production Mode.
 Connection manager, health check, reconnect strategy, delivery metrics,
 channel cardinality monitoring, backpressure safety, and observability hooks.
 """
+
 import asyncio
 import json
 import logging
@@ -18,8 +19,7 @@ logger = logging.getLogger("event_bus.redis")
 class RedisConnectionManager:
     """Manages Redis connection lifecycle with reconnect strategy."""
 
-    def __init__(self, redis_url: str, max_retries: int = 10,
-                 base_backoff_sec: float = 1.0, max_backoff_sec: float = 30.0):
+    def __init__(self, redis_url: str, max_retries: int = 10, base_backoff_sec: float = 1.0, max_backoff_sec: float = 30.0):
         self._redis_url = redis_url
         self._redis = None
         self._connected = False
@@ -49,6 +49,7 @@ class RedisConnectionManager:
 
             try:
                 import redis.asyncio as aioredis
+
                 self._redis = aioredis.from_url(
                     self._redis_url,
                     decode_responses=True,
@@ -69,7 +70,7 @@ class RedisConnectionManager:
 
     async def reconnect_with_backoff(self) -> bool:
         for attempt in range(self._max_retries):
-            backoff = min(self._base_backoff * (2 ** attempt), self._max_backoff)
+            backoff = min(self._base_backoff * (2**attempt), self._max_backoff)
             logger.info(f"Redis reconnect attempt {attempt + 1}/{self._max_retries} in {backoff}s")
             await asyncio.sleep(backoff)
             if await self.connect():
@@ -229,13 +230,13 @@ class RedisPubSubBackend:
         try:
             await self._conn_mgr.redis.ping()
             info = await self._conn_mgr.redis.info("clients")
-            base.update({
-                "status": "healthy",
-                "connected_clients": info.get("connected_clients", 0),
-                "avg_publish_latency_ms": round(
-                    sum(self._publish_latencies) / max(len(self._publish_latencies), 1), 2
-                ),
-            })
+            base.update(
+                {
+                    "status": "healthy",
+                    "connected_clients": info.get("connected_clients", 0),
+                    "avg_publish_latency_ms": round(sum(self._publish_latencies) / max(len(self._publish_latencies), 1), 2),
+                }
+            )
             return base
         except Exception as e:
             base["status"] = "error"
@@ -248,13 +249,9 @@ class RedisPubSubBackend:
             "delivered": self._delivered,
             "dropped": self._dropped,
             "errors": self._errors,
-            "avg_publish_latency_ms": round(
-                sum(self._publish_latencies) / max(len(self._publish_latencies), 1), 2
-            ),
+            "avg_publish_latency_ms": round(sum(self._publish_latencies) / max(len(self._publish_latencies), 1), 2),
             "channel_cardinality": len(self._channel_message_counts),
-            "top_channels": dict(
-                sorted(self._channel_message_counts.items(), key=lambda x: -x[1])[:10]
-            ),
+            "top_channels": dict(sorted(self._channel_message_counts.items(), key=lambda x: -x[1])[:10]),
         }
 
     def _start_listener(self):
@@ -283,6 +280,7 @@ class RedisPubSubBackend:
                             if sub_info["channel"] == channel:
                                 try:
                                     from modules.event_bus.abstraction import EventEnvelope
+
                                     envelope = EventEnvelope.from_dict(data)
                                     await sub_info["callback"](envelope)
                                     self._delivered += 1

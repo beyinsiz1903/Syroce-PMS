@@ -4,6 +4,7 @@ Abstract secrets provider interface.
 All backends must implement this interface.
 Secret payloads are always JSON dicts. Providers must never log secret values.
 """
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -13,20 +14,18 @@ from typing import Any
 @dataclass
 class SecretPayload:
     """Encrypted secret content + metadata."""
+
     data: dict[str, str]
     version: str = "1"
-    created_at: str = field(
-        default_factory=lambda: datetime.now(UTC).isoformat()
-    )
-    updated_at: str = field(
-        default_factory=lambda: datetime.now(UTC).isoformat()
-    )
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     rotation_count: int = 0
 
 
 @dataclass
 class SecretMetadata:
     """Non-sensitive metadata about a secret."""
+
     secret_path: str
     provider: str
     field_names: list

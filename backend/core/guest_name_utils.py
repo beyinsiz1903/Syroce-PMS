@@ -10,6 +10,7 @@ NOT: Veri silinmez — DB'deki orijinal name korunur. Sadece API response'unda
 gosterilen `guest_name` override edilir. Veri temizligi ayri bir migration
 ile yapilmalidir.
 """
+
 from __future__ import annotations
 
 import re

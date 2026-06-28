@@ -7,6 +7,7 @@ Function Space booking'leri için menü kataloğu + booking'e menü atama:
 - Allergen ve diyet etiketleri.
 Yetki: manage_sales (CRUD + read + booking atama).
 """
+
 from __future__ import annotations
 
 import logging
@@ -70,6 +71,7 @@ class MenuItem(BaseModel):
 
 class MenuItemUpdate(BaseModel):
     """Kısmi güncelleme (PATCH semantiği). Sadece gönderilen alanlar değişir."""
+
     name: str | None = Field(None, min_length=1, max_length=160)
     category: str | None = None
     price_per_person: float | None = Field(None, ge=0)
@@ -93,6 +95,7 @@ class BookingMenuPayload(BaseModel):
 
 
 # ---------- Menu items catalog ----------
+
 
 @router.get("/menu-items", response_model=list[MenuItem])
 async def list_items(
@@ -123,9 +126,13 @@ async def create_item(
     db = get_system_db()
     await _ensure_indexes(db)
 
-    existing = await db.catering_menu_items.find_one({
-        "tenant_id": user.tenant_id, "code": payload.code, "active": True,
-    })
+    existing = await db.catering_menu_items.find_one(
+        {
+            "tenant_id": user.tenant_id,
+            "code": payload.code,
+            "active": True,
+        }
+    )
     if existing:
         raise HTTPException(409, f"Bu kod zaten kullanımda: {payload.code}")
 
@@ -190,11 +197,14 @@ async def delete_item(
 
 # ---------- Booking menüleri ----------
 
+
 async def _booking_exists(db, tenant_id: str, booking_id: str) -> dict | None:
-    return await db.function_bookings.find_one({
-        "$or": [{"id": booking_id}, {"_id": booking_id}],
-        "tenant_id": tenant_id,
-    })
+    return await db.function_bookings.find_one(
+        {
+            "$or": [{"id": booking_id}, {"_id": booking_id}],
+            "tenant_id": tenant_id,
+        }
+    )
 
 
 @router.get("/bookings/{booking_id}")
@@ -208,9 +218,12 @@ async def get_booking_menus(
     if not booking:
         raise HTTPException(404, "Function booking bulunamadı")
 
-    rec = await db.catering_booking_menus.find_one({
-        "tenant_id": user.tenant_id, "booking_id": booking_id,
-    })
+    rec = await db.catering_booking_menus.find_one(
+        {
+            "tenant_id": user.tenant_id,
+            "booking_id": booking_id,
+        }
+    )
     lines = (rec or {}).get("lines", [])
 
     enriched: list[dict[str, Any]] = []
@@ -223,9 +236,12 @@ async def get_booking_menus(
         subtotal = price * head
         total += subtotal
         # Item bilgisini join et (görsellik için, fiyat snapshot'tan)
-        item = await db.catering_menu_items.find_one({
-            "id": ln["menu_item_id"], "tenant_id": user.tenant_id,
-        })
+        item = await db.catering_menu_items.find_one(
+            {
+                "id": ln["menu_item_id"],
+                "tenant_id": user.tenant_id,
+            }
+        )
         item_view = None
         if item:
             item.pop("_id", None)
@@ -240,15 +256,17 @@ async def get_booking_menus(
                 "active": item.get("active", False),
                 "current_price_per_person": item.get("price_per_person"),
             }
-        enriched.append({
-            "menu_item_id": ln["menu_item_id"],
-            "headcount": head,
-            "note": ln.get("note"),
-            "price_per_person_snapshot": price,
-            "currency_snapshot": ln.get("currency_snapshot", currency),
-            "subtotal": round(subtotal, 2),
-            "item": item_view,
-        })
+        enriched.append(
+            {
+                "menu_item_id": ln["menu_item_id"],
+                "headcount": head,
+                "note": ln.get("note"),
+                "price_per_person_snapshot": price,
+                "currency_snapshot": ln.get("currency_snapshot", currency),
+                "subtotal": round(subtotal, 2),
+                "item": item_view,
+            }
+        )
     return {
         "booking_id": booking_id,
         "lines": enriched,
@@ -275,9 +293,13 @@ async def set_booking_menus(
     item_ids = [ln.menu_item_id for ln in payload.lines]
     items_by_id: dict[str, dict] = {}
     if item_ids:
-        cur = db.catering_menu_items.find({
-            "tenant_id": user.tenant_id, "id": {"$in": item_ids}, "active": True,
-        })
+        cur = db.catering_menu_items.find(
+            {
+                "tenant_id": user.tenant_id,
+                "id": {"$in": item_ids},
+                "active": True,
+            }
+        )
         async for d in cur:
             d.pop("_id", None)
             items_by_id[d["id"]] = d
@@ -303,24 +325,28 @@ async def set_booking_menus(
                 400,
                 f"'{it['name']}' için min kişi sayısı {it['min_headcount']}",
             )
-        snap_lines.append({
-            "menu_item_id": ln.menu_item_id,
-            "headcount": ln.headcount,
-            "note": ln.note,
-            "price_per_person_snapshot": float(it.get("price_per_person", 0)),
-            "currency_snapshot": it.get("currency", "TRY").upper(),
-        })
+        snap_lines.append(
+            {
+                "menu_item_id": ln.menu_item_id,
+                "headcount": ln.headcount,
+                "note": ln.note,
+                "price_per_person_snapshot": float(it.get("price_per_person", 0)),
+                "currency_snapshot": it.get("currency", "TRY").upper(),
+            }
+        )
 
     await db.catering_booking_menus.update_one(
         {"tenant_id": user.tenant_id, "booking_id": booking_id},
-        {"$set": {
-            "tenant_id": user.tenant_id,
-            "booking_id": booking_id,
-            "lines": snap_lines,
-            "currency": booking_currency,
-            "updated_by": user.email,
-            "updated_at": datetime.now(UTC).isoformat(),
-        }},
+        {
+            "$set": {
+                "tenant_id": user.tenant_id,
+                "booking_id": booking_id,
+                "lines": snap_lines,
+                "currency": booking_currency,
+                "updated_by": user.email,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+        },
         upsert=True,
     )
     return {"ok": True, "count": len(snap_lines), "currency": booking_currency}

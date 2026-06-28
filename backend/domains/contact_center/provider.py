@@ -12,6 +12,7 @@ Doktrin (fail-closed, no fake-green):
 - Telefon/medya gibi PII asla loglanmaz (httpx token-leak dersi); yalnızca
   kanal ve uzunluk gibi PII-içermeyen alanlar loglanır.
 """
+
 import logging
 from typing import Any
 
@@ -27,6 +28,7 @@ class CommunicationProvider:
 
     Faz 1+ gerçek sağlayıcılar bu sözleşmeyi uygular.
     """
+
     provider_name: str = "base"
     supports_inbound: bool = False
     supports_outbound: bool = False
@@ -52,6 +54,7 @@ class MockProvider(CommunicationProvider):
     böylece hiçbir çağıran sahte başarı (fake-green) alamaz. Yalnızca
     iskelet/health amaçlıdır.
     """
+
     provider_name = "mock"
     supports_inbound = False
     supports_outbound = False
@@ -66,8 +69,7 @@ class MockProvider(CommunicationProvider):
     ) -> dict[str, Any]:
         # PII loglanmaz: yalnızca kanal ve gövde uzunluğu.
         logger.info(
-            "[CONTACT-CENTER][MOCK] outbound suppressed channel=%s len=%d "
-            "(transport not configured)",
+            "[CONTACT-CENTER][MOCK] outbound suppressed channel=%s len=%d (transport not configured)",
             channel,
             len(body or ""),
         )
@@ -116,8 +118,7 @@ class WhatsAppCloudProvider(CommunicationProvider):
         template_vars: dict | None = None,
     ) -> dict[str, Any]:
         logger.info(
-            "[CONTACT-CENTER][WHATSAPP] generic send_message reddedildi "
-            "(kiracı bağlamı gerekir) channel=%s len=%d",
+            "[CONTACT-CENTER][WHATSAPP] generic send_message reddedildi (kiracı bağlamı gerekir) channel=%s len=%d",
             channel,
             len(body or ""),
         )

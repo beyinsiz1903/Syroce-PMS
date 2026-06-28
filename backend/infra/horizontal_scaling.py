@@ -6,6 +6,7 @@ Environment:
     INSTANCE_ID     — Unique instance identifier (default: auto-generated)
     SCALING_MODE    — single | multi (default: single)
 """
+
 import asyncio
 import logging
 import os
@@ -65,6 +66,7 @@ class HorizontalScalingManager:
         if self._redis:
             try:
                 import json
+
                 await self._redis.hset(
                     self._registry_key,
                     self._instance_id,
@@ -84,6 +86,7 @@ class HorizontalScalingManager:
                 await asyncio.sleep(self._heartbeat_interval)
                 if self._redis:
                     import json
+
                     self._instance_info.last_heartbeat = datetime.now(UTC).isoformat()
                     await self._redis.hset(
                         self._registry_key,
@@ -102,6 +105,7 @@ class HorizontalScalingManager:
 
         try:
             import json
+
             all_instances = await self._redis.hgetall(self._registry_key)
             active = []
             now = datetime.now(UTC)

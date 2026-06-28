@@ -5,6 +5,7 @@ Indexes:
   - (tenant_id, connector_id, action, created_at)
   - (tenant_id, entity_type, entity_id)
 """
+
 import uuid
 from datetime import UTC, datetime
 from enum import Enum

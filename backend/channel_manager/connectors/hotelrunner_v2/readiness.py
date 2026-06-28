@@ -13,6 +13,7 @@ Score components (weighted):
   - DLQ cleanliness (15%) — empty DLQ = higher
   - Latency         (20%) — lower latency = higher
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -57,13 +58,15 @@ async def calculate_readiness_score(tenant_id: str, hours: int = 24) -> dict[str
     # 1. Overall metrics
     pipeline = [
         {"$match": {"tenant_id": tenant_id, "provider": "hotelrunner_v2", "recorded_at": {"$gte": since}}},
-        {"$group": {
-            "_id": None,
-            "total_ops": {"$sum": 1},
-            "success_count": {"$sum": {"$cond": ["$success", 1, 0]}},
-            "fail_count": {"$sum": {"$cond": ["$success", 0, 1]}},
-            "avg_latency": {"$avg": "$duration_ms"},
-        }},
+        {
+            "$group": {
+                "_id": None,
+                "total_ops": {"$sum": 1},
+                "success_count": {"$sum": {"$cond": ["$success", 1, 0]}},
+                "fail_count": {"$sum": {"$cond": ["$success", 0, 1]}},
+                "avg_latency": {"$avg": "$duration_ms"},
+            }
+        },
     ]
     agg = await db[COLL_METRICS].aggregate(pipeline).to_list(1)
     m = agg[0] if agg else {"total_ops": 0, "success_count": 0, "fail_count": 0, "avg_latency": 0}
@@ -74,15 +77,21 @@ async def calculate_readiness_score(tenant_id: str, hours: int = 24) -> dict[str
     retry_count = m["fail_count"]
 
     # 2. Drift count (24h)
-    drift_count = await db[COLL_RECON_DRIFTS].count_documents({
-        "tenant_id": tenant_id, "provider": "hotelrunner_v2",
-        "created_at": {"$gte": since},
-    })
+    drift_count = await db[COLL_RECON_DRIFTS].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "provider": "hotelrunner_v2",
+            "created_at": {"$gte": since},
+        }
+    )
 
     # 3. DLQ count
-    dlq_count = await db[COLL_DLQ].count_documents({
-        "tenant_id": tenant_id, "provider": "hotelrunner",
-    })
+    dlq_count = await db[COLL_DLQ].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "provider": "hotelrunner",
+        }
+    )
 
     # ── Score components ──
 
@@ -111,11 +120,7 @@ async def calculate_readiness_score(tenant_id: str, hours: int = 24) -> dict[str
     }
 
     overall = round(
-        drift_score * weights["drift"]
-        + error_score * weights["error_rate"]
-        + retry_score * weights["retry"]
-        + dlq_score * weights["dlq"]
-        + latency_score * weights["latency"],
+        drift_score * weights["drift"] + error_score * weights["error_rate"] + retry_score * weights["retry"] + dlq_score * weights["dlq"] + latency_score * weights["latency"],
         1,
     )
 
@@ -142,11 +147,9 @@ async def calculate_readiness_score(tenant_id: str, hours: int = 24) -> dict[str
         "tenant_id": tenant_id,
         "period_hours": hours,
         "calculated_at": datetime.now(UTC).isoformat(),
-
         "overall_score": overall,
         "verdict": verdict,
         "verdict_label": verdict_label,
-
         "components": {
             "drift": {
                 "score": round(drift_score, 1),
@@ -179,7 +182,6 @@ async def calculate_readiness_score(tenant_id: str, hours: int = 24) -> dict[str
                 "unit": "ms",
             },
         },
-
         "raw_metrics": {
             "total_operations": total_ops,
             "error_rate_pct": round(error_rate, 2),

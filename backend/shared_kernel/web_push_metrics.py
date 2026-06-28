@@ -20,6 +20,7 @@ Index: unique (tenant_id, date) — upsert ile günlük tek doküman.
 Bütün yazımlar best-effort: hata durumunda exception yutulur ve loglanır;
 metric kaydı kullanıcı isteğini bloklamamalı.
 """
+
 from __future__ import annotations
 
 import logging
@@ -205,6 +206,7 @@ async def get_metrics_summary(
 
     try:
         from core.tenant_db import get_system_db
+
         sys_db = get_system_db()
         sys_cursor = sys_db[COLL_NAME].find(
             {"tenant_id": SYSTEM_TENANT, "date": {"$gte": start_date}},
@@ -218,9 +220,7 @@ async def get_metrics_summary(
     except Exception:
         logger.exception("web_push_metrics: system rollup read failed")
 
-    daily = [
-        {"date": d, **counts} for d, counts in sorted(daily_map.items())
-    ]
+    daily = [{"date": d, **counts} for d, counts in sorted(daily_map.items())]
 
     return {
         "tenant_id": tenant_id,

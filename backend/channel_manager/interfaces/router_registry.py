@@ -4,6 +4,7 @@ Replaces the monolithic router.py with modular, feature-scoped sub-routers.
 
 All routes are prefixed with /api/channel-manager/v2/ to preserve backward compatibility.
 """
+
 from fastapi import APIRouter
 
 from .routers.alert_router import router as alert_router

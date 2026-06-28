@@ -2,6 +2,7 @@
 PMS Domain — Reservation Service
 Business logic for booking/reservation operations. No FastAPI dependencies.
 """
+
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -15,15 +16,25 @@ class ReservationService:
 
     @staticmethod
     async def get_reservations(
-        tenant_id: str, *, status: str | None = None,
-        check_in_from: str | None = None, check_in_to: str | None = None,
-        guest_id: str | None = None, room_id: str | None = None,
-        limit: int = 50, offset: int = 0,
+        tenant_id: str,
+        *,
+        status: str | None = None,
+        check_in_from: str | None = None,
+        check_in_to: str | None = None,
+        guest_id: str | None = None,
+        room_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         return await ReservationRepository.find_by_tenant(
-            tenant_id, status=status, check_in_from=check_in_from,
-            check_in_to=check_in_to, guest_id=guest_id, room_id=room_id,
-            limit=limit, offset=offset,
+            tenant_id,
+            status=status,
+            check_in_from=check_in_from,
+            check_in_to=check_in_to,
+            guest_id=guest_id,
+            room_id=room_id,
+            limit=limit,
+            offset=offset,
         )
 
     @staticmethod
@@ -104,9 +115,11 @@ class ReservationService:
         # Inventory release: room_night_locks temizle ve audit timeline'a yaz (INV-6).
         try:
             from core.atomic_booking import release_booking_nights
+
             await release_booking_nights(tenant_id=tenant_id, booking_id=booking_id, reason="cancelled")
         except Exception:
             import logging
+
             logging.getLogger(__name__).exception("Lock release failed for booking %s", booking_id)
 
         return result

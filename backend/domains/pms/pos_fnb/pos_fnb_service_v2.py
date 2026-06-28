@@ -5,6 +5,7 @@ Adds: duplicate posting prevention, folio posting consistency,
 order lifecycle management, table reservation contention,
 void/refund safety, stock race protection.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -33,6 +34,7 @@ class PosFnbServiceV2:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     # ==================================================================
@@ -52,27 +54,19 @@ class PosFnbServiceV2:
     ) -> ServiceResult:
         # Idempotency guard
         if idempotency_key:
-            existing = await self._db.pos_orders.find_one(
-                {"idempotency_key": idempotency_key, "tenant_id": ctx.tenant_id}
-            )
+            existing = await self._db.pos_orders.find_one({"idempotency_key": idempotency_key, "tenant_id": ctx.tenant_id})
             if existing:
                 existing.pop("_id", None)
-                return ServiceResult.success(
-                    {"message": "Order already exists (idempotent)", "order": existing, "idempotent": True}
-                )
+                return ServiceResult.success({"message": "Order already exists (idempotent)", "order": existing, "idempotent": True})
 
         if not items or len(items) == 0:
             return ServiceResult.fail("Order must have at least one item", "VALIDATION_ERROR")
 
         # Validate table availability for dine-in
         if order_type == "dine_in" and table_number:
-            table = await self._db.table_layouts.find_one(
-                {"table_number": table_number, "outlet_id": outlet_id, "tenant_id": ctx.tenant_id}
-            )
+            table = await self._db.table_layouts.find_one({"table_number": table_number, "outlet_id": outlet_id, "tenant_id": ctx.tenant_id})
             if table and table.get("status") == "reserved":
-                return ServiceResult.fail(
-                    f"Table {table_number} is reserved", "TABLE_RESERVED"
-                )
+                return ServiceResult.fail(f"Table {table_number} is reserved", "TABLE_RESERVED")
 
         now = datetime.now(UTC)
         order_id = str(uuid.uuid4())
@@ -86,16 +80,18 @@ class PosFnbServiceV2:
             price = item.get("price", 0.0)
             item_total = round(qty * price, 2)
             total_amount += item_total
-            order_items.append({
-                "item_id": item.get("item_id", str(uuid.uuid4())),
-                "item_name": item.get("name", "Unknown"),
-                "quantity": qty,
-                "unit_price": price,
-                "total": item_total,
-                "station": item.get("station", "main"),
-                "special_instructions": item.get("special_instructions"),
-                "status": "pending",
-            })
+            order_items.append(
+                {
+                    "item_id": item.get("item_id", str(uuid.uuid4())),
+                    "item_name": item.get("name", "Unknown"),
+                    "quantity": qty,
+                    "unit_price": price,
+                    "total": item_total,
+                    "station": item.get("station", "main"),
+                    "special_instructions": item.get("special_instructions"),
+                    "status": "pending",
+                }
+            )
 
         tax_amount = round(total_amount * 0.10, 2)
         grand_total = round(total_amount + tax_amount, 2)
@@ -154,14 +150,16 @@ class PosFnbServiceV2:
                 {"$set": {"status": "occupied", "current_order_id": order_id}},
             )
 
-        return ServiceResult.success({
-            "order_id": order_id,
-            "order_number": order_number,
-            "items_count": len(order_items),
-            "total_amount": total_amount,
-            "tax_amount": tax_amount,
-            "grand_total": grand_total,
-        })
+        return ServiceResult.success(
+            {
+                "order_id": order_id,
+                "order_number": order_number,
+                "items_count": len(order_items),
+                "total_amount": total_amount,
+                "tax_amount": tax_amount,
+                "grand_total": grand_total,
+            }
+        )
 
     # ==================================================================
     # Close Order + Payment
@@ -179,17 +177,11 @@ class PosFnbServiceV2:
     ) -> ServiceResult:
         # Idempotency
         if idempotency_key:
-            existing_txn = await self._db.pos_transactions.find_one(
-                {"idempotency_key": idempotency_key, "tenant_id": ctx.tenant_id}
-            )
+            existing_txn = await self._db.pos_transactions.find_one({"idempotency_key": idempotency_key, "tenant_id": ctx.tenant_id})
             if existing_txn:
-                return ServiceResult.success(
-                    {"message": "Payment already processed (idempotent)", "idempotent": True}
-                )
+                return ServiceResult.success({"message": "Payment already processed (idempotent)", "idempotent": True})
 
-        order = await self._db.pos_orders.find_one(
-            {"id": order_id, "tenant_id": ctx.tenant_id}, {"_id": 0}
-        )
+        order = await self._db.pos_orders.find_one({"id": order_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not order:
             return ServiceResult.fail("Order not found", "NOT_FOUND")
         # Terminal-state guard: a voided order MUST NOT be closeable.
@@ -197,17 +189,11 @@ class PosFnbServiceV2:
         # silently succeeded on a voided order. Void is a terminal state
         # for the order lifecycle — reject with 4xx (CONFLICT).
         if order.get("status") == "voided":
-            return ServiceResult.fail(
-                "Cannot close a voided order", "ORDER_VOIDED"
-            )
+            return ServiceResult.fail("Cannot close a voided order", "ORDER_VOIDED")
         if order.get("status") == "closed":
-            return ServiceResult.success(
-                {"message": "Order already closed (idempotent)", "idempotent": True}
-            )
+            return ServiceResult.success({"message": "Order already closed (idempotent)", "idempotent": True})
         if order.get("payment_status") == "paid":
-            return ServiceResult.success(
-                {"message": "Already paid (idempotent)", "idempotent": True}
-            )
+            return ServiceResult.success({"message": "Already paid (idempotent)", "idempotent": True})
 
         now = datetime.now(UTC)
         grand_total = order.get("grand_total", 0)
@@ -247,9 +233,7 @@ class PosFnbServiceV2:
         folio_charge_id = None
         outbox_payload = None
         if post_to_folio and booking_id:
-            folio = await self._db.folios.find_one(
-                {"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": ctx.tenant_id}
-            )
+            folio = await self._db.folios.find_one({"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": ctx.tenant_id})
             if folio:
                 folio_charge_id = str(uuid.uuid4())
                 charge_doc = {
@@ -325,15 +309,17 @@ class PosFnbServiceV2:
                 ctx.tenant_id,
             )
 
-        return ServiceResult.success({
-            "message": "Order closed and payment processed",
-            "order_id": order_id,
-            "transaction_id": txn_id,
-            "amount_paid": total_with_tip,
-            "payment_method": payment_method,
-            "folio_charge_id": folio_charge_id,
-            "posted_to_folio": post_to_folio and folio_charge_id is not None,
-        })
+        return ServiceResult.success(
+            {
+                "message": "Order closed and payment processed",
+                "order_id": order_id,
+                "transaction_id": txn_id,
+                "amount_paid": total_with_tip,
+                "payment_method": payment_method,
+                "folio_charge_id": folio_charge_id,
+                "posted_to_folio": post_to_folio and folio_charge_id is not None,
+            }
+        )
 
     # ==================================================================
     # Atomic intent persistence — Task #389
@@ -381,8 +367,7 @@ class PosFnbServiceV2:
             if not standalone_fallback_allowed():
                 raise HTTPException(
                     status_code=503,
-                    detail=("POS işlem yazımı atomik garanti sağlayamıyor "
-                            "(Mongo replica set gerekli)."),
+                    detail=("POS işlem yazımı atomik garanti sağlayamıyor (Mongo replica set gerekli)."),
                 )
             # Dev opt-in: best-effort non-transactional fallback. The outbox
             # idempotency_key still dedups the enqueue; only all-or-nothing is
@@ -425,9 +410,7 @@ class PosFnbServiceV2:
         if not getattr(ctx, "actor_is_super_admin", False) and ctx.actor_role not in ("admin", "supervisor", "super_admin", "fnb_manager"):
             return ServiceResult.fail("Void requires supervisor permission", "FORBIDDEN")
 
-        order = await self._db.pos_orders.find_one(
-            {"id": order_id, "tenant_id": ctx.tenant_id}, {"_id": 0}
-        )
+        order = await self._db.pos_orders.find_one({"id": order_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not order:
             return ServiceResult.fail("Order not found", "NOT_FOUND")
         if order.get("status") == "voided":
@@ -438,9 +421,7 @@ class PosFnbServiceV2:
         # leaving folio/ledger invariants inconsistent. Reject with CONFLICT
         # and require an explicit refund flow for post-close reversals.
         if order.get("status") == "closed":
-            return ServiceResult.fail(
-                "Cannot void a closed order; use refund/reversal flow", "ORDER_CLOSED"
-            )
+            return ServiceResult.fail("Cannot void a closed order; use refund/reversal flow", "ORDER_CLOSED")
 
         now = datetime.now(UTC)
         # SECURITY: tenant_id filter required (defense-in-depth).
@@ -494,9 +475,7 @@ class PosFnbServiceV2:
                     {"_id": 0, "id": 1},
                 )
                 folio_id = folio["id"] if folio else None
-            await self._publish_charge_reversal(
-                ctx.tenant_id, order_id, folio_id, reason or "POS order voided"
-            )
+            await self._publish_charge_reversal(ctx.tenant_id, order_id, folio_id, reason or "POS order voided")
 
         # Restore any ingredient stock this order consumed at close time.
         # Best-effort and idempotent (per-record reversal flag). For the
@@ -513,11 +492,13 @@ class PosFnbServiceV2:
                 ctx.tenant_id,
             )
 
-        return ServiceResult.success({
-            "message": "Order voided",
-            "order_id": order_id,
-            "reason": reason,
-        })
+        return ServiceResult.success(
+            {
+                "message": "Order voided",
+                "order_id": order_id,
+                "reason": reason,
+            }
+        )
 
     # ==================================================================
     # Recipe/BOM Stock Consumption — close → decrement, void → restore
@@ -537,9 +518,7 @@ class PosFnbServiceV2:
         if not order_items:
             return
 
-        recipes = await self._db.recipes.find(
-            {"tenant_id": ctx.tenant_id}, {"_id": 0}
-        ).to_list(1000)
+        recipes = await self._db.recipes.find({"tenant_id": ctx.tenant_id}, {"_id": 0}).to_list(1000)
         if not recipes:
             return
 
@@ -563,11 +542,7 @@ class PosFnbServiceV2:
             ordered_qty = item.get("quantity", 1) or 0
             if ordered_qty <= 0:
                 continue
-            recipe = (
-                by_id.get(str(item.get("recipe_id")))
-                or by_id.get(str(item.get("item_id")))
-                or by_name.get((item.get("item_name") or "").strip().lower())
-            )
+            recipe = by_id.get(str(item.get("recipe_id"))) or by_id.get(str(item.get("item_id"))) or by_name.get((item.get("item_name") or "").strip().lower())
             if not recipe:
                 continue
             for line in recipe.get("ingredients", []):
@@ -577,9 +552,7 @@ class PosFnbServiceV2:
                 bom_qty = line.get("quantity", 0) or 0
                 if bom_qty <= 0:
                     continue
-                agg = required.setdefault(
-                    ing_id, {"qty": 0.0, "name": line.get("ingredient_name")}
-                )
+                agg = required.setdefault(ing_id, {"qty": 0.0, "name": line.get("ingredient_name")})
                 agg["qty"] += bom_qty * ordered_qty
 
         if not required:
@@ -611,27 +584,28 @@ class PosFnbServiceV2:
                 # leave stock untouched and record the shortfall for visibility.
                 applied, overdraft = 0.0, need
                 logger.warning(
-                    "Ingredient %s short on stock for order %s (tenant %s): "
-                    "needed %s, not decremented (overdraft guard)",
+                    "Ingredient %s short on stock for order %s (tenant %s): needed %s, not decremented (overdraft guard)",
                     ing_id,
                     order.get("id"),
                     ctx.tenant_id,
                     need,
                 )
 
-            await self._db.stock_consumptions.insert_one({
-                "id": str(uuid.uuid4()),
-                "tenant_id": ctx.tenant_id,
-                "order_id": order.get("id"),
-                "ingredient_id": ing_id,
-                "ingredient_name": info.get("name"),
-                "required_quantity": need,
-                "consumed_quantity": applied,
-                "overdraft_quantity": overdraft,
-                "reversed": False,
-                "created_by": ctx.actor_id,
-                "created_at": now.isoformat(),
-            })
+            await self._db.stock_consumptions.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": ctx.tenant_id,
+                    "order_id": order.get("id"),
+                    "ingredient_id": ing_id,
+                    "ingredient_name": info.get("name"),
+                    "required_quantity": need,
+                    "consumed_quantity": applied,
+                    "overdraft_quantity": overdraft,
+                    "reversed": False,
+                    "created_by": ctx.actor_id,
+                    "created_at": now.isoformat(),
+                }
+            )
 
     async def _restore_recipe_stock(self, ctx: OperationContext, order_id: str) -> None:
         """Restore ingredient stock consumed by an order when it is reversed.
@@ -698,9 +672,7 @@ class PosFnbServiceV2:
             return ServiceResult.fail("Insufficient permissions", "FORBIDDEN")
 
         if idempotency_key:
-            existing = await self._db.inventory_movements.find_one(
-                {"idempotency_key": idempotency_key, "tenant_id": ctx.tenant_id}
-            )
+            existing = await self._db.inventory_movements.find_one({"idempotency_key": idempotency_key, "tenant_id": ctx.tenant_id})
             if existing:
                 return ServiceResult.success({"message": "Adjustment already processed", "idempotent": True})
 
@@ -708,13 +680,9 @@ class PosFnbServiceV2:
             return ServiceResult.fail("Quantity must be positive", "VALIDATION_ERROR")
 
         if adjustment_type not in ("in", "out", "set"):
-            return ServiceResult.fail(
-                "Invalid adjustment type. Use: in, out, set", "VALIDATION_ERROR"
-            )
+            return ServiceResult.fail("Invalid adjustment type. Use: in, out, set", "VALIDATION_ERROR")
 
-        product = await self._db.inventory.find_one(
-            {"id": product_id, "tenant_id": ctx.tenant_id}
-        )
+        product = await self._db.inventory.find_one({"id": product_id, "tenant_id": ctx.tenant_id})
         if not product:
             return ServiceResult.fail("Product not found", "NOT_FOUND")
 
@@ -766,13 +734,15 @@ class PosFnbServiceV2:
         }
         await self._db.inventory_movements.insert_one(movement_doc)
 
-        return ServiceResult.success({
-            "message": "Stock adjusted",
-            "product_id": product_id,
-            "previous_quantity": current_qty,
-            "new_quantity": new_qty,
-            "adjustment_type": adjustment_type,
-        })
+        return ServiceResult.success(
+            {
+                "message": "Stock adjusted",
+                "product_id": product_id,
+                "previous_quantity": current_qty,
+                "new_quantity": new_qty,
+                "adjustment_type": adjustment_type,
+            }
+        )
 
     # ==================================================================
     # Table Reservation
@@ -787,42 +757,42 @@ class PosFnbServiceV2:
         reservation_time: str,
         party_size: int = 2,
     ) -> ServiceResult:
-        table = await self._db.table_layouts.find_one(
-            {"table_number": table_number, "outlet_id": outlet_id, "tenant_id": ctx.tenant_id}
-        )
+        table = await self._db.table_layouts.find_one({"table_number": table_number, "outlet_id": outlet_id, "tenant_id": ctx.tenant_id})
         if not table:
             return ServiceResult.fail("Table not found", "NOT_FOUND")
         if table.get("status") in ("occupied", "reserved"):
-            return ServiceResult.fail(
-                f"Table {table_number} is {table.get('status')}", "TABLE_UNAVAILABLE"
-            )
+            return ServiceResult.fail(f"Table {table_number} is {table.get('status')}", "TABLE_UNAVAILABLE")
 
         reservation_id = str(uuid.uuid4())
         now = datetime.now(UTC)
-        await self._db.table_reservations.insert_one({
-            "id": reservation_id,
-            "tenant_id": ctx.tenant_id,
-            "outlet_id": outlet_id,
-            "table_number": table_number,
-            "guest_name": guest_name,
-            "party_size": party_size,
-            "reservation_time": reservation_time,
-            "status": "confirmed",
-            "created_by": ctx.actor_id,
-            "created_at": now.isoformat(),
-        })
+        await self._db.table_reservations.insert_one(
+            {
+                "id": reservation_id,
+                "tenant_id": ctx.tenant_id,
+                "outlet_id": outlet_id,
+                "table_number": table_number,
+                "guest_name": guest_name,
+                "party_size": party_size,
+                "reservation_time": reservation_time,
+                "status": "confirmed",
+                "created_by": ctx.actor_id,
+                "created_at": now.isoformat(),
+            }
+        )
 
         await self._db.table_layouts.update_one(
             {"table_number": table_number, "outlet_id": outlet_id, "tenant_id": ctx.tenant_id},
             {"$set": {"status": "reserved", "reserved_for": guest_name}},
         )
 
-        return ServiceResult.success({
-            "reservation_id": reservation_id,
-            "table_number": table_number,
-            "guest_name": guest_name,
-            "reservation_time": reservation_time,
-        })
+        return ServiceResult.success(
+            {
+                "reservation_id": reservation_id,
+                "table_number": table_number,
+                "guest_name": guest_name,
+                "reservation_time": reservation_time,
+            }
+        )
 
     # ==================================================================
     # Open Tab — running bill on a table (status='open')
@@ -850,47 +820,49 @@ class PosFnbServiceV2:
 
         # Idempotency guard.
         if idempotency_key:
-            existing = await self._db.pos_transactions.find_one(
-                {"idempotency_key": idempotency_key, "tenant_id": ctx.tenant_id}, {"_id": 0}
-            )
+            existing = await self._db.pos_transactions.find_one({"idempotency_key": idempotency_key, "tenant_id": ctx.tenant_id}, {"_id": 0})
             if existing:
-                return ServiceResult.success({
-                    "message": "Tab already open (idempotent)",
-                    "transaction_id": existing.get("id"),
-                    "status": existing.get("status"),
-                    "idempotent": True,
-                })
+                return ServiceResult.success(
+                    {
+                        "message": "Tab already open (idempotent)",
+                        "transaction_id": existing.get("id"),
+                        "status": existing.get("status"),
+                        "idempotent": True,
+                    }
+                )
 
         # One open tab per (tenant, outlet, table) — a second open tab on the
         # same table would make transfer/check-split ambiguous.
-        dup = await self._db.pos_transactions.find_one({
-            "tenant_id": ctx.tenant_id,
-            "outlet_id": outlet_id,
-            "table_number": table_number,
-            "status": "open",
-        })
+        dup = await self._db.pos_transactions.find_one(
+            {
+                "tenant_id": ctx.tenant_id,
+                "outlet_id": outlet_id,
+                "table_number": table_number,
+                "status": "open",
+            }
+        )
         if dup:
-            return ServiceResult.fail(
-                f"Table {table_number} already has an open tab", "TAB_ALREADY_OPEN"
-            )
+            return ServiceResult.fail(f"Table {table_number} already has an open tab", "TAB_ALREADY_OPEN")
 
         now = datetime.now(UTC)
         txn_id = str(uuid.uuid4())
         line_items = []
         total_amount = 0.0
-        for item in (items or []):
+        for item in items or []:
             qty = item.get("quantity", 1)
             price = item.get("price", 0.0)
             line_total = round(qty * price, 2)
             total_amount += line_total
-            line_items.append({
-                "item_id": item.get("item_id", str(uuid.uuid4())),
-                "item_name": item.get("name", "Unknown"),
-                "quantity": qty,
-                "unit_price": price,
-                "total": line_total,
-                "station": item.get("station", "main"),
-            })
+            line_items.append(
+                {
+                    "item_id": item.get("item_id", str(uuid.uuid4())),
+                    "item_name": item.get("name", "Unknown"),
+                    "quantity": qty,
+                    "unit_price": price,
+                    "total": line_total,
+                    "station": item.get("station", "main"),
+                }
+            )
         total_amount = round(total_amount, 2)
 
         txn_doc = {
@@ -916,13 +888,15 @@ class PosFnbServiceV2:
             {"$set": {"status": "occupied", "current_transaction_id": txn_id}},
         )
 
-        return ServiceResult.success({
-            "transaction_id": txn_id,
-            "table_number": table_number,
-            "outlet_id": outlet_id,
-            "total_amount": total_amount,
-            "status": "open",
-        })
+        return ServiceResult.success(
+            {
+                "transaction_id": txn_id,
+                "table_number": table_number,
+                "outlet_id": outlet_id,
+                "total_amount": total_amount,
+                "status": "open",
+            }
+        )
 
     # ==================================================================
     # Close Tab — settle an open tab (status open → completed)
@@ -934,32 +908,32 @@ class PosFnbServiceV2:
         transaction_id: str,
         payment_method: str = "cash",
     ) -> ServiceResult:
-        txn = await self._db.pos_transactions.find_one(
-            {"id": transaction_id, "tenant_id": ctx.tenant_id}, {"_id": 0}
-        )
+        txn = await self._db.pos_transactions.find_one({"id": transaction_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not txn:
             return ServiceResult.fail("Open tab not found", "NOT_FOUND")
         if txn.get("status") == "completed":
-            return ServiceResult.success({
-                "message": "Tab already closed (idempotent)",
-                "transaction_id": transaction_id,
-                "idempotent": True,
-            })
-        if txn.get("status") != "open":
-            return ServiceResult.fail(
-                f"Tab is in terminal state '{txn.get('status')}'", "TAB_NOT_OPEN"
+            return ServiceResult.success(
+                {
+                    "message": "Tab already closed (idempotent)",
+                    "transaction_id": transaction_id,
+                    "idempotent": True,
+                }
             )
+        if txn.get("status") != "open":
+            return ServiceResult.fail(f"Tab is in terminal state '{txn.get('status')}'", "TAB_NOT_OPEN")
 
         now = datetime.now(UTC)
         # SECURITY: tenant_id filter required (defense-in-depth).
         await self._db.pos_transactions.update_one(
             {"id": transaction_id, "tenant_id": ctx.tenant_id},
-            {"$set": {
-                "status": "completed",
-                "payment_method": payment_method,
-                "closed_at": now.isoformat(),
-                "closed_by": ctx.actor_id,
-            }},
+            {
+                "$set": {
+                    "status": "completed",
+                    "payment_method": payment_method,
+                    "closed_at": now.isoformat(),
+                    "closed_by": ctx.actor_id,
+                }
+            },
         )
 
         # Release table.
@@ -969,12 +943,14 @@ class PosFnbServiceV2:
                 {"$set": {"status": "dirty", "current_transaction_id": None}},
             )
 
-        return ServiceResult.success({
-            "message": "Tab closed",
-            "transaction_id": transaction_id,
-            "status": "completed",
-            "payment_method": payment_method,
-        })
+        return ServiceResult.success(
+            {
+                "message": "Tab closed",
+                "transaction_id": transaction_id,
+                "status": "completed",
+                "payment_method": payment_method,
+            }
+        )
 
 
 pos_fnb_service_v2 = PosFnbServiceV2()

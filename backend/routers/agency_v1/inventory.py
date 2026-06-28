@@ -14,6 +14,7 @@ Bu seam'in tek isi: acente sozlesmesine cevirmek — catisma -> `InventoryConfli
 (`conflict_date` = ilk catisan gece) -> T6 bunu 409 `inventory_conflict` zarfina
 esler. Iptalde DB-atomik release.
 """
+
 from __future__ import annotations
 
 import logging
@@ -47,9 +48,7 @@ class InventoryConflict(Exception):
         self.conflict_type = conflict_type
         self.conflicting_booking_id = conflicting_booking_id
         self.available = available
-        super().__init__(
-            f"inventory_conflict night={conflict_date} type={conflict_type}"
-        )
+        super().__init__(f"inventory_conflict night={conflict_date} type={conflict_type}")
 
 
 class DuplicateReservation(Exception):
@@ -100,9 +99,7 @@ async def claim_reservation_inventory(booking_doc: dict[str, Any]) -> dict[str, 
 async def _release_claimed_locks(tenant_id: str, booking_id: str) -> int:
     """Kismi-claim compensation: bu booking icin tutulan TUM gece kilitlerini
     DB-atomik siler (booking_id ile; gece farkli fiziksel odalarda olabilir)."""
-    res = await db.room_night_locks.delete_many(
-        {"tenant_id": tenant_id, "booking_id": booking_id}
-    )
+    res = await db.room_night_locks.delete_many({"tenant_id": tenant_id, "booking_id": booking_id})
     return res.deleted_count
 
 
@@ -130,9 +127,7 @@ async def claim_floating_inventory(booking_doc: dict[str, Any]) -> dict[str, Any
     booking_id = booking_doc.get("id")
 
     if not (tenant_id and room_type and check_in and check_out and booking_id):
-        raise ValueError(
-            "claim_floating_inventory requires tenant_id, room_type, check_in, check_out, id"
-        )
+        raise ValueError("claim_floating_inventory requires tenant_id, room_type, check_in, check_out, id")
 
     room_count = int(booking_doc.get("room_count") or 1)
     if room_count < 1:
@@ -152,9 +147,7 @@ async def claim_floating_inventory(booking_doc: dict[str, Any]) -> dict[str, Any
     candidate_ids = [r["id"] for r in rooms if r.get("id")]
     if not candidate_ids:
         # Bu tipte hic fiziksel oda yok -> ilk gece icin tukendi (fail-closed).
-        raise InventoryConflict(
-            conflict_date=nights[0], conflict_type="no_inventory", available=0
-        )
+        raise InventoryConflict(conflict_date=nights[0], conflict_type="no_inventory", available=0)
 
     now_iso = datetime.now(UTC).isoformat()
     try:
@@ -197,12 +190,14 @@ async def claim_floating_inventory(booking_doc: dict[str, Any]) -> dict[str, Any
             if got < room_count:
                 logger.info(
                     "agency floating sold-out tenant=%s room_type=%s night=%s need=%d got=%d",
-                    tenant_id, room_type, night, room_count, got,
+                    tenant_id,
+                    room_type,
+                    night,
+                    room_count,
+                    got,
                 )
                 # `available` = bu gece gercekten alinabilen oda sayisi (Karar 5 zarfi).
-                raise InventoryConflict(
-                    conflict_date=night, conflict_type="booking", available=got
-                )
+                raise InventoryConflict(conflict_date=night, conflict_type="booking", available=got)
 
         # Tum geceler tutuldu -> floating booking'i persist et (room_id=None).
         doc = dict(booking_doc)
@@ -216,15 +211,11 @@ async def claim_floating_inventory(booking_doc: dict[str, Any]) -> dict[str, Any
         try:
             from security.encrypted_lookup import encrypt_booking_doc
         except ImportError as imp_err:
-            raise RuntimeError(
-                "PII encryption module unavailable; agency booking not saved (fail-closed)"
-            ) from imp_err
+            raise RuntimeError("PII encryption module unavailable; agency booking not saved (fail-closed)") from imp_err
         try:
             doc = encrypt_booking_doc(doc)
         except Exception as enc_err:
-            raise RuntimeError(
-                "PII encryption failed; agency booking not saved (fail-closed)"
-            ) from enc_err
+            raise RuntimeError("PII encryption failed; agency booking not saved (fail-closed)") from enc_err
 
         try:
             from security.search_normalize import apply_collection_normalized_fields
@@ -239,13 +230,14 @@ async def claim_floating_inventory(booking_doc: dict[str, Any]) -> dict[str, Any
             # TOCTOU: eszamanli bir create ayni (tenant, agency, external_id) icin
             # aktif booking'i zaten yazdi (ux_agency_booking_external_active kilidi).
             # Bu denemenin tuttugu geceler outer compensation ile geri salinir.
-            raise DuplicateReservation(
-                external_id=str(booking_doc.get("external_id") or "")
-            ) from dup
+            raise DuplicateReservation(external_id=str(booking_doc.get("external_id") or "")) from dup
         doc.pop("_id", None)
         logger.info(
             "agency floating booking persisted id=%s tenant=%s room_type=%s nights=%d",
-            booking_id, tenant_id, room_type, len(nights),
+            booking_id,
+            tenant_id,
+            room_type,
+            len(nights),
         )
         return doc
 
@@ -269,6 +261,4 @@ async def release_reservation_inventory(
     sayisini doner (idempotent: yoksa 0)."""
     from core.atomic_booking import release_booking_nights
 
-    return await release_booking_nights(
-        tenant_id, booking_id, reason=reason, correlation_id=correlation_id
-    )
+    return await release_booking_nights(tenant_id, booking_id, reason=reason, correlation_id=correlation_id)

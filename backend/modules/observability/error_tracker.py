@@ -1,6 +1,7 @@
 """
 Error Tracker — production error classification, tracking, and persistence.
 """
+
 import logging
 import uuid
 from collections import defaultdict
@@ -17,10 +18,9 @@ class ErrorTracker:
         self._error_counts: dict[str, int] = defaultdict(int)
         self._max_buffer = 500
 
-    async def track_error(self, error_type: str, message: str,
-                          module: str = "unknown", tenant_id: str | None = None,
-                          severity: str = "medium", stack_trace: str | None = None,
-                          correlation_id: str | None = None):
+    async def track_error(
+        self, error_type: str, message: str, module: str = "unknown", tenant_id: str | None = None, severity: str = "medium", stack_trace: str | None = None, correlation_id: str | None = None
+    ):
         error_doc = {
             "id": str(uuid.uuid4()),
             "error_type": error_type,
@@ -43,6 +43,7 @@ class ErrorTracker:
         # Persist to MongoDB
         try:
             from core.database import db
+
             await db.observability_errors.insert_one({**error_doc})
         except Exception as e:
             logger.warning(f"Error persistence failed: {e}")
@@ -50,14 +51,17 @@ class ErrorTracker:
     async def get_error_summary(self, hours: int = 24) -> dict:
         try:
             from core.database import db
+
             cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
             pipeline = [
                 {"$match": {"timestamp": {"$gte": cutoff}}},
-                {"$group": {
-                    "_id": {"error_type": "$error_type", "severity": "$severity"},
-                    "count": {"$sum": 1},
-                    "last_seen": {"$max": "$timestamp"},
-                }},
+                {
+                    "$group": {
+                        "_id": {"error_type": "$error_type", "severity": "$severity"},
+                        "count": {"$sum": 1},
+                        "last_seen": {"$max": "$timestamp"},
+                    }
+                },
                 {"$sort": {"count": -1}},
             ]
             cursor = db.observability_errors.aggregate(pipeline)
@@ -70,12 +74,14 @@ class ErrorTracker:
                 severity = r["_id"]["severity"]
                 by_severity[severity] += r["count"]
                 total += r["count"]
-                top_errors.append({
-                    "error_type": r["_id"]["error_type"],
-                    "severity": severity,
-                    "count": r["count"],
-                    "last_seen": r["last_seen"],
-                })
+                top_errors.append(
+                    {
+                        "error_type": r["_id"]["error_type"],
+                        "severity": severity,
+                        "count": r["count"],
+                        "last_seen": r["last_seen"],
+                    }
+                )
 
             return {
                 "total_errors": total,
@@ -95,6 +101,7 @@ class ErrorTracker:
     async def get_recent_errors(self, limit: int = 50, severity: str | None = None) -> list[dict]:
         try:
             from core.database import db
+
             q = {}
             if severity:
                 q["severity"] = severity
@@ -105,6 +112,7 @@ class ErrorTracker:
     async def resolve_error(self, error_id: str) -> dict:
         try:
             from core.database import db
+
             await db.observability_errors.update_one(
                 {"id": error_id},
                 {"$set": {"resolved": True, "resolved_at": datetime.now(UTC).isoformat()}},

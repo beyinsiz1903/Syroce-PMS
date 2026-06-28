@@ -13,6 +13,7 @@ Sorumluluklar:
 
 Doktrin: telefon/medya/sır gibi PII ASLA loglanmaz; yalnızca PII'siz durum alanları.
 """
+
 from __future__ import annotations
 
 import logging
@@ -37,9 +38,7 @@ class TwilioVoiceProvider:
 
     # ── AccessToken (giden/gelen WebRTC) ───────────────────────────────
 
-    def generate_access_token(
-        self, *, identity: str, ttl: int | None = None
-    ) -> dict[str, Any]:
+    def generate_access_token(self, *, identity: str, ttl: int | None = None) -> dict[str, Any]:
         """Softphone için Twilio AccessToken üretir.
 
         ``identity`` kiracı-kapsamlı olmalı (örn. ``"<tenant_id>:<user_id>"``) ki
@@ -63,9 +62,7 @@ class TwilioVoiceProvider:
             from twilio.jwt.access_token import AccessToken
             from twilio.jwt.access_token.grants import VoiceGrant
         except ImportError:
-            logger.warning(
-                "[CC-VOICE] twilio SDK kurulu değil — token üretimi fail-closed"
-            )
+            logger.warning("[CC-VOICE] twilio SDK kurulu değil — token üretimi fail-closed")
             return {
                 "success": False,
                 "status": "transport_unavailable",
@@ -112,29 +109,18 @@ class TwilioVoiceProvider:
         geçerli kalır.
         """
         if not agent_identity:
-            return self.say_fallback(
-                "Şu anda size bağlanamıyoruz. Lütfen daha sonra tekrar arayın."
-            )
+            return self.say_fallback("Şu anda size bağlanamıyoruz. Lütfen daha sonra tekrar arayın.")
 
         dial_attrs = ['record="record-from-answer-dual"', f'timeout="{int(timeout_seconds)}"']
         if recording_status_callback:
-            dial_attrs.append(
-                f"recordingStatusCallback={quoteattr(recording_status_callback)}"
-            )
+            dial_attrs.append(f"recordingStatusCallback={quoteattr(recording_status_callback)}")
             dial_attrs.append('recordingStatusCallbackEvent="completed"')
         if dial_status_callback:
             dial_attrs.append(f"action={quoteattr(dial_status_callback)}")
             dial_attrs.append('method="POST"')
         dial_attr_str = " ".join(dial_attrs)
         client = escape(agent_identity)
-        return (
-            '<?xml version="1.0" encoding="UTF-8"?>'
-            "<Response>"
-            f"<Dial {dial_attr_str}>"
-            f"<Client>{client}</Client>"
-            "</Dial>"
-            "</Response>"
-        )
+        return f'<?xml version="1.0" encoding="UTF-8"?><Response><Dial {dial_attr_str}><Client>{client}</Client></Dial></Response>'
 
     # ── Giden çağrı (click-to-dial) TwiML ──────────────────────────────
 
@@ -173,49 +159,30 @@ class TwilioVoiceProvider:
         """
         sanitized = self.sanitize_dial_number(to_number)
         if not sanitized or not caller_id:
-            return self.say_fallback(
-                "Çağrı başlatılamadı. Lütfen numarayı kontrol edin."
-            )
+            return self.say_fallback("Çağrı başlatılamadı. Lütfen numarayı kontrol edin.")
         dial_attrs = [
             'record="record-from-answer-dual"',
             f'timeout="{int(timeout_seconds)}"',
             f"callerId={quoteattr(caller_id)}",
         ]
         if recording_status_callback:
-            dial_attrs.append(
-                f"recordingStatusCallback={quoteattr(recording_status_callback)}"
-            )
+            dial_attrs.append(f"recordingStatusCallback={quoteattr(recording_status_callback)}")
             dial_attrs.append('recordingStatusCallbackEvent="completed"')
         if dial_status_callback:
             dial_attrs.append(f"action={quoteattr(dial_status_callback)}")
             dial_attrs.append('method="POST"')
         dial_attr_str = " ".join(dial_attrs)
         number = escape(sanitized)
-        return (
-            '<?xml version="1.0" encoding="UTF-8"?>'
-            "<Response>"
-            f"<Dial {dial_attr_str}>"
-            f"<Number>{number}</Number>"
-            "</Dial>"
-            "</Response>"
-        )
+        return f'<?xml version="1.0" encoding="UTF-8"?><Response><Dial {dial_attr_str}><Number>{number}</Number></Dial></Response>'
 
     @staticmethod
     def say_fallback(message: str, *, language: str = "tr-TR") -> str:
         """PII içermeyen güvenli bir sesli-mesaj TwiML'i (fail-closed yanıt)."""
-        return (
-            '<?xml version="1.0" encoding="UTF-8"?>'
-            "<Response>"
-            f'<Say language="{escape(language)}">{escape(message)}</Say>'
-            "<Hangup/>"
-            "</Response>"
-        )
+        return f'<?xml version="1.0" encoding="UTF-8"?><Response><Say language="{escape(language)}">{escape(message)}</Say><Hangup/></Response>'
 
     # ── Webhook imza doğrulama ─────────────────────────────────────────
 
-    def validate_signature(
-        self, *, url: str, params: dict[str, Any], signature: str
-    ) -> bool:
+    def validate_signature(self, *, url: str, params: dict[str, Any], signature: str) -> bool:
         """Gelen Twilio webhook imzasını doğrular (fail-closed).
 
         Yapılandırma/SDK yoksa ya da imza yoksa ``False`` döner — doğrulanmamış
@@ -227,14 +194,10 @@ class TwilioVoiceProvider:
         try:
             from twilio.request_validator import RequestValidator
         except ImportError:
-            logger.warning(
-                "[CC-VOICE] twilio SDK kurulu değil — imza doğrulanamıyor (fail-closed)"
-            )
+            logger.warning("[CC-VOICE] twilio SDK kurulu değil — imza doğrulanamıyor (fail-closed)")
             return False
         try:
-            return bool(
-                RequestValidator(cfg.auth_token).validate(url, params, signature)
-            )
+            return bool(RequestValidator(cfg.auth_token).validate(url, params, signature))
         except Exception:
             # İmza doğrulama hiçbir koşulda raise etmemeli → fail-closed reddet.
             logger.warning("[CC-VOICE] imza doğrulama hatası (fail-closed reddedildi)")

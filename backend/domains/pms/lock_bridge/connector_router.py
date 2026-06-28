@@ -6,6 +6,7 @@ vendor DLL, then acknowledges each command. Auth is fail-closed: an unknown /
 inactive / missing key is rejected with 401 and the tenant is resolved from the
 stored connector record, never from client input. Responses carry no guest PII.
 """
+
 import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException

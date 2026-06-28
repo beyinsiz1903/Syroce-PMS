@@ -4,6 +4,7 @@ Provides tenant-aware event routing, role-based filtering,
 missed event replay, session presence tracking, and delivery metrics.
 Falls back to in-memory pub/sub when Redis is not available.
 """
+
 import logging
 import uuid
 from collections import defaultdict
@@ -50,8 +51,7 @@ class EventBroadcastService:
         self._event_buffer: dict[str, list[dict]] = defaultdict(list)
         self._metrics = {"total_published": 0, "total_delivered": 0, "total_missed": 0}
 
-    def register_session(self, tenant_id: str, session_id: str, user_id: str,
-                         roles: list, property_ids: list = None) -> dict:
+    def register_session(self, tenant_id: str, session_id: str, user_id: str, roles: list, property_ids: list = None) -> dict:
         self._sessions[tenant_id][session_id] = {
             "user_id": user_id,
             "roles": roles,
@@ -73,8 +73,7 @@ class EventBroadcastService:
                 return True
         return False
 
-    async def publish(self, tenant_id: str, event_type: str, payload: dict,
-                      property_id: str | None = None, source: str = "system") -> dict:
+    async def publish(self, tenant_id: str, event_type: str, payload: dict, property_id: str | None = None, source: str = "system") -> dict:
         """Publish an event to all eligible sessions."""
         event = {
             "id": str(uuid.uuid4()),
@@ -115,25 +114,18 @@ class EventBroadcastService:
         q = {"tenant_id": tenant_id}
         if since:
             q["timestamp"] = {"$gte": since}
-        events = await self.db.event_broadcast_log.find(
-            q, {"_id": 0}
-        ).sort("timestamp", -1).to_list(limit)
+        events = await self.db.event_broadcast_log.find(q, {"_id": 0}).sort("timestamp", -1).to_list(limit)
         return events
 
     def get_active_sessions(self, tenant_id: str) -> list:
         sessions = self._sessions.get(tenant_id, {})
-        return [
-            {"session_id": sid, **dict(s.items())}
-            for sid, s in sessions.items()
-        ]
+        return [{"session_id": sid, **dict(s.items())} for sid, s in sessions.items()]
 
     async def get_metrics(self, tenant_id: str) -> dict:
         session_count = len(self._sessions.get(tenant_id, {}))
         # count recent events
         one_hour_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
-        recent = await self.db.event_broadcast_log.count_documents(
-            {"tenant_id": tenant_id, "timestamp": {"$gte": one_hour_ago}}
-        )
+        recent = await self.db.event_broadcast_log.count_documents({"tenant_id": tenant_id, "timestamp": {"$gte": one_hour_ago}})
         return {
             "active_sessions": session_count,
             "events_last_hour": recent,

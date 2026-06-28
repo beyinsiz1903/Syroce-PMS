@@ -12,6 +12,7 @@ Doktrin: PII (telefon) ASLA loglanmaz/yayınlanmaz; recording_ref (nesne anahtar
 ASLA istemciye dönmez (yalnızca ``has_recording`` bool). Yapılandırma yoksa uçlar
 fail-closed ``not_configured`` döner; sahte token/yeşil YOK.
 """
+
 from __future__ import annotations
 
 import logging
@@ -145,9 +146,7 @@ async def issue_voice_token(
     result = provider.generate_access_token(identity=identity)
     if not result.get("success"):
         return Response(
-            content=__import__("json").dumps(
-                {"status": result.get("status"), "detail": result.get("detail")}
-            ),
+            content=__import__("json").dumps({"status": result.get("status"), "detail": result.get("detail")}),
             media_type="application/json",
             status_code=503,
         )
@@ -190,9 +189,7 @@ async def voice_readiness(current_user: User = Depends(get_current_user)):
         s3_sdk_installed = True
     except ImportError:
         s3_sdk_installed = False
-    twilio_ready = (
-        tw.has_credentials and tw.can_validate_signatures and twilio_sdk_installed
-    )
+    twilio_ready = tw.has_credentials and tw.can_validate_signatures and twilio_sdk_installed
     recording_ready = storage.is_configured and s3_sdk_installed
     return {
         "ready": bool(twilio_ready and public_app_url_set),
@@ -227,11 +224,7 @@ async def list_calls(
     from domains.contact_center.router import _can_reveal_phone
 
     safe_limit = max(1, min(int(limit or 50), 200))
-    cursor = (
-        db.contact_center_calls.find({"tenant_id": current_user.tenant_id})
-        .sort("started_at", -1)
-        .limit(safe_limit)
-    )
+    cursor = db.contact_center_calls.find({"tenant_id": current_user.tenant_id}).sort("started_at", -1).limit(safe_limit)
     docs = await cursor.to_list(length=safe_limit)
     svc = get_field_encryption_service()
     reveal = bool(reveal_phone) and _can_reveal_phone(current_user)
@@ -417,9 +410,7 @@ async def update_voice_number(
     if payload.to_number is not None:
         updates["to_number"] = _normalize_number(payload.to_number)
     if payload.agent_identity is not None:
-        updates["agent_identity"] = _validate_agent_identity(
-            payload.agent_identity, target_tenant
-        )
+        updates["agent_identity"] = _validate_agent_identity(payload.agent_identity, target_tenant)
     if payload.label is not None:
         updates["label"] = payload.label.strip() or None
     # Kapsam filtresi yazma ve okuma adımlarında da korunur (defense-in-depth;
@@ -460,9 +451,7 @@ async def _resolve_tenant_for_number(to_number: str) -> dict | None:
     """
     if not to_number:
         return None
-    return await db.contact_center_voice_numbers.find_one(
-        {"to_number": to_number}, {"_id": 0}
-    )
+    return await db.contact_center_voice_numbers.find_one({"to_number": to_number}, {"_id": 0})
 
 
 async def _resolve_number_for_tenant(tenant_id: str) -> dict | None:
@@ -474,9 +463,7 @@ async def _resolve_number_for_tenant(tenant_id: str) -> dict | None:
     """
     if not tenant_id:
         return None
-    return await db.contact_center_voice_numbers.find_one(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    )
+    return await db.contact_center_voice_numbers.find_one({"tenant_id": tenant_id}, {"_id": 0})
 
 
 def _parse_client_identity(value: str) -> str | None:
@@ -490,7 +477,7 @@ def _parse_client_identity(value: str) -> str | None:
         return None
     raw = value.strip()
     if raw.startswith("client:"):
-        raw = raw[len("client:"):]
+        raw = raw[len("client:") :]
     parts = raw.split(":", 1)
     tenant_id = parts[0].strip() if parts else ""
     return tenant_id or None
@@ -523,9 +510,7 @@ async def voice_inbound(request: Request):
     cfg = await _resolve_tenant_for_number(to_number)
     if not cfg or not cfg.get("tenant_id"):
         return Response(
-            content=provider.say_fallback(
-                "Şu anda çağrınızı yanıtlayamıyoruz. Lütfen daha sonra arayın."
-            ),
+            content=provider.say_fallback("Şu anda çağrınızı yanıtlayamıyoruz. Lütfen daha sonra arayın."),
             media_type=_XML,
         )
 
@@ -578,9 +563,7 @@ async def voice_outbound(request: Request):
     call_sid = params.get("CallSid", "")
     to_number = params.get("To", "")
     # Kiracı YALNIZCA sunucu-basılı client kimliğinden gelir (istemci geçemez).
-    tenant_id = _parse_client_identity(
-        params.get("From", "") or params.get("Caller", "")
-    )
+    tenant_id = _parse_client_identity(params.get("From", "") or params.get("Caller", ""))
     if not tenant_id:
         return Response(
             content=provider.say_fallback("Çağrı başlatılamadı."),
@@ -592,9 +575,7 @@ async def voice_outbound(request: Request):
     sanitized = provider.sanitize_dial_number(to_number)
     if not caller_id or not sanitized:
         return Response(
-            content=provider.say_fallback(
-                "Çağrı başlatılamadı. Lütfen numarayı kontrol edin."
-            ),
+            content=provider.say_fallback("Çağrı başlatılamadı. Lütfen numarayı kontrol edin."),
             media_type=_XML,
         )
 
@@ -679,9 +660,7 @@ async def voice_recording(request: Request):
         try:
             from celery_tasks import process_call_recording_task
 
-            process_call_recording_task.delay(
-                tenant_id, call_sid, recording_url, duration
-            )
+            process_call_recording_task.delay(tenant_id, call_sid, recording_url, duration)
             enqueued = True
         except Exception:
             logger.debug("[CC-VOICE] celery enqueue başarısız; inline işlenecek")

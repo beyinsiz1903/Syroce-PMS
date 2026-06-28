@@ -11,6 +11,7 @@ Proxy-safe IP extraction mirrors the existing best-effort helper in
 finance/folio_einvoice_public.py: take the left-most x-forwarded-for hop
 (the original client) when present, otherwise the direct peer.
 """
+
 from contextvars import ContextVar
 
 _ip_ctx: ContextVar[str | None] = ContextVar("audit_client_ip", default=None)

@@ -1,4 +1,5 @@
 """Phase C — Domain indexes + early workers + R5 audit indexes."""
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -8,6 +9,7 @@ async def phase_c_domain_indexes_and_workers(app):
     # Booking overbooking prevention indexes
     try:
         from core.atomic_booking import ensure_booking_indexes
+
         await ensure_booking_indexes()
         logger.info("Booking overlap prevention indexes ensured")
     except Exception as e:
@@ -17,6 +19,7 @@ async def phase_c_domain_indexes_and_workers(app):
     try:
         from core.database import db as _db
         from domains.pms.lock_bridge.service import ensure_lock_bridge_indexes
+
         await ensure_lock_bridge_indexes(_db)
         logger.info("Lock-bridge indexes ensured")
     except Exception as e:
@@ -28,6 +31,7 @@ async def phase_c_domain_indexes_and_workers(app):
             ensure_room_type_inventory_indexes,
             get_inventory_worker,
         )
+
         await ensure_room_type_inventory_indexes()
         inv_worker = get_inventory_worker()
         await inv_worker.start()
@@ -39,6 +43,7 @@ async def phase_c_domain_indexes_and_workers(app):
     # Booking hold sweeper (TTL auto-release)
     try:
         from core.booking_hold_service import start_hold_sweeper
+
         start_hold_sweeper()
         logger.info("Booking hold sweeper started")
     except Exception as e:
@@ -47,6 +52,7 @@ async def phase_c_domain_indexes_and_workers(app):
     # Mailing automation worker
     try:
         from workers.mailing_automation import start as start_mailing_automation
+
         start_mailing_automation()
         logger.info("Mailing automation worker started (600s interval)")
     except Exception as e:
@@ -57,6 +63,7 @@ async def phase_c_domain_indexes_and_workers(app):
         import asyncio as _asyncio
 
         from workers.subscription_expiry import run_loop as _sub_loop
+
         _asyncio.create_task(_sub_loop(3600), name="subscription-expiry")
         logger.info("Subscription expiry worker started (3600s interval)")
     except Exception as e:
@@ -76,9 +83,8 @@ async def phase_c_domain_indexes_and_workers(app):
         from workers.id_photo_view_alert import (
             run_loop as _idp_loop,
         )
-        _asyncio.create_task(
-            _idp_loop(_IDP_INTERVAL), name="kvkk-id-photo-alert"
-        )
+
+        _asyncio.create_task(_idp_loop(_IDP_INTERVAL), name="kvkk-id-photo-alert")
         logger.info(
             "KVKK ID photo view alert worker started (%ss interval)",
             _IDP_INTERVAL,
@@ -91,6 +97,7 @@ async def phase_c_domain_indexes_and_workers(app):
     # open; this worker fans them out as real OS-level push notifications.
     try:
         from workers.mobile_push_scheduler import start as _start_mobile_push
+
         if _start_mobile_push():
             logger.info("Mobile push scheduler started (VIP + no-show)")
     except Exception as e:
@@ -99,8 +106,10 @@ async def phase_c_domain_indexes_and_workers(app):
     # TGA Tesis Entegrasyon scheduler — son 7 günü periyodik gönderir.
     try:
         from core.tga_outbound import ensure_indexes as _tga_indexes
+
         await _tga_indexes()
         from workers.tga_scheduler import start as _start_tga
+
         if _start_tga():
             logger.info("TGA scheduler started")
     except Exception as e:
@@ -109,6 +118,7 @@ async def phase_c_domain_indexes_and_workers(app):
     # Report Scheduler — kullanıcı tanımlı periyodik rapor e-postaları.
     try:
         from workers.report_scheduler_worker import start as _start_report_sched
+
         if _start_report_sched():
             logger.info("Report scheduler worker started")
     except Exception as e:
@@ -119,6 +129,7 @@ async def phase_c_domain_indexes_and_workers(app):
     # konfigüre edilmiş alıcılara PDF eki ile e-posta atar.
     try:
         from workers.konaklama_vergisi_scheduler import start as _start_kvb_sched
+
         if _start_kvb_sched():
             logger.info("Konaklama Vergisi scheduler started")
     except Exception as e:
@@ -129,6 +140,7 @@ async def phase_c_domain_indexes_and_workers(app):
     # tarar; dry-run default, FOLIO_RECON_ALLOW_APPLY=true ile onarır.
     try:
         from workers.folio_recon_scheduler import start as _start_folio_recon
+
         if _start_folio_recon():
             logger.info("Folio reconciliation backstop scheduler started")
     except Exception as e:
@@ -137,6 +149,7 @@ async def phase_c_domain_indexes_and_workers(app):
     # Marketplace indexes + product seed
     try:
         from core.subscriptions import ensure_indexes as _ms_indexes
+
         await _ms_indexes()
         logger.info("Marketplace indexes ensured")
     except Exception as e:
@@ -145,6 +158,7 @@ async def phase_c_domain_indexes_and_workers(app):
     # Check-in/Check-out transaction indexes
     try:
         from core.atomic_checkin_checkout import ensure_checkin_checkout_indexes
+
         await ensure_checkin_checkout_indexes()
         logger.info("Check-in/check-out indexes ensured")
     except Exception as e:
@@ -153,6 +167,7 @@ async def phase_c_domain_indexes_and_workers(app):
     # Folio Ledger indexes
     try:
         from core.folio_ledger_service import ensure_folio_ledger_indexes
+
         await ensure_folio_ledger_indexes()
     except Exception as e:
         logger.warning(f"Folio ledger index creation error: {e}")
@@ -160,6 +175,7 @@ async def phase_c_domain_indexes_and_workers(app):
     # Learning Loop indexes
     try:
         from core.learning_loop import ensure_learning_loop_indexes
+
         await ensure_learning_loop_indexes()
     except Exception as e:
         logger.warning(f"Learning loop index creation error: {e}")
@@ -167,6 +183,7 @@ async def phase_c_domain_indexes_and_workers(app):
     # PERF-001: Compound indexes for hot queries
     try:
         from bootstrap.phases.perf_indexes import ensure_performance_indexes
+
         await ensure_performance_indexes()
         logger.info("Performance indexes ensured")
     except Exception as e:
@@ -175,6 +192,7 @@ async def phase_c_domain_indexes_and_workers(app):
     # R5: Audit-derived missing indexes (top-25 koleksiyon kapsama)
     try:
         from bootstrap.phases.audit_indexes import ensure_audit_indexes
+
         added = await ensure_audit_indexes()
         if added:
             logger.info(f"R5 audit indexes ensured ({added} created)")
@@ -193,6 +211,7 @@ async def phase_c_domain_indexes_and_workers(app):
     try:
         from core.database import _raw_db
         from security.field_encryption import get_field_encryption_service
+
         svc = get_field_encryption_service()
         created = await svc.ensure_hash_indexes(_raw_db)
         if created:
@@ -204,10 +223,7 @@ async def phase_c_domain_indexes_and_workers(app):
         # "degraded" and the search path becomes observable. Does not raise.
         verify = await svc.verify_hash_indexes(_raw_db)
         if not verify.get("ok"):
-            logger.warning(
-                f"Encrypted-PII hash index verification DEGRADED: "
-                f"{len(verify.get('missing', []))} missing"
-            )
+            logger.warning(f"Encrypted-PII hash index verification DEGRADED: {len(verify.get('missing', []))} missing")
     except Exception as e:
         logger.warning(f"Hash index creation error: {e}")
 
@@ -224,6 +240,7 @@ async def phase_c_domain_indexes_and_workers(app):
             ensure_search_normalize_indexes,
         )
         from core.database import _raw_db
+
         sn_created = await ensure_search_normalize_indexes(_raw_db)
         if sn_created:
             logger.info(f"Search-normalize indexes ensured ({len(sn_created)} created)")

@@ -19,6 +19,7 @@ Akış:
      yazar (status=sent|failed, retries, response).
   4. `safe_post_async` ile DNS-rebinding-safe outbound (SXI standardı).
 """
+
 from __future__ import annotations
 
 import logging
@@ -33,9 +34,7 @@ from core.database import db
 logger = logging.getLogger(__name__)
 
 TGA_BASE_URL_LIVE = "https://tesis-entegrasyon.tga.gov.tr"
-TGA_BASE_URL_TEST = os.environ.get(
-    "TGA_BASE_URL_TEST", "https://tesis-entegrasyon-test.tga.gov.tr"
-)
+TGA_BASE_URL_TEST = os.environ.get("TGA_BASE_URL_TEST", "https://tesis-entegrasyon-test.tga.gov.tr")
 TGA_PATH = "/otel-veri/"
 HTTP_TIMEOUT_S = 30.0
 OUTBOX_COLL = "integration_tga_outbox"
@@ -59,6 +58,7 @@ def _next_backoff_seconds(retry_count: int) -> int:
     idx = min(retry_count, len(RETRY_BACKOFF_STEPS) - 1)
     return RETRY_BACKOFF_STEPS[idx]
 
+
 # ── ISO 3-letter country mapping (TGA payload requires ISO-3166-1 alpha-3) ──
 # Tam ISO-3166-1 sözlüğü `pycountry` üzerinden çözümlenir; aşağıdaki tablo
 # yalnızca pycountry'nin tanımadığı yerel/halk dilindeki isimleri (Türkçe
@@ -66,39 +66,65 @@ def _next_backoff_seconds(retry_count: int) -> int:
 # yaygın kısaltmalar) kapsar.
 _ALIAS_OVERRIDES: dict[str, str] = {
     # ── Türkçe ülke isimleri (pycountry yalnızca İngilizce/resmi isimleri bilir) ──
-    "TURKIYE": "TUR", "TÜRKİYE": "TUR", "TURKEY": "TUR",
+    "TURKIYE": "TUR",
+    "TÜRKİYE": "TUR",
+    "TURKEY": "TUR",
     "ALMANYA": "DEU",
-    "INGILTERE": "GBR", "İNGILTERE": "GBR", "ENGLAND": "GBR",
-    "BIRLESIK KRALLIK": "GBR", "BİRLEŞİK KRALLIK": "GBR",
-    "BIRLEŞIK KRALLIK": "GBR", "BIRLESIK KRALLİK": "GBR",
-    "ABD": "USA", "AMERIKA": "USA", "AMERİKA": "USA",
+    "INGILTERE": "GBR",
+    "İNGILTERE": "GBR",
+    "ENGLAND": "GBR",
+    "BIRLESIK KRALLIK": "GBR",
+    "BİRLEŞİK KRALLIK": "GBR",
+    "BIRLEŞIK KRALLIK": "GBR",
+    "BIRLESIK KRALLİK": "GBR",
+    "ABD": "USA",
+    "AMERIKA": "USA",
+    "AMERİKA": "USA",
     "AMERIKA BIRLESIK DEVLETLERI": "USA",
     "AMERİKA BİRLEŞİK DEVLETLERİ": "USA",
-    "RUSYA": "RUS", "RUSSIA": "RUS",
+    "RUSYA": "RUS",
+    "RUSSIA": "RUS",
     "FRANSA": "FRA",
     "HOLLANDA": "NLD",
-    "ITALYA": "ITA", "İTALYA": "ITA",
-    "BELCIKA": "BEL", "BELÇİKA": "BEL", "BELÇIKA": "BEL",
+    "ITALYA": "ITA",
+    "İTALYA": "ITA",
+    "BELCIKA": "BEL",
+    "BELÇİKA": "BEL",
+    "BELÇIKA": "BEL",
     "AVUSTURYA": "AUT",
-    "ISVICRE": "CHE", "İSVİÇRE": "CHE", "İSVIÇRE": "CHE",
-    "ISVEC": "SWE", "İSVEÇ": "SWE",
-    "NORVEC": "NOR", "NORVEÇ": "NOR",
+    "ISVICRE": "CHE",
+    "İSVİÇRE": "CHE",
+    "İSVIÇRE": "CHE",
+    "ISVEC": "SWE",
+    "İSVEÇ": "SWE",
+    "NORVEC": "NOR",
+    "NORVEÇ": "NOR",
     "DANIMARKA": "DNK",
-    "FINLANDIYA": "FIN", "FİNLANDİYA": "FIN",
-    "IRLANDA": "IRL", "İRLANDA": "IRL",
-    "YUNANISTAN": "GRC", "YUNANİSTAN": "GRC",
-    "BULGARISTAN": "BGR", "BULGARİSTAN": "BGR",
+    "FINLANDIYA": "FIN",
+    "FİNLANDİYA": "FIN",
+    "IRLANDA": "IRL",
+    "İRLANDA": "IRL",
+    "YUNANISTAN": "GRC",
+    "YUNANİSTAN": "GRC",
+    "BULGARISTAN": "BGR",
+    "BULGARİSTAN": "BGR",
     "ROMANYA": "ROU",
     "MACARISTAN": "HUN",
-    "CEKYA": "CZE", "ÇEKYA": "CZE", "CEK CUMHURIYETI": "CZE",
+    "CEKYA": "CZE",
+    "ÇEKYA": "CZE",
+    "CEK CUMHURIYETI": "CZE",
     "ÇEK CUMHURİYETİ": "CZE",
     "SLOVAKYA": "SVK",
     "POLONYA": "POL",
     "UKRAYNA": "UKR",
-    "ISPANYA": "ESP", "İSPANYA": "ESP",
-    "PORTEKIZ": "PRT", "PORTEKİZ": "PRT",
-    "ISRAIL": "ISR", "İSRAİL": "ISR",
-    "SUUDI ARABISTAN": "SAU", "SUUDİ ARABİSTAN": "SAU",
+    "ISPANYA": "ESP",
+    "İSPANYA": "ESP",
+    "PORTEKIZ": "PRT",
+    "PORTEKİZ": "PRT",
+    "ISRAIL": "ISR",
+    "İSRAİL": "ISR",
+    "SUUDI ARABISTAN": "SAU",
+    "SUUDİ ARABİSTAN": "SAU",
     "BIRLESIK ARAP EMIRLIKLERI": "ARE",
     "BİRLEŞİK ARAP EMİRLİKLERİ": "ARE",
     "KATAR": "QAT",
@@ -106,95 +132,154 @@ _ALIAS_OVERRIDES: dict[str, str] = {
     "BAHREYN": "BHR",
     "UMMAN": "OMN",
     "JAPONYA": "JPN",
-    "CIN": "CHN", "ÇİN": "CHN",
-    "GUNEY KORE": "KOR", "GÜNEY KORE": "KOR", "SOUTH KOREA": "KOR",
-    "KUZEY KORE": "PRK", "NORTH KOREA": "PRK",
-    "HINDISTAN": "IND", "HİNDİSTAN": "IND",
+    "CIN": "CHN",
+    "ÇİN": "CHN",
+    "GUNEY KORE": "KOR",
+    "GÜNEY KORE": "KOR",
+    "SOUTH KOREA": "KOR",
+    "KUZEY KORE": "PRK",
+    "NORTH KOREA": "PRK",
+    "HINDISTAN": "IND",
+    "HİNDİSTAN": "IND",
     "AVUSTRALYA": "AUS",
-    "YENI ZELANDA": "NZL", "YENİ ZELANDA": "NZL",
+    "YENI ZELANDA": "NZL",
+    "YENİ ZELANDA": "NZL",
     "KANADA": "CAN",
-    "BREZILYA": "BRA", "BREZİLYA": "BRA",
-    "MEKSIKA": "MEX", "MEKSİKA": "MEX",
-    "ARJANTIN": "ARG", "ARJANTİN": "ARG",
-    "SILI": "CHL", "ŞİLİ": "CHL",
-    "KOLOMBIYA": "COL", "KOLOMBİYA": "COL",
+    "BREZILYA": "BRA",
+    "BREZİLYA": "BRA",
+    "MEKSIKA": "MEX",
+    "MEKSİKA": "MEX",
+    "ARJANTIN": "ARG",
+    "ARJANTİN": "ARG",
+    "SILI": "CHL",
+    "ŞİLİ": "CHL",
+    "KOLOMBIYA": "COL",
+    "KOLOMBİYA": "COL",
     "PERU": "PER",
     "VENEZUELA": "VEN",
     "AZERBAYCAN": "AZE",
-    "GURCISTAN": "GEO", "GÜRCİSTAN": "GEO",
-    "ERMENISTAN": "ARM", "ERMENİSTAN": "ARM",
-    "KAZAKISTAN": "KAZ", "KAZAKİSTAN": "KAZ",
-    "OZBEKISTAN": "UZB", "ÖZBEKİSTAN": "UZB",
-    "TURKMENISTAN": "TKM", "TÜRKMENİSTAN": "TKM",
+    "GURCISTAN": "GEO",
+    "GÜRCİSTAN": "GEO",
+    "ERMENISTAN": "ARM",
+    "ERMENİSTAN": "ARM",
+    "KAZAKISTAN": "KAZ",
+    "KAZAKİSTAN": "KAZ",
+    "OZBEKISTAN": "UZB",
+    "ÖZBEKİSTAN": "UZB",
+    "TURKMENISTAN": "TKM",
+    "TÜRKMENİSTAN": "TKM",
     "KIRGIZISTAN": "KGZ",
-    "TACIKISTAN": "TJK", "TACİKİSTAN": "TJK",
-    "MOGOLISTAN": "MNG", "MOĞOLİSTAN": "MNG",
+    "TACIKISTAN": "TJK",
+    "TACİKİSTAN": "TJK",
+    "MOGOLISTAN": "MNG",
+    "MOĞOLİSTAN": "MNG",
     "TAYLAND": "THA",
-    "VIETNAM": "VNM", "VİETNAM": "VNM",
+    "VIETNAM": "VNM",
+    "VİETNAM": "VNM",
     "ENDONEZYA": "IDN",
     "MALEZYA": "MYS",
-    "FILIPINLER": "PHL", "FİLİPİNLER": "PHL",
-    "SINGAPUR": "SGP", "SİNGAPUR": "SGP",
+    "FILIPINLER": "PHL",
+    "FİLİPİNLER": "PHL",
+    "SINGAPUR": "SGP",
+    "SİNGAPUR": "SGP",
     "PAKISTAN": "PAK",
-    "BANGLADES": "BGD", "BANGLADEŞ": "BGD",
+    "BANGLADES": "BGD",
+    "BANGLADEŞ": "BGD",
     "SRI LANKA": "LKA",
     "NEPAL": "NPL",
-    "AFGANISTAN": "AFG", "AFGANİSTAN": "AFG",
-    "IRAN": "IRN", "İRAN": "IRN",
+    "AFGANISTAN": "AFG",
+    "AFGANİSTAN": "AFG",
+    "IRAN": "IRN",
+    "İRAN": "IRN",
     "IRAK": "IRQ",
-    "SURIYE": "SYR", "SURİYE": "SYR",
-    "URDUN": "JOR", "ÜRDÜN": "JOR",
-    "LUBNAN": "LBN", "LÜBNAN": "LBN",
-    "FILISTIN": "PSE", "FİLİSTİN": "PSE", "PALESTINE": "PSE",
-    "MISIR": "EGY", "MISİR": "EGY",
+    "SURIYE": "SYR",
+    "SURİYE": "SYR",
+    "URDUN": "JOR",
+    "ÜRDÜN": "JOR",
+    "LUBNAN": "LBN",
+    "LÜBNAN": "LBN",
+    "FILISTIN": "PSE",
+    "FİLİSTİN": "PSE",
+    "PALESTINE": "PSE",
+    "MISIR": "EGY",
+    "MISİR": "EGY",
     "FAS": "MAR",
-    "CEZAYIR": "DZA", "CEZAYİR": "DZA",
+    "CEZAYIR": "DZA",
+    "CEZAYİR": "DZA",
     "TUNUS": "TUN",
-    "LIBYA": "LBY", "LİBYA": "LBY",
+    "LIBYA": "LBY",
+    "LİBYA": "LBY",
     "SUDAN": "SDN",
-    "ETIYOPYA": "ETH", "ETİYOPYA": "ETH",
+    "ETIYOPYA": "ETH",
+    "ETİYOPYA": "ETH",
     "KENYA": "KEN",
     "TANZANYA": "TZA",
     "UGANDA": "UGA",
-    "GUNEY AFRIKA": "ZAF", "GÜNEY AFRİKA": "ZAF",
-    "NIJERYA": "NGA", "NİJERYA": "NGA",
+    "GUNEY AFRIKA": "ZAF",
+    "GÜNEY AFRİKA": "ZAF",
+    "NIJERYA": "NGA",
+    "NİJERYA": "NGA",
     "GANA": "GHA",
     "SENEGAL": "SEN",
-    "MAKEDONYA": "MKD", "KUZEY MAKEDONYA": "MKD",
-    "SIRBISTAN": "SRB", "SİRBİSTAN": "SRB", "SERBIA": "SRB",
-    "HIRVATISTAN": "HRV", "HİRVATİSTAN": "HRV",
+    "MAKEDONYA": "MKD",
+    "KUZEY MAKEDONYA": "MKD",
+    "SIRBISTAN": "SRB",
+    "SİRBİSTAN": "SRB",
+    "SERBIA": "SRB",
+    "HIRVATISTAN": "HRV",
+    "HİRVATİSTAN": "HRV",
     "SLOVENYA": "SVN",
-    "BOSNA HERSEK": "BIH", "BOSNA-HERSEK": "BIH",
-    "KARADAG": "MNE", "KARADAĞ": "MNE", "MONTENEGRO": "MNE",
+    "BOSNA HERSEK": "BIH",
+    "BOSNA-HERSEK": "BIH",
+    "KARADAG": "MNE",
+    "KARADAĞ": "MNE",
+    "MONTENEGRO": "MNE",
     "ARNAVUTLUK": "ALB",
-    "KOSOVA": "XKX", "KOSOVO": "XKX",
+    "KOSOVA": "XKX",
+    "KOSOVO": "XKX",
     "MOLDOVA": "MDA",
     "BELARUS": "BLR",
     "LITVANYA": "LTU",
     "LETONYA": "LVA",
     "ESTONYA": "EST",
-    "IZLANDA": "ISL", "İZLANDA": "ISL",
+    "IZLANDA": "ISL",
+    "İZLANDA": "ISL",
     "MALTA": "MLT",
-    "KIBRIS": "CYP", "GUNEY KIBRIS": "CYP", "GÜNEY KIBRIS": "CYP",
+    "KIBRIS": "CYP",
+    "GUNEY KIBRIS": "CYP",
+    "GÜNEY KIBRIS": "CYP",
     "KKTC": "TUR",  # KKTC pasaportları TGA'da TR uyrukla raporlanır
-    "LUKSEMBURG": "LUX", "LÜKSEMBURG": "LUX",
+    "LUKSEMBURG": "LUX",
+    "LÜKSEMBURG": "LUX",
     "MONAKO": "MCO",
-    "VATIKAN": "VAT", "VATİKAN": "VAT",
+    "VATIKAN": "VAT",
+    "VATİKAN": "VAT",
     "ANDORRA": "AND",
     "SAN MARINO": "SMR",
-    "LIHTENSTAYN": "LIE", "LİHTENŞTAYN": "LIE",
+    "LIHTENSTAYN": "LIE",
+    "LİHTENŞTAYN": "LIE",
     # Yaygın İngilizce kısaltma/alias'lar
-    "USA": "USA", "U.S.": "USA", "U.S.A.": "USA",
-    "UK": "GBR", "U.K.": "GBR", "GREAT BRITAIN": "GBR",
-    "TAIWAN": "TWN", "HONG KONG": "HKG", "MACAU": "MAC",
+    "USA": "USA",
+    "U.S.": "USA",
+    "U.S.A.": "USA",
+    "UK": "GBR",
+    "U.K.": "GBR",
+    "GREAT BRITAIN": "GBR",
+    "TAIWAN": "TWN",
+    "HONG KONG": "HKG",
+    "MACAU": "MAC",
     "BRUNEI": "BRN",
     "LAOS": "LAO",
-    "BURMA": "MMR", "MYANMAR": "MMR",
+    "BURMA": "MMR",
+    "MYANMAR": "MMR",
     "IVORY COAST": "CIV",
     "CAPE VERDE": "CPV",
     "EAST TIMOR": "TLS",
-    "VATICAN": "VAT", "HOLY SEE": "VAT",
-    "CONGO": "COG", "DR CONGO": "COD", "DRC": "COD",
+    "VATICAN": "VAT",
+    "HOLY SEE": "VAT",
+    "CONGO": "COG",
+    "DR CONGO": "COD",
+    "DRC": "COD",
 }
 
 
@@ -215,10 +300,7 @@ def _norm_variants(s: str) -> list[str]:
     base = " ".join(str(s).strip().split())
     if not base:
         return []
-    folded = "".join(
-        ch for ch in unicodedata.normalize("NFKD", base)
-        if not unicodedata.combining(ch)
-    )
+    folded = "".join(ch for ch in unicodedata.normalize("NFKD", base) if not unicodedata.combining(ch))
     raw = [
         base.upper(),
         base.replace("i", "İ").replace("ı", "I").upper(),
@@ -227,6 +309,7 @@ def _norm_variants(s: str) -> list[str]:
     ]
     # Noktalama temizlenmiş ek varyant
     import re
+
     raw.append(re.sub(r"[^\w\s]", "", folded).upper())
     raw.append(re.sub(r"[^\w]", "", folded).upper())
     seen: set[str] = set()
@@ -329,6 +412,7 @@ def _to_iso3(raw: str | None) -> str:
 
 # ── Config (per tenant) ─────────────────────────────────────────────────────
 
+
 def _aad(tenant_id: str) -> AADContext:
     return AADContext(
         tenant_id=tenant_id,
@@ -407,13 +491,15 @@ _CHANNEL_LABEL = {
 
 
 def _channel_label(b: dict[str, Any]) -> str:
-    raw = (b.get("source_channel") or b.get("channel") or "direct")
+    raw = b.get("source_channel") or b.get("channel") or "direct"
     key = str(raw).strip().lower()
     return _CHANNEL_LABEL.get(key, key.title() or "Direkt")
 
 
 async def _fetch_active_bookings(
-    tenant_id: str, day_start: datetime, day_end: datetime,
+    tenant_id: str,
+    day_start: datetime,
+    day_end: datetime,
 ) -> list[dict[str, Any]]:
     """O gün içinde gerçek konaklama olarak sayılan rezervasyonlar.
 
@@ -430,10 +516,20 @@ async def _fetch_active_bookings(
             "check_out": {"$gt": day_start.isoformat()},
         },
         {
-            "_id": 0, "id": 1, "check_in": 1, "check_out": 1,
-            "adults": 1, "children": 1, "total_amount": 1, "currency": 1,
-            "source_channel": 1, "channel": 1, "guest_id": 1, "room_id": 1,
-            "nightly_breakdown": 1, "rate_per_night": 1,
+            "_id": 0,
+            "id": 1,
+            "check_in": 1,
+            "check_out": 1,
+            "adults": 1,
+            "children": 1,
+            "total_amount": 1,
+            "currency": 1,
+            "source_channel": 1,
+            "channel": 1,
+            "guest_id": 1,
+            "room_id": 1,
+            "nightly_breakdown": 1,
+            "rate_per_night": 1,
         },
     )
     return await cur.to_list(length=20000)
@@ -513,7 +609,10 @@ async def _guest_country_map(tenant_id: str, guest_ids: list[str]) -> dict[str, 
 
 
 async def build_daily_payload(
-    tenant_id: str, target_date: date, *, currency_default: str = "TRY",
+    tenant_id: str,
+    target_date: date,
+    *,
+    currency_default: str = "TRY",
 ) -> dict[str, Any]:
     """Bir günlük TGA payload bloğu (data[] içine konacak tek eleman)."""
     day_start = datetime(target_date.year, target_date.month, target_date.day, tzinfo=UTC)
@@ -531,15 +630,9 @@ async def build_daily_payload(
     net_oda_geliri = 0.0
 
     # Demografi: iso3 → {yetiskin, cocuk, oda, giren_oda, giren_kisi, net_gelir}
-    demo: dict[str, dict[str, float]] = defaultdict(
-        lambda: {"yetiskin": 0, "cocuk": 0, "oda": 0,
-                 "giren_oda": 0, "giren_kisi": 0, "net_gelir": 0.0}
-    )
+    demo: dict[str, dict[str, float]] = defaultdict(lambda: {"yetiskin": 0, "cocuk": 0, "oda": 0, "giren_oda": 0, "giren_kisi": 0, "net_gelir": 0.0})
     # Kanal: label → {oda, kisi, giren_oda, giren_kisi, net_gelir}
-    kanal: dict[str, dict[str, float]] = defaultdict(
-        lambda: {"oda": 0, "kisi": 0, "giren_oda": 0,
-                 "giren_kisi": 0, "net_gelir": 0.0}
-    )
+    kanal: dict[str, dict[str, float]] = defaultdict(lambda: {"oda": 0, "kisi": 0, "giren_oda": 0, "giren_kisi": 0, "net_gelir": 0.0})
 
     for b in bookings:
         ci = _parse_dt(b.get("check_in"))
@@ -612,7 +705,10 @@ async def build_daily_payload(
 
 
 async def build_batch_envelope(
-    tenant_id: str, end_date: date, *, days: int = 7,
+    tenant_id: str,
+    end_date: date,
+    *,
+    days: int = 7,
 ) -> dict[str, Any]:
     """`days` gün geriye dönük TGA envelope (POST gövdesi)."""
     cfg = await get_tga_config(tenant_id)
@@ -629,6 +725,7 @@ async def build_batch_envelope(
 
 # ── Sender (POST + outbox) ──────────────────────────────────────────────────
 
+
 def _base_url(env: str) -> str:
     return TGA_BASE_URL_LIVE if env == "live" else TGA_BASE_URL_TEST
 
@@ -643,6 +740,7 @@ async def _post_envelope(cfg: dict[str, Any], envelope: dict[str, Any]) -> dict[
     headers = {"Content-Type": "application/json", "X-API-Key": cfg["api_key"]}
     # Lazy import — tests / CLI import bu modülü httpx olmadan da kullanabilsin.
     from integrations.xchange.safety import EgressDenied, safe_post_async
+
     try:
         r = await safe_post_async(url, timeout=HTTP_TIMEOUT_S, json=envelope, headers=headers)
         ok = 200 <= r.status_code < 300
@@ -658,7 +756,10 @@ async def _post_envelope(cfg: dict[str, Any], envelope: dict[str, Any]) -> dict[
 
 
 async def send_batch(
-    tenant_id: str, end_date: date, *, days: int = 7,
+    tenant_id: str,
+    end_date: date,
+    *,
+    days: int = 7,
     triggered_by: str = "scheduler",
 ) -> dict[str, Any]:
     """Son `days` günü TGA'ya gönderir, sonucu outbox'a yazar.
@@ -688,9 +789,7 @@ async def send_batch(
             "tesis_belge_no": cfg["belge_no"],
             "rapor_tarihleri": [d["rapor_tarihi"] for d in envelope["data"]],
             "toplam_oda_sum": sum(d["toplam_oda"] for d in envelope["data"]),
-            "net_oda_geliri_sum": round(
-                sum(d["net_oda_geliri"] for d in envelope["data"]), 2
-            ),
+            "net_oda_geliri_sum": round(sum(d["net_oda_geliri"] for d in envelope["data"]), 2),
         },
         "retry_count": 0,
         "next_retry_at": None,
@@ -703,9 +802,7 @@ async def send_batch(
 
     if out_doc.get("status") == "failed":
         out_doc["first_failed_at"] = started_at
-        out_doc["next_retry_at"] = (
-            finished_dt + timedelta(seconds=_next_backoff_seconds(0))
-        ).isoformat()
+        out_doc["next_retry_at"] = (finished_dt + timedelta(seconds=_next_backoff_seconds(0))).isoformat()
 
     try:
         await db[OUTBOX_COLL].insert_one(out_doc)
@@ -717,7 +814,10 @@ async def send_batch(
 
 
 async def _emit_delivery_failed_alert(
-    tenant_id: str, doc: dict[str, Any], age_seconds: float, attempts: int,
+    tenant_id: str,
+    doc: dict[str, Any],
+    age_seconds: float,
+    attempts: int,
 ) -> None:
     """24 saat içinde başarılamayan gönderim için yönetici uyarısı.
 
@@ -725,27 +825,29 @@ async def _emit_delivery_failed_alert(
     tenant kapsamlı bir notification (varsa servis) ile yöneticilere ulaşır.
     """
     try:
-        await db.audit_logs.insert_one({
-            "tenant_id": tenant_id,
-            "user_id": "system",
-            "user_name": "TGA Scheduler",
-            "user_role": "system",
-            "action": "TGA_DELIVERY_FAILED",
-            "entity_type": "integration_tga",
-            "entity_id": tenant_id,
-            "changes": {
-                "outbox_id": str(doc.get("_id") or ""),
-                "end_date": doc.get("end_date"),
-                "days": doc.get("days"),
-                "retry_count": attempts,
-                "age_hours": round(age_seconds / 3600.0, 2),
-                "http_status": doc.get("http_status"),
-                "last_error": (doc.get("error") or doc.get("response_text") or "")[:500],
-                "environment": doc.get("environment"),
-            },
-            "ip_address": None,
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        await db.audit_logs.insert_one(
+            {
+                "tenant_id": tenant_id,
+                "user_id": "system",
+                "user_name": "TGA Scheduler",
+                "user_role": "system",
+                "action": "TGA_DELIVERY_FAILED",
+                "entity_type": "integration_tga",
+                "entity_id": tenant_id,
+                "changes": {
+                    "outbox_id": str(doc.get("_id") or ""),
+                    "end_date": doc.get("end_date"),
+                    "days": doc.get("days"),
+                    "retry_count": attempts,
+                    "age_hours": round(age_seconds / 3600.0, 2),
+                    "http_status": doc.get("http_status"),
+                    "last_error": (doc.get("error") or doc.get("response_text") or "")[:500],
+                    "environment": doc.get("environment"),
+                },
+                "ip_address": None,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
     except Exception as exc:
         logger.warning("[tga] alert audit insert failed tenant=%s err=%s", tenant_id, exc)
 
@@ -761,13 +863,19 @@ async def retry_failed_outbox(*, max_docs: int = 200) -> dict[str, int]:
     """
     now = datetime.now(UTC)
     iso_now = now.isoformat()
-    cur = db[OUTBOX_COLL].find({
-        "status": "failed",
-        "next_retry_at": {"$ne": None, "$lte": iso_now},
-    }).sort("next_retry_at", 1).limit(max_docs)
+    cur = (
+        db[OUTBOX_COLL]
+        .find(
+            {
+                "status": "failed",
+                "next_retry_at": {"$ne": None, "$lte": iso_now},
+            }
+        )
+        .sort("next_retry_at", 1)
+        .limit(max_docs)
+    )
     docs = await cur.to_list(length=max_docs)
-    stats = {"attempted": 0, "succeeded": 0, "failed": 0,
-             "alerted": 0, "skipped": 0}
+    stats = {"attempted": 0, "succeeded": 0, "failed": 0, "alerted": 0, "skipped": 0}
     for doc in docs:
         stats["attempted"] += 1
         tenant_id = doc.get("tenant_id") or ""
@@ -777,9 +885,7 @@ async def retry_failed_outbox(*, max_docs: int = 200) -> dict[str, int]:
             # Bozuk kayıt — tekrar denemeyi durdur.
             await db[OUTBOX_COLL].update_one(
                 {"_id": doc["_id"]},
-                {"$set": {"next_retry_at": None,
-                          "status": "failed_permanent",
-                          "error": "invalid_end_date"}},
+                {"$set": {"next_retry_at": None, "status": "failed_permanent", "error": "invalid_end_date"}},
             )
             stats["skipped"] += 1
             continue
@@ -794,39 +900,34 @@ async def retry_failed_outbox(*, max_docs: int = 200) -> dict[str, int]:
             cfg = await get_tga_config(tenant_id, decrypt_api_key=True)
             cfg_read_ok = True
         except Exception as exc:
-            logger.warning("[tga-retry] config read failed tenant=%s err=%s",
-                           tenant_id, exc)
+            logger.warning("[tga-retry] config read failed tenant=%s err=%s", tenant_id, exc)
             cfg = {}
             cfg_read_ok = False
 
-        intentionally_disabled = cfg_read_ok and (
-            cfg.get("enabled") is False
-            or not cfg.get("belge_no")
-            or not cfg.get("vergi_no")
-        )
+        intentionally_disabled = cfg_read_ok and (cfg.get("enabled") is False or not cfg.get("belge_no") or not cfg.get("vergi_no"))
         if intentionally_disabled:
-            update = {"next_retry_at": None,
-                      "status": "failed_skipped",
-                      "last_retry_at": iso_now}
+            update = {"next_retry_at": None, "status": "failed_skipped", "last_retry_at": iso_now}
             await db[OUTBOX_COLL].update_one({"_id": doc["_id"]}, {"$set": update})
             # Observability — sessizce düşmesin.
             try:
-                await db.audit_logs.insert_one({
-                    "tenant_id": tenant_id,
-                    "user_id": "system",
-                    "user_name": "TGA Scheduler",
-                    "user_role": "system",
-                    "action": "TGA_DELIVERY_SKIPPED",
-                    "entity_type": "integration_tga",
-                    "entity_id": tenant_id,
-                    "changes": {
-                        "outbox_id": str(doc.get("_id") or ""),
-                        "end_date": doc.get("end_date"),
-                        "reason": "tenant_disabled_or_missing_config",
-                    },
-                    "ip_address": None,
-                    "timestamp": iso_now,
-                })
+                await db.audit_logs.insert_one(
+                    {
+                        "tenant_id": tenant_id,
+                        "user_id": "system",
+                        "user_name": "TGA Scheduler",
+                        "user_role": "system",
+                        "action": "TGA_DELIVERY_SKIPPED",
+                        "entity_type": "integration_tga",
+                        "entity_id": tenant_id,
+                        "changes": {
+                            "outbox_id": str(doc.get("_id") or ""),
+                            "end_date": doc.get("end_date"),
+                            "reason": "tenant_disabled_or_missing_config",
+                        },
+                        "ip_address": None,
+                        "timestamp": iso_now,
+                    }
+                )
             except Exception as exc:
                 logger.warning("[tga-retry] skipped-audit insert failed: %s", exc)
             stats["skipped"] += 1
@@ -842,8 +943,7 @@ async def retry_failed_outbox(*, max_docs: int = 200) -> dict[str, int]:
             update = {
                 "retry_count": new_count,
                 "last_retry_at": iso_now,
-                "error": ("config_unavailable" if not cfg_read_ok
-                          else "api_key_unavailable"),
+                "error": ("config_unavailable" if not cfg_read_ok else "api_key_unavailable"),
             }
             if age >= ALERT_THRESHOLD_SECONDS:
                 update["status"] = "failed_permanent"
@@ -856,9 +956,7 @@ async def retry_failed_outbox(*, max_docs: int = 200) -> dict[str, int]:
             else:
                 update["status"] = "failed"
                 next_secs = _next_backoff_seconds(new_count)
-                update["next_retry_at"] = (
-                    now + timedelta(seconds=next_secs)
-                ).isoformat()
+                update["next_retry_at"] = (now + timedelta(seconds=next_secs)).isoformat()
                 await db[OUTBOX_COLL].update_one({"_id": doc["_id"]}, {"$set": update})
                 stats["failed"] += 1
             continue
@@ -889,7 +987,9 @@ async def retry_failed_outbox(*, max_docs: int = 200) -> dict[str, int]:
             await db[OUTBOX_COLL].update_one({"_id": doc["_id"]}, {"$set": update})
             logger.info(
                 "[tga-retry] tenant=%s end_date=%s attempt=%s -> sent",
-                tenant_id, end_d.isoformat(), new_count,
+                tenant_id,
+                end_d.isoformat(),
+                new_count,
             )
             continue
 
@@ -905,20 +1005,24 @@ async def retry_failed_outbox(*, max_docs: int = 200) -> dict[str, int]:
             stats["alerted"] += 1
             logger.warning(
                 "[tga-retry] tenant=%s end_date=%s attempt=%s age=%.1fh -> alerted",
-                tenant_id, end_d.isoformat(), new_count, age / 3600.0,
+                tenant_id,
+                end_d.isoformat(),
+                new_count,
+                age / 3600.0,
             )
             continue
 
         update["status"] = "failed"
         next_secs = _next_backoff_seconds(new_count)
-        update["next_retry_at"] = (
-            now + timedelta(seconds=next_secs)
-        ).isoformat()
+        update["next_retry_at"] = (now + timedelta(seconds=next_secs)).isoformat()
         await db[OUTBOX_COLL].update_one({"_id": doc["_id"]}, {"$set": update})
         stats["failed"] += 1
         logger.info(
             "[tga-retry] tenant=%s end_date=%s attempt=%s -> failed, next in %ss",
-            tenant_id, end_d.isoformat(), new_count, next_secs,
+            tenant_id,
+            end_d.isoformat(),
+            new_count,
+            next_secs,
         )
 
     return stats
@@ -926,10 +1030,15 @@ async def retry_failed_outbox(*, max_docs: int = 200) -> dict[str, int]:
 
 async def list_send_log(tenant_id: str, *, days: int = 30) -> list[dict[str, Any]]:
     since = (datetime.now(UTC) - timedelta(days=days)).isoformat()
-    cur = db[OUTBOX_COLL].find(
-        {"tenant_id": tenant_id, "started_at": {"$gte": since}},
-        {"_id": 0},
-    ).sort("started_at", -1).limit(200)
+    cur = (
+        db[OUTBOX_COLL]
+        .find(
+            {"tenant_id": tenant_id, "started_at": {"$gte": since}},
+            {"_id": 0},
+        )
+        .sort("started_at", -1)
+        .limit(200)
+    )
     return await cur.to_list(length=200)
 
 
@@ -946,10 +1055,7 @@ async def ensure_indexes() -> None:
 async def list_enabled_tenants() -> list[str]:
     """Scheduler için: TGA gönderim aktif olan tenant kimlikleri."""
     cur = db.tenants.find(
-        {"tga.enabled": True,
-         "tga.api_key_enc": {"$exists": True, "$ne": None},
-         "tga.belge_no": {"$exists": True, "$ne": ""},
-         "tga.vergi_no": {"$exists": True, "$ne": ""}},
+        {"tga.enabled": True, "tga.api_key_enc": {"$exists": True, "$ne": None}, "tga.belge_no": {"$exists": True, "$ne": ""}, "tga.vergi_no": {"$exists": True, "$ne": ""}},
         {"_id": 0, "id": 1},
     )
     return [t["id"] async for t in cur if t.get("id")]

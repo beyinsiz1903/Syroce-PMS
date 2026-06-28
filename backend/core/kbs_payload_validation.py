@@ -12,6 +12,7 @@ Kurallar (EGM/Jandarma KBS minimum şeması):
 
 Yardımcı: `validate_or_raise()` 422 HTTPException fırlatır (router için).
 """
+
 from __future__ import annotations
 
 from fastapi import HTTPException
@@ -20,7 +21,7 @@ REQUIRED_BASE_FIELDS = ("guest_name", "birth_date", "check_in", "check_out")
 
 
 def _norm(v: object) -> str:
-    return (str(v).strip() if v is not None else "")
+    return str(v).strip() if v is not None else ""
 
 
 def validate_kbs_payload(snapshot: dict) -> tuple[bool, list[str]]:
@@ -55,9 +56,6 @@ def validate_or_raise(snapshot: dict) -> None:
             detail={
                 "error": "kbs_payload_incomplete",
                 "missing_fields": missing,
-                "message": (
-                    "KBS bildirimi için zorunlu alanlar eksik veya geçersiz: "
-                    + ", ".join(missing)
-                ),
+                "message": ("KBS bildirimi için zorunlu alanlar eksik veya geçersiz: " + ", ".join(missing)),
             },
         )

@@ -5,6 +5,7 @@ Features: property-level aggregation, tenant-wide health, cross-property compari
            top failing properties, top retry sources, most common provider issues,
            best performing properties, degraded connectors by property.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -96,17 +97,19 @@ class MultiPropertyService:
         comparisons = []
         for pid, conns in by_property.items():
             prop_data = await self._aggregate_property(tenant_id, pid, conns)
-            comparisons.append({
-                "property_id": pid,
-                "connector_count": len(conns),
-                "health_score": prop_data.get("health_score", 0),
-                "health_status": prop_data.get("health_status", "unknown"),
-                "sync_success_rate": prop_data.get("sync_success_rate", 0),
-                "ack_success_rate": prop_data.get("ack_success_rate", 0),
-                "retry_rate": prop_data.get("retry_rate", 0),
-                "open_issues": prop_data.get("open_issues", 0),
-                "failed_syncs": prop_data.get("failed_syncs", 0),
-            })
+            comparisons.append(
+                {
+                    "property_id": pid,
+                    "connector_count": len(conns),
+                    "health_score": prop_data.get("health_score", 0),
+                    "health_status": prop_data.get("health_status", "unknown"),
+                    "sync_success_rate": prop_data.get("sync_success_rate", 0),
+                    "ack_success_rate": prop_data.get("ack_success_rate", 0),
+                    "retry_rate": prop_data.get("retry_rate", 0),
+                    "open_issues": prop_data.get("open_issues", 0),
+                    "failed_syncs": prop_data.get("failed_syncs", 0),
+                }
+            )
 
         comparisons.sort(key=lambda x: x.get("health_score", 0), reverse=True)
         return {"comparisons": comparisons, "count": len(comparisons)}
@@ -147,13 +150,15 @@ class MultiPropertyService:
         health_data = []
         for pid, conns in by_property.items():
             prop = await self._aggregate_property(tenant_id, pid, conns)
-            health_data.append({
-                "property_id": pid,
-                "health_score": prop.get("health_score", 0),
-                "health_status": prop.get("health_status", "unknown"),
-                "connector_count": len(conns),
-                "active_connectors": sum(1 for c in conns if c.get("status") == "active"),
-            })
+            health_data.append(
+                {
+                    "property_id": pid,
+                    "health_score": prop.get("health_score", 0),
+                    "health_status": prop.get("health_status", "unknown"),
+                    "connector_count": len(conns),
+                    "active_connectors": sum(1 for c in conns if c.get("status") == "active"),
+                }
+            )
 
         health_data.sort(key=lambda x: x.get("health_score", 0))
         return {"properties": health_data, "count": len(health_data)}
@@ -163,6 +168,7 @@ class MultiPropertyService:
     async def _aggregate_property(self, tenant_id: str, property_id: str, connectors: list[dict]) -> dict[str, Any]:
         """Aggregate metrics for a single property."""
         from ..application.reconciliation_service import ReconciliationService
+
         recon = ReconciliationService(self._repo)
 
         total_health = 0
@@ -190,18 +196,10 @@ class MultiPropertyService:
             total_failed += failed
             total_retries += retries
 
-            imports = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid}
-            )
-            acks = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "ack_status": "ack_sent"}
-            )
-            import_failed_count = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "import_status": "failed"}
-            )
-            import_review_count = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "import_status": {"$in": ["review", "conflict", "out_of_order"]}}
-            )
+            imports = await db.cm_imported_reservations.count_documents({"tenant_id": tenant_id, "connector_id": cid})
+            acks = await db.cm_imported_reservations.count_documents({"tenant_id": tenant_id, "connector_id": cid, "ack_status": "ack_sent"})
+            import_failed_count = await db.cm_imported_reservations.count_documents({"tenant_id": tenant_id, "connector_id": cid, "import_status": "failed"})
+            import_review_count = await db.cm_imported_reservations.count_documents({"tenant_id": tenant_id, "connector_id": cid, "import_status": {"$in": ["review", "conflict", "out_of_order"]}})
             total_imports += imports
             total_ack_sent += acks
 
@@ -209,16 +207,18 @@ class MultiPropertyService:
             issues = summary.get("total_open", 0)
             open_issues += issues
 
-            connector_details.append({
-                "connector_id": cid,
-                "display_name": c.get("display_name", ""),
-                "provider": c.get("provider", ""),
-                "status": c.get("status", ""),
-                "health_score": health.get("health_score", 0),
-                "import_total": imports,
-                "import_failed": import_failed_count,
-                "import_review": import_review_count,
-            })
+            connector_details.append(
+                {
+                    "connector_id": cid,
+                    "display_name": c.get("display_name", ""),
+                    "provider": c.get("provider", ""),
+                    "status": c.get("status", ""),
+                    "health_score": health.get("health_score", 0),
+                    "import_total": imports,
+                    "import_failed": import_failed_count,
+                    "import_review": import_review_count,
+                }
+            )
 
         avg_health = round(total_health / max(len(connectors), 1))
         sync_rate = round(total_succeeded / max(total_syncs, 1) * 100, 1)
@@ -226,9 +226,7 @@ class MultiPropertyService:
         retry_rate = round(total_retries / max(total_syncs, 1) * 100, 1)
         total_import_failed = sum(c.get("import_failed", 0) for c in connector_details)
         total_import_review = sum(c.get("import_review", 0) for c in connector_details)
-        import_success_rate = round(
-            (total_imports - total_import_failed - total_import_review) / max(total_imports, 1) * 100, 1
-        )
+        import_success_rate = round((total_imports - total_import_failed - total_import_review) / max(total_imports, 1) * 100, 1)
 
         return {
             "property_id": property_id,

@@ -2,6 +2,7 @@
 Channel Manager — Provider Failover
 Circuit breaker + retry/backoff for OTA provider communication.
 """
+
 import asyncio
 import logging
 import time
@@ -13,9 +14,9 @@ logger = logging.getLogger(__name__)
 
 
 class CircuitState(str, Enum):
-    CLOSED = "closed"       # Normal operation
-    OPEN = "open"           # Failures exceeded threshold, blocking requests
-    HALF_OPEN = "half_open" # Testing if service recovered
+    CLOSED = "closed"  # Normal operation
+    OPEN = "open"  # Failures exceeded threshold, blocking requests
+    HALF_OPEN = "half_open"  # Testing if service recovered
 
 
 class CircuitBreaker:
@@ -114,10 +115,13 @@ class CircuitBreaker:
         no async yield inside ``_local_try_acquire``).
         """
         from infra.circuit_breaker_store import circuit_breaker_store
+
         if circuit_breaker_store.enabled:
             try:
                 state, admitted = await circuit_breaker_store.try_acquire(
-                    self.provider, self.recovery_timeout, self.half_open_max_calls,
+                    self.provider,
+                    self.recovery_timeout,
+                    self.half_open_max_calls,
                 )
                 self._apply_shared_state(state)
                 return admitted
@@ -127,10 +131,12 @@ class CircuitBreaker:
 
     async def record_success(self):
         from infra.circuit_breaker_store import circuit_breaker_store
+
         if circuit_breaker_store.enabled:
             try:
                 state = await circuit_breaker_store.record_success(
-                    self.provider, self.half_open_max_calls,
+                    self.provider,
+                    self.half_open_max_calls,
                 )
                 self._apply_shared_state(state)
                 return
@@ -140,10 +146,12 @@ class CircuitBreaker:
 
     async def record_failure(self):
         from infra.circuit_breaker_store import circuit_breaker_store
+
         if circuit_breaker_store.enabled:
             try:
                 state = await circuit_breaker_store.record_failure(
-                    self.provider, self.failure_threshold,
+                    self.provider,
+                    self.failure_threshold,
                 )
                 self._apply_shared_state(state)
                 return
@@ -232,7 +240,8 @@ class ProviderFailover:
                 )
                 if self._retry_config["jitter"]:
                     import random
-                    delay *= (0.5 + random.random())
+
+                    delay *= 0.5 + random.random()
 
                 await asyncio.sleep(delay)
 
@@ -293,6 +302,7 @@ class ProviderFailover:
         the in-process snapshot. Best-effort — any Redis error degrades to
         ``get_all_status()``."""
         from infra.circuit_breaker_store import circuit_breaker_store
+
         if circuit_breaker_store.enabled:
             try:
                 states = await circuit_breaker_store.get_all_states()
@@ -317,6 +327,7 @@ class ProviderFailover:
         """Fleet-wide status for a single breaker (shared Redis when enabled,
         else this worker's local view)."""
         from infra.circuit_breaker_store import circuit_breaker_store
+
         if circuit_breaker_store.enabled:
             try:
                 shared = await circuit_breaker_store.get_state(provider)
@@ -338,9 +349,11 @@ class ProviderFailover:
         ``closed``. Counts are point-in-time snapshots — no locking.
         """
         breakers = list(self._breakers.values())
+
         def _state_str(b) -> str:
             s = getattr(b, "state", None)
             return getattr(s, "value", s) if s is not None else "unknown"
+
         states = [_state_str(b) for b in breakers]
         return {
             "total": len(breakers),
@@ -363,6 +376,7 @@ class ProviderFailover:
         the whole fleet (not just the pod that served the request)."""
         self.reset_breaker(provider)
         from infra.circuit_breaker_store import circuit_breaker_store
+
         if circuit_breaker_store.enabled:
             try:
                 await circuit_breaker_store.reset(provider)

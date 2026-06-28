@@ -13,6 +13,7 @@ Personel tarafı (front_desk / pos / supervisor / admin):
   POST /api/qr-badge/validate    — taranan token bilgi döner (charge yok)
   POST /api/qr-badge/charge      — token + tutar ile pending charge oluştur
 """
+
 from __future__ import annotations
 
 import logging
@@ -44,6 +45,7 @@ _STAFF_CHARGE_ROLES = (
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────
+
 
 class QrTokenResponse(BaseModel):
     token: str
@@ -78,6 +80,7 @@ class QrRejectRequest(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────
 
+
 async def _resolve_guest_active_booking(
     *,
     user: User,
@@ -98,10 +101,9 @@ async def _resolve_guest_active_booking(
     # Misafir kayıtlarını e-posta + KENDİ tenant'ı içinde ara (dual-read:
     # şifreli _hash_email VEYA migre edilmemiş plaintext).
     from security.encrypted_lookup import build_guest_pii_query
+
     guest_records = []
-    async for g in db.guests.find(
-        {"tenant_id": user.tenant_id, **build_guest_pii_query("email", user.email)}
-    ):
+    async for g in db.guests.find({"tenant_id": user.tenant_id, **build_guest_pii_query("email", user.email)}):
         guest_records.append(g)
     if not guest_records:
         raise HTTPException(404, "Bu hesaba bağlı misafir kaydı bulunamadı")
@@ -117,9 +119,7 @@ async def _resolve_guest_active_booking(
         query["id"] = booking_id_hint
 
     # En son oluşturulan aktif booking — birden fazla varsa deterministik.
-    booking = await db.bookings.find_one(
-        query, {"_id": 0}, sort=[("created_at", -1)]
-    )
+    booking = await db.bookings.find_one(query, {"_id": 0}, sort=[("created_at", -1)])
     if not booking:
         raise HTTPException(404, "Aktif (check-in) rezervasyon bulunamadı")
 
@@ -127,6 +127,7 @@ async def _resolve_guest_active_booking(
 
 
 # ── Misafir endpoint'leri ────────────────────────────────────────────────
+
 
 @router.get("/guest/qr/me", response_model=QrTokenResponse)
 async def get_my_qr_token(
@@ -141,9 +142,7 @@ async def get_my_qr_token(
     if current_user.role != UserRole.GUEST:
         raise HTTPException(403, "Sadece misafir hesapları QR rozet alabilir")
 
-    tenant_id, bid = await _resolve_guest_active_booking(
-        user=current_user, booking_id_hint=booking_id
-    )
+    tenant_id, bid = await _resolve_guest_active_booking(user=current_user, booking_id_hint=booking_id)
 
     result = await svc.issue_or_refresh_token(
         tenant_id=tenant_id,
@@ -163,16 +162,12 @@ async def get_my_pending_charges(
 
     # Tenant'ı bulmak için aktif booking'i kullanırız; tenant izolasyonu için.
     try:
-        tenant_id, _ = await _resolve_guest_active_booking(
-            user=current_user, booking_id_hint=None
-        )
+        tenant_id, _ = await _resolve_guest_active_booking(user=current_user, booking_id_hint=None)
     except HTTPException:
         # Aktif booking yok → boş liste.
         return {"charges": [], "pending_count": 0}
 
-    rows = await svc.list_pending_charges_for_guest(
-        tenant_id=tenant_id, guest_user_id=current_user.id
-    )
+    rows = await svc.list_pending_charges_for_guest(tenant_id=tenant_id, guest_user_id=current_user.id)
     pending = sum(1 for r in rows if r.get("status") == "pending_approval")
     return {"charges": rows, "pending_count": pending}
 
@@ -185,9 +180,7 @@ async def approve_my_charge(
     if current_user.role != UserRole.GUEST:
         raise HTTPException(403, "Sadece misafir hesapları onaylayabilir")
 
-    tenant_id, _ = await _resolve_guest_active_booking(
-        user=current_user, booking_id_hint=None
-    )
+    tenant_id, _ = await _resolve_guest_active_booking(user=current_user, booking_id_hint=None)
 
     try:
         return await svc.approve_pending_charge(
@@ -218,9 +211,7 @@ async def reject_my_charge(
     if current_user.role != UserRole.GUEST:
         raise HTTPException(403, "Sadece misafir hesapları reddedebilir")
 
-    tenant_id, _ = await _resolve_guest_active_booking(
-        user=current_user, booking_id_hint=None
-    )
+    tenant_id, _ = await _resolve_guest_active_booking(user=current_user, booking_id_hint=None)
 
     try:
         return await svc.reject_pending_charge(
@@ -241,6 +232,7 @@ async def reject_my_charge(
 
 
 # ── Personel endpoint'leri ───────────────────────────────────────────────
+
 
 @router.post("/qr-badge/validate")
 async def staff_validate_qr(

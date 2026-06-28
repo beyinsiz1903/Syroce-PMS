@@ -1,4 +1,5 @@
 """Auto-split from finance.py — section: accounting."""
+
 import asyncio
 import re as _re
 import uuid
@@ -39,15 +40,19 @@ try:
     from cache_manager import cache, cached
 except ImportError:
     cache = None  # type: ignore
+
     def cached(ttl=300, key_prefix=""):
         def decorator(func):
             return func
+
         return decorator
+
 
 router = APIRouter()
 security = HTTPBearer()
 folio_balance_read_service = FolioBalanceReadService()
 open_folio_service = OpenFolioService()
+
 
 class InvoiceType(str, Enum):
     SALES = "sales"  # Satış faturası
@@ -233,7 +238,7 @@ def _norm(v):
     """Treat empty / 'none' sentinels coming from select inputs as null."""
     if v is None:
         return None
-    if isinstance(v, str) and v.strip().lower() in ('', 'none'):
+    if isinstance(v, str) and v.strip().lower() in ("", "none"):
         return None
     return v
 
@@ -255,25 +260,26 @@ async def create_supplier(
         category=payload.category or "general",
     )
     supplier_dict = supplier.model_dump()
-    supplier_dict['created_at'] = supplier_dict['created_at'].isoformat()
+    supplier_dict["created_at"] = supplier_dict["created_at"].isoformat()
     await db.suppliers.insert_one(supplier_dict)
     return supplier
 
 
-
 @router.get("/accounting/suppliers")
 async def get_suppliers(current_user: User = Depends(get_current_user)):
-    suppliers = await db.suppliers.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
+    suppliers = await db.suppliers.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
     return suppliers
 
 
-
 @router.put("/accounting/suppliers/{supplier_id}")
-async def update_supplier(supplier_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user),
+async def update_supplier(
+    supplier_id: str,
+    updates: dict[str, Any],
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
-    await db.suppliers.update_one({'id': supplier_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
-    supplier = await db.suppliers.find_one({'id': supplier_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
+    await db.suppliers.update_one({"id": supplier_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
+    supplier = await db.suppliers.find_one({"id": supplier_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     return supplier
 
 
@@ -293,25 +299,26 @@ async def create_bank_account(
         balance=payload.balance,
     )
     account_dict = bank_account.model_dump()
-    account_dict['created_at'] = account_dict['created_at'].isoformat()
+    account_dict["created_at"] = account_dict["created_at"].isoformat()
     await db.bank_accounts.insert_one(account_dict)
     return bank_account
 
 
-
 @router.get("/accounting/bank-accounts")
 async def get_bank_accounts(current_user: User = Depends(get_current_user)):
-    accounts = await db.bank_accounts.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
+    accounts = await db.bank_accounts.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
     return accounts
 
 
-
 @router.put("/accounting/bank-accounts/{account_id}")
-async def update_bank_account(account_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user),
+async def update_bank_account(
+    account_id: str,
+    updates: dict[str, Any],
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
-    await db.bank_accounts.update_one({'id': account_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
-    account = await db.bank_accounts.find_one({'id': account_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
+    await db.bank_accounts.update_one({"id": account_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
+    account = await db.bank_accounts.find_one({"id": account_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     return account
 
 
@@ -321,7 +328,7 @@ async def create_expense(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
-    count = await db.expenses.count_documents({'tenant_id': current_user.tenant_id})
+    count = await db.expenses.count_documents({"tenant_id": current_user.tenant_id})
     expense_number = f"EXP-{count + 1:05d}"
 
     vat_amount = payload.amount * (payload.vat_rate / 100)
@@ -347,60 +354,56 @@ async def create_expense(
     )
 
     expense_dict = expense.model_dump()
-    expense_dict['date'] = expense_dict['date'].isoformat()
-    expense_dict['created_at'] = expense_dict['created_at'].isoformat()
+    expense_dict["date"] = expense_dict["date"].isoformat()
+    expense_dict["created_at"] = expense_dict["created_at"].isoformat()
     await db.expenses.insert_one(expense_dict)
 
     if supplier_id:
         await db.suppliers.update_one(
-            {'id': supplier_id, 'tenant_id': current_user.tenant_id},
-            {'$inc': {'account_balance': total_amount}},
+            {"id": supplier_id, "tenant_id": current_user.tenant_id},
+            {"$inc": {"account_balance": total_amount}},
         )
 
     cash_flow = CashFlow(
         tenant_id=current_user.tenant_id,
-        transaction_type='expense',
+        transaction_type="expense",
         category=payload.category,
         amount=total_amount,
         description=expense.description,
         reference_id=expense.id,
-        reference_type='expense',
+        reference_type="expense",
         date=datetime.fromisoformat(payload.date),
         created_by=current_user.name,
     )
     cf_dict = cash_flow.model_dump()
-    cf_dict['date'] = cf_dict['date'].isoformat()
-    cf_dict['created_at'] = cf_dict['created_at'].isoformat()
+    cf_dict["date"] = cf_dict["date"].isoformat()
+    cf_dict["created_at"] = cf_dict["created_at"].isoformat()
     await db.cash_flow.insert_one(cf_dict)
 
     return expense
 
 
-
 @router.get("/accounting/expenses")
-async def get_expenses(
-    start_date: str | None = None,
-    end_date: str | None = None,
-    category: str | None = None,
-    current_user: User = Depends(get_current_user)
-):
-    query = {'tenant_id': current_user.tenant_id}
+async def get_expenses(start_date: str | None = None, end_date: str | None = None, category: str | None = None, current_user: User = Depends(get_current_user)):
+    query = {"tenant_id": current_user.tenant_id}
     if start_date and end_date:
-        query['date'] = {'$gte': start_date, '$lte': end_date}
+        query["date"] = {"$gte": start_date, "$lte": end_date}
     if category:
-        query['category'] = category
+        query["category"] = category
 
-    expenses = await db.expenses.find(query, {'_id': 0}).sort('date', -1).to_list(1000)
+    expenses = await db.expenses.find(query, {"_id": 0}).sort("date", -1).to_list(1000)
     return expenses
 
 
-
 @router.put("/accounting/expenses/{expense_id}")
-async def update_expense(expense_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user),
+async def update_expense(
+    expense_id: str,
+    updates: dict[str, Any],
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
-    await db.expenses.update_one({'id': expense_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
-    expense = await db.expenses.find_one({'id': expense_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
+    await db.expenses.update_one({"id": expense_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
+    expense = await db.expenses.find_one({"id": expense_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     return expense
 
 
@@ -424,25 +427,19 @@ async def create_inventory_item(
         notes=sanitize_plaintext(payload.notes, max_length=1000) if payload.notes else None,
     )
     item_dict = item.model_dump()
-    item_dict['created_at'] = item_dict['created_at'].isoformat()
+    item_dict["created_at"] = item_dict["created_at"].isoformat()
     await db.inventory_items.insert_one(item_dict)
     return item
 
 
-
 @router.get("/accounting/inventory")
 async def get_inventory(current_user: User = Depends(get_current_user)):
-    items = await db.inventory_items.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
+    items = await db.inventory_items.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
 
     # Get low stock items
-    low_stock = [item for item in items if item['quantity'] <= item['reorder_level']]
+    low_stock = [item for item in items if item["quantity"] <= item["reorder_level"]]
 
-    return {
-        'items': items,
-        'low_stock_count': len(low_stock),
-        'total_value': sum(item['quantity'] * item['unit_cost'] for item in items)
-    }
-
+    return {"items": items, "low_stock_count": len(low_stock), "total_value": sum(item["quantity"] * item["unit_cost"] for item in items)}
 
 
 @router.post("/accounting/inventory/movement")
@@ -460,65 +457,51 @@ async def create_stock_movement(
     # Atomic conditional update prevents qty < 0; tenant-scoped filter
     # blocks cross-tenant IDOR; movement record only persisted after
     # update succeeds (no orphan movements on reject).
-    if movement_type not in ('in', 'out', 'adjustment'):
+    if movement_type not in ("in", "out", "adjustment"):
         raise HTTPException(
             status_code=422,
             detail="movement_type must be one of: in, out, adjustment",
         )
     if not isinstance(quantity, (int, float)) or quantity != quantity:  # NaN check
         raise HTTPException(status_code=422, detail="quantity must be a number")
-    if movement_type in ('in', 'out') and quantity <= 0:
+    if movement_type in ("in", "out") and quantity <= 0:
         raise HTTPException(
             status_code=422,
             detail="quantity must be > 0 for in/out movements",
         )
-    if movement_type == 'adjustment' and quantity < 0:
+    if movement_type == "adjustment" and quantity < 0:
         raise HTTPException(
             status_code=422,
             detail="adjustment quantity must be >= 0",
         )
 
-    tenant_filter = {'id': item_id, 'tenant_id': current_user.tenant_id}
-    owned = await db.inventory_items.find_one(
-        tenant_filter, {'_id': 0, 'id': 1, 'quantity': 1}
-    )
+    tenant_filter = {"id": item_id, "tenant_id": current_user.tenant_id}
+    owned = await db.inventory_items.find_one(tenant_filter, {"_id": 0, "id": 1, "quantity": 1})
     if not owned:
-        raise HTTPException(status_code=404, detail='Inventory item not found')
+        raise HTTPException(status_code=404, detail="Inventory item not found")
 
-    if movement_type == 'in':
-        await db.inventory_items.update_one(tenant_filter, {'$inc': {'quantity': quantity}})
-    elif movement_type == 'out':
+    if movement_type == "in":
+        await db.inventory_items.update_one(tenant_filter, {"$inc": {"quantity": quantity}})
+    elif movement_type == "out":
         # Atomic guard: only decrement if current quantity >= requested.
         # modified_count == 0 means insufficient stock — reject with 409.
         guard_filter = dict(tenant_filter)
-        guard_filter['quantity'] = {'$gte': quantity}
-        result = await db.inventory_items.update_one(
-            guard_filter, {'$inc': {'quantity': -quantity}}
-        )
+        guard_filter["quantity"] = {"$gte": quantity}
+        result = await db.inventory_items.update_one(guard_filter, {"$inc": {"quantity": -quantity}})
         if result.modified_count == 0:
-            current_qty = float(owned.get('quantity') or 0)
+            current_qty = float(owned.get("quantity") or 0)
             raise HTTPException(
                 status_code=409,
-                detail=(
-                    f"Insufficient stock: requested={quantity}, "
-                    f"available={current_qty}"
-                ),
+                detail=(f"Insufficient stock: requested={quantity}, available={current_qty}"),
             )
     else:  # adjustment — quantity already validated >= 0 above
-        await db.inventory_items.update_one(tenant_filter, {'$set': {'quantity': quantity}})
+        await db.inventory_items.update_one(tenant_filter, {"$set": {"quantity": quantity}})
 
     movement = StockMovement(
-        tenant_id=current_user.tenant_id,
-        item_id=item_id,
-        movement_type=movement_type,
-        quantity=quantity,
-        unit_cost=unit_cost,
-        reference=reference,
-        notes=notes,
-        created_by=current_user.name
+        tenant_id=current_user.tenant_id, item_id=item_id, movement_type=movement_type, quantity=quantity, unit_cost=unit_cost, reference=reference, notes=notes, created_by=current_user.name
     )
     movement_dict = movement.model_dump()
-    movement_dict['created_at'] = movement_dict['created_at'].isoformat()
+    movement_dict["created_at"] = movement_dict["created_at"].isoformat()
     await db.stock_movements.insert_one(movement_dict)
 
     return movement
@@ -548,36 +531,28 @@ async def transfer_stock_between_warehouses(
     if quantity != quantity or quantity <= 0:  # NaN or non-positive
         raise HTTPException(status_code=422, detail="quantity must be > 0")
 
-    src_filter = {'id': payload.source_item_id, 'tenant_id': current_user.tenant_id}
-    dst_filter = {'id': payload.destination_item_id, 'tenant_id': current_user.tenant_id}
+    src_filter = {"id": payload.source_item_id, "tenant_id": current_user.tenant_id}
+    dst_filter = {"id": payload.destination_item_id, "tenant_id": current_user.tenant_id}
 
-    src = await db.inventory_items.find_one(
-        src_filter, {'_id': 0, 'id': 1, 'quantity': 1, 'location': 1, 'unit': 1}
-    )
+    src = await db.inventory_items.find_one(src_filter, {"_id": 0, "id": 1, "quantity": 1, "location": 1, "unit": 1})
     if not src:
-        raise HTTPException(status_code=404, detail='Source inventory item not found')
-    dst = await db.inventory_items.find_one(
-        dst_filter, {'_id': 0, 'id': 1, 'quantity': 1, 'location': 1, 'unit': 1}
-    )
+        raise HTTPException(status_code=404, detail="Source inventory item not found")
+    dst = await db.inventory_items.find_one(dst_filter, {"_id": 0, "id": 1, "quantity": 1, "location": 1, "unit": 1})
     if not dst:
-        raise HTTPException(status_code=404, detail='Destination inventory item not found')
+        raise HTTPException(status_code=404, detail="Destination inventory item not found")
 
     # Task #75 — unit-mismatch guard. A bare quantity transfer across
     # different units of measure (e.g. kg → adet) silently corrupts stock
     # levels. Reject unless the caller supplies an explicit conversion
     # factor. When units match we ignore any supplied factor so legacy
     # callers (no factor) keep working unchanged.
-    src_unit = (src.get('unit') or '').strip()
-    dst_unit = (dst.get('unit') or '').strip()
+    src_unit = (src.get("unit") or "").strip()
+    dst_unit = (dst.get("unit") or "").strip()
     if src_unit and dst_unit and src_unit != dst_unit:
         if payload.conversion_factor is None:
             raise HTTPException(
                 status_code=422,
-                detail=(
-                    f"Unit mismatch: source is '{src_unit}' but destination is "
-                    f"'{dst_unit}'. Supply an explicit conversion_factor "
-                    f"(destination units per source unit) to proceed."
-                ),
+                detail=(f"Unit mismatch: source is '{src_unit}' but destination is '{dst_unit}'. Supply an explicit conversion_factor (destination units per source unit) to proceed."),
             )
         factor = float(payload.conversion_factor)
     else:
@@ -586,45 +561,42 @@ async def transfer_stock_between_warehouses(
 
     # Atomic source decrement with insufficient-stock guard.
     guard_src = dict(src_filter)
-    guard_src['quantity'] = {'$gte': quantity}
-    dec = await db.inventory_items.update_one(guard_src, {'$inc': {'quantity': -quantity}})
+    guard_src["quantity"] = {"$gte": quantity}
+    dec = await db.inventory_items.update_one(guard_src, {"$inc": {"quantity": -quantity}})
     if dec.modified_count == 0:
-        current_qty = float(src.get('quantity') or 0)
+        current_qty = float(src.get("quantity") or 0)
         raise HTTPException(
             status_code=409,
-            detail=(
-                f"Insufficient stock at source: requested={quantity}, "
-                f"available={current_qty}"
-            ),
+            detail=(f"Insufficient stock at source: requested={quantity}, available={current_qty}"),
         )
 
     # Destination increment. If it fails for any reason, reverse the source
     # decrement so no stock is destroyed.
     try:
-        inc = await db.inventory_items.update_one(dst_filter, {'$inc': {'quantity': dst_quantity}})
+        inc = await db.inventory_items.update_one(dst_filter, {"$inc": {"quantity": dst_quantity}})
         if inc.matched_count == 0:
             # Destination disappeared between read and write — compensate.
-            await db.inventory_items.update_one(src_filter, {'$inc': {'quantity': quantity}})
+            await db.inventory_items.update_one(src_filter, {"$inc": {"quantity": quantity}})
             raise HTTPException(
                 status_code=409,
-                detail='Destination inventory item disappeared during transfer',
+                detail="Destination inventory item disappeared during transfer",
             )
     except HTTPException:
         raise
     except Exception as exc:
         # Compensate source on any unexpected failure.
         try:
-            await db.inventory_items.update_one(src_filter, {'$inc': {'quantity': quantity}})
+            await db.inventory_items.update_one(src_filter, {"$inc": {"quantity": quantity}})
         except Exception:
             pass
-        raise HTTPException(status_code=500, detail=f'Transfer failed: {exc}') from exc
+        raise HTTPException(status_code=500, detail=f"Transfer failed: {exc}") from exc
 
     transfer_id = str(uuid.uuid4())
     now_iso = datetime.now(UTC).isoformat()
     out_leg = StockMovement(
         tenant_id=current_user.tenant_id,
         item_id=payload.source_item_id,
-        movement_type='transfer_out',
+        movement_type="transfer_out",
         quantity=quantity,
         unit_cost=payload.unit_cost,
         reference=payload.reference,
@@ -636,7 +608,7 @@ async def transfer_stock_between_warehouses(
     in_leg = StockMovement(
         tenant_id=current_user.tenant_id,
         item_id=payload.destination_item_id,
-        movement_type='transfer_in',
+        movement_type="transfer_in",
         quantity=dst_quantity,
         unit_cost=payload.unit_cost,
         reference=payload.reference,
@@ -647,8 +619,8 @@ async def transfer_stock_between_warehouses(
     )
     out_dict = out_leg.model_dump()
     in_dict = in_leg.model_dump()
-    out_dict['created_at'] = now_iso
-    in_dict['created_at'] = now_iso
+    out_dict["created_at"] = now_iso
+    in_dict["created_at"] = now_iso
     # Insert both audit legs; if audit insert fails we still keep the
     # successful stock movement (better than reversing real inventory)
     # but log via HTTP 500 so caller can alert.
@@ -657,18 +629,18 @@ async def transfer_stock_between_warehouses(
     except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=f'Transfer completed but audit write failed: {exc}',
+            detail=f"Transfer completed but audit write failed: {exc}",
         ) from exc
 
     return {
-        'transfer_id': transfer_id,
-        'source_item_id': payload.source_item_id,
-        'destination_item_id': payload.destination_item_id,
-        'quantity': quantity,
-        'destination_quantity': dst_quantity,
-        'conversion_factor': factor,
-        'unit_cost': payload.unit_cost,
-        'legs': [out_leg, in_leg],
+        "transfer_id": transfer_id,
+        "source_item_id": payload.source_item_id,
+        "destination_item_id": payload.destination_item_id,
+        "quantity": quantity,
+        "destination_quantity": dst_quantity,
+        "conversion_factor": factor,
+        "unit_cost": payload.unit_cost,
+        "legs": [out_leg, in_leg],
     }
 
 
@@ -703,9 +675,7 @@ async def transfer_stock_bulk(
                 status_code=422,
                 detail=f"line {idx}: quantity must be > 0",
             )
-        needed_per_source[line.source_item_id] = (
-            needed_per_source.get(line.source_item_id, 0.0) + q
-        )
+        needed_per_source[line.source_item_id] = needed_per_source.get(line.source_item_id, 0.0) + q
 
     # Pre-fetch every involved row so we can short-circuit obvious failures
     # (missing rows, insufficient stock) before mutating anything.
@@ -713,10 +683,10 @@ async def transfer_stock_bulk(
     all_ids.update(line.destination_item_id for line in lines)
     items: dict[str, dict] = {}
     async for it in db.inventory_items.find(
-        {'id': {'$in': list(all_ids)}, 'tenant_id': current_user.tenant_id},
-        {'_id': 0, 'id': 1, 'quantity': 1, 'location': 1},
+        {"id": {"$in": list(all_ids)}, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "id": 1, "quantity": 1, "location": 1},
     ):
-        items[it['id']] = it
+        items[it["id"]] = it
 
     for idx, line in enumerate(lines, start=1):
         if line.source_item_id not in items:
@@ -730,14 +700,11 @@ async def transfer_stock_bulk(
                 detail=f"line {idx}: destination inventory item not found",
             )
     for src_id, needed in needed_per_source.items():
-        available = float(items[src_id].get('quantity') or 0)
+        available = float(items[src_id].get("quantity") or 0)
         if available < needed:
             raise HTTPException(
                 status_code=409,
-                detail=(
-                    f"Insufficient stock for source {src_id}: "
-                    f"requested={needed}, available={available}"
-                ),
+                detail=(f"Insufficient stock for source {src_id}: requested={needed}, available={available}"),
             )
 
     transfer_id = str(uuid.uuid4())
@@ -750,24 +717,22 @@ async def transfer_stock_bulk(
         # because the original failure has already been raised to the caller.
         for ln, src_f, dst_f in reversed(applied):
             try:
-                await db.inventory_items.update_one(src_f, {'$inc': {'quantity': ln.quantity}})
+                await db.inventory_items.update_one(src_f, {"$inc": {"quantity": ln.quantity}})
             except Exception:
                 pass
             try:
-                await db.inventory_items.update_one(dst_f, {'$inc': {'quantity': -ln.quantity}})
+                await db.inventory_items.update_one(dst_f, {"$inc": {"quantity": -ln.quantity}})
             except Exception:
                 pass
 
     for idx, line in enumerate(lines, start=1):
-        src_filter = {'id': line.source_item_id, 'tenant_id': current_user.tenant_id}
-        dst_filter = {'id': line.destination_item_id, 'tenant_id': current_user.tenant_id}
+        src_filter = {"id": line.source_item_id, "tenant_id": current_user.tenant_id}
+        dst_filter = {"id": line.destination_item_id, "tenant_id": current_user.tenant_id}
 
         guard_src = dict(src_filter)
-        guard_src['quantity'] = {'$gte': line.quantity}
+        guard_src["quantity"] = {"$gte": line.quantity}
         try:
-            dec = await db.inventory_items.update_one(
-                guard_src, {'$inc': {'quantity': -line.quantity}}
-            )
+            dec = await db.inventory_items.update_one(guard_src, {"$inc": {"quantity": -line.quantity}})
         except Exception as exc:
             await _rollback()
             raise HTTPException(
@@ -783,15 +748,11 @@ async def transfer_stock_bulk(
             )
 
         try:
-            inc = await db.inventory_items.update_one(
-                dst_filter, {'$inc': {'quantity': line.quantity}}
-            )
+            inc = await db.inventory_items.update_one(dst_filter, {"$inc": {"quantity": line.quantity}})
         except Exception as exc:
             # Compensate this line's source decrement, then rollback prior lines.
             try:
-                await db.inventory_items.update_one(
-                    src_filter, {'$inc': {'quantity': line.quantity}}
-                )
+                await db.inventory_items.update_one(src_filter, {"$inc": {"quantity": line.quantity}})
             except Exception:
                 pass
             await _rollback()
@@ -801,9 +762,7 @@ async def transfer_stock_bulk(
             ) from exc
         if inc.matched_count == 0:
             try:
-                await db.inventory_items.update_one(
-                    src_filter, {'$inc': {'quantity': line.quantity}}
-                )
+                await db.inventory_items.update_one(src_filter, {"$inc": {"quantity": line.quantity}})
             except Exception:
                 pass
             await _rollback()
@@ -822,7 +781,7 @@ async def transfer_stock_bulk(
         out_leg = StockMovement(
             tenant_id=current_user.tenant_id,
             item_id=line.source_item_id,
-            movement_type='transfer_out',
+            movement_type="transfer_out",
             quantity=line.quantity,
             unit_cost=line.unit_cost,
             reference=payload.reference,
@@ -834,7 +793,7 @@ async def transfer_stock_bulk(
         in_leg = StockMovement(
             tenant_id=current_user.tenant_id,
             item_id=line.destination_item_id,
-            movement_type='transfer_in',
+            movement_type="transfer_in",
             quantity=line.quantity,
             unit_cost=line.unit_cost,
             reference=payload.reference,
@@ -845,7 +804,7 @@ async def transfer_stock_bulk(
         )
         for leg in (out_leg, in_leg):
             d = leg.model_dump()
-            d['created_at'] = now_iso
+            d["created_at"] = now_iso
             legs_to_insert.append(d)
         leg_models.extend([out_leg, in_leg])
 
@@ -856,23 +815,23 @@ async def transfer_stock_bulk(
         # but do NOT roll back inventory (better than destroying real stock).
         raise HTTPException(
             status_code=500,
-            detail=f'Bulk transfer completed but audit write failed: {exc}',
+            detail=f"Bulk transfer completed but audit write failed: {exc}",
         ) from exc
 
     return {
-        'transfer_id': transfer_id,
-        'reference': payload.reference,
-        'line_count': len(lines),
-        'lines': [
+        "transfer_id": transfer_id,
+        "reference": payload.reference,
+        "line_count": len(lines),
+        "lines": [
             {
-                'source_item_id': line.source_item_id,
-                'destination_item_id': line.destination_item_id,
-                'quantity': line.quantity,
-                'unit_cost': line.unit_cost,
+                "source_item_id": line.source_item_id,
+                "destination_item_id": line.destination_item_id,
+                "quantity": line.quantity,
+                "unit_cost": line.unit_cost,
             }
             for line in lines
         ],
-        'legs': leg_models,
+        "legs": leg_models,
     }
 
 
@@ -901,44 +860,40 @@ async def get_transfer_history(
         limit = 5000
 
     query: dict[str, Any] = {
-        'tenant_id': current_user.tenant_id,
-        'movement_type': {'$in': ['transfer_out', 'transfer_in']},
-        'transfer_id': {'$ne': None},
+        "tenant_id": current_user.tenant_id,
+        "movement_type": {"$in": ["transfer_out", "transfer_in"]},
+        "transfer_id": {"$ne": None},
     }
     if start_date and end_date:
-        query['created_at'] = {'$gte': start_date, '$lte': end_date}
+        query["created_at"] = {"$gte": start_date, "$lte": end_date}
     elif start_date:
-        query['created_at'] = {'$gte': start_date}
+        query["created_at"] = {"$gte": start_date}
     elif end_date:
-        query['created_at'] = {'$lte': end_date}
+        query["created_at"] = {"$lte": end_date}
 
     # Pull legs. A multi-line transfer writes 2*N rows per transfer_id, so
     # cap generously (200x) to keep up to `limit` complete documents in the
     # common case (documents typically <=10 lines).
     fetch_cap = max(limit * 4, min(limit * 200, 20000))
-    rows = await db.stock_movements.find(query, {'_id': 0}).sort(
-        'created_at', -1
-    ).to_list(fetch_cap)
+    rows = await db.stock_movements.find(query, {"_id": 0}).sort("created_at", -1).to_list(fetch_cap)
 
     # Resolve item names for readability without an extra round-trip per row.
-    item_ids = {r.get('item_id') for r in rows if r.get('item_id')}
-    item_ids.update(
-        r.get('counterpart_item_id') for r in rows if r.get('counterpart_item_id')
-    )
+    item_ids = {r.get("item_id") for r in rows if r.get("item_id")}
+    item_ids.update(r.get("counterpart_item_id") for r in rows if r.get("counterpart_item_id"))
     item_ids.discard(None)
     name_by_id: dict[str, str] = {}
     if item_ids:
         items_cursor = db.inventory_items.find(
             {
-                'tenant_id': current_user.tenant_id,
-                'id': {'$in': list(item_ids)},
+                "tenant_id": current_user.tenant_id,
+                "id": {"$in": list(item_ids)},
             },
-            {'_id': 0, 'id': 1, 'name': 1, 'location': 1},
+            {"_id": 0, "id": 1, "name": 1, "location": 1},
         )
         async for it in items_cursor:
-            label = it.get('name') or ''
-            loc = it.get('location')
-            name_by_id[it['id']] = f"{label} ({loc})" if loc else label
+            label = it.get("name") or ""
+            loc = it.get("location")
+            name_by_id[it["id"]] = f"{label} ({loc})" if loc else label
 
     # First pass: bucket legs by transfer_id, then within each bucket pair
     # them by (source_item_id, destination_item_id). Quantities for the same
@@ -946,7 +901,7 @@ async def get_transfer_history(
     # (allowed by the bulk endpoint) collapses to one reconciliation row.
     legs_by_tid: dict[str, list[dict]] = {}
     for row in rows:
-        tid = row.get('transfer_id')
+        tid = row.get("transfer_id")
         if not tid:
             continue
         legs_by_tid.setdefault(tid, []).append(row)
@@ -955,45 +910,45 @@ async def get_transfer_history(
     for tid, legs in legs_by_tid.items():
         # Earliest leg drives the document header so all legs of one
         # document share a single created_at/reference/etc.
-        header_leg = min(legs, key=lambda r: r.get('created_at') or '')
+        header_leg = min(legs, key=lambda r: r.get("created_at") or "")
         header = {
-            'transfer_id': tid,
-            'reference': header_leg.get('reference'),
-            'notes': header_leg.get('notes'),
-            'created_at': header_leg.get('created_at'),
-            'created_by': header_leg.get('created_by'),
+            "transfer_id": tid,
+            "reference": header_leg.get("reference"),
+            "notes": header_leg.get("notes"),
+            "created_at": header_leg.get("created_at"),
+            "created_by": header_leg.get("created_by"),
         }
 
         # Pair legs into reconciliation lines.
         pair_acc: dict[tuple[str | None, str | None], dict[str, Any]] = {}
         for leg in legs:
-            mt = leg.get('movement_type')
-            if mt == 'transfer_out':
-                src = leg.get('item_id')
-                dst = leg.get('counterpart_item_id')
-            elif mt == 'transfer_in':
-                dst = leg.get('item_id')
-                src = leg.get('counterpart_item_id')
+            mt = leg.get("movement_type")
+            if mt == "transfer_out":
+                src = leg.get("item_id")
+                dst = leg.get("counterpart_item_id")
+            elif mt == "transfer_in":
+                dst = leg.get("item_id")
+                src = leg.get("counterpart_item_id")
             else:
                 continue
             key = (src, dst)
             entry = pair_acc.setdefault(
                 key,
                 {
-                    'source_item_id': src,
-                    'source_item_name': name_by_id.get(src),
-                    'destination_item_id': dst,
-                    'destination_item_name': name_by_id.get(dst),
-                    '_out_qty': 0.0,
-                    '_in_qty': 0.0,
-                    'unit_cost': float(leg.get('unit_cost') or 0),
+                    "source_item_id": src,
+                    "source_item_name": name_by_id.get(src),
+                    "destination_item_id": dst,
+                    "destination_item_name": name_by_id.get(dst),
+                    "_out_qty": 0.0,
+                    "_in_qty": 0.0,
+                    "unit_cost": float(leg.get("unit_cost") or 0),
                 },
             )
-            q = float(leg.get('quantity') or 0)
-            if mt == 'transfer_out':
-                entry['_out_qty'] += q
+            q = float(leg.get("quantity") or 0)
+            if mt == "transfer_out":
+                entry["_out_qty"] += q
             else:
-                entry['_in_qty'] += q
+                entry["_in_qty"] += q
 
         lines_out: list[dict[str, Any]] = []
         total_qty = 0.0
@@ -1002,15 +957,15 @@ async def get_transfer_history(
             # The canonical quantity for a line is the out-leg sum (both
             # legs should agree; out leg is what was decremented from the
             # source warehouse).
-            qty = entry['_out_qty'] or entry['_in_qty']
-            unit_cost = entry['unit_cost']
+            qty = entry["_out_qty"] or entry["_in_qty"]
+            unit_cost = entry["unit_cost"]
             line = {
-                'source_item_id': entry['source_item_id'],
-                'source_item_name': entry['source_item_name'],
-                'destination_item_id': entry['destination_item_id'],
-                'destination_item_name': entry['destination_item_name'],
-                'quantity': qty,
-                'unit_cost': unit_cost,
+                "source_item_id": entry["source_item_id"],
+                "source_item_name": entry["source_item_name"],
+                "destination_item_id": entry["destination_item_id"],
+                "destination_item_name": entry["destination_item_name"],
+                "quantity": qty,
+                "unit_cost": unit_cost,
             }
             lines_out.append(line)
             total_qty += qty
@@ -1019,8 +974,8 @@ async def get_transfer_history(
         # Stable line ordering by source/destination for deterministic output.
         lines_out.sort(
             key=lambda ln: (
-                ln.get('source_item_name') or '',
-                ln.get('destination_item_name') or '',
+                ln.get("source_item_name") or "",
+                ln.get("destination_item_name") or "",
             )
         )
 
@@ -1028,33 +983,35 @@ async def get_transfer_history(
         # has exactly one line, so existing consumers keep working.
         first = lines_out[0] if lines_out else None
         single = len(lines_out) == 1
-        header.update({
-            'line_count': len(lines_out),
-            'total_quantity': total_qty,
-            'total_value': total_value,
-            'lines': lines_out,
-            'source_item_id': first['source_item_id'] if single else None,
-            'source_item_name': first['source_item_name'] if single else None,
-            'destination_item_id': first['destination_item_id'] if single else None,
-            'destination_item_name': first['destination_item_name'] if single else None,
-            'quantity': first['quantity'] if single else total_qty,
-            'unit_cost': first['unit_cost'] if single else 0.0,
-        })
+        header.update(
+            {
+                "line_count": len(lines_out),
+                "total_quantity": total_qty,
+                "total_value": total_value,
+                "lines": lines_out,
+                "source_item_id": first["source_item_id"] if single else None,
+                "source_item_name": first["source_item_name"] if single else None,
+                "destination_item_id": first["destination_item_id"] if single else None,
+                "destination_item_name": first["destination_item_name"] if single else None,
+                "quantity": first["quantity"] if single else total_qty,
+                "unit_cost": first["unit_cost"] if single else 0.0,
+            }
+        )
         grouped[tid] = header
 
     transfers = sorted(
         grouped.values(),
-        key=lambda t: t.get('created_at') or '',
+        key=lambda t: t.get("created_at") or "",
         reverse=True,
     )[:limit]
 
     return {
-        'transfers': transfers,
-        'count': len(transfers),
-        'filters': {
-            'start_date': start_date,
-            'end_date': end_date,
-            'limit': limit,
+        "transfers": transfers,
+        "count": len(transfers),
+        "filters": {
+            "start_date": start_date,
+            "end_date": end_date,
+            "limit": limit,
         },
     }
 
@@ -1062,7 +1019,7 @@ async def get_transfer_history(
 # Block ANY HTML/XML-like tag (`<word`, `</word>`, `<...>`), event handlers,
 # javascript: pseudo-URLs. Catches unknown tags too (e.g. `<x>`, `<EVIL>`).
 _INVOICE_NAME_BLOCK = _re.compile(
-    r"<\s*/?\s*[A-Za-z][\w:-]*"      # opening or closing tag start: <tag, </tag
+    r"<\s*/?\s*[A-Za-z][\w:-]*"  # opening or closing tag start: <tag, </tag
     r"|on\w+\s*=|javascript:|data:",
     _re.IGNORECASE,
 )
@@ -1101,9 +1058,7 @@ def _normalize_customer_tax_number(v: str | None) -> str | None:
     if v == "":
         return None
     if not v.isdigit() or len(v) not in (10, 11):
-        raise ValueError(
-            "customer_tax_number must be 10 digits (VKN) or 11 digits (TCKN)"
-        )
+        raise ValueError("customer_tax_number must be 10 digits (VKN) or 11 digits (TCKN)")
     return v
 
 
@@ -1133,7 +1088,7 @@ async def create_accounting_invoice(
 ):
     # Models are now imported at the top of the file
 
-    count = await db.accounting_invoices.count_documents({'tenant_id': current_user.tenant_id})
+    count = await db.accounting_invoices.count_documents({"tenant_id": current_user.tenant_id})
     invoice_number = f"INV-{datetime.now().year}-{count + 1:05d}"
 
     invoice_items = []
@@ -1145,33 +1100,33 @@ async def create_accounting_invoice(
     for item_data in request.items:
         # Handle additional_taxes parsing
         additional_taxes = []
-        if 'additional_taxes' in item_data and item_data['additional_taxes']:
-            for tax_data in item_data['additional_taxes']:
+        if "additional_taxes" in item_data and item_data["additional_taxes"]:
+            for tax_data in item_data["additional_taxes"]:
                 additional_taxes.append(AdditionalTax(**tax_data))
 
         # Create item with parsed additional taxes
-        item_dict = {k: v for k, v in item_data.items() if k != 'additional_taxes'}
-        item_dict['additional_taxes'] = additional_taxes
+        item_dict = {k: v for k, v in item_data.items() if k != "additional_taxes"}
+        item_dict["additional_taxes"] = additional_taxes
 
         # Auto-compute vat_amount/total if client did not send (avoid 5xx)
         try:
-            _qty = float(item_dict.get('quantity', 0) or 0)
-            _up = float(item_dict.get('unit_price', 0) or 0)
-            _vrate = float(item_dict.get('vat_rate', 0) or 0)
+            _qty = float(item_dict.get("quantity", 0) or 0)
+            _up = float(item_dict.get("unit_price", 0) or 0)
+            _vrate = float(item_dict.get("vat_rate", 0) or 0)
         except (TypeError, ValueError):
             raise HTTPException(status_code=422, detail="quantity/unit_price/vat_rate sayisal olmali")
         _line_net = _qty * _up
-        if 'vat_amount' not in item_dict or item_dict.get('vat_amount') in (None, ""):
-            item_dict['vat_amount'] = round(_line_net * (_vrate / 100.0), 2)
+        if "vat_amount" not in item_dict or item_dict.get("vat_amount") in (None, ""):
+            item_dict["vat_amount"] = round(_line_net * (_vrate / 100.0), 2)
         try:
-            _vat_amount_num = float(item_dict.get('vat_amount', 0) or 0)
+            _vat_amount_num = float(item_dict.get("vat_amount", 0) or 0)
         except (TypeError, ValueError):
             raise HTTPException(status_code=422, detail="vat_amount sayisal olmali")
-        if 'total' not in item_dict or item_dict.get('total') in (None, ""):
-            item_dict['total'] = round(_line_net + _vat_amount_num, 2)
+        if "total" not in item_dict or item_dict.get("total") in (None, ""):
+            item_dict["total"] = round(_line_net + _vat_amount_num, 2)
         else:
             try:
-                item_dict['total'] = float(item_dict['total'])
+                item_dict["total"] = float(item_dict["total"])
             except (TypeError, ValueError):
                 raise HTTPException(status_code=422, detail="total sayisal olmali")
 
@@ -1187,11 +1142,11 @@ async def create_accounting_invoice(
         # Calculate additional taxes if present
         if item.additional_taxes:
             for tax in item.additional_taxes:
-                if tax.tax_type == 'withholding':
+                if tax.tax_type == "withholding":
                     # Withholding tax is deducted from VAT
                     # Calculate based on withholding rate (e.g., "7/10" = 70%)
                     if tax.withholding_rate:
-                        rate_parts = tax.withholding_rate.split('/')
+                        rate_parts = tax.withholding_rate.split("/")
                         if len(rate_parts) == 2:
                             rate_percent = (int(rate_parts[0]) / int(rate_parts[1])) * 100
                             withholding_amount = item.vat_amount * (rate_percent / 100)
@@ -1227,31 +1182,31 @@ async def create_accounting_invoice(
         due_date=datetime.fromisoformat(request.due_date),
         booking_id=request.booking_id,
         notes=request.notes,
-        created_by=current_user.name
+        created_by=current_user.name,
     )
 
     invoice_dict = invoice.model_dump()
-    invoice_dict['issue_date'] = invoice_dict['issue_date'].isoformat()
-    invoice_dict['due_date'] = invoice_dict['due_date'].isoformat()
-    invoice_dict['created_at'] = invoice_dict['created_at'].isoformat()
+    invoice_dict["issue_date"] = invoice_dict["issue_date"].isoformat()
+    invoice_dict["due_date"] = invoice_dict["due_date"].isoformat()
+    invoice_dict["created_at"] = invoice_dict["created_at"].isoformat()
     await db.accounting_invoices.insert_one(invoice_dict)
 
     # Create cash flow entry
     # CashFlow model imported at top
     cash_flow = CashFlow(
         tenant_id=current_user.tenant_id,
-        transaction_type='income',
-        category='room_revenue' if request.booking_id else 'other_services',
+        transaction_type="income",
+        category="room_revenue" if request.booking_id else "other_services",
         amount=total,
         description=f"Invoice {invoice_number}",
         reference_id=invoice.id,
-        reference_type='invoice',
+        reference_type="invoice",
         date=datetime.now(UTC),
-        created_by=current_user.name
+        created_by=current_user.name,
     )
     cf_dict = cash_flow.model_dump()
-    cf_dict['date'] = cf_dict['date'].isoformat()
-    cf_dict['created_at'] = cf_dict['created_at'].isoformat()
+    cf_dict["date"] = cf_dict["date"].isoformat()
+    cf_dict["created_at"] = cf_dict["created_at"].isoformat()
     await db.cash_flow.insert_one(cf_dict)
 
     # v95.1 — list cache + dashboard cache invalidasyon
@@ -1265,7 +1220,6 @@ async def create_accounting_invoice(
     return invoice
 
 
-
 @router.get("/accounting/invoices")
 @cached(ttl=300, key_prefix="accounting_invoices_list")  # v95.1 — 5dk cache, write path'leri invalidate eder
 async def get_accounting_invoices(
@@ -1276,57 +1230,58 @@ async def get_accounting_invoices(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v95.1 — diğer finance uçlarıyla tutarlı yetki
 ):
-    query = {'tenant_id': current_user.tenant_id}
+    query = {"tenant_id": current_user.tenant_id}
     if start_date and end_date:
-        query['issue_date'] = {'$gte': start_date, '$lte': end_date}
+        query["issue_date"] = {"$gte": start_date, "$lte": end_date}
     if invoice_type:
-        query['invoice_type'] = invoice_type
+        query["invoice_type"] = invoice_type
     if status:
-        query['status'] = status
+        query["status"] = status
 
-    invoices = await db.accounting_invoices.find(query, {'_id': 0}).sort('issue_date', -1).to_list(1000)
+    invoices = await db.accounting_invoices.find(query, {"_id": 0}).sort("issue_date", -1).to_list(1000)
     # Render-time scrub for legacy rows that contain XML/HTML fragments
     # (e.g. test seeds from earlier security probes). Persisted on next write.
     for inv in invoices:
-        for f in ('customer_name', 'customer_tax_office', 'customer_address'):
+        for f in ("customer_name", "customer_tax_office", "customer_address"):
             if f in inv and isinstance(inv[f], str):
                 inv[f] = sanitize_plaintext(inv[f], max_length=500)
     return invoices
 
 
-
 @router.put("/accounting/invoices/{invoice_id}")
-async def update_accounting_invoice(invoice_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user),
+async def update_accounting_invoice(
+    invoice_id: str,
+    updates: dict[str, Any],
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_charge")),  # v94 DW
 ):
-    if 'status' in updates and updates['status'] == 'paid' and 'payment_date' not in updates:
-        updates['payment_date'] = datetime.now(UTC).isoformat()
+    if "status" in updates and updates["status"] == "paid" and "payment_date" not in updates:
+        updates["payment_date"] = datetime.now(UTC).isoformat()
 
-    for f in ('customer_name', 'customer_tax_office', 'customer_address', 'customer_tax_number'):
+    for f in ("customer_name", "customer_tax_office", "customer_address", "customer_tax_number"):
         if f in updates and isinstance(updates[f], str):
             updates[f] = sanitize_plaintext(updates[f], max_length=500)
 
     # Package C compliance parity: the create model validates customer_tax_number
     # via pydantic, but this update path takes a raw dict, so enforce the same
     # VKN/TCKN contract here to prevent post-create malformed writes.
-    if 'customer_tax_number' in updates:
+    if "customer_tax_number" in updates:
         try:
-            updates['customer_tax_number'] = _normalize_customer_tax_number(
-                updates['customer_tax_number']
-            )
+            updates["customer_tax_number"] = _normalize_customer_tax_number(updates["customer_tax_number"])
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
 
-    tenant_filter = {'id': invoice_id, 'tenant_id': current_user.tenant_id}
-    upd = await db.accounting_invoices.update_one(tenant_filter, {'$set': updates})
+    tenant_filter = {"id": invoice_id, "tenant_id": current_user.tenant_id}
+    upd = await db.accounting_invoices.update_one(tenant_filter, {"$set": updates})
     if upd.matched_count == 0:
         raise HTTPException(status_code=404, detail="Accounting invoice not found")
-    invoice = await db.accounting_invoices.find_one(tenant_filter, {'_id': 0})
+    invoice = await db.accounting_invoices.find_one(tenant_filter, {"_id": 0})
 
     # Drop the dashboard + invoices list cache so the UI reflects the change.
     # cached() builds keys as "cache:{tenant_id}:{key_prefix}:{hash}".
     try:
         from cache_manager import cache as _cache
+
         if _cache:
             _cache.invalidate_tenant_cache(current_user.tenant_id, "accounting_invoices_list")
             _cache.delete_pattern(f"cache:{current_user.tenant_id}:accounting_dashboard:*")
@@ -1335,7 +1290,7 @@ async def update_accounting_invoice(invoice_id: str, updates: dict[str, Any], cu
 
     # Render-time scrub for legacy XML/HTML residues from old test seeds.
     if invoice:
-        for f in ('customer_name', 'customer_tax_office', 'customer_address'):
+        for f in ("customer_name", "customer_tax_office", "customer_address"):
             if f in invoice and isinstance(invoice[f], str):
                 invoice[f] = sanitize_plaintext(invoice[f], max_length=500)
 
@@ -1343,30 +1298,20 @@ async def update_accounting_invoice(invoice_id: str, updates: dict[str, Any], cu
 
 
 @router.get("/accounting/cash-flow")
-async def get_cash_flow(
-    start_date: str | None = None,
-    end_date: str | None = None,
-    transaction_type: str | None = None,
-    current_user: User = Depends(get_current_user)
-):
-    query = {'tenant_id': current_user.tenant_id}
+async def get_cash_flow(start_date: str | None = None, end_date: str | None = None, transaction_type: str | None = None, current_user: User = Depends(get_current_user)):
+    query = {"tenant_id": current_user.tenant_id}
     if start_date and end_date:
-        query['date'] = {'$gte': start_date, '$lte': end_date}
+        query["date"] = {"$gte": start_date, "$lte": end_date}
     if transaction_type:
-        query['transaction_type'] = transaction_type
+        query["transaction_type"] = transaction_type
 
-    flows = await db.cash_flow.find(query, {'_id': 0}).sort('date', -1).to_list(1000)
+    flows = await db.cash_flow.find(query, {"_id": 0}).sort("date", -1).to_list(1000)
 
-    total_income = sum(f['amount'] for f in flows if f['transaction_type'] == 'income')
-    total_expense = sum(f['amount'] for f in flows if f['transaction_type'] == 'expense')
+    total_income = sum(f["amount"] for f in flows if f["transaction_type"] == "income")
+    total_expense = sum(f["amount"] for f in flows if f["transaction_type"] == "expense")
     net_cash_flow = total_income - total_expense
 
-    return {
-        'transactions': flows,
-        'total_income': total_income,
-        'total_expense': total_expense,
-        'net_cash_flow': net_cash_flow
-    }
+    return {"transactions": flows, "total_income": total_income, "total_expense": total_expense, "net_cash_flow": net_cash_flow}
 
 
 @router.get("/accounting/reports/profit-loss")
@@ -1380,91 +1325,69 @@ async def get_profit_loss_report(
     # Tur 3: defaults — last 30 days when params omitted
     from datetime import date as _d
     from datetime import timedelta as _td
+
     if not start_date:
         start_date = (_d.today() - _td(days=30)).isoformat()
     if not end_date:
         end_date = _d.today().isoformat()
     # Get all income
-    invoices = await db.accounting_invoices.find({
-        'tenant_id': current_user.tenant_id,
-        'status': 'paid',
-        'issue_date': {'$gte': start_date, '$lte': end_date}
-    }, {'_id': 0}).to_list(1000)
+    invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "status": "paid", "issue_date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(1000)
 
     # Get all expenses
-    expenses = await db.expenses.find({
-        'tenant_id': current_user.tenant_id,
-        'date': {'$gte': start_date, '$lte': end_date}
-    }, {'_id': 0}).to_list(1000)
+    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(1000)
 
-    total_revenue = sum(inv['total'] for inv in invoices)
-    total_expenses = sum(exp['total_amount'] for exp in expenses)
+    total_revenue = sum(inv["total"] for inv in invoices)
+    total_expenses = sum(exp["total_amount"] for exp in expenses)
     gross_profit = total_revenue - total_expenses
     profit_margin = (gross_profit / total_revenue * 100) if total_revenue > 0 else 0
 
     # Revenue breakdown
     revenue_by_category = {}
     for inv in invoices:
-        for item in inv['items']:
-            desc = item['description']
-            revenue_by_category[desc] = revenue_by_category.get(desc, 0) + item['total']
+        for item in inv["items"]:
+            desc = item["description"]
+            revenue_by_category[desc] = revenue_by_category.get(desc, 0) + item["total"]
 
     # Expense breakdown
     expense_by_category = {}
     for exp in expenses:
-        cat = exp['category']
-        expense_by_category[cat] = expense_by_category.get(cat, 0) + exp['total_amount']
+        cat = exp["category"]
+        expense_by_category[cat] = expense_by_category.get(cat, 0) + exp["total_amount"]
 
     return {
-        'period': {'start': start_date, 'end': end_date},
-        'total_revenue': round(total_revenue, 2),
-        'total_expenses': round(total_expenses, 2),
-        'gross_profit': round(gross_profit, 2),
-        'profit_margin': round(profit_margin, 2),
-        'revenue_breakdown': revenue_by_category,
-        'expense_breakdown': expense_by_category
+        "period": {"start": start_date, "end": end_date},
+        "total_revenue": round(total_revenue, 2),
+        "total_expenses": round(total_expenses, 2),
+        "gross_profit": round(gross_profit, 2),
+        "profit_margin": round(profit_margin, 2),
+        "revenue_breakdown": revenue_by_category,
+        "expense_breakdown": expense_by_category,
     }
 
 
-
 @router.get("/accounting/reports/vat-report")
-async def get_vat_report(
-    start_date: str | None = None,
-    end_date: str | None = None,
-    current_user: User = Depends(get_current_user)
-):
+async def get_vat_report(start_date: str | None = None, end_date: str | None = None, current_user: User = Depends(get_current_user)):
     # Tur 3: defaults — last 30 days when params omitted
     from datetime import date as _d
     from datetime import timedelta as _td
+
     if not start_date:
         start_date = (_d.today() - _td(days=30)).isoformat()
     if not end_date:
         end_date = _d.today().isoformat()
     # Sales VAT (collected)
-    invoices = await db.accounting_invoices.find({
-        'tenant_id': current_user.tenant_id,
-        'issue_date': {'$gte': start_date, '$lte': end_date}
-    }, {'_id': 0}).to_list(1000)
+    invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "issue_date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(1000)
 
-    sales_vat = sum(inv['total_vat'] for inv in invoices)
+    sales_vat = sum(inv["total_vat"] for inv in invoices)
 
     # Purchase VAT (paid)
-    expenses = await db.expenses.find({
-        'tenant_id': current_user.tenant_id,
-        'date': {'$gte': start_date, '$lte': end_date}
-    }, {'_id': 0}).to_list(1000)
+    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}).to_list(1000)
 
-    purchase_vat = sum(exp['vat_amount'] for exp in expenses)
+    purchase_vat = sum(exp["vat_amount"] for exp in expenses)
 
     vat_payable = sales_vat - purchase_vat
 
-    return {
-        'period': {'start': start_date, 'end': end_date},
-        'sales_vat': round(sales_vat, 2),
-        'purchase_vat': round(purchase_vat, 2),
-        'vat_payable': round(vat_payable, 2)
-    }
-
+    return {"period": {"start": start_date, "end": end_date}, "sales_vat": round(sales_vat, 2), "purchase_vat": round(purchase_vat, 2), "vat_payable": round(vat_payable, 2)}
 
 
 @router.get("/accounting/reports/balance-sheet")
@@ -1477,54 +1400,63 @@ async def get_balance_sheet(
 
     async def _sum_cash():
         pipeline = [
-            {'$match': {'tenant_id': tenant_id}},
-            {'$group': {'_id': None, 'total': {'$sum': '$balance'}}},
+            {"$match": {"tenant_id": tenant_id}},
+            {"$group": {"_id": None, "total": {"$sum": "$balance"}}},
         ]
         cur = db.bank_accounts.aggregate(pipeline)
         docs = await cur.to_list(1)
-        return docs[0]['total'] if docs else 0
+        return docs[0]["total"] if docs else 0
 
     async def _sum_inventory():
         pipeline = [
-            {'$match': {'tenant_id': tenant_id}},
-            {'$group': {'_id': None, 'total': {
-                '$sum': {'$multiply': [
-                    {'$ifNull': ['$quantity', 0]},
-                    {'$ifNull': ['$unit_cost', 0]},
-                ]}
-            }}},
+            {"$match": {"tenant_id": tenant_id}},
+            {
+                "$group": {
+                    "_id": None,
+                    "total": {
+                        "$sum": {
+                            "$multiply": [
+                                {"$ifNull": ["$quantity", 0]},
+                                {"$ifNull": ["$unit_cost", 0]},
+                            ]
+                        }
+                    },
+                }
+            },
         ]
         cur = db.inventory_items.aggregate(pipeline)
         docs = await cur.to_list(1)
-        return docs[0]['total'] if docs else 0
+        return docs[0]["total"] if docs else 0
 
     async def _sum_receivables():
         pipeline = [
-            {'$match': {
-                'tenant_id': tenant_id,
-                'status': {'$in': ['pending', 'partial']},
-            }},
-            {'$group': {'_id': None, 'total': {'$sum': '$total'}}},
+            {
+                "$match": {
+                    "tenant_id": tenant_id,
+                    "status": {"$in": ["pending", "partial"]},
+                }
+            },
+            {"$group": {"_id": None, "total": {"$sum": "$total"}}},
         ]
         cur = db.accounting_invoices.aggregate(pipeline)
         docs = await cur.to_list(1)
-        return docs[0]['total'] if docs else 0
+        return docs[0]["total"] if docs else 0
 
     async def _sum_payables():
         pipeline = [
-            {'$match': {
-                'tenant_id': tenant_id,
-                'payment_status': 'pending',
-            }},
-            {'$group': {'_id': None, 'total': {'$sum': '$total_amount'}}},
+            {
+                "$match": {
+                    "tenant_id": tenant_id,
+                    "payment_status": "pending",
+                }
+            },
+            {"$group": {"_id": None, "total": {"$sum": "$total_amount"}}},
         ]
         cur = db.expenses.aggregate(pipeline)
         docs = await cur.to_list(1)
-        return docs[0]['total'] if docs else 0
+        return docs[0]["total"] if docs else 0
 
-    total_cash, total_inventory, total_receivables, total_payables = await asyncio.gather(
-        _sum_cash(), _sum_inventory(), _sum_receivables(), _sum_payables()
-    )
+    total_cash, total_inventory, total_receivables, total_payables = await asyncio.gather(_sum_cash(), _sum_inventory(), _sum_receivables(), _sum_payables())
 
     total_assets = total_cash + total_inventory + total_receivables
 
@@ -1532,21 +1464,10 @@ async def get_balance_sheet(
     total_equity = total_assets - total_payables
 
     return {
-        'assets': {
-            'cash': round(total_cash, 2),
-            'inventory': round(total_inventory, 2),
-            'receivables': round(total_receivables, 2),
-            'total': round(total_assets, 2)
-        },
-        'liabilities': {
-            'payables': round(total_payables, 2),
-            'total': round(total_payables, 2)
-        },
-        'equity': {
-            'total': round(total_equity, 2)
-        }
+        "assets": {"cash": round(total_cash, 2), "inventory": round(total_inventory, 2), "receivables": round(total_receivables, 2), "total": round(total_assets, 2)},
+        "liabilities": {"payables": round(total_payables, 2), "total": round(total_payables, 2)},
+        "equity": {"total": round(total_equity, 2)},
     }
-
 
 
 @router.get("/accounting/dashboard")
@@ -1561,61 +1482,55 @@ async def get_accounting_dashboard(
     month_start = today.replace(day=1, hour=0, minute=0, second=0).isoformat()
     month_end = today.isoformat()
 
-    invoices = await db.accounting_invoices.find({
-        'tenant_id': current_user.tenant_id,
-        'issue_date': {'$gte': month_start, '$lte': month_end}
-    }, {'_id': 0}).to_list(1000)
+    invoices = await db.accounting_invoices.find({"tenant_id": current_user.tenant_id, "issue_date": {"$gte": month_start, "$lte": month_end}}, {"_id": 0}).to_list(1000)
 
-    expenses = await db.expenses.find({
-        'tenant_id': current_user.tenant_id,
-        'date': {'$gte': month_start, '$lte': month_end}
-    }, {'_id': 0}).to_list(1000)
+    expenses = await db.expenses.find({"tenant_id": current_user.tenant_id, "date": {"$gte": month_start, "$lte": month_end}}, {"_id": 0}).to_list(1000)
 
-    collected_income = sum(inv.get('total', 0) for inv in invoices if inv.get('status') == 'paid')
-    accrued_revenue = sum(inv.get('total', 0) for inv in invoices)
-    pending_amount = sum(inv.get('total', 0) for inv in invoices if inv.get('status') in ('pending', 'partial'))
-    overdue_amount = sum(inv.get('total', 0) for inv in invoices if inv.get('status') == 'overdue')
-    total_expenses = sum(exp.get('amount', 0) for exp in expenses)
-    pending_invoices = len([inv for inv in invoices if inv.get('status') == 'pending'])
-    overdue_invoices = len([inv for inv in invoices if inv.get('status') == 'overdue'])
+    collected_income = sum(inv.get("total", 0) for inv in invoices if inv.get("status") == "paid")
+    accrued_revenue = sum(inv.get("total", 0) for inv in invoices)
+    pending_amount = sum(inv.get("total", 0) for inv in invoices if inv.get("status") in ("pending", "partial"))
+    overdue_amount = sum(inv.get("total", 0) for inv in invoices if inv.get("status") == "overdue")
+    total_expenses = sum(exp.get("amount", 0) for exp in expenses)
+    pending_invoices = len([inv for inv in invoices if inv.get("status") == "pending"])
+    overdue_invoices = len([inv for inv in invoices if inv.get("status") == "overdue"])
 
     # Get bank balances
-    bank_accounts = await db.bank_accounts.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
-    total_bank_balance = sum(acc['balance'] for acc in bank_accounts)
+    bank_accounts = await db.bank_accounts.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(1000)
+    total_bank_balance = sum(acc["balance"] for acc in bank_accounts)
 
     # Tenant currency for display.
     from core.tenant_currency import get_tenant_currency
+
     cur_code, cur_symbol = await get_tenant_currency(current_user.tenant_id)
 
     return {
         # Backward-compat field (paid invoices only).
-        'monthly_income': round(collected_income, 2),
+        "monthly_income": round(collected_income, 2),
         # New explicit fields:
-        'collected_income': round(collected_income, 2),
-        'accrued_revenue': round(accrued_revenue, 2),
-        'pending_amount': round(pending_amount, 2),
-        'overdue_amount': round(overdue_amount, 2),
-        'monthly_expenses': round(total_expenses, 2),
-        'net_income': round(collected_income - total_expenses, 2),
-        'pending_invoices': pending_invoices,
-        'overdue_invoices': overdue_invoices,
-        'total_bank_balance': round(total_bank_balance, 2),
-        'currency': cur_code,
-        'currency_symbol': cur_symbol,
+        "collected_income": round(collected_income, 2),
+        "accrued_revenue": round(accrued_revenue, 2),
+        "pending_amount": round(pending_amount, 2),
+        "overdue_amount": round(overdue_amount, 2),
+        "monthly_expenses": round(total_expenses, 2),
+        "net_income": round(collected_income - total_expenses, 2),
+        "pending_invoices": pending_invoices,
+        "overdue_invoices": overdue_invoices,
+        "total_bank_balance": round(total_bank_balance, 2),
+        "currency": cur_code,
+        "currency_symbol": cur_symbol,
     }
-
 
 
 @router.get("/accounting/currencies")
 async def get_currencies(current_user: User = Depends(get_current_user)):
     """Get all supported currencies"""
     currencies = [
-        {'code': 'TRY', 'name': 'Turkish Lira', 'symbol': '₺'},
-        {'code': 'USD', 'name': 'US Dollar', 'symbol': '$'},
-        {'code': 'EUR', 'name': 'Euro', 'symbol': '€'},
-        {'code': 'GBP', 'name': 'British Pound', 'symbol': '£'}
+        {"code": "TRY", "name": "Turkish Lira", "symbol": "₺"},
+        {"code": "USD", "name": "US Dollar", "symbol": "$"},
+        {"code": "EUR", "name": "Euro", "symbol": "€"},
+        {"code": "GBP", "name": "British Pound", "symbol": "£"},
     ]
-    return {'currencies': currencies}
+    return {"currencies": currencies}
 
 
 @router.post("/accounting/currency-rates")
@@ -1626,14 +1541,14 @@ async def create_currency_rate(
 ):
     """Create or update currency exchange rate"""
     rate = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'from_currency': request.from_currency,
-        'to_currency': request.to_currency,
-        'rate': request.rate,
-        'effective_date': request.effective_date,
-        'created_at': datetime.now(UTC).isoformat(),
-        'created_by': current_user.id
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "from_currency": request.from_currency,
+        "to_currency": request.to_currency,
+        "rate": request.rate,
+        "effective_date": request.effective_date,
+        "created_at": datetime.now(UTC).isoformat(),
+        "created_by": current_user.id,
     }
 
     rate_copy = rate.copy()
@@ -1642,28 +1557,20 @@ async def create_currency_rate(
 
 
 @router.get("/accounting/currency-rates")
-async def get_currency_rates(
-    from_currency: str = None,
-    to_currency: str = None,
-    date: str = None,
-    current_user: User = Depends(get_current_user)
-):
+async def get_currency_rates(from_currency: str = None, to_currency: str = None, date: str = None, current_user: User = Depends(get_current_user)):
     """Get currency exchange rates"""
-    query = {'tenant_id': current_user.tenant_id}
+    query = {"tenant_id": current_user.tenant_id}
 
     if from_currency:
-        query['from_currency'] = from_currency
+        query["from_currency"] = from_currency
     if to_currency:
-        query['to_currency'] = to_currency
+        query["to_currency"] = to_currency
     if date:
-        query['effective_date'] = {'$lte': date}
+        query["effective_date"] = {"$lte": date}
 
-    rates = await db.currency_rates.find(
-        query,
-        {'_id': 0}
-    ).sort('effective_date', -1).to_list(100)
+    rates = await db.currency_rates.find(query, {"_id": 0}).sort("effective_date", -1).to_list(100)
 
-    return {'rates': rates, 'count': len(rates)}
+    return {"rates": rates, "count": len(rates)}
 
 
 @router.post("/accounting/convert-currency")
@@ -1675,71 +1582,42 @@ async def convert_currency(
     """Convert amount between currencies"""
     # If same currency, no conversion needed
     if request.from_currency == request.to_currency:
-        return {
-            'amount': request.amount,
-            'from_currency': request.from_currency,
-            'to_currency': request.to_currency,
-            'rate': 1.0,
-            'converted_amount': request.amount
-        }
+        return {"amount": request.amount, "from_currency": request.from_currency, "to_currency": request.to_currency, "rate": 1.0, "converted_amount": request.amount}
 
     # Get exchange rate
-    query = {
-        'tenant_id': current_user.tenant_id,
-        'from_currency': request.from_currency,
-        'to_currency': request.to_currency
-    }
+    query = {"tenant_id": current_user.tenant_id, "from_currency": request.from_currency, "to_currency": request.to_currency}
 
     if request.date:
-        query['effective_date'] = {'$lte': request.date}
+        query["effective_date"] = {"$lte": request.date}
 
-    rate_record = await db.currency_rates.find_one(
-        query,
-        {'_id': 0},
-        sort=[('effective_date', -1)]
-    )
+    rate_record = await db.currency_rates.find_one(query, {"_id": 0}, sort=[("effective_date", -1)])
 
     if not rate_record:
         # Try reverse rate
-        reverse_query = {
-            'tenant_id': current_user.tenant_id,
-            'from_currency': request.to_currency,
-            'to_currency': request.from_currency
-        }
+        reverse_query = {"tenant_id": current_user.tenant_id, "from_currency": request.to_currency, "to_currency": request.from_currency}
         if request.date:
-            reverse_query['effective_date'] = {'$lte': request.date}
+            reverse_query["effective_date"] = {"$lte": request.date}
 
-        reverse_rate = await db.currency_rates.find_one(
-            reverse_query,
-            {'_id': 0},
-            sort=[('effective_date', -1)]
-        )
+        reverse_rate = await db.currency_rates.find_one(reverse_query, {"_id": 0}, sort=[("effective_date", -1)])
 
         if reverse_rate:
-            rate = 1.0 / reverse_rate['rate']
+            rate = 1.0 / reverse_rate["rate"]
         else:
             # Default rates if not found
-            default_rates = {
-                ('TRY', 'USD'): 0.037,
-                ('TRY', 'EUR'): 0.034,
-                ('USD', 'TRY'): 27.0,
-                ('EUR', 'TRY'): 29.5,
-                ('USD', 'EUR'): 0.92,
-                ('EUR', 'USD'): 1.09
-            }
+            default_rates = {("TRY", "USD"): 0.037, ("TRY", "EUR"): 0.034, ("USD", "TRY"): 27.0, ("EUR", "TRY"): 29.5, ("USD", "EUR"): 0.92, ("EUR", "USD"): 1.09}
             rate = default_rates.get((request.from_currency, request.to_currency), 1.0)
     else:
-        rate = rate_record['rate']
+        rate = rate_record["rate"]
 
     converted_amount = request.amount * rate
 
     return {
-        'amount': request.amount,
-        'from_currency': request.from_currency,
-        'to_currency': request.to_currency,
-        'rate': round(rate, 4),
-        'converted_amount': round(converted_amount, 2),
-        'date': request.date or datetime.now(UTC).date().isoformat()
+        "amount": request.amount,
+        "from_currency": request.from_currency,
+        "to_currency": request.to_currency,
+        "rate": round(rate, 4),
+        "converted_amount": round(converted_amount, 2),
+        "date": request.date or datetime.now(UTC).date().isoformat(),
     }
 
 
@@ -1751,33 +1629,26 @@ async def create_multi_currency_invoice(
 ):
     """Create invoice in any currency with auto-conversion to TRY"""
     # Calculate totals in invoice currency
-    subtotal = sum(item.get('quantity', 0) * item.get('unit_price', 0) for item in request.items)
+    subtotal = sum(item.get("quantity", 0) * item.get("unit_price", 0) for item in request.items)
 
     # Calculate VAT
     total_vat = 0
     for item in request.items:
-        item_total = item.get('quantity', 0) * item.get('unit_price', 0)
-        vat_rate = item.get('vat_rate', 18) / 100
-        item['vat_amount'] = round(item_total * vat_rate, 2)
-        total_vat += item['vat_amount']
+        item_total = item.get("quantity", 0) * item.get("unit_price", 0)
+        vat_rate = item.get("vat_rate", 18) / 100
+        item["vat_amount"] = round(item_total * vat_rate, 2)
+        total_vat += item["vat_amount"]
 
     total = subtotal + total_vat
 
     # Convert to TRY if needed
-    if request.currency != 'TRY':
+    if request.currency != "TRY":
         if request.exchange_rate:
             rate = request.exchange_rate
         else:
             # Get current rate
-            conversion = await convert_currency(
-                ConvertCurrencyRequest(
-                    amount=1.0,
-                    from_currency=request.currency,
-                    to_currency='TRY'
-                ),
-                current_user
-            )
-            rate = conversion['rate']
+            conversion = await convert_currency(ConvertCurrencyRequest(amount=1.0, from_currency=request.currency, to_currency="TRY"), current_user)
+            rate = conversion["rate"]
 
         subtotal_try = subtotal * rate
         total_vat_try = total_vat * rate
@@ -1791,35 +1662,34 @@ async def create_multi_currency_invoice(
     invoice_number = f"INV-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
 
     invoice = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'invoice_number': invoice_number,
-        'customer_name': _validate_invoice_customer_name(request.customer_name),
-        'customer_email': request.customer_email,
-        'customer_address': sanitize_plaintext(request.customer_address, max_length=500),
-        'items': request.items,
-        'currency': request.currency,
-        'exchange_rate': rate,
-        'subtotal': round(subtotal, 2),
-        'total_vat': round(total_vat, 2),
-        'total': round(total, 2),
-        'subtotal_try': round(subtotal_try, 2),
-        'total_vat_try': round(total_vat_try, 2),
-        'total_try': round(total_try, 2),
-        'payment_terms': request.payment_terms,
-        'notes': request.notes,
-        'issue_date': datetime.now(UTC).date().isoformat(),
-        'due_date': (datetime.now(UTC) + timedelta(days=30)).date().isoformat(),
-        'status': 'pending',
-        'created_at': datetime.now(UTC).isoformat(),
-        'created_by': current_user.id
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "invoice_number": invoice_number,
+        "customer_name": _validate_invoice_customer_name(request.customer_name),
+        "customer_email": request.customer_email,
+        "customer_address": sanitize_plaintext(request.customer_address, max_length=500),
+        "items": request.items,
+        "currency": request.currency,
+        "exchange_rate": rate,
+        "subtotal": round(subtotal, 2),
+        "total_vat": round(total_vat, 2),
+        "total": round(total, 2),
+        "subtotal_try": round(subtotal_try, 2),
+        "total_vat_try": round(total_vat_try, 2),
+        "total_try": round(total_try, 2),
+        "payment_terms": request.payment_terms,
+        "notes": request.notes,
+        "issue_date": datetime.now(UTC).date().isoformat(),
+        "due_date": (datetime.now(UTC) + timedelta(days=30)).date().isoformat(),
+        "status": "pending",
+        "created_at": datetime.now(UTC).isoformat(),
+        "created_by": current_user.id,
     }
 
     invoice_copy = invoice.copy()
     await db.accounting_invoices.insert_one(invoice_copy)
 
     return invoice
-
 
 
 @router.post("/accounting/invoices/from-folio")
@@ -1830,20 +1700,13 @@ async def generate_invoice_from_folio(
 ):
     """Generate accounting invoice from PMS folio"""
     # Get folio
-    folio = await db.folios.find_one({
-        'id': request.folio_id,
-        'tenant_id': current_user.tenant_id
-    }, {'_id': 0})
+    folio = await db.folios.find_one({"id": request.folio_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
 
     if not folio:
         raise HTTPException(status_code=404, detail="Folio not found")
 
     # Get folio charges
-    charges = await db.folio_charges.find({
-        'folio_id': request.folio_id,
-        'tenant_id': current_user.tenant_id,
-        'voided': False
-    }, {'_id': 0}).to_list(1000)
+    charges = await db.folio_charges.find({"folio_id": request.folio_id, "tenant_id": current_user.tenant_id, "voided": False}, {"_id": 0}).to_list(1000)
 
     # Get booking info. Folios reference their booking via folio.booking_id;
     # the booking document is NOT linked back with a folio_id at check-in /
@@ -1851,19 +1714,16 @@ async def generate_invoice_from_folio(
     # invoice silently loses the customer (falls back to "Guest") and the
     # booking_id. Resolve via the folio's own booking_id instead.
     booking = None
-    folio_booking_id = folio.get('booking_id')
+    folio_booking_id = folio.get("booking_id")
     if folio_booking_id:
-        booking = await db.bookings.find_one({
-            'id': folio_booking_id,
-            'tenant_id': current_user.tenant_id
-        }, {'_id': 0})
+        booking = await db.bookings.find_one({"id": folio_booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
 
     # Fiscal-document guard: refuse to mint a sales invoice for a CANCELLED
     # reservation (no stay happened -> the cut would later need a credit note to
     # unwind). The no-show penalty / checked-out invoicing stays allowed, and a
     # missing booking (manual/legacy folio) is not blocked. Booking is read
     # fresh just above, so this is a true last-second check.
-    if booking is not None and not is_status_invoiceable(booking.get('status')):
+    if booking is not None and not is_status_invoiceable(booking.get("status")):
         raise HTTPException(
             status_code=409,
             detail="Rezervasyon iptal edilmiş; fatura/e-Fatura kesilemez",
@@ -1872,13 +1732,7 @@ async def generate_invoice_from_folio(
     # Convert charges to invoice items
     invoice_items = []
     for charge in charges:
-        item = {
-            'description': charge.get('description', 'Hotel Charge'),
-            'quantity': 1,
-            'unit_price': charge.get('amount', 0),
-            'vat_rate': charge.get('vat_rate', 18),
-            'total': charge.get('total', 0)
-        }
+        item = {"description": charge.get("description", "Hotel Charge"), "quantity": 1, "unit_price": charge.get("amount", 0), "vat_rate": charge.get("vat_rate", 18), "total": charge.get("total", 0)}
         invoice_items.append(item)
 
     # Resolve customer info. Walk-in / check-in store the guest's name on the
@@ -1887,92 +1741,71 @@ async def generate_invoice_from_folio(
     # an empty name and raises 400, which would break invoicing for every
     # walk-in folio.
     guest = None
-    guest_id = (booking.get('guest_id') if booking else None) or folio.get('guest_id')
+    guest_id = (booking.get("guest_id") if booking else None) or folio.get("guest_id")
     if guest_id:
         from security.encrypted_lookup import decrypt_guest_doc
-        guest = decrypt_guest_doc(await db.guests.find_one({
-            'id': guest_id, 'tenant_id': current_user.tenant_id
-        }, {'_id': 0}))
 
-    raw_customer_name = (
-        (booking.get('guest_name') if booking else None)
-        or (guest.get('name') if guest else None)
-        or folio.get('guest_name')
-        or 'Guest'
-    )
+        guest = decrypt_guest_doc(await db.guests.find_one({"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}))
+
+    raw_customer_name = (booking.get("guest_name") if booking else None) or (guest.get("name") if guest else None) or folio.get("guest_name") or "Guest"
     # Apply same validator as manual create — guest_name from booking/folio could
     # have been seeded with HTML/XML payloads in older data; reject those here.
     customer_name = _validate_invoice_customer_name(raw_customer_name)
-    customer_email = (
-        (booking.get('guest_email') if booking else None)
-        or (guest.get('email') if guest else None)
-        or folio.get('guest_email')
-        or ''
-    )
+    customer_email = (booking.get("guest_email") if booking else None) or (guest.get("email") if guest else None) or folio.get("guest_email") or ""
 
     # Create invoice
     invoice_number = f"INV-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
 
     # Calculate totals
-    subtotal = sum(item['unit_price'] * item['quantity'] for item in invoice_items)
-    total_vat = sum(item['unit_price'] * item['quantity'] * (item['vat_rate'] / 100) for item in invoice_items)
+    subtotal = sum(item["unit_price"] * item["quantity"] for item in invoice_items)
+    total_vat = sum(item["unit_price"] * item["quantity"] * (item["vat_rate"] / 100) for item in invoice_items)
 
     # Currency conversion if needed
-    if request.invoice_currency != 'TRY':
-        conversion = await convert_currency(
-            ConvertCurrencyRequest(
-                amount=subtotal + total_vat,
-                from_currency='TRY',
-                to_currency=request.invoice_currency
-            ),
-            current_user
-        )
-        exchange_rate = conversion['rate']
-        total_foreign = conversion['converted_amount']
+    if request.invoice_currency != "TRY":
+        conversion = await convert_currency(ConvertCurrencyRequest(amount=subtotal + total_vat, from_currency="TRY", to_currency=request.invoice_currency), current_user)
+        exchange_rate = conversion["rate"]
+        total_foreign = conversion["converted_amount"]
     else:
         exchange_rate = 1.0
         total_foreign = subtotal + total_vat
 
     invoice = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'invoice_number': invoice_number,
-        'folio_id': request.folio_id,
-        'booking_id': booking['id'] if booking else None,
-        'customer_name': customer_name,
-        'customer_email': customer_email,
-        'customer_address': booking.get('guest_address', '') if booking else '',
-        'items': invoice_items,
-        'currency': request.invoice_currency,
-        'exchange_rate': exchange_rate,
-        'subtotal': round(subtotal, 2),
-        'total_vat': round(total_vat, 2),
-        'total': round(subtotal + total_vat, 2),
-        'total_foreign_currency': round(total_foreign, 2),
-        'payment_terms': 'Due on checkout',
-        'issue_date': datetime.now(UTC).date().isoformat(),
-        'due_date': datetime.now(UTC).date().isoformat(),
-        'status': 'pending',
-        'source': 'pms_folio',
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "invoice_number": invoice_number,
+        "folio_id": request.folio_id,
+        "booking_id": booking["id"] if booking else None,
+        "customer_name": customer_name,
+        "customer_email": customer_email,
+        "customer_address": booking.get("guest_address", "") if booking else "",
+        "items": invoice_items,
+        "currency": request.invoice_currency,
+        "exchange_rate": exchange_rate,
+        "subtotal": round(subtotal, 2),
+        "total_vat": round(total_vat, 2),
+        "total": round(subtotal + total_vat, 2),
+        "total_foreign_currency": round(total_foreign, 2),
+        "payment_terms": "Due on checkout",
+        "issue_date": datetime.now(UTC).date().isoformat(),
+        "due_date": datetime.now(UTC).date().isoformat(),
+        "status": "pending",
+        "source": "pms_folio",
         # invoice_type drives the e-Fatura sweep query (sales invoices only).
-        'invoice_type': 'sales',
+        "invoice_type": "sales",
         # When e-Fatura is requested we QUEUE a real cut: the
         # process_pending_efaturas_task picks up 'pending' sales invoices,
         # builds the UBL-TR document and transmits it to the configured
         # provider. No fake document/UUID is written here.
-        'efatura_status': 'pending' if request.include_efatura else None,
-        'created_at': datetime.now(UTC).isoformat(),
-        'created_by': current_user.id
+        "efatura_status": "pending" if request.include_efatura else None,
+        "created_at": datetime.now(UTC).isoformat(),
+        "created_by": current_user.id,
     }
 
     invoice_copy = invoice.copy()
     await db.accounting_invoices.insert_one(invoice_copy)
 
     # Update folio with invoice reference
-    await db.folios.update_one(
-        {'id': request.folio_id},
-        {'$set': {'invoice_id': invoice['id'], 'invoice_number': invoice_number}}
-    )
+    await db.folios.update_one({"id": request.folio_id}, {"$set": {"invoice_id": invoice["id"], "invoice_number": invoice_number}})
 
     # E-Fatura: the invoice is persisted with efatura_status='pending' above so
     # the process_pending_efaturas_task sweep performs the REAL cut against the
@@ -1991,68 +1824,58 @@ async def generate_invoice_from_folio(
         except Exception:
             pass
 
-    return {
-        'invoice': invoice,
-        'message': 'Invoice generated from folio successfully',
-        'efatura_generated': request.include_efatura
-    }
-
+    return {"invoice": invoice, "message": "Invoice generated from folio successfully", "efatura_generated": request.include_efatura}
 
 
 @router.get("/accounting/invoices/{invoice_id}/efatura-status")
-async def get_invoice_efatura_status(
-    invoice_id: str,
-    current_user: User = Depends(get_current_user)
-):
+async def get_invoice_efatura_status(invoice_id: str, current_user: User = Depends(get_current_user)):
     """Get E-Fatura status for accounting invoice"""
-    invoice = await db.accounting_invoices.find_one({
-        'id': invoice_id,
-        'tenant_id': current_user.tenant_id
-    }, {'_id': 0})
+    invoice = await db.accounting_invoices.find_one({"id": invoice_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
 
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
     # Get E-Fatura record
-    efatura = await db.efatura_records.find_one({
-        'invoice_id': invoice_id,
-        'tenant_id': current_user.tenant_id
-    }, {'_id': 0})
+    efatura = await db.efatura_records.find_one({"invoice_id": invoice_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
 
     # The accounting invoice itself carries the live lifecycle state set by the
     # process_pending_efaturas_task sweep (pending -> generated | error). Surface
     # it even before/without an efatura_records mirror so the accounting screen
     # can show queued and failed states, not only successfully cut documents.
-    inv_status = invoice.get('efatura_status')
+    inv_status = invoice.get("efatura_status")
 
     if not efatura:
         return {
-            'invoice_id': invoice_id,
-            'invoice_number': invoice.get('invoice_number'),
-            'efatura_status': inv_status or 'not_generated',
-            'efatura_error': invoice.get('efatura_last_error'),
-            'efatura_attempts': invoice.get('efatura_attempts', 0),
-            'message': (
-                'E-Fatura kuyruga alindi, XML uretimi bekleniyor' if inv_status == 'pending'
-                else 'E-Fatura XML hazir, indirilebilir' if inv_status == 'xml_ready'
-                else 'E-Fatura harici olarak bildirildi' if inv_status == 'reported_externally'
-                else 'E-Fatura XML uretimi basarisiz oldu' if inv_status == 'error'
-                else 'E-Fatura has not been generated for this invoice'
+            "invoice_id": invoice_id,
+            "invoice_number": invoice.get("invoice_number"),
+            "efatura_status": inv_status or "not_generated",
+            "efatura_error": invoice.get("efatura_last_error"),
+            "efatura_attempts": invoice.get("efatura_attempts", 0),
+            "message": (
+                "E-Fatura kuyruga alindi, XML uretimi bekleniyor"
+                if inv_status == "pending"
+                else "E-Fatura XML hazir, indirilebilir"
+                if inv_status == "xml_ready"
+                else "E-Fatura harici olarak bildirildi"
+                if inv_status == "reported_externally"
+                else "E-Fatura XML uretimi basarisiz oldu"
+                if inv_status == "error"
+                else "E-Fatura has not been generated for this invoice"
             ),
         }
 
     return {
-        'invoice_id': invoice_id,
-        'invoice_number': invoice.get('invoice_number'),
-        'efatura_uuid': efatura.get('efatura_uuid'),
-        'efatura_status': inv_status or efatura.get('status'),
-        'official_number': efatura.get('official_number') or invoice.get('efatura_official_number'),
-        'provider': efatura.get('provider') or invoice.get('efatura_provider'),
-        'efatura_error': invoice.get('efatura_last_error'),
-        'efatura_attempts': invoice.get('efatura_attempts', 0),
-        'generated_at': efatura.get('generated_at'),
-        'sent_at': efatura.get('sent_at'),
-        'gib_response': efatura.get('gib_response'),
+        "invoice_id": invoice_id,
+        "invoice_number": invoice.get("invoice_number"),
+        "efatura_uuid": efatura.get("efatura_uuid"),
+        "efatura_status": inv_status or efatura.get("status"),
+        "official_number": efatura.get("official_number") or invoice.get("efatura_official_number"),
+        "provider": efatura.get("provider") or invoice.get("efatura_provider"),
+        "efatura_error": invoice.get("efatura_last_error"),
+        "efatura_attempts": invoice.get("efatura_attempts", 0),
+        "generated_at": efatura.get("generated_at"),
+        "sent_at": efatura.get("sent_at"),
+        "gib_response": efatura.get("gib_response"),
     }
 
 
@@ -2063,31 +1886,21 @@ async def generate_efatura_for_invoice(
     _perm=Depends(require_op("post_charge")),  # v94 DW
 ):
     """Generate E-Fatura for existing accounting invoice"""
-    invoice = await db.accounting_invoices.find_one({
-        'id': invoice_id,
-        'tenant_id': current_user.tenant_id
-    }, {'_id': 0})
+    invoice = await db.accounting_invoices.find_one({"id": invoice_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
 
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
     # Check if E-Fatura already exists
-    existing_efatura = await db.efatura_records.find_one({
-        'invoice_id': invoice_id,
-        'tenant_id': current_user.tenant_id
-    })
+    existing_efatura = await db.efatura_records.find_one({"invoice_id": invoice_id, "tenant_id": current_user.tenant_id})
 
     if existing_efatura:
-        return {
-            'message': 'E-Fatura already exists for this invoice',
-            'efatura_uuid': existing_efatura.get('efatura_uuid'),
-            'status': existing_efatura.get('status')
-        }
+        return {"message": "E-Fatura already exists for this invoice", "efatura_uuid": existing_efatura.get("efatura_uuid"), "status": existing_efatura.get("status")}
 
     # Last-second guard: do not cut a NEW e-Fatura against a reservation that has
     # since been cancelled. An already-existing record (handled above) is
     # returned as is — it cannot be un-cut; only a fresh cut is blocked here.
-    await ensure_booking_invoiceable(db, current_user.tenant_id, invoice.get('booking_id'))
+    await ensure_booking_invoiceable(db, current_user.tenant_id, invoice.get("booking_id"))
 
     # Generate a flawless UBL-TR document and persist it. There is NO automatic
     # transmission to an integrator/GIB; the accountant downloads the XML and
@@ -2103,45 +1916,48 @@ async def generate_efatura_for_invoice(
             detail="E-Fatura tedarikci kimligi (VKN) yapilandirilmamis (fail-closed)",
         )
     cfg = ep.provider_config()
-    ettn = invoice.get('efatura_ettn') or str(uuid.uuid4())
+    ettn = invoice.get("efatura_ettn") or str(uuid.uuid4())
     profile = ep.document_profile(invoice)
     try:
         efatura_xml = ep.build_ubl_tr_document(
             invoice,
-            supplier_vkn=cfg['supplier_vkn'],
-            supplier_name=cfg['supplier_name'],
+            supplier_vkn=cfg["supplier_vkn"],
+            supplier_name=cfg["supplier_name"],
             ettn=ettn,
             profile=profile,
         )
     except Exception as e:  # noqa: BLE001 - bad invoice data -> error, no fake doc
-        attempts = int(invoice.get('efatura_attempts') or 0) + 1
+        attempts = int(invoice.get("efatura_attempts") or 0) + 1
         await db.accounting_invoices.update_one(
-            {'id': invoice_id, 'tenant_id': current_user.tenant_id},
-            {'$set': {
-                'efatura_status': 'error',
-                'efatura_attempts': attempts,
-                'efatura_ettn': ettn,
-                'efatura_last_error': str(e)[:500],
-            }},
+            {"id": invoice_id, "tenant_id": current_user.tenant_id},
+            {
+                "$set": {
+                    "efatura_status": "error",
+                    "efatura_attempts": attempts,
+                    "efatura_ettn": ettn,
+                    "efatura_last_error": str(e)[:500],
+                }
+            },
         )
         raise HTTPException(
-            status_code=422, detail="E-Fatura XML uretilemedi (gecersiz fatura verisi)",
+            status_code=422,
+            detail="E-Fatura XML uretilemedi (gecersiz fatura verisi)",
         ) from e
 
     now_iso = datetime.now(UTC).isoformat()
     efatura_record = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'invoice_id': invoice_id,
-        'invoice_number': invoice.get('invoice_number'),
-        'efatura_uuid': ettn,
-        'ettn': ettn,
-        'profile': profile,
-        'provider': cfg['provider'],
-        'xml_content': efatura_xml,
-        'status': 'xml_ready',
-        'error': None,
-        'generated_at': now_iso,
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "invoice_id": invoice_id,
+        "invoice_number": invoice.get("invoice_number"),
+        "efatura_uuid": ettn,
+        "ettn": ettn,
+        "profile": profile,
+        "provider": cfg["provider"],
+        "xml_content": efatura_xml,
+        "status": "xml_ready",
+        "error": None,
+        "generated_at": now_iso,
     }
 
     efatura_copy = efatura_record.copy()
@@ -2149,46 +1965,38 @@ async def generate_efatura_for_invoice(
 
     # Update invoice with E-Fatura reference
     await db.accounting_invoices.update_one(
-        {'id': invoice_id, 'tenant_id': current_user.tenant_id},
+        {"id": invoice_id, "tenant_id": current_user.tenant_id},
         {
-            '$set': {
-                'efatura_uuid': ettn,
-                'efatura_ettn': ettn,
-                'efatura_provider': cfg['provider'],
-                'efatura_profile': profile,
-                'efatura_status': 'xml_ready',
-                'efatura_generated_at': now_iso,
-                'efatura_last_error': None,
+            "$set": {
+                "efatura_uuid": ettn,
+                "efatura_ettn": ettn,
+                "efatura_provider": cfg["provider"],
+                "efatura_profile": profile,
+                "efatura_status": "xml_ready",
+                "efatura_generated_at": now_iso,
+                "efatura_last_error": None,
             }
-        }
+        },
     )
 
-    return {
-        'message': 'E-Fatura XML uretildi',
-        'efatura_uuid': ettn,
-        'efatura_status': 'xml_ready',
-        'invoice_number': invoice.get('invoice_number')
-    }
-
+    return {"message": "E-Fatura XML uretildi", "efatura_uuid": ettn, "efatura_status": "xml_ready", "invoice_number": invoice.get("invoice_number")}
 
 
 @router.get("/efatura/invoices")
 async def get_efatura_invoices(current_user: User = Depends(get_current_user)):
-    invoices = await db.invoices.find({
-        'tenant_id': current_user.tenant_id
-    }, {'_id': 0}).sort('created_at', -1).limit(50).to_list(50)
+    invoices = await db.invoices.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("created_at", -1).limit(50).to_list(50)
 
     # Add efatura status to each invoice
     for invoice in invoices:
-        invoice['efatura_status'] = invoice.get('efatura_status', 'pending')
+        invoice["efatura_status"] = invoice.get("efatura_status", "pending")
 
-    return {'invoices': invoices}
+    return {"invoices": invoices}
 
 
 @router.get("/efatura/settings")
 async def get_efatura_settings(current_user: User = Depends(get_current_user)):
-    settings = await db.efatura_settings.find_one({'tenant_id': current_user.tenant_id}, {'_id': 0})
-    return settings or {'vkn': '1234567890', 'enabled': True, 'auto_send': False, 'last_sync': None}
+    settings = await db.efatura_settings.find_one({"tenant_id": current_user.tenant_id}, {"_id": 0})
+    return settings or {"vkn": "1234567890", "enabled": True, "auto_send": False, "last_sync": None}
 
 
 @router.get("/accounting/invoices/{invoice_id}/efatura-xml")
@@ -2205,19 +2013,20 @@ async def download_efatura_xml(
     injection.
     """
     efatura = await db.efatura_records.find_one(
-        {'invoice_id': invoice_id, 'tenant_id': current_user.tenant_id},
-        {'_id': 0},
+        {"invoice_id": invoice_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0},
     )
-    if not efatura or not efatura.get('xml_content'):
+    if not efatura or not efatura.get("xml_content"):
         raise HTTPException(status_code=404, detail="E-Fatura XML bulunamadi")
 
     from core import efatura_provider as ep
+
     filename = ep.safe_xml_filename(
-        efatura.get('invoice_number') or invoice_id,
-        efatura.get('customer_name'),
+        efatura.get("invoice_number") or invoice_id,
+        efatura.get("customer_name"),
     )
     return Response(
-        content=efatura['xml_content'],
+        content=efatura["xml_content"],
         media_type="application/xml",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -2233,13 +2042,13 @@ async def report_efatura_external(
     program). Only allowed once the document is ``xml_ready``; deliberately
     refuses otherwise so the lifecycle stays honest."""
     invoice = await db.accounting_invoices.find_one(
-        {'id': invoice_id, 'tenant_id': current_user.tenant_id},
-        {'_id': 0},
+        {"id": invoice_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0},
     )
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    if invoice.get('efatura_status') != 'xml_ready':
+    if invoice.get("efatura_status") != "xml_ready":
         raise HTTPException(
             status_code=409,
             detail="Yalnizca 'XML Hazir' durumundaki fatura harici bildirilebilir",
@@ -2247,21 +2056,23 @@ async def report_efatura_external(
 
     now_iso = datetime.now(UTC).isoformat()
     await db.accounting_invoices.update_one(
-        {'id': invoice_id, 'tenant_id': current_user.tenant_id},
-        {'$set': {
-            'efatura_status': 'reported_externally',
-            'efatura_reported_at': now_iso,
-        }},
+        {"id": invoice_id, "tenant_id": current_user.tenant_id},
+        {
+            "$set": {
+                "efatura_status": "reported_externally",
+                "efatura_reported_at": now_iso,
+            }
+        },
     )
     await db.efatura_records.update_one(
-        {'invoice_id': invoice_id, 'tenant_id': current_user.tenant_id},
-        {'$set': {'status': 'reported_externally', 'reported_at': now_iso}},
+        {"invoice_id": invoice_id, "tenant_id": current_user.tenant_id},
+        {"$set": {"status": "reported_externally", "reported_at": now_iso}},
     )
 
     return {
-        'message': 'E-Fatura harici olarak bildirildi',
-        'efatura_status': 'reported_externally',
-        'invoice_number': invoice.get('invoice_number'),
+        "message": "E-Fatura harici olarak bildirildi",
+        "efatura_status": "reported_externally",
+        "invoice_number": invoice.get("invoice_number"),
     }
 
 
@@ -2279,10 +2090,7 @@ async def send_statement_email(
     - Invoice details
     - Payment reminder
     """
-    company = await db.companies.find_one({
-        'id': company_id,
-        'tenant_id': current_user.tenant_id
-    })
+    company = await db.companies.find_one({"id": company_id, "tenant_id": current_user.tenant_id})
 
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
@@ -2290,46 +2098,27 @@ async def send_statement_email(
     # Get all open folios for company
     folios = []
     total_balance = 0
-    async for folio in db.folios.find({
-        'company_id': company_id,
-        'tenant_id': current_user.tenant_id,
-        'status': 'open'
-    }):
-        balance = folio.get('balance', 0)
+    async for folio in db.folios.find({"company_id": company_id, "tenant_id": current_user.tenant_id, "status": "open"}):
+        balance = folio.get("balance", 0)
         total_balance += balance
-        folios.append({
-            'folio_number': folio.get('folio_number'),
-            'booking_id': folio.get('booking_id'),
-            'balance': balance,
-            'created_at': folio.get('created_at')
-        })
+        folios.append({"folio_number": folio.get("folio_number"), "booking_id": folio.get("booking_id"), "balance": balance, "created_at": folio.get("created_at")})
 
-    recipient_email = email or company.get('contact_email')
+    recipient_email = email or company.get("contact_email")
 
     if not recipient_email:
         raise HTTPException(status_code=400, detail="No email address provided")
 
     # Create statement document
     statement = {
-        'company_name': company.get('name'),
-        'statement_date': datetime.now(UTC).isoformat(),
-        'total_outstanding': round(total_balance, 2),
-        'folios': folios,
-        'payment_terms': company.get('payment_terms', 'Net 30'),
-        'contact_person': company.get('contact_person')
+        "company_name": company.get("name"),
+        "statement_date": datetime.now(UTC).isoformat(),
+        "total_outstanding": round(total_balance, 2),
+        "folios": folios,
+        "payment_terms": company.get("payment_terms", "Net 30"),
+        "contact_person": company.get("contact_person"),
     }
 
     # In production, send actual email via SMTP or email service
     # For now, simulate email sending
 
-    return {
-        'success': True,
-        'message': f'Statement sent to {recipient_email}',
-        'statement': statement,
-        'note': 'In production, integrate with SendGrid, AWS SES, or SMTP server'
-    }
-
-
-
-
-
+    return {"success": True, "message": f"Statement sent to {recipient_email}", "statement": statement, "note": "In production, integrate with SendGrid, AWS SES, or SMTP server"}

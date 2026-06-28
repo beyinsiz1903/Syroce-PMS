@@ -12,6 +12,7 @@ Değişmezler:
   * Sapma yorumu kind'e göre: expense'te actual>budget = olumsuz (aşım),
     revenue'da actual>budget = olumlu.
 """
+
 import logging
 import uuid
 from calendar import monthrange
@@ -99,18 +100,12 @@ async def list_budgets(
         q["period"] = period
     if kind:
         q["kind"] = kind
-    rows = (
-        await db.finance_budgets.find(q, {"_id": 0})
-        .sort("category", 1)
-        .to_list(5000)
-    )
+    rows = await db.finance_budgets.find(q, {"_id": 0}).sort("category", 1).to_list(5000)
     return {"budgets": rows}
 
 
 @router.post("/budgets")
-async def upsert_budget(
-    payload: BudgetIn, current_user: User = Depends(get_current_user)
-):
+async def upsert_budget(payload: BudgetIn, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _BUDGET_ROLES)
     tenant_id = _tenant_of(current_user)
     if payload.kind not in _KIND_TO_TXN:
@@ -147,9 +142,7 @@ async def upsert_budget(
 async def delete_budget(budget_id: str, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _BUDGET_ROLES)
     tenant_id = _tenant_of(current_user)
-    res = await db.finance_budgets.delete_one(
-        {"tenant_id": tenant_id, "id": budget_id}
-    )
+    res = await db.finance_budgets.delete_one({"tenant_id": tenant_id, "id": budget_id})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Bütçe kaydı bulunamadı")
     return {"ok": True, "id": budget_id}
@@ -170,9 +163,7 @@ async def budget_vs_actual(
         raise HTTPException(status_code=400, detail="Geçersiz kind (expense|revenue)")
     start, end = _period_range(period)
 
-    budgets = await db.finance_budgets.find(
-        {"tenant_id": tenant_id, "period": period, "kind": kind}, {"_id": 0}
-    ).to_list(5000)
+    budgets = await db.finance_budgets.find({"tenant_id": tenant_id, "period": period, "kind": kind}, {"_id": 0}).to_list(5000)
     budget_by_cat = {b["category"]: float(b.get("budget_amount", 0) or 0) for b in budgets}
 
     txn_type = _KIND_TO_TXN[kind]
@@ -204,14 +195,16 @@ async def budget_vs_actual(
             variance = round(act - bud, 2)
             base = bud
         variance_pct = round(variance / base * 100, 2) if base > 0 else None
-        rows.append({
-            "category": cat,
-            "budget": bud,
-            "actual": act,
-            "variance": variance,
-            "variance_pct": variance_pct,
-            "favorable": variance >= 0,
-        })
+        rows.append(
+            {
+                "category": cat,
+                "budget": bud,
+                "actual": act,
+                "variance": variance,
+                "variance_pct": variance_pct,
+                "favorable": variance >= 0,
+            }
+        )
 
     rows.sort(key=lambda r: abs(r["variance"]), reverse=True)
     if kind == "expense":
@@ -227,9 +220,7 @@ async def budget_vs_actual(
             "budget": round(tot_budget, 2),
             "actual": round(tot_actual, 2),
             "variance": tot_var,
-            "variance_pct": (
-                round(tot_var / tot_budget * 100, 2) if tot_budget > 0 else None
-            ),
+            "variance_pct": (round(tot_var / tot_budget * 100, 2) if tot_budget > 0 else None),
             "favorable": tot_var >= 0,
         },
     }

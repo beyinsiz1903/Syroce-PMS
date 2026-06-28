@@ -5,6 +5,7 @@ Provides dual-read query builders that search by both:
   - _hash_{field} (for encrypted documents)
   - plaintext field (for unmigrated documents)
 """
+
 import logging
 import re
 
@@ -123,6 +124,7 @@ def decrypt_guest_doc(doc: dict) -> dict:
         doc = svc.decrypt_document(doc, collection="guests")
     try:
         from security.search_ngram import strip_ngram_fields
+
         strip_ngram_fields(doc)
     except Exception:
         pass

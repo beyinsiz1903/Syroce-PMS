@@ -12,6 +12,7 @@ import names changed (`_get_provider` → `get_provider`, `_log_sync` →
 Mounted under the main `/api/channel-manager/hotelrunner` prefix by the
 parent router.
 """
+
 import uuid
 from datetime import UTC, datetime
 
@@ -30,6 +31,7 @@ router = APIRouter()
 
 
 # ── Room / Inventory Operations ──────────────────────────────────────
+
 
 @router.get("/rooms")
 async def get_rooms(current_user: User = Depends(get_current_user)):
@@ -63,9 +65,7 @@ async def update_room_ari(
     result = await provider.update_room(**update_data)
 
     status = "success" if result["success"] else "failed"
-    await log_sync(current_user.tenant_id, "ari_push", status,
-                   duration_ms=result.get("duration_ms", 0), records=1,
-                   error=result.get("error"), user_name=current_user.name)
+    await log_sync(current_user.tenant_id, "ari_push", status, duration_ms=result.get("duration_ms", 0), records=1, error=result.get("error"), user_name=current_user.name)
 
     if not result["success"]:
         raise HTTPException(status_code=502, detail=f"ARI guncelleme hatasi: {result['error']}")
@@ -92,8 +92,7 @@ async def bulk_update_ari(
     success_count = sum(1 for r in results if r.get("success"))
     fail_count = len(results) - success_count
 
-    await log_sync(current_user.tenant_id, "ari_bulk_push", "success" if fail_count == 0 else "partial",
-                   records=success_count, user_name=current_user.name)
+    await log_sync(current_user.tenant_id, "ari_bulk_push", "success" if fail_count == 0 else "partial", records=success_count, user_name=current_user.name)
 
     return {
         "total": len(results),
@@ -104,6 +103,7 @@ async def bulk_update_ari(
 
 
 # ── Reservation Operations ───────────────────────────────────────────
+
 
 @router.get("/reservations")
 async def get_reservations(
@@ -136,7 +136,8 @@ async def get_reservations(
 
 
 @router.post("/reservations/sync")
-async def sync_reservations(current_user: User = Depends(get_current_user),
+async def sync_reservations(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     """Pull all undelivered reservations and store them for PMS import."""
@@ -149,10 +150,12 @@ async def sync_reservations(current_user: User = Depends(get_current_user),
     imported = 0
     for res in result["reservations"]:
         hr_number = res.get("hr_number", "")
-        existing = await db.hotelrunner_reservations.find_one({
-            "tenant_id": current_user.tenant_id,
-            "hr_number": hr_number,
-        })
+        existing = await db.hotelrunner_reservations.find_one(
+            {
+                "tenant_id": current_user.tenant_id,
+                "hr_number": hr_number,
+            }
+        )
 
         reservation_doc = {
             "tenant_id": current_user.tenant_id,
@@ -199,8 +202,7 @@ async def sync_reservations(current_user: User = Depends(get_current_user),
         {"$set": {"last_sync_at": datetime.now(UTC).isoformat()}},
     )
 
-    await log_sync(current_user.tenant_id, "reservation_sync", "success",
-                   records=imported, user_name=current_user.name)
+    await log_sync(current_user.tenant_id, "reservation_sync", "success", records=imported, user_name=current_user.name)
 
     return {
         "message": f"{imported} yeni rezervasyon senkronize edildi",
@@ -218,10 +220,12 @@ async def confirm_reservation_delivery(
     """Confirm reservation delivery to HotelRunner."""
     provider, conn = await get_provider(current_user.tenant_id)
 
-    res = await db.hotelrunner_reservations.find_one({
-        "tenant_id": current_user.tenant_id,
-        "hr_number": hr_number,
-    })
+    res = await db.hotelrunner_reservations.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "hr_number": hr_number,
+        }
+    )
     if not res:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 

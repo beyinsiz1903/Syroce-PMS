@@ -3,6 +3,7 @@ notifications
 
 Auto-split sub-router (shared imports/classes inlined).
 """
+
 """
 Domain Router: Mobile
 
@@ -27,31 +28,37 @@ from modules.pms_core.role_permission_service import (
 # MOBILE ENDPOINTS - Department-Based Mobile Dashboard APIs
 # ============================================================================
 
+
 # Mobile Endpoint Pydantic Models
 class ProcessNoShowRequest(BaseModel):
     booking_id: str
+
 
 class ChangeRoomRequest(BaseModel):
     booking_id: str
     new_room_id: str
     reason: str | None = None
 
+
 class QuickTaskRequest(BaseModel):
     room_id: str
     task_type: str
-    priority: str = 'normal'
+    priority: str = "normal"
     assigned_to: str | None = None
     notes: str | None = None
+
 
 class QuickIssueRequest(BaseModel):
     room_id: str
     issue_type: str
     description: str
-    priority: str = 'normal'
+    priority: str = "normal"
+
 
 class QuickOrderItem(BaseModel):
     item_id: str
     quantity: int = 1
+
 
 class QuickOrderRequest(BaseModel):
     outlet_id: str
@@ -59,18 +66,15 @@ class QuickOrderRequest(BaseModel):
     items: list[QuickOrderItem] = []
     notes: str | None = None
 
+
 class MenuPriceUpdateRequest(BaseModel):
     new_price: float
     reason: str | None = None
 
+
 # --------------------------------------------------------------------------
 # GM Mobile Dashboard Endpoints
 # --------------------------------------------------------------------------
-
-
-
-
-
 
 
 # --------------------------------------------------------------------------
@@ -78,23 +82,9 @@ class MenuPriceUpdateRequest(BaseModel):
 # --------------------------------------------------------------------------
 
 
-
-
-
-
-
-
-
-
-
 # --------------------------------------------------------------------------
 # Housekeeping Mobile Dashboard Endpoints
 # --------------------------------------------------------------------------
-
-
-
-
-
 
 
 # --------------------------------------------------------------------------
@@ -102,35 +92,9 @@ class MenuPriceUpdateRequest(BaseModel):
 # --------------------------------------------------------------------------
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # --------------------------------------------------------------------------
 # Maintenance Mobile Dashboard Endpoints
 # --------------------------------------------------------------------------
-
-
-
 
 
 # --------------------------------------------------------------------------
@@ -138,35 +102,9 @@ class MenuPriceUpdateRequest(BaseModel):
 # --------------------------------------------------------------------------
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # --------------------------------------------------------------------------
 # F&B Mobile Dashboard Endpoints
 # --------------------------------------------------------------------------
-
-
-
-
-
 
 
 # --------------------------------------------------------------------------
@@ -190,83 +128,80 @@ async def get_gm_notifications_mobile(
 
     # VIP Check-ins today — N+1 fix: bulk guest fetch
     vip_checkins = 0
-    gm_bookings = await db.bookings.find({
-        'tenant_id': current_user.tenant_id,
-        'check_in': {
-            '$gte': today.replace(hour=0, minute=0, second=0),
-            '$lte': today.replace(hour=23, minute=59, second=59)
-        },
-        'status': {'$in': ['confirmed', 'guaranteed']}
-    }).to_list(1000)
-    gm_guest_ids = list({b.get('guest_id') for b in gm_bookings if b.get('guest_id')})
+    gm_bookings = await db.bookings.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "check_in": {"$gte": today.replace(hour=0, minute=0, second=0), "$lte": today.replace(hour=23, minute=59, second=59)},
+            "status": {"$in": ["confirmed", "guaranteed"]},
+        }
+    ).to_list(1000)
+    gm_guest_ids = list({b.get("guest_id") for b in gm_bookings if b.get("guest_id")})
     gm_guests_map: dict = {}
     if gm_guest_ids:
-        async for g in db.guests.find({
-            'id': {'$in': gm_guest_ids},
-            'tenant_id': current_user.tenant_id,
-        }):
-            gm_guests_map[g['id']] = g
+        async for g in db.guests.find(
+            {
+                "id": {"$in": gm_guest_ids},
+                "tenant_id": current_user.tenant_id,
+            }
+        ):
+            gm_guests_map[g["id"]] = g
     for booking in gm_bookings:
-        guest = gm_guests_map.get(booking.get('guest_id'))
-        if guest and guest.get('vip_status'):
+        guest = gm_guests_map.get(booking.get("guest_id"))
+        if guest and guest.get("vip_status"):
             vip_checkins += 1
-            notifications.append({
-                'id': str(uuid.uuid4()),
-                'type': 'vip_checkin',
-                'title': 'VIP Check-in Today',
-                'message': f"{booking.get('guest_name')} - Room {booking.get('room_number')}",
-                'priority': 'high',
-                'created_at': today.isoformat()
-            })
+            notifications.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "type": "vip_checkin",
+                    "title": "VIP Check-in Today",
+                    "message": f"{booking.get('guest_name')} - Room {booking.get('room_number')}",
+                    "priority": "high",
+                    "created_at": today.isoformat(),
+                }
+            )
 
     # Low inventory warning (occupancy > 90%)
-    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-    occupied_rooms = await db.rooms.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'status': 'occupied'
-    })
+    total_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id})
+    occupied_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id, "status": "occupied"})
 
     if total_rooms > 0:
         occupancy_pct = (occupied_rooms / total_rooms) * 100
         if occupancy_pct > 90:
-            notifications.append({
-                'id': str(uuid.uuid4()),
-                'type': 'low_inventory',
-                'title': 'Low Inventory Warning',
-                'message': f"Occupancy {occupancy_pct:.1f}% - Only {total_rooms - occupied_rooms} room(s) left",
-                'priority': 'high',
-                'created_at': today.isoformat()
-            })
+            notifications.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "type": "low_inventory",
+                    "title": "Low Inventory Warning",
+                    "message": f"Occupancy {occupancy_pct:.1f}% - Only {total_rooms - occupied_rooms} room(s) left",
+                    "priority": "high",
+                    "created_at": today.isoformat(),
+                }
+            )
 
     # High-risk reviews (rating <= 2 in last 24 hours)
     risk_reviews = 0
     yesterday = today - timedelta(days=1)
-    async for feedback in db.feedback.find({
-        'tenant_id': current_user.tenant_id,
-        'rating': {'$lte': 2},
-        'created_at': {'$gte': yesterday}
-    }):
+    async for feedback in db.feedback.find({"tenant_id": current_user.tenant_id, "rating": {"$lte": 2}, "created_at": {"$gte": yesterday}}):
         risk_reviews += 1
 
     if risk_reviews > 0:
-        notifications.append({
-            'id': str(uuid.uuid4()),
-            'type': 'high_risk_review',
-            'title': 'High Risk Reviews',
-            'message': f"{risk_reviews} low-rated review(s) received in the last 24 hours",
-            'priority': 'medium',
-            'created_at': today.isoformat()
-        })
+        notifications.append(
+            {
+                "id": str(uuid.uuid4()),
+                "type": "high_risk_review",
+                "title": "High Risk Reviews",
+                "message": f"{risk_reviews} low-rated review(s) received in the last 24 hours",
+                "priority": "medium",
+                "created_at": today.isoformat(),
+            }
+        )
 
-    return {
-        'notifications': notifications,
-        'unread_count': len(notifications)
-    }
+    return {"notifications": notifications, "unread_count": len(notifications)}
+
+
 # ── GET /notifications/mobile/frontdesk ──
 @router.get("/notifications/mobile/frontdesk")
-async def get_frontdesk_notifications_mobile(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
+async def get_frontdesk_notifications_mobile(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get notifications for front desk mobile dashboard"""
     current_user = await get_current_user(credentials)
     today = datetime.now(UTC)
@@ -274,241 +209,233 @@ async def get_frontdesk_notifications_mobile(
     notifications = []
 
     # VIP arrivals today — N+1 fix: bulk guest fetch
-    fd_bookings = await db.bookings.find({
-        'tenant_id': current_user.tenant_id,
-        'check_in': {
-            '$gte': today.replace(hour=0, minute=0, second=0),
-            '$lte': today.replace(hour=23, minute=59, second=59)
-        },
-        'status': {'$in': ['confirmed', 'guaranteed']}
-    }).to_list(1000)
-    fd_guest_ids = list({b.get('guest_id') for b in fd_bookings if b.get('guest_id')})
+    fd_bookings = await db.bookings.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "check_in": {"$gte": today.replace(hour=0, minute=0, second=0), "$lte": today.replace(hour=23, minute=59, second=59)},
+            "status": {"$in": ["confirmed", "guaranteed"]},
+        }
+    ).to_list(1000)
+    fd_guest_ids = list({b.get("guest_id") for b in fd_bookings if b.get("guest_id")})
     fd_guests_map: dict = {}
     if fd_guest_ids:
-        async for g in db.guests.find({
-            'id': {'$in': fd_guest_ids},
-            'tenant_id': current_user.tenant_id,
-        }):
-            fd_guests_map[g['id']] = g
+        async for g in db.guests.find(
+            {
+                "id": {"$in": fd_guest_ids},
+                "tenant_id": current_user.tenant_id,
+            }
+        ):
+            fd_guests_map[g["id"]] = g
     for booking in fd_bookings:
-        guest = fd_guests_map.get(booking.get('guest_id'))
-        if guest and guest.get('vip_status'):
-            notifications.append({
-                'id': str(uuid.uuid4()),
-                'type': 'vip_arrival',
-                'title': 'VIP Arrival',
-                'message': f"{booking.get('guest_name')} - Room {booking.get('room_number')}",
-                'priority': 'high',
-                'created_at': today.isoformat()
-            })
+        guest = fd_guests_map.get(booking.get("guest_id"))
+        if guest and guest.get("vip_status"):
+            notifications.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "type": "vip_arrival",
+                    "title": "VIP Arrival",
+                    "message": f"{booking.get('guest_name')} - Room {booking.get('room_number')}",
+                    "priority": "high",
+                    "created_at": today.isoformat(),
+                }
+            )
 
     # Overbooking risk
-    available_rooms = await db.rooms.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'status': {'$in': ['available', 'inspected']}
-    })
+    available_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id, "status": {"$in": ["available", "inspected"]}})
 
-    arrivals_today = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'check_in': {
-            '$gte': today.replace(hour=0, minute=0, second=0),
-            '$lte': today.replace(hour=23, minute=59, second=59)
-        },
-        'status': {'$in': ['confirmed', 'guaranteed']}
-    })
+    arrivals_today = await db.bookings.count_documents(
+        {
+            "tenant_id": current_user.tenant_id,
+            "check_in": {"$gte": today.replace(hour=0, minute=0, second=0), "$lte": today.replace(hour=23, minute=59, second=59)},
+            "status": {"$in": ["confirmed", "guaranteed"]},
+        }
+    )
 
     if arrivals_today > available_rooms:
-        notifications.append({
-            'id': str(uuid.uuid4()),
-            'type': 'overbooking_risk',
-            'title': 'Overbooking Risk',
-            'message': f"{arrivals_today} arrivals, only {available_rooms} room(s) available",
-            'priority': 'urgent',
-            'created_at': today.isoformat()
-        })
+        notifications.append(
+            {
+                "id": str(uuid.uuid4()),
+                "type": "overbooking_risk",
+                "title": "Overbooking Risk",
+                "message": f"{arrivals_today} arrivals, only {available_rooms} room(s) available",
+                "priority": "urgent",
+                "created_at": today.isoformat(),
+            }
+        )
 
     # Room cleaning completed
     recently_cleaned = 0
     last_hour = today - timedelta(hours=1)
-    async for task in db.housekeeping_tasks.find({
-        'tenant_id': current_user.tenant_id,
-        'task_type': 'cleaning',
-        'status': 'completed',
-        'completed_at': {'$gte': last_hour}
-    }):
+    async for task in db.housekeeping_tasks.find({"tenant_id": current_user.tenant_id, "task_type": "cleaning", "status": "completed", "completed_at": {"$gte": last_hour}}):
         recently_cleaned += 1
 
     if recently_cleaned > 0:
-        notifications.append({
-            'id': str(uuid.uuid4()),
-            'type': 'room_ready',
-            'title': 'Rooms Ready',
-            'message': f"{recently_cleaned} room(s) cleaned in the last hour",
-            'priority': 'info',
-            'created_at': today.isoformat()
-        })
+        notifications.append(
+            {
+                "id": str(uuid.uuid4()),
+                "type": "room_ready",
+                "title": "Rooms Ready",
+                "message": f"{recently_cleaned} room(s) cleaned in the last hour",
+                "priority": "info",
+                "created_at": today.isoformat(),
+            }
+        )
 
-    return {
-        'notifications': notifications,
-        'unread_count': len(notifications)
-    }
+    return {"notifications": notifications, "unread_count": len(notifications)}
+
+
 # ── GET /notifications/mobile/housekeeping ──
 @router.get("/notifications/mobile/housekeeping")
-async def get_housekeeping_notifications_mobile(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
+async def get_housekeeping_notifications_mobile(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get notifications for housekeeping mobile dashboard"""
     current_user = await get_current_user(credentials)
 
     notifications = []
 
     # Damage reports — N+1 fix: bulk room fetch
-    dmg_reports = await db.damage_reports.find({
-        'tenant_id': current_user.tenant_id,
-        'status': 'new',
-        'created_at': {'$gte': datetime.now(UTC) - timedelta(days=1)}
-    }).to_list(1000)
-    dmg_room_ids = list({r.get('room_id') for r in dmg_reports if r.get('room_id')})
+    dmg_reports = await db.damage_reports.find({"tenant_id": current_user.tenant_id, "status": "new", "created_at": {"$gte": datetime.now(UTC) - timedelta(days=1)}}).to_list(1000)
+    dmg_room_ids = list({r.get("room_id") for r in dmg_reports if r.get("room_id")})
     dmg_rooms_map: dict = {}
     if dmg_room_ids:
-        async for r in db.rooms.find({
-            'id': {'$in': dmg_room_ids},
-            'tenant_id': current_user.tenant_id,
-        }):
-            dmg_rooms_map[r['id']] = r
+        async for r in db.rooms.find(
+            {
+                "id": {"$in": dmg_room_ids},
+                "tenant_id": current_user.tenant_id,
+            }
+        ):
+            dmg_rooms_map[r["id"]] = r
     for report in dmg_reports:
-        room = dmg_rooms_map.get(report.get('room_id'))
-        notifications.append({
-            'id': str(uuid.uuid4()),
-            'type': 'damage_report',
-            'title': 'Damage Report',
-            'message': f"Room {room.get('room_number') if room else 'N/A'}: {report.get('description', 'Damage reported')}",
-            'priority': 'high',
-            'created_at': report.get('created_at').isoformat()
-        })
+        room = dmg_rooms_map.get(report.get("room_id"))
+        notifications.append(
+            {
+                "id": str(uuid.uuid4()),
+                "type": "damage_report",
+                "title": "Damage Report",
+                "message": f"Room {room.get('room_number') if room else 'N/A'}: {report.get('description', 'Damage reported')}",
+                "priority": "high",
+                "created_at": report.get("created_at").isoformat(),
+            }
+        )
 
     # Rush room requests (early check-in) — N+1 fix: bulk rooms by room_number
     today = datetime.now(UTC)
-    rush_bookings = await db.bookings.find({
-        'tenant_id': current_user.tenant_id,
-        'check_in': {
-            '$gte': today.replace(hour=0, minute=0, second=0),
-            '$lte': today.replace(hour=23, minute=59, second=59)
-        },
-        'early_checkin_requested': True,
-        'status': {'$in': ['confirmed', 'guaranteed']}
-    }).to_list(500)
-    rush_nums = list({b.get('room_number') for b in rush_bookings if b.get('room_number')})
+    rush_bookings = await db.bookings.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "check_in": {"$gte": today.replace(hour=0, minute=0, second=0), "$lte": today.replace(hour=23, minute=59, second=59)},
+            "early_checkin_requested": True,
+            "status": {"$in": ["confirmed", "guaranteed"]},
+        }
+    ).to_list(500)
+    rush_nums = list({b.get("room_number") for b in rush_bookings if b.get("room_number")})
     rush_rooms_set: set = set()
     if rush_nums:
-        async for r in db.rooms.find({
-            'room_number': {'$in': rush_nums},
-            'tenant_id': current_user.tenant_id,
-            'status': {'$nin': ['available', 'inspected']},
-        }, {'_id': 0, 'room_number': 1}):
-            rush_rooms_set.add(r.get('room_number'))
+        async for r in db.rooms.find(
+            {
+                "room_number": {"$in": rush_nums},
+                "tenant_id": current_user.tenant_id,
+                "status": {"$nin": ["available", "inspected"]},
+            },
+            {"_id": 0, "room_number": 1},
+        ):
+            rush_rooms_set.add(r.get("room_number"))
     for booking in rush_bookings:
-        room = booking.get('room_number') in rush_rooms_set
+        room = booking.get("room_number") in rush_rooms_set
         if room:
-            notifications.append({
-                'id': str(uuid.uuid4()),
-                'type': 'rush_room',
-                'title': 'Rush Cleaning',
-                'message': f"Room {booking.get('room_number')} - Early check-in {booking.get('early_checkin_time', 'request')}",
-                'priority': 'urgent',
-                'created_at': datetime.now(UTC).isoformat()
-            })
+            notifications.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "type": "rush_room",
+                    "title": "Rush Cleaning",
+                    "message": f"Room {booking.get('room_number')} - Early check-in {booking.get('early_checkin_time', 'request')}",
+                    "priority": "urgent",
+                    "created_at": datetime.now(UTC).isoformat(),
+                }
+            )
 
     # Guest "clean now" requests
-    async for request in db.room_service_requests.find({
-        'tenant_id': current_user.tenant_id,
-        'request_type': 'cleaning',
-        'status': 'pending',
-        'created_at': {'$gte': datetime.now(UTC) - timedelta(hours=2)}
-    }):
-        notifications.append({
-            'id': str(uuid.uuid4()),
-            'type': 'clean_now_request',
-            'title': 'Guest Cleaning Request',
-            'message': f"Room {request.get('room_number')} - Immediate cleaning requested",
-            'priority': 'medium',
-            'created_at': request.get('created_at').isoformat()
-        })
+    async for request in db.room_service_requests.find(
+        {"tenant_id": current_user.tenant_id, "request_type": "cleaning", "status": "pending", "created_at": {"$gte": datetime.now(UTC) - timedelta(hours=2)}}
+    ):
+        notifications.append(
+            {
+                "id": str(uuid.uuid4()),
+                "type": "clean_now_request",
+                "title": "Guest Cleaning Request",
+                "message": f"Room {request.get('room_number')} - Immediate cleaning requested",
+                "priority": "medium",
+                "created_at": request.get("created_at").isoformat(),
+            }
+        )
 
-    return {
-        'notifications': notifications,
-        'unread_count': len(notifications)
-    }
+    return {"notifications": notifications, "unread_count": len(notifications)}
+
+
 # ── GET /notifications/mobile/maintenance ──
 @router.get("/notifications/mobile/maintenance")
-async def get_maintenance_notifications_mobile(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
+async def get_maintenance_notifications_mobile(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get notifications for maintenance mobile dashboard"""
     current_user = await get_current_user(credentials)
 
     notifications = []
 
     # Water leak / electrical issues (critical)
-    critical_issues = ['water_leak', 'electrical', 'gas_leak', 'fire_alarm']
+    critical_issues = ["water_leak", "electrical", "gas_leak", "fire_alarm"]
 
-    async for task in db.tasks.find({
-        'tenant_id': current_user.tenant_id,
-        'department': 'maintenance',
-        'issue_type': {'$in': critical_issues},
-        'status': {'$in': ['new', 'assigned', 'in_progress']},
-        'created_at': {'$gte': datetime.now(UTC) - timedelta(hours=24)}
-    }):
-        notifications.append({
-            'id': str(uuid.uuid4()),
-            'type': 'critical_issue',
-            'title': 'Critical Issue',
-            'message': f"Room {task.get('room_number', 'N/A')}: {task.get('issue_type', 'Unknown')} - {task.get('description', '')}",
-            'priority': 'urgent',
-            'created_at': task.get('created_at').isoformat()
-        })
+    async for task in db.tasks.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "department": "maintenance",
+            "issue_type": {"$in": critical_issues},
+            "status": {"$in": ["new", "assigned", "in_progress"]},
+            "created_at": {"$gte": datetime.now(UTC) - timedelta(hours=24)},
+        }
+    ):
+        notifications.append(
+            {
+                "id": str(uuid.uuid4()),
+                "type": "critical_issue",
+                "title": "Critical Issue",
+                "message": f"Room {task.get('room_number', 'N/A')}: {task.get('issue_type', 'Unknown')} - {task.get('description', '')}",
+                "priority": "urgent",
+                "created_at": task.get("created_at").isoformat(),
+            }
+        )
 
     # SLA breach alerts
-    async for task in db.tasks.find({
-        'tenant_id': current_user.tenant_id,
-        'department': 'maintenance',
-        'priority': 'urgent',
-        'status': {'$in': ['new', 'assigned']},
-        'created_at': {'$lte': datetime.now(UTC) - timedelta(hours=2)}
-    }):
-        notifications.append({
-            'id': str(uuid.uuid4()),
-            'type': 'sla_breach',
-            'title': 'SLA İhlali',
-            'message': f"Görev #{task.get('id')[:8]} - 2 saatten fazla bekliyor",
-            'priority': 'high',
-            'created_at': task.get('created_at').isoformat()
-        })
+    async for task in db.tasks.find(
+        {"tenant_id": current_user.tenant_id, "department": "maintenance", "priority": "urgent", "status": {"$in": ["new", "assigned"]}, "created_at": {"$lte": datetime.now(UTC) - timedelta(hours=2)}}
+    ):
+        notifications.append(
+            {
+                "id": str(uuid.uuid4()),
+                "type": "sla_breach",
+                "title": "SLA İhlali",
+                "message": f"Görev #{task.get('id')[:8]} - 2 saatten fazla bekliyor",
+                "priority": "high",
+                "created_at": task.get("created_at").isoformat(),
+            }
+        )
 
     # Critical room maintenance (room is out of order)
-    async for room in db.rooms.find({
-        'tenant_id': current_user.tenant_id,
-        'status': 'out_of_order',
-        'updated_at': {'$gte': datetime.now(UTC) - timedelta(days=1)}
-    }):
-        notifications.append({
-            'id': str(uuid.uuid4()),
-            'type': 'critical_room',
-            'title': 'Room Out of Service',
-            'message': f"Room {room.get('room_number')} out of service - Urgent attention required",
-            'priority': 'high',
-            'created_at': room.get('updated_at').isoformat()
-        })
+    async for room in db.rooms.find({"tenant_id": current_user.tenant_id, "status": "out_of_order", "updated_at": {"$gte": datetime.now(UTC) - timedelta(days=1)}}):
+        notifications.append(
+            {
+                "id": str(uuid.uuid4()),
+                "type": "critical_room",
+                "title": "Room Out of Service",
+                "message": f"Room {room.get('room_number')} out of service - Urgent attention required",
+                "priority": "high",
+                "created_at": room.get("updated_at").isoformat(),
+            }
+        )
 
-    return {
-        'notifications': notifications,
-        'unread_count': len(notifications)
-    }
+    return {"notifications": notifications, "unread_count": len(notifications)}
+
+
 # ── GET /notifications/mobile/fnb ──
 @router.get("/notifications/mobile/fnb")
-async def get_fnb_notifications_mobile(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
+async def get_fnb_notifications_mobile(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get notifications for F&B mobile dashboard"""
     current_user = await get_current_user(credentials)
 
@@ -516,56 +443,48 @@ async def get_fnb_notifications_mobile(
 
     # Void transactions in last 24 hours
     void_transactions = 0
-    async for transaction in db.pos_transactions.find({
-        'tenant_id': current_user.tenant_id,
-        'status': 'voided',
-        'voided_at': {'$gte': datetime.now(UTC) - timedelta(hours=24)}
-    }):
+    async for transaction in db.pos_transactions.find({"tenant_id": current_user.tenant_id, "status": "voided", "voided_at": {"$gte": datetime.now(UTC) - timedelta(hours=24)}}):
         void_transactions += 1
 
     if void_transactions > 0:
-        notifications.append({
-            'id': str(uuid.uuid4()),
-            'type': 'void_transaction',
-            'title': 'İptal Edilen İşlemler',
-            'message': f"Son 24 saatte {void_transactions} işlem iptal edildi",
-            'priority': 'medium',
-            'created_at': datetime.now(UTC).isoformat()
-        })
+        notifications.append(
+            {
+                "id": str(uuid.uuid4()),
+                "type": "void_transaction",
+                "title": "İptal Edilen İşlemler",
+                "message": f"Son 24 saatte {void_transactions} işlem iptal edildi",
+                "priority": "medium",
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
 
     # POS connection errors
-    async for error in db.system_logs.find({
-        'tenant_id': current_user.tenant_id,
-        'log_type': 'pos_error',
-        'created_at': {'$gte': datetime.now(UTC) - timedelta(hours=1)}
-    }).limit(1):
-        notifications.append({
-            'id': str(uuid.uuid4()),
-            'type': 'pos_error',
-            'title': 'POS Connection Error',
-            'message': error.get('message', 'POS system connection issue'),
-            'priority': 'high',
-            'created_at': error.get('created_at').isoformat()
-        })
+    async for error in db.system_logs.find({"tenant_id": current_user.tenant_id, "log_type": "pos_error", "created_at": {"$gte": datetime.now(UTC) - timedelta(hours=1)}}).limit(1):
+        notifications.append(
+            {
+                "id": str(uuid.uuid4()),
+                "type": "pos_error",
+                "title": "POS Connection Error",
+                "message": error.get("message", "POS system connection issue"),
+                "priority": "high",
+                "created_at": error.get("created_at").isoformat(),
+            }
+        )
 
     # End of day report ready notification
     today = datetime.now(UTC).date().isoformat()
-    eod_report = await db.pos_eod_reports.find_one({
-        'tenant_id': current_user.tenant_id,
-        'report_date': today
-    })
+    eod_report = await db.pos_eod_reports.find_one({"tenant_id": current_user.tenant_id, "report_date": today})
 
-    if eod_report and eod_report.get('status') == 'ready':
-        notifications.append({
-            'id': str(uuid.uuid4()),
-            'type': 'eod_report_ready',
-            'title': 'Gün Sonu Raporu Hazır',
-            'message': f"Toplam satış: ₺{eod_report.get('total_sales', 0):.2f}",
-            'priority': 'info',
-            'created_at': eod_report.get('created_at').isoformat()
-        })
+    if eod_report and eod_report.get("status") == "ready":
+        notifications.append(
+            {
+                "id": str(uuid.uuid4()),
+                "type": "eod_report_ready",
+                "title": "Gün Sonu Raporu Hazır",
+                "message": f"Toplam satış: ₺{eod_report.get('total_sales', 0):.2f}",
+                "priority": "info",
+                "created_at": eod_report.get("created_at").isoformat(),
+            }
+        )
 
-    return {
-        'notifications': notifications,
-        'unread_count': len(notifications)
-    }
+    return {"notifications": notifications, "unread_count": len(notifications)}

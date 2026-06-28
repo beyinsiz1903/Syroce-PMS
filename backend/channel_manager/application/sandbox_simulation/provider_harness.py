@@ -8,6 +8,7 @@ Generates canonical reservations with configurable chaos:
   - Stale inventory snapshots
   - Delayed/failed ACK responses
 """
+
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -96,15 +97,10 @@ def generate_reservation(
     )
 
 
-def generate_duplicate_batch(
-    provider: str, count: int = 3
-) -> list[CanonicalReservation]:
+def generate_duplicate_batch(provider: str, count: int = 3) -> list[CanonicalReservation]:
     """Generate N identical reservations (same external_id, same data)."""
     ext_id = f"DUP-{uuid.uuid4().hex[:8]}"
-    return [
-        generate_reservation(provider, external_id=ext_id, seq=1)
-        for _ in range(count)
-    ]
+    return [generate_reservation(provider, external_id=ext_id, seq=1) for _ in range(count)]
 
 
 def generate_modify_then_cancel(
@@ -114,19 +110,27 @@ def generate_modify_then_cancel(
     ext_id = f"RACE-{uuid.uuid4().hex[:8]}"
     original = generate_reservation(provider, external_id=ext_id, seq=1, total_amount=1500.0)
     modified = generate_reservation(
-        provider, external_id=ext_id, seq=1,
-        total_amount=2000.0, special_requests="Modified: extra bed",
+        provider,
+        external_id=ext_id,
+        seq=1,
+        total_amount=2000.0,
+        special_requests="Modified: extra bed",
     )
     cancelled = generate_reservation(
-        provider, external_id=ext_id, seq=1,
+        provider,
+        external_id=ext_id,
+        seq=1,
         status=ReservationStatus.CANCELLED,
     )
     return [original, modified, cancelled]
 
 
 def generate_stale_inventory_snapshot(
-    provider: str, room_type_id: str, dates: list[str],
-    stale_available: int = 10, actual_available: int = 3,
+    provider: str,
+    room_type_id: str,
+    dates: list[str],
+    stale_available: int = 10,
+    actual_available: int = 3,
 ) -> dict[str, Any]:
     """Generate a stale inventory snapshot that doesn't match actual state."""
     profile = PROVIDER_PROFILES[provider]

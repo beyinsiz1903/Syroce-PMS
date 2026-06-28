@@ -1,4 +1,5 @@
 """Auto-split from schemas.py — domain: bookings."""
+
 import uuid
 from datetime import UTC, datetime
 
@@ -57,6 +58,7 @@ class BookingCreate(BaseModel):
     virtual_card_number: str | None = None
     virtual_card_expiry: str | None = None
 
+
 class Booking(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -69,10 +71,13 @@ class Booking(BaseModel):
     routing_rules: list[dict] | None = None
     routing_updated_at: str | None = None
 
+
 REJECTED_STATUS = "rejected"
+
 
 class BookingExtended(BaseModel):
     """Extended booking model with CM/integration fields"""
+
     # CM / integration semantics (defaults chosen by user)
     source_channel: str = "direct"  # direct|agency|airbnb|booking|expedia|manual
     origin: str = "ui"  # ui|api|webhook|import
@@ -119,5 +124,3 @@ class BookingExtended(BaseModel):
     checked_in_at: datetime | None = None
     checked_out_at: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
-

@@ -10,6 +10,7 @@ Checks:
   3. Required MongoDB indexes exist
   4. Required environment variables present
 """
+
 import logging
 import os
 
@@ -18,6 +19,7 @@ logger = logging.getLogger("controlplane.startup_validator")
 
 class StartupValidationError(RuntimeError):
     """Raised when a critical startup check fails."""
+
     pass
 
 
@@ -42,6 +44,7 @@ async def validate_startup(*, strict: bool = False) -> dict[str, any]:
     # ── 1. Crypto Keys ────────────────────────────────────────────
     try:
         from core.crypto import get_crypto_service
+
         crypto_svc = get_crypto_service()
         health = crypto_svc.health()
         report["crypto"] = {
@@ -64,6 +67,7 @@ async def validate_startup(*, strict: bool = False) -> dict[str, any]:
     # ── 2. Secrets Manager ────────────────────────────────────────
     try:
         from core.secrets import get_secrets_config, get_secrets_manager
+
         config = get_secrets_config()
         sm = get_secrets_manager()
         await sm.ensure_indexes()
@@ -84,6 +88,7 @@ async def validate_startup(*, strict: bool = False) -> dict[str, any]:
     try:
         from controlplane.indexes import ensure_controlplane_indexes
         from core.database import db
+
         await ensure_controlplane_indexes(db)
         report["indexes"] = {"status": "pass", "details": {"created": True}}
     except Exception as e:
@@ -110,9 +115,7 @@ async def validate_startup(*, strict: bool = False) -> dict[str, any]:
     report["failures"] = failures
 
     if failures and strict:
-        raise StartupValidationError(
-            f"Startup validation failed ({len(failures)} issues): {'; '.join(failures)}"
-        )
+        raise StartupValidationError(f"Startup validation failed ({len(failures)} issues): {'; '.join(failures)}")
 
     if all_passed:
         logger.info("STARTUP: All control plane validations PASSED")

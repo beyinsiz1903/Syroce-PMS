@@ -11,6 +11,7 @@ Doktrin:
   KRIPTOGRAFIK olarak turetilir (client input degil), olaylar idempotent islenir.
 - Ham PAN/CVV/secret/imza ASLA loglanmaz; yanit yalnizca maskeli kart tasir.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -92,9 +93,7 @@ async def collect_payment(
     except PaymentError as pe:
         raise HTTPException(status_code=pe.http_status, detail=pe.error_code)
 
-    booking = await db.bookings.find_one(
-        {"id": booking_id, "tenant_id": tenant_id}, {"_id": 0}
-    )
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     folio = await db.folios.find_one(
@@ -111,13 +110,9 @@ async def collect_payment(
 
     vault_ref = body.vault_card_ref
     if not vault_ref:
-        card = await db.vcc_cards.find_one(
-            {"booking_id": booking_id, "tenant_id": tenant_id}, {"_id": 0, "id": 1}
-        )
+        card = await db.vcc_cards.find_one({"booking_id": booking_id, "tenant_id": tenant_id}, {"_id": 0, "id": 1})
         if not card:
-            raise HTTPException(
-                status_code=404, detail="Booking icin kasa karti yok"
-            )
+            raise HTTPException(status_code=404, detail="Booking icin kasa karti yok")
         vault_ref = make_vault_card_ref(card["id"])
 
     # Tahsilat cekirdegi tek dogruluk kaynagindan calisir (endpoint + otonom worker
@@ -178,11 +173,7 @@ async def iyzico_webhook(request: Request):
     if not secret:
         raise HTTPException(status_code=503, detail="webhook not configured")
 
-    provided = (
-        request.headers.get("X-IYZ-SIGNATURE")
-        or request.headers.get("X-Iyz-Signature")
-        or ""
-    )
+    provided = request.headers.get("X-IYZ-SIGNATURE") or request.headers.get("X-Iyz-Signature") or ""
     expected = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
     if not provided or not hmac.compare_digest(expected, provided.strip().lower()):
         logger.warning(
@@ -205,19 +196,14 @@ async def iyzico_webhook(request: Request):
     # Tenant binding: conversationId == bizim SUNUCU-URETIMI conversation_token'imiz
     # -> intent. Token globally-unique + unique-index ile zorlanir; client bir
     # baska tenant'in token'ini tahmin/forge edemeyeceginden tenant guvenle turetilir.
-    intent = await db.payment_intents.find_one(
-        {"conversation_token": conversation_id}, {"_id": 0}
-    )
+    intent = await db.payment_intents.find_one({"conversation_token": conversation_id}, {"_id": 0})
     if not intent:
         # Bize ait olmayan/eski olay: sessizce kabul et (retry firtinasi olmasin).
         return {"status": "ignored"}
     tenant_id = intent["tenant_id"]
 
     # Olay dedup (idempotent ingest): _id tekilligi.
-    event_key = hashlib.sha256(
-        f"{tenant_id}:{conversation_id}:{payload.get('paymentId') or ''}:"
-        f"{payload.get('iyziEventType') or payload.get('status') or ''}".encode()
-    ).hexdigest()
+    event_key = hashlib.sha256(f"{tenant_id}:{conversation_id}:{payload.get('paymentId') or ''}:{payload.get('iyziEventType') or payload.get('status') or ''}".encode()).hexdigest()
     from pymongo.errors import DuplicateKeyError  # type: ignore
 
     try:
@@ -236,10 +222,12 @@ async def iyzico_webhook(request: Request):
     webhook_status = "webhook_success" if status_raw == "success" else "webhook_failed"
     await db.payment_intents.update_one(
         {"id": intent["id"], "tenant_id": tenant_id},
-        {"$set": {
-            "webhook_status": webhook_status,
-            "webhook_provider_ref": str(payload.get("paymentId") or "") or None,
-            "updated_at": datetime.now(UTC).isoformat(),
-        }},
+        {
+            "$set": {
+                "webhook_status": webhook_status,
+                "webhook_provider_ref": str(payload.get("paymentId") or "") or None,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+        },
     )
     return {"status": "processed", "intent_status": webhook_status}

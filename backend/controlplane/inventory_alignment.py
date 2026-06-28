@@ -10,6 +10,7 @@ No fallback. If views are stale, state is reported as degraded.
 Output: alignment_status, drift_count, drift_nights, provider breakdown.
 Drift events are written to timeline for auditability.
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -127,26 +128,30 @@ async def compute_inventory_alignment(
 
             checked += 1
             if pushed_available != authoritative:
-                conn_drifts.append({
-                    "room_type": rt,
-                    "date": date,
-                    "authoritative_sellable": authoritative,
-                    "pushed_available": pushed_available,
-                    "delta": authoritative - pushed_available,
-                })
+                conn_drifts.append(
+                    {
+                        "room_type": rt,
+                        "date": date,
+                        "authoritative_sellable": authoritative,
+                        "pushed_available": pushed_available,
+                        "delta": authoritative - pushed_available,
+                    }
+                )
 
         drift_count = len(conn_drifts)
         total_drift_count += drift_count
         total_drift_nights += drift_count
 
-        provider_breakdown.append({
-            "connector_id": conn_id,
-            "provider": provider,
-            "snapshots_checked": checked,
-            "drift_count": drift_count,
-            "status": "aligned" if drift_count == 0 else "drift_detected",
-            "drifts": conn_drifts[:20],
-        })
+        provider_breakdown.append(
+            {
+                "connector_id": conn_id,
+                "provider": provider,
+                "snapshots_checked": checked,
+                "drift_count": drift_count,
+                "status": "aligned" if drift_count == 0 else "drift_detected",
+                "drifts": conn_drifts[:20],
+            }
+        )
 
     # Step 5: Determine overall status
     if freshness in ("stale", "empty"):
@@ -159,7 +164,10 @@ async def compute_inventory_alignment(
     # Step 6: Write drift events to timeline if any
     if total_drift_count > 0:
         await _write_drift_timeline_event(
-            tenant_id, alignment_status, total_drift_count, provider_breakdown,
+            tenant_id,
+            alignment_status,
+            total_drift_count,
+            provider_breakdown,
         )
 
     return {
@@ -207,6 +215,7 @@ async def _write_drift_timeline_event(
     """Write drift detection event to timeline for auditability."""
     try:
         from controlplane.timeline_writer import get_timeline_writer
+
         writer = get_timeline_writer()
         await writer.append(
             tenant_id=tenant_id,
@@ -219,10 +228,7 @@ async def _write_drift_timeline_event(
             metadata={
                 "alignment_status": status,
                 "total_drift_count": drift_count,
-                "providers": [
-                    {"provider": p["provider"], "drift_count": p["drift_count"]}
-                    for p in provider_breakdown
-                ],
+                "providers": [{"provider": p["provider"], "drift_count": p["drift_count"]} for p in provider_breakdown],
             },
         )
     except Exception as e:

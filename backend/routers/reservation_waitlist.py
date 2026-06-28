@@ -16,6 +16,7 @@ Tenant scope + RBAC:
   - promote additionally requires `require_op("manage_sales")` because it
     creates a booking (mutating, revenue-affecting surface).
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -39,7 +40,7 @@ _ACTIVE_STATUSES = ["waiting", "notified"]
 class ReservationWaitlistIn(BaseModel):
     guest_name: str
     room_type: str
-    check_in: str   # YYYY-MM-DD
+    check_in: str  # YYYY-MM-DD
     check_out: str  # YYYY-MM-DD
     guest_email: str | None = None
     guest_phone: str | None = None
@@ -133,8 +134,7 @@ async def promote_waitlist_entry(
     occurs (expected guard behaviour).
     """
     tenant_id = current_user.tenant_id
-    entry = await db.reservation_waitlist.find_one(
-        {"id": entry_id, "tenant_id": tenant_id}, {"_id": 0})
+    entry = await db.reservation_waitlist.find_one({"id": entry_id, "tenant_id": tenant_id}, {"_id": 0})
     if not entry:
         raise HTTPException(status_code=404, detail="Bekleme listesi kaydı bulunamadı")
     if entry.get("status") == "promoted":
@@ -144,38 +144,37 @@ async def promote_waitlist_entry(
 
     # Resolve target room (tenant-scoped).
     if body.room_id:
-        room = await db.rooms.find_one(
-            {"id": body.room_id, "tenant_id": tenant_id}, {"_id": 0})
+        room = await db.rooms.find_one({"id": body.room_id, "tenant_id": tenant_id}, {"_id": 0})
         if not room:
             raise HTTPException(status_code=404, detail="Oda bulunamadı")
     else:
-        room = await db.rooms.find_one(
-            {"tenant_id": tenant_id, "room_type": entry.get("room_type"),
-             "status": "available"}, {"_id": 0})
+        room = await db.rooms.find_one({"tenant_id": tenant_id, "room_type": entry.get("room_type"), "status": "available"}, {"_id": 0})
         if not room:
-            raise HTTPException(
-                status_code=409,
-                detail=f"{entry.get('room_type')} tipinde uygun oda yok — promote edilemedi")
+            raise HTTPException(status_code=409, detail=f"{entry.get('room_type')} tipinde uygun oda yok — promote edilemedi")
 
     # Resolve / create guest (tenant-scoped).
     guest_id = entry.get("guest_id")
     if guest_id:
-        existing = await db.guests.find_one(
-            {"id": guest_id, "tenant_id": tenant_id}, {"_id": 0})
+        existing = await db.guests.find_one({"id": guest_id, "tenant_id": tenant_id}, {"_id": 0})
         if not existing:
             guest_id = None
     if not guest_id:
         guest_id = str(uuid.uuid4())
         from security.guest_write import encrypt_guest_insert
-        await db.guests.insert_one(encrypt_guest_insert({
-            "id": guest_id,
-            "tenant_id": tenant_id,
-            "name": entry.get("guest_name"),
-            "email": entry.get("guest_email") or f"waitlist-{guest_id[:8]}@placeholder.local",
-            "phone": entry.get("guest_phone") or "",
-            "id_number": "",
-            "created_at": datetime.now(UTC).isoformat(),
-        }))
+
+        await db.guests.insert_one(
+            encrypt_guest_insert(
+                {
+                    "id": guest_id,
+                    "tenant_id": tenant_id,
+                    "name": entry.get("guest_name"),
+                    "email": entry.get("guest_email") or f"waitlist-{guest_id[:8]}@placeholder.local",
+                    "phone": entry.get("guest_phone") or "",
+                    "id_number": "",
+                    "created_at": datetime.now(UTC).isoformat(),
+                }
+            )
+        )
 
     now = datetime.now(UTC)
     booking = {
@@ -188,10 +187,7 @@ async def promote_waitlist_entry(
         "status": "confirmed",
         "adults": int(entry.get("adults") or 1),
         "children": int(entry.get("children") or 0),
-        "total_amount": (
-            body.total_amount if body.total_amount is not None
-            else float(entry.get("preferred_rate") or 0.0)
-        ),
+        "total_amount": (body.total_amount if body.total_amount is not None else float(entry.get("preferred_rate") or 0.0)),
         "rate_type": "waitlist_promote",
         "market_segment": "direct",
         "channel": "direct",
@@ -201,6 +197,7 @@ async def promote_waitlist_entry(
         "created_by": current_user.id,
     }
     from core.atomic_booking import BookingConflictError, create_booking_atomic
+
     try:
         await create_booking_atomic(booking)
     except BookingConflictError as exc:
@@ -208,13 +205,15 @@ async def promote_waitlist_entry(
 
     await db.reservation_waitlist.update_one(
         {"id": entry_id, "tenant_id": tenant_id},
-        {"$set": {
-            "status": "promoted",
-            "booking_id": booking["id"],
-            "room_id": room["id"],
-            "promoted_at": now.isoformat(),
-            "promoted_by": current_user.id,
-        }},
+        {
+            "$set": {
+                "status": "promoted",
+                "booking_id": booking["id"],
+                "room_id": room["id"],
+                "promoted_at": now.isoformat(),
+                "promoted_by": current_user.id,
+            }
+        },
     )
     return {
         "success": True,
@@ -233,8 +232,7 @@ async def remove_waitlist_entry(
     _perm=Depends(require_module("pms")),
 ) -> dict:
     """Remove a reservation waitlist entry (tenant-scoped)."""
-    res = await db.reservation_waitlist.delete_one(
-        {"id": entry_id, "tenant_id": current_user.tenant_id})
+    res = await db.reservation_waitlist.delete_one({"id": entry_id, "tenant_id": current_user.tenant_id})
     if not res.deleted_count:
         raise HTTPException(status_code=404, detail="Bekleme listesi kaydı bulunamadı")
     return {"ok": True, "deleted": entry_id}

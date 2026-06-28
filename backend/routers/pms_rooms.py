@@ -2,6 +2,7 @@
 PMS Rooms Router — Extracted from routers/pms.py (Stage 1 decomposition)
 Room CRUD, bulk operations, CSV import, image upload.
 """
+
 import csv
 import io
 import logging
@@ -129,7 +130,7 @@ async def create_room(
 ):
     room = Room(tenant_id=current_user.tenant_id, **room_data.model_dump())
     room_dict = room.model_dump()
-    room_dict['created_at'] = room_dict['created_at'].isoformat()
+    room_dict["created_at"] = room_dict["created_at"].isoformat()
     await db.rooms.insert_one(room_dict)
     return room
 
@@ -176,22 +177,32 @@ async def _enrich_rooms_with_housekeeping(tenant_id: str, rooms: list[dict]) -> 
         active_statuses = ["pending", "in_progress"]
         or_conds: list[dict] = []
         if task_ids:
-            or_conds.append({
-                "id": {"$in": list(task_ids)},
-                "status": {"$in": active_statuses},
-            })
+            or_conds.append(
+                {
+                    "id": {"$in": list(task_ids)},
+                    "status": {"$in": active_statuses},
+                }
+            )
         if room_ids:
-            or_conds.append({
-                "room_id": {"$in": list(room_ids)},
-                "status": {"$in": active_statuses},
-            })
+            or_conds.append(
+                {
+                    "room_id": {"$in": list(room_ids)},
+                    "status": {"$in": active_statuses},
+                }
+            )
         cursor = db.housekeeping_tasks.find(
             {"tenant_id": tenant_id, "$or": or_conds},
             {
-                "_id": 0, "id": 1, "room_id": 1, "status": 1,
-                "started_at": 1, "estimated_minutes": 1,
-                "assigned_to": 1, "assigned_to_name": 1,
-                "priority": 1, "task_type": 1,
+                "_id": 0,
+                "id": 1,
+                "room_id": 1,
+                "status": 1,
+                "started_at": 1,
+                "estimated_minutes": 1,
+                "assigned_to": 1,
+                "assigned_to_name": 1,
+                "priority": 1,
+                "task_type": 1,
             },
         )
         async for t in cursor:
@@ -200,10 +211,7 @@ async def _enrich_rooms_with_housekeeping(tenant_id: str, rooms: list[dict]) -> 
                 continue
             existing = tasks_by_room.get(rid)
             # in_progress'i pending'e tercih et
-            if existing is None or (
-                existing.get("status") != "in_progress"
-                and t.get("status") == "in_progress"
-            ):
+            if existing is None or (existing.get("status") != "in_progress" and t.get("status") == "in_progress"):
                 tasks_by_room[rid] = t
 
     now = datetime.now(UTC)
@@ -223,20 +231,13 @@ async def _enrich_rooms_with_housekeeping(tenant_id: str, rooms: list[dict]) -> 
         }
         if task:
             hk["task_id"] = task.get("id") or hk["task_id"]
-            hk["assigned_to_name"] = (
-                task.get("assigned_to_name")
-                or task.get("assigned_to")
-                or hk["assigned_to_name"]
-            )
+            hk["assigned_to_name"] = task.get("assigned_to_name") or task.get("assigned_to") or hk["assigned_to_name"]
             hk["estimated_minutes"] = task.get("estimated_minutes") or estimated
             hk["priority"] = task.get("priority")
             started_raw = task.get("started_at") or room.get("cleaning_started_at")
             if task.get("status") == "in_progress" and started_raw:
                 try:
-                    started_dt = (
-                        started_raw if isinstance(started_raw, datetime)
-                        else datetime.fromisoformat(str(started_raw).replace("Z", "+00:00"))
-                    )
+                    started_dt = started_raw if isinstance(started_raw, datetime) else datetime.fromisoformat(str(started_raw).replace("Z", "+00:00"))
                     if started_dt.tzinfo is None:
                         started_dt = started_dt.replace(tzinfo=UTC)
                     elapsed = max(0.0, (now - started_dt).total_seconds() / 60.0)
@@ -252,10 +253,7 @@ async def _enrich_rooms_with_housekeeping(tenant_id: str, rooms: list[dict]) -> 
             # Task kaydı yoksa bile oda alanından çıkar
             try:
                 started_raw = room["cleaning_started_at"]
-                started_dt = (
-                    started_raw if isinstance(started_raw, datetime)
-                    else datetime.fromisoformat(str(started_raw).replace("Z", "+00:00"))
-                )
+                started_dt = started_raw if isinstance(started_raw, datetime) else datetime.fromisoformat(str(started_raw).replace("Z", "+00:00"))
                 if started_dt.tzinfo is None:
                     started_dt = started_dt.replace(tzinfo=UTC)
                 elapsed = max(0.0, (now - started_dt).total_seconds() / 60.0)
@@ -289,24 +287,26 @@ async def get_rooms(
     # For small queries with filters, skip cache. NOTE: `search` MUST be in this
     # guard — otherwise a search request would be served the cached FULL list and
     # the room_number filter below would be silently ignored (global search bug).
-    use_cache = (offset == 0 and not status and not room_type and not view and not amenity and not search and not include_virtual and limit >= 100)
+    use_cache = offset == 0 and not status and not room_type and not view and not amenity and not search and not include_virtual and limit >= 100
 
     # Try Redis cache first (FASTEST!) - only for full list
     if use_cache:
         try:
             from redis_cache import redis_cache
+
             if redis_cache:
                 cache_key = f"rooms:{current_user.tenant_id}:limit{limit}:nv"
                 cached = redis_cache.get(cache_key)
                 if cached:
                     # Filter virtual from cached data
-                    base = [r for r in cached if not r.get('is_virtual')]
+                    base = [r for r in cached if not r.get("is_virtual")]
                     return await _enrich_rooms_with_housekeeping(current_user.tenant_id, base)
         except Exception:
             logger.debug("pms_rooms: redis cache read failed", exc_info=True)
 
         # Check pre-warmed cache second
         from cache_warmer import cache_warmer
+
         if cache_warmer:
             cached_data = cache_warmer.get_cached(f"rooms:{current_user.tenant_id}")
             if cached_data:
@@ -314,57 +314,80 @@ async def get_rooms(
                 rooms = []
                 for room in cached_data[:limit]:  # Apply limit to cached data
                     # Skip virtual rooms
-                    if room.get('is_virtual'):
+                    if room.get("is_virtual"):
                         continue
                     # Ensure tenant_id is present
-                    if 'tenant_id' not in room:
-                        room['tenant_id'] = current_user.tenant_id
+                    if "tenant_id" not in room:
+                        room["tenant_id"] = current_user.tenant_id
 
-                    if 'floor' in room and isinstance(room['floor'], str):
+                    if "floor" in room and isinstance(room["floor"], str):
                         try:
-                            room['floor'] = int(room['floor'])
+                            room["floor"] = int(room["floor"])
                         except Exception:
-                            room['floor'] = 1
-                    elif 'floor' not in room:
-                        room['floor'] = 1
+                            room["floor"] = 1
+                    elif "floor" not in room:
+                        room["floor"] = 1
 
-                    if 'capacity' not in room and 'max_occupancy' in room:
-                        room['capacity'] = room['max_occupancy']
-                    elif 'capacity' not in room:
-                        room['capacity'] = 2
+                    if "capacity" not in room and "max_occupancy" in room:
+                        room["capacity"] = room["max_occupancy"]
+                    elif "capacity" not in room:
+                        room["capacity"] = 2
 
                     rooms.append(room)
                 return await _enrich_rooms_with_housekeeping(current_user.tenant_id, rooms)
 
     # Build query with filters
     # Backward compatible: old room docs may not have is_active field.
-    active_cond = {'$or': [{'is_active': True}, {'is_active': {'$exists': False}}]}
+    active_cond = {"$or": [{"is_active": True}, {"is_active": {"$exists": False}}]}
     base_conds = [active_cond]
     if not include_virtual:
-        base_conds.append({'$or': [{'is_virtual': False}, {'is_virtual': {'$exists': False}}]})
+        base_conds.append({"$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}]})
     query = {
-        'tenant_id': current_user.tenant_id,
-        '$and': base_conds,
+        "tenant_id": current_user.tenant_id,
+        "$and": base_conds,
     }
     if status:
-        query['status'] = status
+        query["status"] = status
     if room_type:
-        query['room_type'] = room_type
+        query["room_type"] = room_type
     if view:
-        query['view'] = view
+        query["view"] = view
     if amenity:
-        query['amenities'] = amenity
+        query["amenities"] = amenity
     if search and search.strip():
         # Global search / oda-no araması: room_number üzerinde tenant-scoped
         # anchored prefix (case-insensitive). Anchored `^` regex (tenant_id,
         # room_number) index'ini kullanabilir; escape ile regex-injection yok.
         import re as _re
+
         safe_s = _re.escape(search.strip().replace("\x00", ""))
-        query['room_number'] = {'$regex': f'^{safe_s}', '$options': 'i'}
+        query["room_number"] = {"$regex": f"^{safe_s}", "$options": "i"}
 
     # Fallback: Ultra-minimal projection with pagination
     # cleaning_started_at/current_task_id/assigned_cleaner: HK enrichment için
-    projection = {'_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1, 'status': 1, 'floor': 1, 'capacity': 1, 'max_occupancy': 1, 'base_price': 1, 'tenant_id': 1, 'amenities': 1, 'view': 1, 'bed_type': 1, 'images': 1, 'is_virtual': 1, 'cleaning_started_at': 1, 'current_task_id': 1, 'assigned_cleaner': 1, 'stress_seed': 1, 'stress_prefix': 1, 'room_move_target': 1}
+    projection = {
+        "_id": 0,
+        "id": 1,
+        "room_number": 1,
+        "room_type": 1,
+        "status": 1,
+        "floor": 1,
+        "capacity": 1,
+        "max_occupancy": 1,
+        "base_price": 1,
+        "tenant_id": 1,
+        "amenities": 1,
+        "view": 1,
+        "bed_type": 1,
+        "images": 1,
+        "is_virtual": 1,
+        "cleaning_started_at": 1,
+        "current_task_id": 1,
+        "assigned_cleaner": 1,
+        "stress_seed": 1,
+        "stress_prefix": 1,
+        "room_move_target": 1,
+    }
     # F8A tur-13 fix: stable sort by `_id` is REQUIRED for deterministic
     # pagination. Without it, MongoDB's `skip(offset).limit(limit)` can return
     # non-stable ordering after delete+insert cycles (storage engine recycles
@@ -374,25 +397,25 @@ async def get_rooms(
     # writes occur. Symptom in CI: seed inserts 60 extras → fetch returns 0
     # extras → setup precondition `fetchedExtras>=50` FAIL. `_id` is the only
     # collection-wide unique index always present, so it's the safest sort key.
-    rooms_raw = await db.rooms.find(query, projection).sort('_id', 1).skip(offset).limit(limit).to_list(limit)
+    rooms_raw = await db.rooms.find(query, projection).sort("_id", 1).skip(offset).limit(limit).to_list(limit)
 
     # Fix field mapping
     rooms = []
     for room in rooms_raw:
         # Convert floor to int if it's string
-        if 'floor' in room and isinstance(room['floor'], str):
+        if "floor" in room and isinstance(room["floor"], str):
             try:
-                room['floor'] = int(room['floor'])
+                room["floor"] = int(room["floor"])
             except Exception:
-                room['floor'] = 1
-        elif 'floor' not in room:
-            room['floor'] = 1
+                room["floor"] = 1
+        elif "floor" not in room:
+            room["floor"] = 1
 
         # Map max_occupancy to capacity if needed
-        if 'capacity' not in room and 'max_occupancy' in room:
-            room['capacity'] = room['max_occupancy']
-        elif 'capacity' not in room:
-            room['capacity'] = 2
+        if "capacity" not in room and "max_occupancy" in room:
+            room["capacity"] = room["max_occupancy"]
+        elif "capacity" not in room:
+            room["capacity"] = 2
 
         rooms.append(room)
 
@@ -402,6 +425,7 @@ async def get_rooms(
     if use_cache:
         try:
             from redis_cache import redis_cache
+
             if redis_cache:
                 cache_key = f"rooms:{current_user.tenant_id}:limit{limit}"
                 redis_cache.set(cache_key, rooms, ttl=30)
@@ -452,7 +476,7 @@ async def bulk_create_rooms_range(
             bed_type=payload.bed_type,
         )
         room_dict = room.model_dump()
-        room_dict['created_at'] = room_dict['created_at'].isoformat()
+        room_dict["created_at"] = room_dict["created_at"].isoformat()
         docs.append(room_dict)
         created_rooms.append(room)
 
@@ -517,7 +541,7 @@ async def bulk_create_rooms_template(
             bed_type=payload.bed_type,
         )
         room_dict = room.model_dump()
-        room_dict['created_at'] = room_dict['created_at'].isoformat()
+        room_dict["created_at"] = room_dict["created_at"].isoformat()
         docs.append(room_dict)
         created_rooms.append(room)
         existing_numbers.add(room_number)
@@ -542,7 +566,7 @@ async def bulk_delete_rooms(
 ):
     # Permission: super_admin only
 
-    if (payload.confirm_text or '').strip().upper() != 'DELETE':
+    if (payload.confirm_text or "").strip().upper() != "DELETE":
         raise HTTPException(status_code=400, detail="Silme islemini onaylamak icin 'DELETE' yazmalisiniz")
 
     target_ids = set(payload.ids or [])
@@ -556,7 +580,7 @@ async def bulk_delete_rooms(
         if payload.end_number - payload.start_number + 1 > 2000:
             raise HTTPException(status_code=400, detail="Tek seferde maksimum 2000 oda silebilirsiniz")
 
-        prefix = (payload.prefix or '').strip()
+        prefix = (payload.prefix or "").strip()
         for n in range(payload.start_number, payload.end_number + 1):
             target_numbers.add(f"{prefix}{n}")
 
@@ -577,7 +601,7 @@ async def bulk_delete_rooms(
 
     rooms = await db.rooms.find(query, {"_id": 0, "id": 1, "room_number": 1}).to_list(5000)
 
-    room_ids = [r['id'] for r in rooms]
+    room_ids = [r["id"] for r in rooms]
     if not room_ids:
         return RoomBulkDeleteResponse(to_delete=0, deleted=0, blocked=0)
 
@@ -591,17 +615,17 @@ async def bulk_delete_rooms(
         {"_id": 0, "room_id": 1},
     ).to_list(5000)
 
-    blocked_room_ids = {b.get('room_id') for b in active_bookings if b.get('room_id')}
+    blocked_room_ids = {b.get("room_id") for b in active_bookings if b.get("room_id")}
 
-    to_delete_rooms = [r for r in rooms if r['id'] not in blocked_room_ids]
-    blocked_rooms = [r['room_number'] for r in rooms if r['id'] in blocked_room_ids]
+    to_delete_rooms = [r for r in rooms if r["id"] not in blocked_room_ids]
+    blocked_rooms = [r["room_number"] for r in rooms if r["id"] in blocked_room_ids]
 
     now = datetime.now(UTC).isoformat()
 
     deleted_numbers: list[str] = []
     if to_delete_rooms:
-        ids_to_delete = [r['id'] for r in to_delete_rooms]
-        deleted_numbers = [r['room_number'] for r in to_delete_rooms]
+        ids_to_delete = [r["id"] for r in to_delete_rooms]
+        deleted_numbers = [r["room_number"] for r in to_delete_rooms]
         await db.rooms.update_many(
             {"tenant_id": current_user.tenant_id, "id": {"$in": ids_to_delete}},
             {"$set": {"is_active": False, "deleted_at": now}},
@@ -625,7 +649,7 @@ async def import_rooms_csv(
     # CSV rows limit safety
     MAX_ROWS = 2000
 
-    if not (file.filename or '').lower().endswith('.csv'):
+    if not (file.filename or "").lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Lutfen .csv dosyasi yukleyin")
 
     content = await file.read()
@@ -634,10 +658,10 @@ async def import_rooms_csv(
     if len(content) > 2 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="CSV dosyasi cok buyuk (max 2MB)")
 
-    decoded = content.decode('utf-8-sig', errors='replace')
+    decoded = content.decode("utf-8-sig", errors="replace")
     reader = csv.DictReader(io.StringIO(decoded))
 
-    required = {'room_number', 'room_type', 'floor', 'capacity', 'base_price'}
+    required = {"room_number", "room_type", "floor", "capacity", "base_price"}
     header = {h.strip() for h in (reader.fieldnames or []) if h}
     missing = sorted(required - header)
     if missing:
@@ -659,24 +683,24 @@ async def import_rooms_csv(
             break
 
         try:
-            room_number = (row.get('room_number') or '').strip()
+            room_number = (row.get("room_number") or "").strip()
             if not room_number:
-                raise ValueError('room_number bos')
+                raise ValueError("room_number bos")
 
             if room_number in existing_numbers:
                 skipped_numbers.append(room_number)
                 continue
 
-            room_type = (row.get('room_type') or 'standard').strip() or 'standard'
-            floor = int((row.get('floor') or '1').strip() or 1)
-            capacity = int((row.get('capacity') or '2').strip() or 2)
-            base_price = float((row.get('base_price') or '0').strip() or 0)
+            room_type = (row.get("room_type") or "standard").strip() or "standard"
+            floor = int((row.get("floor") or "1").strip() or 1)
+            capacity = int((row.get("capacity") or "2").strip() or 2)
+            base_price = float((row.get("base_price") or "0").strip() or 0)
 
-            view_val = (row.get('view') or '').strip() or None
-            bed_type = (row.get('bed_type') or '').strip() or None
+            view_val = (row.get("view") or "").strip() or None
+            bed_type = (row.get("bed_type") or "").strip() or None
 
-            amenities_raw = (row.get('amenities') or '').strip()
-            amenities = [a.strip() for a in amenities_raw.split('|') if a.strip()] if amenities_raw else []
+            amenities_raw = (row.get("amenities") or "").strip()
+            amenities = [a.strip() for a in amenities_raw.split("|") if a.strip()] if amenities_raw else []
 
             room = Room(
                 tenant_id=current_user.tenant_id,
@@ -690,7 +714,7 @@ async def import_rooms_csv(
                 bed_type=bed_type,
             )
             room_dict = room.model_dump()
-            room_dict['created_at'] = room_dict['created_at'].isoformat()
+            room_dict["created_at"] = room_dict["created_at"].isoformat()
             docs.append(room_dict)
             existing_numbers.add(room_number)
             created += 1
@@ -716,11 +740,11 @@ async def upload_room_images(
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("pms")),
 ):
-    room = await db.rooms.find_one({'id': room_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
+    room = await db.rooms.find_one({"id": room_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
 
-    room_folder = UPLOAD_DIR / current_user.tenant_id / 'rooms' / room_id
+    room_folder = UPLOAD_DIR / current_user.tenant_id / "rooms" / room_id
     room_folder.mkdir(parents=True, exist_ok=True)
 
     from security.upload_validator import MAX_IMAGE_BYTES, validate_image_bytes
@@ -731,9 +755,7 @@ async def upload_room_images(
         # validate_image_bytes rejects SVG/PDF/spoofed-MIME polyglots, returns
         # canonical (content_type, ext) derived from the real decoded format.
         file_content = await f.read(MAX_IMAGE_BYTES + 1)
-        safe_ct, safe_ext = validate_image_bytes(
-            file_content, max_bytes=MAX_IMAGE_BYTES, field_label="Gorsel"
-        )
+        safe_ct, safe_ext = validate_image_bytes(file_content, max_bytes=MAX_IMAGE_BYTES, field_label="Gorsel")
 
         filename = f"{uuid.uuid4().hex}{safe_ext}"
         dest = room_folder / filename
@@ -748,27 +770,44 @@ async def upload_room_images(
         saved_urls.append(url)
 
     if not saved_urls:
-        return {"success": True, "uploaded": 0, "images": room.get('images', [])}
+        return {"success": True, "uploaded": 0, "images": room.get("images", [])}
 
-    await db.rooms.update_one(
-        {'id': room_id, 'tenant_id': current_user.tenant_id},
-        {'$push': {'images': {'$each': saved_urls}}}
-    )
+    await db.rooms.update_one({"id": room_id, "tenant_id": current_user.tenant_id}, {"$push": {"images": {"$each": saved_urls}}})
 
-    updated = await db.rooms.find_one({'id': room_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
-    return {"success": True, "uploaded": len(saved_urls), "images": updated.get('images', [])}
+    updated = await db.rooms.find_one({"id": room_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    return {"success": True, "uploaded": len(saved_urls), "images": updated.get("images", [])}
 
 
 _ROOM_UPDATE_ALLOWED = {
-    "room_number", "floor", "room_type", "view", "amenities",
-    "status", "price", "base_rate", "base_price", "max_occupancy", "max_adults",
-    "max_children", "is_active", "notes", "smoking", "accessible",
-    "connecting_room_id", "images", "name", "description",
+    "room_number",
+    "floor",
+    "room_type",
+    "view",
+    "amenities",
+    "status",
+    "price",
+    "base_rate",
+    "base_price",
+    "max_occupancy",
+    "max_adults",
+    "max_children",
+    "is_active",
+    "notes",
+    "smoking",
+    "accessible",
+    "connecting_room_id",
+    "images",
+    "name",
+    "description",
 }
 _ROOM_VALID_STATUS = {"available", "occupied", "dirty", "cleaning", "inspected", "maintenance", "out_of_order"}
 
+
 @router.put("/pms/rooms/{room_id}")
-async def update_room(room_id: str, updates: dict[str, Any], current_user: User = Depends(get_current_user),
+async def update_room(
+    room_id: str,
+    updates: dict[str, Any],
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     if not isinstance(updates, dict):
@@ -798,17 +837,15 @@ async def update_room(room_id: str, updates: dict[str, Any], current_user: User 
     if not safe:
         raise HTTPException(status_code=400, detail="Guncellenecek izinli alan yok")
     result = await db.rooms.update_one(
-        {'id': room_id, 'tenant_id': current_user.tenant_id},
-        {'$set': safe},
+        {"id": room_id, "tenant_id": current_user.tenant_id},
+        {"$set": safe},
     )
     # If matched_count is 0 the room either doesn't exist or belongs to another
     # tenant. Either way we must NOT read back without a tenant filter, otherwise
     # an attacker could fetch a foreign tenant's room document by id.
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Oda bulunamadi")
-    room_doc = await db.rooms.find_one(
-        {'id': room_id, 'tenant_id': current_user.tenant_id}, {'_id': 0}
-    )
+    room_doc = await db.rooms.find_one({"id": room_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not room_doc:
         raise HTTPException(status_code=404, detail="Oda bulunamadi")
     return room_doc
@@ -819,23 +856,24 @@ async def get_pms_companies(
     search: str | None = None,
     status: CompanyStatus | None = None,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales"))  # v103 DX alias drift fix
+    _perm=Depends(require_op("manage_sales")),  # v103 DX alias drift fix
 ):
     """Get all companies - PMS module alias."""
-    query = {'tenant_id': current_user.tenant_id}
+    query = {"tenant_id": current_user.tenant_id}
 
     if status:
-        query['status'] = status
+        query["status"] = status
 
     if search:
         import re as _re
+
         safe_s = _re.escape(search.replace("\x00", ""))
-        query['$or'] = [
-            {'name': {'$regex': safe_s, '$options': 'i'}},
-            {'corporate_code': {'$regex': safe_s, '$options': 'i'}},
+        query["$or"] = [
+            {"name": {"$regex": safe_s, "$options": "i"}},
+            {"corporate_code": {"$regex": safe_s, "$options": "i"}},
         ]
 
-    companies = await db.companies.find(query, {'_id': 0}).to_list(1000)
+    companies = await db.companies.find(query, {"_id": 0}).to_list(1000)
     return companies
 
 
@@ -928,9 +966,7 @@ async def no_show_to_virtual_room(
 ):
     """Mark booking as no-show and assign to virtual room of matching type."""
     tenant_id = current_user.tenant_id
-    booking = await db.bookings.find_one(
-        {"id": req.booking_id, "tenant_id": tenant_id}, {"_id": 0}
-    )
+    booking = await db.bookings.find_one({"id": req.booking_id, "tenant_id": tenant_id}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 

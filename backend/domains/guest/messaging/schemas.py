@@ -2,6 +2,7 @@
 Guest / Messaging Domain — Pydantic Schemas
 Extracted from messaging/router.py inline models.
 """
+
 import uuid
 from datetime import UTC, datetime
 from enum import Enum

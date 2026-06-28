@@ -6,6 +6,7 @@
      ve aile rezervasyonları için).
 Yetki: manage_rates (oda yapılandırma yetkisi).
 """
+
 from __future__ import annotations
 
 import logging
@@ -75,10 +76,12 @@ class ConnectingPair(BaseModel):
 
 
 async def _get_room(db, tenant_id: str, room_id: str) -> dict | None:
-    return await db.rooms.find_one({
-        "$or": [{"id": room_id}, {"_id": room_id}],
-        "tenant_id": tenant_id,
-    })
+    return await db.rooms.find_one(
+        {
+            "$or": [{"id": room_id}, {"_id": room_id}],
+            "tenant_id": tenant_id,
+        }
+    )
 
 
 async def _room_in_use(db, tenant_id: str, room_id: str, exclude_suite_id: str | None = None) -> str | None:
@@ -96,15 +99,14 @@ async def _room_in_use(db, tenant_id: str, room_id: str, exclude_suite_id: str |
 
 # ---------- Suites ----------
 
+
 @router.get("/suites", response_model=list[SuiteDefinition])
 async def list_suites(
     user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),
 ):
     db = get_system_db()
-    cur = db.suite_definitions.find(
-        {"tenant_id": user.tenant_id, "active": True}
-    ).sort([("name", 1)])
+    cur = db.suite_definitions.find({"tenant_id": user.tenant_id, "active": True}).sort([("name", 1)])
     out: list[dict[str, Any]] = []
     async for d in cur:
         d.pop("_id", None)
@@ -182,9 +184,13 @@ async def suite_blocked_rooms(
     """Suite satıldığında bloke edilecek oda id'lerinin listesi (master + bileşenler).
     Booking akışı bu uçtan ID listesini alıp tüm odaları işaretler."""
     db = get_system_db()
-    s = await db.suite_definitions.find_one({
-        "id": suite_id, "tenant_id": user.tenant_id, "active": True,
-    })
+    s = await db.suite_definitions.find_one(
+        {
+            "id": suite_id,
+            "tenant_id": user.tenant_id,
+            "active": True,
+        }
+    )
     if not s:
         raise HTTPException(404, "Suite bulunamadı")
     return {
@@ -196,15 +202,14 @@ async def suite_blocked_rooms(
 
 # ---------- Connecting pairs ----------
 
+
 @router.get("/connecting", response_model=list[ConnectingPair])
 async def list_connecting(
     user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),
 ):
     db = get_system_db()
-    cur = db.connecting_pairs.find(
-        {"tenant_id": user.tenant_id, "active": True}
-    ).sort([("room_a_id", 1)])
+    cur = db.connecting_pairs.find({"tenant_id": user.tenant_id, "active": True}).sort([("room_a_id", 1)])
     out: list[dict[str, Any]] = []
     async for d in cur:
         d.pop("_id", None)
@@ -233,9 +238,14 @@ async def create_connecting(
         if not await _get_room(db, user.tenant_id, rid):
             raise HTTPException(400, f"Oda bulunamadı: {rid}")
 
-    existing = await db.connecting_pairs.find_one({
-        "tenant_id": user.tenant_id, "room_a_id": a, "room_b_id": b, "active": True,
-    })
+    existing = await db.connecting_pairs.find_one(
+        {
+            "tenant_id": user.tenant_id,
+            "room_a_id": a,
+            "room_b_id": b,
+            "active": True,
+        }
+    )
     if existing:
         raise HTTPException(409, "Bu çift zaten kayıtlı")
 
@@ -279,11 +289,13 @@ async def room_connections(
 ):
     """Bir odanın bağlı olduğu diğer odalar (her iki yön)."""
     db = get_system_db()
-    cur = db.connecting_pairs.find({
-        "tenant_id": user.tenant_id,
-        "active": True,
-        "$or": [{"room_a_id": room_id}, {"room_b_id": room_id}],
-    })
+    cur = db.connecting_pairs.find(
+        {
+            "tenant_id": user.tenant_id,
+            "active": True,
+            "$or": [{"room_a_id": room_id}, {"room_b_id": room_id}],
+        }
+    )
     out: list[str] = []
     async for d in cur:
         other = d["room_b_id"] if d["room_a_id"] == room_id else d["room_a_id"]

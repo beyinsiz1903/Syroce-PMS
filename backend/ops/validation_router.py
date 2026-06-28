@@ -4,6 +4,7 @@ Phase 6 — Runtime Validation & Go-Live API Router
 Unified router for: runtime validation, incident drills,
 observability validation, go-live scoring.
 """
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
@@ -21,15 +22,18 @@ router = APIRouter(prefix="/api/validation", tags=["Phase 6 — Runtime Validati
 
 # ── Schemas ──────────────────────────────────────────────────────────
 
+
 class RunScenarioRequest(BaseModel):
     scenario_type: str  # load, stress, soak, chaos
     scenario_id: str
+
 
 class ExecuteDrillRequest(BaseModel):
     drill_id: str
 
 
 # ── Runtime Validation ───────────────────────────────────────────────
+
 
 @router.get("/scenarios")
 async def get_scenarios(user=Depends(get_current_user)):
@@ -38,7 +42,9 @@ async def get_scenarios(user=Depends(get_current_user)):
 
 
 @router.post("/run")
-async def run_scenario(req: RunScenarioRequest, user=Depends(get_current_user),
+async def run_scenario(
+    req: RunScenarioRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     ctx = OperationContext.from_user(user)
@@ -60,6 +66,7 @@ async def get_validation_report(
 
 # ── Incident Drills ─────────────────────────────────────────────────
 
+
 @router.get("/drills")
 async def list_drills(user=Depends(get_current_user)):
     result = await incident_drill_service.list_drills()
@@ -67,7 +74,9 @@ async def list_drills(user=Depends(get_current_user)):
 
 
 @router.post("/drills/execute")
-async def execute_drill(req: ExecuteDrillRequest, user=Depends(get_current_user),
+async def execute_drill(
+    req: ExecuteDrillRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     ctx = OperationContext.from_user(user)
@@ -88,7 +97,8 @@ async def drill_history(
 
 
 @router.post("/drills/cleanup")
-async def cleanup_drill_data(user=Depends(get_current_user),
+async def cleanup_drill_data(
+    user=Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     ctx = OperationContext.from_user(user)
@@ -97,6 +107,7 @@ async def cleanup_drill_data(user=Depends(get_current_user),
 
 
 # ── Observability Validation ─────────────────────────────────────────
+
 
 @router.get("/observability")
 async def validate_observability(user=Depends(get_current_user)):
@@ -134,6 +145,7 @@ async def validate_audit_timeline(user=Depends(get_current_user)):
 
 
 # ── Go-Live Readiness Score ──────────────────────────────────────────
+
 
 @router.get("/golive-score")
 async def compute_golive_score(user=Depends(get_current_user)):

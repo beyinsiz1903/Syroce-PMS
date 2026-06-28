@@ -4,6 +4,7 @@ Auto-Rollback Engine — Metric-Based Automatic Rollback
 Monitors real system health metrics and triggers rollback when thresholds are breached.
 Works with the canary deployment service for progressive deploy safety.
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -71,6 +72,7 @@ class AutoRollbackEngine:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     async def evaluate_triggers(self) -> ServiceResult:
@@ -89,17 +91,19 @@ class AutoRollbackEngine:
                 if trigger["action"] == "auto_rollback":
                     auto_rollback_needed = True
 
-            results.append({
-                "trigger_id": trigger["id"],
-                "name": trigger["name"],
-                "description": trigger["description"],
-                "threshold": trigger["threshold"],
-                "current_value": current_value,
-                "unit": trigger["unit"],
-                "triggered": triggered,
-                "action": trigger["action"] if triggered else "none",
-                "source": trigger["source"],
-            })
+            results.append(
+                {
+                    "trigger_id": trigger["id"],
+                    "name": trigger["name"],
+                    "description": trigger["description"],
+                    "threshold": trigger["threshold"],
+                    "current_value": current_value,
+                    "unit": trigger["unit"],
+                    "triggered": triggered,
+                    "action": trigger["action"] if triggered else "none",
+                    "source": trigger["source"],
+                }
+            )
 
         recommendation = "continue"
         if auto_rollback_needed:
@@ -125,7 +129,8 @@ class AutoRollbackEngine:
 
         # Get current canary state
         canary_state = await self._db.canary_deployments.find_one(
-            {"status": "active"}, {"_id": 0},
+            {"status": "active"},
+            {"_id": 0},
             sort=[("updated_at", -1)],
         )
 
@@ -151,6 +156,7 @@ class AutoRollbackEngine:
 
         # Run post-rollback smoke tests
         from ops.smoke_test_runner import smoke_test_runner
+
         smoke_result = await smoke_test_runner.run_all()
         if smoke_result.ok:
             rollback_record["verification"] = {
@@ -197,6 +203,7 @@ class AutoRollbackEngine:
         """Get 5xx error rate from APM store."""
         try:
             from server import apm_store
+
             summary = apm_store.get_summary(minutes=5)
             return summary.get("error_rate_percent", 0.0)
         except Exception:
@@ -205,6 +212,7 @@ class AutoRollbackEngine:
     async def _metric_health_check(self) -> float:
         """Ping liveness endpoint — 0 = OK, 1 = DOWN."""
         import httpx
+
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.get("http://localhost:8001/health/liveness")
@@ -232,10 +240,12 @@ class AutoRollbackEngine:
         """Count failed imports in the last window."""
         try:
             cutoff = (datetime.now(UTC) - timedelta(minutes=30)).isoformat()
-            failed = await self._db.imported_reservations.count_documents({
-                "import_status": "failed",
-                "updated_at": {"$gte": cutoff},
-            })
+            failed = await self._db.imported_reservations.count_documents(
+                {
+                    "import_status": "failed",
+                    "updated_at": {"$gte": cutoff},
+                }
+            )
             return float(failed)
         except Exception:
             return 0.0

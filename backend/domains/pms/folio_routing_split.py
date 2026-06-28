@@ -10,6 +10,7 @@ deterministik olarak remainder_index'teki folyoya yazilir (cagiran taraf bunu
 master/payor folyosu — sirket/acente/grup master — olarak secer, yoksa misafir
 folyosu). Toplam HICBIR ZAMAN orijinal tutardan sapmaz.
 """
+
 from __future__ import annotations
 
 

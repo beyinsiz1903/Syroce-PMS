@@ -16,6 +16,7 @@ Observability metrics:
   - provider_ack_latency:  Average ack latency per provider (ms)
   - cycle_count:           Total push cycles executed
 """
+
 import asyncio
 import logging
 import time
@@ -66,10 +67,7 @@ class PushLoopMetrics:
         return round(sum(samples) / len(samples), 1) if samples else 0.0
 
     def to_dict(self) -> dict[str, Any]:
-        provider_latency = {
-            p: self.get_avg_latency(p)
-            for p in self._provider_latencies
-        }
+        provider_latency = {p: self.get_avg_latency(p) for p in self._provider_latencies}
         total_verify = self.verify_success_count + self.verify_fail_count
         return {
             "queued_changes": self.queued_changes,
@@ -79,10 +77,7 @@ class PushLoopMetrics:
             "emitted_payloads": self.emitted_payloads,
             "verify_success_count": self.verify_success_count,
             "verify_fail_count": self.verify_fail_count,
-            "verify_success_ratio": (
-                round(self.verify_success_count / total_verify, 3)
-                if total_verify > 0 else 0.0
-            ),
+            "verify_success_ratio": (round(self.verify_success_count / total_verify, 3) if total_verify > 0 else 0.0),
             "cycle_count": self.cycle_count,
             "last_cycle_at": self.last_cycle_at,
             "last_cycle_duration_ms": self.last_cycle_duration_ms,
@@ -186,7 +181,8 @@ class PushLoopWorker:
     async def _process_tenant(self, tenant_id: str):
         """Process pending change sets for a single tenant."""
         pending = await repo.get_pending_change_sets(
-            tenant_id, limit=self._batch_size,
+            tenant_id,
+            limit=self._batch_size,
         )
         self.metrics.queued_changes = len(pending)
 
@@ -202,7 +198,9 @@ class PushLoopWorker:
 
             # 2. Outbound idempotency check
             is_dupe = await repo.check_outbound_idempotency(
-                provider, property_id, cs["provider_delta_hash"],
+                provider,
+                property_id,
+                cs["provider_delta_hash"],
             )
             if is_dupe:
                 await repo.update_change_set_status(cs["id"], "skipped")
@@ -220,7 +218,9 @@ class PushLoopWorker:
             except Exception as e:
                 logger.error(f"Delta compile error: {e}")
                 await repo.update_change_set_status(
-                    cs["id"], "manual_review", error=str(e),
+                    cs["id"],
+                    "manual_review",
+                    error=str(e),
                 )
                 self.metrics.verify_fail_count += 1
                 continue
@@ -233,7 +233,8 @@ class PushLoopWorker:
             if not adapter:
                 # No adapter = can't push (this is OK in dev, logged)
                 await repo.update_change_set_status(
-                    cs["id"], "pending",
+                    cs["id"],
+                    "pending",
                     error="No adapter registered (waiting for provider setup)",
                 )
                 continue
@@ -243,8 +244,10 @@ class PushLoopWorker:
                 result = await self._push_to_adapter(adapter, delta)
             except Exception as e:
                 result = ProviderResult(
-                    success=False, provider=provider,
-                    error=str(e), retryable=True,
+                    success=False,
+                    provider=provider,
+                    error=str(e),
+                    retryable=True,
                 )
             push_ms = int((time.monotonic() - push_start) * 1000)
 
@@ -257,7 +260,9 @@ class PushLoopWorker:
 
             # 7. Process ack
             status = await process_ack(
-                cs, result, cs.get("outbound_change_id", ""),
+                cs,
+                result,
+                cs.get("outbound_change_id", ""),
             )
 
             if status == "acked":
@@ -275,7 +280,8 @@ class PushLoopWorker:
         elif scope == "restriction":
             return await adapter.push_restrictions(delta)
         return ProviderResult(
-            success=False, provider=delta.provider,
+            success=False,
+            provider=delta.provider,
             error=f"Unknown scope: {scope}",
         )
 

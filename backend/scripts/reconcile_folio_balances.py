@@ -74,6 +74,7 @@ counts, sample drifting folio ids + differences — no PII). Any row with
 In dry-run, a non-zero ``found_total`` makes the process exit 1 so cron/CI
 can alert.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -89,9 +90,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from core.tenant_db import get_system_db  # noqa: E402
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("reconcile_folio_balances")
 
 # Known pilot tenant UUID — a live demo tenant that must never be mutated by
@@ -139,9 +138,7 @@ async def list_open_folio_tenants() -> list[str]:
     return [t for t in ids if t]
 
 
-async def _authoritative_balances(
-    tenant_id: str, folio_ids: list[str]
-) -> dict[str, float]:
+async def _authoritative_balances(tenant_id: str, folio_ids: list[str]) -> dict[str, float]:
     """Bulk authoritative balance per folio.
 
     Mirrors ``core.utils.calculate_folio_balance`` /
@@ -153,22 +150,28 @@ async def _authoritative_balances(
         return {}
     db = get_system_db()
     ch_pipe = [
-        {"$match": {
-            "tenant_id": tenant_id,
-            "folio_id": {"$in": folio_ids},
-            "voided": False,
-        }},
-        {"$group": {
-            "_id": "$folio_id",
-            "total": {"$sum": {"$ifNull": ["$total", "$amount"]}},
-        }},
+        {
+            "$match": {
+                "tenant_id": tenant_id,
+                "folio_id": {"$in": folio_ids},
+                "voided": False,
+            }
+        },
+        {
+            "$group": {
+                "_id": "$folio_id",
+                "total": {"$sum": {"$ifNull": ["$total", "$amount"]}},
+            }
+        },
     ]
     pay_pipe = [
-        {"$match": {
-            "tenant_id": tenant_id,
-            "folio_id": {"$in": folio_ids},
-            "voided": False,
-        }},
+        {
+            "$match": {
+                "tenant_id": tenant_id,
+                "folio_id": {"$in": folio_ids},
+                "voided": False,
+            }
+        },
         {"$group": {"_id": "$folio_id", "total": {"$sum": "$amount"}}},
     ]
     ch_rows = await db.folio_charges.aggregate(ch_pipe).to_list(len(folio_ids))
@@ -217,13 +220,15 @@ async def scan_tenant(tenant_id: str, grace_minutes: int) -> dict:
         cached = round(float(f.get("balance", 0.0) or 0.0), 2)
         difference = round(auth - cached, 2)
         if abs(difference) >= TOLERANCE:
-            drifts.append({
-                "folio_id": fid,
-                "booking_id": f.get("booking_id", ""),
-                "cached_balance": cached,
-                "authoritative_balance": auth,
-                "difference": difference,
-            })
+            drifts.append(
+                {
+                    "folio_id": fid,
+                    "booking_id": f.get("booking_id", ""),
+                    "cached_balance": cached,
+                    "authoritative_balance": auth,
+                    "difference": difference,
+                }
+            )
     return {
         "checked": len(candidates),
         "skipped_fresh": fresh_skipped,
@@ -314,15 +319,16 @@ async def reconcile_tenant(
     if found_total > 0:
         logger.warning(
             "[folio-recon] tenant=%s drift folios=%d repaired=%d mode=%s",
-            tenant_id, found_total, repaired, summary["mode"],
+            tenant_id,
+            found_total,
+            repaired,
+            summary["mode"],
         )
     return summary
 
 
 async def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Open-folio balance reconciliation backstop (Task #390)."
-    )
+    parser = argparse.ArgumentParser(description="Open-folio balance reconciliation backstop (Task #390).")
     parser.add_argument(
         "--tenant",
         default="",
@@ -337,25 +343,19 @@ async def main() -> int:
         "--grace-minutes",
         type=int,
         default=DEFAULT_GRACE_MINUTES,
-        help="Son N dakikada dokunulan folyoları atla (in-flight apply'ı yanlış "
-             "pozitif saymamak için).",
+        help="Son N dakikada dokunulan folyoları atla (in-flight apply'ı yanlış pozitif saymamak için).",
     )
     args = parser.parse_args()
 
-    if args.apply and os.environ.get(
-        "FOLIO_RECON_ALLOW_APPLY", ""
-    ).lower() != "true":
-        logger.error(
-            "--apply için FOLIO_RECON_ALLOW_APPLY=true gerekli — fail-closed."
-        )
+    if args.apply and os.environ.get("FOLIO_RECON_ALLOW_APPLY", "").lower() != "true":
+        logger.error("--apply için FOLIO_RECON_ALLOW_APPLY=true gerekli — fail-closed.")
         return 2
 
     target_tenant = args.tenant.strip()
     # Explicitly targeting the pilot with --apply is a loud operator error.
     if args.apply and target_tenant and target_tenant in pilot_tenant_ids():
         logger.error(
-            "--tenant pilot tenant'a (%s) eşit ve --apply verildi — fail-closed; "
-            "mutabakat backstop'u pilot'a dokunamaz.",
+            "--tenant pilot tenant'a (%s) eşit ve --apply verildi — fail-closed; mutabakat backstop'u pilot'a dokunamaz.",
             target_tenant,
         )
         return 2
@@ -384,29 +384,23 @@ async def main() -> int:
         grand_checked += summary["folios_checked"]
 
     print("=" * 60)
-    print(
-        f"Folio balance reconciliation "
-        f"({'APPLY' if args.apply else 'DRY-RUN'}) tenants={len(tenants)}"
-    )
+    print(f"Folio balance reconciliation ({'APPLY' if args.apply else 'DRY-RUN'}) tenants={len(tenants)}")
     print("=" * 60)
     for s in summaries:
-        line = (
-            f"  tenant={s['tenant_id']} checked={s['folios_checked']} "
-            f"drift={s['found_total']} repaired={s['repaired']}"
-        )
+        line = f"  tenant={s['tenant_id']} checked={s['folios_checked']} drift={s['found_total']} repaired={s['repaired']}"
         if s.get("pilot_skipped_apply"):
             line += " (pilot: apply skipped)"
         print(line)
     print("-" * 60)
-    print(f"  TOPLAM checked={grand_checked} drift={grand_found} "
-          f"repaired={grand_repaired}")
+    print(f"  TOPLAM checked={grand_checked} drift={grand_found} repaired={grand_repaired}")
     print("  metric rows -> folio_balance_recon_scans")
 
     if grand_found > 0:
         logger.warning(
-            "[folio-recon] %d sapan folyo bulundu (checked=%d repaired=%d) — "
-            "B (POS->folio) yolunu kontrol et.",
-            grand_found, grand_checked, grand_repaired,
+            "[folio-recon] %d sapan folyo bulundu (checked=%d repaired=%d) — B (POS->folio) yolunu kontrol et.",
+            grand_found,
+            grand_checked,
+            grand_repaired,
         )
         # Non-zero exit when drift remains unhandled (dry-run) so cron/CI can
         # alert. Apply that repaired everything still exits 0.

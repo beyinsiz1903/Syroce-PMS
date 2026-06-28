@@ -20,6 +20,7 @@ Caveats (acknowledged):
   * Sliding window uses a deque per key — O(N) per check where N == max.
     Throttle thresholds are small (≤30) so cost is negligible.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -107,6 +108,7 @@ async def _ensure_mongo_throttle_indexes() -> bool:
             # by tenant_id), so we use `_raw_db` to bypass the tenant
             # proxy which would otherwise raise without a request context.
             from core.database import _raw_db as _db
+
             # (key, score) compound — supports the sliding-window count
             # query `{key: rkey, score: {$gt: cutoff}}` and the
             # find-oldest sort used for retry-after computation.
@@ -129,22 +131,15 @@ async def _ensure_mongo_throttle_indexes() -> bool:
             # different names before declaring failure.
             try:
                 from core.database import _raw_db as _db
+
                 idx = await _db.throttle_hits.index_information()
                 key_score_seen = False
                 ttl_seen = False
                 for _name, spec in idx.items():
                     keys = spec.get("key") or []
-                    if (
-                        len(keys) == 2
-                        and keys[0][0] == "key"
-                        and keys[1][0] == "score"
-                    ):
+                    if len(keys) == 2 and keys[0][0] == "key" and keys[1][0] == "score":
                         key_score_seen = True
-                    if (
-                        len(keys) == 1
-                        and keys[0][0] == "expires_at"
-                        and spec.get("expireAfterSeconds") == 0
-                    ):
+                    if len(keys) == 1 and keys[0][0] == "expires_at" and spec.get("expireAfterSeconds") == 0:
                         ttl_seen = True
                 if key_score_seen and ttl_seen:
                     _MONGO_THROTTLE_INDEX_READY = True
@@ -165,6 +160,7 @@ def _invalidate_redis() -> None:
     """
     global _REDIS_CLIENT, _REDIS_NEXT_RETRY_AT
     import time as _time
+
     _REDIS_CLIENT = None
     _REDIS_NEXT_RETRY_AT = _time.monotonic() + _REDIS_RETRY_BACKOFF_SECONDS
 
@@ -185,6 +181,7 @@ async def _get_redis():
     if _REDIS_CLIENT is not None:
         return _REDIS_CLIENT
     import time as _time
+
     now = _time.monotonic()
     if now < _REDIS_NEXT_RETRY_AT:
         return None
@@ -195,8 +192,10 @@ async def _get_redis():
         if now < _REDIS_NEXT_RETRY_AT:
             return None
         import os as _os
+
         try:
             from redis import asyncio as aioredis  # type: ignore
+
             url = _os.environ.get("REDIS_URL", "redis://localhost:6379/0")
             client = aioredis.from_url(
                 url,
@@ -306,6 +305,7 @@ class SlidingWindowThrottle:
         """
         import time as _time
         import uuid as _uuid
+
         rkey = self._rkey(key)
         now_ms = int(_time.time() * 1000)
         window_ms = int(self.window.total_seconds() * 1000)
@@ -318,32 +318,56 @@ class SlidingWindowThrottle:
             # and still atomic on the Redis side.
             try:
                 result = await rc.eval(
-                    _SLIDING_WINDOW_LUA, 1, rkey,
-                    str(now_ms), str(cutoff_ms), str(self.max), str(ttl_s), member,
+                    _SLIDING_WINDOW_LUA,
+                    1,
+                    rkey,
+                    str(now_ms),
+                    str(cutoff_ms),
+                    str(self.max),
+                    str(ttl_s),
+                    member,
                 )
             except Exception:
                 raise
         else:
             try:
                 result = await rc.evalsha(
-                    sha, 1, rkey,
-                    str(now_ms), str(cutoff_ms), str(self.max), str(ttl_s), member,
+                    sha,
+                    1,
+                    rkey,
+                    str(now_ms),
+                    str(cutoff_ms),
+                    str(self.max),
+                    str(ttl_s),
+                    member,
                 )
             except Exception as exc:
                 # NOSCRIPT (script flushed) → reload and retry once.
-                if 'NOSCRIPT' in str(exc).upper():
+                if "NOSCRIPT" in str(exc).upper():
                     global _SLIDING_WINDOW_SHA
                     _SLIDING_WINDOW_SHA = None
                     sha2 = await _get_sliding_window_sha(rc)
                     if sha2:
                         result = await rc.evalsha(
-                            sha2, 1, rkey,
-                            str(now_ms), str(cutoff_ms), str(self.max), str(ttl_s), member,
+                            sha2,
+                            1,
+                            rkey,
+                            str(now_ms),
+                            str(cutoff_ms),
+                            str(self.max),
+                            str(ttl_s),
+                            member,
                         )
                     else:
                         result = await rc.eval(
-                            _SLIDING_WINDOW_LUA, 1, rkey,
-                            str(now_ms), str(cutoff_ms), str(self.max), str(ttl_s), member,
+                            _SLIDING_WINDOW_LUA,
+                            1,
+                            rkey,
+                            str(now_ms),
+                            str(cutoff_ms),
+                            str(self.max),
+                            str(ttl_s),
+                            member,
                         )
                 else:
                     raise
@@ -377,24 +401,27 @@ class SlidingWindowThrottle:
         import uuid as _uuid
 
         from core.database import _raw_db as _db
+
         rkey = self._rkey(key)
         now_ms = float(_time.time() * 1000)
         window_ms = float(self.window.total_seconds() * 1000)
         cutoff_ms = now_ms - window_ms
-        expires_at = datetime.utcfromtimestamp(
-            (now_ms + window_ms + 5000) / 1000.0
-        )
+        expires_at = datetime.utcfromtimestamp((now_ms + window_ms + 5000) / 1000.0)
         doc_id = f"{int(now_ms)}:{_uuid.uuid4().hex[:12]}"
-        await _db.throttle_hits.insert_one({
-            "_id": doc_id,
-            "key": rkey,
-            "score": now_ms,
-            "expires_at": expires_at,
-        })
-        count = await _db.throttle_hits.count_documents({
-            "key": rkey,
-            "score": {"$gt": cutoff_ms},
-        })
+        await _db.throttle_hits.insert_one(
+            {
+                "_id": doc_id,
+                "key": rkey,
+                "score": now_ms,
+                "expires_at": expires_at,
+            }
+        )
+        count = await _db.throttle_hits.count_documents(
+            {
+                "key": rkey,
+                "score": {"$gt": cutoff_ms},
+            }
+        )
         if count > self.max:
             # Over budget — compensate our insert and report retry.
             try:
@@ -506,6 +533,7 @@ class SlidingWindowThrottle:
         if self.always_on:
             try:
                 from core.database import _raw_db as _db
+
                 await _db.throttle_hits.delete_many({"key": rkey})
             except Exception as exc:
                 logger.error(
@@ -583,12 +611,8 @@ def normalize_identity(value: str | None) -> str:
 # ordering (Task-137), so wrong creds still 401, correct creds never accumulate
 # a hit, and a legitimate user who mistyped is still drained on success. Stable
 # name= so the Mongo/Redis key namespace can't drift with instance ordering.
-LOGIN_IP = SlidingWindowThrottle(
-    max_requests=20, window_seconds=60, always_on=True, name="login_ip"
-)
-LOGIN_ACCOUNT = SlidingWindowThrottle(
-    max_requests=10, window_seconds=300, always_on=True, name="login_account"
-)
+LOGIN_IP = SlidingWindowThrottle(max_requests=20, window_seconds=60, always_on=True, name="login_ip")
+LOGIN_ACCOUNT = SlidingWindowThrottle(max_requests=10, window_seconds=300, always_on=True, name="login_account")
 FORGOT_PW_EMAIL = SlidingWindowThrottle(max_requests=3, window_seconds=600)
 FORGOT_PW_IP = SlidingWindowThrottle(max_requests=10, window_seconds=600)
 RESET_TOKEN_IP = SlidingWindowThrottle(max_requests=10, window_seconds=60)
@@ -665,12 +689,8 @@ RESET_CODE_EMAIL = SlidingWindowThrottle(max_requests=10, window_seconds=1800, a
 #   could share a stolen token across many peer accounts in parallel.
 # always_on=True so the dev escape hatch (DISABLE_AUTH_THROTTLE) cannot mask
 # the protection in stress runs or production smoke tests.
-CASHIER_HANDOVER_USER = SlidingWindowThrottle(
-    max_requests=6, window_seconds=900, always_on=True, name="cashier_handover_user"
-)
-CASHIER_HANDOVER_IP = SlidingWindowThrottle(
-    max_requests=6, window_seconds=900, always_on=True, name="cashier_handover_ip"
-)
+CASHIER_HANDOVER_USER = SlidingWindowThrottle(max_requests=6, window_seconds=900, always_on=True, name="cashier_handover_user")
+CASHIER_HANDOVER_IP = SlidingWindowThrottle(max_requests=6, window_seconds=900, always_on=True, name="cashier_handover_ip")
 
 # Task-120 — `/api/cashier/peer-verify` is the mobile cashier PIN re-auth gate
 # (front-desk terminals every shift). Same financial-PIN-equivalent exposure as
@@ -685,12 +705,8 @@ CASHIER_HANDOVER_IP = SlidingWindowThrottle(
 # the window returns 429 — matches the regression probe in spec 98 test L.
 # always_on=True so DISABLE_AUTH_THROTTLE cannot mask the protection in
 # stress runs or production smoke tests.
-CASHIER_PEER_VERIFY_USER = SlidingWindowThrottle(
-    max_requests=10, window_seconds=900, always_on=True, name="cashier_peer_verify_user"
-)
-CASHIER_PEER_VERIFY_IP = SlidingWindowThrottle(
-    max_requests=10, window_seconds=900, always_on=True, name="cashier_peer_verify_ip"
-)
+CASHIER_PEER_VERIFY_USER = SlidingWindowThrottle(max_requests=10, window_seconds=900, always_on=True, name="cashier_peer_verify_user")
+CASHIER_PEER_VERIFY_IP = SlidingWindowThrottle(max_requests=10, window_seconds=900, always_on=True, name="cashier_peer_verify_ip")
 
 # Task-55 — peer login surfaces (`/api/agency-portal/auth/login`,
 # `/api/supplies-market/vendor/login`) verify a staff/vendor password with
@@ -711,18 +727,10 @@ CASHIER_PEER_VERIFY_IP = SlidingWindowThrottle(
 # always_on=True so DISABLE_AUTH_THROTTLE cannot mask the protection in
 # stress/pen runs or production smoke tests (matches the task-51 +
 # SENSITIVE_AUTH_USER doctrine).
-AGENCY_LOGIN_IP = SlidingWindowThrottle(
-    max_requests=20, window_seconds=60, always_on=True, name="agency_login_ip"
-)
-AGENCY_LOGIN_ACCOUNT = SlidingWindowThrottle(
-    max_requests=10, window_seconds=300, always_on=True, name="agency_login_account"
-)
-VENDOR_LOGIN_IP = SlidingWindowThrottle(
-    max_requests=20, window_seconds=60, always_on=True, name="vendor_login_ip"
-)
-VENDOR_LOGIN_ACCOUNT = SlidingWindowThrottle(
-    max_requests=10, window_seconds=300, always_on=True, name="vendor_login_account"
-)
+AGENCY_LOGIN_IP = SlidingWindowThrottle(max_requests=20, window_seconds=60, always_on=True, name="agency_login_ip")
+AGENCY_LOGIN_ACCOUNT = SlidingWindowThrottle(max_requests=10, window_seconds=300, always_on=True, name="agency_login_account")
+VENDOR_LOGIN_IP = SlidingWindowThrottle(max_requests=20, window_seconds=60, always_on=True, name="vendor_login_ip")
+VENDOR_LOGIN_ACCOUNT = SlidingWindowThrottle(max_requests=10, window_seconds=300, always_on=True, name="vendor_login_account")
 
 
 async def enforce(throttle: SlidingWindowThrottle, key: str, label: str = "istek") -> None:
@@ -737,6 +745,7 @@ async def enforce(throttle: SlidingWindowThrottle, key: str, label: str = "istek
     a production env, it is IGNORED unless `APP_ENV` / `ENVIRONMENT` is dev/test.
     """
     import os as _os
+
     # F8AG P0 fix — `always_on` throttles (e.g. TWOFA_VERIFY_IP) are never
     # bypassed by the dev escape hatch. Brute-force-critical surfaces must
     # keep their rate limit in every environment so stress/penetration

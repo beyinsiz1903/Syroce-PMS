@@ -2,6 +2,7 @@
 Real-Time Operational Event System - Event Bus, Persistence, WebSocket Gateway.
 Handles hotel operational events: check-in, guest arrival, HK overdue, room ready, etc.
 """
+
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -44,8 +45,7 @@ NOTIFICATION_RULES = {
 class EventBus:
     """Central event bus for publishing and persisting operational events."""
 
-    async def publish(self, tenant_id: str, event_type: str, payload: dict[str, Any],
-                      user_id: str | None = None, property_id: str | None = None) -> dict[str, Any]:
+    async def publish(self, tenant_id: str, event_type: str, payload: dict[str, Any], user_id: str | None = None, property_id: str | None = None) -> dict[str, Any]:
         """Publish an operational event to the event bus."""
         if event_type not in EVENT_TYPES:
             return {"success": False, "error": f"Unknown event type: {event_type}"}
@@ -69,9 +69,7 @@ class EventBus:
         await db.operational_events.insert_one(event)
         return {"success": True, "event_id": event["id"], "event_type": event_type, "priority": event["priority"]}
 
-    async def get_live_feed(self, tenant_id: str, limit: int = 50,
-                            event_type: str | None = None,
-                            priority: str | None = None) -> dict[str, Any]:
+    async def get_live_feed(self, tenant_id: str, limit: int = 50, event_type: str | None = None, priority: str | None = None) -> dict[str, Any]:
         """Get live activity feed for the operational dashboard."""
         query: dict[str, Any] = {"tenant_id": tenant_id}
         if event_type:
@@ -79,9 +77,7 @@ class EventBus:
         if priority:
             query["priority"] = priority
 
-        events = await db.operational_events.find(
-            query, {"_id": 0}
-        ).sort("created_at", -1).limit(limit).to_list(limit)
+        events = await db.operational_events.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
 
         return {
             "tenant_id": tenant_id,
@@ -120,12 +116,14 @@ class EventBus:
         """Acknowledge a critical/high priority event."""
         result = await db.operational_events.update_one(
             {"tenant_id": tenant_id, "id": event_id},
-            {"$set": {
-                "acknowledged": True,
-                "acknowledged_by": user_id,
-                "acknowledged_at": datetime.now(UTC).isoformat(),
-                "acknowledge_note": note,
-            }},
+            {
+                "$set": {
+                    "acknowledged": True,
+                    "acknowledged_by": user_id,
+                    "acknowledged_at": datetime.now(UTC).isoformat(),
+                    "acknowledge_note": note,
+                }
+            },
         )
         if result.matched_count == 0:
             return {"success": False, "error": "Event not found"}
@@ -174,10 +172,15 @@ class EventBus:
         ).to_list(200)
 
         # Recent events for front desk
-        recent = await db.operational_events.find(
-            {"tenant_id": tenant_id, "target_roles": "front_desk", "read": False},
-            {"_id": 0},
-        ).sort("created_at", -1).limit(20).to_list(20)
+        recent = (
+            await db.operational_events.find(
+                {"tenant_id": tenant_id, "target_roles": "front_desk", "read": False},
+                {"_id": 0},
+            )
+            .sort("created_at", -1)
+            .limit(20)
+            .to_list(20)
+        )
 
         return {
             "pending_arrivals": len(arrivals),
@@ -200,10 +203,15 @@ class EventBus:
         clean = [r for r in rooms if r.get("status") in ("clean", "available")]
 
         # Overdue HK events
-        overdue_events = await db.operational_events.find(
-            {"tenant_id": tenant_id, "event_type": "housekeeping_task_overdue", "acknowledged": False},
-            {"_id": 0},
-        ).sort("created_at", -1).limit(20).to_list(20)
+        overdue_events = (
+            await db.operational_events.find(
+                {"tenant_id": tenant_id, "event_type": "housekeeping_task_overdue", "acknowledged": False},
+                {"_id": 0},
+            )
+            .sort("created_at", -1)
+            .limit(20)
+            .to_list(20)
+        )
 
         return {
             "summary": {

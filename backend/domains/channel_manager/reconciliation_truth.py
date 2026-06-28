@@ -7,6 +7,7 @@ and the rules for drift resolution.
 
 This is the system's constitutional document for data ownership.
 """
+
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -16,16 +17,18 @@ from .data_model import DriftResolution, DriftType
 
 class GoldSource(str, Enum):
     """Where the final truth lives for each data type."""
-    RAW_EVENTS = "raw_channel_events"          # immutable truth
+
+    RAW_EVENTS = "raw_channel_events"  # immutable truth
     RESERVATION_LINEAGE = "reservation_lineage"  # derived truth (current state)
-    ARI_SYNC_STATE = "ari_drift_state"           # latest applied truth
-    MAPPING_TABLE = "room_mappings"              # config truth
-    PROVIDER_SNAPSHOT = "provider_snapshot"       # external truth
+    ARI_SYNC_STATE = "ari_drift_state"  # latest applied truth
+    MAPPING_TABLE = "room_mappings"  # config truth
+    PROVIDER_SNAPSHOT = "provider_snapshot"  # external truth
 
 
 @dataclass
 class TruthRule:
     """Resolution policy for a specific drift type."""
+
     drift_type: DriftType
     resolution: DriftResolution
     gold_source: GoldSource
@@ -88,7 +91,6 @@ TRUTH_TABLE: dict[str, TruthRule] = {
         auto_heal_action="",
         requires_evidence=True,
     ),
-
     # ── ARI / Inventory Drifts ────────────────────────────────
     DriftType.PAYLOAD_MISMATCH: TruthRule(
         drift_type=DriftType.PAYLOAD_MISMATCH,
@@ -98,7 +100,6 @@ TRUTH_TABLE: dict[str, TruthRule] = {
         auto_heal_action="Re-push current ARI state",
         requires_evidence=True,
     ),
-
     # ── Mapping Drifts ────────────────────────────────────────
     DriftType.MAPPING_MISMATCH: TruthRule(
         drift_type=DriftType.MAPPING_MISMATCH,
@@ -143,7 +144,8 @@ def get_truth_table_summary() -> list[dict[str, Any]]:
             "description": rule.description,
             "auto_heal_action": rule.auto_heal_action,
             "requires_evidence": rule.requires_evidence,
-            "can_auto_heal": rule.resolution in (
+            "can_auto_heal": rule.resolution
+            in (
                 DriftResolution.SAFE_AUTO_HEAL,
                 DriftResolution.RISKY_AUTO_HEAL,
             ),

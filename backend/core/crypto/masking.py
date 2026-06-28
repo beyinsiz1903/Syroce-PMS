@@ -36,7 +36,4 @@ def mask_dict(
     visible_suffix: int = 4,
 ) -> dict:
     """Mask all values in a credentials dict for display."""
-    return {
-        k: mask_value(str(v), visible_suffix=visible_suffix) if v else "****"
-        for k, v in credentials.items()
-    }
+    return {k: mask_value(str(v), visible_suffix=visible_suffix) if v else "****" for k, v in credentials.items()}

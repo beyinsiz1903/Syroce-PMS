@@ -7,6 +7,7 @@ Stores: sync success, ack success, retry, latency, error types, mapping validati
 Retention: 30d (hourly), 90d (daily), 1y (weekly)
 Aggregation: daily, weekly, monthly
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -43,24 +44,27 @@ class HistoricalMetricsService:
             metrics = await self._repo.get_sync_metrics(tenant_id, cid)
             error_summary = await self._repo.get_error_queue_summary(tenant_id, cid)
             from ..application.reconciliation_service import ReconciliationService
+
             recon = ReconciliationService(self._repo)
             health = await recon.get_health_score(tenant_id, cid)
 
             # ACK + import metrics — tek aggregation ile (8 count_documents yerine 1 sorgu)
             ack_pipeline = [
                 {"$match": {"tenant_id": tenant_id, "connector_id": cid}},
-                {"$group": {
-                    "_id": None,
-                    "total": {"$sum": 1},
-                    "ack_sent": {"$sum": {"$cond": [{"$eq": ["$ack_status", "ack_sent"]}, 1, 0]}},
-                    "ack_failed": {"$sum": {"$cond": [{"$eq": ["$ack_status", "ack_failed"]}, 1, 0]}},
-                    "import_created": {"$sum": {"$cond": [{"$eq": ["$import_status", "created"]}, 1, 0]}},
-                    "import_modified": {"$sum": {"$cond": [{"$eq": ["$import_status", "modified"]}, 1, 0]}},
-                    "import_cancelled": {"$sum": {"$cond": [{"$eq": ["$import_status", "cancelled"]}, 1, 0]}},
-                    "import_failed": {"$sum": {"$cond": [{"$eq": ["$import_status", "failed"]}, 1, 0]}},
-                    "import_review": {"$sum": {"$cond": [{"$in": ["$import_status", ["review", "conflict", "out_of_order"]]}, 1, 0]}},
-                    "import_duplicate": {"$sum": {"$cond": [{"$eq": ["$import_status", "duplicate"]}, 1, 0]}},
-                }},
+                {
+                    "$group": {
+                        "_id": None,
+                        "total": {"$sum": 1},
+                        "ack_sent": {"$sum": {"$cond": [{"$eq": ["$ack_status", "ack_sent"]}, 1, 0]}},
+                        "ack_failed": {"$sum": {"$cond": [{"$eq": ["$ack_status", "ack_failed"]}, 1, 0]}},
+                        "import_created": {"$sum": {"$cond": [{"$eq": ["$import_status", "created"]}, 1, 0]}},
+                        "import_modified": {"$sum": {"$cond": [{"$eq": ["$import_status", "modified"]}, 1, 0]}},
+                        "import_cancelled": {"$sum": {"$cond": [{"$eq": ["$import_status", "cancelled"]}, 1, 0]}},
+                        "import_failed": {"$sum": {"$cond": [{"$eq": ["$import_status", "failed"]}, 1, 0]}},
+                        "import_review": {"$sum": {"$cond": [{"$in": ["$import_status", ["review", "conflict", "out_of_order"]]}, 1, 0]}},
+                        "import_duplicate": {"$sum": {"$cond": [{"$eq": ["$import_status", "duplicate"]}, 1, 0]}},
+                    }
+                },
             ]
             ack_rows = await db.cm_imported_reservations.aggregate(ack_pipeline).to_list(1)
             ack_row = ack_rows[0] if ack_rows else {}
@@ -81,9 +85,7 @@ class HistoricalMetricsService:
             total_sync = sum(jobs.values())
             succeeded_sync = jobs.get("succeeded", 0)
             failed_sync = jobs.get("failed", 0)
-            retry_jobs = await db.cm_sync_jobs.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "retry_count": {"$gt": 0}}
-            )
+            retry_jobs = await db.cm_sync_jobs.count_documents({"tenant_id": tenant_id, "connector_id": cid, "retry_count": {"$gt": 0}})
 
             # Mapping
             mappings = await self._repo.get_mappings(tenant_id, cid)
@@ -144,8 +146,11 @@ class HistoricalMetricsService:
     # ─── Trend Calculation ─────────────────────────────────────────────
 
     async def get_trends(
-        self, tenant_id: str, connector_id: str | None = None,
-        period: str = "7d", metric_keys: list[str] | None = None,
+        self,
+        tenant_id: str,
+        connector_id: str | None = None,
+        period: str = "7d",
+        metric_keys: list[str] | None = None,
     ) -> dict[str, Any]:
         """Get trend data for specified metrics over a period."""
         days = {"24h": 1, "7d": 7, "30d": 30, "90d": 90, "1y": 365}.get(period, 7)
@@ -159,8 +164,12 @@ class HistoricalMetricsService:
 
         if not metric_keys:
             metric_keys = [
-                "health_score", "sync_success_rate", "ack_success_rate",
-                "retry_rate", "mapping_validation_rate", "error_queue_total",
+                "health_score",
+                "sync_success_rate",
+                "ack_success_rate",
+                "retry_rate",
+                "mapping_validation_rate",
+                "error_queue_total",
                 "recon_total_open",
             ]
 
@@ -193,8 +202,11 @@ class HistoricalMetricsService:
     # ─── History Query ─────────────────────────────────────────────────
 
     async def get_history(
-        self, tenant_id: str, connector_id: str | None = None,
-        period: str = "7d", limit: int = 500,
+        self,
+        tenant_id: str,
+        connector_id: str | None = None,
+        period: str = "7d",
+        limit: int = 500,
     ) -> dict[str, Any]:
         """Get raw snapshot history."""
         days = {"24h": 1, "7d": 7, "30d": 30, "90d": 90, "1y": 365}.get(period, 7)
@@ -208,8 +220,11 @@ class HistoricalMetricsService:
         return {"snapshots": docs, "count": len(docs), "period": period}
 
     async def get_history_by_property(
-        self, tenant_id: str, property_id: str,
-        period: str = "7d", limit: int = 500,
+        self,
+        tenant_id: str,
+        property_id: str,
+        period: str = "7d",
+        limit: int = 500,
     ) -> dict[str, Any]:
         """Get snapshot history for a specific property."""
         days = {"24h": 1, "7d": 7, "30d": 30, "90d": 90, "1y": 365}.get(period, 7)
@@ -228,23 +243,17 @@ class HistoricalMetricsService:
 
         # Hourly snapshots older than 30 days
         cutoff_30d = (now - timedelta(days=30)).isoformat()
-        r = await db[SNAPSHOTS].delete_many({
-            "tenant_id": tenant_id, "granularity": "hourly", "timestamp": {"$lt": cutoff_30d}
-        })
+        r = await db[SNAPSHOTS].delete_many({"tenant_id": tenant_id, "granularity": "hourly", "timestamp": {"$lt": cutoff_30d}})
         deleted["hourly"] = r.deleted_count
 
         # Daily snapshots older than 90 days
         cutoff_90d = (now - timedelta(days=90)).isoformat()
-        r = await db[SNAPSHOTS].delete_many({
-            "tenant_id": tenant_id, "granularity": "daily", "timestamp": {"$lt": cutoff_90d}
-        })
+        r = await db[SNAPSHOTS].delete_many({"tenant_id": tenant_id, "granularity": "daily", "timestamp": {"$lt": cutoff_90d}})
         deleted["daily"] = r.deleted_count
 
         # Weekly snapshots older than 1 year
         cutoff_1y = (now - timedelta(days=365)).isoformat()
-        r = await db[SNAPSHOTS].delete_many({
-            "tenant_id": tenant_id, "granularity": "weekly", "timestamp": {"$lt": cutoff_1y}
-        })
+        r = await db[SNAPSHOTS].delete_many({"tenant_id": tenant_id, "granularity": "weekly", "timestamp": {"$lt": cutoff_1y}})
         deleted["weekly"] = r.deleted_count
 
         return {"deleted": deleted, "cleaned_at": now.isoformat()}
@@ -302,10 +311,13 @@ class HistoricalMetricsService:
 
         return {"aggregated": created, "date": date}
 
-
     async def record_validation_result(
-        self, tenant_id: str, connector_id: str,
-        passed: int, failed: int, total: int,
+        self,
+        tenant_id: str,
+        connector_id: str,
+        passed: int,
+        failed: int,
+        total: int,
     ) -> None:
         """Record a sandbox validation result as a metrics snapshot."""
         doc = {

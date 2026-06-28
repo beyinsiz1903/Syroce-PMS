@@ -8,6 +8,7 @@ Endpoints:
   GET  /api/inventory/room-types/summary  — Get date-range summary
   POST /api/inventory/room-types/reconcile — Trigger manual reconciliation
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -55,15 +56,12 @@ async def get_room_type_inventory(
         raise HTTPException(status_code=400, detail="tenant_id required")
 
     from core.room_type_inventory_service import get_room_type_inventory as get_inv
+
     results = await get_inv(tenant_id, date, room_type)
 
     total_physical = sum(r.get("physical_total", 0) for r in results)
     total_sellable = sum(r.get("sellable", 0) for r in results)
-    total_locked = sum(
-        r.get("locked_booking", 0) + r.get("locked_hold", 0) +
-        r.get("locked_ooo", 0) + r.get("locked_oos", 0)
-        for r in results
-    )
+    total_locked = sum(r.get("locked_booking", 0) + r.get("locked_hold", 0) + r.get("locked_ooo", 0) + r.get("locked_oos", 0) for r in results)
 
     return {
         "date": date,
@@ -109,6 +107,7 @@ async def get_inventory_summary(
         raise HTTPException(status_code=400, detail="tenant_id required")
 
     from core.room_type_inventory_service import get_inventory_summary as get_summary
+
     return await get_summary(tenant_id, start_date, end_date)
 
 
@@ -149,6 +148,7 @@ async def trigger_reconciliation(
         raise HTTPException(status_code=400, detail="tenant_id required")
 
     from core.room_type_inventory_service import reconcile_date_range
+
     result = await reconcile_date_range(tenant_id, start_date, end_date)
 
     return {
@@ -183,9 +183,7 @@ async def inventory_health(
     today = datetime.now(UTC).date().isoformat()
 
     # Check if we have data for today
-    count = await db.room_type_inventory.count_documents(
-        {"tenant_id": tenant_id, "date": today}
-    )
+    count = await db.room_type_inventory.count_documents({"tenant_id": tenant_id, "date": today})
 
     # Check latest computation time
     latest = await db.room_type_inventory.find_one(

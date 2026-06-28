@@ -16,6 +16,7 @@ Safety:
   - Supports dry-run mode
   - Idempotent: skip already-migrated records
 """
+
 import argparse
 import asyncio
 import logging
@@ -58,8 +59,7 @@ async def migrate_provider_secrets(sm, db, tenant_filter: str, dry_run: bool) ->
                 continue
 
             if dry_run:
-                logger.info("[DRY-RUN] Would migrate: %s/%s/%s (fields: %s)",
-                            tenant_id, provider, property_id, list(creds.keys()))
+                logger.info("[DRY-RUN] Would migrate: %s/%s/%s (fields: %s)", tenant_id, provider, property_id, list(creds.keys()))
                 stats["migrated"] += 1
                 continue
 
@@ -74,10 +74,12 @@ async def migrate_provider_secrets(sm, db, tenant_filter: str, dry_run: bool) ->
             # Mark as migrated
             await db.provider_secrets.update_one(
                 {"id": rec["id"]},
-                {"$set": {
-                    "migrated_to_secrets_manager": True,
-                    "migrated_at": datetime.now(UTC).isoformat(),
-                }},
+                {
+                    "$set": {
+                        "migrated_to_secrets_manager": True,
+                        "migrated_at": datetime.now(UTC).isoformat(),
+                    }
+                },
             )
             stats["migrated"] += 1
             logger.info("Migrated: %s/%s/%s", tenant_id, provider, property_id)
@@ -151,6 +153,7 @@ async def migrate_hotelrunner_connections(sm, db, tenant_filter: str, dry_run: b
 async def run_migration(tenant_filter: str, dry_run: bool):
     """Main migration entry point."""
     from dotenv import load_dotenv
+
     load_dotenv()
 
     from core.database import db

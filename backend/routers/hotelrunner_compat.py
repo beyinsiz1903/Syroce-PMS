@@ -8,6 +8,7 @@ Provides stable external-facing endpoints for HotelRunner panel configuration:
 The POST endpoint inspects the payload's event_type/state and dispatches
 to the internal ingest pipeline handlers (reservations/modifications/cancellations).
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -89,6 +90,7 @@ async def hotelrunner_webhook(request: Request, background_tasks: BackgroundTask
     # the Resend webhook hardening: HMAC-SHA256 with replay protection,
     # fail-closed if secret is unset (dev escape via env flag).
     import os as _os
+
     secret = _os.environ.get("HOTELRUNNER_WEBHOOK_SECRET")
     if not secret:
         if _os.environ.get("ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK") != "1":
@@ -100,16 +102,9 @@ async def hotelrunner_webhook(request: Request, background_tasks: BackgroundTask
         import hashlib as _hashlib
         import hmac as _hmac
         import time as _time
-        sig_header = (
-            request.headers.get("X-HotelRunner-Signature")
-            or request.headers.get("X-Signature")
-            or ""
-        ).strip()
-        ts_header = (
-            request.headers.get("X-HotelRunner-Timestamp")
-            or request.headers.get("X-Timestamp")
-            or ""
-        ).strip()
+
+        sig_header = (request.headers.get("X-HotelRunner-Signature") or request.headers.get("X-Signature") or "").strip()
+        ts_header = (request.headers.get("X-HotelRunner-Timestamp") or request.headers.get("X-Timestamp") or "").strip()
         if not (sig_header and ts_header):
             raise HTTPException(status_code=401, detail="Missing signature headers")
         try:
@@ -118,9 +113,7 @@ async def hotelrunner_webhook(request: Request, background_tasks: BackgroundTask
         except (ValueError, TypeError):
             raise HTTPException(status_code=401, detail="Invalid timestamp")
         signed_payload = f"{ts_header}.".encode() + raw_body
-        expected = _hmac.new(
-            secret.encode(), signed_payload, _hashlib.sha256
-        ).hexdigest()
+        expected = _hmac.new(secret.encode(), signed_payload, _hashlib.sha256).hexdigest()
         # Accept "sha256=<hex>" or bare hex
         provided = sig_header.split("=", 1)[1] if "=" in sig_header else sig_header
         if not _hmac.compare_digest(expected, provided.lower()):
@@ -128,15 +121,12 @@ async def hotelrunner_webhook(request: Request, background_tasks: BackgroundTask
 
     try:
         import json as _json
+
         body = _json.loads(raw_body)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    tenant_id = (
-        request.headers.get("X-Tenant-ID")
-        or request.query_params.get("tenant_id")
-        or body.get("tenant_id", "")
-    )
+    tenant_id = request.headers.get("X-Tenant-ID") or request.query_params.get("tenant_id") or body.get("tenant_id", "")
     if not tenant_id:
         raise HTTPException(
             status_code=400,
@@ -171,7 +161,11 @@ async def hotelrunner_webhook(request: Request, background_tasks: BackgroundTask
         for res in reservations:
             try:
                 await _persist_and_process(
-                    tenant_id, property_id, res, pipeline_event_type, source_ip,
+                    tenant_id,
+                    property_id,
+                    res,
+                    pipeline_event_type,
+                    source_ip,
                 )
             except Exception as e:
                 logger.error("[COMPAT-WEBHOOK] Error processing %s: %s", pipeline_event_type, e)

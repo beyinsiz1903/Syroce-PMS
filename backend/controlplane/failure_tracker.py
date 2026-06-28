@@ -6,6 +6,7 @@ Every subsystem (outbox, import, sync, secrets) calls this service.
 
 Multi-tenant aware. Provider-aware. Never leaks plaintext.
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -43,6 +44,7 @@ class FailureTracker:
     def _get_db(self):
         if self._db is None:
             from core.database import db
+
             self._db = db
         return self._db
 
@@ -90,8 +92,12 @@ class FailureTracker:
         await db[COLL_FAILURES].insert_one({**event})
         logger.warning(
             "Failure recorded: op=%s type=%s sev=%s tenant=%s provider=%s code=%s",
-            operation_type, failure_type.value, severity.value,
-            tenant_id, provider, error_code,
+            operation_type,
+            failure_type.value,
+            severity.value,
+            tenant_id,
+            provider,
+            error_code,
         )
         return event
 
@@ -125,9 +131,7 @@ class FailureTracker:
         db = self._get_db()
         coll = db[COLL_FAILURES]
         total = await coll.count_documents(query)
-        items = await coll.find(
-            query, {"_id": 0}
-        ).sort("last_seen_at", -1).skip(skip).limit(limit).to_list(limit)
+        items = await coll.find(query, {"_id": 0}).sort("last_seen_at", -1).skip(skip).limit(limit).to_list(limit)
 
         return {
             "items": items,
@@ -139,21 +143,21 @@ class FailureTracker:
     async def get_failure(self, failure_id: str) -> dict[str, Any] | None:
         """Get a single failure by ID."""
         db = self._get_db()
-        return await db[COLL_FAILURES].find_one(
-            {"id": failure_id}, {"_id": 0}
-        )
+        return await db[COLL_FAILURES].find_one({"id": failure_id}, {"_id": 0})
 
     async def resolve(self, failure_id: str, *, resolved_by: str = "operator") -> bool:
         """Mark a failure as resolved."""
         db = self._get_db()
         result = await db[COLL_FAILURES].update_one(
             {"id": failure_id, "status": {"$ne": FailureStatus.RESOLVED.value}},
-            {"$set": {
-                "status": FailureStatus.RESOLVED.value,
-                "resolved_by": resolved_by,
-                "resolved_at": datetime.now(UTC).isoformat(),
-                "updated_at": datetime.now(UTC).isoformat(),
-            }},
+            {
+                "$set": {
+                    "status": FailureStatus.RESOLVED.value,
+                    "resolved_by": resolved_by,
+                    "resolved_at": datetime.now(UTC).isoformat(),
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            },
         )
         return result.modified_count == 1
 
@@ -162,12 +166,14 @@ class FailureTracker:
         db = self._get_db()
         result = await db[COLL_FAILURES].update_one(
             {"id": failure_id, "status": {"$ne": FailureStatus.IGNORED.value}},
-            {"$set": {
-                "status": FailureStatus.IGNORED.value,
-                "ignored_by": ignored_by,
-                "ignored_at": datetime.now(UTC).isoformat(),
-                "updated_at": datetime.now(UTC).isoformat(),
-            }},
+            {
+                "$set": {
+                    "status": FailureStatus.IGNORED.value,
+                    "ignored_by": ignored_by,
+                    "ignored_at": datetime.now(UTC).isoformat(),
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            },
         )
         return result.modified_count == 1
 
@@ -176,11 +182,13 @@ class FailureTracker:
         db = self._get_db()
         result = await db[COLL_FAILURES].update_one(
             {"id": failure_id, "status": FailureStatus.OPEN.value},
-            {"$set": {
-                "status": FailureStatus.RETRYING.value,
-                "updated_at": datetime.now(UTC).isoformat(),
+            {
+                "$set": {
+                    "status": FailureStatus.RETRYING.value,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                },
+                "$inc": {"retry_count": 1},
             },
-            "$inc": {"retry_count": 1}},
         )
         return result.modified_count == 1
 
@@ -198,7 +206,8 @@ class FailureTracker:
             update["$set"]["error_message"] = error_message
         db = self._get_db()
         result = await db[COLL_FAILURES].update_one(
-            {"id": failure_id}, update,
+            {"id": failure_id},
+            update,
         )
         return result.modified_count == 1
 
@@ -261,7 +270,11 @@ class FailureTracker:
         return result
 
     async def recent_failures(
-        self, *, hours: int = 24, tenant_id: str | None = None, limit: int = 20,
+        self,
+        *,
+        hours: int = 24,
+        tenant_id: str | None = None,
+        limit: int = 20,
     ) -> list[dict[str, Any]]:
         """Get recent failures within a time window."""
         cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
@@ -270,9 +283,7 @@ class FailureTracker:
             query["tenant_id"] = tenant_id
 
         db = self._get_db()
-        return await db[COLL_FAILURES].find(
-            query, {"_id": 0}
-        ).sort("created_at", -1).limit(limit).to_list(limit)
+        return await db[COLL_FAILURES].find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
 
 
 # ── Singleton ──────────────────────────────────────────────────────

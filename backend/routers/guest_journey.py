@@ -65,6 +65,7 @@ class SubmitReviewRequest(BaseModel):
 
 # ── PRE-ARRIVAL ──
 
+
 @router.post("/online-checkin")
 async def api_online_checkin(req: OnlineCheckinRequest, current_user: User = Depends(get_current_user)):
     """Submit online check-in."""
@@ -82,38 +83,37 @@ async def api_pre_arrival_status(booking_id: str, current_user: User = Depends(g
 
 # ── STAY MANAGEMENT ──
 
+
 @router.post("/guest-request")
 async def api_create_guest_request(req: GuestRequestCreate, current_user: User = Depends(get_current_user)):
     """Create a guest request."""
-    result = await journey_svc.create_guest_request(
-        current_user.tenant_id, req.booking_id, req.request_type, req.description, req.priority, req.room_id
-    )
+    result = await journey_svc.create_guest_request(current_user.tenant_id, req.booking_id, req.request_type, req.description, req.priority, req.room_id)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error"))
     return result
 
 
 @router.post("/guest-request/status")
-async def api_update_request_status(req: RequestStatusUpdate, current_user: User = Depends(get_current_user),
+async def api_update_request_status(
+    req: RequestStatusUpdate,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v100("frontdesk")),  # v100 DW
 ):
     """Update guest request status."""
-    result = await journey_svc.update_request_status(
-        current_user.tenant_id, req.request_id, req.new_status, current_user.id, req.notes
-    )
+    result = await journey_svc.update_request_status(current_user.tenant_id, req.request_id, req.new_status, current_user.id, req.notes)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error"))
     return result
 
 
 @router.post("/guest-request/assign")
-async def api_assign_request(req: AssignRequestBody, current_user: User = Depends(get_current_user),
+async def api_assign_request(
+    req: AssignRequestBody,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v100("frontdesk")),  # v100 DW
 ):
     """Assign a guest request to staff."""
-    result = await journey_svc.assign_request(
-        current_user.tenant_id, req.request_id, req.assignee_id, current_user.id
-    )
+    result = await journey_svc.assign_request(current_user.tenant_id, req.request_id, req.assignee_id, current_user.id)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error"))
     return result
@@ -133,12 +133,11 @@ async def api_list_requests(
 
 # ── MESSAGING ──
 
+
 @router.post("/send-message")
 async def api_send_message(req: SendMessageRequest, current_user: User = Depends(get_current_user)):
     """Send a message to a guest."""
-    result = await journey_svc.send_message(
-        current_user.tenant_id, req.booking_id, req.channel, req.message_type, req.content, current_user.id
-    )
+    result = await journey_svc.send_message(current_user.tenant_id, req.booking_id, req.channel, req.message_type, req.content, current_user.id)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error"))
     return result
@@ -158,8 +157,11 @@ async def api_message_templates(current_user: User = Depends(get_current_user)):
 
 # ── REVIEW CAPTURE ──
 
+
 @router.post("/request-review")
-async def api_request_review(booking_id: str, current_user: User = Depends(get_current_user),
+async def api_request_review(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     """Request a post-checkout review."""
@@ -172,9 +174,7 @@ async def api_request_review(booking_id: str, current_user: User = Depends(get_c
 @router.post("/submit-review")
 async def api_submit_review(req: SubmitReviewRequest, current_user: User = Depends(get_current_user)):
     """Submit a guest review."""
-    result = await journey_svc.submit_review(
-        current_user.tenant_id, req.booking_id, req.rating, req.comment, req.categories
-    )
+    result = await journey_svc.submit_review(current_user.tenant_id, req.booking_id, req.rating, req.comment, req.categories)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error"))
     return result
@@ -187,6 +187,7 @@ async def api_reputation_summary(current_user: User = Depends(get_current_user))
 
 
 # ── GUEST DASHBOARD ──
+
 
 @router.get("/satisfaction-dashboard")
 async def api_satisfaction_dashboard(current_user: User = Depends(get_current_user)):

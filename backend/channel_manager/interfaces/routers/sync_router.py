@@ -1,4 +1,5 @@
 """Inventory/rate sync, mapping, event-driven sync, scheduler, provider push endpoints."""
+
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -56,6 +57,7 @@ class ProviderPushRequest(BaseModel):
 
 
 # ─── Mapping Endpoints ────────────────────────────────────────────
+
 
 @router.get("/mappings/{connector_id}")
 async def list_mappings(
@@ -156,6 +158,7 @@ async def get_readiness_report(
 
 # ─── Inventory Sync ──────────────────────────────────────────────
 
+
 @router.post("/sync/inventory")
 async def trigger_inventory_sync(
     req: TriggerSyncRequest,
@@ -216,6 +219,7 @@ async def list_sync_jobs(
     current_user: User = Depends(get_current_user),
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     jobs = await repo.get_sync_jobs(current_user.tenant_id, connector_id, limit)
     return {"jobs": jobs, "count": len(jobs)}
@@ -227,6 +231,7 @@ async def get_sync_job(
     current_user: User = Depends(get_current_user),
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     job = await repo.get_sync_job(job_id)
     if not job:
@@ -241,6 +246,7 @@ async def get_sync_job_events(
     current_user: User = Depends(get_current_user),
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     job = await repo.get_sync_job(job_id)
     if not job:
@@ -289,6 +295,7 @@ async def dismiss_manual_review_job(
 
 # ─── Scheduler ────────────────────────────────────────────────────
 
+
 @router.post("/scheduler/run/{connector_id}")
 async def run_scheduled_check(
     connector_id: str,
@@ -298,7 +305,9 @@ async def run_scheduled_check(
     svc = SchedulerService()
     try:
         result = await svc.run_scheduled_check(
-            current_user.tenant_id, connector_id, current_user.id,
+            current_user.tenant_id,
+            connector_id,
+            current_user.id,
         )
         return result
     except ValueError as e:
@@ -316,6 +325,7 @@ async def run_all_scheduled_checks(
 
 # ─── Event-Driven Sync ───────────────────────────────────────────
 
+
 @router.post("/events/sync")
 async def trigger_event_sync(
     req: DomainEventRequest,
@@ -324,7 +334,9 @@ async def trigger_event_sync(
 ):
     svc = EventSyncService()
     result = await svc.handle_event(
-        current_user.tenant_id, req.event_type, req.payload,
+        current_user.tenant_id,
+        req.event_type,
+        req.payload,
     )
     return result
 
@@ -341,6 +353,7 @@ async def trigger_batch_event_sync(
 
 
 # ─── Provider Adapters ────────────────────────────────────────────
+
 
 @router.post("/providers/inventory/push")
 async def push_inventory_via_adapter(

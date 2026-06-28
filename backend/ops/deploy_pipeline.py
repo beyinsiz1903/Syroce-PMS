@@ -4,6 +4,7 @@ Deploy Pipeline — Hard Gate CI/CD Orchestrator
 Each gate MUST pass before the next runs. No || true, no soft failures.
 Pipeline state persisted in MongoDB for audit trail.
 """
+
 import asyncio
 import logging
 import time
@@ -73,6 +74,7 @@ class DeployPipeline:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     async def start_pipeline(self, triggered_by: str, version_tag: str = "latest") -> ServiceResult:
@@ -120,11 +122,13 @@ class DeployPipeline:
         now = datetime.now(UTC).isoformat()
         await self._db.deploy_pipelines.update_one(
             {"pipeline_id": pipeline_id},
-            {"$set": {
-                f"gates.{gate_id}.status": "running",
-                f"gates.{gate_id}.started_at": now,
-                "current_gate": gate_id,
-            }},
+            {
+                "$set": {
+                    f"gates.{gate_id}.status": "running",
+                    f"gates.{gate_id}.started_at": now,
+                    "current_gate": gate_id,
+                }
+            },
         )
 
         t0 = time.time()
@@ -215,6 +219,7 @@ class DeployPipeline:
 
     async def _gate_lint(self, gate_def: dict) -> dict:
         import sys as _sys
+
         errors = []
         output_lines = []
         venv_bin = str(Path(_sys.executable).parent)
@@ -223,7 +228,9 @@ class DeployPipeline:
         try:
             ruff_bin = f"{venv_bin}/ruff"
             proc = await asyncio.create_subprocess_exec(
-                ruff_bin, "check", ".",
+                ruff_bin,
+                "check",
+                ".",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd="/app/backend",
@@ -245,8 +252,14 @@ class DeployPipeline:
         # Frontend lint check (syntax errors only)
         try:
             proc = await asyncio.create_subprocess_exec(
-                "npx", "eslint", "src/", "--quiet", "--max-warnings", "0",
-                "--rule", '{"no-undef": "error", "no-unused-vars": "off"}',
+                "npx",
+                "eslint",
+                "src/",
+                "--quiet",
+                "--max-warnings",
+                "0",
+                "--rule",
+                '{"no-undef": "error", "no-unused-vars": "off"}',
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd="/app/frontend",
@@ -300,11 +313,19 @@ class DeployPipeline:
         try:
             import os as _os
             import sys as _sys
+
             python_bin = _sys.executable
             env = {**_os.environ, "VITE_BACKEND_URL": "http://localhost:8001"}
-            cmd = [python_bin, "-m", "pytest"] + ci_test_paths + [
-                "-v", "--tb=short", "-q", "--timeout=30",
-            ]
+            cmd = (
+                [python_bin, "-m", "pytest"]
+                + ci_test_paths
+                + [
+                    "-v",
+                    "--tb=short",
+                    "-q",
+                    "--timeout=30",
+                ]
+            )
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -343,6 +364,7 @@ class DeployPipeline:
         scan_dirs = ["/app/backend/ops", "/app/backend/core", "/app/backend/routers"]
 
         import glob
+
         for scan_dir in scan_dirs:
             for py_file in glob.glob(f"{scan_dir}/**/*.py", recursive=True):
                 try:
@@ -362,6 +384,7 @@ class DeployPipeline:
 
         # Check .env files not in gitignore
         import os
+
         for env_file in ["/app/backend/.env", "/app/frontend/.env"]:
             if os.path.exists(env_file):
                 output_lines.append(f"[ENV] {env_file} exists — OK")
@@ -389,6 +412,7 @@ class DeployPipeline:
 
     async def _gate_migration_check(self, gate_def: dict) -> dict:
         from ops.migration_verification import migration_verifier
+
         result = await migration_verifier.verify_all()
         if not result.ok:
             return {"passed": False, "errors": [result.error], "output": "Migration verification failed"}
@@ -425,6 +449,7 @@ class DeployPipeline:
         # Phases 6.1 / 8.2). We validate the file the production image
         # actually depends on, which is what catches a corrupted image.
         import os
+
         req_path = "/app/backend/requirements/api-runtime.txt"
         if os.path.exists(req_path):
             with open(req_path) as f:
@@ -437,6 +462,7 @@ class DeployPipeline:
         pkg_path = "/app/frontend/package.json"
         if os.path.exists(pkg_path):
             import json
+
             try:
                 with open(pkg_path) as f:
                     pkg = json.load(f)
@@ -462,9 +488,12 @@ class DeployPipeline:
         # Check critical imports
         try:
             import sys as _sys
+
             python_bin = _sys.executable
             proc = await asyncio.create_subprocess_exec(
-                python_bin, "-c", "from server import app; print('OK')",
+                python_bin,
+                "-c",
+                "from server import app; print('OK')",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd="/app/backend",
@@ -485,6 +514,7 @@ class DeployPipeline:
 
     async def _gate_smoke_test(self, gate_def: dict) -> dict:
         from ops.smoke_test_runner import smoke_test_runner
+
         result = await smoke_test_runner.run_all()
         if not result.ok:
             return {"passed": False, "errors": [result.error], "output": "Smoke test runner failed"}

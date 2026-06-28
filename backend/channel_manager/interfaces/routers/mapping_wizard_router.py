@@ -6,6 +6,7 @@ Endpoints:
   GET  /mapping-wizard/{connector_id}/suggest-rates   — Auto-suggest rate plan mappings
   POST /mapping-wizard/{connector_id}/bulk-create      — Bulk-create confirmed mappings
 """
+
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException

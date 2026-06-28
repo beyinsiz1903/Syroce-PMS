@@ -3,6 +3,7 @@ PMS / Night Audit — Service Layer
 Orchestrates audit logs, error logs, night audit reports,
 OTA sync logs, and maintenance prediction logs. No FastAPI dependencies.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -41,16 +42,21 @@ class NightAuditService:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     # ------------------------------------------------------------------
     # Audit Logs
     # ------------------------------------------------------------------
     async def get_audit_logs(
-        self, ctx: OperationContext,
-        entity_type: str | None = None, entity_id: str | None = None,
-        user_id: str | None = None, action: str | None = None,
-        start_date: str | None = None, end_date: str | None = None,
+        self,
+        ctx: OperationContext,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        user_id: str | None = None,
+        action: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
         limit: int = 100,
     ) -> ServiceResult:
         if not getattr(ctx, "actor_is_super_admin", False) and ctx.actor_role not in ("super_admin", "admin"):
@@ -73,20 +79,27 @@ class NightAuditService:
 
         logs = await self._db.audit_logs.find(query, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
         sanitized = _sanitize_bson(logs)
-        return ServiceResult.success({
-            "logs": sanitized,
-            "count": len(sanitized),
-            "filters_applied": {k: v for k, v in query.items() if k != "tenant_id"},
-        })
+        return ServiceResult.success(
+            {
+                "logs": sanitized,
+                "count": len(sanitized),
+                "filters_applied": {k: v for k, v in query.items() if k != "tenant_id"},
+            }
+        )
 
     # ------------------------------------------------------------------
     # Error Logs
     # ------------------------------------------------------------------
     async def get_error_logs(
-        self, ctx: OperationContext,
-        start_date: str | None = None, end_date: str | None = None,
-        severity: str | None = None, endpoint: str | None = None,
-        resolved: bool | None = None, limit: int = 100, skip: int = 0,
+        self,
+        ctx: OperationContext,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        severity: str | None = None,
+        endpoint: str | None = None,
+        resolved: bool | None = None,
+        limit: int = 100,
+        skip: int = 0,
     ) -> ServiceResult:
         query: dict[str, Any] = {"tenant_id": ctx.tenant_id}
         if start_date or end_date:
@@ -100,7 +113,8 @@ class NightAuditService:
             query["severity"] = severity
         if endpoint:
             from security.query_safety import safe_search_term
-            if (_s := safe_search_term(endpoint)):
+
+            if _s := safe_search_term(endpoint):
                 query["endpoint"] = {"$regex": _s, "$options": "i"}
         if resolved is not None:
             query["resolved"] = resolved
@@ -112,17 +126,24 @@ class NightAuditService:
 
         total_count = await self._db.error_logs.count_documents(query)
         severity_stats: dict[str, int] = {}
-        async for doc in self._db.error_logs.aggregate([
-            {"$match": {"tenant_id": ctx.tenant_id}},
-            {"$group": {"_id": "$severity", "count": {"$sum": 1}}},
-        ]):
+        async for doc in self._db.error_logs.aggregate(
+            [
+                {"$match": {"tenant_id": ctx.tenant_id}},
+                {"$group": {"_id": "$severity", "count": {"$sum": 1}}},
+            ]
+        ):
             severity_stats[doc["_id"]] = doc["count"]
 
-        return ServiceResult.success({
-            "logs": logs, "total_count": total_count,
-            "returned_count": len(logs), "skip": skip, "limit": limit,
-            "severity_stats": severity_stats,
-        })
+        return ServiceResult.success(
+            {
+                "logs": logs,
+                "total_count": total_count,
+                "returned_count": len(logs),
+                "skip": skip,
+                "limit": limit,
+                "severity_stats": severity_stats,
+            }
+        )
 
     async def resolve_error_log(self, ctx: OperationContext, error_id: str, notes: str | None = None) -> ServiceResult:
         result = await self._db.error_logs.update_one(
@@ -137,9 +158,13 @@ class NightAuditService:
     # Night Audit Logs
     # ------------------------------------------------------------------
     async def get_night_audit_logs(
-        self, ctx: OperationContext,
-        start_date: str | None = None, end_date: str | None = None,
-        status: str | None = None, limit: int = 100, skip: int = 0,
+        self,
+        ctx: OperationContext,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+        skip: int = 0,
     ) -> ServiceResult:
         query: dict[str, Any] = {"tenant_id": ctx.tenant_id}
         if start_date or end_date:
@@ -168,20 +193,30 @@ class NightAuditService:
             stats["total_rooms"] += log.get("rooms_processed", 0)
         stats["success_rate"] = round(stats["successful"] / stats["total_audits"] * 100, 1) if stats["total_audits"] > 0 else 0
 
-        return ServiceResult.success({
-            "logs": logs, "total_count": total_count,
-            "returned_count": len(logs), "skip": skip, "limit": limit,
-            "stats": stats,
-        })
+        return ServiceResult.success(
+            {
+                "logs": logs,
+                "total_count": total_count,
+                "returned_count": len(logs),
+                "skip": skip,
+                "limit": limit,
+                "stats": stats,
+            }
+        )
 
     # ------------------------------------------------------------------
     # OTA Sync Logs
     # ------------------------------------------------------------------
     async def get_ota_sync_logs(
-        self, ctx: OperationContext,
-        start_date: str | None = None, end_date: str | None = None,
-        channel: str | None = None, sync_type: str | None = None,
-        status: str | None = None, limit: int = 100, skip: int = 0,
+        self,
+        ctx: OperationContext,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        channel: str | None = None,
+        sync_type: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+        skip: int = 0,
     ) -> ServiceResult:
         query: dict[str, Any] = {"tenant_id": ctx.tenant_id}
         if start_date or end_date:
@@ -205,16 +240,20 @@ class NightAuditService:
 
         total_count = await self._db.ota_sync_logs.count_documents(query)
         channel_stats: dict[str, Any] = {}
-        async for doc in self._db.ota_sync_logs.aggregate([
-            {"$match": {"tenant_id": ctx.tenant_id}},
-            {"$group": {
-                "_id": "$channel",
-                "total": {"$sum": 1},
-                "successful": {"$sum": {"$cond": [{"$eq": ["$status", "completed"]}, 1, 0]}},
-                "failed": {"$sum": {"$cond": [{"$eq": ["$status", "failed"]}, 1, 0]}},
-                "records_synced": {"$sum": "$records_synced"},
-            }},
-        ]):
+        async for doc in self._db.ota_sync_logs.aggregate(
+            [
+                {"$match": {"tenant_id": ctx.tenant_id}},
+                {
+                    "$group": {
+                        "_id": "$channel",
+                        "total": {"$sum": 1},
+                        "successful": {"$sum": {"$cond": [{"$eq": ["$status", "completed"]}, 1, 0]}},
+                        "failed": {"$sum": {"$cond": [{"$eq": ["$status", "failed"]}, 1, 0]}},
+                        "records_synced": {"$sum": "$records_synced"},
+                    }
+                },
+            ]
+        ):
             name = doc["_id"]
             channel_stats[name] = {
                 "total_syncs": doc["total"],
@@ -224,20 +263,30 @@ class NightAuditService:
                 "records_synced": doc["records_synced"],
             }
 
-        return ServiceResult.success({
-            "logs": logs, "total_count": total_count,
-            "returned_count": len(logs), "skip": skip, "limit": limit,
-            "channel_stats": channel_stats,
-        })
+        return ServiceResult.success(
+            {
+                "logs": logs,
+                "total_count": total_count,
+                "returned_count": len(logs),
+                "skip": skip,
+                "limit": limit,
+                "channel_stats": channel_stats,
+            }
+        )
 
     # ------------------------------------------------------------------
     # RMS Publish Logs
     # ------------------------------------------------------------------
     async def get_rms_publish_logs(
-        self, ctx: OperationContext,
-        start_date: str | None = None, end_date: str | None = None,
-        publish_type: str | None = None, auto_published: bool | None = None,
-        status: str | None = None, limit: int = 100, skip: int = 0,
+        self,
+        ctx: OperationContext,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        publish_type: str | None = None,
+        auto_published: bool | None = None,
+        status: str | None = None,
+        limit: int = 100,
+        skip: int = 0,
     ) -> ServiceResult:
         query: dict[str, Any] = {"tenant_id": ctx.tenant_id}
         if start_date or end_date:
@@ -260,19 +309,29 @@ class NightAuditService:
             logs.append(log)
 
         total_count = await self._db.rms_publish_logs.count_documents(query)
-        return ServiceResult.success({
-            "logs": logs, "total_count": total_count,
-            "returned_count": len(logs), "skip": skip, "limit": limit,
-        })
+        return ServiceResult.success(
+            {
+                "logs": logs,
+                "total_count": total_count,
+                "returned_count": len(logs),
+                "skip": skip,
+                "limit": limit,
+            }
+        )
 
     # ------------------------------------------------------------------
     # Maintenance Prediction Logs
     # ------------------------------------------------------------------
     async def get_maintenance_prediction_logs(
-        self, ctx: OperationContext,
-        start_date: str | None = None, end_date: str | None = None,
-        equipment_type: str | None = None, prediction_result: str | None = None,
-        room_number: str | None = None, limit: int = 100, skip: int = 0,
+        self,
+        ctx: OperationContext,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        equipment_type: str | None = None,
+        prediction_result: str | None = None,
+        room_number: str | None = None,
+        limit: int = 100,
+        skip: int = 0,
     ) -> ServiceResult:
         query: dict[str, Any] = {"tenant_id": ctx.tenant_id}
         if start_date or end_date:
@@ -296,26 +355,35 @@ class NightAuditService:
 
         total_count = await self._db.maintenance_prediction_logs.count_documents(query)
         risk_stats: dict[str, Any] = {}
-        async for doc in self._db.maintenance_prediction_logs.aggregate([
-            {"$match": {"tenant_id": ctx.tenant_id}},
-            {"$group": {
-                "_id": "$prediction_result",
-                "count": {"$sum": 1},
-                "avg_confidence": {"$avg": "$confidence_score"},
-                "tasks_created": {"$sum": {"$cond": ["$auto_task_created", 1, 0]}},
-            }},
-        ]):
+        async for doc in self._db.maintenance_prediction_logs.aggregate(
+            [
+                {"$match": {"tenant_id": ctx.tenant_id}},
+                {
+                    "$group": {
+                        "_id": "$prediction_result",
+                        "count": {"$sum": 1},
+                        "avg_confidence": {"$avg": "$confidence_score"},
+                        "tasks_created": {"$sum": {"$cond": ["$auto_task_created", 1, 0]}},
+                    }
+                },
+            ]
+        ):
             risk_stats[doc["_id"]] = {
                 "count": doc["count"],
                 "avg_confidence": round(doc["avg_confidence"], 3),
                 "tasks_created": doc["tasks_created"],
             }
 
-        return ServiceResult.success({
-            "logs": logs, "total_count": total_count,
-            "returned_count": len(logs), "skip": skip, "limit": limit,
-            "risk_stats": risk_stats,
-        })
+        return ServiceResult.success(
+            {
+                "logs": logs,
+                "total_count": total_count,
+                "returned_count": len(logs),
+                "skip": skip,
+                "limit": limit,
+                "risk_stats": risk_stats,
+            }
+        )
 
 
 night_audit_service = NightAuditService()

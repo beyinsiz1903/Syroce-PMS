@@ -13,6 +13,7 @@ Tasarim ilkeleri (donmus):
 
 Bu modul yalnizca dogrulama/sekil sozlesmesidir; DB/secret/IO icermez.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -171,9 +172,7 @@ class AgencyReservationCreate(BaseModel):
     @classmethod
     def _version_match(cls, v: str) -> str:
         if v != SCHEMA_VERSION:
-            raise ValueError(
-                f"schema_version '{v}' desteklenmiyor; beklenen '{SCHEMA_VERSION}'"
-            )
+            raise ValueError(f"schema_version '{v}' desteklenmiyor; beklenen '{SCHEMA_VERSION}'")
         return v
 
     @model_validator(mode="after")
@@ -210,9 +209,7 @@ class AgencyReservationModify(BaseModel):
     @classmethod
     def _version_match(cls, v: str) -> str:
         if v != SCHEMA_VERSION:
-            raise ValueError(
-                f"schema_version '{v}' desteklenmiyor; beklenen '{SCHEMA_VERSION}'"
-            )
+            raise ValueError(f"schema_version '{v}' desteklenmiyor; beklenen '{SCHEMA_VERSION}'")
         return v
 
     _v_status = field_validator("status")(_validate_agency_status)
@@ -242,11 +239,7 @@ class AgencyReservationModify(BaseModel):
         )
         if all(v is None for v in mutable):
             raise ValueError("en az bir degisebilir alan saglanmali")
-        if (
-            self.arrival_date is not None
-            and self.departure_date is not None
-            and self.departure_date <= self.arrival_date
-        ):
+        if self.arrival_date is not None and self.departure_date is not None and self.departure_date <= self.arrival_date:
             raise ValueError("departure_date, arrival_date'ten sonra olmali")
         return self
 
@@ -274,9 +267,7 @@ class AgencyAvailabilityNight(BaseModel):
     rate_plan_id: str = ""
     available: int = 0
     sell_rate: float = 0.0
-    restrictions: AgencyAvailabilityRestrictions = Field(
-        default_factory=AgencyAvailabilityRestrictions
-    )
+    restrictions: AgencyAvailabilityRestrictions = Field(default_factory=AgencyAvailabilityRestrictions)
 
 
 class AgencyAvailabilityResponse(BaseModel):

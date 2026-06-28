@@ -6,6 +6,7 @@ Supports:
   - REST/JSON reservation payloads → CanonicalReservation
   - Canonical inventory/rates → HotelRunner push format
 """
+
 from typing import Any
 
 from ...domain.models.canonical import (
@@ -120,25 +121,29 @@ class HotelRunnerMapper:
         for room in rooms:
             for dp in room.get("daily_prices") or []:
                 all_daily_prices.append(dp)
-                price_breakdown.append(PriceBreakdown(
-                    date=dp.get("date", ""),
-                    base_rate=float(dp.get("original_price", 0) or 0),
-                    sell_rate=float(dp.get("price", 0) or 0),
-                    net_rate=float(dp.get("price", 0) or 0),
-                    currency=raw.get("currency", "TRY"),
-                ))
+                price_breakdown.append(
+                    PriceBreakdown(
+                        date=dp.get("date", ""),
+                        base_rate=float(dp.get("original_price", 0) or 0),
+                        sell_rate=float(dp.get("price", 0) or 0),
+                        net_rate=float(dp.get("price", 0) or 0),
+                        currency=raw.get("currency", "TRY"),
+                    )
+                )
 
         # ── Tax breakdown from room extras ──────────────────────────
         tax_breakdown = []
         for room in rooms:
             for extra in room.get("extras") or []:
                 if extra.get("included_in_price") and not extra.get("is_extra"):
-                    tax_breakdown.append(TaxBreakdown(
-                        tax_name=extra.get("name", ""),
-                        tax_amount=float(extra.get("price", 0) or 0),
-                        is_inclusive=True,
-                        currency=raw.get("currency", "TRY"),
-                    ))
+                    tax_breakdown.append(
+                        TaxBreakdown(
+                            tax_name=extra.get("name", ""),
+                            tax_amount=float(extra.get("price", 0) or 0),
+                            is_inclusive=True,
+                            currency=raw.get("currency", "TRY"),
+                        )
+                    )
 
         # ── Special requests from room comments ─────────────────────
         special_requests_parts = []
@@ -220,14 +225,16 @@ class HotelRunnerMapper:
         """
         refs = []
         for room in raw.get("rooms") or []:
-            refs.append({
-                "code": room.get("code", ""),
-                "inv_code": room.get("inv_code", ""),
-                "rate_code": room.get("rate_code", ""),
-                "rate_plan_code": room.get("rate_plan_code", ""),
-                "availability_group": room.get("availability_group", ""),
-                "room_name": room.get("name", ""),
-            })
+            refs.append(
+                {
+                    "code": room.get("code", ""),
+                    "inv_code": room.get("inv_code", ""),
+                    "rate_code": room.get("rate_code", ""),
+                    "rate_plan_code": room.get("rate_plan_code", ""),
+                    "availability_group": room.get("availability_group", ""),
+                    "room_name": room.get("name", ""),
+                }
+            )
         return refs
 
     # ─── Inventory Push (unchanged) ──────────────────────────────────
@@ -243,12 +250,14 @@ class HotelRunnerMapper:
             external_code = mapping_lookup.get(sl.room_type_id)
             if not external_code:
                 continue
-            updates.append({
-                "room_type_code": external_code,
-                "date_start": sl.date,
-                "date_end": sl.date,
-                "available": sl.available,
-            })
+            updates.append(
+                {
+                    "room_type_code": external_code,
+                    "date_start": sl.date,
+                    "date_end": sl.date,
+                    "available": sl.available,
+                }
+            )
         return updates
 
     def rates_to_push_updates(
@@ -264,14 +273,16 @@ class HotelRunnerMapper:
             ext_rate = rate_mapping.get(r.get("rate_plan_id", ""))
             if not ext_room or not ext_rate:
                 continue
-            updates.append({
-                "room_type_code": ext_room,
-                "rate_plan_code": ext_rate,
-                "date_start": r.get("date", ""),
-                "date_end": r.get("date", ""),
-                "amount_after_tax": r.get("sell_rate", 0.0),
-                "currency": r.get("currency", "TRY"),
-            })
+            updates.append(
+                {
+                    "room_type_code": ext_room,
+                    "rate_plan_code": ext_rate,
+                    "date_start": r.get("date", ""),
+                    "date_end": r.get("date", ""),
+                    "amount_after_tax": r.get("sell_rate", 0.0),
+                    "currency": r.get("currency", "TRY"),
+                }
+            )
         return updates
 
     def restrictions_to_push_updates(

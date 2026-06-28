@@ -11,6 +11,7 @@ Endpoints:
   GET  /api/ops/secrets/rotation/overdue       — Overdue secrets only
   GET  /api/ops/secrets/rotation/audit         — Rotation audit trail
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -29,6 +30,7 @@ router = APIRouter(
 
 
 # ── Request Models ─────────────────────────────────────────────────
+
 
 class InitiateRotationRequest(BaseModel):
     secret_path: str
@@ -58,6 +60,7 @@ class RollbackRequest(BaseModel):
 
 
 # ── Endpoints ──────────────────────────────────────────────────────
+
 
 @router.post("/initiate")
 async def initiate_rotation(body: InitiateRotationRequest):

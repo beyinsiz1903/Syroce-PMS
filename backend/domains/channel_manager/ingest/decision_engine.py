@@ -17,6 +17,7 @@ Mutation Detection:
   new_booking, date_change, room_type_change, rate_change,
   guest_detail_change, partial_modification, cancellation, reinstatement
 """
+
 import logging
 from typing import Any
 
@@ -141,8 +142,7 @@ def detect_mutation_type(
     changes = []
 
     # Date change
-    if (canonical.get("check_in") != existing_lineage.get("arrival_date") or
-            canonical.get("check_out") != existing_lineage.get("departure_date")):
+    if canonical.get("check_in") != existing_lineage.get("arrival_date") or canonical.get("check_out") != existing_lineage.get("departure_date"):
         changes.append("date")
 
     # Room type change
@@ -158,9 +158,11 @@ def detect_mutation_type(
         changes.append("amount")
 
     # Guest detail change
-    if (canonical.get("guest_name") != existing_lineage.get("guest_name") or
-            canonical.get("guest_email") != existing_lineage.get("guest_email") or
-            canonical.get("guest_phone") != existing_lineage.get("guest_phone")):
+    if (
+        canonical.get("guest_name") != existing_lineage.get("guest_name")
+        or canonical.get("guest_email") != existing_lineage.get("guest_email")
+        or canonical.get("guest_phone") != existing_lineage.get("guest_phone")
+    ):
         changes.append("guest")
 
     # Classify
@@ -199,8 +201,7 @@ def _check_anomalies(
 ) -> str | None:
     """Check for anomalies that require manual review."""
     # Currency mismatch
-    if (existing.get("currency") and canonical.get("currency") and
-            existing["currency"] != canonical["currency"]):
+    if existing.get("currency") and canonical.get("currency") and existing["currency"] != canonical["currency"]:
         return f"Currency mismatch: existing={existing['currency']}, incoming={canonical['currency']}"
 
     # Amount anomaly (>100% change)

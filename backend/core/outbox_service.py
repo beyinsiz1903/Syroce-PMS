@@ -18,6 +18,7 @@ Usage inside a business transaction:
         payload={...},
     )
 """
+
 import hashlib
 import json
 import logging
@@ -92,31 +93,46 @@ DEFAULT_MAX_ATTEMPTS = 5
 
 # ── Retry backoff schedule (seconds) ────────────────────────────────
 RETRY_BACKOFF = {
-    1: 0,     # attempt 1 → immediate
-    2: 30,    # attempt 2 → +30s
-    3: 120,   # attempt 3 → +2min
-    4: 600,   # attempt 4 → +10min
+    1: 0,  # attempt 1 → immediate
+    2: 30,  # attempt 2 → +30s
+    3: 120,  # attempt 3 → +2min
+    4: 600,  # attempt 4 → +10min
     5: 1800,  # attempt 5 → +30min
     # Agency webhook tail (max_attempts=8, ADR Karar 6). OTA events cap at 5 and
     # NEVER reach attempts 6-8, so keys 1-5 above stay untouched. This stretches
     # the final 3 agency retries so a multi-hour partner outage isn't prematurely
     # dead-lettered (total span ~24h before DLQ).
-    6: 14400,   # attempt 6 → +4h
-    7: 28800,   # attempt 7 → +8h
-    8: 43200,   # attempt 8 → +12h
+    6: 14400,  # attempt 6 → +4h
+    7: 28800,  # attempt 7 → +8h
+    8: 43200,  # attempt 8 → +12h
 }
 
 # ── Retryable vs permanent errors ───────────────────────────────────
 RETRYABLE_ERROR_KEYWORDS = [
-    "timeout", "timed out", "connection refused", "connection reset",
-    "502", "503", "504", "429", "rate limit",
-    "temporary", "unavailable", "network",
+    "timeout",
+    "timed out",
+    "connection refused",
+    "connection reset",
+    "502",
+    "503",
+    "504",
+    "429",
+    "rate limit",
+    "temporary",
+    "unavailable",
+    "network",
 ]
 
 PERMANENT_ERROR_KEYWORDS = [
-    "mapping error", "invalid payload", "invalid_xml",
-    "authentication failed", "401", "403", "permanent",
-    "unsupported", "schema_mismatch",
+    "mapping error",
+    "invalid payload",
+    "invalid_xml",
+    "authentication failed",
+    "401",
+    "403",
+    "permanent",
+    "unsupported",
+    "schema_mismatch",
 ]
 
 
@@ -130,9 +146,7 @@ def _build_idempotency_key(
     entity_id: str,
     payload: dict[str, Any],
 ) -> str:
-    payload_hash = hashlib.sha256(
-        json.dumps(payload, sort_keys=True, default=str).encode()
-    ).hexdigest()[:16]
+    payload_hash = hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()[:16]
     return f"{tenant_id}:{event_type}:{entity_id}:{payload_hash}"
 
 
@@ -151,6 +165,7 @@ def is_retryable_error(error_message: str) -> bool:
 def compute_next_available_at(attempt_count: int) -> str:
     backoff_seconds = RETRY_BACKOFF.get(attempt_count, 1800)
     from datetime import timedelta
+
     return (datetime.now(UTC) + timedelta(seconds=backoff_seconds)).isoformat()
 
 
@@ -201,9 +216,7 @@ async def enqueue_outbox_event(
     # Caller may supply an explicit, payload-independent dedup key (e.g. agency
     # fan-out: stable across worker retries even if the derived payload drifts).
     # Default: hash of (tenant, type, entity, payload).
-    idempotency_key = idempotency_key or _build_idempotency_key(
-        tenant_id, event_type, entity_id, payload
-    )
+    idempotency_key = idempotency_key or _build_idempotency_key(tenant_id, event_type, entity_id, payload)
 
     doc = {
         "id": event_id,
@@ -236,13 +249,19 @@ async def enqueue_outbox_event(
     except DuplicateKeyError:
         logger.info(
             "Outbox event already enqueued (idempotent): %s %s %s",
-            event_type, entity_type, entity_id,
+            event_type,
+            entity_type,
+            entity_id,
         )
 
     doc.pop("_id", None)
     logger.info(
         "Outbox event enqueued: id=%s type=%s entity=%s/%s provider=%s",
-        event_id, event_type, entity_type, entity_id, provider or "fan-out",
+        event_id,
+        event_type,
+        entity_type,
+        entity_id,
+        provider or "fan-out",
     )
     return doc
 

@@ -1,4 +1,5 @@
 """Idempotent ensure-helpers run on every startup even when full seed is skipped."""
+
 import logging
 import random
 from datetime import timedelta
@@ -19,9 +20,7 @@ async def ensure_hr_legacy_connection(db):
     existing = await db.hotelrunner_connections.find_one({"tenant_id": tid})
     if existing:
         return
-    pc = await db.provider_connections.find_one(
-        {"tenant_id": tid, "provider": "hotelrunner", "status": "active"}
-    )
+    pc = await db.provider_connections.find_one({"tenant_id": tid, "provider": "hotelrunner", "status": "active"})
     if not pc:
         return
     creds = pc.get("credentials", {})
@@ -67,9 +66,7 @@ async def ensure_tenant_admin_seeded(db):
         from security.encrypted_lookup import build_user_email_query
     except Exception:  # pragma: no cover — defensive: never fall back to a
         # plaintext probe that could miss an encrypted doc and re-insert.
-        logger.warning(
-            "tenant_admin seed: encrypted_lookup unavailable — skipping idempotency check"
-        )
+        logger.warning("tenant_admin seed: encrypted_lookup unavailable — skipping idempotency check")
         return
 
     email = "tenantadmin@hotel.com"
@@ -117,10 +114,7 @@ async def ensure_complaints_seeded(db):
     if not tid:
         return
 
-    bookings_list = await db.bookings.find(
-        {"tenant_id": tid, "status": {"$in": ["checked_in", "checked_out"]}},
-        {"_id": 0}
-    ).to_list(30)
+    bookings_list = await db.bookings.find({"tenant_id": tid, "status": {"$in": ["checked_in", "checked_out"]}}, {"_id": 0}).to_list(30)
     if not bookings_list:
         return
 
@@ -172,11 +166,9 @@ async def ensure_complaints_seeded(db):
         if is_resolved:
             comp["resolved_at"] = (_now() - timedelta(days=max(0, days_ago - 1))).isoformat()
             comp["resolved_by"] = "system"
-            comp["resolution_notes"] = random.choice([
-                "Oda degistirildi", "Teknik ekip sorunu giderdi",
-                "Misafire ozur dilendi ve indirim uygulandi",
-                "Housekeeping tekrar temizlik yapti",
-                "Yonetici ile gorusuldu ve cozuldu"])
+            comp["resolution_notes"] = random.choice(
+                ["Oda degistirildi", "Teknik ekip sorunu giderdi", "Misafire ozur dilendi ve indirim uygulandi", "Housekeeping tekrar temizlik yapti", "Yonetici ile gorusuldu ve cozuldu"]
+            )
             comp["compensation_offered"] = random.choice([None, "room_upgrade", "fnb_credit", "discount"])
             comp["compensation_amount"] = random.choice([0, 50, 100, 200]) if comp["compensation_offered"] else 0
         complaints.append(comp)
@@ -201,11 +193,46 @@ async def ensure_agencies_seeded(db):
     logger.info("🌱 Seeding travel agencies and AR/AP data...")
 
     agency_defs = [
-        {"name": "Antalya Sun Tours", "contact_name": "Mehmet Yılmaz", "contact_email": "mehmet@antsunsuntours.com", "contact_phone": "+905551001001", "commission_rate": 12, "notes": "Premium partner since 2020"},
-        {"name": "Blue Horizon Travel", "contact_name": "Elena Popov", "contact_email": "elena@bluehorizon.eu", "contact_phone": "+442071234567", "commission_rate": 15, "notes": "UK market specialist"},
-        {"name": "Deutsche Reisen GmbH", "contact_name": "Hans Müller", "contact_email": "mueller@deutschereisen.de", "contact_phone": "+4930123456", "commission_rate": 10, "notes": "German market, high volume"},
-        {"name": "Orient Express Tours", "contact_name": "Ayşe Demir", "contact_email": "ayse@orientexpress.com.tr", "contact_phone": "+905552002002", "commission_rate": 8, "notes": "Domestic tours, corporate groups"},
-        {"name": "Riviera Holiday Agency", "contact_name": "Pierre Dubois", "contact_email": "pierre@rivieraholiday.fr", "contact_phone": "+33142123456", "commission_rate": 14, "notes": "French Riviera clientele"},
+        {
+            "name": "Antalya Sun Tours",
+            "contact_name": "Mehmet Yılmaz",
+            "contact_email": "mehmet@antsunsuntours.com",
+            "contact_phone": "+905551001001",
+            "commission_rate": 12,
+            "notes": "Premium partner since 2020",
+        },
+        {
+            "name": "Blue Horizon Travel",
+            "contact_name": "Elena Popov",
+            "contact_email": "elena@bluehorizon.eu",
+            "contact_phone": "+442071234567",
+            "commission_rate": 15,
+            "notes": "UK market specialist",
+        },
+        {
+            "name": "Deutsche Reisen GmbH",
+            "contact_name": "Hans Müller",
+            "contact_email": "mueller@deutschereisen.de",
+            "contact_phone": "+4930123456",
+            "commission_rate": 10,
+            "notes": "German market, high volume",
+        },
+        {
+            "name": "Orient Express Tours",
+            "contact_name": "Ayşe Demir",
+            "contact_email": "ayse@orientexpress.com.tr",
+            "contact_phone": "+905552002002",
+            "commission_rate": 8,
+            "notes": "Domestic tours, corporate groups",
+        },
+        {
+            "name": "Riviera Holiday Agency",
+            "contact_name": "Pierre Dubois",
+            "contact_email": "pierre@rivieraholiday.fr",
+            "contact_phone": "+33142123456",
+            "commission_rate": 14,
+            "notes": "French Riviera clientele",
+        },
     ]
 
     guests_list = await db.guests.find({"tenant_id": tid}).to_list(50)

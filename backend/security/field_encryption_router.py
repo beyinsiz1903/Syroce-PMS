@@ -8,6 +8,7 @@ Provides API endpoints for:
   - Hash index management
   - Audit trail for encryption operations
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -29,6 +30,7 @@ router = APIRouter(
 def _require_ops_role(user: User = Depends(get_current_user)) -> User:
     """Only super_admin can manage field encryption."""
     from core.security import _is_super_admin
+
     if _is_super_admin(user):
         return user
     if user.role not in ("super_admin", "admin"):
@@ -65,14 +67,16 @@ async def trigger_migration(
         )
 
     # Audit the migration trigger
-    await system_db["field_encryption_audit"].insert_one({
-        "action": "migration_triggered",
-        "collection": collection_name,
-        "actor": user.email,
-        "actor_role": user.role,
-        "batch_size": batch_size,
-        "timestamp": datetime.now(UTC).isoformat(),
-    })
+    await system_db["field_encryption_audit"].insert_one(
+        {
+            "action": "migration_triggered",
+            "collection": collection_name,
+            "actor": user.email,
+            "actor_role": user.role,
+            "batch_size": batch_size,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    )
 
     result = await svc.migrate_collection(
         system_db,
@@ -91,14 +95,16 @@ async def trigger_migration_all(
     svc = get_field_encryption_service()
     collections = list(svc.get_config()["collections"].keys())
 
-    await system_db["field_encryption_audit"].insert_one({
-        "action": "migration_all_triggered",
-        "collections": collections,
-        "actor": user.email,
-        "actor_role": user.role,
-        "batch_size": batch_size,
-        "timestamp": datetime.now(UTC).isoformat(),
-    })
+    await system_db["field_encryption_audit"].insert_one(
+        {
+            "action": "migration_all_triggered",
+            "collections": collections,
+            "actor": user.email,
+            "actor_role": user.role,
+            "batch_size": batch_size,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    )
 
     results = {}
     for col_name in collections:
@@ -156,12 +162,7 @@ async def get_encryption_audit(
     user: User = Depends(_require_ops_role),
 ):
     """Return encryption operation audit trail."""
-    cursor = (
-        system_db["field_encryption_audit"]
-        .find({}, {"_id": 0})
-        .sort("timestamp", -1)
-        .limit(limit)
-    )
+    cursor = system_db["field_encryption_audit"].find({}, {"_id": 0}).sort("timestamp", -1).limit(limit)
     audit_entries = await cursor.to_list(limit)
     return {"status": "ok", "audit": audit_entries, "count": len(audit_entries)}
 

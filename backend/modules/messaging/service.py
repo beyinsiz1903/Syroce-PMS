@@ -3,6 +3,7 @@ Messaging service – orchestrates sending, retry, consent, rate limiting, fallb
 Production runtime with credential vault integration, delivery metrics,
 provider latency tracking, cost/usage summary, and per-tenant policy.
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -35,6 +36,7 @@ def _decrypt_provider_creds(creds: dict, provider_type: str) -> dict:
         return dict(creds or {})
     try:
         from security.field_encryption import get_field_encryption_service
+
         svc = get_field_encryption_service()
     except Exception:
         return dict(creds or {})
@@ -82,6 +84,7 @@ class MessagingService:
         """
         try:
             from modules.security_hardening.credential_vault import credential_vault
+
             vault_key = f"messaging_{config.get('provider_type')}_{tenant_id}"
             creds = credential_vault.get_credential(vault_key)
             if creds:
@@ -139,6 +142,7 @@ class MessagingService:
         # fields (name, special_requests, etc.) cannot inject markup into rendered
         # email bodies. SMS/WhatsApp render plain-text — keep raw.
         import html as _html_mod
+
         result = body_template
         for k, v in variables.items():
             sv = str(v) if v is not None else ""
@@ -218,9 +222,7 @@ class MessagingService:
             log_doc["status"] = DeliveryStatus.FAILED.value
             log_doc["error_message"] = f"No active provider config for {provider_type}"
             await self.db.messaging_delivery_logs.insert_one(seal_delivery_log(log_doc))
-            return await self._try_fallback(
-                tenant_id, channel, recipient, body, subject, log_doc, booking_id, guest_id, property_id, use_case
-            )
+            return await self._try_fallback(tenant_id, channel, recipient, body, subject, log_doc, booking_id, guest_id, property_id, use_case)
 
         # rate limit
         rl = config.get("rate_limit_per_minute", 60)
@@ -254,6 +256,7 @@ class MessagingService:
         # Observability hook
         try:
             from modules.observability.metrics_collector import metrics as obs_metrics
+
             obs_metrics.record_messaging_delivery(provider_type, result.get("success", False))
         except Exception:
             logger.debug("messaging: observability metric record failed", exc_info=True)
@@ -262,33 +265,33 @@ class MessagingService:
             self._provider_successes[provider_type] = self._provider_successes.get(provider_type, 0) + 1
             await self.db.messaging_delivery_logs.update_one(
                 {"id": log_doc["id"]},
-                {"$set": {
-                    "status": DeliveryStatus.SENT.value,
-                    "provider_message_id": result.get("provider_message_id"),
-                    "delivered_at": datetime.now(UTC).isoformat(),
-                    "updated_at": datetime.now(UTC).isoformat(),
-                }},
+                {
+                    "$set": {
+                        "status": DeliveryStatus.SENT.value,
+                        "provider_message_id": result.get("provider_message_id"),
+                        "delivered_at": datetime.now(UTC).isoformat(),
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
+                },
             )
-            return {"success": True, "delivery_id": log_doc["id"],
-                    "provider_message_id": result.get("provider_message_id")}
+            return {"success": True, "delivery_id": log_doc["id"], "provider_message_id": result.get("provider_message_id")}
         else:
             self._provider_errors[provider_type] = self._provider_errors.get(provider_type, 0) + 1
             error_class = result.get("error_class", "unknown_error")
             await self.db.messaging_delivery_logs.update_one(
                 {"id": log_doc["id"]},
-                {"$set": {
-                    "status": DeliveryStatus.FAILED.value,
-                    "error_message": result.get("error"),
-                    "error_class": error_class,
-                    "updated_at": datetime.now(UTC).isoformat(),
-                }},
+                {
+                    "$set": {
+                        "status": DeliveryStatus.FAILED.value,
+                        "error_message": result.get("error"),
+                        "error_class": error_class,
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
+                },
             )
-            return await self._try_fallback(
-                tenant_id, channel, recipient, body, subject, log_doc, booking_id, guest_id, property_id, use_case
-            )
+            return await self._try_fallback(tenant_id, channel, recipient, body, subject, log_doc, booking_id, guest_id, property_id, use_case)
 
-    async def _try_fallback(self, tenant_id, original_channel, recipient, body, subject,
-                            original_log, booking_id, guest_id, property_id, use_case) -> dict:
+    async def _try_fallback(self, tenant_id, original_channel, recipient, body, subject, original_log, booking_id, guest_id, property_id, use_case) -> dict:
         fallbacks = FALLBACK_CHAIN.get(original_channel, [])
         for fb_channel in fallbacks:
             fb_provider_type = CHANNEL_PROVIDER_MAP.get(fb_channel)
@@ -304,25 +307,29 @@ class MessagingService:
             if result.get("success"):
                 self._fallback_usage[fb_channel] = self._fallback_usage.get(fb_channel, 0) + 1
                 fb_log = new_delivery_log(
-                    tenant_id=tenant_id, property_id=property_id, channel=fb_channel,
-                    provider_type=fb_provider_type, recipient=recipient, template_id=None,
-                    subject=subject, body=body, booking_id=booking_id, guest_id=guest_id, use_case=use_case,
+                    tenant_id=tenant_id,
+                    property_id=property_id,
+                    channel=fb_channel,
+                    provider_type=fb_provider_type,
+                    recipient=recipient,
+                    template_id=None,
+                    subject=subject,
+                    body=body,
+                    booking_id=booking_id,
+                    guest_id=guest_id,
+                    use_case=use_case,
                 )
                 fb_log["status"] = DeliveryStatus.SENT.value
                 fb_log["provider_message_id"] = result.get("provider_message_id")
                 fb_log["delivered_at"] = datetime.now(UTC).isoformat()
                 await self.db.messaging_delivery_logs.insert_one(seal_delivery_log(fb_log))
-                return {"success": True, "delivery_id": fb_log["id"], "fallback_channel": fb_channel,
-                        "provider_message_id": result.get("provider_message_id")}
-        return {"success": False, "error": original_log.get("error_message", "All channels failed"),
-                "delivery_id": original_log["id"]}
+                return {"success": True, "delivery_id": fb_log["id"], "fallback_channel": fb_channel, "provider_message_id": result.get("provider_message_id")}
+        return {"success": False, "error": original_log.get("error_message", "All channels failed"), "delivery_id": original_log["id"]}
 
     # ── retry failed ──
 
     async def retry_failed(self, tenant_id: str, delivery_id: str) -> dict:
-        doc = await self.db.messaging_delivery_logs.find_one(
-            {"id": delivery_id, "tenant_id": tenant_id}, {"_id": 0}
-        )
+        doc = await self.db.messaging_delivery_logs.find_one({"id": delivery_id, "tenant_id": tenant_id}, {"_id": 0})
         if not doc:
             return {"success": False, "error": "Delivery not found"}
         if doc.get("retry_count", 0) >= doc.get("max_retries", 3):
@@ -345,25 +352,29 @@ class MessagingService:
         if result.get("success"):
             await self.db.messaging_delivery_logs.update_one(
                 {"id": delivery_id},
-                {"$set": {
-                    "status": DeliveryStatus.SENT.value,
-                    "retry_count": new_count,
-                    "provider_message_id": result.get("provider_message_id"),
-                    "delivered_at": datetime.now(UTC).isoformat(),
-                    "updated_at": datetime.now(UTC).isoformat(),
-                }},
+                {
+                    "$set": {
+                        "status": DeliveryStatus.SENT.value,
+                        "retry_count": new_count,
+                        "provider_message_id": result.get("provider_message_id"),
+                        "delivered_at": datetime.now(UTC).isoformat(),
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
+                },
             )
             return {"success": True, "delivery_id": delivery_id}
         else:
-            next_retry = datetime.now(UTC) + timedelta(minutes=2 ** new_count)
+            next_retry = datetime.now(UTC) + timedelta(minutes=2**new_count)
             await self.db.messaging_delivery_logs.update_one(
                 {"id": delivery_id},
-                {"$set": {
-                    "retry_count": new_count,
-                    "error_message": result.get("error"),
-                    "next_retry_at": next_retry.isoformat(),
-                    "updated_at": datetime.now(UTC).isoformat(),
-                }},
+                {
+                    "$set": {
+                        "retry_count": new_count,
+                        "error_message": result.get("error"),
+                        "next_retry_at": next_retry.isoformat(),
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
+                },
             )
             return {"success": False, "error": result.get("error"), "retry_count": new_count}
 
@@ -373,10 +384,12 @@ class MessagingService:
         cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
         pipeline = [
             {"$match": {"tenant_id": tenant_id, "created_at": {"$gte": cutoff}}},
-            {"$group": {
-                "_id": {"channel": "$channel", "status": "$status"},
-                "count": {"$sum": 1},
-            }},
+            {
+                "$group": {
+                    "_id": {"channel": "$channel", "status": "$status"},
+                    "count": {"$sum": 1},
+                }
+            },
         ]
         cursor = self.db.messaging_delivery_logs.aggregate(pipeline)
         results = await cursor.to_list(200)
@@ -394,9 +407,7 @@ class MessagingService:
     # ── provider runtime status ──
 
     async def check_all_providers(self, tenant_id: str) -> list:
-        configs = await self.db.messaging_provider_configs.find(
-            {"tenant_id": tenant_id}, {"_id": 0}
-        ).to_list(20)
+        configs = await self.db.messaging_provider_configs.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(20)
         results = []
         for cfg in configs:
             pt = cfg.get("provider_type")
@@ -406,7 +417,8 @@ class MessagingService:
                 continue
             mode = self._resolve_mode(cfg)
             decrypted_creds = _decrypt_provider_creds(
-                cfg.get("credentials_encrypted", {}) or {}, pt or "",
+                cfg.get("credentials_encrypted", {}) or {},
+                pt or "",
             )
             health = await provider.check_health(decrypted_creds, mode)
             await self.db.messaging_provider_configs.update_one(
@@ -442,8 +454,10 @@ class MessagingService:
         }
 
     async def get_retry_queue_size(self, tenant_id: str) -> int:
-        return await self.db.messaging_delivery_logs.count_documents({
-            "tenant_id": tenant_id,
-            "status": DeliveryStatus.FAILED.value,
-            "retry_count": {"$lt": 3},
-        })
+        return await self.db.messaging_delivery_logs.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "status": DeliveryStatus.FAILED.value,
+                "retry_count": {"$lt": 3},
+            }
+        )

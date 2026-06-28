@@ -2,6 +2,7 @@
 PMS Domain — Housekeeping Service
 Business logic for housekeeping task operations. No FastAPI dependencies.
 """
+
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -15,14 +16,23 @@ class HousekeepingService:
 
     @staticmethod
     async def get_tasks(
-        tenant_id: str, *, status: str | None = None,
-        assigned_to: str | None = None, room_id: str | None = None,
-        task_type: str | None = None, limit: int = 100, offset: int = 0,
+        tenant_id: str,
+        *,
+        status: str | None = None,
+        assigned_to: str | None = None,
+        room_id: str | None = None,
+        task_type: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         return await HousekeepingRepository.find_by_tenant(
-            tenant_id, status=status, assigned_to=assigned_to,
-            room_id=room_id, task_type=task_type,
-            limit=limit, offset=offset,
+            tenant_id,
+            status=status,
+            assigned_to=assigned_to,
+            room_id=room_id,
+            task_type=task_type,
+            limit=limit,
+            offset=offset,
         )
 
     @staticmethod
@@ -46,11 +56,15 @@ class HousekeepingService:
         if task.get("status") != "pending":
             raise ValueError(f"Cannot start task with status: {task.get('status')}")
 
-        return await HousekeepingRepository.update(tenant_id, task_id, {
-            "status": "in_progress",
-            "started_at": datetime.now(UTC).isoformat(),
-            "updated_at": datetime.now(UTC).isoformat(),
-        })
+        return await HousekeepingRepository.update(
+            tenant_id,
+            task_id,
+            {
+                "status": "in_progress",
+                "started_at": datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        )
 
     @staticmethod
     async def complete_task(tenant_id: str, task_id: str) -> bool:
@@ -58,11 +72,15 @@ class HousekeepingService:
         if not task:
             raise ValueError("Task not found")
 
-        await HousekeepingRepository.update(tenant_id, task_id, {
-            "status": "completed",
-            "completed_at": datetime.now(UTC).isoformat(),
-            "updated_at": datetime.now(UTC).isoformat(),
-        })
+        await HousekeepingRepository.update(
+            tenant_id,
+            task_id,
+            {
+                "status": "completed",
+                "completed_at": datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        )
 
         # Update room status to clean
         room_id = task.get("room_id")
@@ -77,7 +95,11 @@ class HousekeepingService:
 
     @staticmethod
     async def assign_task(tenant_id: str, task_id: str, staff_id: str) -> bool:
-        return await HousekeepingRepository.update(tenant_id, task_id, {
-            "assigned_to": staff_id,
-            "updated_at": datetime.now(UTC).isoformat(),
-        })
+        return await HousekeepingRepository.update(
+            tenant_id,
+            task_id,
+            {
+                "assigned_to": staff_id,
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        )

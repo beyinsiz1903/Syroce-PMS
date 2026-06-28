@@ -34,6 +34,7 @@ bazindadir (per-reservation degil), bu yuzden cp-alert kanali kisa pencerede
 farkli rezervasyonlar icin az-uyarabilir. Per-rezervasyon idempotency ve asil
 gorunurluk, tenant'a izole in-app bildirim (dedup_key) tarafindan saglanir.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -101,8 +102,9 @@ async def create_unmatched_reservation_hold(
     """
     if not tenant_id or not external_id:
         logger.warning(
-            "[UNMATCHED-HOLD] tenant_id/external_id eksik; atlandi "
-            "provider=%s ext=%s", provider, external_id,
+            "[UNMATCHED-HOLD] tenant_id/external_id eksik; atlandi provider=%s ext=%s",
+            provider,
+            external_id,
         )
         return {"created": False, "booking_id": None, "nights_held": [], "idempotent": False}
 
@@ -175,7 +177,9 @@ async def create_unmatched_reservation_hold(
     except Exception as exc:
         logger.exception(
             "[UNMATCHED-HOLD] tutma booking insert basarisiz provider=%s ext=%s: %s",
-            provider, external_id, exc,
+            provider,
+            external_id,
+            exc,
         )
         return {"created": False, "booking_id": None, "nights_held": [], "idempotent": False}
 
@@ -187,7 +191,10 @@ async def create_unmatched_reservation_hold(
     except Exception as exc:
         logger.warning(
             "[UNMATCHED-HOLD] gece hesaplama basarisiz ext=%s (%s -> %s): %s",
-            external_id, check_in, check_out, exc,
+            external_id,
+            check_in,
+            check_out,
+            exc,
         )
 
     held = []
@@ -211,12 +218,17 @@ async def create_unmatched_reservation_hold(
         except Exception as exc:
             logger.warning(
                 "[UNMATCHED-HOLD] sentinel kilit basarisiz ext=%s night=%s: %s",
-                external_id, night, exc,
+                external_id,
+                night,
+                exc,
             )
 
     logger.info(
         "[UNMATCHED-HOLD] tutma olusturuldu provider=%s ext=%s booking=%s nights=%d",
-        provider, external_id, booking_id, len(held),
+        provider,
+        external_id,
+        booking_id,
+        len(held),
     )
 
     # ── ACIL alarm (idempotent) ─────────────────────────────────────
@@ -275,7 +287,9 @@ async def release_unmatched_reservation_hold(
     except Exception as exc:
         logger.exception(
             "[UNMATCHED-HOLD] kilit serbest birakma basarisiz ext=%s booking=%s: %s",
-            external_id, booking_id, exc,
+            external_id,
+            booking_id,
+            exc,
         )
         released = 0
         release_ok = False
@@ -296,19 +310,25 @@ async def release_unmatched_reservation_hold(
     else:
         await db.bookings.update_one(
             {"id": booking_id, "tenant_id": tenant_id},
-            {"$set": {
-                "status": "cancelled",
-                "cancelled_at": now,
-                "cancelled_reason": reason,
-                "action_needed": False,
-                "is_inventory_hold": False,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "status": "cancelled",
+                    "cancelled_at": now,
+                    "cancelled_reason": reason,
+                    "action_needed": False,
+                    "is_inventory_hold": False,
+                    "updated_at": now,
+                }
+            },
         )
 
     logger.info(
         "[UNMATCHED-HOLD] tutma serbest ext=%s booking=%s nights=%d delete=%s reason=%s",
-        external_id, booking_id, released, delete_hold, reason,
+        external_id,
+        booking_id,
+        released,
+        delete_hold,
+        reason,
     )
     return {
         "released": release_ok,
@@ -344,34 +364,39 @@ async def _raise_unmatched_alarm(
         f"tutma olusturuldu. Lutfen oda tipi eslestirmesini tamamlayin."
     )
     try:
-        existing_notif = await db.notifications.find_one({
-            "tenant_id": tenant_id,
-            "dedup_key": dedup_key,
-        })
-        if not existing_notif:
-            await db.notifications.insert_one({
-                "id": str(uuid.uuid4()),
+        existing_notif = await db.notifications.find_one(
+            {
                 "tenant_id": tenant_id,
-                "user_id": None,
-                "type": "channel_unmatched_reservation",
-                "priority": "high",
-                "category": "channel_manager",
-                "title": ALARM_TITLE,
-                "message": notif_message,
-                "action_url": "/channel-manager",
-                "booking_id": booking_id,
-                "external_reservation_id": external_id,
-                "provider": provider,
-                "read": False,
                 "dedup_key": dedup_key,
-                "created_at": now,
-            })
+            }
+        )
+        if not existing_notif:
+            await db.notifications.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "user_id": None,
+                    "type": "channel_unmatched_reservation",
+                    "priority": "high",
+                    "category": "channel_manager",
+                    "title": ALARM_TITLE,
+                    "message": notif_message,
+                    "action_url": "/channel-manager",
+                    "booking_id": booking_id,
+                    "external_reservation_id": external_id,
+                    "provider": provider,
+                    "read": False,
+                    "dedup_key": dedup_key,
+                    "created_at": now,
+                }
+            )
             # ── 2. Tenant-scoped websocket bildirimi ────────────────
             # broadcast_notification KULLANILMAZ (global 'notifications'
             # odasina yayar -> cross-tenant PII sizintisi). Tenant-scoped
             # broadcast_booking_update tercih edilir.
             try:
                 from websocket_server import broadcast_booking_update
+
                 await broadcast_booking_update(
                     {
                         "id": booking_id,
@@ -387,12 +412,14 @@ async def _raise_unmatched_alarm(
             except Exception as exc:
                 logger.warning(
                     "[UNMATCHED-HOLD] websocket yayini basarisiz ext=%s: %s",
-                    external_id, exc,
+                    external_id,
+                    exc,
                 )
     except Exception as exc:
         logger.exception(
             "[UNMATCHED-HOLD] in-app bildirim basarisiz ext=%s: %s",
-            external_id, exc,
+            external_id,
+            exc,
         )
 
     # ── 3. Control Plane uyari motoru (best-effort, PII'siz) ────────
@@ -405,6 +432,7 @@ async def _raise_unmatched_alarm(
     )
     try:
         from controlplane.alerting import AlertSeverity, get_alerting_engine
+
         await get_alerting_engine().fire(
             trigger=ALARM_TRIGGER,
             severity=AlertSeverity.CRITICAL,
@@ -423,5 +451,6 @@ async def _raise_unmatched_alarm(
     except Exception as exc:
         logger.warning(
             "[UNMATCHED-HOLD] control plane uyarisi basarisiz ext=%s: %s",
-            external_id, exc,
+            external_id,
+            exc,
         )

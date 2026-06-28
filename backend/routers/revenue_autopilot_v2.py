@@ -20,6 +20,7 @@ def _get_service():
     if _service is None:
         from modules.revenue_autopilot.service import RevenueAutopilotService
         from server import db
+
         _service = RevenueAutopilotService(db)
     return _service
 
@@ -41,7 +42,9 @@ async def get_policy(current_user: User = Depends(get_current_user)):
 
 
 @router.put("/policy")
-async def update_policy(req: dict, current_user: User = Depends(get_current_user),
+async def update_policy(
+    req: dict,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     svc = _get_service()
@@ -69,8 +72,9 @@ class ProcessRecommendationReq(BaseModel):
 
 
 @router.post("/process")
-async def process_recommendation(req: ProcessRecommendationReq,
-                                  current_user: User = Depends(get_current_user),
+async def process_recommendation(
+    req: ProcessRecommendationReq,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     svc = _get_service()
@@ -78,7 +82,9 @@ async def process_recommendation(req: ProcessRecommendationReq,
 
 
 @router.post("/queue/{item_id}/approve")
-async def approve_item(item_id: str, current_user: User = Depends(get_current_user),
+async def approve_item(
+    item_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_approvals")),  # v95 DW
 ):
     svc = _get_service()
@@ -90,8 +96,10 @@ class RejectReq(BaseModel):
 
 
 @router.post("/queue/{item_id}/reject")
-async def reject_item(item_id: str, req: RejectReq,
-                       current_user: User = Depends(get_current_user),
+async def reject_item(
+    item_id: str,
+    req: RejectReq,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_approvals")),  # v95 DW
 ):
     svc = _get_service()
@@ -99,7 +107,9 @@ async def reject_item(item_id: str, req: RejectReq,
 
 
 @router.post("/queue/{item_id}/rollback")
-async def rollback_item(item_id: str, current_user: User = Depends(get_current_user),
+async def rollback_item(
+    item_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     svc = _get_service()

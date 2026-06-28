@@ -25,10 +25,12 @@ def _ok_payload(result):
         return data
     return from_service_result(result)
 
+
 router = APIRouter(prefix="/api/pos/v2", tags=["POS & F&B v2"])
 
 
 # ── Schemas ──────────────────────────────────────────────────────────
+
 
 class OrderItemSchema(BaseModel):
     item_id: str | None = None
@@ -37,6 +39,7 @@ class OrderItemSchema(BaseModel):
     price: float
     station: str = "main"
     special_instructions: str | None = None
+
 
 class CreateOrderRequest(BaseModel):
     outlet_id: str
@@ -47,6 +50,7 @@ class CreateOrderRequest(BaseModel):
     order_type: str = "dine_in"
     idempotency_key: str | None = None
 
+
 class CloseOrderRequest(BaseModel):
     order_id: str
     payment_method: str = "cash"
@@ -55,9 +59,11 @@ class CloseOrderRequest(BaseModel):
     tip_amount: float = 0.0
     idempotency_key: str | None = None
 
+
 class VoidOrderRequest(BaseModel):
     order_id: str
     reason: str
+
 
 class StockAdjustRequest(BaseModel):
     product_id: str
@@ -66,12 +72,14 @@ class StockAdjustRequest(BaseModel):
     reason: str
     idempotency_key: str | None = None
 
+
 class TableReserveRequest(BaseModel):
     outlet_id: str
     table_number: str
     guest_name: str
     reservation_time: str
     party_size: int = 2
+
 
 class OpenTabRequest(BaseModel):
     outlet_id: str
@@ -81,6 +89,7 @@ class OpenTabRequest(BaseModel):
     guests: int = 1
     idempotency_key: str | None = None
 
+
 class CloseTabRequest(BaseModel):
     transaction_id: str
     payment_method: str = "cash"
@@ -88,37 +97,40 @@ class CloseTabRequest(BaseModel):
 
 # ── Endpoints ────────────────────────────────────────────────────────
 
+
 @router.post("/orders")
-async def create_order(req: CreateOrderRequest, user=Depends(get_current_user),
+async def create_order(
+    req: CreateOrderRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     ctx = OperationContext.from_user(user)
     items_dicts = [item.model_dump() for item in req.items]
-    result = await pos_fnb_service_v2.create_order(
-        ctx, req.outlet_id, req.table_number, items_dicts,
-        req.guest_name, req.booking_id, req.order_type, req.idempotency_key
-    )
+    result = await pos_fnb_service_v2.create_order(ctx, req.outlet_id, req.table_number, items_dicts, req.guest_name, req.booking_id, req.order_type, req.idempotency_key)
     if not result.ok:
         raise HTTPException(status_code=400, detail=from_service_result(result))
     return _ok_payload(result)
 
+
 @router.post("/orders/close")
-async def close_order(req: CloseOrderRequest, user=Depends(get_current_user),
+async def close_order(
+    req: CloseOrderRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     ctx = OperationContext.from_user(user)
-    result = await pos_fnb_service_v2.close_order(
-        ctx, req.order_id, req.payment_method, req.post_to_folio,
-        req.booking_id, req.tip_amount, req.idempotency_key
-    )
+    result = await pos_fnb_service_v2.close_order(ctx, req.order_id, req.payment_method, req.post_to_folio, req.booking_id, req.tip_amount, req.idempotency_key)
     if not result.ok:
         # Terminal-state conflicts → 409; everything else → 400.
         status_code = 409 if result.code == "ORDER_VOIDED" else 400
         raise HTTPException(status_code=status_code, detail=from_service_result(result))
     return _ok_payload(result)
 
+
 @router.post("/orders/void")
-async def void_order(req: VoidOrderRequest, user=Depends(get_current_user),
+async def void_order(
+    req: VoidOrderRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_op("post_charge")),  # v99 DW
 ):
     ctx = OperationContext.from_user(user)
@@ -134,50 +146,53 @@ async def void_order(req: VoidOrderRequest, user=Depends(get_current_user),
         raise HTTPException(status_code=status_code, detail=from_service_result(result))
     return _ok_payload(result)
 
+
 @router.post("/stock/adjust")
-async def adjust_stock(req: StockAdjustRequest, user=Depends(get_current_user),
+async def adjust_stock(
+    req: StockAdjustRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v98 DW
 ):
     ctx = OperationContext.from_user(user)
-    result = await pos_fnb_service_v2.adjust_stock(
-        ctx, req.product_id, req.adjustment_type, req.quantity,
-        req.reason, req.idempotency_key
-    )
+    result = await pos_fnb_service_v2.adjust_stock(ctx, req.product_id, req.adjustment_type, req.quantity, req.reason, req.idempotency_key)
     if not result.ok:
         raise HTTPException(status_code=400, detail=from_service_result(result))
     return from_service_result(result)
 
+
 @router.post("/tables/reserve")
-async def reserve_table(req: TableReserveRequest, user=Depends(get_current_user),
+async def reserve_table(
+    req: TableReserveRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_module_v101("pos")),  # v101 DW
 ):
     ctx = OperationContext.from_user(user)
-    result = await pos_fnb_service_v2.reserve_table(
-        ctx, req.outlet_id, req.table_number, req.guest_name,
-        req.reservation_time, req.party_size
-    )
+    result = await pos_fnb_service_v2.reserve_table(ctx, req.outlet_id, req.table_number, req.guest_name, req.reservation_time, req.party_size)
     if not result.ok:
         raise HTTPException(status_code=400, detail=from_service_result(result))
     return from_service_result(result)
 
+
 @router.post("/tabs/open")
-async def open_tab(req: OpenTabRequest, user=Depends(get_current_user),
+async def open_tab(
+    req: OpenTabRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     ctx = OperationContext.from_user(user)
     items_dicts = [item.model_dump() for item in req.items]
-    result = await pos_fnb_service_v2.open_tab(
-        ctx, req.outlet_id, req.table_number, items_dicts,
-        req.guest_name, req.guests, req.idempotency_key
-    )
+    result = await pos_fnb_service_v2.open_tab(ctx, req.outlet_id, req.table_number, items_dicts, req.guest_name, req.guests, req.idempotency_key)
     if not result.ok:
         # Duplicate open tab on the same table → 409 conflict; else 400.
         status_code = 409 if result.code == "TAB_ALREADY_OPEN" else 400
         raise HTTPException(status_code=status_code, detail=from_service_result(result))
     return _ok_payload(result)
 
+
 @router.post("/tabs/close")
-async def close_tab(req: CloseTabRequest, user=Depends(get_current_user),
+async def close_tab(
+    req: CloseTabRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
     ctx = OperationContext.from_user(user)

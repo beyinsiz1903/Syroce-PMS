@@ -1,4 +1,5 @@
 """Health Dashboard Router — Connector health metrics and scoring."""
+
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException

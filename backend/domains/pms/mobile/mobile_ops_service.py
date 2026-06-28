@@ -3,6 +3,7 @@ PMS / Mobile Ops — Service Layer
 Orchestrates mobile check-in, quick tasks, no-show processing,
 room changes, and active order management. No FastAPI dependencies.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -19,6 +20,7 @@ class MobileOpsService:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     @audited("mobile.process_no_show", "booking", severity=SEVERITY_WARNING, capture_before=True)
@@ -54,13 +56,15 @@ class MobileOpsService:
             await self._db.rooms.update_one({"id": old_room_id}, {"$set": {"status": "dirty", "current_booking_id": None}})
         await self._db.rooms.update_one({"id": new_room_id}, {"$set": {"status": "occupied", "current_booking_id": booking_id}})
 
-        return ServiceResult.success({
-            "message": "Room changed successfully",
-            "old_room": old_room_id,
-            "new_room": new_room_id,
-            "new_room_number": new_room.get("room_number"),
-            "reason": reason,
-        })
+        return ServiceResult.success(
+            {
+                "message": "Room changed successfully",
+                "old_room": old_room_id,
+                "new_room": new_room_id,
+                "new_room_number": new_room.get("room_number"),
+                "reason": reason,
+            }
+        )
 
     @audited("mobile.create_quick_task", "housekeeping_task", severity=SEVERITY_INFO)
     async def create_quick_task(self, ctx: OperationContext, data: dict) -> ServiceResult:
@@ -106,17 +110,19 @@ class MobileOpsService:
         dirty = await self._db.rooms.count_documents({"tenant_id": ctx.tenant_id, "status": "dirty"})
         pending_tasks = await self._db.housekeeping_tasks.count_documents({"tenant_id": ctx.tenant_id, "status": {"$in": ["new", "in_progress"]}})
 
-        return ServiceResult.success({
-            "arrivals_today": arrivals,
-            "departures_today": departures,
-            "in_house": in_house,
-            "total_rooms": total_rooms,
-            "occupied_rooms": occupied,
-            "available_rooms": available,
-            "dirty_rooms": dirty,
-            "occupancy_rate": round(occupied / total_rooms * 100, 1) if total_rooms > 0 else 0,
-            "pending_tasks": pending_tasks,
-        })
+        return ServiceResult.success(
+            {
+                "arrivals_today": arrivals,
+                "departures_today": departures,
+                "in_house": in_house,
+                "total_rooms": total_rooms,
+                "occupied_rooms": occupied,
+                "available_rooms": available,
+                "dirty_rooms": dirty,
+                "occupancy_rate": round(occupied / total_rooms * 100, 1) if total_rooms > 0 else 0,
+                "pending_tasks": pending_tasks,
+            }
+        )
 
 
 mobile_ops_service = MobileOpsService()

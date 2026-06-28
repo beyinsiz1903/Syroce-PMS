@@ -10,6 +10,7 @@ Usage:
     python -m scripts.scrub_negative_inventory --apply         # apply changes
     python -m scripts.scrub_negative_inventory --tenant <tid>  # restrict to one tenant
 """
+
 from __future__ import annotations
 
 import argparse
@@ -36,8 +37,7 @@ async def main() -> int:
     # we cannot guarantee the pilot exclusion filter below excludes anything.
     if args.apply and not pilot_tid:
         print(
-            "REFUSED: --apply requires E2E_PILOT_TENANT_ID or PILOT_TENANT_ID "
-            "env var to be set (pilot exclusion guard).",
+            "REFUSED: --apply requires E2E_PILOT_TENANT_ID or PILOT_TENANT_ID env var to be set (pilot exclusion guard).",
             file=sys.stderr,
         )
         return 2
@@ -53,8 +53,7 @@ async def main() -> int:
     elif pilot_tid:
         query["tenant_id"] = {"$ne": pilot_tid}
 
-    cursor = db.inventory_items.find(query, {"_id": 0, "id": 1, "tenant_id": 1,
-                                              "quantity": 1, "name": 1, "unit_cost": 1})
+    cursor = db.inventory_items.find(query, {"_id": 0, "id": 1, "tenant_id": 1, "quantity": 1, "name": 1, "unit_cost": 1})
     rows = await cursor.to_list(100000)
     print(f"Found {len(rows)} inventory_items with quantity < 0")
     by_tenant: dict[str, int] = {}
@@ -81,18 +80,20 @@ async def main() -> int:
             {"id": item_id, "tenant_id": tid},
             {"$set": {"quantity": 0}},
         )
-        await db.stock_movements.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tid,
-            "item_id": item_id,
-            "movement_type": "adjustment",
-            "quantity": 0,
-            "unit_cost": float(r.get("unit_cost") or 0),
-            "reference": "T209_SCRUB",
-            "notes": f"task #209 scrub: clamped from {old_qty} to 0",
-            "created_by": "system:scrub_negative_inventory",
-            "created_at": datetime.now(UTC).isoformat(),
-        })
+        await db.stock_movements.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tid,
+                "item_id": item_id,
+                "movement_type": "adjustment",
+                "quantity": 0,
+                "unit_cost": float(r.get("unit_cost") or 0),
+                "reference": "T209_SCRUB",
+                "notes": f"task #209 scrub: clamped from {old_qty} to 0",
+                "created_by": "system:scrub_negative_inventory",
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
         fixed += 1
     print(f"Applied: {fixed} rows clamped to 0 (audit entry written for each).")
     return 0

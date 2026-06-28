@@ -32,6 +32,7 @@ PII-at-rest: yanit govdesi seal_response_body ile sifreli zarf olarak yazilir
 (shared_kernel tek kaynak); crypto yoksa fail-closed (bos zarf; plaintext PII
 ASLA yazilmaz). Secret/PII loglanmaz.
 """
+
 from __future__ import annotations
 
 import logging
@@ -53,9 +54,7 @@ RETENTION_SECONDS = 48 * 3600
 BeginStatus = Literal["acquired", "replay", "conflict", "in_progress"]
 
 
-def _scope_filter(
-    tenant_id: str, agency_id: str, method: str, path: str, idempotency_key: str
-) -> dict[str, Any]:
+def _scope_filter(tenant_id: str, agency_id: str, method: str, path: str, idempotency_key: str) -> dict[str, Any]:
     return {
         "tenant_id": tenant_id,
         "agency_id": agency_id,
@@ -98,10 +97,7 @@ class _AgencyIdemLock:
         res = await self._db.idempotency_cache.update_one(self._scope, {"$set": set_fields})
         matched = getattr(res, "matched_count", 1)
         if matched == 0:
-            logger.warning(
-                "agency idempotency: completion lock missing (stale/expired before "
-                "complete); replay not cached"
-            )
+            logger.warning("agency idempotency: completion lock missing (stale/expired before complete); replay not cached")
             return False
         return True
 
@@ -147,9 +143,7 @@ async def begin_agency_idempotency(
     }
     try:
         await db_handle.idempotency_cache.insert_one(doc)
-        return AgencyIdempotencyResult(
-            status="acquired", lock=_AgencyIdemLock(db_handle, scope)
-        )
+        return AgencyIdempotencyResult(status="acquired", lock=_AgencyIdemLock(db_handle, scope))
     except DuplicateKeyError:
         existing = await db_handle.idempotency_cache.find_one(scope, {"_id": 0})
         if not existing:

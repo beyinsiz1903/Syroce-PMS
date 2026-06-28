@@ -11,46 +11,45 @@ Usage:
 
 Add new legitimate root files to ALLOWED_ROOT_FILES below.
 """
+
 import pathlib
 import sys
 
 # ── Allow-list: files that are EXPECTED at /backend/*.py ─────────
-ALLOWED_ROOT_FILES = frozenset({
-    "__init__.py",
-    "advanced_cache.py",
-    "apm_middleware.py",
-    "app.py",
-    "auto_seed.py",
-    "cache_manager.py",
-    "cache_warmer.py",
-    "celery_app.py",
-    "celery_tasks.py",
-    "conftest.py",
-    "create_demo_users.py",
-    "data_archival.py",
-    "demo_data_generator.py",
-    "health_check.py",
-    "materialized_views.py",
-    "ml_data_generators.py",
-    "ml_service.py",
-    "ml_trainers.py",
-    "optimization_endpoints.py",
-    "redis_cache.py",
-    "redis_ssl.py",
-    "server.py",
-    "startup.py",
-    "websocket_server.py",
-})
+ALLOWED_ROOT_FILES = frozenset(
+    {
+        "__init__.py",
+        "advanced_cache.py",
+        "apm_middleware.py",
+        "app.py",
+        "auto_seed.py",
+        "cache_manager.py",
+        "cache_warmer.py",
+        "celery_app.py",
+        "celery_tasks.py",
+        "conftest.py",
+        "create_demo_users.py",
+        "data_archival.py",
+        "demo_data_generator.py",
+        "health_check.py",
+        "materialized_views.py",
+        "ml_data_generators.py",
+        "ml_service.py",
+        "ml_trainers.py",
+        "optimization_endpoints.py",
+        "redis_cache.py",
+        "redis_ssl.py",
+        "server.py",
+        "startup.py",
+        "websocket_server.py",
+    }
+)
 
 BACKEND_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 def main() -> int:
-    actual = {
-        p.name
-        for p in BACKEND_ROOT.glob("*.py")
-        if p.is_file()
-    }
+    actual = {p.name for p in BACKEND_ROOT.glob("*.py") if p.is_file()}
     orphans = sorted(actual - ALLOWED_ROOT_FILES)
     if orphans:
         print(f"FAIL: {len(orphans)} orphan file(s) in backend root:")

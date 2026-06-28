@@ -5,6 +5,7 @@ Validates platform behavior under real traffic patterns:
 OTA reservation burst, ARI update storm, queue backlog,
 night audit concurrency, websocket event stream.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -58,6 +59,7 @@ class ProductionLoadValidationService:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     async def get_scenarios(self) -> ServiceResult:
@@ -81,12 +83,14 @@ class ProductionLoadValidationService:
             passed = actual <= threshold
             if passed:
                 passed_metrics += 1
-            metric_results.append({
-                "metric": metric_key,
-                "threshold": threshold,
-                "actual": actual,
-                "passed": passed,
-            })
+            metric_results.append(
+                {
+                    "metric": metric_key,
+                    "threshold": threshold,
+                    "actual": actual,
+                    "passed": passed,
+                }
+            )
 
         overall_passed = passed_metrics == total_metrics
 
@@ -109,24 +113,32 @@ class ProductionLoadValidationService:
 
     async def get_load_report(self, ctx: OperationContext, hours: int = 24) -> ServiceResult:
         from datetime import timedelta
+
         since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
-        runs = await self._db.production_load_runs.find(
-            {"tenant_id": ctx.tenant_id, "started_at": {"$gte": since}},
-            {"_id": 0},
-        ).sort("started_at", -1).to_list(100)
+        runs = (
+            await self._db.production_load_runs.find(
+                {"tenant_id": ctx.tenant_id, "started_at": {"$gte": since}},
+                {"_id": 0},
+            )
+            .sort("started_at", -1)
+            .to_list(100)
+        )
 
         passed = sum(1 for r in runs if r["status"] == "passed")
-        return ServiceResult.success({
-            "runs": runs,
-            "total": len(runs),
-            "passed": passed,
-            "pass_rate": round(passed / max(len(runs), 1) * 100, 1),
-        })
+        return ServiceResult.success(
+            {
+                "runs": runs,
+                "total": len(runs),
+                "passed": passed,
+                "pass_rate": round(passed / max(len(runs), 1) * 100, 1),
+            }
+        )
 
     async def _execute_scenario(self, scenario: dict) -> dict:
         """Execute scenario and return metric values."""
         # Simulated results — within healthy thresholds
         import random
+
         results = {}
         for metric_key, threshold in scenario["thresholds"].items():
             # Generate value within 30-80% of threshold (healthy range)

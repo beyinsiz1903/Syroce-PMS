@@ -1,6 +1,7 @@
 """Function Space — Toplantı/balo salonu saatlik takvim, kurulum tipi, kapasite.
 Opera Cloud Function Space modülünün karşılığı. Banquet/MICE event'leri için.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -17,8 +18,15 @@ from models.schemas import User
 router = APIRouter(prefix="/api/function-space", tags=["Function Space"])
 
 SETUP_TYPES = (
-    "theatre", "classroom", "boardroom", "u_shape", "banquet",
-    "cocktail", "hollow_square", "cabaret", "custom",
+    "theatre",
+    "classroom",
+    "boardroom",
+    "u_shape",
+    "banquet",
+    "cocktail",
+    "hollow_square",
+    "cabaret",
+    "custom",
 )
 
 
@@ -56,6 +64,7 @@ class FunctionBooking(FunctionBookingCreate):
 
 # ---------- Rooms ----------
 
+
 @router.get("/rooms", response_model=list[FunctionRoom])
 async def list_rooms(user: User = Depends(get_current_user)):
     db = get_system_db()
@@ -92,6 +101,7 @@ async def delete_room(room_id: str, user: User = Depends(get_current_user)):
 
 
 # ---------- Bookings ----------
+
 
 async def _has_clash(db, tenant_id: str, room_id: str, starts: str, ends: str, exclude_id: str | None = None) -> bool:
     """Aynı salon için verilen aralıkla çakışan onaylı booking var mı?"""
@@ -201,19 +211,23 @@ async def availability(
 
     day_start = f"{date}T00:00"
     day_end = f"{date}T23:59"
-    busy_cur = db.function_bookings.find({
-        "tenant_id": user.tenant_id,
-        "status": {"$ne": "cancelled"},
-        "starts_at": {"$lte": day_end},
-        "ends_at": {"$gte": day_start},
-    })
+    busy_cur = db.function_bookings.find(
+        {
+            "tenant_id": user.tenant_id,
+            "status": {"$ne": "cancelled"},
+            "starts_at": {"$lte": day_end},
+            "ends_at": {"$gte": day_start},
+        }
+    )
     busy: dict[str, list[dict[str, str]]] = {}
     async for b in busy_cur:
-        busy.setdefault(b["room_id"], []).append({
-            "starts_at": b["starts_at"],
-            "ends_at": b["ends_at"],
-            "event_name": b.get("event_name"),
-        })
+        busy.setdefault(b["room_id"], []).append(
+            {
+                "starts_at": b["starts_at"],
+                "ends_at": b["ends_at"],
+                "event_name": b.get("event_name"),
+            }
+        )
     return {
         "date": date,
         "rooms": [

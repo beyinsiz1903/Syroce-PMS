@@ -4,6 +4,7 @@ Cekirdek kod somut bir PSP'yi bilmez; aktif saglayici tenant ayarindan
 (tenant_settings.active_payment_provider) okunur. Bos/gecersiz/kayitsiz veya
 yapilandirilmamis saglayici -> ProviderNotConfigured (503). Sessiz fallback YOK.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -15,9 +16,7 @@ from .contracts import PaymentProvider, ProviderNotConfigured
 _REGISTRY: dict[str, Callable[[], PaymentProvider]] = {}
 
 
-def register_provider(
-    name: str, factory: Callable[[], PaymentProvider]
-) -> None:
+def register_provider(name: str, factory: Callable[[], PaymentProvider]) -> None:
     """Bir saglayici fabrikasini kanonik adiyla kaydet."""
     if not name:
         raise ValueError("provider name zorunlu")
@@ -60,19 +59,13 @@ async def get_provider_for_tenant(db, tenant_id: str) -> PaymentProvider:
     """
     name = await get_active_provider_name(db, tenant_id)
     if not name:
-        raise ProviderNotConfigured(
-            "tenant icin aktif odeme saglayicisi ayarli degil"
-        )
+        raise ProviderNotConfigured("tenant icin aktif odeme saglayicisi ayarli degil")
 
     factory = _REGISTRY.get(name)
     if factory is None:
-        raise ProviderNotConfigured(
-            f"odeme saglayicisi kayitli degil: {name}"
-        )
+        raise ProviderNotConfigured(f"odeme saglayicisi kayitli degil: {name}")
 
     provider = factory()
     if not provider.is_configured():
-        raise ProviderNotConfigured(
-            f"odeme saglayicisi yapilandirilmamis: {name}"
-        )
+        raise ProviderNotConfigured(f"odeme saglayicisi yapilandirilmamis: {name}")
     return provider

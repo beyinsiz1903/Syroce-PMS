@@ -12,6 +12,7 @@ Endpoints:
   POST /api/channel-manager/monitoring/alerts/{id}/ack     — Acknowledge alert
   POST /api/channel-manager/monitoring/alerts/{id}/resolve — Resolve alert
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -64,6 +65,7 @@ class ResolveAlertRequest(BaseModel):
 
 # ── Overview ──────────────────────────────────────────────────────────
 
+
 @router.get("/overview")
 async def get_monitoring_overview(
     current_user: User = Depends(_REQUIRE_SUPER_ADMIN),  # v102 task #54
@@ -94,9 +96,7 @@ async def get_monitoring_overview(
         "critical_alerts": critical_alerts,
         "queue_depth": queue.get("queue_depth", 0),
         "reconciliation_open_cases": recon.get("open_cases", 0),
-        "provider_statuses": {
-            name: p.get("status", "unknown") for name, p in providers.items()
-        },
+        "provider_statuses": {name: p.get("status", "unknown") for name, p in providers.items()},
         "ingest_status": metrics.get("ingest_health", {}).get("status", "unknown"),
         "ari_status": metrics.get("ari_health", {}).get("status", "unknown"),
         "recon_status": recon.get("status", "unknown"),
@@ -107,6 +107,7 @@ async def get_monitoring_overview(
 
 
 # ── Alerts ────────────────────────────────────────────────────────────
+
 
 @router.get("/alerts")
 async def list_alerts(
@@ -125,9 +126,16 @@ async def list_alerts(
     if provider:
         q["provider"] = provider
 
-    alerts = await db[COLL_MONITORING_ALERTS].find(
-        q, _NO_ID,
-    ).sort("created_at", -1).limit(limit).to_list(limit)
+    alerts = (
+        await db[COLL_MONITORING_ALERTS]
+        .find(
+            q,
+            _NO_ID,
+        )
+        .sort("created_at", -1)
+        .limit(limit)
+        .to_list(limit)
+    )
 
     active_count = await db[COLL_MONITORING_ALERTS].count_documents(
         {"status": {"$in": ["active", "acknowledged"]}},
@@ -137,6 +145,7 @@ async def list_alerts(
 
 
 # ── Metrics ───────────────────────────────────────────────────────────
+
 
 @router.get("/metrics")
 async def get_detailed_metrics(
@@ -149,6 +158,7 @@ async def get_detailed_metrics(
 
 # ── Provider Health ───────────────────────────────────────────────────
 
+
 @router.get("/providers")
 async def get_provider_health(
     current_user: User = Depends(_REQUIRE_SUPER_ADMIN),  # v102 task #54
@@ -158,10 +168,14 @@ async def get_provider_health(
 
     provider_alerts: dict[str, list] = {}
     for pname in health.get("providers", {}):
-        alerts = await db[COLL_MONITORING_ALERTS].find(
-            {"provider": pname, "status": {"$in": ["active", "acknowledged"]}},
-            _NO_ID,
-        ).to_list(20)
+        alerts = (
+            await db[COLL_MONITORING_ALERTS]
+            .find(
+                {"provider": pname, "status": {"$in": ["active", "acknowledged"]}},
+                _NO_ID,
+            )
+            .to_list(20)
+        )
         provider_alerts[pname] = alerts
 
     return {
@@ -172,6 +186,7 @@ async def get_provider_health(
 
 # ── Acknowledge Alert ─────────────────────────────────────────────────
 
+
 @router.post("/alerts/{alert_id}/ack")
 async def acknowledge_alert(
     alert_id: str,
@@ -180,7 +195,8 @@ async def acknowledge_alert(
 ):
     """Acknowledge a monitoring alert."""
     alert = await db[COLL_MONITORING_ALERTS].find_one(
-        {"id": alert_id}, _NO_ID,
+        {"id": alert_id},
+        _NO_ID,
     )
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
@@ -189,15 +205,18 @@ async def acknowledge_alert(
 
     await db[COLL_MONITORING_ALERTS].update_one(
         {"id": alert_id},
-        {"$set": {
-            "status": AlertStatus.ACKNOWLEDGED.value,
-            "acknowledged_at": datetime.now(UTC).isoformat(),
-        }},
+        {
+            "$set": {
+                "status": AlertStatus.ACKNOWLEDGED.value,
+                "acknowledged_at": datetime.now(UTC).isoformat(),
+            }
+        },
     )
     return {"message": "Alert acknowledged", "alert_id": alert_id}
 
 
 # ── Resolve Alert ─────────────────────────────────────────────────────
+
 
 @router.post("/alerts/{alert_id}/resolve")
 async def resolve_alert(
@@ -207,7 +226,8 @@ async def resolve_alert(
 ):
     """Resolve a monitoring alert."""
     alert = await db[COLL_MONITORING_ALERTS].find_one(
-        {"id": alert_id}, _NO_ID,
+        {"id": alert_id},
+        _NO_ID,
     )
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
@@ -216,16 +236,18 @@ async def resolve_alert(
 
     await db[COLL_MONITORING_ALERTS].update_one(
         {"id": alert_id},
-        {"$set": {
-            "status": AlertStatus.RESOLVED.value,
-            "resolved_at": datetime.now(UTC).isoformat(),
-        }},
+        {
+            "$set": {
+                "status": AlertStatus.RESOLVED.value,
+                "resolved_at": datetime.now(UTC).isoformat(),
+            }
+        },
     )
     return {"message": "Alert resolved", "alert_id": alert_id}
 
 
-
 # ── Slack / Dispatch Configuration ────────────────────────────────────
+
 
 class SlackConfigRequest(BaseModel):
     enabled: bool = False
@@ -241,6 +263,7 @@ async def get_dispatch_config_endpoint(
 ):
     """Get alert dispatch configuration (Slack, Email, etc.)."""
     from .alert_dispatch import get_dispatch_config
+
     config = await get_dispatch_config(current_user.tenant_id)
     # Mask webhook URL for security
     slack = config.get("slack", {})
@@ -287,8 +310,8 @@ async def test_slack(
     return result
 
 
-
 # ── Catchup Pre-Insert Dedup Counter ─────────────────────────────────
+
 
 @router.get("/catchup-dedup")
 async def get_catchup_dedup_stats(
@@ -329,6 +352,7 @@ async def get_catchup_dedup_stats(
 
 # ── Trend Metrics (24h Time Series) ──────────────────────────────────
 
+
 @router.get("/trends")
 async def get_metrics_trends(
     hours: int = Query(24, ge=1, le=168),
@@ -341,10 +365,14 @@ async def get_metrics_trends(
 
     since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
 
-    cursor = db[COLL_METRICS_HISTORY].find(
-        {"ts": {"$gte": since}},
-        {"_id": 0},
-    ).sort("ts", 1)
+    cursor = (
+        db[COLL_METRICS_HISTORY]
+        .find(
+            {"ts": {"$gte": since}},
+            {"_id": 0},
+        )
+        .sort("ts", 1)
+    )
 
     snapshots = await cursor.to_list(2000)
 
@@ -366,28 +394,36 @@ async def get_metrics_trends(
 
     for s in snapshots:
         ts = s.get("ts", "")
-        ingest_series.append({
-            "ts": ts,
-            "events_1h": s.get("ingest_events_1h", 0),
-            "failed": s.get("ingest_failed", 0),
-            "duplicates": s.get("ingest_duplicates", 0),
-        })
-        ari_series.append({
-            "ts": ts,
-            "success_rate": s.get("ari_success_rate", 0),
-            "p95_latency": s.get("ari_p95_latency", 0),
-            "retry_count": s.get("ari_retry_count", 0),
-        })
-        recon_series.append({
-            "ts": ts,
-            "open_cases": s.get("recon_open", 0),
-            "critical": s.get("recon_critical", 0),
-        })
-        queue_series.append({
-            "ts": ts,
-            "depth": s.get("queue_depth", 0),
-            "retry_backlog": s.get("retry_backlog", 0),
-        })
+        ingest_series.append(
+            {
+                "ts": ts,
+                "events_1h": s.get("ingest_events_1h", 0),
+                "failed": s.get("ingest_failed", 0),
+                "duplicates": s.get("ingest_duplicates", 0),
+            }
+        )
+        ari_series.append(
+            {
+                "ts": ts,
+                "success_rate": s.get("ari_success_rate", 0),
+                "p95_latency": s.get("ari_p95_latency", 0),
+                "retry_count": s.get("ari_retry_count", 0),
+            }
+        )
+        recon_series.append(
+            {
+                "ts": ts,
+                "open_cases": s.get("recon_open", 0),
+                "critical": s.get("recon_critical", 0),
+            }
+        )
+        queue_series.append(
+            {
+                "ts": ts,
+                "depth": s.get("queue_depth", 0),
+                "retry_backlog": s.get("retry_backlog", 0),
+            }
+        )
 
     return {
         "hours": hours,

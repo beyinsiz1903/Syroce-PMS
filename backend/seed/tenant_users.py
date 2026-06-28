@@ -2,6 +2,7 @@
 
 Writes ctx['tenant_id'], ctx['admin_user_id'], ctx['staff_users_count'].
 """
+
 import random
 
 from seed._helpers import (
@@ -132,7 +133,7 @@ async def seed_tenant_and_users(db, ctx):
             "email": su["email"],
             "name": su["name"],
             "role": su["role"],
-            "phone": f"+90555{random.randint(1000000,9999999)}",
+            "phone": f"+90555{random.randint(1000000, 9999999)}",
             "is_active": True,
             "email_verified": True,
             "email_verified_at": _now().isoformat(),

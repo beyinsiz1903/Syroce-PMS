@@ -4,6 +4,7 @@ delivery monitoring, error classification, and fallback chain management.
 
 Supports: Twilio SMS, SendGrid Email, WhatsApp.
 """
+
 import logging
 import os
 from collections import defaultdict
@@ -25,11 +26,17 @@ class ProviderActivationManager:
     """Manages messaging provider activation, validation, and monitoring."""
 
     def __init__(self):
-        self._delivery_metrics = defaultdict(lambda: {
-            "total_sent": 0, "delivered": 0, "failed": 0,
-            "latency_sum_ms": 0, "last_error": None, "last_sent": None,
-            "error_types": defaultdict(int),
-        })
+        self._delivery_metrics = defaultdict(
+            lambda: {
+                "total_sent": 0,
+                "delivered": 0,
+                "failed": 0,
+                "latency_sum_ms": 0,
+                "last_error": None,
+                "last_sent": None,
+                "error_types": defaultdict(int),
+            }
+        )
         self._provider_configs = {}
         self._fallback_chain = ["twilio_sms", "sendgrid_email", "whatsapp"]
 
@@ -151,6 +158,7 @@ class ProviderActivationManager:
             m["last_error"] = error
             if error:
                 from modules.messaging.providers import BaseProvider
+
                 err_type = BaseProvider().classify_error(error)
                 m["error_types"][err_type] += 1
         m["latency_sum_ms"] += latency_ms
@@ -207,8 +215,7 @@ class ProviderActivationManager:
             "total_providers": len(providers),
             "delivery_metrics": self.get_delivery_metrics(),
             "fallback_chain": self._fallback_chain,
-            "overall_status": "production" if production_ready == len(providers) else
-                              "partial" if production_ready > 0 else "not_configured",
+            "overall_status": "production" if production_ready == len(providers) else "partial" if production_ready > 0 else "not_configured",
         }
 
 

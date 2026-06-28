@@ -9,6 +9,7 @@ Endpoints:
   GET /api/b2b-analytics/top-endpoints     — En çok kullanılan B2B endpoint'leri
   GET /api/b2b-analytics/export            — CSV dışa aktarma
 """
+
 import csv
 import io
 import logging
@@ -30,8 +31,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/b2b-analytics", tags=["B2B Analytics"])
 
 HOTEL_ROLES = {
-    UserRole.SUPER_ADMIN, UserRole.ADMIN,
-    "super_admin", "admin", "manager", "staff",
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    "super_admin",
+    "admin",
+    "manager",
+    "staff",
 }
 
 
@@ -57,8 +62,11 @@ def _date_range(start_date: str | None, end_date: str | None, period: str = "30d
 
 
 B2B_EVENT_TYPES = [
-    "api_call", "reservation_created", "reservation_cancelled",
-    "channel_sync", "webhook_received",
+    "api_call",
+    "reservation_created",
+    "reservation_cancelled",
+    "channel_sync",
+    "webhook_received",
 ]
 
 
@@ -143,17 +151,20 @@ async def get_agency_breakdown(
     agency_ids = [a.get("id", "") for a in agencies]
     stats_map: dict = {}
     if agency_ids:
-        async for r in db.agency_booking_requests.aggregate([
-            {"$match": {"tenant_id": tenant_id, "agency_id": {"$in": agency_ids},
-                        "created_at": {"$gte": sd, "$lte": ed}}},
-            {"$group": {
-                "_id": "$agency_id",
-                "total": {"$sum": 1},
-                "approved": {"$sum": {"$cond": [{"$eq": ["$status", "approved"]}, 1, 0]}},
-                "revenue": {"$sum": {"$cond": [{"$eq": ["$status", "approved"]}, "$total_amount", 0]}},
-                "commission": {"$sum": {"$cond": [{"$eq": ["$status", "approved"]}, "$commission_amount", 0]}},
-            }},
-        ]):
+        async for r in db.agency_booking_requests.aggregate(
+            [
+                {"$match": {"tenant_id": tenant_id, "agency_id": {"$in": agency_ids}, "created_at": {"$gte": sd, "$lte": ed}}},
+                {
+                    "$group": {
+                        "_id": "$agency_id",
+                        "total": {"$sum": 1},
+                        "approved": {"$sum": {"$cond": [{"$eq": ["$status", "approved"]}, 1, 0]}},
+                        "revenue": {"$sum": {"$cond": [{"$eq": ["$status", "approved"]}, "$total_amount", 0]}},
+                        "commission": {"$sum": {"$cond": [{"$eq": ["$status", "approved"]}, "$commission_amount", 0]}},
+                    }
+                },
+            ]
+        ):
             stats_map[r["_id"]] = r
 
     result = []
@@ -164,19 +175,21 @@ async def get_agency_breakdown(
         approved_count = s.get("approved", 0)
         rev = {"revenue": s.get("revenue", 0) or 0, "commission": s.get("commission", 0) or 0}
 
-        result.append({
-            "agency_id": aid,
-            "agency_name": agency.get("name", ""),
-            "status": agency.get("status", ""),
-            "contact_name": agency.get("contact_name", ""),
-            "commission_rate": agency.get("commission_rate", 0),
-            "total_bookings": booking_count,
-            "approved_bookings": approved_count,
-            "conversion_rate": round(approved_count / booking_count * 100, 1) if booking_count > 0 else 0,
-            "revenue": rev.get("revenue", 0) or 0,
-            "commission": rev.get("commission", 0) or 0,
-            "net_revenue": (rev.get("revenue", 0) or 0) - (rev.get("commission", 0) or 0),
-        })
+        result.append(
+            {
+                "agency_id": aid,
+                "agency_name": agency.get("name", ""),
+                "status": agency.get("status", ""),
+                "contact_name": agency.get("contact_name", ""),
+                "commission_rate": agency.get("commission_rate", 0),
+                "total_bookings": booking_count,
+                "approved_bookings": approved_count,
+                "conversion_rate": round(approved_count / booking_count * 100, 1) if booking_count > 0 else 0,
+                "revenue": rev.get("revenue", 0) or 0,
+                "commission": rev.get("commission", 0) or 0,
+                "net_revenue": (rev.get("revenue", 0) or 0) - (rev.get("commission", 0) or 0),
+            }
+        )
 
     result.sort(key=lambda x: x["revenue"], reverse=True)
     return {"period": {"start": sd, "end": ed}, "agencies": result}
@@ -202,11 +215,13 @@ async def get_booking_trends(
     pipeline = [
         {"$match": match_q},
         {"$addFields": {"date_key": {"$substr": ["$created_at", 0, 10]}}},
-        {"$group": {
-            "_id": {"date": "$date_key", "status": "$status"},
-            "count": {"$sum": 1},
-            "revenue": {"$sum": "$total_amount"},
-        }},
+        {
+            "$group": {
+                "_id": {"date": "$date_key", "status": "$status"},
+                "count": {"$sum": 1},
+                "revenue": {"$sum": "$total_amount"},
+            }
+        },
         {"$sort": {"_id.date": 1}},
     ]
     results = await db.agency_booking_requests.aggregate(pipeline).to_list(2000)
@@ -244,10 +259,12 @@ async def get_api_usage(
 
     pipeline = [
         {"$match": {"tenant_id": tenant_id, "date": {"$gte": sd, "$lte": ed}}},
-        {"$group": {
-            "_id": {"date": "$date", "event_type": "$event_type"},
-            "count": {"$sum": "$count"},
-        }},
+        {
+            "$group": {
+                "_id": {"date": "$date", "event_type": "$event_type"},
+                "count": {"$sum": "$count"},
+            }
+        },
         {"$sort": {"_id.date": 1}},
     ]
     results = await db.usage_daily.aggregate(pipeline).to_list(5000)
@@ -297,11 +314,13 @@ async def get_top_endpoints(
     grand_total = sum(r["total_calls"] for r in results) or 1
     endpoints = []
     for r in results:
-        endpoints.append({
-            "event_type": r["_id"],
-            "total_calls": r["total_calls"],
-            "percentage": round(r["total_calls"] / grand_total * 100, 1),
-        })
+        endpoints.append(
+            {
+                "event_type": r["_id"],
+                "total_calls": r["total_calls"],
+                "percentage": round(r["total_calls"] / grand_total * 100, 1),
+            }
+        )
 
     return {"period": {"start": sd, "end": ed}, "endpoints": endpoints}
 
@@ -334,14 +353,17 @@ async def export_b2b_data(
         async for doc in cursor:
             total = doc.get("total_amount", 0) or 0
             commission = doc.get("commission_amount", 0) or 0
-            safe_writerow(writer, [
-                doc.get("created_at", ""),
-                doc.get("agency_name", ""),
-                doc.get("status", ""),
-                total,
-                commission,
-                total - commission,
-            ])
+            safe_writerow(
+                writer,
+                [
+                    doc.get("created_at", ""),
+                    doc.get("agency_name", ""),
+                    doc.get("status", ""),
+                    total,
+                    commission,
+                    total - commission,
+                ],
+            )
 
     elif export_type == "agencies":
         writer = csv.writer(output)
@@ -356,16 +378,19 @@ async def export_b2b_data(
         ag_ids = [ag.get("id", "") for ag in agencies]
         ag_stats: dict = {}
         if ag_ids:
-            async for r in db.agency_booking_requests.aggregate([
-                {"$match": {"tenant_id": tenant_id, "agency_id": {"$in": ag_ids},
-                            "created_at": {"$gte": sd, "$lte": ed}}},
-                {"$group": {
-                    "_id": "$agency_id",
-                    "total": {"$sum": 1},
-                    "approved": {"$sum": {"$cond": [{"$eq": ["$status", "approved"]}, 1, 0]}},
-                    "revenue": {"$sum": {"$cond": [{"$eq": ["$status", "approved"]}, "$total_amount", 0]}},
-                }},
-            ]):
+            async for r in db.agency_booking_requests.aggregate(
+                [
+                    {"$match": {"tenant_id": tenant_id, "agency_id": {"$in": ag_ids}, "created_at": {"$gte": sd, "$lte": ed}}},
+                    {
+                        "$group": {
+                            "_id": "$agency_id",
+                            "total": {"$sum": 1},
+                            "approved": {"$sum": {"$cond": [{"$eq": ["$status", "approved"]}, 1, 0]}},
+                            "revenue": {"$sum": {"$cond": [{"$eq": ["$status", "approved"]}, "$total_amount", 0]}},
+                        }
+                    },
+                ]
+            ):
                 ag_stats[r["_id"]] = r
         for ag in agencies:
             s = ag_stats.get(ag.get("id", ""), {})

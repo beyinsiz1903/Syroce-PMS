@@ -17,6 +17,7 @@ Triggers:
 Design: log-based + generic HTTP webhook with Slack-compatible payload.
 No Slack-specific code — when you provide a Slack webhook URL, it works.
 """
+
 import asyncio
 import logging
 import os
@@ -73,6 +74,7 @@ class AlertingEngine:
     def _get_db(self):
         if self._db is None:
             from core.tenant_db import get_system_db
+
             self._db = get_system_db()
         return self._db
 
@@ -122,10 +124,7 @@ class AlertingEngine:
         }
 
         # Channel 1: Log
-        log_fn = logger.critical if severity == AlertSeverity.CRITICAL else (
-            logger.warning if severity in (AlertSeverity.HIGH, AlertSeverity.WARNING)
-            else logger.info
-        )
+        log_fn = logger.critical if severity == AlertSeverity.CRITICAL else (logger.warning if severity in (AlertSeverity.HIGH, AlertSeverity.WARNING) else logger.info)
         log_fn("ALERT [%s] %s: %s", severity.upper(), title, message)
 
         # Channel 2: Webhook (async, best-effort)
@@ -145,6 +144,7 @@ class AlertingEngine:
         """Send alert via HTTP webhook. Slack-compatible payload."""
         try:
             import aiohttp
+
             severity_emoji = {
                 AlertSeverity.CRITICAL: ":rotating_light:",
                 AlertSeverity.HIGH: ":warning:",
@@ -176,7 +176,8 @@ class AlertingEngine:
                             {"type": "mrkdwn", "text": f"*Trigger:* {alert['trigger']}"},
                             {"type": "mrkdwn", "text": f"*Time:* {alert['fired_at']}"},
                             {"type": "mrkdwn", "text": f"*Runbook:* {alert.get('runbook_link', 'N/A')}"},
-                        ] + context_fields,
+                        ]
+                        + context_fields,
                     },
                     {
                         "type": "section",
@@ -208,11 +209,13 @@ class AlertingEngine:
         try:
             threshold = DEFAULT_THRESHOLDS[AlertTrigger.IMPORT_FAILURE_SPIKE]
             cutoff = (now - timedelta(minutes=threshold["window_minutes"])).isoformat()
-            count = await db.cp_failures.count_documents({
-                "operation_type": "reservation_import",
-                "status": "open",
-                "created_at": {"$gte": cutoff},
-            })
+            count = await db.cp_failures.count_documents(
+                {
+                    "operation_type": "reservation_import",
+                    "status": "open",
+                    "created_at": {"$gte": cutoff},
+                }
+            )
             if count >= threshold["count"]:
                 alert = await self.fire(
                     trigger=AlertTrigger.IMPORT_FAILURE_SPIKE,
@@ -230,10 +233,12 @@ class AlertingEngine:
         try:
             threshold = DEFAULT_THRESHOLDS[AlertTrigger.OUTBOX_STUCK]
             cutoff = (now - timedelta(minutes=threshold["max_stuck_minutes"])).isoformat()
-            stuck = await db.outbox_events.count_documents({
-                "status": {"$in": ["pending", "retry"]},
-                "created_at": {"$lte": cutoff},
-            })
+            stuck = await db.outbox_events.count_documents(
+                {
+                    "status": {"$in": ["pending", "retry"]},
+                    "created_at": {"$lte": cutoff},
+                }
+            )
             if stuck >= threshold["max_stuck_count"]:
                 alert = await self.fire(
                     trigger=AlertTrigger.OUTBOX_STUCK,
@@ -251,10 +256,12 @@ class AlertingEngine:
         try:
             threshold = DEFAULT_THRESHOLDS[AlertTrigger.SECRET_ANOMALY]
             cutoff = (now - timedelta(minutes=threshold["window_minutes"])).isoformat()
-            anomalies = await db.secret_access_audit.count_documents({
-                "result": {"$in": ["failure", "denied"]},
-                "timestamp": {"$gte": cutoff},
-            })
+            anomalies = await db.secret_access_audit.count_documents(
+                {
+                    "result": {"$in": ["failure", "denied"]},
+                    "timestamp": {"$gte": cutoff},
+                }
+            )
             if anomalies >= threshold["count"]:
                 alert = await self.fire(
                     trigger=AlertTrigger.SECRET_ANOMALY,
@@ -272,11 +279,13 @@ class AlertingEngine:
         try:
             threshold = DEFAULT_THRESHOLDS[AlertTrigger.CRYPTO_FAILURE]
             cutoff = (now - timedelta(minutes=threshold["window_minutes"])).isoformat()
-            crypto_fails = await db.cp_failures.count_documents({
-                "operation_type": {"$in": ["crypto_decrypt", "crypto_encrypt"]},
-                "status": "open",
-                "created_at": {"$gte": cutoff},
-            })
+            crypto_fails = await db.cp_failures.count_documents(
+                {
+                    "operation_type": {"$in": ["crypto_decrypt", "crypto_encrypt"]},
+                    "status": "open",
+                    "created_at": {"$gte": cutoff},
+                }
+            )
             if crypto_fails >= threshold["count"]:
                 alert = await self.fire(
                     trigger=AlertTrigger.CRYPTO_FAILURE,
@@ -293,16 +302,17 @@ class AlertingEngine:
         return fired
 
     async def get_recent_alerts(
-        self, *, limit: int = 20, severity: str | None = None,
+        self,
+        *,
+        limit: int = 20,
+        severity: str | None = None,
     ) -> list[dict[str, Any]]:
         """Get recent alerts."""
         db = self._get_db()
         query: dict[str, Any] = {}
         if severity:
             query["severity"] = severity
-        return await db[COLL_ALERTS].find(
-            query, {"_id": 0}
-        ).sort("fired_at", -1).limit(limit).to_list(limit)
+        return await db[COLL_ALERTS].find(query, {"_id": 0}).sort("fired_at", -1).limit(limit).to_list(limit)
 
 
 # ── Singleton ──────────────────────────────────────────────────────

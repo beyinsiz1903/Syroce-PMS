@@ -7,6 +7,7 @@ ARI updates, and any entity through the entire pipeline.
 Primary debug entry point: GET /api/ops/timeline/external/{external_id}
 "Trace any reservation from OTA webhook to PMS booking in seconds."
 """
+
 import logging
 
 from fastapi import APIRouter, Query
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/api/ops/timeline", tags=["Event Timeline"])
 
 
 # ── Fixed routes first (before the catch-all) ──────────────────────
+
 
 @router.get("/search")
 async def search_timeline(
@@ -123,10 +125,14 @@ async def get_raw_payloads_by_external_id(
     """
     from security.pii_registry import mask_dict
 
-    docs = await db.webhook_raw_payloads.find(
-        {"external_id": external_id},
-        {"_id": 0},
-    ).sort("received_at", -1).to_list(limit)
+    docs = (
+        await db.webhook_raw_payloads.find(
+            {"external_id": external_id},
+            {"_id": 0},
+        )
+        .sort("received_at", -1)
+        .to_list(limit)
+    )
 
     # Mask PII in all raw payloads
     masked_docs = [mask_dict(d, user_role="", context="api") for d in docs]
@@ -134,6 +140,7 @@ async def get_raw_payloads_by_external_id(
 
 
 # ── Catch-all route last ───────────────────────────────────────────
+
 
 @router.get("/{entity_type}/{entity_id}")
 async def get_entity_timeline(

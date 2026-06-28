@@ -21,6 +21,7 @@ This module makes that failure observable and self-healing:
   * ``list_status`` powers an ops/admin health check so operators can see which
     backstops are active vs off.
 """
+
 from __future__ import annotations
 
 import logging
@@ -43,14 +44,12 @@ try:  # pragma: no cover - prometheus is always present in prod
 
     _backstop_active_gauge = Gauge(
         "hotel_pms_unique_index_backstop_active",
-        "Whether a unique-index duplicate-prevention backstop is built (1) or "
-        "deferred/off (0)",
+        "Whether a unique-index duplicate-prevention backstop is built (1) or deferred/off (0)",
         ["backstop"],
     )
     _backstop_deferred_total = Counter(
         "hotel_pms_unique_index_backstop_deferred_total",
-        "Times a unique-index backstop build was deferred (existing duplicate "
-        "data) leaving the duplicate-prevention safeguard off",
+        "Times a unique-index backstop build was deferred (existing duplicate data) leaving the duplicate-prevention safeguard off",
         ["backstop"],
     )
 except Exception:  # pragma: no cover
@@ -127,7 +126,10 @@ def record_deferred(
         "UNIQUE_INDEX_BACKSTOP_DEFERRED backstop=%s collection=%s fields=%s — "
         "duplicate-prevention safeguard is OFF (existing duplicate data?). It "
         "will self-heal once the duplicate rows are cleaned: %s",
-        name, collection, fields, error,
+        name,
+        collection,
+        fields,
+        error,
     )
 
 
@@ -168,9 +170,7 @@ async def attempt_backstop(
         record_deferred(name, collection=collection, fields=fields, error=exc)
         return False
     record_active(name, collection=collection, fields=fields)
-    logger.info(
-        "UNIQUE_INDEX_BACKSTOP_ACTIVE backstop=%s collection=%s — "
-        "duplicate-prevention safeguard enforced", name, collection)
+    logger.info("UNIQUE_INDEX_BACKSTOP_ACTIVE backstop=%s collection=%s — duplicate-prevention safeguard enforced", name, collection)
     return True
 
 
@@ -189,10 +189,7 @@ def list_status() -> list[dict[str, Any]]:
         e = dict(entry)
         last = e.get("last_attempt")
         e["status"] = _status_label(e.get("active"))
-        e["last_attempt_iso"] = (
-            time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(last))
-            if last else None
-        )
+        e["last_attempt_iso"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(last)) if last else None
         out.append(e)
     return sorted(out, key=lambda x: x["name"])
 

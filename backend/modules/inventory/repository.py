@@ -67,13 +67,13 @@ class InventoryRepository:
     ) -> list[dict[str, Any]]:
         return await db.bookings.find(
             {
-                'tenant_id': tenant_id,
-                'room_id': room_id,
-                'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-                'check_in': {'$lt': end_date or '9999-12-31'},
-                'check_out': {'$gt': start_date},
+                "tenant_id": tenant_id,
+                "room_id": room_id,
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
+                "check_in": {"$lt": end_date or "9999-12-31"},
+                "check_out": {"$gt": start_date},
             },
-            {'_id': 0},
+            {"_id": 0},
         ).to_list(100)
 
     async def insert_room_block(self, block_doc: dict[str, Any]) -> None:
@@ -108,6 +108,7 @@ class InventoryRepository:
             IDEMPOTENCY_PROCESSING_GRACE_SECONDS,
             unseal_response_body,
         )
+
         lock_id = hashlib.sha256(f"{tenant_id}:{scope}:{idempotency_key}".encode()).hexdigest()
         now = datetime.now(UTC)
         lock_doc = {
@@ -146,6 +147,7 @@ class InventoryRepository:
             IDEMPOTENCY_RETENTION_SECONDS,
             seal_response_body,
         )
+
         now = datetime.now(UTC)
         await db.idempotency_keys.update_one(
             {"_id": lock_id},
@@ -166,6 +168,7 @@ class InventoryRepository:
         from datetime import timedelta as _td
 
         from shared_kernel.idempotency import IDEMPOTENCY_RETENTION_SECONDS
+
         now = datetime.now(UTC)
         await db.idempotency_keys.update_one(
             {"_id": lock_id},

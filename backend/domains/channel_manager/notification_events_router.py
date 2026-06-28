@@ -7,6 +7,7 @@ API endpoints for the high-signal notification system:
   - Event configuration
   - Manual evaluation trigger
 """
+
 import logging
 
 from fastapi import APIRouter, Depends, Query
@@ -68,6 +69,7 @@ async def evaluate_readiness(
     """Trigger tenant readiness evaluation and emit events."""
     property_id = getattr(current_user, "property_id", "default")
     result = await evaluate_tenant_readiness(
-        current_user.tenant_id, property_id,
+        current_user.tenant_id,
+        property_id,
     )
     return result

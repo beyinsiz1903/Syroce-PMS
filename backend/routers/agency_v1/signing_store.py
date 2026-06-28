@@ -26,6 +26,7 @@ Doktrin: shared_secret degeri ASLA loglanmaz/yanitta gecmez; resolve cozulemezse
 Sir cagirana yalniz mint aninda BIR KEZ ham doner; persist edilen tek sey sifreli
 zarftir.
 """
+
 from __future__ import annotations
 
 import logging
@@ -60,17 +61,13 @@ def _aad(tenant_id: str, agency_id: str, key_id: str) -> AADContext:
     )
 
 
-async def mint_agency_signing_secret(
-    sysdb, *, key_id: str, tenant_id: str, agency_id: str
-) -> str:
+async def mint_agency_signing_secret(sysdb, *, key_id: str, tenant_id: str, agency_id: str) -> str:
     """Yeni shared_secret uretir, AAD-bagli sifreli olarak saklar, ham degeri BIR
     KEZ doner. `_id = key_id` benzersiz oldugundan ayni key icin ikinci mint
     DuplicateKeyError firlatir (rotasyon ayri/bilincli bir islemdir).
     """
     raw_secret = secrets.token_urlsafe(48)
-    secret_enc = _engine().encrypt(
-        raw_secret, aad=_aad(tenant_id, agency_id, key_id)
-    )
+    secret_enc = _engine().encrypt(raw_secret, aad=_aad(tenant_id, agency_id, key_id))
     from datetime import UTC, datetime
 
     doc = {
@@ -92,9 +89,7 @@ async def resolve_signing_secret(sysdb, key_id: str) -> dict | None:
     """
     if not key_id:
         return None
-    doc = await sysdb.agency_signing_secrets.find_one(
-        {"_id": key_id, "is_active": True}
-    )
+    doc = await sysdb.agency_signing_secrets.find_one({"_id": key_id, "is_active": True})
     if not doc:
         return None
     tenant_id = doc.get("tenant_id") or ""
@@ -103,14 +98,10 @@ async def resolve_signing_secret(sysdb, key_id: str) -> dict | None:
     if not (tenant_id and agency_id and enc):
         return None
     try:
-        shared_secret = _engine().decrypt(
-            enc, aad=_aad(tenant_id, agency_id, key_id)
-        )
+        shared_secret = _engine().decrypt(enc, aad=_aad(tenant_id, agency_id, key_id))
     except CryptoError:
         # tamper / wrong-AAD / key-not-found -> fail-closed. Sir/zarf LOGLANMAZ.
-        logger.warning(
-            "agency signing secret decrypt failed (fail-closed) key_id=%s", key_id
-        )
+        logger.warning("agency signing secret decrypt failed (fail-closed) key_id=%s", key_id)
         return None
     return {
         "key_id": key_id,
@@ -122,6 +113,4 @@ async def resolve_signing_secret(sysdb, key_id: str) -> dict | None:
 
 async def revoke_signing_secret(sysdb, key_id: str) -> None:
     """Imza sirrini pasiflestirir (api key revoke ile paralel). Idempotent."""
-    await sysdb.agency_signing_secrets.update_one(
-        {"_id": key_id}, {"$set": {"is_active": False}}
-    )
+    await sysdb.agency_signing_secrets.update_one({"_id": key_id}, {"$set": {"is_active": False}})

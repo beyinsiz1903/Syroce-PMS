@@ -78,9 +78,14 @@ COLLECTION_ALIASES: dict[str, list[str]] = {
 
 # Collections the static query scan inspects for un-scoped raw reads.
 QUERY_SCAN_COLLECTIONS: set[str] = {
-    "bookings", "guests", "rooms", "folios",
-    "audit_logs", "pms_audit_trail",
-    "housekeeping_tasks", "task_queue",
+    "bookings",
+    "guests",
+    "rooms",
+    "folios",
+    "audit_logs",
+    "pms_audit_trail",
+    "housekeeping_tasks",
+    "task_queue",
 }
 
 # Read operations whose first/pipeline argument carries the query filter.
@@ -93,9 +98,18 @@ RAW_DB_NAMES: set[str] = {"_raw_db"}
 # Directory names skipped by the static scan (out of production scope per
 # threat_model.md: tests, scripts, e2e harnesses, vendored code).
 _SKIP_DIRS: set[str] = {
-    "tests", "scripts", "e2e", "e2e-business", "e2e-smoke",
-    ".venv", "venv", "node_modules", "__pycache__", ".git",
-    "migrations", "seeds",
+    "tests",
+    "scripts",
+    "e2e",
+    "e2e-business",
+    "e2e-smoke",
+    ".venv",
+    "venv",
+    "node_modules",
+    "__pycache__",
+    ".git",
+    "migrations",
+    "seeds",
 }
 
 
@@ -131,13 +145,13 @@ class Findings:
 
 @dataclass
 class CollIndexResult:
-    logical: str                      # doc-named collection (e.g. "tasks")
-    resolved: list[str]               # real collection(s) audited
-    present: bool                     # any resolved collection exists live
-    tenant_leading: list[str]         # index names leading with tenant_id
-    shardkey_by_field: list[str]      # index names whose prefix == shard fields
-    shardkey_exact: list[str]         # ... and direction also matches
-    status: str                       # READY | READY_TENANT_ONLY | MISSING | ABSENT
+    logical: str  # doc-named collection (e.g. "tasks")
+    resolved: list[str]  # real collection(s) audited
+    present: bool  # any resolved collection exists live
+    tenant_leading: list[str]  # index names leading with tenant_id
+    shardkey_by_field: list[str]  # index names whose prefix == shard fields
+    shardkey_exact: list[str]  # ... and direction also matches
+    status: str  # READY | READY_TENANT_ONLY | MISSING | ABSENT
     notes: list[str] = field(default_factory=list)
 
 
@@ -159,10 +173,7 @@ def _field_names(keylist: list) -> list[str]:
 
 
 def _norm_pairs(keylist: list) -> list[tuple[str, object]]:
-    return [
-        (k[0], k[1]) for k in keylist
-        if isinstance(k, (list, tuple)) and len(k) >= 2
-    ]
+    return [(k[0], k[1]) for k in keylist if isinstance(k, (list, tuple)) and len(k) >= 2]
 
 
 def evaluate_collection(
@@ -203,33 +214,21 @@ def evaluate_collection(
 
     notes: list[str] = []
     if logical in COLLECTION_ALIASES:
-        notes.append(
-            f"strateji dokümanı '{logical}' koleksiyonunu listeliyor; kod "
-            f"tabanında karşılığı: {', '.join(resolved)}"
-        )
+        notes.append(f"strateji dokümanı '{logical}' koleksiyonunu listeliyor; kod tabanında karşılığı: {', '.join(resolved)}")
 
     if not present:
         status = "ABSENT"
-        notes.append(
-            "koleksiyon canlı cluster'da yok (henüz veri yazılmamış olabilir) "
-            "— shard öncesi yeniden denetle"
-        )
+        notes.append("koleksiyon canlı cluster'da yok (henüz veri yazılmamış olabilir) — shard öncesi yeniden denetle")
     elif not tenant_leading:
         status = "MISSING"
     elif shardkey_by_field:
         status = "READY"
         if not shardkey_exact:
-            notes.append(
-                "shard-key alanlarını taşıyan index var ama önerilen yön "
-                f"({_fmt_key(shard_key)}) ile birebir değil — sharding anında "
-                "tam yönlü shard-key index'i oluşturulmalı"
-            )
+            notes.append(f"shard-key alanlarını taşıyan index var ama önerilen yön ({_fmt_key(shard_key)}) ile birebir değil — sharding anında tam yönlü shard-key index'i oluşturulmalı")
     else:
         status = "READY_TENANT_ONLY"
         notes.append(
-            f"önerilen bileşik shard-key {_fmt_key(shard_key)} hiçbir index'le "
-            "desteklenmiyor; tenant_id öncüllü index'ler var → {tenant_id} "
-            "shard-key'i için hazır, bileşik için index eklenmeli"
+            f"önerilen bileşik shard-key {_fmt_key(shard_key)} hiçbir index'le desteklenmiyor; tenant_id öncüllü index'ler var → {{tenant_id}} shard-key'i için hazır, bileşik için index eklenmeli"
         )
 
     return CollIndexResult(
@@ -258,8 +257,8 @@ class QueryFinding:
     lineno: int
     collection: str
     op: str
-    scoped: bool          # True if the call's source carries a tenant_id filter
-    by_design: bool       # True if it matches a known cross-tenant pattern
+    scoped: bool  # True if the call's source carries a tenant_id filter
+    by_design: bool  # True if it matches a known cross-tenant pattern
     snippet: str
 
 
@@ -339,10 +338,7 @@ async def fetch_index_maps(collections: list[str]) -> dict[str, dict[str, list]]
 
     mongo_url = os.environ.get("MONGO_URL") or os.environ.get("MONGO_ATLAS_URI")
     if not mongo_url:
-        raise RuntimeError(
-            "MONGO_URL (veya MONGO_ATLAS_URI) tanımlı değil — index denetimi "
-            "canlı cluster gerektirir. --query-only ile statik tarama yapın."
-        )
+        raise RuntimeError("MONGO_URL (veya MONGO_ATLAS_URI) tanımlı değil — index denetimi canlı cluster gerektirir. --query-only ile statik tarama yapın.")
     db_name = os.environ.get("DB_NAME", "hotel_pms")
     client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
     try:
@@ -378,19 +374,12 @@ def build_findings(
 
     # 1) Index coverage
     if index_results is None:
-        f.warn(
-            "Index shard-key denetimi ATLANDI (canlı cluster sorgulanmadı). "
-            "Tam hazırlık raporu için MONGO_URL ile --query-only olmadan çalıştır."
-        )
+        f.warn("Index shard-key denetimi ATLANDI (canlı cluster sorgulanmadı). Tam hazırlık raporu için MONGO_URL ile --query-only olmadan çalıştır.")
     else:
         for r in index_results:
             label = f"{r.logical} (shard-key {_fmt_key(SHARD_KEY_SPEC[r.logical])})"
             if r.status == "MISSING":
-                f.block(
-                    f"{label}: tenant_id öncüllü HİÇBİR index yok → sorgular "
-                    "scatter-gather'a düşer, koleksiyon temiz shard'lanamaz. "
-                    f"Denetlenen: {', '.join(r.resolved)}."
-                )
+                f.block(f"{label}: tenant_id öncüllü HİÇBİR index yok → sorgular scatter-gather'a düşer, koleksiyon temiz shard'lanamaz. Denetlenen: {', '.join(r.resolved)}.")
             elif r.status == "READY_TENANT_ONLY":
                 f.warn(
                     f"{label}: tenant_id öncüllü index var ama önerilen bileşik "
@@ -399,10 +388,7 @@ def build_findings(
                     f"tenant_id öncüllü: {', '.join(r.tenant_leading) or '-'}."
                 )
             elif r.status == "ABSENT":
-                f.note(
-                    f"{label}: koleksiyon canlı cluster'da yok — "
-                    f"{'; '.join(r.notes)}"
-                )
+                f.note(f"{label}: koleksiyon canlı cluster'da yok — {'; '.join(r.notes)}")
             else:  # READY
                 detail = f"shard-key index'i: {', '.join(r.shardkey_by_field)}"
                 if not r.shardkey_exact:
@@ -423,15 +409,9 @@ def build_findings(
         f"{len(unscoped)} tenant_id'siz."
     )
     for q in by_design:
-        f.note(
-            f"  · bilinçli global: {q.path}:{q.lineno} {q.collection}.{q.op} "
-            f"(guest-app cross-tenant) → {q.snippet}"
-        )
+        f.note(f"  · bilinçli global: {q.path}:{q.lineno} {q.collection}.{q.op} (guest-app cross-tenant) → {q.snippet}")
     for q in unscoped:
-        f.warn(
-            f"tenant_id'siz raw okuma (shard'da scatter-gather): {q.path}:"
-            f"{q.lineno} {q.collection}.{q.op} → {q.snippet}"
-        )
+        f.warn(f"tenant_id'siz raw okuma (shard'da scatter-gather): {q.path}:{q.lineno} {q.collection}.{q.op} → {q.snippet}")
 
     return f
 
@@ -450,10 +430,7 @@ def _print_report(f: Findings) -> None:
         print(f"\n[INFO] ({len(f.info)})")
         for i in f.info:
             print(f"  - {i}")
-    print(
-        f"\nSUMMARY blockers={len(f.blockers)} warnings={len(f.warnings)} "
-        f"info={len(f.info)} verdict={f.verdict}"
-    )
+    print(f"\nSUMMARY blockers={len(f.blockers)} warnings={len(f.warnings)} info={len(f.info)} verdict={f.verdict}")
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────
@@ -466,10 +443,7 @@ async def run(query_only: bool) -> Findings:
     index_results: list[CollIndexResult] | None = None
     if not query_only:
         index_maps = await fetch_index_maps(_resolved_collection_names())
-        index_results = [
-            evaluate_collection(logical, shard_key, index_maps)
-            for logical, shard_key in SHARD_KEY_SPEC.items()
-        ]
+        index_results = [evaluate_collection(logical, shard_key, index_maps) for logical, shard_key in SHARD_KEY_SPEC.items()]
     return build_findings(index_results, query_findings)
 
 

@@ -8,6 +8,7 @@ Examples:
   syroce/production/channel-manager/t_abc123/exely/hotel_501694
   syroce/development/channel-manager/t_demo/hotelrunner/hr_12345
 """
+
 import re
 from dataclasses import dataclass
 
@@ -24,6 +25,7 @@ def _sanitize(segment: str) -> str:
 @dataclass(frozen=True)
 class SecretIdentity:
     """Uniquely identifies a secret across environments and tenants."""
+
     prefix: str
     environment: str
     tenant_id: str

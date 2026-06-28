@@ -15,6 +15,7 @@ Public methods:
 - push_date_range_inventory()
 - confirm_delivery()
 """
+
 import logging
 import time
 from typing import Any
@@ -130,6 +131,7 @@ class HotelRunnerProvider:
         """
         start = time.time()
         try:
+
             async def _call():
                 return await self._client.get(ep.CHANNELS)
 
@@ -137,9 +139,11 @@ class HotelRunnerProvider:
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                path=ep.CHANNELS, method="GET",
+                path=ep.CHANNELS,
+                method="GET",
                 status_code=result.status_code,
-                duration_ms=duration_ms, success=result.success,
+                duration_ms=duration_ms,
+                success=result.success,
                 connection_id=self._connection_id,
             )
 
@@ -176,6 +180,7 @@ class HotelRunnerProvider:
         """Fetch all rooms/rates from HotelRunner."""
         start = time.time()
         try:
+
             async def _call():
                 return await self._client.get(ep.ROOMS)
 
@@ -183,9 +188,11 @@ class HotelRunnerProvider:
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                path=ep.ROOMS, method="GET",
+                path=ep.ROOMS,
+                method="GET",
                 status_code=result.status_code,
-                duration_ms=duration_ms, success=result.success,
+                duration_ms=duration_ms,
+                success=result.success,
                 connection_id=self._connection_id,
             )
 
@@ -206,6 +213,7 @@ class HotelRunnerProvider:
         """Fetch all available channels."""
         start = time.time()
         try:
+
             async def _call():
                 return await self._client.get(ep.CHANNELS)
 
@@ -213,9 +221,11 @@ class HotelRunnerProvider:
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                path=ep.CHANNELS, method="GET",
+                path=ep.CHANNELS,
+                method="GET",
                 status_code=result.status_code,
-                duration_ms=duration_ms, success=result.success,
+                duration_ms=duration_ms,
+                success=result.success,
                 connection_id=self._connection_id,
             )
 
@@ -234,6 +244,7 @@ class HotelRunnerProvider:
         """Fetch connected channels with process stats."""
         start = time.time()
         try:
+
             async def _call():
                 return await self._client.get(ep.CONNECTED_CHANNELS)
 
@@ -241,9 +252,11 @@ class HotelRunnerProvider:
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                path=ep.CONNECTED_CHANNELS, method="GET",
+                path=ep.CONNECTED_CHANNELS,
+                method="GET",
                 status_code=result.status_code,
-                duration_ms=duration_ms, success=result.success,
+                duration_ms=duration_ms,
+                success=result.success,
                 connection_id=self._connection_id,
             )
 
@@ -305,14 +318,25 @@ class HotelRunnerProvider:
             return self._handle_error(e, start, ep.RESERVATIONS)
 
     async def _fetch_reservations_page(
-        self, *, undelivered, from_date, from_last_update_date,
-        per_page, page, modified, booked, start_time,
+        self,
+        *,
+        undelivered,
+        from_date,
+        from_last_update_date,
+        per_page,
+        page,
+        modified,
+        booked,
+        start_time,
     ) -> ProviderResult:
         params = self._build_reservation_params(
-            undelivered=undelivered, from_date=from_date,
+            undelivered=undelivered,
+            from_date=from_date,
             from_last_update_date=from_last_update_date,
-            per_page=per_page, page=page,
-            modified=modified, booked=booked,
+            per_page=per_page,
+            page=page,
+            modified=modified,
+            booked=booked,
         )
 
         async def _call():
@@ -322,9 +346,11 @@ class HotelRunnerProvider:
         duration_ms = int((time.time() - start_time) * 1000)
 
         obs.record_provider_call(
-            path=ep.RESERVATIONS, method="GET",
+            path=ep.RESERVATIONS,
+            method="GET",
             status_code=result.status_code,
-            duration_ms=duration_ms, success=result.success,
+            duration_ms=duration_ms,
+            success=result.success,
             connection_id=self._connection_id,
         )
 
@@ -344,15 +370,24 @@ class HotelRunnerProvider:
         return ProviderResult(success=False, error=result.error, duration_ms=duration_ms)
 
     async def _fetch_all_reservations(
-        self, *, from_date, from_last_update_date,
-        per_page, modified, booked, start_time,
+        self,
+        *,
+        from_date,
+        from_last_update_date,
+        per_page,
+        modified,
+        booked,
+        start_time,
     ) -> ProviderResult:
         async def _fetch_page(page_num: int) -> dict[str, Any]:
             params = self._build_reservation_params(
-                undelivered=False, from_date=from_date,
+                undelivered=False,
+                from_date=from_date,
                 from_last_update_date=from_last_update_date,
-                per_page=per_page, page=page_num,
-                modified=modified, booked=booked,
+                per_page=per_page,
+                page=page_num,
+                modified=modified,
+                booked=booked,
             )
 
             async def _call():
@@ -367,9 +402,11 @@ class HotelRunnerProvider:
         duration_ms = int((time.time() - start_time) * 1000)
 
         obs.record_provider_call(
-            path=ep.RESERVATIONS, method="GET",
+            path=ep.RESERVATIONS,
+            method="GET",
             status_code=200,
-            duration_ms=duration_ms, success=True,
+            duration_ms=duration_ms,
+            success=True,
             connection_id=self._connection_id,
         )
 
@@ -385,8 +422,14 @@ class HotelRunnerProvider:
 
     @staticmethod
     def _build_reservation_params(
-        *, undelivered, from_date, from_last_update_date,
-        per_page, page, modified, booked,
+        *,
+        undelivered,
+        from_date,
+        from_last_update_date,
+        per_page,
+        page,
+        modified,
+        booked,
     ) -> dict[str, str]:
         params: dict[str, str] = {
             "undelivered": str(undelivered).lower(),
@@ -442,9 +485,11 @@ class HotelRunnerProvider:
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                path=ep.ROOMS_DAILY, method="PUT",
+                path=ep.ROOMS_DAILY,
+                method="PUT",
                 status_code=result.status_code,
-                duration_ms=duration_ms, success=result.success,
+                duration_ms=duration_ms,
+                success=result.success,
                 connection_id=self._connection_id,
             )
             if result.success:
@@ -496,9 +541,11 @@ class HotelRunnerProvider:
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                path=ep.ROOMS_DATERANGE, method="PUT",
+                path=ep.ROOMS_DATERANGE,
+                method="PUT",
                 status_code=result.status_code,
-                duration_ms=duration_ms, success=result.success,
+                duration_ms=duration_ms,
+                success=result.success,
                 connection_id=self._connection_id,
             )
             if result.success:
@@ -536,9 +583,11 @@ class HotelRunnerProvider:
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                path=ep.RESERVATIONS_ACK, method="PUT",
+                path=ep.RESERVATIONS_ACK,
+                method="PUT",
                 status_code=result.status_code,
-                duration_ms=duration_ms, success=result.success,
+                duration_ms=duration_ms,
+                success=result.success,
                 connection_id=self._connection_id,
             )
             return ProviderResult(
@@ -667,9 +716,11 @@ class HotelRunnerProvider:
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                path=ep.ROOMS_DATERANGE, method="PUT",
+                path=ep.ROOMS_DATERANGE,
+                method="PUT",
                 status_code=result.status_code,
-                duration_ms=duration_ms, success=result.success,
+                duration_ms=duration_ms,
+                success=result.success,
                 connection_id=self._connection_id,
             )
             if result.success:
@@ -704,6 +755,7 @@ class HotelRunnerProvider:
         """
         start = time.time()
         try:
+
             async def _call():
                 return await self._client.get(
                     ep.TRANSACTION_DETAILS,
@@ -714,9 +766,11 @@ class HotelRunnerProvider:
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                path=ep.TRANSACTION_DETAILS, method="GET",
+                path=ep.TRANSACTION_DETAILS,
+                method="GET",
                 status_code=result.status_code,
-                duration_ms=duration_ms, success=result.success,
+                duration_ms=duration_ms,
+                success=result.success,
                 connection_id=self._connection_id,
             )
             if result.success:

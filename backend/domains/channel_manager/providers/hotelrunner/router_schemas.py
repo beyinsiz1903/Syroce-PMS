@@ -5,6 +5,7 @@ HotelRunner Router — Request/Response DTOs
 Pydantic models used by hotelrunner_router endpoints.
 Kept separate from `schemas.py` (provider-internal dataclasses).
 """
+
 from pydantic import BaseModel
 
 

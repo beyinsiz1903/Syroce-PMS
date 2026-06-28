@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 try:
     from openai import AsyncOpenAI
+
     _OPENAI_AVAILABLE = True
 except Exception:
     AsyncOpenAI = None
@@ -82,7 +83,7 @@ class AIService:
         self.api_key = None
 
         if _OPENAI_AVAILABLE and AsyncOpenAI is not None:
-            api_key = os.getenv('OPENAI_API_KEY')
+            api_key = os.getenv("OPENAI_API_KEY")
             if api_key:
                 self.api_key = api_key
                 self.llm_enabled = True
@@ -97,16 +98,7 @@ class AIService:
         return _SimpleLlmChat(api_key=self.api_key, system_message=system_message)
 
     async def generate_daily_briefing(
-        self,
-        hotel_name: str,
-        total_rooms: int,
-        occupied_rooms: int,
-        today_checkins: int,
-        today_checkouts: int,
-        pending_invoices: int,
-        monthly_revenue: float,
-        weather: str = "clear",
-        lang: str = "tr"
+        self, hotel_name: str, total_rooms: int, occupied_rooms: int, today_checkins: int, today_checkouts: int, pending_invoices: int, monthly_revenue: float, weather: str = "clear", lang: str = "tr"
     ) -> str:
         """
         Generate a natural language daily briefing for the dashboard
@@ -157,12 +149,7 @@ Give a friendly greeting, highlight key metrics, and provide 1-2 actionable insi
         return response
 
     async def predict_occupancy(
-        self,
-        historical_data: list[dict[str, Any]],
-        current_occupancy: float,
-        upcoming_bookings: int,
-        season: str = "normal",
-        room_capacity: int | None = None
+        self, historical_data: list[dict[str, Any]], current_occupancy: float, upcoming_bookings: int, season: str = "normal", room_capacity: int | None = None
     ) -> dict[str, Any]:
         """
         Predict occupancy trends and patterns for PMS.
@@ -191,19 +178,14 @@ Format your response as JSON with keys: tomorrow_prediction, next_week_predictio
 
             response = await chat.send_message(prompt)
         except Exception as exc:
-            return self._fallback_occupancy_prediction(
-                current_occupancy=current_occupancy,
-                upcoming_bookings=upcoming_bookings,
-                season=season,
-                room_capacity=room_capacity,
-                error_message=str(exc)
-            )
+            return self._fallback_occupancy_prediction(current_occupancy=current_occupancy, upcoming_bookings=upcoming_bookings, season=season, room_capacity=room_capacity, error_message=str(exc))
 
         # Try to parse as JSON, fallback to text response
         try:
             import json
-            json_start = response.find('{')
-            json_end = response.rfind('}') + 1
+
+            json_start = response.find("{")
+            json_end = response.rfind("}") + 1
             if json_start != -1 and json_end != -1:
                 parsed = json.loads(response[json_start:json_end])
                 if isinstance(parsed, dict):
@@ -212,20 +194,9 @@ Format your response as JSON with keys: tomorrow_prediction, next_week_predictio
         except Exception:
             pass
 
-        return {
-            "prediction": response,
-            "confidence": "medium",
-            "source": "llm_raw"
-        }
+        return {"prediction": response, "confidence": "medium", "source": "llm_raw"}
 
-    def _fallback_occupancy_prediction(
-        self,
-        current_occupancy: float,
-        upcoming_bookings: int,
-        season: str,
-        room_capacity: int | None = None,
-        error_message: str | None = None
-    ) -> dict[str, Any]:
+    def _fallback_occupancy_prediction(self, current_occupancy: float, upcoming_bookings: int, season: str, room_capacity: int | None = None, error_message: str | None = None) -> dict[str, Any]:
         """
         Generate a deterministic occupancy prediction when the AI backend
         is unavailable. Keeps the UI responsive instead of surfacing 500 errors.
@@ -236,17 +207,11 @@ Format your response as JSON with keys: tomorrow_prediction, next_week_predictio
 
         demand_modifier = booking_ratio * 20
         tomorrow_prediction = max(0.0, min(100.0, current_occupancy + demand_modifier * 0.6 + seasonal_adjustment))
-        next_week_prediction = max(
-            tomorrow_prediction,
-            max(0.0, min(100.0, current_occupancy + demand_modifier + seasonal_adjustment))
-        )
+        next_week_prediction = max(tomorrow_prediction, max(0.0, min(100.0, current_occupancy + demand_modifier + seasonal_adjustment)))
 
         confidence = "high" if booking_ratio >= 1 else "medium" if booking_ratio >= 0.5 else "low"
 
-        patterns = [
-            f"Current occupancy is {current_occupancy:.1f}%.",
-            f"{upcoming_bookings} upcoming bookings cover roughly {booking_ratio:.0%} of available rooms."
-        ]
+        patterns = [f"Current occupancy is {current_occupancy:.1f}%.", f"{upcoming_bookings} upcoming bookings cover roughly {booking_ratio:.0%} of available rooms."]
         # We do not surface technical error messages to end users in the UI;
         # the frontend only shows human-friendly patterns.
 
@@ -267,15 +232,10 @@ Format your response as JSON with keys: tomorrow_prediction, next_week_predictio
             "patterns": patterns,
             "recommendations": recommendations,
             "confidence": confidence,
-            "source": "heuristic"
+            "source": "heuristic",
         }
 
-    async def analyze_guest_patterns(
-        self,
-        checkin_times: list[str],
-        checkout_times: list[str],
-        guest_count: int
-    ) -> str:
+    async def analyze_guest_patterns(self, checkin_times: list[str], checkout_times: list[str], guest_count: int) -> str:
         """
         Analyze check-in/check-out patterns for staffing optimization
         """
@@ -286,8 +246,8 @@ Format your response as JSON with keys: tomorrow_prediction, next_week_predictio
 
         prompt = f"""Analyze these guest patterns:
 
-Check-in times: {', '.join(checkin_times[:10])}
-Check-out times: {', '.join(checkout_times[:10])}
+Check-in times: {", ".join(checkin_times[:10])}
+Check-out times: {", ".join(checkout_times[:10])}
 Total guests: {guest_count}
 
 Identify:
@@ -300,12 +260,7 @@ Keep response concise (under 80 words)."""
         response = await chat.send_message(prompt)
         return response
 
-    async def categorize_expense(
-        self,
-        description: str,
-        amount: float,
-        vendor: str = ""
-    ) -> dict[str, str]:
+    async def categorize_expense(self, description: str, amount: float, vendor: str = "") -> dict[str, str]:
         """
         Automatically categorize expenses for invoicing
         """
@@ -332,24 +287,16 @@ Format: Category: [category], Confidence: [level]"""
 
         if "Category:" in response:
             try:
-                parts = response.split(',')
-                category = parts[0].split(':')[1].strip()
+                parts = response.split(",")
+                category = parts[0].split(":")[1].strip()
                 if len(parts) > 1:
-                    confidence = parts[1].split(':')[1].strip().lower()
+                    confidence = parts[1].split(":")[1].strip().lower()
             except Exception:
                 pass
 
-        return {
-            "category": category,
-            "confidence": confidence,
-            "raw_response": response
-        }
+        return {"category": category, "confidence": confidence, "raw_response": response}
 
-    async def detect_invoice_anomalies(
-        self,
-        invoices: list[dict[str, Any]],
-        average_amount: float
-    ) -> list[dict[str, Any]]:
+    async def detect_invoice_anomalies(self, invoices: list[dict[str, Any]], average_amount: float) -> list[dict[str, Any]]:
         """
         Detect unusual patterns in invoices
         """
@@ -378,15 +325,9 @@ List only genuine anomalies. Be concise."""
 
         response = await chat.send_message(prompt)
 
-        return [{
-            "type": "analysis",
-            "message": response
-        }]
+        return [{"type": "analysis", "message": response}]
 
-    async def segment_guests(
-        self,
-        guests: list[dict[str, Any]]
-    ) -> dict[str, Any]:
+    async def segment_guests(self, guests: list[dict[str, Any]]) -> dict[str, Any]:
         """
         Segment guests for loyalty program targeting
         """
@@ -416,18 +357,9 @@ Format as JSON with segments array."""
 
         response = await chat.send_message(prompt)
 
-        return {
-            "segments_analysis": response,
-            "total_guests": len(guests)
-        }
+        return {"segments_analysis": response, "total_guests": len(guests)}
 
-    async def predict_churn_risk(
-        self,
-        guest_id: str,
-        last_visit_days: int,
-        total_visits: int,
-        average_spend: float
-    ) -> dict[str, Any]:
+    async def predict_churn_risk(self, guest_id: str, last_visit_days: int, total_visits: int, average_spend: float) -> dict[str, Any]:
         """
         Predict if a guest is at risk of churning
         """
@@ -458,17 +390,9 @@ Be concise (under 60 words)."""
         elif "low" in response.lower():
             risk_level = "low"
 
-        return {
-            "risk_level": risk_level,
-            "analysis": response
-        }
+        return {"risk_level": risk_level, "analysis": response}
 
-    async def recommend_products(
-        self,
-        inventory: list[dict[str, Any]],
-        recent_orders: list[dict[str, Any]],
-        season: str = "normal"
-    ) -> list[dict[str, Any]]:
+    async def recommend_products(self, inventory: list[dict[str, Any]], recent_orders: list[dict[str, Any]], season: str = "normal") -> list[dict[str, Any]]:
         """
         Recommend products to order based on usage patterns
         """
@@ -478,7 +402,7 @@ Be concise (under 60 words)."""
         chat = self._create_chat(system_message, session_id="product_recommendations")
 
         # Summarize inventory
-        low_stock_items = [item for item in inventory if item.get('quantity', 0) < item.get('reorder_level', 10)]
+        low_stock_items = [item for item in inventory if item.get("quantity", 0) < item.get("reorder_level", 10)]
 
         prompt = f"""Analyze inventory and recommend orders:
 
@@ -495,18 +419,9 @@ Keep it concise and practical."""
 
         response = await chat.send_message(prompt)
 
-        return [{
-            "type": "recommendation",
-            "message": response,
-            "low_stock_count": len(low_stock_items)
-        }]
+        return [{"type": "recommendation", "message": response, "low_stock_count": len(low_stock_items)}]
 
-    async def analyze_revenue_trends(
-        self,
-        revenue_data: list[dict[str, Any]],
-        current_month_revenue: float,
-        last_month_revenue: float
-    ) -> str:
+    async def analyze_revenue_trends(self, revenue_data: list[dict[str, Any]], current_month_revenue: float, last_month_revenue: float) -> str:
         """
         Analyze revenue trends for RMS insights
         """
@@ -539,11 +454,13 @@ Keep under 80 words."""
 # Lazy-loaded singleton instance
 _ai_service_instance = None
 
+
 def get_ai_service():
     global _ai_service_instance
     if _ai_service_instance is None:
         _ai_service_instance = AIService()
     return _ai_service_instance
+
 
 # For backwards compatibility
 ai_service = None  # Will be initialized on first use

@@ -16,6 +16,7 @@ Tutarlılık:
   - audit_log entegrasyonu
   - Legacy folios (window_number=None) slot accounting'e dahil edilir
 """
+
 from __future__ import annotations
 
 import logging
@@ -91,6 +92,7 @@ async def _ensure_indexes() -> None:
     Fail-closed: index oluşturulamazsa mutating endpoint 503 verir.
     Cooldown: hata olursa 30sn boyunca DB'ye yeniden deneme yapılmaz (sadece 503)."""
     import time as _time
+
     global _INDEX_DONE, _INDEX_FAILED_AT
     if _INDEX_DONE:
         return
@@ -125,8 +127,7 @@ def _resolve_window_number(folio: dict[str, Any], all_folios: list[dict[str, Any
     wn = folio.get("window_number")
     if isinstance(wn, int) and wn >= 1:
         return wn
-    used = {f.get("window_number") for f in all_folios
-            if isinstance(f.get("window_number"), int) and f.get("window_number") >= 1}
+    used = {f.get("window_number") for f in all_folios if isinstance(f.get("window_number"), int) and f.get("window_number") >= 1}
     legacy_sorted = sorted(
         [f for f in all_folios if not (isinstance(f.get("window_number"), int) and f.get("window_number") >= 1)],
         key=lambda x: _ts_key(x.get("created_at")),
@@ -182,23 +183,17 @@ async def open_window(
 ):
     """Yeni window aç (auto-numbering 1-8). Race-safe: unique index + 3x retry."""
     await _ensure_indexes()
-    booking = await db.bookings.find_one(
-        {"id": body.booking_id, "tenant_id": user.tenant_id}, {"_id": 0, "id": 1}
-    )
+    booking = await db.bookings.find_one({"id": body.booking_id, "tenant_id": user.tenant_id}, {"_id": 0, "id": 1})
     if not booking:
         raise HTTPException(404, "Rezervasyon bulunamadı")
 
     # Payor doğrulama
     if body.payor_type == "guest" and body.payor_id:
-        ok = await db.guests.find_one(
-            {"id": body.payor_id, "tenant_id": user.tenant_id}, {"_id": 0, "id": 1}
-        )
+        ok = await db.guests.find_one({"id": body.payor_id, "tenant_id": user.tenant_id}, {"_id": 0, "id": 1})
         if not ok:
             raise HTTPException(404, "Misafir bulunamadı")
     elif body.payor_type == "company" and body.payor_id:
-        ok = await db.companies.find_one(
-            {"id": body.payor_id, "tenant_id": user.tenant_id}, {"_id": 0, "id": 1}
-        )
+        ok = await db.companies.find_one({"id": body.payor_id, "tenant_id": user.tenant_id}, {"_id": 0, "id": 1})
         if not ok:
             raise HTTPException(404, "Şirket bulunamadı")
 
@@ -273,9 +268,7 @@ async def list_windows(
 ):
     """Booking'in tüm window'larını döner (window_number'a göre sıralı).
     Legacy folios (window_number=None) eski→yeni implicit slot atanır."""
-    folios = await db.folios.find(
-        {"booking_id": booking_id, "tenant_id": user.tenant_id}, {"_id": 0}
-    ).to_list(500)
+    folios = await db.folios.find({"booking_id": booking_id, "tenant_id": user.tenant_id}, {"_id": 0}).to_list(500)
 
     # Tek noktadan implicit slot resolve
     for f in folios:
@@ -287,27 +280,25 @@ async def list_windows(
     for f in folios:
         fid = f["id"]
         bal = await calculate_folio_balance(fid, user.tenant_id)
-        c_cnt = await db.folio_charges.count_documents(
-            {"tenant_id": user.tenant_id, "folio_id": fid, "voided": {"$ne": True}}
-        )
-        p_cnt = await db.payments.count_documents(
-            {"tenant_id": user.tenant_id, "folio_id": fid, "voided": {"$ne": True}}
-        )
+        c_cnt = await db.folio_charges.count_documents({"tenant_id": user.tenant_id, "folio_id": fid, "voided": {"$ne": True}})
+        p_cnt = await db.payments.count_documents({"tenant_id": user.tenant_id, "folio_id": fid, "voided": {"$ne": True}})
         wn = f["_resolved_window"]
-        out.append(WindowSummary(
-            folio_id=fid,
-            folio_number=f.get("folio_number", ""),
-            window_number=wn or 0,
-            payor_type=f.get("payor_type"),
-            payor_id=f.get("payor_id"),
-            folio_type=f.get("folio_type", ""),
-            status=f.get("status", ""),
-            balance=round(bal, 2),
-            charges_count=c_cnt,
-            payments_count=p_cnt,
-            created_at=str(f.get("created_at")) if f.get("created_at") else None,
-            closed_at=str(f.get("closed_at")) if f.get("closed_at") else None,
-        ))
+        out.append(
+            WindowSummary(
+                folio_id=fid,
+                folio_number=f.get("folio_number", ""),
+                window_number=wn or 0,
+                payor_type=f.get("payor_type"),
+                payor_id=f.get("payor_id"),
+                folio_type=f.get("folio_type", ""),
+                status=f.get("status", ""),
+                balance=round(bal, 2),
+                charges_count=c_cnt,
+                payments_count=p_cnt,
+                created_at=str(f.get("created_at")) if f.get("created_at") else None,
+                closed_at=str(f.get("closed_at")) if f.get("closed_at") else None,
+            )
+        )
     return out
 
 
@@ -319,9 +310,7 @@ async def change_payor(
     _perm=Depends(require_op("post_charge")),
 ):
     """Window'un payor'unu değiştir (örn. guest→company aktarımı)."""
-    folio = await db.folios.find_one(
-        {"id": folio_id, "tenant_id": user.tenant_id}, {"_id": 0}
-    )
+    folio = await db.folios.find_one({"id": folio_id, "tenant_id": user.tenant_id}, {"_id": 0})
     if not folio:
         raise HTTPException(404, "Folio bulunamadı")
     if folio.get("status") != FolioStatus.OPEN.value:
@@ -353,12 +342,8 @@ async def change_payor(
     )
 
     bal = await calculate_folio_balance(folio_id, user.tenant_id)
-    c_cnt = await db.folio_charges.count_documents(
-        {"tenant_id": user.tenant_id, "folio_id": folio_id, "voided": {"$ne": True}}
-    )
-    p_cnt = await db.payments.count_documents(
-        {"tenant_id": user.tenant_id, "folio_id": folio_id, "voided": {"$ne": True}}
-    )
+    c_cnt = await db.folio_charges.count_documents({"tenant_id": user.tenant_id, "folio_id": folio_id, "voided": {"$ne": True}})
+    p_cnt = await db.payments.count_documents({"tenant_id": user.tenant_id, "folio_id": folio_id, "voided": {"$ne": True}})
     # list_windows ile aynı implicit slot mantığı
     siblings = await db.folios.find(
         {"booking_id": folio.get("booking_id"), "tenant_id": user.tenant_id},

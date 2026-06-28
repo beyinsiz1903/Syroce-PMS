@@ -27,6 +27,7 @@ The bridge mirrors the pattern used by ``broadcast_booking_update`` /
       direct ``order_stream.broadcast`` when the adapter has not been
       wired up (tests, very early startup) or is otherwise unavailable.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -110,22 +111,23 @@ class RoomServiceOrderStream:
         # shared bookings (multiple guests on the same booking) cheap.
         try:
             from infra.ws_redis_adapter import ws_redis_adapter
+
             await ws_redis_adapter.subscribe(_room_key(tenant_id, booking_id))
         except Exception as e:
             logger.warning(
-                "room-service WS adapter subscribe failed "
-                "tenant=%s booking=%s: %s",
-                tenant_id, booking_id, e,
+                "room-service WS adapter subscribe failed tenant=%s booking=%s: %s",
+                tenant_id,
+                booking_id,
+                e,
             )
         logger.info(
             "room-service WS connected tenant=%s booking=%s (total=%d)",
-            tenant_id, booking_id,
+            tenant_id,
+            booking_id,
             len(self._connections.get((tenant_id, booking_id), set())),
         )
 
-    async def disconnect(
-        self, ws: WebSocket, tenant_id: str, booking_id: str
-    ) -> None:
+    async def disconnect(self, ws: WebSocket, tenant_id: str, booking_id: str) -> None:
         async with self._lock:
             key = (tenant_id, booking_id)
             bucket = self._connections.get(key)
@@ -143,31 +145,34 @@ class RoomServiceOrderStream:
         if had_socket:
             try:
                 from infra.ws_redis_adapter import ws_redis_adapter
+
                 await ws_redis_adapter.unsubscribe(_room_key(tenant_id, booking_id))
             except Exception as e:
                 logger.warning(
-                    "room-service WS adapter unsubscribe failed "
-                    "tenant=%s booking=%s: %s",
-                    tenant_id, booking_id, e,
+                    "room-service WS adapter unsubscribe failed tenant=%s booking=%s: %s",
+                    tenant_id,
+                    booking_id,
+                    e,
                 )
         logger.info(
             "room-service WS disconnected tenant=%s booking=%s",
-            tenant_id, booking_id,
+            tenant_id,
+            booking_id,
         )
 
-    async def broadcast(
-        self, tenant_id: str, booking_id: str, event: dict[str, Any]
-    ) -> int:
+    async def broadcast(self, tenant_id: str, booking_id: str, event: dict[str, Any]) -> int:
         """Send ``event`` to every socket on this (tenant, booking).
         Returns delivery count; prunes dead sockets."""
         async with self._lock:
             conns = list(self._connections.get((tenant_id, booking_id), set()))
         if not conns:
             return 0
-        payload = json.dumps({
-            **event,
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        payload = json.dumps(
+            {
+                **event,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
         delivered = 0
         dead: list[WebSocket] = []
         for ws in conns:
@@ -255,12 +260,11 @@ class RoomServiceOrderStream:
             if not bucket:
                 self._staff_connections.pop(tenant_id, None)
         logger.info(
-            "room-service staff WS disconnected tenant=%s", tenant_id,
+            "room-service staff WS disconnected tenant=%s",
+            tenant_id,
         )
 
-    async def broadcast_staff(
-        self, tenant_id: str, event: dict[str, Any]
-    ) -> int:
+    async def broadcast_staff(self, tenant_id: str, event: dict[str, Any]) -> int:
         """Send ``event`` to every staff socket subscribed to this
         tenant. Used so kitchen/front-desk dashboards see every order
         change regardless of which booking it belongs to."""
@@ -268,10 +272,12 @@ class RoomServiceOrderStream:
             conns = list(self._staff_connections.get(tenant_id, set()))
         if not conns:
             return 0
-        payload = json.dumps({
-            **event,
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        payload = json.dumps(
+            {
+                **event,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
         delivered = 0
         dead: list[WebSocket] = []
         for ws in conns:
@@ -322,9 +328,7 @@ def _adapter_is_wired() -> Any | None:
     return ws_redis_adapter
 
 
-async def emit_order_event(
-    order: dict[str, Any], event_type: str = "updated"
-) -> int:
+async def emit_order_event(order: dict[str, Any], event_type: str = "updated") -> int:
     """Broadcast a room-service order event to subscribers of the
     order's booking. ``event_type`` is ``"created"`` or ``"status_changed"``.
     Tenant + booking are read from the order doc; missing → silent no-op
@@ -344,9 +348,9 @@ async def emit_order_event(
     booking_id = order.get("booking_id")
     if not tenant_id or not booking_id:
         logger.warning(
-            "emit_order_event called without tenant/booking; "
-            "event_type=%s order_id=%s",
-            event_type, order.get("id"),
+            "emit_order_event called without tenant/booking; event_type=%s order_id=%s",
+            event_type,
+            order.get("id"),
         )
         return 0
     envelope = {
@@ -364,9 +368,7 @@ async def emit_order_event(
     # this same broadcast — adding an unnecessary indirection on the
     # publishing pod.
     try:
-        delivered = await order_stream.broadcast(
-            tenant_id, booking_id, envelope
-        )
+        delivered = await order_stream.broadcast(tenant_id, booking_id, envelope)
     except Exception as e:
         logger.error("Failed to emit room-service order event locally: %s", e)
         delivered = 0

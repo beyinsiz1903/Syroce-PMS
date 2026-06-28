@@ -2,6 +2,7 @@
 PMS Domain — Housekeeping Repository
 Data access layer for housekeeping tasks. No FastAPI dependencies.
 """
+
 from datetime import UTC, datetime
 from typing import Any
 
@@ -15,10 +16,15 @@ class HousekeepingRepository:
 
     @classmethod
     async def find_by_tenant(
-        cls, tenant_id: str, *, status: str | None = None,
-        assigned_to: str | None = None, room_id: str | None = None,
+        cls,
+        tenant_id: str,
+        *,
+        status: str | None = None,
+        assigned_to: str | None = None,
+        room_id: str | None = None,
         task_type: str | None = None,
-        limit: int = 100, offset: int = 0,
+        limit: int = 100,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         query: dict[str, Any] = {"tenant_id": tenant_id}
         if status:
@@ -30,19 +36,12 @@ class HousekeepingRepository:
         if task_type:
             query["task_type"] = task_type
 
-        cursor = (
-            cls.collection.find(query, {"_id": 0})
-            .sort("created_at", -1)
-            .skip(offset)
-            .limit(limit)
-        )
+        cursor = cls.collection.find(query, {"_id": 0}).sort("created_at", -1).skip(offset).limit(limit)
         return await cursor.to_list(limit)
 
     @classmethod
     async def find_one(cls, tenant_id: str, task_id: str) -> dict[str, Any] | None:
-        return await cls.collection.find_one(
-            {"tenant_id": tenant_id, "id": task_id}, {"_id": 0}
-        )
+        return await cls.collection.find_one({"tenant_id": tenant_id, "id": task_id}, {"_id": 0})
 
     @classmethod
     async def insert(cls, task_dict: dict[str, Any]) -> None:
@@ -58,10 +57,14 @@ class HousekeepingRepository:
 
     @classmethod
     async def update_status(cls, tenant_id: str, task_id: str, new_status: str) -> bool:
-        return await cls.update(tenant_id, task_id, {
-            "status": new_status,
-            "updated_at": datetime.now(UTC).isoformat(),
-        })
+        return await cls.update(
+            tenant_id,
+            task_id,
+            {
+                "status": new_status,
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        )
 
     @classmethod
     async def count_by_status(cls, tenant_id: str) -> dict[str, int]:

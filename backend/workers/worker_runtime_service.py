@@ -3,6 +3,7 @@ Workers — Runtime Service
 Production-grade: aggregates real queue health, stuck task management,
 failure archive stats, retry pressure, worker heartbeat, and dead-letter trends.
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -20,6 +21,7 @@ class WorkerRuntimeService:
         from workers.failure_archive import failure_archive
         from workers.queue_monitor import queue_monitor
         from workers.task_status_service import task_status_service
+
         self._task_status = task_status_service
         self._queue_monitor = queue_monitor
         self._failure_archive = failure_archive
@@ -29,6 +31,7 @@ class WorkerRuntimeService:
         Sprint 33: 21 sequential count_documents → parallel asyncio.gather (~7×).
         """
         import asyncio as _asyncio
+
         try:
             now = datetime.now(UTC)
             last_24h = (now - timedelta(hours=24)).isoformat()
@@ -41,37 +44,50 @@ class WorkerRuntimeService:
             base_health_q = self._task_status.get_queue_health()
             per_queue_qs = []
             for qt in queue_types:
-                per_queue_qs.append(db.task_queue.count_documents(
-                    {"task_type": qt, "status": "pending"}))
-                per_queue_qs.append(db.task_queue.count_documents(
-                    {"task_type": qt, "status": "processing"}))
-                per_queue_qs.append(db.task_queue.count_documents({
-                    "task_type": qt, "status": "failed",
-                    "started_at": {"$gte": last_24h},
-                }))
+                per_queue_qs.append(db.task_queue.count_documents({"task_type": qt, "status": "pending"}))
+                per_queue_qs.append(db.task_queue.count_documents({"task_type": qt, "status": "processing"}))
+                per_queue_qs.append(
+                    db.task_queue.count_documents(
+                        {
+                            "task_type": qt,
+                            "status": "failed",
+                            "started_at": {"$gte": last_24h},
+                        }
+                    )
+                )
             dl_total_q = db.dead_letter_tasks.count_documents({})
-            dl_today_q = db.dead_letter_tasks.count_documents({
-                "archived_at": {"$gte": today_start}
-            })
+            dl_today_q = db.dead_letter_tasks.count_documents({"archived_at": {"$gte": today_start}})
             replay_q = db.dead_letter_tasks.count_documents({"status": "archived"})
-            recent_q = db.task_queue.count_documents({
-                "status": "completed", "started_at": {"$gte": last_5m},
-            })
-            retry_q = db.task_queue.count_documents({
-                "retry_count": {"$gt": 0}, "started_at": {"$gte": last_24h},
-            })
+            recent_q = db.task_queue.count_documents(
+                {
+                    "status": "completed",
+                    "started_at": {"$gte": last_5m},
+                }
+            )
+            retry_q = db.task_queue.count_documents(
+                {
+                    "retry_count": {"$gt": 0},
+                    "started_at": {"$gte": last_24h},
+                }
+            )
 
             results = await _asyncio.gather(
-                base_health_q, *per_queue_qs,
-                dl_total_q, dl_today_q, replay_q, recent_q, retry_q,
+                base_health_q,
+                *per_queue_qs,
+                dl_total_q,
+                dl_today_q,
+                replay_q,
+                recent_q,
+                retry_q,
                 return_exceptions=True,
             )
+
             def _safe(v, default=0):
                 return default if isinstance(v, Exception) else v
+
             base_health = _safe(results[0], {})
-            per_q_counts = [_safe(v, 0) for v in results[1:1 + 3 * len(queue_types)]]
-            dl_total, dl_today, replay_candidates, recent_completions, retry_count_24h = \
-                [_safe(v, 0) for v in results[1 + 3 * len(queue_types):]]
+            per_q_counts = [_safe(v, 0) for v in results[1 : 1 + 3 * len(queue_types)]]
+            dl_total, dl_today, replay_candidates, recent_completions, retry_count_24h = [_safe(v, 0) for v in results[1 + 3 * len(queue_types) :]]
 
             per_queue = []
             for i, qt in enumerate(queue_types):
@@ -83,11 +99,15 @@ class WorkerRuntimeService:
                     q_health = "critical"
                 elif pending > 30 or failed_24h > 3:
                     q_health = "warning"
-                per_queue.append({
-                    "queue": qt, "health": q_health,
-                    "pending": pending, "processing": processing,
-                    "failed_24h": failed_24h,
-                })
+                per_queue.append(
+                    {
+                        "queue": qt,
+                        "health": q_health,
+                        "pending": pending,
+                        "processing": processing,
+                        "failed_24h": failed_24h,
+                    }
+                )
             workers_responding = recent_completions > 0
 
             # Severity calculation
@@ -116,33 +136,37 @@ class WorkerRuntimeService:
                 health = "critical"
                 recommendations.append("No worker activity in last 5 minutes — check worker process")
 
-            return ServiceResult.success({
-                **base_health,
-                "severity": severity,
-                "health": health,
-                "per_queue": per_queue,
-                "dead_letter": {
-                    "total": dl_total,
-                    "today": dl_today,
-                    "replay_candidates": replay_candidates,
-                },
-                "worker_heartbeat": {
-                    "responding": workers_responding,
-                    "recent_completions_5m": recent_completions,
-                },
-                "retry_pressure": {
-                    "retried_tasks_24h": retry_count_24h,
-                },
-                "recommendations": recommendations,
-            })
+            return ServiceResult.success(
+                {
+                    **base_health,
+                    "severity": severity,
+                    "health": health,
+                    "per_queue": per_queue,
+                    "dead_letter": {
+                        "total": dl_total,
+                        "today": dl_today,
+                        "replay_candidates": replay_candidates,
+                    },
+                    "worker_heartbeat": {
+                        "responding": workers_responding,
+                        "recent_completions_5m": recent_completions,
+                    },
+                    "retry_pressure": {
+                        "retried_tasks_24h": retry_count_24h,
+                    },
+                    "recommendations": recommendations,
+                }
+            )
         except Exception as e:
             logger.error(f"WorkerRuntimeService.get_queue_health error: {e}")
-            return ServiceResult.success({
-                "health": "unknown",
-                "severity": "warning",
-                "error": str(e)[:100],
-                "checked_at": datetime.now(UTC).isoformat(),
-            })
+            return ServiceResult.success(
+                {
+                    "health": "unknown",
+                    "severity": "warning",
+                    "error": str(e)[:100],
+                    "checked_at": datetime.now(UTC).isoformat(),
+                }
+            )
 
     async def get_stuck_tasks(self, ctx: OperationContext) -> ServiceResult:
         """Get stuck tasks with grouping by task type."""
@@ -153,11 +177,13 @@ class WorkerRuntimeService:
             tt = t.get("task_type", "unknown")
             groups[tt] = groups.get(tt, 0) + 1
 
-        return ServiceResult.success({
-            "stuck_tasks": stuck,
-            "count": len(stuck),
-            "by_type": groups,
-        })
+        return ServiceResult.success(
+            {
+                "stuck_tasks": stuck,
+                "count": len(stuck),
+                "by_type": groups,
+            }
+        )
 
     async def unstick_task(self, ctx: OperationContext, task_id: str) -> ServiceResult:
         success = await self._queue_monitor.unstick_task(task_id)
@@ -165,15 +191,17 @@ class WorkerRuntimeService:
             return ServiceResult.fail("Task not found or not stuck", "NOT_FOUND")
         try:
             from websocket_server import broadcast_system_health_event
-            await broadcast_system_health_event(
-                "stuck_task_resolved", {"task_id": task_id}, tenant_id=ctx.tenant_id, severity="info"
-            )
+
+            await broadcast_system_health_event("stuck_task_resolved", {"task_id": task_id}, tenant_id=ctx.tenant_id, severity="info")
         except Exception:
             pass
         return ServiceResult.success({"status": "unstuck", "task_id": task_id})
 
     async def get_failure_summary(
-        self, ctx: OperationContext, tenant_id: str | None = None, limit: int = 50,
+        self,
+        ctx: OperationContext,
+        tenant_id: str | None = None,
+        limit: int = 50,
     ) -> ServiceResult:
         tid = tenant_id or ctx.tenant_id
         data = await self._task_status.get_failure_summary(tenant_id=tid, limit=limit)
@@ -183,9 +211,8 @@ class WorkerRuntimeService:
         result = await self._task_status.replay_task(archive_id)
         try:
             from websocket_server import broadcast_system_health_event
-            await broadcast_system_health_event(
-                "replay_completed", {"archive_id": archive_id, **result}, tenant_id=ctx.tenant_id, severity="info"
-            )
+
+            await broadcast_system_health_event("replay_completed", {"archive_id": archive_id, **result}, tenant_id=ctx.tenant_id, severity="info")
         except Exception:
             pass
         return ServiceResult.success(result)

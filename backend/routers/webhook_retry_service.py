@@ -10,6 +10,7 @@ Replaces fire-and-forget webhook delivery with:
   - Ops events emitted at each lifecycle stage
   - Queryable delivery records
 """
+
 import asyncio
 import hashlib
 import hmac
@@ -57,7 +58,7 @@ def _uuid():
 
 def _calculate_backoff(attempt: int) -> float:
     """Exponential backoff with jitter: base * 2^attempt + random(0,1)"""
-    delay = min(BASE_DELAY_SECONDS * (2 ** attempt) + random.uniform(0, 1), MAX_DELAY_SECONDS)
+    delay = min(BASE_DELAY_SECONDS * (2**attempt) + random.uniform(0, 1), MAX_DELAY_SECONDS)
     return delay
 
 
@@ -77,12 +78,11 @@ async def deliver_webhook_with_retry(
     Returns delivery result dict.
     """
     from core.tenant_db import get_system_db
+
     sysdb = get_system_db()
 
     delivery_id = _uuid()
-    idempotency_key = _generate_idempotency_key(
-        webhook_doc["id"], event, delivery_id
-    )
+    idempotency_key = _generate_idempotency_key(webhook_doc["id"], event, delivery_id)
     tenant_id = webhook_doc.get("tenant_id", "")
     agency_id = webhook_doc.get("agency_id", "")
     webhook_url = webhook_doc["url"]
@@ -164,10 +164,12 @@ async def deliver_webhook_with_retry(
             # Update status to delivering
             await sysdb.webhook_deliveries.update_one(
                 {"id": delivery_id},
-                {"$set": {
-                    "status": STATUS_DELIVERING,
-                    "attempt_count": attempt + 1,
-                }},
+                {
+                    "$set": {
+                        "status": STATUS_DELIVERING,
+                        "attempt_count": attempt + 1,
+                    }
+                },
             )
 
             # v109 Bug DAL round-7 follow-up #3: replaced bespoke SSRF check
@@ -178,6 +180,7 @@ async def deliver_webhook_with_retry(
             # setting attempt_error directly (don't re-raise into broad
             # Exception handler which would prepend "Unexpected error:").
             from integrations.xchange.safety import EgressDenied, safe_post_async
+
             try:
                 resp = await safe_post_async(
                     webhook_url,
@@ -202,12 +205,14 @@ async def deliver_webhook_with_retry(
 
                 await sysdb.webhook_deliveries.update_one(
                     {"id": delivery_id},
-                    {"$set": {
-                        "status": STATUS_SUCCEEDED,
-                        "last_status_code": attempt_status_code,
-                        "completed_at": _now_iso(),
+                    {
+                        "$set": {
+                            "status": STATUS_SUCCEEDED,
+                            "last_status_code": attempt_status_code,
+                            "completed_at": _now_iso(),
+                        },
+                        "$push": {"attempts": attempt_record},
                     },
-                    "$push": {"attempts": attempt_record}},
                 )
 
                 await emit_ops_event(
@@ -229,7 +234,10 @@ async def deliver_webhook_with_retry(
 
                 logger.info(
                     "[WEBHOOK] Delivered %s to %s (attempt %d, status %d)",
-                    event, webhook_url, attempt + 1, attempt_status_code,
+                    event,
+                    webhook_url,
+                    attempt + 1,
+                    attempt_status_code,
                 )
                 return {"delivery_id": delivery_id, "status": STATUS_SUCCEEDED, "attempts": attempt + 1}
 
@@ -264,14 +272,16 @@ async def deliver_webhook_with_retry(
 
             await sysdb.webhook_deliveries.update_one(
                 {"id": delivery_id},
-                {"$set": {
-                    "status": STATUS_RETRYING,
-                    "last_error": attempt_error,
-                    "last_status_code": attempt_status_code,
-                    "next_retry_at": next_retry_at,
-                    "attempt_count": attempt + 1,
+                {
+                    "$set": {
+                        "status": STATUS_RETRYING,
+                        "last_error": attempt_error,
+                        "last_status_code": attempt_status_code,
+                        "next_retry_at": next_retry_at,
+                        "attempt_count": attempt + 1,
+                    },
+                    "$push": {"attempts": attempt_record},
                 },
-                "$push": {"attempts": attempt_record}},
             )
 
             await emit_ops_event(
@@ -295,7 +305,11 @@ async def deliver_webhook_with_retry(
 
             logger.warning(
                 "[WEBHOOK] Delivery failed for %s (attempt %d/%d, error: %s). Retrying in %.1fs",
-                webhook_url, attempt + 1, MAX_ATTEMPTS, attempt_error, backoff,
+                webhook_url,
+                attempt + 1,
+                MAX_ATTEMPTS,
+                attempt_error,
+                backoff,
             )
 
             await asyncio.sleep(backoff)
@@ -303,14 +317,16 @@ async def deliver_webhook_with_retry(
             # Last attempt — record as terminal failure
             await sysdb.webhook_deliveries.update_one(
                 {"id": delivery_id},
-                {"$set": {
-                    "status": STATUS_FAILED,
-                    "last_error": attempt_error,
-                    "last_status_code": attempt_status_code,
-                    "attempt_count": attempt + 1,
-                    "completed_at": _now_iso(),
+                {
+                    "$set": {
+                        "status": STATUS_FAILED,
+                        "last_error": attempt_error,
+                        "last_status_code": attempt_status_code,
+                        "attempt_count": attempt + 1,
+                        "completed_at": _now_iso(),
+                    },
+                    "$push": {"attempts": attempt_record},
                 },
-                "$push": {"attempts": attempt_record}},
             )
 
     # ═══ TERMINAL FAILURE — Move to DLQ ═══
@@ -383,25 +399,30 @@ async def deliver_webhook_with_retry(
 
     logger.error(
         "[WEBHOOK-DLQ] Terminal failure for %s → %s. DLQ ID: %s (attempts: %d)",
-        event, webhook_url, dlq_id, MAX_ATTEMPTS,
+        event,
+        webhook_url,
+        dlq_id,
+        MAX_ATTEMPTS,
     )
 
     return {"delivery_id": delivery_id, "status": STATUS_DLQ, "dlq_id": dlq_id, "attempts": MAX_ATTEMPTS}
 
 
-async def fire_webhooks_with_retry(
-    tenant_id: str, agency_id: str, event: str, data: dict
-):
+async def fire_webhooks_with_retry(tenant_id: str, agency_id: str, event: str, data: dict):
     """Find all active webhooks for agency subscribed to event and deliver with retry."""
     from core.tenant_db import get_system_db
+
     sysdb = get_system_db()
 
-    webhooks = await sysdb.agency_webhooks.find({
-        "tenant_id": tenant_id,
-        "agency_id": agency_id,
-        "is_active": True,
-        "events": event,
-    }, {"_id": 0}).to_list(50)
+    webhooks = await sysdb.agency_webhooks.find(
+        {
+            "tenant_id": tenant_id,
+            "agency_id": agency_id,
+            "is_active": True,
+            "events": event,
+        },
+        {"_id": 0},
+    ).to_list(50)
 
     results = []
     for wh in webhooks:
@@ -434,24 +455,25 @@ def schedule_emit_reservation_updated(
     """
     try:
         import asyncio as _asyncio
+
         loop = _asyncio.get_running_loop()
     except RuntimeError:
         # No running loop (e.g. called from sync context) — skip silently.
         logger.warning(
             "schedule_emit_reservation_updated: no running loop (booking=%s change=%s)",
-            booking_id, change,
+            booking_id,
+            change,
         )
         return
     try:
-        task = loop.create_task(
-            emit_reservation_updated(tenant_id, booking_id, change, extra)
-        )
+        task = loop.create_task(emit_reservation_updated(tenant_id, booking_id, change, extra))
         _pending_emit_tasks.add(task)
         task.add_done_callback(_pending_emit_tasks.discard)
     except Exception:
         logger.exception(
             "schedule_emit_reservation_updated failed (booking=%s change=%s)",
-            booking_id, change,
+            booking_id,
+            change,
         )
 
 
@@ -474,13 +496,23 @@ async def emit_reservation_updated(
     """
     try:
         from core.database import db
+
         booking = await db.bookings.find_one(
             {"id": booking_id, "tenant_id": tenant_id},
             {
-                "_id": 0, "id": 1, "agency_id": 1, "confirmation_code": 1,
-                "status": 1, "room_type": 1, "room_number": 1,
-                "check_in": 1, "check_out": 1, "guest_name": 1,
-                "total_amount": 1, "balance": 1, "checked_in_at": 1,
+                "_id": 0,
+                "id": 1,
+                "agency_id": 1,
+                "confirmation_code": 1,
+                "status": 1,
+                "room_type": 1,
+                "room_number": 1,
+                "check_in": 1,
+                "check_out": 1,
+                "guest_name": 1,
+                "total_amount": 1,
+                "balance": 1,
+                "checked_in_at": 1,
                 "checked_out_at": 1,
             },
         )
@@ -506,19 +538,20 @@ async def emit_reservation_updated(
         if extra:
             payload.update(extra)
 
-        await fire_webhooks_with_retry(
-            tenant_id, booking["agency_id"], "reservation.updated", payload
-        )
+        await fire_webhooks_with_retry(tenant_id, booking["agency_id"], "reservation.updated", payload)
     except Exception:
         logger.exception(
             "emit_reservation_updated failed (tenant=%s booking=%s change=%s)",
-            tenant_id, booking_id, change,
+            tenant_id,
+            booking_id,
+            change,
         )
 
 
 async def retry_dlq_item(dlq_id: str) -> dict[str, Any]:
     """Manually retry a DLQ item."""
     from core.tenant_db import get_system_db
+
     sysdb = get_system_db()
 
     dlq_item = await sysdb.webhook_dlq.find_one({"id": dlq_id}, {"_id": 0})

@@ -2,6 +2,7 @@
 Workers — Retry Strategy
 Configurable retry with exponential backoff, jitter, and max attempts.
 """
+
 import asyncio
 import logging
 import random
@@ -30,9 +31,9 @@ class RetryStrategy:
         self.retryable_exceptions = retryable_exceptions or (Exception,)
 
     def _calculate_delay(self, attempt: int) -> float:
-        delay = min(self.base_delay * (self.backoff_factor ** attempt), self.max_delay)
+        delay = min(self.base_delay * (self.backoff_factor**attempt), self.max_delay)
         if self.jitter:
-            delay *= (0.5 + random.random())
+            delay *= 0.5 + random.random()
         return delay
 
     async def execute(self, fn: Callable[..., Awaitable], *args, **kwargs) -> dict[str, Any]:

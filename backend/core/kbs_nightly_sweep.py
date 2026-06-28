@@ -15,6 +15,7 @@ seviyesinde ``core.database.db``'yi yakaladığı için, tarama süresince
 ``core.kbs_auto_enqueue.db`` taze raw db'ye yeniden bağlanır (night-audit'in
 engine-rebind kalıbının aynısı; prefork tek-task-per-process olduğundan güvenli).
 """
+
 from __future__ import annotations
 
 import logging
@@ -80,7 +81,10 @@ async def sweep_tenant_kbs(raw_db, tenant_id: str, day_iso: str) -> dict:
                 skipped += 1
                 continue
             result = await ae.auto_enqueue_kbs(
-                tenant_id, booking_id, "checkin", actor="system:nightly_sweep",
+                tenant_id,
+                booking_id,
+                "checkin",
+                actor="system:nightly_sweep",
             )
             if result:
                 enqueued += 1
@@ -104,7 +108,10 @@ async def sweep_tenant_kbs(raw_db, tenant_id: str, day_iso: str) -> dict:
                 skipped += 1
                 continue
             result = await ae.auto_enqueue_kbs(
-                tenant_id, booking_id, "checkout", actor="system:nightly_sweep",
+                tenant_id,
+                booking_id,
+                "checkout",
+                actor="system:nightly_sweep",
             )
             if result:
                 enqueued += 1
@@ -129,9 +136,7 @@ def previous_local_day(local_now: datetime) -> str:
 
 async def resolve_tenant_timezone(raw_db, tenant_id: str) -> str:
     """Kiracı IANA timezone adını çöz (tenant_settings öncelikli, fallback Istanbul)."""
-    doc = await raw_db.tenant_settings.find_one(
-        {"tenant_id": tenant_id}, {"_id": 0, "timezone": 1}
-    ) or {}
+    doc = await raw_db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "timezone": 1}) or {}
     return doc.get("timezone") or "Europe/Istanbul"
 
 

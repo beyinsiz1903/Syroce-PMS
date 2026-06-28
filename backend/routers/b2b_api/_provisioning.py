@@ -20,6 +20,7 @@ Security invariants (see threat_model.md):
   - Fail-closed: a missing JWT_SECRET raises rather than falling back to a
     hard-coded pepper.
 """
+
 from __future__ import annotations
 
 import base64
@@ -42,24 +43,24 @@ CONNECT_CODE_PREFIX = "syroce_connect_"
 # widen/narrow this at approval time. Never default to unrestricted (None).
 DEFAULT_AUTO_SCOPES = ["booking_engine", "webhooks"]
 
-REQUEST_TTL_DAYS = 30          # full request record retention (TTL sweep)
-KEY_DELIVERY_TTL_HOURS = 72    # window the agency app has to retrieve the key
+REQUEST_TTL_DAYS = 30  # full request record retention (TTL sweep)
+KEY_DELIVERY_TTL_HOURS = 72  # window the agency app has to retrieve the key
 
 
 # ── Crypto (derived from JWT_SECRET with domain separation, fail-closed) ──
+
 
 def _secret_base() -> str:
     base = os.environ.get("JWT_SECRET", "")
     if not base:
         try:
             from core.security import JWT_SECRET as _RUNTIME_JWT_SECRET
+
             base = _RUNTIME_JWT_SECRET or ""
         except Exception:
             base = ""
     if not base:
-        raise RuntimeError(
-            "JWT_SECRET must be set for B2B connect-code provisioning"
-        )
+        raise RuntimeError("JWT_SECRET must be set for B2B connect-code provisioning")
     return base
 
 
@@ -97,6 +98,7 @@ def decrypt_delivery_key(token: str) -> str:
 # delivery requires this token, so a party that only knows the shared hotel
 # connect code can never read (or race for) another agency's API key.
 
+
 def _delivery_pepper() -> bytes:
     return hashlib.sha256(b"b2b-delivery-token-v1|" + _secret_base().encode()).digest()
 
@@ -112,6 +114,7 @@ def hash_delivery_token(raw_token: str) -> str:
 
 
 # ── Small helpers ────────────────────────────────────────────────
+
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -134,6 +137,7 @@ def _code_prefix(raw_code: str) -> str:
 
 
 # ── Connect code storage (sys_db.b2b_connect_codes) ──────────────
+
 
 async def generate_connect_code(sysdb, tenant_id: str) -> dict:
     """Rotate (deactivate old + create new) the active connect code for a tenant.
@@ -163,9 +167,7 @@ async def ensure_connect_code_for_tenant(sysdb, tenant_id: str) -> dict | None:
     """Create a connect code for a tenant that has none. Returns raw code (once)
     or None when one already exists. Used by the tenant-creation hook only —
     NEVER call this from a GET handler (would mutate on read)."""
-    existing = await sysdb.b2b_connect_codes.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 1}
-    )
+    existing = await sysdb.b2b_connect_codes.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 1})
     if existing:
         return None
     return await generate_connect_code(sysdb, tenant_id)
@@ -187,9 +189,7 @@ async def resolve_tenant_from_code(sysdb, raw_code: str | None) -> str | None:
 
 async def get_connect_info(sysdb, tenant_id: str) -> dict:
     """Read-only status of a tenant's connect code (no raw value, no mutation)."""
-    doc = await sysdb.b2b_connect_codes.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    )
+    doc = await sysdb.b2b_connect_codes.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
     if not doc:
         return {"has_active_code": False, "code_prefix": None, "created_at": None}
     return {
@@ -201,9 +201,8 @@ async def get_connect_info(sysdb, tenant_id: str) -> dict:
 
 # ── Shared API-key issuance (single source of truth) ─────────────
 
-async def mint_agency_api_key(
-    db_handle, tenant_id: str, agency: dict, scopes, created_by: str | None
-) -> tuple[str, dict]:
+
+async def mint_agency_api_key(db_handle, tenant_id: str, agency: dict, scopes, created_by: str | None) -> tuple[str, dict]:
     """Generate + persist an agency API key. Returns (raw_key, stored_doc).
 
     `db_handle` is the collection owner (scoped `db` under a JWT request, or

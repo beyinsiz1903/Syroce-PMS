@@ -2,9 +2,11 @@
 WhatsApp Business Integration
 Simplified version - requires WhatsApp Business API credentials
 """
+
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 class WhatsAppService:
     """WhatsApp Business service"""
@@ -29,16 +31,16 @@ class WhatsAppService:
         message = f"""
 🏨 *Syroce - Booking Confirmation*
 
-Dear {booking_details['guest_name']},
+Dear {booking_details["guest_name"]},
 
-Your reservation number: *{booking_details['booking_id'][:8].upper()}*
+Your reservation number: *{booking_details["booking_id"][:8].upper()}*
 
-📅 Check-in: {booking_details['check_in']}
-📅 Check-out: {booking_details['check_out']}
-🛏️ Room: {booking_details['room_type']}
-💰 Total: €{booking_details['total_amount']}
+📅 Check-in: {booking_details["check_in"]}
+📅 Check-out: {booking_details["check_out"]}
+🛏️ Room: {booking_details["room_type"]}
+💰 Total: €{booking_details["total_amount"]}
 
-✅ Online check-in available at: https://syroce.com/checkin/{booking_details['booking_id']}
+✅ Online check-in available at: https://syroce.com/checkin/{booking_details["booking_id"]}
 
 See you soon!
 """
@@ -69,17 +71,18 @@ Syroce Team 🌟
         message = f"""
 💎 *Special Offer - Just for You!*
 
-{offer_details['title']}
+{offer_details["title"]}
 
-{offer_details['description']}
+{offer_details["description"]}
 
-~~€{offer_details['original_price']}~~ ➡️ *€{offer_details['discounted_price']}*
+~~€{offer_details["original_price"]}~~ ➡️ *€{offer_details["discounted_price"]}*
 
-💚 Save €{offer_details['savings']}!
+💚 Save €{offer_details["savings"]}!
 
 Reply 'YES' to accept.
 """
 
         return self._deliver(phone, message, "upsell")
+
 
 whatsapp_service = WhatsAppService()

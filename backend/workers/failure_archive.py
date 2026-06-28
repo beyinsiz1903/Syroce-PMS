@@ -2,6 +2,7 @@
 Workers — Failure Archive (Dead Letter)
 Archives permanently failed tasks for post-mortem analysis.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -18,12 +19,16 @@ class FailureArchive:
 
     @classmethod
     async def archive(
-        cls, task_type: str, task_data: dict[str, Any],
-        error: str, attempts: int,
+        cls,
+        task_type: str,
+        task_data: dict[str, Any],
+        error: str,
+        attempts: int,
         tenant_id: str | None = None,
     ) -> dict[str, Any]:
         """Archive a failed task for later analysis or manual replay."""
         import uuid
+
         entry = {
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,
@@ -40,7 +45,9 @@ class FailureArchive:
 
     @classmethod
     async def get_archived(
-        cls, *, tenant_id: str | None = None,
+        cls,
+        *,
+        tenant_id: str | None = None,
         task_type: str | None = None,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
@@ -49,9 +56,7 @@ class FailureArchive:
             query["tenant_id"] = tenant_id
         if task_type:
             query["task_type"] = task_type
-        return await cls.collection.find(
-            query, {"_id": 0}
-        ).sort("archived_at", -1).limit(limit).to_list(limit)
+        return await cls.collection.find(query, {"_id": 0}).sort("archived_at", -1).limit(limit).to_list(limit)
 
     @classmethod
     async def replay(cls, archive_id: str) -> dict[str, Any]:
@@ -67,10 +72,12 @@ class FailureArchive:
     @classmethod
     async def get_stats(cls) -> dict[str, Any]:
         pipeline = [
-            {"$group": {
-                "_id": {"task_type": "$task_type", "status": "$status"},
-                "count": {"$sum": 1},
-            }},
+            {
+                "$group": {
+                    "_id": {"task_type": "$task_type", "status": "$status"},
+                    "count": {"$sum": 1},
+                }
+            },
         ]
         stats = {}
         async for doc in cls.collection.aggregate(pipeline):

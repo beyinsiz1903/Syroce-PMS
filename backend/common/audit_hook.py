@@ -3,6 +3,7 @@ Common — Audit Hook Decorator
 Service-level audit decorator for consistent audit trail generation.
 Wraps service methods to automatically log audit events.
 """
+
 import functools
 import logging
 import time
@@ -23,6 +24,7 @@ async def _write_audit(db, entry: dict):
     never break the caller."""
     try:
         from core.audit_chain import append_audit_log
+
         await append_audit_log(db, entry)
     except Exception as exc:
         logger.warning("audit_hook: write failed — %s", exc)

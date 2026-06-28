@@ -8,6 +8,7 @@ Doktrin (fail-closed, no fake-green):
 - Çağrı kaydı deposu ayrı bir S3/Spaces bucket'tır (operatör seçimi); yapılandırma
   yoksa kayıt boru hattı fail-closed çalışır (kayıt indirilmez/saklanmaz).
 """
+
 from __future__ import annotations
 
 import os

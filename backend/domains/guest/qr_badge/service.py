@@ -31,6 +31,7 @@ Güvenlik
 * Misafir kendi olmayan şarjı approve edemez (booking_id eşleşmesi
   + guest e-posta eşleşmesi).
 """
+
 from __future__ import annotations
 
 import logging
@@ -47,8 +48,8 @@ from services.expo_push import fire_and_forget_expo_push
 logger = logging.getLogger(__name__)
 
 # ── Configuration ─────────────────────────────────────────────────────────
-TOKEN_TTL_SECONDS = 60          # mobil 30 sn'de bir yeniler → 30 sn headroom
-TOKEN_LENGTH = 16               # base32 alfabesinden
+TOKEN_TTL_SECONDS = 60  # mobil 30 sn'de bir yeniler → 30 sn headroom
+TOKEN_LENGTH = 16  # base32 alfabesinden
 PENDING_CHARGE_TTL_SECONDS = 300  # 5 dakika
 TOKEN_ALPHABET = string.ascii_uppercase + "23456789"  # base32, ambiguous chars çıkarıldı
 
@@ -78,6 +79,7 @@ def _generate_token() -> str:
 # ─────────────────────────────────────────────────────────────────────────
 # TOKEN LIFECYCLE
 # ─────────────────────────────────────────────────────────────────────────
+
 
 async def issue_or_refresh_token(
     *,
@@ -214,9 +216,7 @@ async def validate_token(
             {"_id": 0, "first_name": 1, "last_name": 1, "full_name": 1},
         )
         if guest:
-            guest_name = guest.get("full_name") or " ".join(
-                [guest.get("first_name", ""), guest.get("last_name", "")]
-            ).strip() or None
+            guest_name = guest.get("full_name") or " ".join([guest.get("first_name", ""), guest.get("last_name", "")]).strip() or None
 
     return {
         "valid": True,
@@ -231,6 +231,7 @@ async def validate_token(
 # ─────────────────────────────────────────────────────────────────────────
 # PENDING CHARGE
 # ─────────────────────────────────────────────────────────────────────────
+
 
 async def create_pending_charge(
     *,
@@ -340,13 +341,17 @@ async def list_pending_charges_for_guest(
         {"$set": {"status": "expired", "expired_at": now.isoformat()}},
     )
 
-    cursor = db.pending_qr_charges.find(
-        {
-            "tenant_id": tenant_id,
-            "guest_user_id": guest_user_id,
-        },
-        {"_id": 0},
-    ).sort("created_at", -1).limit(50)
+    cursor = (
+        db.pending_qr_charges.find(
+            {
+                "tenant_id": tenant_id,
+                "guest_user_id": guest_user_id,
+            },
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .limit(50)
+    )
 
     return await cursor.to_list(50)
 
@@ -453,10 +458,7 @@ async def approve_pending_charge(
             booking_id=booking_id,
             charge_data={
                 "category": charge.get("outlet", "other"),
-                "description": (
-                    f"[QR] {charge.get('outlet_name', '')} — "
-                    f"{charge.get('description', '')}"
-                ).strip(),
+                "description": (f"[QR] {charge.get('outlet_name', '')} — {charge.get('description', '')}").strip(),
                 "amount": float(charge["amount"]),
                 "quantity": 1.0,
                 "tax_rate": 0,
@@ -505,23 +507,25 @@ async def approve_pending_charge(
 
     # Audit
     try:
-        await db.audit_logs.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "actor_id": guest_user_id,
-            "actor_role": "guest",
-            "action": "qr_charge_approved",
-            "entity_type": "pending_qr_charge",
-            "entity_id": charge_id,
-            "details": {
-                "booking_id": booking_id,
-                "amount": float(charge["amount"]),
-                "outlet": charge.get("outlet"),
-                "folio_charge_id": folio_charge_id,
-            },
-            "severity": "info",
-            "created_at": now.isoformat(),
-        })
+        await db.audit_logs.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "actor_id": guest_user_id,
+                "actor_role": "guest",
+                "action": "qr_charge_approved",
+                "entity_type": "pending_qr_charge",
+                "entity_id": charge_id,
+                "details": {
+                    "booking_id": booking_id,
+                    "amount": float(charge["amount"]),
+                    "outlet": charge.get("outlet"),
+                    "folio_charge_id": folio_charge_id,
+                },
+                "severity": "info",
+                "created_at": now.isoformat(),
+            }
+        )
     except Exception:
         logger.exception("[qr_badge] audit insert failed for %s", charge_id)
 
@@ -604,24 +608,26 @@ async def reject_pending_charge(
 
     # Audit (severity warning — incele).
     try:
-        await db.audit_logs.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "actor_id": guest_user_id,
-            "actor_role": "guest",
-            "action": "qr_charge_rejected",
-            "entity_type": "pending_qr_charge",
-            "entity_id": charge_id,
-            "details": {
-                "booking_id": charge.get("booking_id"),
-                "amount": float(charge["amount"]),
-                "outlet": charge.get("outlet"),
-                "created_by_user_id": charge.get("created_by_user_id"),
-                "reason": (reason or "").strip()[:240] or None,
-            },
-            "severity": "warning",
-            "created_at": now.isoformat(),
-        })
+        await db.audit_logs.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "actor_id": guest_user_id,
+                "actor_role": "guest",
+                "action": "qr_charge_rejected",
+                "entity_type": "pending_qr_charge",
+                "entity_id": charge_id,
+                "details": {
+                    "booking_id": charge.get("booking_id"),
+                    "amount": float(charge["amount"]),
+                    "outlet": charge.get("outlet"),
+                    "created_by_user_id": charge.get("created_by_user_id"),
+                    "reason": (reason or "").strip()[:240] or None,
+                },
+                "severity": "warning",
+                "created_at": now.isoformat(),
+            }
+        )
     except Exception:
         logger.exception("[qr_badge] audit insert failed for %s", charge_id)
 

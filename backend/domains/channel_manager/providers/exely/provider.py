@@ -12,6 +12,7 @@ Public methods:
 - push_ari()
 - confirm_delivery()
 """
+
 import logging
 import time
 from datetime import datetime, timedelta
@@ -136,7 +137,9 @@ class ExelyProvider:
     # ── Room Discovery ────────────────────────────────────────────────
 
     async def discover_rooms(
-        self, checkin: str | None = None, checkout: str | None = None,
+        self,
+        checkin: str | None = None,
+        checkout: str | None = None,
     ) -> ProviderResult:
         """Discover room types and rate plans via OTA_HotelAvailRQ."""
         start = time.time()
@@ -262,9 +265,15 @@ class ExelyProvider:
             try:
                 rate_op = "OTA_HotelRateAmountNotifRQ"
                 rate_xml = build_rate_amount_notif_rq(
-                    self._username, self._password, self._hotel_code,
-                    room_type_code, rate_plan_code, start_date, end_date,
-                    rate_amount, currency,
+                    self._username,
+                    self._password,
+                    self._hotel_code,
+                    room_type_code,
+                    rate_plan_code,
+                    start_date,
+                    end_date,
+                    rate_amount,
+                    currency,
                 )
                 rate_action = get_soap_action_uri(rate_op)
 
@@ -288,9 +297,18 @@ class ExelyProvider:
             try:
                 avail_op = "OTA_HotelAvailNotifRQ"
                 avail_xml = build_ari_update_rq(
-                    self._username, self._password, self._hotel_code,
-                    room_type_code, rate_plan_code, start_date, end_date,
-                    availability, None, currency, stop_sell, min_stay,
+                    self._username,
+                    self._password,
+                    self._hotel_code,
+                    room_type_code,
+                    rate_plan_code,
+                    start_date,
+                    end_date,
+                    availability,
+                    None,
+                    currency,
+                    stop_sell,
+                    min_stay,
                 )
                 avail_action = get_soap_action_uri(avail_op)
 
@@ -334,8 +352,11 @@ class ExelyProvider:
         soap_action = get_soap_action_uri(operation)
         try:
             xml = build_notif_report_rq(
-                self._username, self._password, self._hotel_code,
-                reservation_id, confirmation_number,
+                self._username,
+                self._password,
+                self._hotel_code,
+                reservation_id,
+                confirmation_number,
                 create_datetime=create_datetime,
                 last_modify_datetime=last_modify_datetime,
                 res_status=res_status,
@@ -427,7 +448,9 @@ class ExelyProvider:
             return {"success": True, **(result.data or {}), "duration_ms": result.duration_ms}
         return {"success": False, "error": result.error, "duration_ms": result.duration_ms}
 
-    async def legacy_confirm_delivery(self, reservation_id: str, confirmation_number: str, create_datetime: str = None, last_modify_datetime: str = None, res_status: str = "Reserved") -> dict[str, Any]:
+    async def legacy_confirm_delivery(
+        self, reservation_id: str, confirmation_number: str, create_datetime: str = None, last_modify_datetime: str = None, res_status: str = "Reserved"
+    ) -> dict[str, Any]:
         """Legacy: returns dict like the old ExelyClient."""
         result = await self.confirm_delivery(reservation_id, confirmation_number, create_datetime=create_datetime, last_modify_datetime=last_modify_datetime, res_status=res_status)
         if result.success:

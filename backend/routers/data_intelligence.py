@@ -5,6 +5,7 @@ Endpoint groups:
   /api/data-intelligence/operations/*
   /api/data-intelligence/guests/*
 """
+
 import logging
 
 from fastapi import APIRouter, Depends, Query
@@ -21,9 +22,11 @@ try:
     from cache_manager import cache, cached
 except ImportError:  # pragma: no cover
     cache = None
+
     def cached(ttl=300, key_prefix=""):
         def decorator(func):
             return func
+
         return decorator
 
 
@@ -35,6 +38,7 @@ def _invalidate_forecast(tenant_id: str):
         except Exception:  # pragma: no cover
             pass
 
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/data-intelligence", tags=["data-intelligence"])
@@ -43,6 +47,7 @@ router = APIRouter(prefix="/api/data-intelligence", tags=["data-intelligence"])
 # ═══════════════════════════════════════════════════════════
 # REQUEST MODELS
 # ═══════════════════════════════════════════════════════════
+
 
 class RunPipelineReq(BaseModel):
     room_type: str | None = None
@@ -54,9 +59,11 @@ class RunPipelineReq(BaseModel):
 # 1. REVENUE INTELLIGENCE
 # ═══════════════════════════════════════════════════════════
 
+
 @router.post("/revenue/run-pipeline")
-async def run_revenue_pipeline(req: RunPipelineReq,
-                                current_user: User = Depends(get_current_user),
+async def run_revenue_pipeline(
+    req: RunPipelineReq,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     """Execute the full Revenue ML Pipeline."""
@@ -91,6 +98,7 @@ async def get_revenue_recommendations(
 ):
     """Get recent ML pricing recommendations."""
     from modules.platform_scaling.revenue_autopricing import autopricing
+
     pending = await autopricing.get_pending_recommendations(current_user.tenant_id)
     history = await autopricing.get_recommendation_history(current_user.tenant_id, 20)
     return {
@@ -103,26 +111,21 @@ async def get_revenue_recommendations(
 # 2. OPERATIONAL AI
 # ═══════════════════════════════════════════════════════════
 
+
 @router.get("/operations/dashboard")
-async def get_operations_dashboard(target_date: str | None = None,
-                                    current_user: User = Depends(get_current_user),
-                                    _perm=Depends(require_op("view_executive_reports"))):
+async def get_operations_dashboard(target_date: str | None = None, current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_executive_reports"))):
     """Get full operational AI dashboard."""
     return await operational_ai.get_dashboard(current_user.tenant_id, target_date)
 
 
 @router.get("/operations/staffing")
-async def get_staffing_recommendations(target_date: str | None = None,
-                                        current_user: User = Depends(get_current_user),
-                                        _perm=Depends(require_op("view_executive_reports"))):
+async def get_staffing_recommendations(target_date: str | None = None, current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_executive_reports"))):
     """Get staffing recommendations for front desk and housekeeping."""
     return await operational_ai.get_staffing_recommendations(current_user.tenant_id, target_date)
 
 
 @router.get("/operations/workload-heatmap")
-async def get_workload_heatmap(target_date: str | None = None,
-                                current_user: User = Depends(get_current_user),
-                                _perm=Depends(require_op("view_executive_reports"))):
+async def get_workload_heatmap(target_date: str | None = None, current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_executive_reports"))):
     """Get housekeeping workload heatmap and check-in hourly distribution."""
     return await operational_ai.get_workload_heatmap(current_user.tenant_id, target_date)
 
@@ -149,38 +152,29 @@ async def get_maintenance_risk(
 # 3. GUEST INTELLIGENCE
 # ═══════════════════════════════════════════════════════════
 
+
 @router.get("/guests/dashboard")
-async def get_guest_dashboard(limit: int = Query(30, ge=1, le=100),
-                               current_user: User = Depends(get_current_user),
-                               _perm=Depends(require_op("view_guest_list"))):
+async def get_guest_dashboard(limit: int = Query(30, ge=1, le=100), current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_guest_list"))):
     """Get aggregate guest intelligence dashboard."""
     return await guest_intelligence.get_dashboard(current_user.tenant_id, limit)
 
 
 @router.get("/guests/{guest_id}/summary")
-async def get_guest_summary(guest_id: str,
-                             current_user: User = Depends(get_current_user),
-                             _perm=Depends(require_op("view_guest_list"))):
+async def get_guest_summary(guest_id: str, current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_guest_list"))):
     """Get complete intelligence for a single guest."""
     return await guest_intelligence.get_guest_summary(current_user.tenant_id, guest_id)
 
 
 @router.get("/guests/{guest_id}/churn-risk")
-async def get_guest_churn_risk(guest_id: str,
-                                current_user: User = Depends(get_current_user),
-                                _perm=Depends(require_op("view_guest_list"))):
+async def get_guest_churn_risk(guest_id: str, current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_guest_list"))):
     """Get churn prediction for a guest."""
     return await guest_intelligence.churn.predict(current_user.tenant_id, guest_id)
 
 
 @router.get("/guests/{guest_id}/upsell")
-async def get_guest_upsell(guest_id: str, booking_id: str | None = None,
-                            current_user: User = Depends(get_current_user),
-                            _perm=Depends(require_op("view_guest_list"))):
+async def get_guest_upsell(guest_id: str, booking_id: str | None = None, current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_guest_list"))):
     """Get upsell recommendations for a guest."""
-    return await guest_intelligence.upsell.recommend(
-        current_user.tenant_id, guest_id, booking_id
-    )
+    return await guest_intelligence.upsell.recommend(current_user.tenant_id, guest_id, booking_id)
 
 
 @router.get("/guests/segments")

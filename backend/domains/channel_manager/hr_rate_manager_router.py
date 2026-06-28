@@ -2,6 +2,7 @@
 HotelRunner Rate Manager Router — Fiyat, Müsaitlik, Min Konaklama Yönetimi
 HotelRunner üzerinden ayarla → HR API'ye push et → OTA'lara yansısın.
 """
+
 import asyncio
 import logging
 import uuid
@@ -88,6 +89,7 @@ def _extract_room_types_and_rate_plans(cached_rooms: list) -> tuple[list, list]:
 async def _get_hr_provider(tenant_id: str):
     """Get HotelRunner provider instance."""
     from domains.channel_manager.providers.hotelrunner.factory import get_provider as _get_provider
+
     try:
         provider, conn = await _get_provider(tenant_id)
         return provider, conn
@@ -96,11 +98,17 @@ async def _get_hr_provider(tenant_id: str):
         return None, None
 
 
-
-
 async def _push_with_retry(
-    provider, rt_code: str, start_date: str, end_date: str,
-    *, rate=None, avail=None, stop=None, minstay=None, days=None,
+    provider,
+    rt_code: str,
+    start_date: str,
+    end_date: str,
+    *,
+    rate=None,
+    avail=None,
+    stop=None,
+    minstay=None,
+    days=None,
 ) -> dict:
     """Push ARI update to HotelRunner — fail-fast, no retries."""
     update_data = {"inv_code": rt_code, "start_date": start_date, "end_date": end_date}
@@ -142,26 +150,26 @@ async def get_hr_rate_grid(
     if not end_date:
         end_date = (datetime.now(UTC) + timedelta(days=14)).date().isoformat()
 
-    conn = await db.hotelrunner_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    )
+    conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
     if not conn:
         raise HTTPException(status_code=404, detail="HotelRunner bağlantısı bulunamadı")
 
     cached_rooms = conn.get("cached_rooms", [])
     if not cached_rooms:
         return {
-            "grid": [], "room_types": [], "rate_plans": [],
-            "pricing_settings": {}, "currency": "TRY",
-            "start_date": start_date, "end_date": end_date,
+            "grid": [],
+            "room_types": [],
+            "rate_plans": [],
+            "pricing_settings": {},
+            "currency": "TRY",
+            "start_date": start_date,
+            "end_date": end_date,
         }
 
     room_types, rate_plans = _extract_room_types_and_rate_plans(cached_rooms)
 
     # Get room mappings for PMS room type lookups
-    mappings = await db.hotelrunner_room_mappings.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).to_list(100)
+    mappings = await db.hotelrunner_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(100)
 
     mapping_by_inv = {}
     for m in mappings:
@@ -184,9 +192,7 @@ async def get_hr_rate_grid(
     # Count rooms per PMS type
     room_counts = {}
     room_ids_by_type = {}
-    rooms = await db.rooms.find(
-        {"tenant_id": tenant_id}, {"_id": 0, "id": 1, "room_type": 1, "status": 1}
-    ).to_list(500)
+    rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0, "id": 1, "room_type": 1, "status": 1}).to_list(500)
     for r in rooms:
         rt = r.get("room_type", "")
         room_counts.setdefault(rt, {"total": 0, "available": 0})
@@ -255,31 +261,33 @@ async def get_hr_rate_grid(
                 else:
                     real_avail = max(counts["total"] - sold_count, 0)
 
-                dates_data.append({
-                    "date": ds,
-                    "rate": entry.get("rate"),
-                    "availability": real_avail,
-                    "base_availability": base_avail if base_avail is not None else counts["total"],
-                    "sold": sold_count,
-                    "min_stay": entry.get("min_stay", 1),
-                    "stop_sell": entry.get("stop_sell", False),
-                })
+                dates_data.append(
+                    {
+                        "date": ds,
+                        "rate": entry.get("rate"),
+                        "availability": real_avail,
+                        "base_availability": base_avail if base_avail is not None else counts["total"],
+                        "sold": sold_count,
+                        "min_stay": entry.get("min_stay", 1),
+                        "stop_sell": entry.get("stop_sell", False),
+                    }
+                )
                 d += timedelta(days=1)
 
-            grid.append({
-                "room_type_code": rt["code"],
-                "room_type_name": rt["name"],
-                "rate_plan_code": rp["code"],
-                "rate_plan_name": rp["name"],
-                "pms_room_type": pms_type or rt["name"],
-                "total_rooms": counts["total"],
-                "dates": dates_data,
-            })
+            grid.append(
+                {
+                    "room_type_code": rt["code"],
+                    "room_type_name": rt["name"],
+                    "rate_plan_code": rp["code"],
+                    "rate_plan_name": rp["name"],
+                    "pms_room_type": pms_type or rt["name"],
+                    "total_rooms": counts["total"],
+                    "dates": dates_data,
+                }
+            )
 
     # Pricing settings
-    pricing_docs = await db.hr_pricing_settings.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).to_list(200)
+    pricing_docs = await db.hr_pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
     pricing_map = {}
     for doc in pricing_docs:
         pricing_map[doc["room_type_code"]] = doc.get("pricing_type", "per_person")
@@ -303,18 +311,14 @@ async def get_hr_rate_grid(
 async def get_hr_room_types(current_user: User = Depends(get_current_user)):
     """HotelRunner oda tiplerini ve fiyat planlarını döndürür."""
     tenant_id = current_user.tenant_id
-    conn = await db.hotelrunner_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    )
+    conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
     if not conn:
         raise HTTPException(status_code=404, detail="HotelRunner bağlantısı bulunamadı")
 
     cached_rooms = conn.get("cached_rooms", [])
     room_types, rate_plans = _extract_room_types_and_rate_plans(cached_rooms)
 
-    pricing_docs = await db.hr_pricing_settings.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).to_list(200)
+    pricing_docs = await db.hr_pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
     pricing_map = {}
     for doc in pricing_docs:
         pricing_map[doc["room_type_code"]] = doc.get("pricing_type", "per_person")
@@ -340,9 +344,7 @@ async def hr_bulk_grid_update(
     now = datetime.now(UTC).isoformat()
     saved = 0
 
-    conn = await db.hotelrunner_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    )
+    conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
     if not conn:
         raise HTTPException(status_code=404, detail="HotelRunner bağlantısı bulunamadı")
 
@@ -438,16 +440,18 @@ async def hr_bulk_grid_update(
             if "ctd" in update_fields and v_ctd is not None:
                 set_fields["ctd"] = v_ctd
 
-            bulk_ops.append(UpdateOne(
-                {
-                    "tenant_id": tenant_id,
-                    "room_type_code": rt_code,
-                    "rate_plan_code": rp_code,
-                    "date": ds,
-                },
-                {"$set": set_fields},
-                upsert=True,
-            ))
+            bulk_ops.append(
+                UpdateOne(
+                    {
+                        "tenant_id": tenant_id,
+                        "room_type_code": rt_code,
+                        "rate_plan_code": rp_code,
+                        "date": ds,
+                    },
+                    {"$set": set_fields},
+                    upsert=True,
+                )
+            )
             saved += 1
 
             # Track matching dates for push (per room type)
@@ -470,41 +474,41 @@ async def hr_bulk_grid_update(
 
             # Warn about permission issues
             if push_avail is not None and not perms.get("availability_update", True):
-                permission_warnings.append(
-                    f"{rt_code}: HotelRunner bu oda tipi icin musaitlik guncellemesine izin vermiyor (availability_update=false)"
-                )
+                permission_warnings.append(f"{rt_code}: HotelRunner bu oda tipi icin musaitlik guncellemesine izin vermiyor (availability_update=false)")
                 logger.warning("[HR-BULK-UPDATE] availability_update=false for %s — availability will be skipped by HR", rt_code)
             if push_rate is not None and not perms.get("price_update", True):
-                permission_warnings.append(
-                    f"{rt_code}: HotelRunner bu oda tipi icin fiyat guncellemesine izin vermiyor (price_update=false)"
-                )
+                permission_warnings.append(f"{rt_code}: HotelRunner bu oda tipi icin fiyat guncellemesine izin vermiyor (price_update=false)")
                 logger.warning("[HR-BULK-UPDATE] price_update=false for %s — price will be skipped by HR", rt_code)
 
             # Build push tasks: when day filter is active, use days[] param
             # so HR only updates those weekdays in a SINGLE API call (instead
             # of one call per non-consecutive date group).
             if selected_days_set is not None:
-                push_tasks.append({
-                    "rt": rt_code,
-                    "rate": push_rate,
-                    "avail": push_avail,
-                    "stop": push_stop,
-                    "minstay": push_min,
-                    "start_date": request.start_date,
-                    "end_date": request.end_date,
-                    "days": sorted(selected_days_set),
-                })
+                push_tasks.append(
+                    {
+                        "rt": rt_code,
+                        "rate": push_rate,
+                        "avail": push_avail,
+                        "stop": push_stop,
+                        "minstay": push_min,
+                        "start_date": request.start_date,
+                        "end_date": request.end_date,
+                        "days": sorted(selected_days_set),
+                    }
+                )
             else:
-                push_tasks.append({
-                    "rt": rt_code,
-                    "rate": push_rate,
-                    "avail": push_avail,
-                    "stop": push_stop,
-                    "minstay": push_min,
-                    "start_date": request.start_date,
-                    "end_date": request.end_date,
-                    "days": None,
-                })
+                push_tasks.append(
+                    {
+                        "rt": rt_code,
+                        "rate": push_rate,
+                        "avail": push_avail,
+                        "stop": push_stop,
+                        "minstay": push_min,
+                        "start_date": request.start_date,
+                        "end_date": request.end_date,
+                        "days": None,
+                    }
+                )
 
     if bulk_ops:
         await db.hr_rate_calendar.bulk_write(bulk_ops, ordered=False)
@@ -529,12 +533,25 @@ async def hr_bulk_grid_update(
                 t_start = task_info["start_date"]
                 t_end = task_info["end_date"]
                 t_days = task_info.get("days")
-                logger.info("[HR-BULK-UPDATE] Push [%d/%d] rt=%s dates=%s→%s rate=%s avail=%s stop=%s minstay=%s days=%s",
-                    i+1, len(tasks), rt, t_start, t_end,
-                    task_info["rate"], task_info["avail"], task_info["stop"], task_info["minstay"], t_days)
+                logger.info(
+                    "[HR-BULK-UPDATE] Push [%d/%d] rt=%s dates=%s→%s rate=%s avail=%s stop=%s minstay=%s days=%s",
+                    i + 1,
+                    len(tasks),
+                    rt,
+                    t_start,
+                    t_end,
+                    task_info["rate"],
+                    task_info["avail"],
+                    task_info["stop"],
+                    task_info["minstay"],
+                    t_days,
+                )
                 try:
                     result = await _push_with_retry(
-                        prov, rt, t_start, t_end,
+                        prov,
+                        rt,
+                        t_start,
+                        t_end,
                         rate=task_info["rate"],
                         avail=task_info["avail"],
                         stop=task_info["stop"],
@@ -546,16 +563,20 @@ async def hr_bulk_grid_update(
                         reset_auto_retry(t_id)
                         success_count += 1
                         consecutive_auth_errors = 0
-                        logger.info("[HR-BULK-UPDATE] Push [%d/%d] SUCCESS rt=%s dates=%s→%s", i+1, len(tasks), rt, t_start, t_end)
+                        logger.info("[HR-BULK-UPDATE] Push [%d/%d] SUCCESS rt=%s dates=%s→%s", i + 1, len(tasks), rt, t_start, t_end)
                     elif "rate limit" in str(result.get("error", "")).lower():
                         # Rate limit → kalan push'ları da dahil kuyruğa ekle
                         retry_secs = result.get("retry_after_seconds", 65)
                         for remaining in tasks[i:]:
                             await enqueue_failed_push(
-                                t_id, remaining["rt"],
-                                remaining["start_date"], remaining["end_date"],
-                                rate=remaining["rate"], avail=remaining["avail"],
-                                stop=remaining["stop"], minstay=remaining["minstay"],
+                                t_id,
+                                remaining["rt"],
+                                remaining["start_date"],
+                                remaining["end_date"],
+                                rate=remaining["rate"],
+                                avail=remaining["avail"],
+                                stop=remaining["stop"],
+                                minstay=remaining["minstay"],
                                 days=remaining.get("days"),
                                 error=result.get("error", ""),
                                 retry_after_seconds=retry_secs,
@@ -567,14 +588,17 @@ async def hr_bulk_grid_update(
                         consecutive_auth_errors += 1
                         if consecutive_auth_errors >= MAX_CONSECUTIVE_AUTH_ERRORS:
                             # Ardışık 403 hataları — muhtemelen geçici IP engeli, kalan push'ları kuyruğa at
-                            logger.warning("[HR-BULK-UPDATE] %d consecutive 403 errors — queuing %d remaining tasks for retry",
-                                consecutive_auth_errors, len(tasks) - i)
+                            logger.warning("[HR-BULK-UPDATE] %d consecutive 403 errors — queuing %d remaining tasks for retry", consecutive_auth_errors, len(tasks) - i)
                             for remaining in tasks[i:]:
                                 await enqueue_failed_push(
-                                    t_id, remaining["rt"],
-                                    remaining["start_date"], remaining["end_date"],
-                                    rate=remaining["rate"], avail=remaining["avail"],
-                                    stop=remaining["stop"], minstay=remaining["minstay"],
+                                    t_id,
+                                    remaining["rt"],
+                                    remaining["start_date"],
+                                    remaining["end_date"],
+                                    rate=remaining["rate"],
+                                    avail=remaining["avail"],
+                                    stop=remaining["stop"],
+                                    minstay=remaining["minstay"],
                                     days=remaining.get("days"),
                                     error="Persistent 403 — queued for retry",
                                     retry_after_seconds=120,
@@ -588,14 +612,17 @@ async def hr_bulk_grid_update(
                     if "403" in str(e) or "access denied" in str(e).lower():
                         consecutive_auth_errors += 1
                         if consecutive_auth_errors >= MAX_CONSECUTIVE_AUTH_ERRORS:
-                            logger.warning("[HR-BULK-UPDATE] %d consecutive 403 exceptions — queuing %d remaining for retry",
-                                consecutive_auth_errors, len(tasks) - i)
+                            logger.warning("[HR-BULK-UPDATE] %d consecutive 403 exceptions — queuing %d remaining for retry", consecutive_auth_errors, len(tasks) - i)
                             for remaining in tasks[i:]:
                                 await enqueue_failed_push(
-                                    t_id, remaining["rt"],
-                                    remaining["start_date"], remaining["end_date"],
-                                    rate=remaining["rate"], avail=remaining["avail"],
-                                    stop=remaining["stop"], minstay=remaining["minstay"],
+                                    t_id,
+                                    remaining["rt"],
+                                    remaining["start_date"],
+                                    remaining["end_date"],
+                                    rate=remaining["rate"],
+                                    avail=remaining["avail"],
+                                    stop=remaining["stop"],
+                                    minstay=remaining["minstay"],
                                     days=remaining.get("days"),
                                     error=f"Persistent 403: {e}",
                                     retry_after_seconds=120,
@@ -611,9 +638,13 @@ async def hr_bulk_grid_update(
 
             logger.info("[HR-BULK-UPDATE] Background push done: %d/%d successful (tenant=%s)", success_count, len(tasks), t_id)
 
-        asyncio.create_task(_background_push(
-            push_tasks, provider, tenant_id,
-        ))
+        asyncio.create_task(
+            _background_push(
+                push_tasks,
+                provider,
+                tenant_id,
+            )
+        )
 
     msg = f"{saved} kayıt güncellendi"
     if push_tasks and provider:
@@ -670,9 +701,7 @@ async def get_hr_stop_sale_summary(
 
     results = await db.hr_rate_calendar.aggregate(pipeline).to_list(500)
 
-    conn = await db.hotelrunner_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0, "cached_rooms": 1}
-    )
+    conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0, "cached_rooms": 1})
     rt_map = {}
     if conn:
         for room in conn.get("cached_rooms", []):
@@ -682,12 +711,14 @@ async def get_hr_stop_sale_summary(
     for r in results:
         code = r["_id"]
         dates = sorted(r["dates"])
-        stops.append({
-            "room_type_code": code,
-            "room_type_name": rt_map.get(code, code),
-            "dates": dates,
-            "count": r["count"],
-        })
+        stops.append(
+            {
+                "room_type_code": code,
+                "room_type_name": rt_map.get(code, code),
+                "dates": dates,
+                "count": r["count"],
+            }
+        )
 
     return {"stops": stops}
 
@@ -698,9 +729,7 @@ async def get_hr_stop_sale_summary(
 @router.get("/pricing-settings")
 async def get_hr_pricing_settings(current_user: User = Depends(get_current_user)):
     tenant_id = current_user.tenant_id
-    docs = await db.hr_pricing_settings.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).to_list(200)
+    docs = await db.hr_pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
 
     settings = {}
     for doc in docs:
@@ -725,13 +754,15 @@ async def update_hr_pricing_settings(
 
         await db.hr_pricing_settings.update_one(
             {"tenant_id": tenant_id, "room_type_code": item.room_type_code},
-            {"$set": {
-                "tenant_id": tenant_id,
-                "room_type_code": item.room_type_code,
-                "pricing_type": item.pricing_type,
-                "updated_at": now,
-                "updated_by": current_user.id,
-            }},
+            {
+                "$set": {
+                    "tenant_id": tenant_id,
+                    "room_type_code": item.room_type_code,
+                    "pricing_type": item.pricing_type,
+                    "updated_at": now,
+                    "updated_by": current_user.id,
+                }
+            },
             upsert=True,
         )
         updated += 1
@@ -740,8 +771,6 @@ async def update_hr_pricing_settings(
 
 
 # ── Holidays (shared logic) ─────────────────────────────────────
-
-
 
 
 @router.get("/holidays")
@@ -760,14 +789,10 @@ async def get_hr_holidays(current_user: User = Depends(get_current_user)):
 # ── Stop Sale Schedules ──────────────────────────────────────────
 
 
-
-
 @router.get("/stop-sale-schedules")
 async def list_hr_stop_sale_schedules(current_user: User = Depends(get_current_user)):
     tenant_id = current_user.tenant_id
-    docs = await db.hr_stop_sale_schedules.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).sort("start_date", 1).to_list(200)
+    docs = await db.hr_stop_sale_schedules.find({"tenant_id": tenant_id}, {"_id": 0}).sort("start_date", 1).to_list(200)
     return {"schedules": docs}
 
 
@@ -780,9 +805,7 @@ async def create_hr_stop_sale_schedule(
     tenant_id = current_user.tenant_id
     now = datetime.now(UTC).isoformat()
 
-    conn = await db.hotelrunner_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0, "cached_rooms": 1}
-    )
+    conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0, "cached_rooms": 1})
 
     schedule = {
         "id": str(uuid.uuid4()),
@@ -842,16 +865,12 @@ async def delete_hr_stop_sale_schedule(
     _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     tenant_id = current_user.tenant_id
-    schedule = await db.hr_stop_sale_schedules.find_one(
-        {"tenant_id": tenant_id, "id": schedule_id}, {"_id": 0}
-    )
+    schedule = await db.hr_stop_sale_schedules.find_one({"tenant_id": tenant_id, "id": schedule_id}, {"_id": 0})
     if not schedule:
         raise HTTPException(status_code=404, detail="Zamanlayici bulunamadi")
 
     if remove_stop_sale and schedule.get("applied"):
-        conn = await db.hotelrunner_connections.find_one(
-            {"tenant_id": tenant_id, "is_active": True}, {"_id": 0, "cached_rooms": 1}
-        )
+        conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0, "cached_rooms": 1})
         if conn:
             cached_rooms = conn.get("cached_rooms", [])
             _, rate_plans = _extract_room_types_and_rate_plans(cached_rooms)
@@ -874,9 +893,7 @@ async def delete_hr_stop_sale_schedule(
             )
             await hr_bulk_grid_update(bulk_req, current_user)
 
-    await db.hr_stop_sale_schedules.delete_one(
-        {"tenant_id": tenant_id, "id": schedule_id}
-    )
+    await db.hr_stop_sale_schedules.delete_one({"tenant_id": tenant_id, "id": schedule_id})
     return {"message": "Zamanlayici silindi"}
 
 
@@ -920,17 +937,11 @@ async def get_hr_push_providers(current_user: User = Depends(get_current_user)):
     """HotelRunner push provider durumu."""
     tenant_id = current_user.tenant_id
 
-    hr_flags = await db.connector_feature_flags.find_one(
-        {"tenant_id": tenant_id, "provider": "hotelrunner_v2"}, {"_id": 0}
-    )
+    hr_flags = await db.connector_feature_flags.find_one({"tenant_id": tenant_id, "provider": "hotelrunner_v2"}, {"_id": 0})
     if not hr_flags:
-        hr_flags = await db.connector_feature_flags.find_one(
-            {"provider": "hotelrunner_v2"}, {"_id": 0}
-        )
+        hr_flags = await db.connector_feature_flags.find_one({"provider": "hotelrunner_v2"}, {"_id": 0})
 
-    hr_conn = await db.hotelrunner_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    )
+    hr_conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
 
     if hr_flags and hr_flags.get("connector_enabled"):
         hr_shadow = hr_flags.get("shadow_mode", True)
@@ -949,12 +960,14 @@ async def get_hr_push_providers(current_user: User = Depends(get_current_user)):
         hr_write = False
 
     return {
-        "providers": [{
-            "name": "HotelRunner",
-            "slug": "hotelrunner",
-            "push_active": hr_write,
-            "mode": hr_mode,
-        }]
+        "providers": [
+            {
+                "name": "HotelRunner",
+                "slug": "hotelrunner",
+                "push_active": hr_write,
+                "mode": hr_mode,
+            }
+        ]
     }
 
 
@@ -970,9 +983,7 @@ async def remove_hr_room_type(
     """Remove a room type from cached_rooms (hides from rate manager)."""
     tenant_id = current_user.tenant_id
 
-    conn = await db.hotelrunner_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0, "cached_rooms": 1}
-    )
+    conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0, "cached_rooms": 1})
     if not conn:
         raise HTTPException(status_code=404, detail="HotelRunner baglantisi bulunamadi")
 
@@ -991,10 +1002,12 @@ async def remove_hr_room_type(
     )
 
     # Also clean up related calendar data
-    await db.hr_rate_calendar.delete_many({
-        "tenant_id": tenant_id,
-        "room_type_code": inv_code,
-    })
+    await db.hr_rate_calendar.delete_many(
+        {
+            "tenant_id": tenant_id,
+            "room_type_code": inv_code,
+        }
+    )
 
     logger.info("[HR-ROOM-TYPE] Removed inv_code=%s from cached_rooms (%d entries removed)", inv_code, removed_count)
 
@@ -1017,7 +1030,8 @@ async def get_hr_queue_status(current_user: User = Depends(get_current_user)):
 
 
 @router.delete("/queue-cancel-all")
-async def cancel_all_queue_items(current_user: User = Depends(get_current_user),
+async def cancel_all_queue_items(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     """Kuyruktaki TÜM bekleyen ve retrying push'ları iptal et ve arka plan görevlerini durdur."""
@@ -1028,6 +1042,7 @@ async def cancel_all_queue_items(current_user: User = Depends(get_current_user),
         _auto_retry_tasks,
         _batch_push_tasks,
     )
+
     for task_dict in (_auto_retry_tasks, _batch_push_tasks):
         task = task_dict.pop(tenant_id, None)
         if task and not task.done():
@@ -1036,20 +1051,23 @@ async def cancel_all_queue_items(current_user: User = Depends(get_current_user),
     clear_cooldown(tenant_id)
     reset_auto_retry(tenant_id)
 
-    result = await db.hr_push_queue.delete_many({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["pending", "retrying"]},
-    })
+    result = await db.hr_push_queue.delete_many(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["pending", "retrying"]},
+        }
+    )
     deleted = result.deleted_count
 
     # Also clear completed items
-    completed_result = await db.hr_push_queue.delete_many({
-        "tenant_id": tenant_id,
-        "status": "completed",
-    })
+    completed_result = await db.hr_push_queue.delete_many(
+        {
+            "tenant_id": tenant_id,
+            "status": "completed",
+        }
+    )
 
-    logger.info("[HR-QUEUE] Tenant %s: %d pending/retrying + %d completed items cancelled/cleared",
-                tenant_id, deleted, completed_result.deleted_count)
+    logger.info("[HR-QUEUE] Tenant %s: %d pending/retrying + %d completed items cancelled/cleared", tenant_id, deleted, completed_result.deleted_count)
 
     return {
         "message": f"{deleted} bekleyen push iptal edildi",
@@ -1059,7 +1077,8 @@ async def cancel_all_queue_items(current_user: User = Depends(get_current_user),
 
 
 @router.delete("/queue-clear")
-async def clear_queue(current_user: User = Depends(get_current_user),
+async def clear_queue(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     """Tamamlanan kuyruk öğelerini temizle."""
@@ -1069,7 +1088,9 @@ async def clear_queue(current_user: User = Depends(get_current_user),
 
 
 @router.delete("/queue-cancel/{item_id}")
-async def cancel_queue_item(item_id: str, current_user: User = Depends(get_current_user),
+async def cancel_queue_item(
+    item_id: str,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     """Kuyruktaki belirli bir push görevini iptal et."""

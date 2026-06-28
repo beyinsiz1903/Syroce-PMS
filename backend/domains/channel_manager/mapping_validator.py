@@ -10,6 +10,7 @@ Every mapping failure produces:
   - reason
   - operator_action_hint
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -167,10 +168,7 @@ async def compute_mapping_health(
 
     room_completeness = (room_active / room_total * 100) if room_total > 0 else 0
     rate_completeness = (rate_active / rate_total * 100) if rate_total > 0 else 0
-    overall_completeness = (
-        ((room_active + rate_active) / (room_total + rate_total) * 100)
-        if (room_total + rate_total) > 0 else 0
-    )
+    overall_completeness = ((room_active + rate_active) / (room_total + rate_total) * 100) if (room_total + rate_total) > 0 else 0
 
     return {
         "tenant_id": tenant_id,
@@ -193,11 +191,6 @@ async def compute_mapping_health(
             "inactive": rate_inactive,
             "completeness_pct": round(rate_completeness, 1),
         },
-        "is_production_ready": (
-            room_completeness == 100 and
-            rate_completeness == 100 and
-            room_broken == 0 and
-            rate_broken == 0
-        ),
+        "is_production_ready": (room_completeness == 100 and rate_completeness == 100 and room_broken == 0 and rate_broken == 0),
         "last_validation_at": now,
     }

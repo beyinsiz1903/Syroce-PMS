@@ -29,6 +29,7 @@ sir, devre disi key -> fail-closed 401. shared_secret/imza degerleri ASLA
 loglanmaz/yanitta gecmez. Kimlik (tenant/agency) SUNUCU tarafinda key_id'den
 cozulur; istek govdesinden ASLA guvenilmez.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -44,7 +45,7 @@ from .signing_store import resolve_signing_secret
 logger = logging.getLogger("agency_v1.auth")
 
 ACCEPT_WINDOW_SECONDS = 360  # +/-300 tazelik + /-60 saat-kaymasi (donmus)
-NONCE_TTL_SECONDS = 600      # >= ACCEPT_WINDOW_SECONDS (degismez kural)
+NONCE_TTL_SECONDS = 600  # >= ACCEPT_WINDOW_SECONDS (degismez kural)
 
 _UNAUTHORIZED = "unauthorized"
 
@@ -57,13 +58,17 @@ def _canonical_query(request: Request) -> str:
 
 
 def _build_string_to_sign(
-    *, key_id: str, method: str, path: str, canonical_query: str,
-    timestamp: str, nonce: str, body: bytes,
+    *,
+    key_id: str,
+    method: str,
+    path: str,
+    canonical_query: str,
+    timestamp: str,
+    nonce: str,
+    body: bytes,
 ) -> str:
     body_hash = hashlib.sha256(body).hexdigest()
-    return "\n".join(
-        [key_id, method, path, canonical_query, timestamp, nonce, body_hash]
-    )
+    return "\n".join([key_id, method, path, canonical_query, timestamp, nonce, body_hash])
 
 
 def _bearer_key_id(authorization: str | None) -> str | None:
@@ -72,7 +77,7 @@ def _bearer_key_id(authorization: str | None) -> str | None:
     prefix = "Bearer "
     if not authorization.startswith(prefix):
         return None
-    key_id = authorization[len(prefix):].strip()
+    key_id = authorization[len(prefix) :].strip()
     return key_id or None
 
 
@@ -134,15 +139,12 @@ async def verify_agency_signature(request: Request) -> dict:
 
     # Revoke kapisi: key_id ayni zamanda agency_api_keys.id'dir; api key devre
     # disi birakilirsa agency_v1 erisimi de kapanmali (auth zayiflatilmaz).
-    apikey = await sysdb.agency_api_keys.find_one(
-        {"id": key_id, "is_active": True}, {"_id": 0, "tenant_id": 1, "agency_id": 1}
-    )
+    apikey = await sysdb.agency_api_keys.find_one({"id": key_id, "is_active": True}, {"_id": 0, "tenant_id": 1, "agency_id": 1})
     if not apikey:
         raise HTTPException(status_code=401, detail=_UNAUTHORIZED)
     # Savunma derinligi: signing dokumani ile api key ayni (tenant, agency)
     # ciftine baglanmali; uyumsuzluk -> tamper -> 401.
-    if (apikey.get("tenant_id") != resolved["tenant_id"]
-            or apikey.get("agency_id") != resolved["agency_id"]):
+    if apikey.get("tenant_id") != resolved["tenant_id"] or apikey.get("agency_id") != resolved["agency_id"]:
         raise HTTPException(status_code=401, detail=_UNAUTHORIZED)
 
     # Body-cache guvenli okuma (tuketme yok).

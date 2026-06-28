@@ -2,6 +2,7 @@
 Eski 2024-satırlık dosya 8 sub-module'e bölündü. URL'ler aynı (prefix /api
 burada uygulanır, sub-router'lar prefix'siz).
 """
+
 import logging
 
 from fastapi import APIRouter

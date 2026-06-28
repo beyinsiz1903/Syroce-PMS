@@ -33,6 +33,7 @@ Design constraints (mirrors the existing ``auth_cache_pubsub`` /
 Keys self-expire (``_STATE_TTL_MS``) so a connection removed forever does
 not leave a stale OPEN key behind; the TTL is refreshed on every write.
 """
+
 import logging
 from typing import Any
 
@@ -167,13 +168,15 @@ class CircuitBreakerStore:
         self._metrics["errors"] += 1
         self._metrics["last_error"] = f"{type(e).__name__}: {str(e)[:160]}"
 
-    async def try_acquire(
-        self, key: str, recovery_timeout: int, half_open_max: int
-    ) -> tuple[str, bool]:
+    async def try_acquire(self, key: str, recovery_timeout: int, half_open_max: int) -> tuple[str, bool]:
         """Atomically decide admission for ``key``. Returns (state, admitted)."""
         res = await self._redis.eval(
-            _ACQUIRE_LUA, 1, self._k(key),
-            recovery_timeout, half_open_max, _STATE_TTL_MS,
+            _ACQUIRE_LUA,
+            1,
+            self._k(key),
+            recovery_timeout,
+            half_open_max,
+            _STATE_TTL_MS,
         )
         state = res[0]
         if isinstance(state, bytes):
@@ -187,8 +190,11 @@ class CircuitBreakerStore:
 
     async def record_failure(self, key: str, failure_threshold: int) -> str:
         state = await self._redis.eval(
-            _RECORD_FAILURE_LUA, 1, self._k(key),
-            failure_threshold, _STATE_TTL_MS,
+            _RECORD_FAILURE_LUA,
+            1,
+            self._k(key),
+            failure_threshold,
+            _STATE_TTL_MS,
         )
         if isinstance(state, bytes):
             state = state.decode("utf-8", "replace")
@@ -197,8 +203,11 @@ class CircuitBreakerStore:
 
     async def record_success(self, key: str, half_open_max: int) -> str:
         state = await self._redis.eval(
-            _RECORD_SUCCESS_LUA, 1, self._k(key),
-            half_open_max, _STATE_TTL_MS,
+            _RECORD_SUCCESS_LUA,
+            1,
+            self._k(key),
+            half_open_max,
+            _STATE_TTL_MS,
         )
         if isinstance(state, bytes):
             state = state.decode("utf-8", "replace")
@@ -222,14 +231,12 @@ class CircuitBreakerStore:
         out: dict[str, dict[str, Any]] = {}
         cursor = 0
         while True:
-            cursor, keys = await self._redis.scan(
-                cursor=cursor, match=f"{_KEY_PREFIX}*", count=200
-            )
+            cursor, keys = await self._redis.scan(cursor=cursor, match=f"{_KEY_PREFIX}*", count=200)
             for k in keys:
                 kk = k.decode("utf-8", "replace") if isinstance(k, bytes) else k
                 h = await self._redis.hgetall(kk)
                 if h:
-                    out[kk[len(_KEY_PREFIX):]] = _decode_hash(h)
+                    out[kk[len(_KEY_PREFIX) :]] = _decode_hash(h)
             if cursor == 0:
                 break
         return out

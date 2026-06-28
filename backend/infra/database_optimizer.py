@@ -2,6 +2,7 @@
 Database Optimization & Index Management
 Ensures all collections have proper indexes for performance
 """
+
 import logging
 from datetime import datetime
 
@@ -18,7 +19,8 @@ def _log_index_error(coll_name: str, e: Exception) -> None:
     if isinstance(e, OperationFailure) and getattr(e, "code", None) == 85:
         logger.debug(
             "Index for %s already exists with a different name (cosmetic, skipping): %s",
-            coll_name, e,
+            coll_name,
+            e,
         )
     else:
         logger.warning("Index creation warning for %s: %s", coll_name, e)
@@ -34,31 +36,31 @@ class DatabaseOptimizer:
 
         try:
             # Bookings Collection
-            results['bookings'] = await self.create_booking_indexes()
+            results["bookings"] = await self.create_booking_indexes()
 
             # Guests Collection
-            results['guests'] = await self.create_guest_indexes()
+            results["guests"] = await self.create_guest_indexes()
 
             # Rooms Collection
-            results['rooms'] = await self.create_room_indexes()
+            results["rooms"] = await self.create_room_indexes()
 
             # Folios Collection
-            results['folios'] = await self.create_folio_indexes()
+            results["folios"] = await self.create_folio_indexes()
 
             # Users Collection
-            results['users'] = await self.create_user_indexes()
+            results["users"] = await self.create_user_indexes()
 
             # Tasks/Housekeeping
-            results['tasks'] = await self.create_task_indexes()
+            results["tasks"] = await self.create_task_indexes()
 
             # Audit Logs
-            results['audit_logs'] = await self.create_audit_log_indexes()
+            results["audit_logs"] = await self.create_audit_log_indexes()
 
             # Performance Reports
-            results['reports'] = await self.create_report_indexes()
+            results["reports"] = await self.create_report_indexes()
 
             # Tenant-prefixed compound indexes (most important for multi-tenant query plans)
-            results['tenant_compound'] = await self.create_tenant_compound_indexes()
+            results["tenant_compound"] = await self.create_tenant_compound_indexes()
 
             logger.info(f"✅ All indexes created successfully: {results}")
             return results
@@ -82,60 +84,89 @@ class DatabaseOptimizer:
             #   • idx_b_tid_created   EXACT-DUP idx_booking_created (perf_indexes.py: tid,created_at:-1)
             # idx_b_tid_chkin/chkout zaten önceki turda kaldırılmıştı.
             # Drop'lar d_perf.py _redundant listesinde idempotent olarak çalışır.
-            ('rooms', [
-                ([('tenant_id', ASCENDING), ('id', ASCENDING)], {'name': 'idx_r_tid_id'}),
-                ([('tenant_id', ASCENDING), ('status', ASCENDING)], {'name': 'idx_r_tid_status'}),
-                ([('tenant_id', ASCENDING), ('room_number', ASCENDING)], {'name': 'idx_r_tid_num'}),
-            ]),
-            ('guests', [
-                ([('tenant_id', ASCENDING), ('id', ASCENDING)], {'name': 'idx_g_tid_id'}),
-                ([('tenant_id', ASCENDING), ('vip', ASCENDING)], {'name': 'idx_g_tid_vip'}),
-            ]),
+            (
+                "rooms",
+                [
+                    ([("tenant_id", ASCENDING), ("id", ASCENDING)], {"name": "idx_r_tid_id"}),
+                    ([("tenant_id", ASCENDING), ("status", ASCENDING)], {"name": "idx_r_tid_status"}),
+                    ([("tenant_id", ASCENDING), ("room_number", ASCENDING)], {"name": "idx_r_tid_num"}),
+                ],
+            ),
+            (
+                "guests",
+                [
+                    ([("tenant_id", ASCENDING), ("id", ASCENDING)], {"name": "idx_g_tid_id"}),
+                    ([("tenant_id", ASCENDING), ("vip", ASCENDING)], {"name": "idx_g_tid_vip"}),
+                ],
+            ),
             # folios tenant_compound: KALDIRILDI (Mayıs 2026):
             #   • idx_f_tid_booking ↔ idx_folio_tenant_booking (atomic_checkin_checkout.py)
             #     ve idx_folios_tenant_booking (d_perf.py) — üçlü duplikasyon.
             #   • idx_f_tid_status ⊂ idx_folio_status_balance (perf_indexes.py: tid,status,balance)
-            ('folio_charges', [
-                ([('tenant_id', ASCENDING), ('booking_id', ASCENDING)], {'name': 'idx_fc_tid_booking'}),
-                ([('tenant_id', ASCENDING), ('date', ASCENDING)], {'name': 'idx_fc_tid_date'}),
-            ]),
-            ('housekeeping_tasks', [
-                # idx_hk_tid_status: KALDIRILDI ⊂ idx_hk_status_room (perf_indexes.py)
-                # idx_hk_tid_done:   KALDIRILDI EXACT-DUP idx_hk_completed (perf_indexes.py)
-                # idx_hk_tid_room kalıyor — perf_indexes'te {tid,room_id} prefix'li
-                # bağımsız index yok (idx_hk_status_room'un prefix'i sadece tid+status).
-                ([('tenant_id', ASCENDING), ('room_id', ASCENDING)], {'name': 'idx_hk_tid_room'}),
-            ]),
-            ('users', [
-                ([('tenant_id', ASCENDING), ('email', ASCENDING)], {'name': 'idx_u_tid_email'}),
-                ([('tenant_id', ASCENDING), ('role', ASCENDING)], {'name': 'idx_u_tid_role'}),
-            ]),
-            ('notifications', [
-                ([('tenant_id', ASCENDING), ('created_at', DESCENDING)], {'name': 'idx_n_tid_created'}),
-                ([('tenant_id', ASCENDING), ('user_id', ASCENDING), ('read', ASCENDING)], {'name': 'idx_n_tid_user_read'}),
-                # Mayıs 2026 — p95 fix: GET /api/notifications/list 1.2-1.5s
-                # sürüyordu (3 prod log'unda SLOW REQUEST). Sebep: visibility
-                # filtresi target_roles üzerinde $or yapıyor ama sıralı index
-                # yok → tenant scope'undaki tüm notification scan'leniyor +
-                # ardından count_documents tekrar tarama yapıyor.
-                # Bu multikey-friendly compound (tenant + target_roles array
-                # eşleşme + created_at sort) hem find hem unread count yolunu
-                # kapsar; her iki sorgu da aynı index prefix'inden yararlanır.
-                ([('tenant_id', ASCENDING), ('target_roles', ASCENDING), ('created_at', DESCENDING)],
-                 {'name': 'idx_n_tid_roles_created'}),
-            ]),
-            ('communication_logs', [
-                ([('tenant_id', ASCENDING), ('booking_id', ASCENDING)], {'name': 'idx_cl_tid_booking'}),
-            ]),
-            ('booking_guests', [
-                ([('tenant_id', ASCENDING), ('booking_id', ASCENDING)], {'name': 'idx_bg_tid_booking'}),
-            ]),
-            ('deposits', [
-                ([('tenant_id', ASCENDING), ('booking_id', ASCENDING)], {'name': 'idx_dep_tid_booking'}),
-            ]),
-            ('room_notes', [
-                ([('tenant_id', ASCENDING), ('room_id', ASCENDING), ('resolved', ASCENDING)], {'name': 'idx_rn_tid_room_resolved'}),
-            ]),
+            (
+                "folio_charges",
+                [
+                    ([("tenant_id", ASCENDING), ("booking_id", ASCENDING)], {"name": "idx_fc_tid_booking"}),
+                    ([("tenant_id", ASCENDING), ("date", ASCENDING)], {"name": "idx_fc_tid_date"}),
+                ],
+            ),
+            (
+                "housekeeping_tasks",
+                [
+                    # idx_hk_tid_status: KALDIRILDI ⊂ idx_hk_status_room (perf_indexes.py)
+                    # idx_hk_tid_done:   KALDIRILDI EXACT-DUP idx_hk_completed (perf_indexes.py)
+                    # idx_hk_tid_room kalıyor — perf_indexes'te {tid,room_id} prefix'li
+                    # bağımsız index yok (idx_hk_status_room'un prefix'i sadece tid+status).
+                    ([("tenant_id", ASCENDING), ("room_id", ASCENDING)], {"name": "idx_hk_tid_room"}),
+                ],
+            ),
+            (
+                "users",
+                [
+                    ([("tenant_id", ASCENDING), ("email", ASCENDING)], {"name": "idx_u_tid_email"}),
+                    ([("tenant_id", ASCENDING), ("role", ASCENDING)], {"name": "idx_u_tid_role"}),
+                ],
+            ),
+            (
+                "notifications",
+                [
+                    ([("tenant_id", ASCENDING), ("created_at", DESCENDING)], {"name": "idx_n_tid_created"}),
+                    ([("tenant_id", ASCENDING), ("user_id", ASCENDING), ("read", ASCENDING)], {"name": "idx_n_tid_user_read"}),
+                    # Mayıs 2026 — p95 fix: GET /api/notifications/list 1.2-1.5s
+                    # sürüyordu (3 prod log'unda SLOW REQUEST). Sebep: visibility
+                    # filtresi target_roles üzerinde $or yapıyor ama sıralı index
+                    # yok → tenant scope'undaki tüm notification scan'leniyor +
+                    # ardından count_documents tekrar tarama yapıyor.
+                    # Bu multikey-friendly compound (tenant + target_roles array
+                    # eşleşme + created_at sort) hem find hem unread count yolunu
+                    # kapsar; her iki sorgu da aynı index prefix'inden yararlanır.
+                    ([("tenant_id", ASCENDING), ("target_roles", ASCENDING), ("created_at", DESCENDING)], {"name": "idx_n_tid_roles_created"}),
+                ],
+            ),
+            (
+                "communication_logs",
+                [
+                    ([("tenant_id", ASCENDING), ("booking_id", ASCENDING)], {"name": "idx_cl_tid_booking"}),
+                ],
+            ),
+            (
+                "booking_guests",
+                [
+                    ([("tenant_id", ASCENDING), ("booking_id", ASCENDING)], {"name": "idx_bg_tid_booking"}),
+                ],
+            ),
+            (
+                "deposits",
+                [
+                    ([("tenant_id", ASCENDING), ("booking_id", ASCENDING)], {"name": "idx_dep_tid_booking"}),
+                ],
+            ),
+            (
+                "room_notes",
+                [
+                    ([("tenant_id", ASCENDING), ("room_id", ASCENDING), ("resolved", ASCENDING)], {"name": "idx_rn_tid_room_resolved"}),
+                ],
+            ),
         ]
 
         total = 0
@@ -195,11 +226,14 @@ class DatabaseOptimizer:
             ([("created_at", DESCENDING)], {}),
             ([("name", TEXT)], {}),
             # Partial unique: only enforce uniqueness for non-empty emails, per tenant
-            ([("tenant_id", ASCENDING), ("email", ASCENDING)], {
-                "unique": True,
-                "name": "idx_guests_tenant_email_unique",
-                "partialFilterExpression": {"email": {"$gt": ""}},
-            }),
+            (
+                [("tenant_id", ASCENDING), ("email", ASCENDING)],
+                {
+                    "unique": True,
+                    "name": "idx_guests_tenant_email_unique",
+                    "partialFilterExpression": {"email": {"$gt": ""}},
+                },
+            ),
             # NOTE: MongoDB allows only ONE text index per collection.
             # "name" text index already covers text search needs.
         ]
@@ -290,11 +324,14 @@ class DatabaseOptimizer:
             # boylece legacy/sifresiz (alan yok) satirlar `null` uzerinde
             # cakismaz. Global (login zaten global-by-email; app-katmani dup
             # kontrolu de global) — bu yuzden tenant_id'siz.
-            ([("_hash_email", ASCENDING)], {
-                "name": "uniq_users_hash_email",
-                "unique": True,
-                "partialFilterExpression": {"_hash_email": {"$type": "string"}},
-            }),
+            (
+                [("_hash_email", ASCENDING)],
+                {
+                    "name": "uniq_users_hash_email",
+                    "unique": True,
+                    "partialFilterExpression": {"_hash_email": {"$type": "string"}},
+                },
+            ),
         ]
 
         created = []
@@ -375,11 +412,7 @@ class DatabaseOptimizer:
 
     async def verify_indexes(self):
         """Verify all indexes are in place"""
-        collections = [
-            'bookings', 'guests', 'rooms', 'folios',
-            'users', 'housekeeping_tasks', 'audit_logs',
-            'daily_performance_reports'
-        ]
+        collections = ["bookings", "guests", "rooms", "folios", "users", "housekeeping_tasks", "audit_logs", "daily_performance_reports"]
 
         results = {}
 
@@ -387,10 +420,7 @@ class DatabaseOptimizer:
             try:
                 collection = self.db[collection_name]
                 indexes = await collection.index_information()
-                results[collection_name] = {
-                    "count": len(indexes),
-                    "indexes": list(indexes.keys())
-                }
+                results[collection_name] = {"count": len(indexes), "indexes": list(indexes.keys())}
             except Exception as e:
                 results[collection_name] = {"error": str(e)}
 
@@ -399,30 +429,36 @@ class DatabaseOptimizer:
     async def analyze_query_performance(self):
         """Analyze slow queries and suggest optimizations"""
         # Enable profiling
-        await self.db.command('profile', 2)  # Profile all operations
+        await self.db.command("profile", 2)  # Profile all operations
 
         # Get slow queries
-        slow_queries = await self.db.system.profile.find({
-            "millis": {"$gt": 100}  # Queries taking more than 100ms
-        }).sort("millis", DESCENDING).limit(20).to_list(20)
+        slow_queries = (
+            await self.db.system.profile.find(
+                {
+                    "millis": {"$gt": 100}  # Queries taking more than 100ms
+                }
+            )
+            .sort("millis", DESCENDING)
+            .limit(20)
+            .to_list(20)
+        )
 
         # Disable profiling
-        await self.db.command('profile', 0)
+        await self.db.command("profile", 0)
 
         suggestions = []
         for query in slow_queries:
-            suggestions.append({
-                "operation": query.get("op"),
-                "namespace": query.get("ns"),
-                "duration_ms": query.get("millis"),
-                "query": query.get("command", {}).get("filter", {}),
-                "suggestion": "Consider adding index" if not query.get("planSummary") else "Existing index may need optimization"
-            })
+            suggestions.append(
+                {
+                    "operation": query.get("op"),
+                    "namespace": query.get("ns"),
+                    "duration_ms": query.get("millis"),
+                    "query": query.get("command", {}).get("filter", {}),
+                    "suggestion": "Consider adding index" if not query.get("planSummary") else "Existing index may need optimization",
+                }
+            )
 
-        return {
-            "slow_queries_count": len(slow_queries),
-            "suggestions": suggestions
-        }
+        return {"slow_queries_count": len(slow_queries), "suggestions": suggestions}
 
     async def get_collection_stats(self):
         """Get statistics for all collections"""
@@ -435,9 +471,7 @@ class DatabaseOptimizer:
                 # maxTimeMS bounds server-side execution so a slow collStats aborts
                 # on the server (frees the connection) instead of only being
                 # abandoned client-side by an outer asyncio.wait_for.
-                collection_stats = await self.db.command(
-                    "collStats", collection_name, maxTimeMS=4000
-                )
+                collection_stats = await self.db.command("collStats", collection_name, maxTimeMS=4000)
                 stats[collection_name] = {
                     "count": collection_stats.get("count", 0),
                     "size_mb": round(collection_stats.get("size", 0) / (1024 * 1024), 2),
@@ -458,46 +492,34 @@ from modules.pms_core.role_permission_service import require_op  # v88 DW
 
 db_optimizer_router = APIRouter(prefix="/api/db-optimizer", tags=["database-optimization"])
 
+
 @db_optimizer_router.post("/indexes/create")
 async def create_all_indexes(db, _perm=Depends(require_op("view_system_diagnostics"))):  # v88 DW
     """Create all necessary database indexes"""
     optimizer = DatabaseOptimizer(db)
     result = await optimizer.create_all_indexes()
-    return {
-        "success": True,
-        "results": result,
-        "timestamp": datetime.utcnow().isoformat()
-    }
+    return {"success": True, "results": result, "timestamp": datetime.utcnow().isoformat()}
+
 
 @db_optimizer_router.get("/indexes/verify")
 async def verify_indexes(db):
     """Verify all indexes are in place"""
     optimizer = DatabaseOptimizer(db)
     result = await optimizer.verify_indexes()
-    return {
-        "success": True,
-        "indexes": result,
-        "timestamp": datetime.utcnow().isoformat()
-    }
+    return {"success": True, "indexes": result, "timestamp": datetime.utcnow().isoformat()}
+
 
 @db_optimizer_router.get("/stats")
 async def get_database_stats(db):
     """Get database statistics"""
     optimizer = DatabaseOptimizer(db)
     result = await optimizer.get_collection_stats()
-    return {
-        "success": True,
-        "stats": result,
-        "timestamp": datetime.utcnow().isoformat()
-    }
+    return {"success": True, "stats": result, "timestamp": datetime.utcnow().isoformat()}
+
 
 @db_optimizer_router.get("/analyze")
 async def analyze_performance(db):
     """Analyze query performance and suggest optimizations"""
     optimizer = DatabaseOptimizer(db)
     result = await optimizer.analyze_query_performance()
-    return {
-        "success": True,
-        "analysis": result,
-        "timestamp": datetime.utcnow().isoformat()
-    }
+    return {"success": True, "analysis": result, "timestamp": datetime.utcnow().isoformat()}

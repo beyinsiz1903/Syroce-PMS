@@ -40,9 +40,17 @@ _FALSY = frozenset({"0", "false", "no", "off", "n", "f", ""})
 
 # Environments where DISABLE_* security guards may be honoured. Anything
 # outside this set is treated as production for the purposes of the guard.
-_NON_PROD_ENVS = frozenset({
-    "development", "dev", "test", "testing", "local", "ci", "sandbox",
-})
+_NON_PROD_ENVS = frozenset(
+    {
+        "development",
+        "dev",
+        "test",
+        "testing",
+        "local",
+        "ci",
+        "sandbox",
+    }
+)
 
 
 def _read_raw(flag: str) -> str | None:
@@ -72,7 +80,8 @@ def is_enabled(flag: str, default: bool = False) -> bool:
     # behaviour drift from typos like "yse" or "trrue".
     logger.warning(
         "feature_flags: unknown value for %s, falling back to default=%s",
-        flag, default,
+        flag,
+        default,
     )
     return default
 
@@ -108,22 +117,17 @@ def production_guard(
     if not is_disabled(flag):
         return False
 
-    allowed = frozenset(
-        e.lower() for e in (allowed_envs or _NON_PROD_ENVS)
-    )
-    env = (
-        os.environ.get("APP_ENV")
-        or os.environ.get("ENVIRONMENT")
-        or "development"
-    ).strip().lower()
+    allowed = frozenset(e.lower() for e in (allowed_envs or _NON_PROD_ENVS))
+    env = (os.environ.get("APP_ENV") or os.environ.get("ENVIRONMENT") or "development").strip().lower()
 
     if env in allowed:
         return True
 
     logger.warning(
-        "feature_flags: %s is set but ignored — current env=%s is not in "
-        "allowed_envs=%s. Security guard remains active.",
-        flag, env, sorted(allowed),
+        "feature_flags: %s is set but ignored — current env=%s is not in allowed_envs=%s. Security guard remains active.",
+        flag,
+        env,
+        sorted(allowed),
     )
     return False
 
@@ -182,15 +186,17 @@ def snapshot() -> dict:
         else:  # "enable"
             state = is_enabled(name, default=default)
             raw_state = state
-        flags.append({
-            "name": name,
-            "kind": kind,
-            "active": state,
-            "default": default,
-            # `requested` differs from `active` only for prod-guarded flags
-            # that were set but ignored — operators see the leak.
-            "requested": raw_state,
-        })
+        flags.append(
+            {
+                "name": name,
+                "kind": kind,
+                "active": state,
+                "default": default,
+                # `requested` differs from `active` only for prod-guarded flags
+                # that were set but ignored — operators see the leak.
+                "requested": raw_state,
+            }
+        )
         if state:
             active += 1
         if state != default:

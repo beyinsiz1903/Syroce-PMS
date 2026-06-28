@@ -36,6 +36,7 @@ Doktrin / izolasyon:
     event'lerinde tetiklenmez (rekursiyon yok).
   - PII/secret loglanmaz; hata loglarinda yalniz exception SINIF adi kullanilir.
 """
+
 from __future__ import annotations
 
 import logging
@@ -93,9 +94,7 @@ async def _resolve_room_type(db, tenant_id: str, room_id: str | None) -> str | N
     return room.get("room_type") or None
 
 
-async def _booking_room_and_dates(
-    db, tenant_id: str, event: dict[str, Any]
-) -> tuple[str | None, str | None, str | None]:
+async def _booking_room_and_dates(db, tenant_id: str, event: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
     """Booking event'i icin (room_id, check_in, check_out) cozer. Once payload'a bakar
     (zengin emitter'lar bunlari tasir); eksikse booking dokumanini SADECE bu uc alanin
     projeksiyonuyla okur (PII alanlari PROJE EDILMEZ -> loglara/akisa misafir verisi
@@ -121,9 +120,7 @@ async def _booking_room_and_dates(
     return room_id, date_from, date_to
 
 
-async def _derive_agency_event(
-    db, event: dict[str, Any]
-) -> tuple[str, dict[str, Any]] | None:
+async def _derive_agency_event(db, event: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
     """Bir kaynak event'i (agency_event_type, anonim_payload) ikilisine cevirir.
     Mappable degilse / no-op ise None doner. Donen payload'a agency_id EKLENMEZ
     (enqueue_agency_webhook_event ekler) ve ASLA PII tasimaz."""
@@ -176,7 +173,8 @@ async def _derive_agency_event(
         # Fail-closed: room_id'yi acenteye sizdirmaktansa bu sinyali atla.
         logger.warning(
             "Agency fan-out skipped (unresolved room_type/date): event=%s type=%s",
-            event.get("id"), event_type,
+            event.get("id"),
+            event_type,
         )
         return None
 
@@ -236,10 +234,7 @@ async def fan_out_agency_events(event: dict[str, Any]) -> int:
             # agency_id) basina tek kayit; worker retry'inda turetilmis payload
             # (orn. import_bridge'de canli booking read'i) degisse bile DuplicateKey
             # -> no-op, cift fan-out olmaz.
-            dedup_key = (
-                f"agency_fanout:{tenant_id}:{agency_id}:"
-                f"{source_event_id}:{agency_event_type}"
-            )
+            dedup_key = f"agency_fanout:{tenant_id}:{agency_id}:{source_event_id}:{agency_event_type}"
             try:
                 await enqueue_agency_webhook_event(
                     db,
@@ -256,12 +251,15 @@ async def fan_out_agency_events(event: dict[str, Any]) -> int:
             except Exception as e:  # bir acente hatasi digerlerini engellemez
                 logger.warning(
                     "Agency fan-out enqueue failed: source=%s agency=%s err=%s",
-                    source_event_id, agency_id, type(e).__name__,
+                    source_event_id,
+                    agency_id,
+                    type(e).__name__,
                 )
         return count
     except Exception as e:  # fan-out kaynak teslimini ASLA bozmaz
         logger.warning(
             "Agency fan-out error: event=%s err=%s",
-            event.get("id"), type(e).__name__,
+            event.get("id"),
+            type(e).__name__,
         )
         return 0

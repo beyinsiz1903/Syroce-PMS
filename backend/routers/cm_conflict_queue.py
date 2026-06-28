@@ -28,6 +28,7 @@ Already shipped (later turus):
   - Conflict Queue UI (Turu #1c, May 2026)
   - Bulk resolve endpoint + UI (Turu #2, May 2026 — see POST /bulk-resolve)
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -69,6 +70,7 @@ class BulkResolveRequest(BaseModel):
 
 # ─── Helpers ────────────────────────────────────────────────────────────
 
+
 async def _serialize_pending_booking(booking: dict[str, Any]) -> dict[str, Any]:
     """Lightweight projection for the queue view."""
     return {
@@ -91,7 +93,11 @@ async def _serialize_pending_booking(booking: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _claim_room_for_pending_booking(
-    *, tenant_id: str, booking: dict[str, Any], room_id: str, resolved_by: str,
+    *,
+    tenant_id: str,
+    booking: dict[str, Any],
+    room_id: str,
+    resolved_by: str,
 ) -> tuple[bool, dict[str, Any]]:
     """Atomically claim `room_id` for an already-persisted pending booking.
 
@@ -147,12 +153,14 @@ async def _claim_room_for_pending_booking(
 
             # Compensation — release any nights we managed to claim
             if claimed:
-                await db.room_night_locks.delete_many({
-                    "tenant_id": tenant_id,
-                    "room_id": room_id,
-                    "night_date": {"$in": claimed},
-                    "booking_id": booking_id,
-                })
+                await db.room_night_locks.delete_many(
+                    {
+                        "tenant_id": tenant_id,
+                        "room_id": room_id,
+                        "night_date": {"$in": claimed},
+                        "booking_id": booking_id,
+                    }
+                )
 
             await _timeline_event(
                 tenant_id=tenant_id,
@@ -202,26 +210,25 @@ async def _claim_room_for_pending_booking(
         room_doc = await db.rooms.find_one({"id": room_id}, {"_id": 0, "room_number": 1})
         room_label = room_doc.get("room_number", room_id) if room_doc else room_id
         guest_name = booking.get("guest_name") or "Misafir"
-        await db.notifications.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "type": "overbooking_resolved",
-            "severity": "info",
-            "title": f"Pending Booking Atandı - Oda {room_label}",
-            "message": (
-                f"{guest_name} adlı misafirin {(check_in or '')[:10]} - "
-                f"{(check_out or '')[:10]} tarihli OTA rezervasyonu Oda {room_label}'e atandı."
-            ),
-            "related_entity": "booking",
-            "related_id": booking_id,
-            "read": False,
-            "created_at": now_iso,
-            "metadata": {
-                "resolved_by": resolved_by,
-                "assigned_room_id": room_id,
-            },
-            **stress_markers,
-        })
+        await db.notifications.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "type": "overbooking_resolved",
+                "severity": "info",
+                "title": f"Pending Booking Atandı - Oda {room_label}",
+                "message": (f"{guest_name} adlı misafirin {(check_in or '')[:10]} - {(check_out or '')[:10]} tarihli OTA rezervasyonu Oda {room_label}'e atandı."),
+                "related_entity": "booking",
+                "related_id": booking_id,
+                "read": False,
+                "created_at": now_iso,
+                "metadata": {
+                    "resolved_by": resolved_by,
+                    "assigned_room_id": room_id,
+                },
+                **stress_markers,
+            }
+        )
     except Exception as exc:
         logger.warning("Resolve notification insert failed (booking=%s): %s", booking_id, exc)
 
@@ -229,6 +236,7 @@ async def _claim_room_for_pending_booking(
 
 
 # ─── Endpoints ──────────────────────────────────────────────────────────
+
 
 @router.get("")
 async def list_conflict_queue(
@@ -364,12 +372,14 @@ async def bulk_resolve_pending_bookings(
 
     for booking_id, room_id in dedup.items():
         if room_id not in valid_room_ids:
-            failed.append({
-                "booking_id": booking_id,
-                "room_id": room_id,
-                "error": "room_not_found",
-                "message": "Room does not belong to this tenant",
-            })
+            failed.append(
+                {
+                    "booking_id": booking_id,
+                    "room_id": room_id,
+                    "error": "room_not_found",
+                    "message": "Room does not belong to this tenant",
+                }
+            )
             continue
 
         booking = await db.bookings.find_one(
@@ -377,12 +387,14 @@ async def bulk_resolve_pending_bookings(
             {"_id": 0},
         )
         if not booking:
-            failed.append({
-                "booking_id": booking_id,
-                "room_id": room_id,
-                "error": "not_pending",
-                "message": "Booking is not in pending_assignment state",
-            })
+            failed.append(
+                {
+                    "booking_id": booking_id,
+                    "room_id": room_id,
+                    "error": "not_pending",
+                    "message": "Booking is not in pending_assignment state",
+                }
+            )
             continue
 
         ok, err = await _claim_room_for_pending_booking(

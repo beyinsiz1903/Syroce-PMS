@@ -2,6 +2,7 @@
 Tenant-Scoped Queries - Query guards to enforce tenant data isolation.
 Every database query must pass through tenant context validation.
 """
+
 import asyncio
 import logging
 from datetime import UTC, datetime
@@ -12,11 +13,23 @@ from core.database import _raw_db
 logger = logging.getLogger("security.tenant_queries")
 
 TENANT_SCOPED_COLLECTIONS = [
-    "bookings", "guests", "rooms", "folios", "tasks", "users",
-    "invoices", "audit_logs", "messaging_delivery_logs",
-    "ml_predictions", "pipeline_runs", "revenue_approval_queue",
-    "feature_store", "ml_datasets", "model_registry",
-    "event_bus_log", "messaging_provider_configs",
+    "bookings",
+    "guests",
+    "rooms",
+    "folios",
+    "tasks",
+    "users",
+    "invoices",
+    "audit_logs",
+    "messaging_delivery_logs",
+    "ml_predictions",
+    "pipeline_runs",
+    "revenue_approval_queue",
+    "feature_store",
+    "ml_datasets",
+    "model_registry",
+    "event_bus_log",
+    "messaging_provider_configs",
 ]
 
 
@@ -28,8 +41,7 @@ class TenantQueryGuard:
         self._checks_performed = 0
         self._violations_blocked = 0
 
-    def validate_query(self, collection: str, query: dict, tenant_id: str,
-                       operation: str = "read") -> dict:
+    def validate_query(self, collection: str, query: dict, tenant_id: str, operation: str = "read") -> dict:
         """Validate that a query is properly tenant-scoped."""
         self._checks_performed += 1
         result = {
@@ -43,21 +55,19 @@ class TenantQueryGuard:
         if collection in TENANT_SCOPED_COLLECTIONS:
             if "tenant_id" not in query:
                 result["valid"] = False
-                result["warnings"].append(
-                    f"Query to '{collection}' missing tenant_id filter"
-                )
+                result["warnings"].append(f"Query to '{collection}' missing tenant_id filter")
                 self._violations_blocked += 1
-                self._violations.append({
-                    "collection": collection,
-                    "operation": operation,
-                    "expected_tenant": tenant_id,
-                    "timestamp": datetime.now(UTC).isoformat(),
-                })
+                self._violations.append(
+                    {
+                        "collection": collection,
+                        "operation": operation,
+                        "expected_tenant": tenant_id,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
+                )
             elif query.get("tenant_id") != tenant_id:
                 result["valid"] = False
-                result["warnings"].append(
-                    "Cross-tenant access attempt: query tenant_id does not match context"
-                )
+                result["warnings"].append("Cross-tenant access attempt: query tenant_id does not match context")
                 self._violations_blocked += 1
 
         return result
@@ -86,12 +96,14 @@ class TenantQueryGuard:
         for idx, coll_name in enumerate(TENANT_SCOPED_COLLECTIONS):
             total = counts[idx * 2]
             unscoped = counts[idx * 2 + 1]
-            results.append({
-                "collection": coll_name,
-                "tenant_documents": total,
-                "unscoped_documents": unscoped,
-                "isolation_status": "clean" if unscoped == 0 else "warning",
-            })
+            results.append(
+                {
+                    "collection": coll_name,
+                    "tenant_documents": total,
+                    "unscoped_documents": unscoped,
+                    "isolation_status": "clean" if unscoped == 0 else "warning",
+                }
+            )
 
         clean_count = sum(1 for r in results if r["isolation_status"] == "clean")
         return {

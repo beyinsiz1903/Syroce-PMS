@@ -15,6 +15,7 @@ Gercek PSP cagrisi env kimlik bilgisi (IYZICO_API_KEY/SECRET_KEY) ister; yoksa
 `is_configured()` False ve her islem ProviderNotConfigured (503) atar (fail-closed).
 SDK testlerde enjekte edilebilir (`IyzicoProvider(sdk=...)`).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -59,9 +60,7 @@ def minor_to_price_str(amount_minor: int) -> str:
 
     Decimal ile; float aritmetigi yok. 150 -> '1.50', 99 -> '0.99'.
     """
-    value = (Decimal(int(amount_minor)) / Decimal(100)).quantize(
-        Decimal("0.01"), rounding=ROUND_HALF_UP
-    )
+    value = (Decimal(int(amount_minor)) / Decimal(100)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     return str(value)
 
 
@@ -156,11 +155,7 @@ class IyzicoProvider(PaymentProvider):
 
     def _build_card(self, request: PaymentRequest, material: CardMaterial) -> dict:
         month, year = _split_expiry(material.expiry)
-        holder = (
-            material.holder
-            or request.metadata.get("buyer_name")
-            or "CARD HOLDER"
-        )
+        holder = material.holder or request.metadata.get("buyer_name") or "CARD HOLDER"
         card: dict = {
             "cardHolderName": holder,
             "cardNumber": material.pan,
@@ -212,9 +207,7 @@ class IyzicoProvider(PaymentProvider):
             }
         ]
 
-    def _build_payment_payload(
-        self, request: PaymentRequest, material: CardMaterial
-    ) -> dict:
+    def _build_payment_payload(self, request: PaymentRequest, material: CardMaterial) -> dict:
         price = minor_to_price_str(request.amount_minor)
         buyer, address = self._build_buyer_and_address(request)
         payload = {
@@ -280,9 +273,7 @@ class IyzicoProvider(PaymentProvider):
             **common,
         )
 
-    def _parse_refund_void_result(
-        self, request: PaymentRequest, body: dict, operation: PaymentOperation
-    ) -> PaymentResult:
+    def _parse_refund_void_result(self, request: PaymentRequest, body: dict, operation: PaymentOperation) -> PaymentResult:
         status_raw = str(body.get("status") or "")
         common = {
             "operation": operation,
@@ -307,13 +298,9 @@ class IyzicoProvider(PaymentProvider):
             **common,
         )
 
-    async def _charge_like(
-        self, request: PaymentRequest, operation: PaymentOperation
-    ) -> PaymentResult:
+    async def _charge_like(self, request: PaymentRequest, operation: PaymentOperation) -> PaymentResult:
         self._require_configured()
-        material = await resolve_card_material(
-            db, tenant_id=request.tenant_id, vault_card_ref=request.vault_card_ref
-        )
+        material = await resolve_card_material(db, tenant_id=request.tenant_id, vault_card_ref=request.vault_card_ref)
         masked = material.masked
         try:
             payload = self._build_payment_payload(request, material)
@@ -322,14 +309,13 @@ class IyzicoProvider(PaymentProvider):
                 payload["callbackUrl"] = request.three_ds_return_url
                 body = await self._call(sdk.ThreedsInitialize, payload)
                 return self._parse_charge_result(
-                    request, body, operation, masked,
+                    request,
+                    body,
+                    operation,
+                    masked,
                     action_field="threeDSHtmlContent",
                 )
-            op_factory = (
-                sdk.PaymentPreAuth
-                if operation == PaymentOperation.AUTHORIZE
-                else sdk.Payment
-            )
+            op_factory = sdk.PaymentPreAuth if operation == PaymentOperation.AUTHORIZE else sdk.Payment
             body = await self._call(op_factory, payload)
             return self._parse_charge_result(request, body, operation, masked)
         finally:
@@ -354,9 +340,7 @@ class IyzicoProvider(PaymentProvider):
             "currency": request.currency,
         }
         body = await self._call(sdk.PaymentPostAuth, payload)
-        return self._parse_charge_result(
-            request, body, PaymentOperation.CAPTURE, None
-        )
+        return self._parse_charge_result(request, body, PaymentOperation.CAPTURE, None)
 
     async def refund(self, request: PaymentRequest) -> PaymentResult:
         self._require_configured()
@@ -370,9 +354,7 @@ class IyzicoProvider(PaymentProvider):
             "ip": (request.metadata or {}).get("buyer_ip") or "127.0.0.1",
         }
         body = await self._call(sdk.Refund, payload)
-        return self._parse_refund_void_result(
-            request, body, PaymentOperation.REFUND
-        )
+        return self._parse_refund_void_result(request, body, PaymentOperation.REFUND)
 
     async def void(self, request: PaymentRequest) -> PaymentResult:
         self._require_configured()
@@ -384,9 +366,7 @@ class IyzicoProvider(PaymentProvider):
             "ip": (request.metadata or {}).get("buyer_ip") or "127.0.0.1",
         }
         body = await self._call(sdk.Cancel, payload)
-        return self._parse_refund_void_result(
-            request, body, PaymentOperation.VOID
-        )
+        return self._parse_refund_void_result(request, body, PaymentOperation.VOID)
 
 
 # Import-time kayit: tenant ayari 'iyzico' ise registry bu fabrikayi kullanir.

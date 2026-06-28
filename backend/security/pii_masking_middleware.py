@@ -15,6 +15,7 @@ Usage:
         data = await fetch_guests()
         return pii.mask(data)
 """
+
 import logging
 from dataclasses import dataclass
 
@@ -28,6 +29,7 @@ logger = logging.getLogger("security.pii_masking")
 @dataclass
 class PIIMaskingContext:
     """Context for PII masking in a single request."""
+
     user_role: str = ""
     force_mask: bool = False
 
@@ -37,11 +39,7 @@ class PIIMaskingContext:
         if isinstance(data, dict):
             return mask_dict(data, user_role=effective_role, context="api")
         if isinstance(data, list):
-            return [
-                mask_dict(item, user_role=effective_role, context="api")
-                if isinstance(item, dict) else item
-                for item in data
-            ]
+            return [mask_dict(item, user_role=effective_role, context="api") if isinstance(item, dict) else item for item in data]
         return data
 
 
@@ -59,11 +57,14 @@ def get_pii_context(request: Request) -> PIIMaskingContext:
 
     # Check if this is a sensitive ops endpoint
     path = request.url.path
-    force_mask = any(path.startswith(p) for p in (
-        "/api/ops/",
-        "/api/timeline/",
-        "/api/failures/",
-        "/api/webhooks/raw",
-    ))
+    force_mask = any(
+        path.startswith(p)
+        for p in (
+            "/api/ops/",
+            "/api/timeline/",
+            "/api/failures/",
+            "/api/webhooks/raw",
+        )
+    )
 
     return PIIMaskingContext(user_role=user_role, force_mask=force_mask)

@@ -3,6 +3,7 @@ Domain Router: RMS Revenue
 
 Revenue management system, comp-set, yield management, Faz 2 sales/revenue features.
 """
+
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -25,37 +26,28 @@ router = APIRouter(prefix="/api", tags=["rms-revenue"])
 
 
 @router.get("/rms/demand-forecast")
-async def get_demand_forecast(
-    start_date: str = None,
-    end_date: str = None,
-    days: int = None,
-    current_user: User = Depends(get_current_user)
-):
+async def get_demand_forecast(start_date: str = None, end_date: str = None, days: int = None, current_user: User = Depends(get_current_user)):
     """Get demand forecast (supports days param or start_date/end_date)"""
-    query = {'tenant_id': current_user.tenant_id}
+    query = {"tenant_id": current_user.tenant_id}
 
     if days and not start_date:
         start_date = datetime.now(UTC).date().isoformat()
         end_date = (datetime.now(UTC) + timedelta(days=days)).date().isoformat()
 
     if start_date and end_date:
-        query['date'] = {'$gte': start_date, '$lte': end_date}
+        query["date"] = {"$gte": start_date, "$lte": end_date}
 
-    forecasts = await db.demand_forecasts.find(
-        query,
-        {'_id': 0}
-    ).sort('date', 1).to_list(365)
+    forecasts = await db.demand_forecasts.find(query, {"_id": 0}).sort("date", 1).to_list(365)
 
     # Stored forecast yoksa FABRİKASYON yapma: base_demand (50 + ...) üretimi kaldırıldı.
     # Gerçek tahmin POST /rms/demand-forecast ile geçmiş veriden üretilip saklanır.
     return {
-        'forecast': forecasts,
-        'forecasts': forecasts,
-        'count': len(forecasts),
-        'data_available': len(forecasts) > 0,
-        'message': None if forecasts else 'Saklı talep tahmini yok; tahmin için POST /rms/demand-forecast ile üretim gerekir.'
+        "forecast": forecasts,
+        "forecasts": forecasts,
+        "count": len(forecasts),
+        "data_available": len(forecasts) > 0,
+        "message": None if forecasts else "Saklı talep tahmini yok; tahmin için POST /rms/demand-forecast ile üretim gerekir.",
     }
-
 
 
 @router.post("/rms/demand-forecast")
@@ -71,10 +63,9 @@ async def generate_demand_forecast(
 
     # Get historical booking data for trend analysis
     historical_start = datetime.now(UTC) - timedelta(days=365)
-    historical_bookings = await db.bookings.find({
-        'tenant_id': current_user.tenant_id,
-        'created_at': {'$gte': historical_start.isoformat()}
-    }, {'_id': 0, 'check_in_date': 1, 'check_out_date': 1, 'created_at': 1}).to_list(10000)
+    historical_bookings = await db.bookings.find(
+        {"tenant_id": current_user.tenant_id, "created_at": {"$gte": historical_start.isoformat()}}, {"_id": 0, "check_in_date": 1, "check_out_date": 1, "created_at": 1}
+    ).to_list(10000)
 
     # Calculate historical occupancy patterns
     historical_occupancy_by_dow = {i: [] for i in range(7)}  # Day of week
@@ -82,7 +73,7 @@ async def generate_demand_forecast(
 
     for booking in historical_bookings:
         try:
-            checkin = datetime.fromisoformat(booking['check_in_date'])
+            checkin = datetime.fromisoformat(booking["check_in_date"])
             dow = checkin.weekday()
             month = checkin.month
             historical_occupancy_by_dow[dow].append(1)
@@ -91,21 +82,21 @@ async def generate_demand_forecast(
             pass
 
     # Get total rooms
-    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
+    total_rooms = await db.rooms.count_documents({"tenant_id": current_user.tenant_id})
     if total_rooms == 0:
         # Gercek oda envanteri yok: uydurma 100 oda ile sahte tahmin uretme; fail-closed.
         return {
-            'message': 'Oda envanteri bulunamadigi icin talep tahmini olusturulamadi.',
-            'data_available': False,
-            'forecasts': [],
-            'summary': {
-                'total_days': 0,
-                'avg_forecasted_occupancy': 0,
-                'high_demand_days': 0,
-                'moderate_demand_days': 0,
-                'low_demand_days': 0,
-                'date_range': f"{request.start_date} to {request.end_date}",
-                'model_version': '2.0-advanced',
+            "message": "Oda envanteri bulunamadigi icin talep tahmini olusturulamadi.",
+            "data_available": False,
+            "forecasts": [],
+            "summary": {
+                "total_days": 0,
+                "avg_forecasted_occupancy": 0,
+                "high_demand_days": 0,
+                "moderate_demand_days": 0,
+                "low_demand_days": 0,
+                "date_range": f"{request.start_date} to {request.end_date}",
+                "model_version": "2.0-advanced",
             },
         }
 
@@ -158,7 +149,7 @@ async def generate_demand_forecast(
             lead_factor = 0.92  # Far future less certain
 
         # 4. Current Booking Trend (15% weight)
-        recent_booking_count = len([b for b in historical_bookings if b.get('created_at') and (datetime.now(UTC) - datetime.fromisoformat(b['created_at']).replace(tzinfo=UTC)).days < 30])
+        recent_booking_count = len([b for b in historical_bookings if b.get("created_at") and (datetime.now(UTC) - datetime.fromisoformat(b["created_at"]).replace(tzinfo=UTC)).days < 30])
         if recent_booking_count > 50:
             trend_factor = 1.10  # Strong recent trend
         elif recent_booking_count > 20:
@@ -247,46 +238,45 @@ async def generate_demand_forecast(
             trend = "Low Demand"
 
         forecast = {
-            'id': str(uuid.uuid4()),
-            'tenant_id': current_user.tenant_id,
-            'date': current_date,
-            'forecasted_occupancy': forecasted_occupancy,
-            'forecasted_rooms': forecasted_rooms,
-            'total_rooms': total_rooms,
-            'day_of_week': ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][day_of_week],
-            'is_weekend': day_of_week in [4, 5, 6],
-            'confidence': round(confidence, 2),
-            'confidence_level': confidence_level,
-            'confidence_factors': confidence_factors,
-            'trend': trend,
-            'seasonal_factor': round(seasonal_factor, 2),
-            'lead_time_days': days_from_now,
-            'model_version': '2.0-advanced',
-            'generated_at': datetime.now(UTC).isoformat()
+            "id": str(uuid.uuid4()),
+            "tenant_id": current_user.tenant_id,
+            "date": current_date,
+            "forecasted_occupancy": forecasted_occupancy,
+            "forecasted_rooms": forecasted_rooms,
+            "total_rooms": total_rooms,
+            "day_of_week": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][day_of_week],
+            "is_weekend": day_of_week in [4, 5, 6],
+            "confidence": round(confidence, 2),
+            "confidence_level": confidence_level,
+            "confidence_factors": confidence_factors,
+            "trend": trend,
+            "seasonal_factor": round(seasonal_factor, 2),
+            "lead_time_days": days_from_now,
+            "model_version": "2.0-advanced",
+            "generated_at": datetime.now(UTC).isoformat(),
         }
         forecasts.append(forecast)
 
     # Calculate summary statistics
-    avg_occupancy = sum(f['forecasted_occupancy'] for f in forecasts) / len(forecasts) if forecasts else 0
-    high_demand_days = sum(1 for f in forecasts if f['forecasted_occupancy'] > 75)
-    low_demand_days = sum(1 for f in forecasts if f['forecasted_occupancy'] < 40)
+    avg_occupancy = sum(f["forecasted_occupancy"] for f in forecasts) / len(forecasts) if forecasts else 0
+    high_demand_days = sum(1 for f in forecasts if f["forecasted_occupancy"] > 75)
+    low_demand_days = sum(1 for f in forecasts if f["forecasted_occupancy"] < 40)
 
     # Save forecasts
     if forecasts:
         await db.demand_forecasts.insert_many([f.copy() for f in forecasts])
 
     return {
-        'message': f'Generated {len(forecasts)} demand forecasts',
-        'data_available': True,
-        'forecasts': forecasts,
-        'summary': {
-            'total_days': len(forecasts),
-            'avg_forecasted_occupancy': round(avg_occupancy, 1),
-            'high_demand_days': high_demand_days,
-            'moderate_demand_days': len(forecasts) - high_demand_days - low_demand_days,
-            'low_demand_days': low_demand_days,
-            'date_range': f"{request.start_date} to {request.end_date}",
-            'model_version': '2.0-advanced'
-        }
+        "message": f"Generated {len(forecasts)} demand forecasts",
+        "data_available": True,
+        "forecasts": forecasts,
+        "summary": {
+            "total_days": len(forecasts),
+            "avg_forecasted_occupancy": round(avg_occupancy, 1),
+            "high_demand_days": high_demand_days,
+            "moderate_demand_days": len(forecasts) - high_demand_days - low_demand_days,
+            "low_demand_days": low_demand_days,
+            "date_range": f"{request.start_date} to {request.end_date}",
+            "model_version": "2.0-advanced",
+        },
     }
-

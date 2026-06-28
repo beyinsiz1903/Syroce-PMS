@@ -24,6 +24,7 @@ NOT auto-healed (manual only):
   - mapping_mismatch
   - payload_mismatch (risky, opt-in only)
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -101,17 +102,23 @@ async def run_auto_heal_cycle(
 
     # Find eligible open cases
     eligible_types = list(whitelist)
-    cases = await db[COLL_RECONCILIATION_CASES].find(
-        {
-            "tenant_id": tenant_id,
-            "status": {"$in": ["open", "investigating"]},
-            "$or": [
-                {"drift_type": {"$in": eligible_types}},
-                {"case_type": {"$in": ["stale_event", "duplicate_event"]}},
-            ],
-        },
-        _NO_ID,
-    ).sort("created_at", 1).limit(max_heals).to_list(max_heals)
+    cases = (
+        await db[COLL_RECONCILIATION_CASES]
+        .find(
+            {
+                "tenant_id": tenant_id,
+                "status": {"$in": ["open", "investigating"]},
+                "$or": [
+                    {"drift_type": {"$in": eligible_types}},
+                    {"case_type": {"$in": ["stale_event", "duplicate_event"]}},
+                ],
+            },
+            _NO_ID,
+        )
+        .sort("created_at", 1)
+        .limit(max_heals)
+        .to_list(max_heals)
+    )
 
     for case in cases:
         result.processed += 1
@@ -122,36 +129,38 @@ async def run_auto_heal_cycle(
             healed = await _attempt_heal(case, drift_type, whitelist)
             if healed:
                 result.healed += 1
-                result.details.append({
-                    "case_id": case_id,
-                    "drift_type": drift_type,
-                    "outcome": "healed",
-                })
+                result.details.append(
+                    {
+                        "case_id": case_id,
+                        "drift_type": drift_type,
+                        "outcome": "healed",
+                    }
+                )
             else:
                 result.skipped += 1
-                result.details.append({
-                    "case_id": case_id,
-                    "drift_type": drift_type,
-                    "outcome": "skipped",
-                    "reason": "Not eligible or no healing action available",
-                })
+                result.details.append(
+                    {
+                        "case_id": case_id,
+                        "drift_type": drift_type,
+                        "outcome": "skipped",
+                        "reason": "Not eligible or no healing action available",
+                    }
+                )
         except Exception as e:
             result.failed += 1
             result.escalated += 1
             await _escalate_case(case, str(e))
-            result.details.append({
-                "case_id": case_id,
-                "drift_type": drift_type,
-                "outcome": "failed",
-                "error": str(e),
-            })
+            result.details.append(
+                {
+                    "case_id": case_id,
+                    "drift_type": drift_type,
+                    "outcome": "failed",
+                    "error": str(e),
+                }
+            )
             logger.error(f"Auto-heal failed for case {case_id}: {e}")
 
-    logger.info(
-        f"Auto-heal cycle: tenant={tenant_id} "
-        f"processed={result.processed} healed={result.healed} "
-        f"skipped={result.skipped} failed={result.failed}"
-    )
+    logger.info(f"Auto-heal cycle: tenant={tenant_id} processed={result.processed} healed={result.healed} skipped={result.skipped} failed={result.failed}")
     return result
 
 
@@ -210,23 +219,22 @@ async def _attempt_heal(
     # Mark the case as resolved by auto-heal
     await db[COLL_RECONCILIATION_CASES].update_one(
         {"id": case["id"]},
-        {"$set": {
-            "status": "resolved",
-            "resolution": f"[AUTO_HEAL] {action['action']}: {action['description']}",
-            "resolved_by": "system:auto_heal",
-            "resolved_at": now,
-            "updated_at": now,
-            "auto_heal_evidence_id": evidence_id,
-        }},
+        {
+            "$set": {
+                "status": "resolved",
+                "resolution": f"[AUTO_HEAL] {action['action']}: {action['description']}",
+                "resolved_by": "system:auto_heal",
+                "resolved_at": now,
+                "updated_at": now,
+                "auto_heal_evidence_id": evidence_id,
+            }
+        },
     )
 
     # Persist evidence
     await db[COLL_AUTO_HEAL_LOG].insert_one(evidence)
 
-    logger.info(
-        f"Auto-healed case {case.get('id')}: "
-        f"type={drift_type} action={action['action']}"
-    )
+    logger.info(f"Auto-healed case {case.get('id')}: type={drift_type} action={action['action']}")
     return True
 
 
@@ -254,60 +262,73 @@ async def _escalate_case(case: dict[str, Any], error: str) -> None:
     now = datetime.now(UTC).isoformat()
     await db[COLL_RECONCILIATION_CASES].update_one(
         {"id": case["id"]},
-        {"$set": {
-            "status": "investigating",
-            "severity": "high",
-            "last_auto_heal_error": error,
-            "last_auto_heal_attempt": now,
-            "updated_at": now,
-        }},
+        {
+            "$set": {
+                "status": "investigating",
+                "severity": "high",
+                "last_auto_heal_error": error,
+                "last_auto_heal_attempt": now,
+                "updated_at": now,
+            }
+        },
     )
 
     # Log the failure
-    await db[COLL_AUTO_HEAL_LOG].insert_one({
-        "id": str(uuid.uuid4()),
-        "tenant_id": case["tenant_id"],
-        "case_id": case.get("id"),
-        "drift_type": case.get("drift_type") or case.get("case_type"),
-        "heal_action": "escalated",
-        "description": f"Auto-heal failed: {error}",
-        "status": "failed",
-        "error": error,
-        "timestamp": now,
-    })
+    await db[COLL_AUTO_HEAL_LOG].insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": case["tenant_id"],
+            "case_id": case.get("id"),
+            "drift_type": case.get("drift_type") or case.get("case_type"),
+            "heal_action": "escalated",
+            "description": f"Auto-heal failed: {error}",
+            "status": "failed",
+            "error": error,
+            "timestamp": now,
+        }
+    )
 
 
 async def get_auto_heal_stats(tenant_id: str) -> dict[str, Any]:
     """Get auto-heal statistics for the dashboard."""
     # Total auto-healed
-    total_healed = await db[COLL_AUTO_HEAL_LOG].count_documents({
-        "tenant_id": tenant_id,
-        "status": "completed",
-    })
-    total_failed = await db[COLL_AUTO_HEAL_LOG].count_documents({
-        "tenant_id": tenant_id,
-        "status": "failed",
-    })
+    total_healed = await db[COLL_AUTO_HEAL_LOG].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "completed",
+        }
+    )
+    total_failed = await db[COLL_AUTO_HEAL_LOG].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "failed",
+        }
+    )
 
     # Eligible cases (open + in whitelist)
     eligible_types = list(SAFE_WHITELIST)
-    eligible_count = await db[COLL_RECONCILIATION_CASES].count_documents({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["open", "investigating"]},
-        "$or": [
-            {"drift_type": {"$in": eligible_types}},
-            {"case_type": {"$in": ["stale_event", "duplicate_event"]}},
-        ],
-    })
+    eligible_count = await db[COLL_RECONCILIATION_CASES].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["open", "investigating"]},
+            "$or": [
+                {"drift_type": {"$in": eligible_types}},
+                {"case_type": {"$in": ["stale_event", "duplicate_event"]}},
+            ],
+        }
+    )
 
     # Recent heals (last 24h)
     from datetime import timedelta
+
     since = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
-    recent_healed = await db[COLL_AUTO_HEAL_LOG].count_documents({
-        "tenant_id": tenant_id,
-        "status": "completed",
-        "timestamp": {"$gte": since},
-    })
+    recent_healed = await db[COLL_AUTO_HEAL_LOG].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "completed",
+            "timestamp": {"$gte": since},
+        }
+    )
 
     # By drift type
     type_pipeline = [
@@ -336,7 +357,14 @@ async def get_auto_heal_history(
     skip: int = 0,
 ) -> list[dict[str, Any]]:
     """Get recent auto-heal operations."""
-    return await db[COLL_AUTO_HEAL_LOG].find(
-        {"tenant_id": tenant_id},
-        _NO_ID,
-    ).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+    return (
+        await db[COLL_AUTO_HEAL_LOG]
+        .find(
+            {"tenant_id": tenant_id},
+            _NO_ID,
+        )
+        .sort("timestamp", -1)
+        .skip(skip)
+        .limit(limit)
+        .to_list(limit)
+    )

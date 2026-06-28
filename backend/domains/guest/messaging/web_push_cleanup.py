@@ -28,6 +28,7 @@ ayağa kalkarsa hepsi worker'ı çalıştırır, ancak `delete_many` doğal
 olarak idempotent (hedefe ulaşmış olan kayıt zaten yok). Pahalı bir
 sorgu olmadığı için lock'lamaya gerek yok.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -53,8 +54,7 @@ def _env_int(name: str, default: int) -> int:
     try:
         return int(raw)
     except ValueError:
-        logger.warning("web_push_cleanup: invalid %s=%r, using default %d",
-                       name, raw, default)
+        logger.warning("web_push_cleanup: invalid %s=%r, using default %d", name, raw, default)
         return default
 
 
@@ -110,13 +110,15 @@ async def prune_inactive_subscriptions(
     if deleted:
         logger.info(
             "web_push_cleanup: pruned %d stale subscriptions (older than %d days)",
-            deleted, max_age_days,
+            deleted,
+            max_age_days,
         )
         # Task #32: Yaş tabanlı silmeyi sayaç olarak rollup'a yaz.
         try:
             from shared_kernel.web_push_metrics import (
                 record_scheduled_prune,
             )
+
             await record_scheduled_prune(db, count=deleted)
         except Exception:
             logger.exception("web_push_cleanup: scheduled-prune metric write failed")
@@ -138,13 +140,16 @@ async def _worker_loop(interval_seconds: int) -> None:
     while True:
         try:
             from core.database import db  # late import: web_push ile aynı kaynak
+
             await prune_inactive_subscriptions(db=db)
             _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
         except asyncio.CancelledError:
             raise
         except Exception as e:  # pragma: no cover — worker hiç durmamalı
             _transient_tracker.log_exception(
-                logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                logger,
+                e,
+                TransientFailureTracker.OUTER_LOOP_KEY,
                 context="prune cycle",
                 non_transient_msg="%s prune cycle error: %s",
             )

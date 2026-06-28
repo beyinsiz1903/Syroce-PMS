@@ -10,6 +10,7 @@ Akış:
   her gün için aktif booking sayısı hesaplama → gerçek availability →
   Exely push (SOAP) + HotelRunner push (REST) arka planda
 """
+
 import asyncio
 import logging
 from datetime import datetime, timedelta
@@ -41,7 +42,9 @@ async def sync_availability_after_booking(
     except Exception as e:
         logger.error(
             "[AVAIL-AUTO-SYNC] Hata tenant=%s room=%s: %s",
-            tenant_id, room_id, e,
+            tenant_id,
+            room_id,
+            e,
         )
     finally:
         clear_tenant_context()
@@ -116,7 +119,10 @@ async def _do_sync(tenant_id: str, room_id: str, check_in: str, check_out: str):
 
     logger.info(
         "[AVAIL-AUTO-SYNC] tenant=%s room_type=%s tarih=%s→%s avail=%s",
-        tenant_id, pms_room_type, ci_str, co_str,
+        tenant_id,
+        pms_room_type,
+        ci_str,
+        co_str,
         dict(list(date_availability.items())[:5]),
     )
 
@@ -135,9 +141,7 @@ async def _push_to_exely(
     """Exely'ye müsaitlik push et."""
     try:
         # Exely bağlantısını bul
-        conn = await db.exely_connections.find_one(
-            {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-        )
+        conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
         if not conn:
             logger.debug("[AVAIL-AUTO-SYNC] No Exely connection for tenant=%s", tenant_id)
             return
@@ -217,12 +221,18 @@ async def _push_to_exely(
                             push_count += 1
                             logger.info(
                                 "[AVAIL-AUTO-SYNC] Exely push OK: room=%s rp=%s %s→%s avail=%d",
-                                exely_room_code, rp_code, group_start, group_end, avail,
+                                exely_room_code,
+                                rp_code,
+                                group_start,
+                                group_end,
+                                avail,
                             )
                         else:
                             logger.warning(
                                 "[AVAIL-AUTO-SYNC] Exely push FAIL: room=%s rp=%s err=%s",
-                                exely_room_code, rp_code, result.error,
+                                exely_room_code,
+                                rp_code,
+                                result.error,
                             )
                     except Exception as e:
                         logger.error("[AVAIL-AUTO-SYNC] Exely push error: %s", e)
@@ -240,9 +250,7 @@ async def _push_to_hotelrunner(
 ):
     """HotelRunner'a müsaitlik push et."""
     try:
-        conn = await db.hotelrunner_connections.find_one(
-            {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-        )
+        conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
         if not conn:
             logger.debug("[AVAIL-AUTO-SYNC] No HR connection for tenant=%s", tenant_id)
             return
@@ -259,6 +267,7 @@ async def _push_to_hotelrunner(
         # HR provider'ı al
         try:
             from domains.channel_manager.providers.hotelrunner.factory import get_provider as _get_provider
+
             provider, _ = await _get_provider(tenant_id)
         except Exception as e:
             logger.warning("[AVAIL-AUTO-SYNC] Cannot get HR provider: %s", e)
@@ -296,12 +305,16 @@ async def _push_to_hotelrunner(
                         push_count += 1
                         logger.info(
                             "[AVAIL-AUTO-SYNC] HR push OK: inv=%s %s→%s avail=%d",
-                            hr_inv_code, group_start, group_end, avail,
+                            hr_inv_code,
+                            group_start,
+                            group_end,
+                            avail,
                         )
                     else:
                         logger.warning(
                             "[AVAIL-AUTO-SYNC] HR push FAIL: inv=%s err=%s",
-                            hr_inv_code, result.get("error"),
+                            hr_inv_code,
+                            result.get("error"),
                         )
                 except Exception as e:
                     logger.error("[AVAIL-AUTO-SYNC] HR push error: %s", e)

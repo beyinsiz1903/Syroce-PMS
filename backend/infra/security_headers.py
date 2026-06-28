@@ -2,6 +2,7 @@
 Comprehensive Security Headers Middleware
 Implements OWASP security best practices
 """
+
 from fastapi import Request
 
 
@@ -27,14 +28,14 @@ class SecurityHeadersMiddleware:
 
         # Strict-Transport-Security (HSTS)
         if strict_transport_security:
-            self.headers['Strict-Transport-Security'] = strict_transport_security
+            self.headers["Strict-Transport-Security"] = strict_transport_security
 
         # Content-Security-Policy
         if content_security_policy:
-            self.headers['Content-Security-Policy'] = content_security_policy
+            self.headers["Content-Security-Policy"] = content_security_policy
         else:
             # Default CSP
-            self.headers['Content-Security-Policy'] = (
+            self.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
                 "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
                 "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
@@ -49,39 +50,30 @@ class SecurityHeadersMiddleware:
 
         # X-Frame-Options
         if x_frame_options:
-            self.headers['X-Frame-Options'] = x_frame_options
+            self.headers["X-Frame-Options"] = x_frame_options
 
         # X-Content-Type-Options
         if x_content_type_options:
-            self.headers['X-Content-Type-Options'] = x_content_type_options
+            self.headers["X-Content-Type-Options"] = x_content_type_options
 
         # X-XSS-Protection
         if x_xss_protection:
-            self.headers['X-XSS-Protection'] = x_xss_protection
+            self.headers["X-XSS-Protection"] = x_xss_protection
 
         # Referrer-Policy
         if referrer_policy:
-            self.headers['Referrer-Policy'] = referrer_policy
+            self.headers["Referrer-Policy"] = referrer_policy
 
         # Permissions-Policy (formerly Feature-Policy)
         if permissions_policy:
-            self.headers['Permissions-Policy'] = permissions_policy
+            self.headers["Permissions-Policy"] = permissions_policy
         else:
-            self.headers['Permissions-Policy'] = (
-                "geolocation=(), "
-                "microphone=(), "
-                "camera=(), "
-                "payment=(), "
-                "usb=(), "
-                "magnetometer=(), "
-                "gyroscope=(), "
-                "accelerometer=()"
-            )
+            self.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
 
         # Additional security headers
-        self.headers['X-Permitted-Cross-Domain-Policies'] = 'none'
-        self.headers['X-DNS-Prefetch-Control'] = 'off'
-        self.headers['X-Download-Options'] = 'noopen'
+        self.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+        self.headers["X-DNS-Prefetch-Control"] = "off"
+        self.headers["X-Download-Options"] = "noopen"
 
     # Permissive CSP for API documentation routes (ReDoc, Swagger, OpenAPI)
     DOC_CSP = (
@@ -98,32 +90,29 @@ class SecurityHeadersMiddleware:
     _DOC_PATHS = {"/api/docs", "/api/redoc", "/api/openapi.json"}
 
     async def __call__(self, scope, receive, send):
-        if scope['type'] != 'http':
+        if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
-        path = scope.get('path', '')
-        is_doc_route = path in self._DOC_PATHS or path.rstrip('/') in self._DOC_PATHS
+        path = scope.get("path", "")
+        is_doc_route = path in self._DOC_PATHS or path.rstrip("/") in self._DOC_PATHS
 
         async def send_wrapper(message):
-            if message['type'] == 'http.response.start':
-                existing_headers = list(message.get('headers', []))
+            if message["type"] == "http.response.start":
+                existing_headers = list(message.get("headers", []))
                 existing_names = {h[0].lower() if isinstance(h[0], bytes) else h[0].lower().encode() for h in existing_headers}
 
                 for header, value in self.headers.items():
                     h_bytes = header.lower().encode()
                     # For doc routes, override CSP with permissive version
-                    if is_doc_route and header == 'Content-Security-Policy':
+                    if is_doc_route and header == "Content-Security-Policy":
                         # Remove existing CSP if present
-                        existing_headers = [
-                            h for h in existing_headers
-                            if (h[0].lower() if isinstance(h[0], bytes) else h[0].lower().encode()) != b'content-security-policy'
-                        ]
+                        existing_headers = [h for h in existing_headers if (h[0].lower() if isinstance(h[0], bytes) else h[0].lower().encode()) != b"content-security-policy"]
                         existing_headers.append((header.encode(), self.DOC_CSP.encode()))
                     elif h_bytes not in existing_names:
                         existing_headers.append((header.encode(), value.encode()))
 
-                message['headers'] = existing_headers
+                message["headers"] = existing_headers
 
             await send(message)
 
@@ -203,6 +192,7 @@ from fastapi import APIRouter
 
 security_router = APIRouter(prefix="/api/security", tags=["security"])
 
+
 @security_router.get("/audit")
 async def security_audit(request: Request):
     """
@@ -213,49 +203,25 @@ async def security_audit(request: Request):
     recommendations = []
 
     # Check HTTPS
-    if request.url.scheme != 'https' and request.headers.get('host') != 'localhost:8001':
-        issues.append({
-            "severity": "HIGH",
-            "issue": "Not using HTTPS",
-            "recommendation": "Enable HTTPS in production"
-        })
+    if request.url.scheme != "https" and request.headers.get("host") != "localhost:8001":
+        issues.append({"severity": "HIGH", "issue": "Not using HTTPS", "recommendation": "Enable HTTPS in production"})
 
     # Check security headers
 
     # Note: These would be checked on the response,
     # but we're checking configuration here
 
-    recommendations.append({
-        "category": "Headers",
-        "recommendation": "Ensure all security headers are present in responses"
-    })
+    recommendations.append({"category": "Headers", "recommendation": "Ensure all security headers are present in responses"})
 
-    recommendations.append({
-        "category": "Authentication",
-        "recommendation": "Use JWT with short expiration times"
-    })
+    recommendations.append({"category": "Authentication", "recommendation": "Use JWT with short expiration times"})
 
-    recommendations.append({
-        "category": "Rate Limiting",
-        "recommendation": "Implement rate limiting on all public endpoints"
-    })
+    recommendations.append({"category": "Rate Limiting", "recommendation": "Implement rate limiting on all public endpoints"})
 
-    recommendations.append({
-        "category": "Input Validation",
-        "recommendation": "Validate and sanitize all user inputs"
-    })
+    recommendations.append({"category": "Input Validation", "recommendation": "Validate and sanitize all user inputs"})
 
-    recommendations.append({
-        "category": "Database",
-        "recommendation": "Use parameterized queries to prevent injection attacks"
-    })
+    recommendations.append({"category": "Database", "recommendation": "Use parameterized queries to prevent injection attacks"})
 
-    return {
-        "timestamp": datetime.utcnow().isoformat(),
-        "issues": issues,
-        "recommendations": recommendations,
-        "security_score": max(0, 100 - len(issues) * 10)
-    }
+    return {"timestamp": datetime.utcnow().isoformat(), "issues": issues, "recommendations": recommendations, "security_score": max(0, 100 - len(issues) * 10)}
 
 
 @security_router.get("/headers/check")
@@ -263,8 +229,4 @@ async def check_security_headers():
     """Check which security headers are configured"""
     middleware = SecurityHeadersMiddleware(None)
 
-    return {
-        "configured_headers": list(middleware.headers.keys()),
-        "headers": middleware.headers,
-        "status": "OK"
-    }
+    return {"configured_headers": list(middleware.headers.keys()), "headers": middleware.headers, "status": "OK"}

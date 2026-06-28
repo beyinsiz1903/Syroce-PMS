@@ -3,6 +3,7 @@
 Manages spa + dining joint packages, schedules linked resource bookings,
 performs cross-departmental conflict checking, and handles room folio posting.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -31,7 +32,7 @@ DEFAULT_PACKAGES = [
         "dining_duration_minutes": 120,
         "gap_minutes": 30,
         "price": 3200.0,
-        "description": "60 dakikalık İsveç masajı ve ardından restoranımızda gurme akşam yemeği."
+        "description": "60 dakikalık İsveç masajı ve ardından restoranımızda gurme akşam yemeği.",
     },
     {
         "id": "pkg_royal_treatment",
@@ -42,8 +43,8 @@ DEFAULT_PACKAGES = [
         "dining_duration_minutes": 120,
         "gap_minutes": 30,
         "price": 4000.0,
-        "description": "90 dakikalık derin doku masajı ve ardından restoranımızda gurme akşam yemeği."
-    }
+        "description": "90 dakikalık derin doku masajı ve ardından restoranımızda gurme akşam yemeği.",
+    },
 ]
 
 
@@ -66,12 +67,7 @@ async def _check_dining_conflict(tenant_id: str, outlet_id: str, table_number: s
     if not table:
         return "Masa bulunamadı"
 
-    async for res in db.table_reservations.find({
-        "tenant_id": tenant_id,
-        "outlet_id": outlet_id,
-        "table_number": table_number,
-        "status": "confirmed"
-    }):
+    async for res in db.table_reservations.find({"tenant_id": tenant_id, "outlet_id": outlet_id, "table_number": table_number, "status": "confirmed"}):
         try:
             res_time = datetime.fromisoformat(res["reservation_time"].replace("Z", "+00:00"))
             res_end = res_time + timedelta(hours=2)  # Assume 2 hours dining reservation hold
@@ -115,6 +111,7 @@ async def _post_package_to_folio(tenant_id: str, booking: dict) -> None:
     try:
         from integrations.xchange.bus import bus
         from integrations.xchange.schemas import MessageType
+
         await bus.publish(
             tenant_id=tenant_id,
             message_type=MessageType.POSTING_CHARGE,
@@ -183,24 +180,12 @@ async def create_package_booking(
 
     # 3. Conflict Checks
     # a) SPA room/therapist conflict
-    spa_err = await _check_spa_conflict(
-        tenant_id=tenant_id,
-        therapist_id=payload.spa_therapist_id,
-        room_id=payload.spa_room_id,
-        start=spa_start,
-        end=spa_end
-    )
+    spa_err = await _check_spa_conflict(tenant_id=tenant_id, therapist_id=payload.spa_therapist_id, room_id=payload.spa_room_id, start=spa_start, end=spa_end)
     if spa_err:
         raise HTTPException(status_code=409, detail=f"SPA Kaynak Çakışması: {spa_err}")
 
     # b) Dining table conflict
-    dining_err = await _check_dining_conflict(
-        tenant_id=tenant_id,
-        outlet_id=payload.dining_outlet_id,
-        table_number=payload.dining_table_number,
-        start=dining_start,
-        end=dining_end
-    )
+    dining_err = await _check_dining_conflict(tenant_id=tenant_id, outlet_id=payload.dining_outlet_id, table_number=payload.dining_table_number, start=dining_start, end=dining_end)
     if dining_err:
         raise HTTPException(status_code=409, detail=f"Restoran Masa Çakışması: {dining_err}")
 
@@ -226,7 +211,7 @@ async def create_package_booking(
         "status": "scheduled",
         "reservation_id": payload.reservation_id,
         "charge_to_room": payload.charge_to_room,
-        "created_at": datetime.now(UTC).isoformat()
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.spa_appointments.insert_one(spa_appt)
 
@@ -241,14 +226,13 @@ async def create_package_booking(
         "reservation_time": dining_start.isoformat(),
         "status": "confirmed",
         "created_by": current_user.id,
-        "created_at": datetime.now(UTC).isoformat()
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.table_reservations.insert_one(dining_res)
 
     # Set table layout status to reserved
     await db.table_layouts.update_one(
-        {"table_number": payload.dining_table_number, "outlet_id": payload.dining_outlet_id, "tenant_id": tenant_id},
-        {"$set": {"status": "reserved", "reserved_for": payload.guest_name}}
+        {"table_number": payload.dining_table_number, "outlet_id": payload.dining_outlet_id, "tenant_id": tenant_id}, {"$set": {"status": "reserved", "reserved_for": payload.guest_name}}
     )
 
     # Create linked Cross-Booking
@@ -264,7 +248,7 @@ async def create_package_booking(
         "guest_phone": payload.guest_phone,
         "reservation_id": payload.reservation_id,
         "charge_to_room": payload.charge_to_room,
-        "created_at": datetime.now(UTC).isoformat()
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.spa_dining_package_bookings.insert_one(cross_booking)
 
@@ -285,5 +269,5 @@ async def create_package_booking(
         "spa_appointment_id": spa_appt_id,
         "dining_reservation_id": dining_res_id,
         "spa_time": f"{spa_start.isoformat()} -> {spa_end.isoformat()}",
-        "dining_time": f"{dining_start.isoformat()} -> {dining_end.isoformat()}"
+        "dining_time": f"{dining_start.isoformat()} -> {dining_end.isoformat()}",
     }

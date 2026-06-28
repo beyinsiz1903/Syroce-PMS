@@ -60,6 +60,7 @@ Exit codes
            else ``0``.
 * ``2`` on a fail-closed guard violation (``--apply`` without the env opt-in).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -76,9 +77,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from core.database import db  # noqa: E402
 from security.field_encryption import get_field_encryption_service  # noqa: E402
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("encrypt_messaging_recipient_backfill")
 
 # Collections carrying a legacy plaintext ``recipient`` field.
@@ -90,9 +89,7 @@ _COLLECTIONS: tuple[str, ...] = (
 
 def _looks_encrypted(value: object) -> bool:
     """True if a value is already an AES envelope (matches the crypto engine)."""
-    return isinstance(value, str) and (
-        value.startswith("SYR1:") or value.startswith("aes256gcm:")
-    )
+    return isinstance(value, str) and (value.startswith("SYR1:") or value.startswith("aes256gcm:"))
 
 
 async def scan(collection: str, tenant_id: str | None) -> dict:
@@ -109,9 +106,7 @@ async def scan(collection: str, tenant_id: str | None) -> dict:
     total_scanned = 0
     candidates: list[dict] = []
 
-    cursor = db[collection].find(
-        query, {"_id": 1, "id": 1, "recipient": 1}
-    ).batch_size(500)
+    cursor = db[collection].find(query, {"_id": 1, "id": 1, "recipient": 1}).batch_size(500)
     async for doc in cursor:
         total_scanned += 1
         recipient = doc.get("recipient")
@@ -119,9 +114,7 @@ async def scan(collection: str, tenant_id: str | None) -> dict:
             continue
         if _looks_encrypted(recipient):
             continue
-        candidates.append(
-            {"_id": doc["_id"], "id": doc.get("id"), "recipient": recipient}
-        )
+        candidates.append({"_id": doc["_id"], "id": doc.get("id"), "recipient": recipient})
 
     return {"total_scanned": total_scanned, "candidates": candidates}
 
@@ -147,9 +140,7 @@ async def apply(collection: str, candidates: list[dict]) -> dict:
         }
         pin = {"_id": cand["_id"], "recipient": recipient}
         try:
-            res = await db[collection].update_one(
-                pin, {"$set": set_fields, "$unset": {"recipient": ""}}
-            )
+            res = await db[collection].update_one(pin, {"$set": set_fields, "$unset": {"recipient": ""}})
             if res.modified_count == 1:
                 sealed += 1
             else:
@@ -175,9 +166,7 @@ async def record_scan(summary: dict) -> None:
 
 
 async def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Messaging recipient plaintext sealing backfill (KVKK at-rest)."
-    )
+    parser = argparse.ArgumentParser(description="Messaging recipient plaintext sealing backfill (KVKK at-rest).")
     parser.add_argument(
         "--tenant-id",
         type=str,
@@ -191,12 +180,8 @@ async def main() -> int:
     )
     args = parser.parse_args()
 
-    if args.apply and os.environ.get(
-        "ALLOW_MESSAGING_RECIPIENT_BACKFILL", ""
-    ).lower() != "true":
-        logger.error(
-            "--apply için ALLOW_MESSAGING_RECIPIENT_BACKFILL=true gerekli — fail-closed."
-        )
+    if args.apply and os.environ.get("ALLOW_MESSAGING_RECIPIENT_BACKFILL", "").lower() != "true":
+        logger.error("--apply için ALLOW_MESSAGING_RECIPIENT_BACKFILL=true gerekli — fail-closed.")
         return 2
 
     scope = args.tenant_id or "ALL"
@@ -240,10 +225,7 @@ async def main() -> int:
     await record_scan(summary)
 
     print("=" * 60)
-    print(
-        f"Messaging recipient backfill "
-        f"({'APPLY' if args.apply else 'DRY-RUN'}) tenant={scope}"
-    )
+    print(f"Messaging recipient backfill ({'APPLY' if args.apply else 'DRY-RUN'}) tenant={scope}")
     print("=" * 60)
     for collection, stats in per_collection.items():
         print(f"  [{collection}]")
@@ -252,30 +234,22 @@ async def main() -> int:
         if args.apply:
             for k, v in stats["applied"].items():
                 print(f"    {k:20s} -> {v}")
-    print(
-        "  metric row -> messaging_recipient_backfill_scans "
-        f"@ {summary['scanned_at']}"
-    )
+    print(f"  metric row -> messaging_recipient_backfill_scans @ {summary['scanned_at']}")
 
     if not args.apply:
         if total_candidates > 0:
             logger.warning(
-                "[messaging-recipient-backfill] %d kayıtta plaintext recipient "
-                "bulundu — şifrelemek için ALLOW_MESSAGING_RECIPIENT_BACKFILL=true "
-                "ile --apply koştur.",
+                "[messaging-recipient-backfill] %d kayıtta plaintext recipient bulundu — şifrelemek için ALLOW_MESSAGING_RECIPIENT_BACKFILL=true ile --apply koştur.",
                 total_candidates,
             )
             return 1
-        logger.info(
-            "[messaging-recipient-backfill] plaintext recipient=0, at-rest temiz."
-        )
+        logger.info("[messaging-recipient-backfill] plaintext recipient=0, at-rest temiz.")
         return 0
 
     # apply mode
     if total_skipped > 0 or total_errors > 0:
         logger.warning(
-            "[messaging-recipient-backfill] apply tamamlandı ancak %d skip / "
-            "%d hata kaldı — tekrar koştur.",
+            "[messaging-recipient-backfill] apply tamamlandı ancak %d skip / %d hata kaldı — tekrar koştur.",
             total_skipped,
             total_errors,
         )

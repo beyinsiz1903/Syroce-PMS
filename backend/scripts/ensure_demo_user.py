@@ -7,6 +7,7 @@ even if the database is recreated or the user is accidentally removed.
 Safe to run multiple times — only inserts when missing, never overwrites
 an existing user's password.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -25,6 +26,7 @@ async def ensure_demo_user(db: AsyncIOMotorDatabase) -> None:
         # v42 Bug BH: bootstrap script runs without tenant context. Use the
         # raw system DB so STRICT_TENANT_MODE=true does not block the lookup.
         from core.tenant_db import get_system_db
+
         sys_db = get_system_db()
         tenant = await sys_db.tenants.find_one({"hotel_id": DEMO_HOTEL_ID})
         if not tenant:
@@ -39,21 +41,23 @@ async def ensure_demo_user(db: AsyncIOMotorDatabase) -> None:
         from core.security import hash_password
 
         now = datetime.now(UTC).isoformat()
-        await sys_db.users.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "agency_id": None,
-            "email": "demo@syroce.com",
-            "name": "Demo Kullanıcı",
-            "role": "super_admin",
-            "phone": "+905555555555",
-            "is_active": True,
-            "email_verified": True,
-            "email_verified_at": now,
-            "hashed_password": hash_password(DEMO_PASSWORD),
-            "created_at": now,
-            "username": DEMO_USERNAME,
-        })
+        await sys_db.users.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "agency_id": None,
+                "email": "demo@syroce.com",
+                "name": "Demo Kullanıcı",
+                "role": "super_admin",
+                "phone": "+905555555555",
+                "is_active": True,
+                "email_verified": True,
+                "email_verified_at": now,
+                "hashed_password": hash_password(DEMO_PASSWORD),
+                "created_at": now,
+                "username": DEMO_USERNAME,
+            }
+        )
         logger.info("ensure_demo_user: created demo user (tenant=%s, hotel_id=%s)", tenant_id, DEMO_HOTEL_ID)
     except Exception as exc:
         logger.warning("ensure_demo_user skipped: %s", exc)

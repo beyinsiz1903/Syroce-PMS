@@ -2,6 +2,7 @@
 Guest Domain — Schemas
 Request/response models extracted from guest routers.
 """
+
 import uuid
 from datetime import UTC, datetime
 from enum import Enum
@@ -95,6 +96,7 @@ class CleaningRequestCreate(BaseModel):
 
 
 # Guest Messaging schemas
+
 
 class SendMessageRequest(BaseModel):
     guest_id: str

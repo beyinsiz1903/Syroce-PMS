@@ -17,6 +17,7 @@ Two distinct auth surfaces on the SAME `/api/b2b` prefix:
 Doctrine: an API key can NEVER be minted without an explicit hotel approval.
 Tenant identity is resolved server-side (code hash or JWT), never from the body.
 """
+
 from __future__ import annotations
 
 import logging
@@ -77,6 +78,7 @@ _IDEMPOTENT_MSG = (
 
 # ── Models (strict, bounded) ─────────────────────────────────────
 
+
 class ConnectRequestIn(BaseModel):
     model_config = {"extra": "forbid", "str_strip_whitespace": True}
     agency_name: str = Field(..., min_length=2, max_length=120)
@@ -101,6 +103,7 @@ class RejectIn(BaseModel):
 
 
 # ── Auth helpers ─────────────────────────────────────────────────
+
 
 async def _require_connect_code(
     x_connect_code: str | None = Header(None, alias="X-Connect-Code"),
@@ -135,6 +138,7 @@ def _resolve_scopes(*candidates) -> list[str]:
 # CONNECT-CODE AUTH (agency app) — no JWT
 # ═══════════════════════════════════════════════════════════════════
 
+
 @router.post("/connect-requests", status_code=201)
 async def create_connect_request(
     payload: ConnectRequestIn,
@@ -161,8 +165,7 @@ async def create_connect_request(
             # neither the request_id nor a token here — the caller MUST persist both
             # from the original 201. This keeps a connect-code holder from harvesting
             # an existing request's id by resubmitting a known agency name.
-            return {"status": prior.get("status", "pending"), "idempotent": True,
-                    "message": _IDEMPOTENT_MSG}
+            return {"status": prior.get("status", "pending"), "idempotent": True, "message": _IDEMPOTENT_MSG}
 
     open_pending = await sysdb.b2b_connection_requests.find_one(
         {"tenant_id": tenant_id, "agency_name_lower": name_lower, "status": "pending"},
@@ -225,8 +228,7 @@ async def create_connect_request(
         return {"status": "pending", "idempotent": True, "message": _IDEMPOTENT_MSG}
 
     logger.info("B2B connect request created tenant=%s", tenant_id)  # no PII
-    return {"request_id": doc["id"], "request_token": raw_token, "status": "pending",
-            "message": "request_token yalnizca burada bir kez doner. Guvenli saklayin."}
+    return {"request_id": doc["id"], "request_token": raw_token, "status": "pending", "message": "request_token yalnizca burada bir kez doner. Guvenli saklayin."}
 
 
 @router.get("/connect-requests/{request_id}")
@@ -271,8 +273,7 @@ async def poll_connect_request(
             "api_key_consumed_at": None,
             "key_delivery_expires_at": {"$gt": now},
         },
-        {"$set": {"api_key_consumed_at": now},
-         "$unset": {"encrypted_api_key": ""}},
+        {"$set": {"api_key_consumed_at": now}, "$unset": {"encrypted_api_key": ""}},
         return_document=ReturnDocument.BEFORE,
     )
     if claimed and claimed.get("encrypted_api_key"):
@@ -294,24 +295,25 @@ async def poll_connect_request(
     if status in ("pending", "approving"):
         return {"status": "pending", "message": "Onay bekleniyor."}
     if status == "rejected":
-        return {"status": "rejected", "reason": current.get("reject_reason", ""),
-                "message": "Baglanti istegi reddedildi."}
+        return {"status": "rejected", "reason": current.get("reject_reason", ""), "message": "Baglanti istegi reddedildi."}
 
     # status == approved but no key was delivered now → explain why.
     if current.get("delivery_state") == "existing_key_not_retrievable":
-        return {"status": "approved", "key_available": False,
-                "reason": "connected_existing_key_not_retrievable",
-                "message": "Bu acente icin zaten aktif key var; tekrar teslim edilemez. Oteldan yenileme isteyin."}
+        return {
+            "status": "approved",
+            "key_available": False,
+            "reason": "connected_existing_key_not_retrievable",
+            "message": "Bu acente icin zaten aktif key var; tekrar teslim edilemez. Oteldan yenileme isteyin.",
+        }
     if current.get("api_key_consumed_at"):
-        return {"status": "approved", "key_available": False, "reason": "already_retrieved",
-                "message": "API key zaten tek seferlik teslim edildi."}
-    return {"status": "approved", "key_available": False, "reason": "delivery_expired",
-            "message": "Key teslim suresi doldu. Oteldan yenileme isteyin."}
+        return {"status": "approved", "key_available": False, "reason": "already_retrieved", "message": "API key zaten tek seferlik teslim edildi."}
+    return {"status": "approved", "key_available": False, "reason": "delivery_expired", "message": "Key teslim suresi doldu. Oteldan yenileme isteyin."}
 
 
 # ═══════════════════════════════════════════════════════════════════
 # JWT HOTEL-STAFF AUTH (PMS UI)
 # ═══════════════════════════════════════════════════════════════════
+
 
 @router.get("/connect-info")
 async def connect_info(
@@ -360,13 +362,7 @@ async def list_connect_requests(
     query: dict = {"tenant_id": tenant_id}
     if status in ("pending", "approved", "rejected"):
         query["status"] = status
-    cursor = (
-        sysdb.b2b_connection_requests.find(
-            query, {"_id": 0, "encrypted_api_key": 0, "source_ip": 0}
-        )
-        .sort("created_at", -1)
-        .limit(200)
-    )
+    cursor = sysdb.b2b_connection_requests.find(query, {"_id": 0, "encrypted_api_key": 0, "source_ip": 0}).sort("created_at", -1).limit(200)
     items = await cursor.to_list(length=200)
     return {"items": items, "count": len(items)}
 
@@ -376,8 +372,7 @@ async def _release_approving_claim(sysdb, tenant_id: str, request_id: str) -> No
     re-approve. No-op if the row already advanced (e.g. delivered)."""
     await sysdb.b2b_connection_requests.update_one(
         {"id": request_id, "tenant_id": tenant_id, "status": "approving"},
-        {"$set": {"status": "pending", "updated_at": _now_iso()},
-         "$unset": {"approving_by": "", "approving_at": ""}},
+        {"$set": {"status": "pending", "updated_at": _now_iso()}, "$unset": {"approving_by": "", "approving_at": ""}},
     )
 
 
@@ -385,15 +380,12 @@ async def _match_or_create_agency(sysdb, tenant_id: str, req: dict, created_by: 
     ext = req.get("external_agency_id")
     agency = None
     if ext:
-        agency = await sysdb.agencies.find_one(
-            {"tenant_id": tenant_id, "external_agency_id": ext}, {"_id": 0}
-        )
+        agency = await sysdb.agencies.find_one({"tenant_id": tenant_id, "external_agency_id": ext}, {"_id": 0})
     if not agency:
         import re as _re
+
         rx = {"$regex": f"^{_re.escape(req.get('agency_name', ''))}$", "$options": "i"}
-        agency = await sysdb.agencies.find_one(
-            {"tenant_id": tenant_id, "name": rx}, {"_id": 0}
-        )
+        agency = await sysdb.agencies.find_one({"tenant_id": tenant_id, "name": rx}, {"_id": 0})
     if agency:
         return agency
     agency = {
@@ -437,8 +429,7 @@ async def approve_connect_request(
     # loser observes a non-pending status below.
     req = await sysdb.b2b_connection_requests.find_one_and_update(
         {"id": request_id, "tenant_id": tenant_id, "status": "pending"},
-        {"$set": {"status": "approving", "approving_by": current_user.id,
-                  "approving_at": _now_iso()}},
+        {"$set": {"status": "approving", "approving_by": current_user.id, "approving_at": _now_iso()}},
         return_document=ReturnDocument.AFTER,
     )
     if not req:
@@ -450,10 +441,7 @@ async def approve_connect_request(
             raise HTTPException(status_code=404, detail="Istek bulunamadi")
         st = existing.get("status")
         if st == "approved":
-            return {"ok": True, "status": "approved", "already": True,
-                    "agency_id": existing.get("agency_id"),
-                    "key_prefix": existing.get("key_prefix"),
-                    "message": "Istek zaten onaylanmis."}
+            return {"ok": True, "status": "approved", "already": True, "agency_id": existing.get("agency_id"), "key_prefix": existing.get("key_prefix"), "message": "Istek zaten onaylanmis."}
         if st == "rejected":
             raise HTTPException(status_code=409, detail="Reddedilmis istek onaylanamaz")
         if st == "approving":
@@ -484,19 +472,21 @@ async def approve_connect_request(
             # Don't mint a second key; the existing one's raw value is unrecoverable.
             await sysdb.b2b_connection_requests.update_one(
                 {"id": request_id, "tenant_id": tenant_id},
-                {"$set": {**base_set, "delivery_state": "existing_key_not_retrievable",
-                          "key_prefix": existing_key.get("key_prefix")}},
+                {"$set": {**base_set, "delivery_state": "existing_key_not_retrievable", "key_prefix": existing_key.get("key_prefix")}},
             )
-            return {"ok": True, "status": "approved",
-                    "agency_id": agency["id"], "key_minted": False,
-                    "reason": "connected_existing_key_not_retrievable",
-                    "message": "Onaylandi. Bu acentede zaten aktif key var; yeni key uretmek icin 'yenile' secenegini kullanin."}
+            return {
+                "ok": True,
+                "status": "approved",
+                "agency_id": agency["id"],
+                "key_minted": False,
+                "reason": "connected_existing_key_not_retrievable",
+                "message": "Onaylandi. Bu acentede zaten aktif key var; yeni key uretmek icin 'yenile' secenegini kullanin.",
+            }
 
         if existing_key and body.regenerate_if_exists:
             await sysdb.agency_api_keys.update_many(
                 {"tenant_id": tenant_id, "agency_id": agency["id"], "is_active": True},
-                {"$set": {"is_active": False, "revoked_at": _now_iso(),
-                          "revoked_by": current_user.id}},
+                {"$set": {"is_active": False, "revoked_at": _now_iso(), "revoked_by": current_user.id}},
             )
 
         # NARROW DuplicateKeyError scope to the mint insert ONLY: the
@@ -507,9 +497,7 @@ async def approve_connect_request(
         # DuplicateKeyError (e.g. a future agency unique index) propagates to the
         # outer `except Exception`, which deterministically releases the claim.
         try:
-            raw_key, key_doc = await mint_agency_api_key(
-                sysdb, tenant_id, agency, scopes, current_user.id
-            )
+            raw_key, key_doc = await mint_agency_api_key(sysdb, tenant_id, agency, scopes, current_user.id)
         except DuplicateKeyError:
             ex = await sysdb.agency_api_keys.find_one(
                 {"tenant_id": tenant_id, "agency_id": agency["id"], "is_active": True},
@@ -517,25 +505,31 @@ async def approve_connect_request(
             )
             await sysdb.b2b_connection_requests.update_one(
                 {"id": request_id, "tenant_id": tenant_id},
-                {"$set": {**base_set, "delivery_state": "existing_key_not_retrievable",
-                          "key_prefix": (ex or {}).get("key_prefix")}},
+                {"$set": {**base_set, "delivery_state": "existing_key_not_retrievable", "key_prefix": (ex or {}).get("key_prefix")}},
             )
-            return {"ok": True, "status": "approved", "agency_id": agency["id"],
-                    "key_minted": False, "reason": "connected_existing_key_not_retrievable",
-                    "key_prefix": (ex or {}).get("key_prefix"),
-                    "message": "Onaylandi. Bu acentede zaten aktif key var; yeni key uretmek icin 'yenile' secenegini kullanin."}
+            return {
+                "ok": True,
+                "status": "approved",
+                "agency_id": agency["id"],
+                "key_minted": False,
+                "reason": "connected_existing_key_not_retrievable",
+                "key_prefix": (ex or {}).get("key_prefix"),
+                "message": "Onaylandi. Bu acentede zaten aktif key var; yeni key uretmek icin 'yenile' secenegini kullanin.",
+            }
 
         await sysdb.b2b_connection_requests.update_one(
             {"id": request_id, "tenant_id": tenant_id},
-            {"$set": {
-                **base_set,
-                "scopes": scopes,
-                "encrypted_api_key": encrypt_delivery_key(raw_key),
-                "key_prefix": key_doc["key_prefix"],
-                "key_delivery_expires_at": now + timedelta(hours=KEY_DELIVERY_TTL_HOURS),
-                "api_key_consumed_at": None,
-                "delivery_state": "pending_retrieval",
-            }},
+            {
+                "$set": {
+                    **base_set,
+                    "scopes": scopes,
+                    "encrypted_api_key": encrypt_delivery_key(raw_key),
+                    "key_prefix": key_doc["key_prefix"],
+                    "key_delivery_expires_at": now + timedelta(hours=KEY_DELIVERY_TTL_HOURS),
+                    "api_key_consumed_at": None,
+                    "delivery_state": "pending_retrieval",
+                }
+            },
         )
     except HTTPException:
         await _release_approving_claim(sysdb, tenant_id, request_id)
@@ -546,9 +540,15 @@ async def approve_connect_request(
         raise HTTPException(status_code=500, detail="Onay islemi basarisiz")
 
     logger.info("B2B connect request approved tenant=%s agency=%s", tenant_id, agency["id"])
-    return {"ok": True, "status": "approved", "agency_id": agency["id"],
-            "key_minted": True, "key_prefix": key_doc["key_prefix"], "scopes": scopes,
-            "message": "Onaylandi; API key acente uygulamasina poll ile teslim edilecek."}
+    return {
+        "ok": True,
+        "status": "approved",
+        "agency_id": agency["id"],
+        "key_minted": True,
+        "key_prefix": key_doc["key_prefix"],
+        "scopes": scopes,
+        "message": "Onaylandi; API key acente uygulamasina poll ile teslim edilecek.",
+    }
 
 
 @router.post("/connect-requests/{request_id}/reject")
@@ -566,9 +566,7 @@ async def reject_connect_request(
 
     result = await sysdb.b2b_connection_requests.update_one(
         {"id": request_id, "tenant_id": tenant_id, "status": "pending"},
-        {"$set": {"status": "rejected", "rejected_by": current_user.id,
-                  "rejected_at": _now_iso(), "reject_reason": body.reason.strip(),
-                  "updated_at": _now_iso()}},
+        {"$set": {"status": "rejected", "rejected_by": current_user.id, "rejected_at": _now_iso(), "reject_reason": body.reason.strip(), "updated_at": _now_iso()}},
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Bekleyen istek bulunamadi")

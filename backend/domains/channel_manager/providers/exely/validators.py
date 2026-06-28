@@ -22,10 +22,7 @@ def extract_credentials(credentials: dict[str, str]) -> tuple:
     """Extract username, password, hotel_code from a credentials dict."""
     username = credentials.get("username", "").strip()
     password = credentials.get("password", "").strip()
-    hotel_code = (
-        credentials.get("hotel_code")
-        or credentials.get("hotel_id", "")
-    ).strip()
+    hotel_code = (credentials.get("hotel_code") or credentials.get("hotel_id", "")).strip()
     return username, password, hotel_code
 
 

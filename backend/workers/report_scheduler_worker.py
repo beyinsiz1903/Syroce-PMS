@@ -7,6 +7,7 @@ uygulama startup'ında başlatılır.
 
 Kapatmak için: `REPORT_SCHEDULER_INTERVAL_SECONDS=0`.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -31,13 +32,12 @@ async def _tick() -> None:
     """
     from core.database import _raw_db as raw_db
     from routers.report_scheduler import _compute_next_run, _execute_schedule
+
     processed = 0
     while True:
         now_iso = datetime.now(UTC).isoformat()
         # Önce dökümanı tek bir atomik komutla "kilitle".
-        sch = await raw_db.report_schedules.find_one(
-            {"is_active": True, "next_run": {"$lte": now_iso}}
-        )
+        sch = await raw_db.report_schedules.find_one({"is_active": True, "next_run": {"$lte": now_iso}})
         if not sch:
             break
         try:

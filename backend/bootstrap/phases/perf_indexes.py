@@ -1,4 +1,5 @@
 """PERF-001: Compound indexes for hot query patterns + R5 audit augmentations."""
+
 import logging
 
 from core.database import _raw_db
@@ -97,20 +98,16 @@ async def ensure_performance_indexes():
         # expireAfterSeconds=0 means Mongo deletes the row as soon as
         # `expires_at` is in the past. Retention window is documented in
         # docs/GOTCHAS.md.
-        ("idempotency_keys", [("expires_at", 1)], "idx_idempotency_expires_at_ttl",
-         {"expireAfterSeconds": 0}),
+        ("idempotency_keys", [("expires_at", 1)], "idx_idempotency_expires_at_ttl", {"expireAfterSeconds": 0}),
         # Task #312 — payment_intents: tahsilat akisinin pending/reconcile kaydi.
         # Webhook conversationId -> intent lookup'i SUNUCU-URETIMI conversation_token
         # uzerinden yapilir (client-controlled idempotency_key DEGIL); cross-tenant
         # yanlis eslemeyi onlemek icin token GLOBALLY UNIQUE. Indekssiz collection
         # scan public webhook yuzeyinde DoS riski oldugundan ayrica indekslenir.
-        ("payment_intents", [("conversation_token", 1)],
-         "idx_payment_intents_conv_token", {"unique": True}),
+        ("payment_intents", [("conversation_token", 1)], "idx_payment_intents_conv_token", {"unique": True}),
         # Idempotency lookup'lari tenant'a kapali (client key tenant'lar arasi cakisabilir).
-        ("payment_intents", [("tenant_id", 1), ("idempotency_key", 1)],
-         "idx_payment_intents_tenant_idem", {}),
-        ("payment_intents", [("tenant_id", 1), ("status", 1), ("created_at", -1)],
-         "idx_payment_intents_tenant_status", {}),
+        ("payment_intents", [("tenant_id", 1), ("idempotency_key", 1)], "idx_payment_intents_tenant_idem", {}),
+        ("payment_intents", [("tenant_id", 1), ("status", 1), ("created_at", -1)], "idx_payment_intents_tenant_status", {}),
         # Task #315 — Otonom tahsilat (no-show + VCC check-in) deploy-ani indeks
         # garantisi. Bu IKI index bir optimizasyon DEGIL, exactly-once cekirdegin
         # ZORUNLU invariant'i:
@@ -128,11 +125,8 @@ async def ensure_performance_indexes():
         # runtime ensure ile boot ensure ASLA duplicate index uretmez (name drift
         # yok). scripts/index_apply.py'de de ayni adlarla yer alir (operator
         # immediate apply, bos koleksiyonlari Atlas limiti icin atlar).
-        ("autonomous_collection_runs", [("tenant_id", 1)],
-         "autonomous_collection_runs_tenant_uq", {"unique": True}),
-        ("autonomous_collection_jobs",
-         [("tenant_id", 1), ("booking_id", 1), ("charge_kind", 1)],
-         "autocollect_jobs_uq", {"unique": True}),
+        ("autonomous_collection_runs", [("tenant_id", 1)], "autonomous_collection_runs_tenant_uq", {"unique": True}),
+        ("autonomous_collection_jobs", [("tenant_id", 1), ("booking_id", 1), ("charge_kind", 1)], "autocollect_jobs_uq", {"unique": True}),
         ("audit_exceptions", [("tenant_id", 1), ("created_at", -1)], "idx_audit_exc_tenant_created", {}),
         ("agencies", [("tenant_id", 1), ("status", 1)], "idx_agencies_tenant_status", {}),
         ("night_audit_logs", [("tenant_id", 1), ("business_date", -1)], "idx_night_audit_logs_tenant_date", {}),
@@ -142,10 +136,8 @@ async def ensure_performance_indexes():
         ("invoices", [("tenant_id", 1), ("status", 1), ("issue_date", -1)], "idx_invoices_tenant_status", {}),
         # R5 final pass 2026-05-04: monitoring_metrics_history (~2.6k docs)
         # tek index'siz top-25 koleksiyondu — time-series query coverage.
-        ("monitoring_metrics_history", [("tenant_id", 1), ("metric_name", 1), ("timestamp", -1)],
-         "idx_monitoring_metrics_tenant_name_ts", {}),
-        ("monitoring_metrics_history", [("timestamp", -1)],
-         "idx_monitoring_metrics_ts", {}),
+        ("monitoring_metrics_history", [("tenant_id", 1), ("metric_name", 1), ("timestamp", -1)], "idx_monitoring_metrics_tenant_name_ts", {}),
+        ("monitoring_metrics_history", [("timestamp", -1)], "idx_monitoring_metrics_ts", {}),
         # Atlas Performance Advisor (2026-05-10):
         #   - channel_reconciliation_cases: rollout_framework + cockpit_snapshot
         #     worker'ları `find({tenant_id, ...}).sort(created_at)` yapıyor;
@@ -154,8 +146,7 @@ async def ensure_performance_indexes():
         #     sorgu alanı `timestamp` (created_at değil); mevcut
         #     idx_exely_sync_tenant_created bu pattern'i karşılamıyor.
         #     5745 scan / 101 returned (targeting 57, 256ms).
-        ("channel_reconciliation_cases", [("tenant_id", 1), ("created_at", -1)],
-         "idx_recon_cases_tenant_created", {}),
+        ("channel_reconciliation_cases", [("tenant_id", 1), ("created_at", -1)], "idx_recon_cases_tenant_created", {}),
         # Atlas Query Targeting (2026-06-17): monitoring/aggregator.py
         # collect_reconciliation_health() is a BY-DESIGN cross-tenant
         # (platform-wide ops health) function with NO tenant_id filter:
@@ -171,21 +162,15 @@ async def ensure_performance_indexes():
         # created_at index (ISO-8601 string; lexicographic == chronological)
         # turns the 24h growth count into a small range scan. The function stays
         # intentionally cross-tenant; do NOT add a tenant_id filter.
-        ("channel_reconciliation_cases", [("status", 1)],
-         "idx_recon_cases_status_global", {}),
-        ("channel_reconciliation_cases", [("created_at", 1)],
-         "idx_recon_cases_created_global", {}),
-        ("exely_sync_logs", [("tenant_id", 1), ("timestamp", -1)],
-         "idx_exely_sync_tenant_timestamp", {}),
+        ("channel_reconciliation_cases", [("status", 1)], "idx_recon_cases_status_global", {}),
+        ("channel_reconciliation_cases", [("created_at", 1)], "idx_recon_cases_created_global", {}),
+        ("exely_sync_logs", [("tenant_id", 1), ("timestamp", -1)], "idx_exely_sync_tenant_timestamp", {}),
         # WhatsApp inbound idempotency — Meta retry'larda duplicate önler.
         # Webhook upsert'i (tenant_id, wa_message_id) key'iyle yapıyor;
         # concurrency altında race-free garanti için unique index gerekli.
-        ("wa_inbound_messages", [("tenant_id", 1), ("wa_message_id", 1)],
-         "idx_wa_inbound_unique", {"unique": True}),
+        ("wa_inbound_messages", [("tenant_id", 1), ("wa_message_id", 1)], "idx_wa_inbound_unique", {"unique": True}),
         # WhatsApp webhook tenant lookup — phone_number_id'den config'e.
-        ("messaging_provider_configs",
-         [("provider_type", 1), ("credentials_encrypted.phone_number_id", 1)],
-         "idx_msg_provider_phone_lookup", {}),
+        ("messaging_provider_configs", [("provider_type", 1), ("credentials_encrypted.phone_number_id", 1)], "idx_msg_provider_phone_lookup", {}),
         # Task #645 — Contact Center Faz 1 (omnichannel WhatsApp MVP).
         #   - contact_center_messages (tenant_id, channel, provider_message_id):
         #     Meta retry inbound + status callback aynı provider_message_id'yi
@@ -193,11 +178,12 @@ async def ensure_performance_indexes():
         #     provider_message_id string → henüz id atanmamış (None) giden
         #     taslaklar collision'a girmez (fake-green'i önler). Race-free
         #     garanti için unique.
-        ("contact_center_messages",
-         [("tenant_id", 1), ("channel", 1), ("provider_message_id", 1)],
-         "ux_cc_messages_provider_msg_id",
-         {"unique": True,
-          "partialFilterExpression": {"provider_message_id": {"$type": "string"}}}),
+        (
+            "contact_center_messages",
+            [("tenant_id", 1), ("channel", 1), ("provider_message_id", 1)],
+            "ux_cc_messages_provider_msg_id",
+            {"unique": True, "partialFilterExpression": {"provider_message_id": {"$type": "string"}}},
+        ),
         #   - contact_center_conversations (tenant_id, channel, caller_id_hash):
         #     ingest'in arayan başına AÇIK konuşmayı bul-veya-oluştur
         #     find_one_and_update'i bu shape ile sorgular (blind-index hash).
@@ -208,16 +194,10 @@ async def ensure_performance_indexes():
         #     konuşmalar partial filtre dışında kalır → arayan tarih boyunca
         #     birden çok KAPALI konuşmaya sahip olabilir. Sorgu status:"open"
         #     içerdiğinden planlayıcı bu partial index'i kullanır.
-        ("contact_center_conversations",
-         [("tenant_id", 1), ("channel", 1), ("caller_id_hash", 1)],
-         "ux_cc_conv_open_caller",
-         {"unique": True,
-          "partialFilterExpression": {"status": "open"}}),
+        ("contact_center_conversations", [("tenant_id", 1), ("channel", 1), ("caller_id_hash", 1)], "ux_cc_conv_open_caller", {"unique": True, "partialFilterExpression": {"status": "open"}}),
         #   - contact_center_conversations (tenant_id, last_message_at desc):
         #     liste ucu son mesaja göre azalan sıralar.
-        ("contact_center_conversations",
-         [("tenant_id", 1), ("last_message_at", -1)],
-         "idx_cc_conv_tenant_lastmsg", {}),
+        ("contact_center_conversations", [("tenant_id", 1), ("last_message_at", -1)], "idx_cc_conv_tenant_lastmsg", {}),
         # Task #648 — Contact Center Faz 2 (sesli softphone, Twilio Voice).
         #   - contact_center_calls (tenant_id, provider_call_sid): Twilio inbound +
         #     status + recording callback'leri aynı CallSid'i retry eder; durum
@@ -226,21 +206,13 @@ async def ensure_performance_indexes():
         #     atanmamış (None) satırlar collision'a girmez. Eşzamanlı ilk-inbound
         #     yarışında upsert ÇİFT çağrı üretemez (kaybeden DuplicateKeyError alır,
         #     mevcut çağrıyı okur). Race-free garanti için unique.
-        ("contact_center_calls",
-         [("tenant_id", 1), ("provider_call_sid", 1)],
-         "ux_cc_calls_provider_sid",
-         {"unique": True,
-          "partialFilterExpression": {"provider_call_sid": {"$type": "string"}}}),
+        ("contact_center_calls", [("tenant_id", 1), ("provider_call_sid", 1)], "ux_cc_calls_provider_sid", {"unique": True, "partialFilterExpression": {"provider_call_sid": {"$type": "string"}}}),
         #   - contact_center_calls (tenant_id, started_at desc): çağrı listesi ucu
         #     başlangıca göre azalan sıralar.
-        ("contact_center_calls",
-         [("tenant_id", 1), ("started_at", -1)],
-         "idx_cc_calls_tenant_started", {}),
+        ("contact_center_calls", [("tenant_id", 1), ("started_at", -1)], "idx_cc_calls_tenant_started", {}),
         #   - contact_center_voice_numbers (to_number): public inbound webhook'ta
         #     çağrılan numaradan kiracıyı sunucu-tarafı eşler (istemci tenant geçemez).
-        ("contact_center_voice_numbers",
-         [("to_number", 1)],
-         "ux_cc_voice_number", {"unique": True}),
+        ("contact_center_voice_numbers", [("to_number", 1)], "ux_cc_voice_number", {"unique": True}),
         # Task #647 — Legacy messaging recipient PII at-rest sealing.
         #   - messaging_consents (tenant_id, recipient_hash, channel):
         #     consent opt-out enforcement now looks the recipient up by its HMAC
@@ -250,9 +222,7 @@ async def ensure_performance_indexes():
         #     it from collection-scanning. NOT unique: the gateway's
         #     guest_id-keyed consent shape (no recipient_hash) shares this
         #     collection and would collide on a null-key unique index.
-        ("messaging_consents",
-         [("tenant_id", 1), ("recipient_hash", 1), ("channel", 1)],
-         "idx_msg_consent_recipient_hash", {}),
+        ("messaging_consents", [("tenant_id", 1), ("recipient_hash", 1), ("channel", 1)], "idx_msg_consent_recipient_hash", {}),
         # Task #184 — record-payment idempotency: bir misafir tekrar tıkladığında
         # ya da frontend/network retry yaptığında aynı (tenant_id, booking_id,
         # reference) anahtarıyla iki kez yazılan ödeme satırı misafiri çift
@@ -262,14 +232,18 @@ async def ensure_performance_indexes():
         # void sonrası yeniden kullanılabilir. Application-level fast-path
         # (find_one + DuplicateKeyError yakala) bu index'in race-free
         # garantisine dayanır.
-        ("payments",
-         [("tenant_id", 1), ("booking_id", 1), ("reference", 1)],
-         "uniq_payment_reference_active",
-         {"unique": True,
-          "partialFilterExpression": {
-              "reference": {"$type": "string"},
-              "voided": False,
-          }}),
+        (
+            "payments",
+            [("tenant_id", 1), ("booking_id", 1), ("reference", 1)],
+            "uniq_payment_reference_active",
+            {
+                "unique": True,
+                "partialFilterExpression": {
+                    "reference": {"$type": "string"},
+                    "voided": False,
+                },
+            },
+        ),
         # Task #360 — POS create-order atomic + idempotent folio posting.
         #   - pos_orders (tenant_id, idempotency_key): a retry / double-tap /
         #     network replay carrying the same client key must NOT create a
@@ -282,29 +256,20 @@ async def ensure_performance_indexes():
         #     string so legacy / non-POS charges are exempt.
         # These are also lazily ensured per-request (fail-closed) in
         # pos_core._ensure_pos_atomicity_indexes; this entry covers cold start.
-        ("pos_orders",
-         [("tenant_id", 1), ("idempotency_key", 1)],
-         "ux_pos_orders_tenant_idemp",
-         {"unique": True,
-          "partialFilterExpression": {"idempotency_key": {"$type": "string"}}}),
-        ("folio_charges",
-         [("tenant_id", 1), ("source_pos_order_id", 1), ("line_no", 1)],
-         "ux_folio_charges_pos_source",
-         {"unique": True,
-          "partialFilterExpression": {"source_pos_order_id": {"$type": "string"}}}),
+        ("pos_orders", [("tenant_id", 1), ("idempotency_key", 1)], "ux_pos_orders_tenant_idemp", {"unique": True, "partialFilterExpression": {"idempotency_key": {"$type": "string"}}}),
+        (
+            "folio_charges",
+            [("tenant_id", 1), ("source_pos_order_id", 1), ("line_no", 1)],
+            "ux_folio_charges_pos_source",
+            {"unique": True, "partialFilterExpression": {"source_pos_order_id": {"$type": "string"}}},
+        ),
         # Misafir Oda Talepleri sohbet thread'i (guest_room_messages):
         #   - (tenant_id, room_id, created_at): oda thread'i kronolojik getirme
         #     + booking-scoped misafir GET + okunmamış sayımı için.
         #   - (tenant_id, created_at): personel akışındaki oda-gruplama
         #     aggregate'i (en son etkinliğe göre) için.
-        ("guest_room_messages",
-         [("tenant_id", 1), ("room_id", 1), ("created_at", -1)],
-         "ix_grm_tenant_room_created",
-         {}),
-        ("guest_room_messages",
-         [("tenant_id", 1), ("created_at", -1)],
-         "ix_grm_tenant_created",
-         {}),
+        ("guest_room_messages", [("tenant_id", 1), ("room_id", 1), ("created_at", -1)], "ix_grm_tenant_room_created", {}),
+        ("guest_room_messages", [("tenant_id", 1), ("created_at", -1)], "ix_grm_tenant_created", {}),
         # Atlas Performance Advisor (2026-06-14): folios & folio_charges were
         # missing the (tenant_id, id) companion that every other hot collection
         # already has (bookings idx_booking_tenant_id, guests idx_g_tid_id).
@@ -355,57 +320,37 @@ async def ensure_performance_indexes():
         #     tarar. Partial index yalnizca acik adisyonlari tutar -> kucuk
         #     kalir; sorgudaki literal status:"open" partialFilter'i karsiladigi
         #     icin planner index'i kullanir.
-        ("pos_orders", [("tenant_id", 1), ("status", 1), ("created_at", 1)],
-         "idx_pos_orders_status_created", {}),
-        ("pos_orders", [("tenant_id", 1), ("created_at", 1)],
-         "idx_pos_orders_tenant_created", {}),
+        ("pos_orders", [("tenant_id", 1), ("status", 1), ("created_at", 1)], "idx_pos_orders_status_created", {}),
+        ("pos_orders", [("tenant_id", 1), ("created_at", 1)], "idx_pos_orders_tenant_created", {}),
         ("pos_orders", [("tenant_id", 1), ("id", 1)], "tenant_id_1_id_1", {}),
         ("pos_transactions", [("tenant_id", 1), ("id", 1)], "tenant_id_1_id_1", {}),
-        ("pos_transactions", [("tenant_id", 1), ("order_id", 1)],
-         "idx_pos_txn_tenant_order", {}),
-        ("pos_transactions",
-         [("tenant_id", 1), ("outlet_id", 1), ("table_number", 1)],
-         "idx_pos_txn_open_tab",
-         {"partialFilterExpression": {"status": "open"}}),
+        ("pos_transactions", [("tenant_id", 1), ("order_id", 1)], "idx_pos_txn_tenant_order", {}),
+        ("pos_transactions", [("tenant_id", 1), ("outlet_id", 1), ("table_number", 1)], "idx_pos_txn_open_tab", {"partialFilterExpression": {"status": "open"}}),
         # B2B agency auto-provisioning (Seçenek B / connect-request approval).
         #   - b2b_connect_codes.code_hmac UNIQUE: fast tenant resolution from a
         #     hashed connect code (lookup must be O(1), not a scan).
         #   - b2b_connection_requests partial-unique (tenant, agency_name_lower)
         #     {status:pending}: at most one open pending request per agency name.
         #   - expires_at TTL: 30-day request record retention sweep.
-        ("b2b_connect_codes", [("code_hmac", 1)],
-         "ux_b2b_connect_code_hmac", {"unique": True}),
-        ("b2b_connect_codes", [("tenant_id", 1), ("is_active", 1)],
-         "idx_b2b_connect_code_tenant", {}),
-        ("b2b_connection_requests",
-         [("tenant_id", 1), ("status", 1), ("created_at", -1)],
-         "idx_b2b_conn_req_tenant_status", {}),
-        ("b2b_connection_requests", [("tenant_id", 1), ("agency_name_lower", 1)],
-         "ux_b2b_conn_req_pending",
-         {"unique": True, "partialFilterExpression": {"status": "pending"}}),
-        ("b2b_connection_requests",
-         [("tenant_id", 1), ("agency_platform_request_id", 1)],
-         "idx_b2b_conn_req_idem",
-         {"partialFilterExpression": {"agency_platform_request_id": {"$exists": True}}}),
-        ("b2b_connection_requests", [("expires_at", 1)],
-         "idx_b2b_conn_req_ttl", {"expireAfterSeconds": 0}),
+        ("b2b_connect_codes", [("code_hmac", 1)], "ux_b2b_connect_code_hmac", {"unique": True}),
+        ("b2b_connect_codes", [("tenant_id", 1), ("is_active", 1)], "idx_b2b_connect_code_tenant", {}),
+        ("b2b_connection_requests", [("tenant_id", 1), ("status", 1), ("created_at", -1)], "idx_b2b_conn_req_tenant_status", {}),
+        ("b2b_connection_requests", [("tenant_id", 1), ("agency_name_lower", 1)], "ux_b2b_conn_req_pending", {"unique": True, "partialFilterExpression": {"status": "pending"}}),
+        ("b2b_connection_requests", [("tenant_id", 1), ("agency_platform_request_id", 1)], "idx_b2b_conn_req_idem", {"partialFilterExpression": {"agency_platform_request_id": {"$exists": True}}}),
+        ("b2b_connection_requests", [("expires_at", 1)], "idx_b2b_conn_req_ttl", {"expireAfterSeconds": 0}),
         # At most one ACTIVE API key per (tenant, agency): a DB-level backstop so
         # two concurrent approvals for the same brand-new agency can never both
         # mint an active key. The approve handler catches the DuplicateKeyError and
         # connects without minting a second key. Best-effort build (legacy dup
         # actives won't crash boot); the in-handler claim is the primary guard.
-        ("agency_api_keys", [("tenant_id", 1), ("agency_id", 1)],
-         "ux_b2b_agency_api_key_active",
-         {"unique": True, "partialFilterExpression": {"is_active": True}}),
+        ("agency_api_keys", [("tenant_id", 1), ("agency_id", 1)], "ux_b2b_agency_api_key_active", {"unique": True, "partialFilterExpression": {"is_active": True}}),
         # Exely reservations (#649): partial-unique on (tenant, external_id) so two
         # concurrent first-deliveries of the same reservation can't both insert.
         # With a unique index, MongoDB auto-retries the upsert's duplicate-key once
         # → update, making concurrent first-delivery race-free. The partial filter
         # keeps legacy rows without a string external_id out of the constraint
         # (best-effort build; no fake-green).
-        ("exely_reservations", [("tenant_id", 1), ("external_id", 1)],
-         "ux_exely_reservations_tenant_extid",
-         {"unique": True, "partialFilterExpression": {"external_id": {"$type": "string"}}}),
+        ("exely_reservations", [("tenant_id", 1), ("external_id", 1)], "ux_exely_reservations_tenant_extid", {"unique": True, "partialFilterExpression": {"external_id": {"$type": "string"}}}),
         # Agency v1 (ADR docs/adr/2026-06-agency-pms-integration.md) — Adim 1 DB
         # temeli. idempotency_cache = Karar 4 SOGUK katmani: cozulen rezervasyon
         # yanitlari (POST create / PATCH modify / DELETE cancel) Mongo'ya offload
@@ -426,15 +371,13 @@ async def ensure_performance_indexes():
         #     tutulur (yazici sorumlulugu, Adim 3); index sadece scope+TTL.
         # background=True ortak donguden gelir → boot'ta indeks basimi worker'i
         # kilitlemez (502/503 yok), zero-downtime.
-        ("idempotency_cache",
-         [("tenant_id", 1), ("agency_id", 1), ("method", 1), ("path", 1),
-          ("idempotency_key", 1)],
-         "ux_idempotency_cache_scope",
-         {"unique": True,
-          "partialFilterExpression": {"idempotency_key": {"$type": "string"}}}),
-        ("idempotency_cache", [("expires_at", 1)],
-         "ttl_idempotency_cache",
-         {"expireAfterSeconds": 0}),
+        (
+            "idempotency_cache",
+            [("tenant_id", 1), ("agency_id", 1), ("method", 1), ("path", 1), ("idempotency_key", 1)],
+            "ux_idempotency_cache_scope",
+            {"unique": True, "partialFilterExpression": {"idempotency_key": {"$type": "string"}}},
+        ),
+        ("idempotency_cache", [("expires_at", 1)], "ttl_idempotency_cache", {"expireAfterSeconds": 0}),
         # Agency v1 Adim 3 — HMAC replay-cache (Karar 2). `_id = "{key_id}:{nonce}"`
         # zaten otomatik unique → ayni nonce ikinci insert DuplicateKeyError verir
         # (replay race-free); ek unique index GEREKMEZ. Tek index: expires_at TTL.
@@ -442,9 +385,7 @@ async def ensure_performance_indexes():
         # DEGISMEZ kural: TTL >= pencere, yoksa nonce suresi dolup timestamp hala
         # gecerliyken replay penceresi acilir). expireAfterSeconds=0 → suresi
         # gecince Mongo siler (depo hijyeni; dogruluk _id benzersizliginden gelir).
-        ("agency_nonces", [("expires_at", 1)],
-         "ttl_agency_nonces",
-         {"expireAfterSeconds": 0}),
+        ("agency_nonces", [("expires_at", 1)], "ttl_agency_nonces", {"expireAfterSeconds": 0}),
         # Agency v1 Adim 3 — POST create TOCTOU zirhi (Karar 5 dayanikliligi).
         # router.py create'teki domain-guard (read-then-insert: ayni (tenant,
         # agency, external_id) icin aktif booking var mi) tek basina race-safe
@@ -459,11 +400,12 @@ async def ensure_performance_indexes():
         # sonrasi ayni external_id ile yeniden olusturma serbest (domain-guard
         # status!=cancelled ile bire bir). $type:string -> alan yoksa (acente-disi
         # booking veya iptal edilmis) kisitlamaya girmez (fake-green onlenir).
-        ("bookings",
-         [("tenant_id", 1), ("agency_id", 1), ("agency_external_active", 1)],
-         "ux_agency_booking_external_active",
-         {"unique": True,
-          "partialFilterExpression": {"agency_external_active": {"$type": "string"}}}),
+        (
+            "bookings",
+            [("tenant_id", 1), ("agency_id", 1), ("agency_external_active", 1)],
+            "ux_agency_booking_external_active",
+            {"unique": True, "partialFilterExpression": {"agency_external_active": {"$type": "string"}}},
+        ),
     ]
     for coll_name, keys, name, kwargs in indexes:
         try:

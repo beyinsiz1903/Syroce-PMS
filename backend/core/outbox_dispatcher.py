@@ -6,6 +6,7 @@ or fans out to all active connectors via EventSyncService.
 
 Error classification determines retry vs. permanent failure.
 """
+
 import logging
 from typing import Any
 
@@ -128,7 +129,9 @@ async def dispatch_outbox_event(event: dict[str, Any]) -> tuple[bool, str]:
             error_msgs = "; ".join(j.get("error", "unknown") for j in errors)
             logger.warning(
                 "Partial outbox dispatch: %d/%d jobs succeeded, errors: %s",
-                jobs_created, len(jobs), error_msgs,
+                jobs_created,
+                len(jobs),
+                error_msgs,
             )
 
         return True, f"Dispatched: {jobs_created} sync jobs created"
@@ -139,6 +142,7 @@ async def dispatch_outbox_event(event: dict[str, Any]) -> tuple[bool, str]:
     except Exception as e:
         error_msg = str(e)
         from core.outbox_service import is_retryable_error
+
         if is_retryable_error(error_msg):
             return False, f"retryable: {error_msg[:500]}"
         return False, f"permanent: {error_msg[:500]}"
@@ -151,6 +155,7 @@ async def _fallback_dispatch(event: dict[str, Any], cm_event_name: str) -> tuple
     """
     try:
         import httpx
+
         tenant_id = event.get("tenant_id", "")
         payload = event.get("payload", {})
 
@@ -164,6 +169,7 @@ async def _fallback_dispatch(event: dict[str, Any], cm_event_name: str) -> tuple
 
         # Try the channel manager webhook
         from domains.channel_manager.router import CM_PARTNER_WEBHOOK_URL
+
         if CM_PARTNER_WEBHOOK_URL:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.post(CM_PARTNER_WEBHOOK_URL, json=webhook_payload)
@@ -177,6 +183,7 @@ async def _fallback_dispatch(event: dict[str, Any], cm_event_name: str) -> tuple
 
     except Exception as e:
         from core.outbox_service import is_retryable_error
+
         error_msg = str(e)
         if is_retryable_error(error_msg):
             return False, f"retryable: fallback dispatch failed: {error_msg[:300]}"

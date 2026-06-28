@@ -2,6 +2,7 @@
 All inline models from the original 1900-line monolith collected here for
 reuse across the 5 sub-routers.
 """
+
 import html as _html
 import re as _re
 from datetime import UTC, datetime, timedelta
@@ -23,6 +24,7 @@ def _safe_logo_src(logo_data) -> str:
         return s
     return ""
 
+
 def _clean_doc(doc):
     if doc and "_id" in doc:
         del doc["_id"]
@@ -33,11 +35,11 @@ def _clean_doc(doc):
 # 1. HOUSEKEEPING STATUS MANAGEMENT (within rooms)
 # ═══════════════════════════════════════════════════
 
+
 class RoomStatusUpdate(BaseModel):
     status: str  # clean, dirty, inspected, maintenance, out_of_order
     notes: str | None = None
     priority: str | None = "normal"  # low, normal, high, urgent
-
 
 
 class WakeUpCallCreate(BaseModel):
@@ -62,7 +64,6 @@ class WakeUpCallUpdate(BaseModel):
     response: str | None = None  # answered, no_answer, busy
 
 
-
 async def _fire_due_wake_up_alerts(tenant_id: str, calls: list[dict]) -> None:
     """For each pending wake-up call whose scheduled time has arrived,
     create a notification (idempotent — gated by `alert_fired_at`) so it
@@ -72,6 +73,7 @@ async def _fire_due_wake_up_alerts(tenant_id: str, calls: list[dict]) -> None:
     """
     try:
         from zoneinfo import ZoneInfo
+
         now_local = datetime.now(ZoneInfo("Europe/Istanbul"))
     except Exception:
         now_local = datetime.now(UTC) + timedelta(hours=3)
@@ -110,12 +112,8 @@ async def _fire_due_wake_up_alerts(tenant_id: str, calls: list[dict]) -> None:
                         "source_id": call["id"],
                         "type": "alert",
                         "severity": "warning",
-                        "title": f"Uyandırma: Oda {call.get('room_number','')}",
-                        "message": (
-                            f"Oda {call.get('room_number','')}"
-                            + (f" — {call['guest_name']}" if call.get("guest_name") else "")
-                            + f" — saat {wt} uyandırma çağrısı zamanı geldi."
-                        ),
+                        "title": f"Uyandırma: Oda {call.get('room_number', '')}",
+                        "message": (f"Oda {call.get('room_number', '')}" + (f" — {call['guest_name']}" if call.get("guest_name") else "") + f" — saat {wt} uyandırma çağrısı zamanı geldi."),
                         "link": "/app/pms/wake-up-calls",
                         "icon": "alarm-clock",
                         "read": False,
@@ -139,6 +137,7 @@ async def _fire_due_wake_up_alerts(tenant_id: str, calls: list[dict]) -> None:
 def _annotate_due(calls: list[dict]) -> None:
     try:
         from zoneinfo import ZoneInfo
+
         now_local = datetime.now(ZoneInfo("Europe/Istanbul"))
     except Exception:
         now_local = datetime.now(UTC) + timedelta(hours=3)
@@ -147,10 +146,7 @@ def _annotate_due(calls: list[dict]) -> None:
     for c in calls:
         wd = c.get("wake_date") or ""
         wt = (c.get("wake_time") or "")[:5]
-        c["is_due"] = bool(
-            c.get("status") == "pending"
-            and ((wd < today_str) or (wd == today_str and wt <= time_str))
-        )
+        c["is_due"] = bool(c.get("status") == "pending" and ((wd < today_str) or (wd == today_str and wt <= time_str)))
 
 
 class LostFoundCreate(BaseModel):
@@ -194,13 +190,11 @@ class HotelSettingsUpdate(BaseModel):
     currency_symbol: str | None = None
 
 
-
 class GroupFolioMerge(BaseModel):
     group_id: str
     master_booking_id: str
     merge_booking_ids: list[str]
     merge_payments: bool = True
-
 
 
 class GroupPaymentRequest(BaseModel):
@@ -211,7 +205,6 @@ class GroupPaymentRequest(BaseModel):
     reference: str = ""
 
 
-
 class GroupBulkPaymentRequest(BaseModel):
     group_id: str
     total_amount: float
@@ -220,14 +213,12 @@ class GroupBulkPaymentRequest(BaseModel):
     distribution: str = "proportional"  # proportional | equal | balance_only
 
 
-
 class CancelReservationRequest(BaseModel):
     reason: str
     cancel_type: str = "guest_request"
     apply_noshow: bool = False
     noshow_charge_type: str | None = None
     noshow_charge_amount: float | None = None
-
 
 
 class InvoiceItemSelection(BaseModel):
@@ -240,7 +231,6 @@ class InvoiceItemSelection(BaseModel):
     invoice_note: str | None = None
 
 
-
 class CreateCariAccount(BaseModel):
     name: str
     account_type: str = "agency"
@@ -249,5 +239,3 @@ class CreateCariAccount(BaseModel):
     address: str | None = None
     phone: str | None = None
     email: str | None = None
-
-

@@ -14,6 +14,7 @@ Değişmezler:
   * Görev gövdesi mevcut housekeeping_tasks şemasıyla uyumlu (task_type='turndown'
     zaten geçerli tip).
 """
+
 import logging
 import uuid
 from datetime import UTC, date, datetime
@@ -81,9 +82,7 @@ async def _ensure_turndown_index() -> None:
 
 
 class ScheduleIn(BaseModel):
-    service_date: str | None = Field(
-        None, description="YYYY-MM-DD; verilmezse bugün (sunucu)."
-    )
+    service_date: str | None = Field(None, description="YYYY-MM-DD; verilmezse bugün (sunucu).")
     vip_only: bool = False
 
 
@@ -93,15 +92,11 @@ def _resolve_date(service_date: str | None) -> str:
     try:
         return date.fromisoformat(service_date).isoformat()
     except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail="Geçersiz service_date (YYYY-MM-DD)"
-        ) from exc
+        raise HTTPException(status_code=400, detail="Geçersiz service_date (YYYY-MM-DD)") from exc
 
 
 @router.post("/schedule")
-async def schedule_turndown(
-    payload: ScheduleIn, current_user: User = Depends(get_current_user)
-):
+async def schedule_turndown(payload: ScheduleIn, current_user: User = Depends(get_current_user)):
     _require_role(current_user, _HK_ROLES)
     tenant_id = _tenant_of(current_user)
     svc_date = _resolve_date(payload.service_date)

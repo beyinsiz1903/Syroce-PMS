@@ -1,4 +1,5 @@
 """Loyalty Programı — Tier yönetimi, üye puanları, ödül kataloğu, kazanma/harcama."""
+
 from __future__ import annotations
 
 import uuid
@@ -102,9 +103,7 @@ async def delete_tier(tier_id: str, user: User = Depends(get_current_user)):
 
 # ── Members ───────────────────────────────────────────
 @router.get("/members", response_model=list[LoyaltyMember])
-async def list_members(
-    q: str | None = None, limit: int = 100, user: User = Depends(get_current_user)
-):
+async def list_members(q: str | None = None, limit: int = 100, user: User = Depends(get_current_user)):
     await _ensure_indexes()
     db = get_system_db()
     query: dict[str, Any] = {"tenant_id": user.tenant_id}
@@ -120,9 +119,7 @@ async def list_members(
 async def enroll_member(body: LoyaltyMember, user: User = Depends(get_current_user)):
     await _ensure_indexes()
     db = get_system_db()
-    existing = await db.loyalty_members.find_one(
-        {"tenant_id": user.tenant_id, "guest_id": body.guest_id}
-    )
+    existing = await db.loyalty_members.find_one({"tenant_id": user.tenant_id, "guest_id": body.guest_id})
     if existing:
         existing.pop("_id", None)
         return existing
@@ -143,14 +140,10 @@ async def enroll_member(body: LoyaltyMember, user: User = Depends(get_current_us
 async def earn_points(body: EarnBody, user: User = Depends(get_current_user)):
     await _ensure_indexes()
     db = get_system_db()
-    member = await db.loyalty_members.find_one(
-        {"tenant_id": user.tenant_id, "guest_id": body.guest_id}
-    )
+    member = await db.loyalty_members.find_one({"tenant_id": user.tenant_id, "guest_id": body.guest_id})
     if not member:
         raise HTTPException(404, "Üye değil — önce kaydedin")
-    tier = await db.loyalty_tiers.find_one(
-        {"tenant_id": user.tenant_id, "id": member.get("tier_id")}
-    ) if member.get("tier_id") else None
+    tier = await db.loyalty_tiers.find_one({"tenant_id": user.tenant_id, "id": member.get("tier_id")}) if member.get("tier_id") else None
     multiplier = (tier or {}).get("earn_multiplier", 1.0)
     awarded = int(round(body.points * multiplier))
     new_balance = member.get("points_balance", 0) + awarded
@@ -163,20 +156,20 @@ async def earn_points(body: EarnBody, user: User = Depends(get_current_user)):
     if new_tier:
         update["tier_id"] = new_tier["id"]
         update["tier_name"] = new_tier["name"]
-    await db.loyalty_members.update_one(
-        {"tenant_id": user.tenant_id, "guest_id": body.guest_id}, {"$set": update}
+    await db.loyalty_members.update_one({"tenant_id": user.tenant_id, "guest_id": body.guest_id}, {"$set": update})
+    await db.loyalty_transactions.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": user.tenant_id,
+            "guest_id": body.guest_id,
+            "type": "earn",
+            "points": awarded,
+            "balance_after": new_balance,
+            "source": body.source,
+            "reference_id": body.reference_id,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
     )
-    await db.loyalty_transactions.insert_one({
-        "id": str(uuid.uuid4()),
-        "tenant_id": user.tenant_id,
-        "guest_id": body.guest_id,
-        "type": "earn",
-        "points": awarded,
-        "balance_after": new_balance,
-        "source": body.source,
-        "reference_id": body.reference_id,
-        "created_at": datetime.now(UTC).isoformat(),
-    })
     return {"awarded": awarded, "balance": new_balance, "tier": update.get("tier_name")}
 
 
@@ -209,9 +202,7 @@ async def create_reward(body: LoyaltyReward, user: User = Depends(get_current_us
 @router.delete("/rewards/{reward_id}", status_code=204)
 async def delete_reward(reward_id: str, user: User = Depends(get_current_user)):
     db = get_system_db()
-    await db.loyalty_rewards.update_one(
-        {"id": reward_id, "tenant_id": user.tenant_id}, {"$set": {"active": False}}
-    )
+    await db.loyalty_rewards.update_one({"id": reward_id, "tenant_id": user.tenant_id}, {"$set": {"active": False}})
     return None
 
 
@@ -219,16 +210,12 @@ async def delete_reward(reward_id: str, user: User = Depends(get_current_user)):
 async def redeem_reward(body: RedeemBody, user: User = Depends(get_current_user)):
     await _ensure_indexes()
     db = get_system_db()
-    reward = await db.loyalty_rewards.find_one(
-        {"id": body.reward_id, "tenant_id": user.tenant_id, "active": True}
-    )
+    reward = await db.loyalty_rewards.find_one({"id": body.reward_id, "tenant_id": user.tenant_id, "active": True})
     if not reward:
         raise HTTPException(404, "Ödül bulunamadı")
     if reward.get("stock") is not None and reward["stock"] <= 0:
         raise HTTPException(400, "Ödül stoğu tükendi")
-    member = await db.loyalty_members.find_one(
-        {"tenant_id": user.tenant_id, "guest_id": body.guest_id}
-    )
+    member = await db.loyalty_members.find_one({"tenant_id": user.tenant_id, "guest_id": body.guest_id})
     if not member:
         raise HTTPException(404, "Üye bulunamadı")
     if member.get("points_balance", 0) < reward["points_cost"]:
@@ -239,9 +226,7 @@ async def redeem_reward(body: RedeemBody, user: User = Depends(get_current_user)
         {"$set": {"points_balance": new_balance}},
     )
     if reward.get("stock") is not None:
-        await db.loyalty_rewards.update_one(
-            {"id": body.reward_id, "tenant_id": user.tenant_id}, {"$inc": {"stock": -1}}
-        )
+        await db.loyalty_rewards.update_one({"id": body.reward_id, "tenant_id": user.tenant_id}, {"$inc": {"stock": -1}})
     redemption = {
         "id": str(uuid.uuid4()),
         "tenant_id": user.tenant_id,
@@ -253,28 +238,26 @@ async def redeem_reward(body: RedeemBody, user: User = Depends(get_current_user)
         "created_at": datetime.now(UTC).isoformat(),
     }
     await db.loyalty_redemptions.insert_one(redemption)
-    await db.loyalty_transactions.insert_one({
-        "id": str(uuid.uuid4()),
-        "tenant_id": user.tenant_id,
-        "guest_id": body.guest_id,
-        "type": "redeem",
-        "points": -reward["points_cost"],
-        "balance_after": new_balance,
-        "reference_id": body.reward_id,
-        "created_at": datetime.now(UTC).isoformat(),
-    })
+    await db.loyalty_transactions.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": user.tenant_id,
+            "guest_id": body.guest_id,
+            "type": "redeem",
+            "points": -reward["points_cost"],
+            "balance_after": new_balance,
+            "reference_id": body.reward_id,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+    )
     redemption.pop("_id", None)
     return redemption
 
 
 @router.get("/transactions/{guest_id}")
-async def member_history(
-    guest_id: str, limit: int = 100, user: User = Depends(get_current_user)
-):
+async def member_history(guest_id: str, limit: int = 100, user: User = Depends(get_current_user)):
     db = get_system_db()
-    docs = await db.loyalty_transactions.find(
-        {"tenant_id": user.tenant_id, "guest_id": guest_id}
-    ).sort("created_at", -1).to_list(limit)
+    docs = await db.loyalty_transactions.find({"tenant_id": user.tenant_id, "guest_id": guest_id}).sort("created_at", -1).to_list(limit)
     for d in docs:
         d.pop("_id", None)
     return docs

@@ -9,6 +9,7 @@ Türk İş Kanunu uyumlu defaultlar (2026):
   - Fazla mesai zammı: %50 (overtime_rate = hourly_rate * 1.5)
   - Para birimi: TRY
 """
+
 import base64
 import io
 import re
@@ -30,7 +31,7 @@ from security.upload_validator import validate_document_bytes
 
 # GridFS bucket — personel belgeleri için (5MB üstü destek + memory verimi).
 # Eski kayıtlar `data_b64` alanı üzerinden okunmaya devam eder (geriye uyum).
-_hr_docs_bucket = AsyncIOMotorGridFSBucket(_raw_db, bucket_name='staff_docs')
+_hr_docs_bucket = AsyncIOMotorGridFSBucket(_raw_db, bucket_name="staff_docs")
 from core.audit import log_audit_event  # v2 HR Foundation (Task #262)
 from models.schemas import User
 from modules.pms_core.role_permission_service import (  # v96 DW
@@ -50,6 +51,7 @@ def _user_has_hr_op(user: User, op: str) -> bool:
     Depends dışında, response serializer içinde sorgulamamızı sağlar.
     """
     from core.security import _is_super_admin
+
     try:
         if _is_super_admin(user):
             return True
@@ -78,8 +80,12 @@ _PII_PHONE_FIELDS = ("phone", "mobile", "emergency_phone")
 _PII_ID_FIELDS = ("national_id", "identity_number", "tc_kimlik", "tc")
 _PII_BANK_FIELDS = ("iban", "bank_iban", "bank_account")
 _PII_SALARY_FIELDS = (
-    "salary", "monthly_salary", "hourly_rate", "gross_salary",
-    "net_salary", "base_salary",
+    "salary",
+    "monthly_salary",
+    "hourly_rate",
+    "gross_salary",
+    "net_salary",
+    "base_salary",
 )
 
 
@@ -216,10 +222,7 @@ def _authorize_staff_access(
     rec_id = str(staff.get("id") or "")
     self_email = (str(getattr(current_user, "email", "") or "")).strip().lower()
     rec_email = (str(staff.get("email") or "")).strip().lower()
-    is_self = bool(
-        (self_id and rec_id and self_id == rec_id)
-        or (self_email and rec_email and self_email == rec_email)
-    )
+    is_self = bool((self_id and rec_id and self_id == rec_id) or (self_email and rec_email and self_email == rec_email))
     if is_self:
         return
     if require_manage:
@@ -266,11 +269,12 @@ async def _audit(
         # Audit yazımı best-effort; mutation akışını bloklamaz.
         pass
 
+
 router = APIRouter(prefix="/api", tags=["hr-operations"])
 
 # ============= TR Labor Defaults =============
-TR_DEFAULT_HOURLY_RATE = 140.0   # 2026 asgari ücret yaklaşık saatlik brüt
-TR_DEFAULT_MONTHLY_HOURS = 195   # 45 sa/hafta × 4.33 hafta
+TR_DEFAULT_HOURLY_RATE = 140.0  # 2026 asgari ücret yaklaşık saatlik brüt
+TR_DEFAULT_MONTHLY_HOURS = 195  # 45 sa/hafta × 4.33 hafta
 TR_DEFAULT_OVERTIME_MULTIPLIER = 1.5  # %50 zam (İş K. m.41)
 TR_CURRENCY = "TRY"
 
@@ -279,12 +283,12 @@ TR_CURRENCY = "TRY"
 # (ör. 14.0 = %14). KHK ile değişebildiği için tenant bazında
 # tenant_settings.payroll_tax_rates altında override edilebilir.
 TR_PAYROLL_TAX_RATES_DEFAULT: dict[str, float] = {
-    'sgk_employee': 14.0,   # SGK işçi payı
-    'unemployment': 1.0,    # İşsizlik sigortası işçi payı
-    'income_tax': 15.0,     # Gelir vergisi (SGK+işsizlik sonrası matrah)
-    'stamp_tax': 0.759,     # Damga vergisi
+    "sgk_employee": 14.0,  # SGK işçi payı
+    "unemployment": 1.0,  # İşsizlik sigortası işçi payı
+    "income_tax": 15.0,  # Gelir vergisi (SGK+işsizlik sonrası matrah)
+    "stamp_tax": 0.759,  # Damga vergisi
 }
-_PAYROLL_TAX_RATE_KEYS = ('sgk_employee', 'unemployment', 'income_tax', 'stamp_tax')
+_PAYROLL_TAX_RATE_KEYS = ("sgk_employee", "unemployment", "income_tax", "stamp_tax")
 
 
 async def _get_payroll_tax_rates(tenant_id: str) -> dict[str, float]:
@@ -292,11 +296,14 @@ async def _get_payroll_tax_rates(tenant_id: str) -> dict[str, float]:
 
     Eksik/geçersiz tek tek anahtarlar için varsayılana düşülür (kısmi override
     güvenli). Dönen değerler yüzde cinsindendir (ör. 14.0 = %14)."""
-    s = await db.tenant_settings.find_one(
-        {'tenant_id': tenant_id},
-        {'_id': 0, 'payroll_tax_rates': 1},
-    ) or {}
-    overrides = s.get('payroll_tax_rates') or {}
+    s = (
+        await db.tenant_settings.find_one(
+            {"tenant_id": tenant_id},
+            {"_id": 0, "payroll_tax_rates": 1},
+        )
+        or {}
+    )
+    overrides = s.get("payroll_tax_rates") or {}
     rates = dict(TR_PAYROLL_TAX_RATES_DEFAULT)
     if isinstance(overrides, dict):
         for k in _PAYROLL_TAX_RATE_KEYS:
@@ -304,6 +311,7 @@ async def _get_payroll_tax_rates(tenant_id: str) -> dict[str, float]:
             if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0:
                 rates[k] = float(v)
     return rates
+
 
 # Türkiye saat dilimi (UTC+3, sabit — yaz saati uygulaması yok)
 TR_TZ = timezone(timedelta(hours=3))
@@ -316,9 +324,10 @@ def _today_local() -> date:
 
 # ============= HR COMPLETE SUITE =============
 
+
 async def _get_staff_map(tenant_id: str):
-    staff = await db.staff_members.find({'tenant_id': tenant_id}, {'_id': 0}).to_list(500)
-    return {member['id']: member for member in staff}
+    staff = await db.staff_members.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(500)
+    return {member["id"]: member for member in staff}
 
 
 async def _verify_staff_in_tenant(staff_id: str, tenant_id: str) -> dict | None:
@@ -329,29 +338,24 @@ async def _verify_staff_in_tenant(staff_id: str, tenant_id: str) -> dict | None:
     """
     if not staff_id:
         return None
-    sm = await db.staff_members.find_one(
-        {'id': staff_id, 'tenant_id': tenant_id},
-        {'_id': 0}
-    )
+    sm = await db.staff_members.find_one({"id": staff_id, "tenant_id": tenant_id}, {"_id": 0})
     if sm:
         return sm
     # users tablosundan türetilmiş staff (HRv2 — derived_from=users)
-    user = await db.users.find_one(
-        {'id': staff_id, 'tenant_id': tenant_id, 'is_active': True},
-        {'_id': 0, 'id': 1, 'name': 1, 'role': 1, 'email': 1}
-    )
+    user = await db.users.find_one({"id": staff_id, "tenant_id": tenant_id, "is_active": True}, {"_id": 0, "id": 1, "name": 1, "role": 1, "email": 1})
     if user:
         return {
-            'id': user['id'],
-            'tenant_id': tenant_id,
-            'name': user.get('name') or 'Personel',
-            'department': user.get('role') or 'staff',
-            'derived_from': 'users',
+            "id": user["id"],
+            "tenant_id": tenant_id,
+            "name": user.get("name") or "Personel",
+            "department": user.get("role") or "staff",
+            "derived_from": "users",
         }
     return None
 
 
 # ============= Pydantic Models =============
+
 
 class ClockInRequest(BaseModel):
     staff_id: str = Field(..., min_length=1, max_length=128)
@@ -360,13 +364,13 @@ class ClockInRequest(BaseModel):
 class LeaveRequestPayload(BaseModel):
     staff_id: str = Field(..., min_length=1, max_length=128)
     staff_name: str | None = Field(None, max_length=200)
-    leave_type: Literal['annual', 'sick', 'maternity', 'paternity', 'unpaid', 'bereavement', 'excused'] = 'annual'
+    leave_type: Literal["annual", "sick", "maternity", "paternity", "unpaid", "bereavement", "excused"] = "annual"
     start_date: str = Field(..., description="ISO date YYYY-MM-DD")
     end_date: str = Field(..., description="ISO date YYYY-MM-DD")
     reason: str | None = Field(None, max_length=500)
     total_days: int | None = Field(None, ge=0, le=365)
 
-    @field_validator('start_date', 'end_date')
+    @field_validator("start_date", "end_date")
     @classmethod
     def _valid_iso(cls, v: str) -> str:
         try:
@@ -380,12 +384,12 @@ class LeaveDecision(BaseModel):
     # Task #263: 2-aşamalı onay state machine.
     #   pending → dept_approve → dept_approved → approve → approved
     #   pending / dept_approved → reject → rejected (note ZORUNLU)
-    decision: Literal['dept_approve', 'approve', 'reject']
+    decision: Literal["dept_approve", "approve", "reject"]
     note: str | None = Field(None, max_length=500)
 
 
 class PayrollFinalizePayload(BaseModel):
-    month: str = Field(..., pattern=r'^\d{4}-\d{2}$')
+    month: str = Field(..., pattern=r"^\d{4}-\d{2}$")
 
 
 # ============= Payroll v2 (Task #264) =============
@@ -393,11 +397,11 @@ class PayrollFinalizePayload(BaseModel):
 # `payroll_revisions` koleksiyonu: locked sonrası düzeltme audit zinciri.
 
 PAYROLL_EXTRA_KINDS = (
-    'bonus',          # prim
-    'meal',           # yemek
-    'transport',      # yol
-    'advance',        # avans (kesinti yönü)
-    'deduction',      # diğer kesinti
+    "bonus",  # prim
+    "meal",  # yemek
+    "transport",  # yol
+    "advance",  # avans (kesinti yönü)
+    "deduction",  # diğer kesinti
 )
 
 
@@ -412,8 +416,9 @@ class PayrollExtraLine(BaseModel):
       - deduction→ nete kesinti (diğer)
     `amount` her zaman pozitif TRY; yönü `kind` belirler.
     """
+
     staff_id: str = Field(..., min_length=1, max_length=128)
-    kind: Literal['bonus', 'meal', 'transport', 'advance', 'deduction']
+    kind: Literal["bonus", "meal", "transport", "advance", "deduction"]
     amount: float = Field(..., ge=0, le=1_000_000)
     note: str | None = Field(None, max_length=200)
 
@@ -424,6 +429,7 @@ class PayrollSavePayload(BaseModel):
     Idempotent: aynı (tenant, period_month) için açık draft varsa üzerine yazar.
     `extras`: per-staff manuel kalemler (avans/prim/yemek/yol/kesinti).
     """
+
     extras: list[PayrollExtraLine] = Field(default_factory=list, max_length=2000)
     note: str | None = Field(None, max_length=500)
 
@@ -434,6 +440,7 @@ class PayrollRevisionPayload(BaseModel):
     Yeni bir draft run açar (parent_run_id link); locked run değişmez.
     `reason` zorunlu (KVKK + iş hukuku audit).
     """
+
     reason: str = Field(..., min_length=3, max_length=500)
     extras: list[PayrollExtraLine] = Field(default_factory=list, max_length=2000)
 
@@ -459,18 +466,19 @@ class JobPostingPayload(BaseModel):
     - `request_type='public_posting'`: Direkt kabul edilmiş açık pozisyon
       (legacy davranış; ileride dış kanal entegrasyonu eklenirse kullanılır).
     """
+
     title: str = Field(..., min_length=1, max_length=200)
     department: str = Field(..., max_length=100)
     description: str | None = Field(None, max_length=5000)
-    employment_type: Literal['full_time', 'part_time', 'seasonal', 'intern', 'contract'] = 'full_time'
+    employment_type: Literal["full_time", "part_time", "seasonal", "intern", "contract"] = "full_time"
     location: str | None = Field(None, max_length=200)
     salary_range: str | None = Field(None, max_length=100)
     # Personel talebi alanları
-    request_type: Literal['internal_request', 'public_posting'] = 'internal_request'
+    request_type: Literal["internal_request", "public_posting"] = "internal_request"
     headcount_needed: int = Field(1, ge=1, le=50)
-    urgency: Literal['low', 'normal', 'high', 'critical'] = 'normal'
+    urgency: Literal["low", "normal", "high", "critical"] = "normal"
     justification: str | None = Field(None, max_length=2000)
-    needed_by: str | None = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
+    needed_by: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
 
 
 class JobDecisionPayload(BaseModel):
@@ -478,6 +486,7 @@ class JobDecisionPayload(BaseModel):
 
 
 # ============= Attendance =============
+
 
 @router.post("/hr/clock-in")
 async def clock_in(payload: ClockInRequest, current_user: User = Depends(get_current_user)):
@@ -488,50 +497,51 @@ async def clock_in(payload: ClockInRequest, current_user: User = Depends(get_cur
 
     today_iso = _today_local().isoformat()
     # Aynı gün içinde açık clock-in varsa, çift kayıt önle
-    existing = await db.attendance_records.find_one({
-        'tenant_id': current_user.tenant_id,
-        'staff_id': payload.staff_id,
-        'date': today_iso,
-        'clock_out': None,
-    })
+    existing = await db.attendance_records.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "staff_id": payload.staff_id,
+            "date": today_iso,
+            "clock_out": None,
+        }
+    )
     if existing:
-        return {'success': False, 'message': 'Açık giriş kaydı mevcut', 'time': existing.get('clock_in')}
+        return {"success": False, "message": "Açık giriş kaydı mevcut", "time": existing.get("clock_in")}
 
     record = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'staff_id': payload.staff_id,
-        'staff_name': staff.get('name'),
-        'date': today_iso,
-        'clock_in': datetime.now(UTC).isoformat(),
-        'clock_out': None,
-        'status': 'present',
-        'created_at': datetime.now(UTC).isoformat()
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "staff_id": payload.staff_id,
+        "staff_name": staff.get("name"),
+        "date": today_iso,
+        "clock_in": datetime.now(UTC).isoformat(),
+        "clock_out": None,
+        "status": "present",
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.attendance_records.insert_one(record)
-    return {'success': True, 'message': 'Giriş kaydedildi', 'time': record['clock_in']}
+    return {"success": True, "message": "Giriş kaydedildi", "time": record["clock_in"]}
 
 
 @router.post("/hr/clock-out")
 async def clock_out(payload: ClockInRequest, current_user: User = Depends(get_current_user)):
     # v109 Bug DAK round-6 (T08 P1): tenant_id scoped on both find and update.
     today_iso = _today_local().isoformat()
-    record = await db.attendance_records.find_one({
-        'tenant_id': current_user.tenant_id,
-        'staff_id': payload.staff_id,
-        'date': today_iso,
-        'clock_out': None,
-    })
+    record = await db.attendance_records.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "staff_id": payload.staff_id,
+            "date": today_iso,
+            "clock_out": None,
+        }
+    )
     if record:
         clock_out_time = datetime.now(UTC)
-        clock_in_time = datetime.fromisoformat(record['clock_in'].replace('Z', '+00:00'))
+        clock_in_time = datetime.fromisoformat(record["clock_in"].replace("Z", "+00:00"))
         hours = (clock_out_time - clock_in_time).total_seconds() / 3600
-        await db.attendance_records.update_one(
-            {'id': record['id'], 'tenant_id': current_user.tenant_id},
-            {'$set': {'clock_out': clock_out_time.isoformat(), 'total_hours': round(hours, 2)}}
-        )
-        return {'success': True, 'hours_worked': round(hours, 2)}
-    return {'success': False, 'message': 'Açık giriş kaydı bulunamadı'}
+        await db.attendance_records.update_one({"id": record["id"], "tenant_id": current_user.tenant_id}, {"$set": {"clock_out": clock_out_time.isoformat(), "total_hours": round(hours, 2)}})
+        return {"success": True, "hours_worked": round(hours, 2)}
+    return {"success": False, "message": "Açık giriş kaydı bulunamadı"}
 
 
 def _parse_date_range(start: str | None, end: str | None, days: int = 7):
@@ -544,113 +554,83 @@ def _parse_date_range(start: str | None, end: str | None, days: int = 7):
 
 
 @router.get("/hr/attendance/records")
-async def get_attendance_records(
-    start_date: str | None = None,
-    end_date: str | None = None,
-    staff_id: str | None = None,
-    limit: int = 500,
-    current_user: User = Depends(get_current_user)
-):
+async def get_attendance_records(start_date: str | None = None, end_date: str | None = None, staff_id: str | None = None, limit: int = 500, current_user: User = Depends(get_current_user)):
     start_dt, end_dt = _parse_date_range(start_date, end_date, days=7)
-    query: dict[str, Any] = {
-        'tenant_id': current_user.tenant_id,
-        'date': {'$gte': start_dt.isoformat(), '$lte': end_dt.isoformat()}
-    }
+    query: dict[str, Any] = {"tenant_id": current_user.tenant_id, "date": {"$gte": start_dt.isoformat(), "$lte": end_dt.isoformat()}}
     if staff_id:
-        query['staff_id'] = staff_id
-    records = await db.attendance_records.find(query, {'_id': 0}).sort('clock_in', -1).limit(limit).to_list(limit)
+        query["staff_id"] = staff_id
+    records = await db.attendance_records.find(query, {"_id": 0}).sort("clock_in", -1).limit(limit).to_list(limit)
     staff_map = await _get_staff_map(current_user.tenant_id)
     for record in records:
-        staff = staff_map.get(record['staff_id'])
+        staff = staff_map.get(record["staff_id"])
         if staff:
-            record['staff_name'] = staff.get('name') or record.get('staff_name')
-            record['department'] = staff.get('department')
-            record['position'] = staff.get('position')
-    return {
-        'records': records,
-        'total': len(records),
-        'range': {'start': start_dt.isoformat(), 'end': end_dt.isoformat()}
-    }
+            record["staff_name"] = staff.get("name") or record.get("staff_name")
+            record["department"] = staff.get("department")
+            record["position"] = staff.get("position")
+    return {"records": records, "total": len(records), "range": {"start": start_dt.isoformat(), "end": end_dt.isoformat()}}
 
 
 @router.get("/hr/attendance/summary")
-async def get_attendance_summary(
-    start_date: str | None = None,
-    end_date: str | None = None,
-    current_user: User = Depends(get_current_user)
-):
+async def get_attendance_summary(start_date: str | None = None, end_date: str | None = None, current_user: User = Depends(get_current_user)):
     start_dt, end_dt = _parse_date_range(start_date, end_date, days=30)
-    query = {
-        'tenant_id': current_user.tenant_id,
-        'date': {'$gte': start_dt.isoformat(), '$lte': end_dt.isoformat()}
-    }
-    records = await db.attendance_records.find(query, {'_id': 0}).to_list(2000)
+    query = {"tenant_id": current_user.tenant_id, "date": {"$gte": start_dt.isoformat(), "$lte": end_dt.isoformat()}}
+    records = await db.attendance_records.find(query, {"_id": 0}).to_list(2000)
     staff_map = await _get_staff_map(current_user.tenant_id)
 
     summary: dict[str, Any] = {}
     for record in records:
-        staff_id = record['staff_id']
-        summary.setdefault(staff_id, {
-            'staff_id': staff_id,
-            'total_hours': 0,
-            'days_present': 0,
-            'overtime_hours': 0,
-            'late_count': 0
-        })
-        summary[staff_id]['total_hours'] += record.get('total_hours', 0)
-        summary[staff_id]['days_present'] += 1
+        staff_id = record["staff_id"]
+        summary.setdefault(staff_id, {"staff_id": staff_id, "total_hours": 0, "days_present": 0, "overtime_hours": 0, "late_count": 0})
+        summary[staff_id]["total_hours"] += record.get("total_hours", 0)
+        summary[staff_id]["days_present"] += 1
 
     for staff_id, data in summary.items():
         staff = staff_map.get(staff_id, {})
-        data['staff_name'] = staff.get('name', staff_id)
-        data['department'] = staff.get('department', 'unknown')
-        data['position'] = staff.get('position', 'Staff')
-        overtime_threshold = staff.get('monthly_hours', TR_DEFAULT_MONTHLY_HOURS)
-        if data['total_hours'] > overtime_threshold:
-            data['overtime_hours'] = round(data['total_hours'] - overtime_threshold, 2)
-        data['average_daily_hours'] = round(
-            data['total_hours'] / data['days_present'], 2
-        ) if data['days_present'] else 0
+        data["staff_name"] = staff.get("name", staff_id)
+        data["department"] = staff.get("department", "unknown")
+        data["position"] = staff.get("position", "Staff")
+        overtime_threshold = staff.get("monthly_hours", TR_DEFAULT_MONTHLY_HOURS)
+        if data["total_hours"] > overtime_threshold:
+            data["overtime_hours"] = round(data["total_hours"] - overtime_threshold, 2)
+        data["average_daily_hours"] = round(data["total_hours"] / data["days_present"], 2) if data["days_present"] else 0
 
-    summary_list = sorted(summary.values(), key=lambda x: x['staff_name'])
-    total_hours = round(sum(item['total_hours'] for item in summary_list), 2)
+    summary_list = sorted(summary.values(), key=lambda x: x["staff_name"])
+    total_hours = round(sum(item["total_hours"] for item in summary_list), 2)
 
     # Aktif personel sayısı: hem staff_members'da olanlar hem users
     # tablosundan türeyenler (HRv2 derived staff). `_get_staff_map` yalnızca
     # staff_members'ı döndürdüğü için users tarafını ayrıca sayıyoruz.
-    explicit_count = await db.staff_members.count_documents(
-        {'tenant_id': current_user.tenant_id, 'active': True}
+    explicit_count = await db.staff_members.count_documents({"tenant_id": current_user.tenant_id, "active": True})
+    derived_roles = ["housekeeping", "front_desk", "supervisor", "finance", "sales", "admin"]
+    derived_count = await db.users.count_documents(
+        {
+            "tenant_id": current_user.tenant_id,
+            "is_active": True,
+            "role": {"$in": derived_roles},
+        }
     )
-    derived_roles = ['housekeeping', 'front_desk', 'supervisor',
-                     'finance', 'sales', 'admin']
-    derived_count = await db.users.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'is_active': True,
-        'role': {'$in': derived_roles},
-    })
     total_active_staff = explicit_count + derived_count
 
     # Devam kayıtlı personel başına ortalamayı koru, bilgi amaçlı
     # genel ortalamayı (gerçek headcount'a göre) ayrı alanla sunalım.
     avg_hours = round(total_hours / len(summary_list), 2) if summary_list else 0
-    avg_hours_per_active_staff = (
-        round(total_hours / total_active_staff, 2) if total_active_staff else 0
-    )
+    avg_hours_per_active_staff = round(total_hours / total_active_staff, 2) if total_active_staff else 0
 
     return {
-        'summary': summary_list,
-        'range': {'start': start_dt.isoformat(), 'end': end_dt.isoformat()},
-        'metrics': {
-            'staff_count': len(summary_list),
-            'total_active_staff': total_active_staff,
-            'total_hours': total_hours,
-            'avg_hours_per_staff': avg_hours,
-            'avg_hours_per_active_staff': avg_hours_per_active_staff,
-        }
+        "summary": summary_list,
+        "range": {"start": start_dt.isoformat(), "end": end_dt.isoformat()},
+        "metrics": {
+            "staff_count": len(summary_list),
+            "total_active_staff": total_active_staff,
+            "total_hours": total_hours,
+            "avg_hours_per_staff": avg_hours,
+            "avg_hours_per_active_staff": avg_hours_per_active_staff,
+        },
     }
 
 
 # ============= Leave =============
+
 
 @router.post("/hr/leave-request")
 async def create_leave_request(
@@ -668,15 +648,12 @@ async def create_leave_request(
         raise HTTPException(status_code=404, detail="Personel bulunamadı veya bu tenant'a ait değil")
 
     # Self-leave kontrolü: HR yönetici izni olmayan kullanıcı sadece kendi adına talep edebilir
-    is_self = (payload.staff_id == getattr(current_user, 'id', None))
+    is_self = payload.staff_id == getattr(current_user, "id", None)
     if not is_self:
         # HR yönetici yetkisi gereken roller: admin/supervisor/finance
-        manager_roles = {'admin', 'supervisor', 'finance'}
-        if (getattr(current_user, 'role', None) or '').lower() not in manager_roles:
-            raise HTTPException(
-                status_code=403,
-                detail="Başka personel adına izin talebi oluşturma yetkiniz yok"
-            )
+        manager_roles = {"admin", "supervisor", "finance"}
+        if (getattr(current_user, "role", None) or "").lower() not in manager_roles:
+            raise HTTPException(status_code=403, detail="Başka personel adına izin talebi oluşturma yetkiniz yok")
 
     start = datetime.fromisoformat(payload.start_date).date()
     end = datetime.fromisoformat(payload.end_date).date()
@@ -685,35 +662,32 @@ async def create_leave_request(
     total_days = payload.total_days if payload.total_days is not None else (end - start).days + 1
 
     leave = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'staff_id': payload.staff_id,
-        'staff_name': payload.staff_name or staff.get('name') or 'Personel',
-        'leave_type': payload.leave_type,
-        'start_date': payload.start_date,
-        'end_date': payload.end_date,
-        'total_days': total_days,
-        'reason': payload.reason,
-        'status': 'pending',
-        'requested_by': getattr(current_user, 'id', None),
-        'created_at': datetime.now(UTC).isoformat(),
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "staff_id": payload.staff_id,
+        "staff_name": payload.staff_name or staff.get("name") or "Personel",
+        "leave_type": payload.leave_type,
+        "start_date": payload.start_date,
+        "end_date": payload.end_date,
+        "total_days": total_days,
+        "reason": payload.reason,
+        "status": "pending",
+        "requested_by": getattr(current_user, "id", None),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.leave_requests.insert_one(leave)
 
     # HR yöneticilerine bildirim — onay bekleyen talep
     await _notify_hr_managers(
         current_user.tenant_id,
-        kind='leave_request',
-        title='Yeni izin talebi',
-        body=(
-            f"{leave['staff_name']} • {payload.leave_type} • "
-            f"{payload.start_date} → {payload.end_date} ({total_days} gün)"
-        ),
-        link=f'/hr?tab=leave&id={leave["id"]}',
-        ref_id=leave['id'],
+        kind="leave_request",
+        title="Yeni izin talebi",
+        body=(f"{leave['staff_name']} • {payload.leave_type} • {payload.start_date} → {payload.end_date} ({total_days} gün)"),
+        link=f"/hr?tab=leave&id={leave['id']}",
+        ref_id=leave["id"],
     )
 
-    return {'success': True, 'leave_id': leave['id'], 'total_days': total_days, 'status': 'pending'}
+    return {"success": True, "leave_id": leave["id"], "total_days": total_days, "status": "pending"}
 
 
 @router.get("/hr/leave-requests")
@@ -722,31 +696,32 @@ async def list_leave_requests(
     staff_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
-    query: dict[str, Any] = {'tenant_id': current_user.tenant_id}
+    query: dict[str, Any] = {"tenant_id": current_user.tenant_id}
     if status:
-        query['status'] = status
+        query["status"] = status
     if staff_id:
-        query['staff_id'] = staff_id
-    items = await db.leave_requests.find(query, {'_id': 0}).sort('created_at', -1).to_list(500)
-    counts = {'pending': 0, 'approved': 0, 'rejected': 0}
+        query["staff_id"] = staff_id
+    items = await db.leave_requests.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    counts = {"pending": 0, "approved": 0, "rejected": 0}
     for item in items:
-        counts[item.get('status', 'pending')] = counts.get(item.get('status', 'pending'), 0) + 1
-    return {'items': items, 'total': len(items), 'counts': counts}
+        counts[item.get("status", "pending")] = counts.get(item.get("status", "pending"), 0) + 1
+    return {"items": items, "total": len(items), "counts": counts}
 
 
 async def _apply_leave_to_shifts(
-    tenant_id: str, leave: dict,
+    tenant_id: str,
+    leave: dict,
 ) -> int:
     """Final onaylı izin → izin gününe `shift_schedules` üzerinde
     status='on_leave' satırı upsert. Lock YARATMAZ (izin kapsayan gün
     çakışma kontratının dışındadır; overlap guard sadece aktif vardiya
     için anlamlıdır). Idempotent: aynı (staff,date,leave_id) için
     yeniden çağrılırsa duplicate açmaz."""
-    start = date.fromisoformat(leave['start_date'])
-    end = date.fromisoformat(leave['end_date'])
+    start = date.fromisoformat(leave["start_date"])
+    end = date.fromisoformat(leave["end_date"])
     cur = start
     written = 0
-    leave_type = leave.get('leave_type')
+    leave_type = leave.get("leave_type")
     leave_notes = f"İzin: {leave_type}" if leave_type else "İzin"
     while cur <= end:
         d_iso = cur.isoformat()
@@ -754,55 +729,59 @@ async def _apply_leave_to_shifts(
         # yeni satır eklerdi → planner çift kayıt görüyordu). Mevcut shift
         # varsa status='on_leave' + leave_id setle; lock konvansiyonel olarak
         # release edilmez çünkü on_leave kayıt çakışma kontratının dışında.
-        existing = await db.shift_schedules.find_one({
-            'tenant_id': tenant_id,
-            'staff_id': leave['staff_id'],
-            'shift_date': d_iso,
-            'status': {'$ne': 'cancelled'},
-        })
+        existing = await db.shift_schedules.find_one(
+            {
+                "tenant_id": tenant_id,
+                "staff_id": leave["staff_id"],
+                "shift_date": d_iso,
+                "status": {"$ne": "cancelled"},
+            }
+        )
         if existing is not None:
             await db.shift_schedules.update_one(
-                {'id': existing['id'], 'tenant_id': tenant_id},
-                {'$set': {
-                    'status': 'on_leave',
-                    'leave_id': leave['id'],
-                    'leave_type': leave_type,
-                    'notes': leave_notes,
-                    'on_leave_applied_at': datetime.now(UTC).isoformat(),
-                    'on_leave_applied_via': 'leave_approval',
-                }},
+                {"id": existing["id"], "tenant_id": tenant_id},
+                {
+                    "$set": {
+                        "status": "on_leave",
+                        "leave_id": leave["id"],
+                        "leave_type": leave_type,
+                        "notes": leave_notes,
+                        "on_leave_applied_at": datetime.now(UTC).isoformat(),
+                        "on_leave_applied_via": "leave_approval",
+                    }
+                },
             )
-            if existing.get('status') != 'on_leave' or existing.get('leave_id') != leave['id']:
+            if existing.get("status") != "on_leave" or existing.get("leave_id") != leave["id"]:
                 written += 1
         else:
             # Mevcut shift yoksa yeni on_leave kayıt aç (idempotent: aynı leave_id
             # için tekrar çağrılırsa update_one match eder, insert YOK).
             res = await db.shift_schedules.update_one(
                 {
-                    'tenant_id': tenant_id,
-                    'staff_id': leave['staff_id'],
-                    'shift_date': d_iso,
-                    'status': 'on_leave',
-                    'leave_id': leave['id'],
+                    "tenant_id": tenant_id,
+                    "staff_id": leave["staff_id"],
+                    "shift_date": d_iso,
+                    "status": "on_leave",
+                    "leave_id": leave["id"],
                 },
                 {
-                    '$setOnInsert': {
-                        'id': str(uuid.uuid4()),
-                        'tenant_id': tenant_id,
-                        'staff_id': leave['staff_id'],
-                        'staff_name': leave.get('staff_name'),
-                        'shift_date': d_iso,
-                        'shift_type': 'off',
-                        'start_time': '00:00',
-                        'end_time': '23:59',
-                        'crosses_midnight': False,
-                        'end_date': d_iso,
-                        'status': 'on_leave',
-                        'leave_id': leave['id'],
-                        'leave_type': leave_type,
-                        'notes': leave_notes,
-                        'created_at': datetime.now(UTC).isoformat(),
-                        'created_via': 'leave_approval',
+                    "$setOnInsert": {
+                        "id": str(uuid.uuid4()),
+                        "tenant_id": tenant_id,
+                        "staff_id": leave["staff_id"],
+                        "staff_name": leave.get("staff_name"),
+                        "shift_date": d_iso,
+                        "shift_type": "off",
+                        "start_time": "00:00",
+                        "end_time": "23:59",
+                        "crosses_midnight": False,
+                        "end_date": d_iso,
+                        "status": "on_leave",
+                        "leave_id": leave["id"],
+                        "leave_type": leave_type,
+                        "notes": leave_notes,
+                        "created_at": datetime.now(UTC).isoformat(),
+                        "created_via": "leave_approval",
                     },
                 },
                 upsert=True,
@@ -820,16 +799,14 @@ async def decide_leave_request(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),  # HR yönetici yetkisi
 ):
-    leave = await db.leave_requests.find_one({
-        'tenant_id': current_user.tenant_id, 'id': leave_id
-    })
+    leave = await db.leave_requests.find_one({"tenant_id": current_user.tenant_id, "id": leave_id})
     if not leave:
         raise HTTPException(status_code=404, detail="İzin talebi bulunamadı")
 
-    current_status = leave.get('status', 'pending')
+    current_status = leave.get("status", "pending")
     # Task #263: 2-aşamalı state machine.
-    if payload.decision == 'reject':
-        if current_status not in ('pending', 'dept_approved'):
+    if payload.decision == "reject":
+        if current_status not in ("pending", "dept_approved"):
             raise HTTPException(
                 status_code=400,
                 detail=f"Bu talep zaten karara bağlanmış (status={current_status})",
@@ -839,127 +816,119 @@ async def decide_leave_request(
                 status_code=400,
                 detail="Red için gerekçe (note) zorunludur",
             )
-        new_status = 'rejected'
-    elif payload.decision == 'dept_approve':
-        if current_status != 'pending':
+        new_status = "rejected"
+    elif payload.decision == "dept_approve":
+        if current_status != "pending":
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    f"Departman onayı sadece pending durumdan verilebilir "
-                    f"(mevcut: {current_status})"
-                ),
+                detail=(f"Departman onayı sadece pending durumdan verilebilir (mevcut: {current_status})"),
             )
-        new_status = 'dept_approved'
+        new_status = "dept_approved"
     else:  # 'approve' (final HR) — Task #263: strict chain enforcement
-        if current_status != 'dept_approved':
+        if current_status != "dept_approved":
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    f"Final onay sadece departman onayından sonra verilebilir "
-                    f"(mevcut: {current_status}). Önce 'dept_approve' aşaması gerekli."
-                ),
+                detail=(f"Final onay sadece departman onayından sonra verilebilir (mevcut: {current_status}). Önce 'dept_approve' aşaması gerekli."),
             )
-        new_status = 'approved'
+        new_status = "approved"
 
     update_set: dict[str, Any] = {
-        'status': new_status,
-        'decision_note': payload.note,
-        'decided_at': datetime.now(UTC).isoformat(),
+        "status": new_status,
+        "decision_note": payload.note,
+        "decided_at": datetime.now(UTC).isoformat(),
     }
-    decision_history = leave.get('decision_history') or []
-    decision_history.append({
-        'stage': payload.decision,
-        'status': new_status,
-        'by': getattr(current_user, 'id', None),
-        'at': datetime.now(UTC).isoformat(),
-        'note': payload.note,
-    })
-    update_set['decision_history'] = decision_history
-    if new_status == 'dept_approved':
-        update_set['dept_approved_by'] = getattr(current_user, 'id', None)
-        update_set['dept_approved_at'] = datetime.now(UTC).isoformat()
-    elif new_status == 'approved':
-        update_set['decided_by'] = getattr(current_user, 'id', None)
-        update_set['approved_by'] = getattr(current_user, 'id', None)
-        update_set['approved_at'] = datetime.now(UTC).isoformat()
+    decision_history = leave.get("decision_history") or []
+    decision_history.append(
+        {
+            "stage": payload.decision,
+            "status": new_status,
+            "by": getattr(current_user, "id", None),
+            "at": datetime.now(UTC).isoformat(),
+            "note": payload.note,
+        }
+    )
+    update_set["decision_history"] = decision_history
+    if new_status == "dept_approved":
+        update_set["dept_approved_by"] = getattr(current_user, "id", None)
+        update_set["dept_approved_at"] = datetime.now(UTC).isoformat()
+    elif new_status == "approved":
+        update_set["decided_by"] = getattr(current_user, "id", None)
+        update_set["approved_by"] = getattr(current_user, "id", None)
+        update_set["approved_at"] = datetime.now(UTC).isoformat()
     else:
-        update_set['decided_by'] = getattr(current_user, 'id', None)
+        update_set["decided_by"] = getattr(current_user, "id", None)
 
     await db.leave_requests.update_one(
-        {'tenant_id': current_user.tenant_id, 'id': leave_id},
-        {'$set': update_set},
+        {"tenant_id": current_user.tenant_id, "id": leave_id},
+        {"$set": update_set},
     )
 
     on_leave_written = 0
-    if new_status == 'approved':
+    if new_status == "approved":
         # Final onay: shift_schedules üstüne on_leave upsert.
         on_leave_written = await _apply_leave_to_shifts(
-            current_user.tenant_id, {**leave, **update_set, 'id': leave_id},
+            current_user.tenant_id,
+            {**leave, **update_set, "id": leave_id},
         )
 
     # Talep sahibine bildirim — kararı duyur
-    requester_id = leave.get('requested_by') or leave.get('staff_id')
+    requester_id = leave.get("requested_by") or leave.get("staff_id")
     if requester_id:
         notif_title = {
-            'approved': 'İzin talebiniz onaylandı',
-            'dept_approved': 'İzin talebiniz departman onayı aldı (HR onayı bekleniyor)',
-            'rejected': 'İzin talebiniz reddedildi',
+            "approved": "İzin talebiniz onaylandı",
+            "dept_approved": "İzin talebiniz departman onayı aldı (HR onayı bekleniyor)",
+            "rejected": "İzin talebiniz reddedildi",
         }[new_status]
         await _notify_user(
             current_user.tenant_id,
             user_id=requester_id,
-            kind=f'leave_{new_status}',
+            kind=f"leave_{new_status}",
             title=notif_title,
-            body=(
-                f"{leave.get('start_date')} → {leave.get('end_date')} • "
-                f"{leave.get('total_days', 0)} gün"
-                + (f" • Not: {payload.note}" if payload.note else '')
-            ),
-            link=f'/hr?tab=leave&id={leave_id}',
+            body=(f"{leave.get('start_date')} → {leave.get('end_date')} • {leave.get('total_days', 0)} gün" + (f" • Not: {payload.note}" if payload.note else "")),
+            link=f"/hr?tab=leave&id={leave_id}",
             ref_id=leave_id,
         )
     return {
-        'success': True,
-        'status': new_status,
-        'on_leave_shifts_created': on_leave_written,
+        "success": True,
+        "status": new_status,
+        "on_leave_shifts_created": on_leave_written,
     }
 
 
 @router.get("/hr/leave/calendar")
 async def leave_calendar(
-    month: str = Query(..., pattern=r'^\d{4}-\d{2}$'),
+    month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
     department: str | None = None,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr")),
 ):
     """Ay görünümü: per-staff per-day matrix. Sadece status IN
     (dept_approved, approved) izinler döner. Frontend takvim renkler."""
-    yyyy, mm = month.split('-')
+    yyyy, mm = month.split("-")
     start = date(int(yyyy), int(mm), 1)
     next_month = start.replace(day=28) + timedelta(days=4)
     end = next_month - timedelta(days=next_month.day)
 
     query: dict[str, Any] = {
-        'tenant_id': current_user.tenant_id,
-        'status': {'$in': ['dept_approved', 'approved']},
-        'start_date': {'$lte': end.isoformat()},
-        'end_date': {'$gte': start.isoformat()},
+        "tenant_id": current_user.tenant_id,
+        "status": {"$in": ["dept_approved", "approved"]},
+        "start_date": {"$lte": end.isoformat()},
+        "end_date": {"$gte": start.isoformat()},
     }
     leaves = await db.leave_requests.find(
-        query, {'_id': 0, 'id': 1, 'staff_id': 1, 'staff_name': 1,
-                'leave_type': 1, 'status': 1,
-                'start_date': 1, 'end_date': 1},
+        query,
+        {"_id": 0, "id": 1, "staff_id": 1, "staff_name": 1, "leave_type": 1, "status": 1, "start_date": 1, "end_date": 1},
     ).to_list(2000)
 
     # Department filter (staff lookup)
     if department:
         staff_in_dept: set[str] = set()
         async for s in db.staff_members.find(
-            {'tenant_id': current_user.tenant_id, 'department': department},
-            {'_id': 0, 'id': 1},
+            {"tenant_id": current_user.tenant_id, "department": department},
+            {"_id": 0, "id": 1},
         ):
-            staff_in_dept.add(s['id'])
-        leaves = [l for l in leaves if l['staff_id'] in staff_in_dept]
+            staff_in_dept.add(s["id"])
+        leaves = [l for l in leaves if l["staff_id"] in staff_in_dept]
 
     # Per-day occupancy: {day_iso: [staff_id, ...]}
     by_day: dict[str, list[dict]] = {}
@@ -968,32 +937,41 @@ async def leave_calendar(
         by_day[cur.isoformat()] = []
         cur += timedelta(days=1)
     for l in leaves:
-        ls = max(date.fromisoformat(l['start_date']), start)
-        le = min(date.fromisoformat(l['end_date']), end)
+        ls = max(date.fromisoformat(l["start_date"]), start)
+        le = min(date.fromisoformat(l["end_date"]), end)
         c = ls
         while c <= le:
-            by_day[c.isoformat()].append({
-                'leave_id': l['id'],
-                'staff_id': l['staff_id'],
-                'staff_name': l.get('staff_name'),
-                'leave_type': l.get('leave_type'),
-                'status': l.get('status'),
-            })
+            by_day[c.isoformat()].append(
+                {
+                    "leave_id": l["id"],
+                    "staff_id": l["staff_id"],
+                    "staff_name": l.get("staff_name"),
+                    "leave_type": l.get("leave_type"),
+                    "status": l.get("status"),
+                }
+            )
             c += timedelta(days=1)
     return {
-        'month': month,
-        'range': {'start': start.isoformat(), 'end': end.isoformat()},
-        'days': by_day,
-        'leaves': leaves,
-        'total': len(leaves),
+        "month": month,
+        "range": {"start": start.isoformat(), "end": end.isoformat()},
+        "days": by_day,
+        "leaves": leaves,
+        "total": len(leaves),
     }
 
 
 # ============= Notification helpers (HR akışı için) =============
 
+
 def _build_notification_doc(
-    tenant_id: str, *, user_id: str | None, kind: str, title: str, body: str,
-    link: str | None, ref_id: str | None,
+    tenant_id: str,
+    *,
+    user_id: str | None,
+    kind: str,
+    title: str,
+    body: str,
+    link: str | None,
+    ref_id: str | None,
 ) -> dict:
     """notifications koleksiyon şemasıyla uyumlu doc üretir.
 
@@ -1003,39 +981,52 @@ def _build_notification_doc(
     """
     now_iso = datetime.now(UTC).isoformat()
     return {
-        'id': str(uuid.uuid4()),
-        'tenant_id': tenant_id,
-        'user_id': user_id,
-        'type': kind,                # list endpoint 'type' okuyor
-        'title': title,
-        'message': body,             # list endpoint 'message' okuyor
-        'body': body,                # backward-compat (bazı yerler 'body' kullanıyor)
-        'priority': 'normal',
-        'action_url': link,          # list endpoint 'action_url' okuyor
-        'metadata': {'kind': kind, 'ref_id': ref_id} if ref_id else {'kind': kind},
-        'read': False,
-        'created_at': now_iso,
-        'sent_at': now_iso,
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "type": kind,  # list endpoint 'type' okuyor
+        "title": title,
+        "message": body,  # list endpoint 'message' okuyor
+        "body": body,  # backward-compat (bazı yerler 'body' kullanıyor)
+        "priority": "normal",
+        "action_url": link,  # list endpoint 'action_url' okuyor
+        "metadata": {"kind": kind, "ref_id": ref_id} if ref_id else {"kind": kind},
+        "read": False,
+        "created_at": now_iso,
+        "sent_at": now_iso,
     }
 
 
 async def _notify_hr_managers(
-    tenant_id: str, *, kind: str, title: str, body: str,
-    link: str | None = None, ref_id: str | None = None,
+    tenant_id: str,
+    *,
+    kind: str,
+    title: str,
+    body: str,
+    link: str | None = None,
+    ref_id: str | None = None,
 ):
     """HR yönetici rollerindeki tüm aktif kullanıcılara in-app bildirim gönder."""
-    cursor = db.users.find({
-        'tenant_id': tenant_id,
-        'is_active': True,
-        'role': {'$in': ['admin', 'supervisor', 'finance']},
-    }, {'_id': 0, 'id': 1})
-    user_ids = [u['id'] async for u in cursor if u.get('id')]
+    cursor = db.users.find(
+        {
+            "tenant_id": tenant_id,
+            "is_active": True,
+            "role": {"$in": ["admin", "supervisor", "finance"]},
+        },
+        {"_id": 0, "id": 1},
+    )
+    user_ids = [u["id"] async for u in cursor if u.get("id")]
     if not user_ids:
         return
     docs = [
         _build_notification_doc(
-            tenant_id, user_id=uid, kind=kind, title=title, body=body,
-            link=link, ref_id=ref_id,
+            tenant_id,
+            user_id=uid,
+            kind=kind,
+            title=title,
+            body=body,
+            link=link,
+            ref_id=ref_id,
         )
         for uid in user_ids
     ]
@@ -1046,15 +1037,28 @@ async def _notify_hr_managers(
 
 
 async def _notify_user(
-    tenant_id: str, *, user_id: str, kind: str, title: str, body: str,
-    link: str | None = None, ref_id: str | None = None,
+    tenant_id: str,
+    *,
+    user_id: str,
+    kind: str,
+    title: str,
+    body: str,
+    link: str | None = None,
+    ref_id: str | None = None,
 ):
     """Tek kullanıcıya in-app bildirim gönder."""
     try:
-        await db.notifications.insert_one(_build_notification_doc(
-            tenant_id, user_id=user_id, kind=kind, title=title, body=body,
-            link=link, ref_id=ref_id,
-        ))
+        await db.notifications.insert_one(
+            _build_notification_doc(
+                tenant_id,
+                user_id=user_id,
+                kind=kind,
+                title=title,
+                body=body,
+                link=link,
+                ref_id=ref_id,
+            )
+        )
     except Exception as exc:  # pragma: no cover
         logger.warning("HR bildirimi yazılamadı: %s", exc)
 
@@ -1063,6 +1067,7 @@ async def _notify_user(
 
 # NOTE: The dynamic `GET /hr/payroll/{month}` is intentionally declared
 # AFTER the static export/finalize routes so FastAPI matches static first.
+
 
 def _compute_payroll_for_month(
     records: list[dict],
@@ -1073,16 +1078,16 @@ def _compute_payroll_for_month(
     rates = rates or TR_PAYROLL_TAX_RATES_DEFAULT
     payroll_rows: dict[str, float] = {}
     for record in records:
-        staff_id = record['staff_id']
+        staff_id = record["staff_id"]
         payroll_rows.setdefault(staff_id, 0.0)
-        payroll_rows[staff_id] += record.get('total_hours', 0)
+        payroll_rows[staff_id] += record.get("total_hours", 0)
 
     payroll: list[dict] = []
     for staff_id, total_hours in payroll_rows.items():
         staff = staff_map.get(staff_id, {})
-        hourly_rate = float(staff.get('hourly_rate') or TR_DEFAULT_HOURLY_RATE)
-        monthly_hours = float(staff.get('monthly_hours') or TR_DEFAULT_MONTHLY_HOURS)
-        overtime_rate = float(staff.get('overtime_rate') or hourly_rate * TR_DEFAULT_OVERTIME_MULTIPLIER)
+        hourly_rate = float(staff.get("hourly_rate") or TR_DEFAULT_HOURLY_RATE)
+        monthly_hours = float(staff.get("monthly_hours") or TR_DEFAULT_MONTHLY_HOURS)
+        overtime_rate = float(staff.get("overtime_rate") or hourly_rate * TR_DEFAULT_OVERTIME_MULTIPLIER)
         overtime_hours = max(0.0, total_hours - monthly_hours)
         base_hours = total_hours - overtime_hours
         gross_pay = (base_hours * hourly_rate) + (overtime_hours * overtime_rate)
@@ -1090,32 +1095,34 @@ def _compute_payroll_for_month(
         # Basitleştirilmiş TR kesinti modeli (yaklaşık). Oranlar tenant'a özel
         # olabilir (yoksa varsayılan): SGK işçi payı, işsizlik, gelir vergisi
         # (matrah = brüt - SGK - işsizlik), damga vergisi.
-        sgk_employee = round(gross_pay * rates['sgk_employee'] / 100, 2)
-        unemployment = round(gross_pay * rates['unemployment'] / 100, 2)
+        sgk_employee = round(gross_pay * rates["sgk_employee"] / 100, 2)
+        unemployment = round(gross_pay * rates["unemployment"] / 100, 2)
         income_tax_base = max(0.0, gross_pay - sgk_employee - unemployment)
-        income_tax = round(income_tax_base * rates['income_tax'] / 100, 2)
-        stamp_tax = round(gross_pay * rates['stamp_tax'] / 100, 2)
+        income_tax = round(income_tax_base * rates["income_tax"] / 100, 2)
+        stamp_tax = round(gross_pay * rates["stamp_tax"] / 100, 2)
         total_deductions = round(sgk_employee + unemployment + income_tax + stamp_tax, 2)
         net_pay = round(gross_pay - total_deductions, 2)
 
-        payroll.append({
-            'staff_id': staff_id,
-            'staff_name': staff.get('name', staff_id),
-            'department': staff.get('department', 'unknown'),
-            'period_month': month,
-            'total_hours': round(total_hours, 2),
-            'overtime_hours': round(overtime_hours, 2),
-            'hourly_rate': round(hourly_rate, 2),
-            'overtime_rate': round(overtime_rate, 2),
-            'gross_pay': round(gross_pay, 2),
-            'sgk_employee': sgk_employee,
-            'unemployment': unemployment,
-            'income_tax': income_tax,
-            'stamp_tax': stamp_tax,
-            'total_deductions': total_deductions,
-            'net_salary': net_pay,
-            'currency': TR_CURRENCY,
-        })
+        payroll.append(
+            {
+                "staff_id": staff_id,
+                "staff_name": staff.get("name", staff_id),
+                "department": staff.get("department", "unknown"),
+                "period_month": month,
+                "total_hours": round(total_hours, 2),
+                "overtime_hours": round(overtime_hours, 2),
+                "hourly_rate": round(hourly_rate, 2),
+                "overtime_rate": round(overtime_rate, 2),
+                "gross_pay": round(gross_pay, 2),
+                "sgk_employee": sgk_employee,
+                "unemployment": unemployment,
+                "income_tax": income_tax,
+                "stamp_tax": stamp_tax,
+                "total_deductions": total_deductions,
+                "net_salary": net_pay,
+                "currency": TR_CURRENCY,
+            }
+        )
     return payroll
 
 
@@ -1128,14 +1135,11 @@ async def _build_payroll(month: str | None, tenant_id: str):
     next_month = start_dt.replace(day=28) + timedelta(days=4)
     end_dt = next_month - timedelta(days=next_month.day)
 
-    query = {
-        'tenant_id': tenant_id,
-        'date': {'$gte': start_dt.isoformat(), '$lte': end_dt.isoformat()}
-    }
-    records = await db.attendance_records.find(query, {'_id': 0}).to_list(5000)
+    query = {"tenant_id": tenant_id, "date": {"$gte": start_dt.isoformat(), "$lte": end_dt.isoformat()}}
+    records = await db.attendance_records.find(query, {"_id": 0}).to_list(5000)
     staff_map = await _get_staff_map(tenant_id)
     rates = await _get_payroll_tax_rates(tenant_id)
-    period_month = start_dt.strftime('%Y-%m')
+    period_month = start_dt.strftime("%Y-%m")
     payroll = _compute_payroll_for_month(records, staff_map, period_month, rates)
     return period_month, payroll
 
@@ -1143,7 +1147,7 @@ async def _build_payroll(month: str | None, tenant_id: str):
 @router.get("/hr/payroll/export")
 async def export_payroll(
     month: str | None = None,
-    format: str = 'json',
+    format: str = "json",
     current_user: User = Depends(get_current_user),
     # Bug DAK round-7: Maaş PII'sı için yetki gate'i (KVKK + iş hukuku).
     _perm=Depends(require_op("view_hr")),
@@ -1151,17 +1155,20 @@ async def export_payroll(
     period_month, payroll = await _build_payroll(month, current_user.tenant_id)
 
     response: dict[str, Any] = {
-        'month': period_month,
-        'payroll': payroll,
-        'staff_count': len(payroll),
-        'total_gross_pay': round(sum(row['gross_pay'] for row in payroll), 2),
-        'total_net_pay': round(sum(row['net_salary'] for row in payroll), 2),
-        'currency': TR_CURRENCY,
+        "month": period_month,
+        "payroll": payroll,
+        "staff_count": len(payroll),
+        "total_gross_pay": round(sum(row["gross_pay"] for row in payroll), 2),
+        "total_net_pay": round(sum(row["net_salary"] for row in payroll), 2),
+        "currency": TR_CURRENCY,
     }
     await _audit(
-        current_user, 'payroll.export', 'payroll', period_month,
+        current_user,
+        "payroll.export",
+        "payroll",
+        period_month,
         f"Bordro export (format={format}, staff={len(payroll)})",
-        severity='info',
+        severity="info",
     )
 
     # NOT: format=csv için inline base64 desteği kaldırıldı. UI artık
@@ -1182,12 +1189,25 @@ async def export_payroll_csv_stream(
     import csv
 
     from core.csv_safe import safe_dict_writerow
+
     buf = io.StringIO()
     fields = [
-        'staff_id', 'staff_name', 'department', 'period_month',
-        'total_hours', 'overtime_hours', 'hourly_rate', 'overtime_rate',
-        'gross_pay', 'sgk_employee', 'unemployment', 'income_tax',
-        'stamp_tax', 'total_deductions', 'net_salary', 'currency'
+        "staff_id",
+        "staff_name",
+        "department",
+        "period_month",
+        "total_hours",
+        "overtime_hours",
+        "hourly_rate",
+        "overtime_rate",
+        "gross_pay",
+        "sgk_employee",
+        "unemployment",
+        "income_tax",
+        "stamp_tax",
+        "total_deductions",
+        "net_salary",
+        "currency",
     ]
     writer = csv.DictWriter(buf, fieldnames=fields)
     writer.writeheader()
@@ -1196,17 +1216,14 @@ async def export_payroll_csv_stream(
     csv_text = buf.getvalue()
 
     await _audit(
-        current_user, 'payroll.export_csv', 'payroll', period_month,
+        current_user,
+        "payroll.export_csv",
+        "payroll",
+        period_month,
         f"Bordro CSV stream (satır={len(payroll)})",
-        severity='info',
+        severity="info",
     )
-    return StreamingResponse(
-        iter([csv_text]),
-        media_type='text/csv; charset=utf-8',
-        headers={
-            'Content-Disposition': f'attachment; filename="payroll_{period_month}.csv"'
-        }
-    )
+    return StreamingResponse(iter([csv_text]), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="payroll_{period_month}.csv"'})
 
 
 @router.post("/hr/payroll/finalize", deprecated=True)
@@ -1225,34 +1242,40 @@ async def finalize_payroll(
     """
     period_month, payroll = await _build_payroll(payload.month, current_user.tenant_id)
     if not payroll:
-        return {'success': False, 'message': 'Bu ay için attendance kaydı yok', 'count': 0}
+        return {"success": False, "message": "Bu ay için attendance kaydı yok", "count": 0}
 
-    await db.payroll_records.delete_many({
-        'tenant_id': current_user.tenant_id,
-        'period_month': period_month,
-    })
+    await db.payroll_records.delete_many(
+        {
+            "tenant_id": current_user.tenant_id,
+            "period_month": period_month,
+        }
+    )
     for row in payroll:
-        row['id'] = str(uuid.uuid4())
-        row['tenant_id'] = current_user.tenant_id
-        row['finalized_by'] = getattr(current_user, 'id', None)
-        row['finalized_at'] = datetime.now(UTC).isoformat()
+        row["id"] = str(uuid.uuid4())
+        row["tenant_id"] = current_user.tenant_id
+        row["finalized_by"] = getattr(current_user, "id", None)
+        row["finalized_at"] = datetime.now(UTC).isoformat()
     await db.payroll_records.insert_many(payroll)
     await _audit(
-        current_user, 'payroll.legacy_finalize', 'payroll_records', period_month,
+        current_user,
+        "payroll.legacy_finalize",
+        "payroll_records",
+        period_month,
         f"Legacy finalize (deprecated) — ay={period_month}, satır={len(payroll)}",
-        severity='warning',
+        severity="warning",
     )
     return {
-        'success': True,
-        'period_month': period_month,
-        'count': len(payroll),
-        'total_gross': round(sum(r['gross_pay'] for r in payroll), 2),
-        'total_net': round(sum(r['net_salary'] for r in payroll), 2),
-        'currency': TR_CURRENCY,
+        "success": True,
+        "period_month": period_month,
+        "count": len(payroll),
+        "total_gross": round(sum(r["gross_pay"] for r in payroll), 2),
+        "total_net": round(sum(r["net_salary"] for r in payroll), 2),
+        "currency": TR_CURRENCY,
     }
 
 
 # ---------- Payroll v2 helpers (Task #264) ----------
+
 
 def _payroll_apply_extras_and_overtime(
     base_rows: list[dict],
@@ -1275,114 +1298,125 @@ def _payroll_apply_extras_and_overtime(
     rates = rates or TR_PAYROLL_TAX_RATES_DEFAULT
     extras_by_staff: dict[str, list[dict]] = {}
     for ex in extras:
-        extras_by_staff.setdefault(ex['staff_id'], []).append(ex)
+        extras_by_staff.setdefault(ex["staff_id"], []).append(ex)
 
     out: list[dict] = []
     for row in base_rows:
-        sid = row['staff_id']
-        hourly_rate = float(row.get('hourly_rate') or TR_DEFAULT_HOURLY_RATE)
+        sid = row["staff_id"]
+        hourly_rate = float(row.get("hourly_rate") or TR_DEFAULT_HOURLY_RATE)
         line_items: list[dict] = [
             {
-                'kind': 'base',
-                'label': 'Esas ücret (saat × tarife)',
-                'hours': row.get('total_hours', 0) - row.get('overtime_hours', 0),
-                'rate': hourly_rate,
-                'amount': round(
-                    (row.get('total_hours', 0) - row.get('overtime_hours', 0)) * hourly_rate,
+                "kind": "base",
+                "label": "Esas ücret (saat × tarife)",
+                "hours": row.get("total_hours", 0) - row.get("overtime_hours", 0),
+                "rate": hourly_rate,
+                "amount": round(
+                    (row.get("total_hours", 0) - row.get("overtime_hours", 0)) * hourly_rate,
                     2,
                 ),
-                'direction': 'earning',
+                "direction": "earning",
             },
         ]
-        if row.get('overtime_hours', 0) > 0:
-            line_items.append({
-                'kind': 'overtime_attendance',
-                'label': 'Mesai (devam-türetilmiş, >195h)',
-                'hours': row['overtime_hours'],
-                'rate': row.get('overtime_rate', hourly_rate * TR_DEFAULT_OVERTIME_MULTIPLIER),
-                'amount': round(
-                    row['overtime_hours']
-                    * (row.get('overtime_rate') or hourly_rate * TR_DEFAULT_OVERTIME_MULTIPLIER),
-                    2,
-                ),
-                'direction': 'earning',
-            })
+        if row.get("overtime_hours", 0) > 0:
+            line_items.append(
+                {
+                    "kind": "overtime_attendance",
+                    "label": "Mesai (devam-türetilmiş, >195h)",
+                    "hours": row["overtime_hours"],
+                    "rate": row.get("overtime_rate", hourly_rate * TR_DEFAULT_OVERTIME_MULTIPLIER),
+                    "amount": round(
+                        row["overtime_hours"] * (row.get("overtime_rate") or hourly_rate * TR_DEFAULT_OVERTIME_MULTIPLIER),
+                        2,
+                    ),
+                    "direction": "earning",
+                }
+            )
 
         ot = overtime_by_staff.get(sid)
-        if ot and ot.get('hours', 0) > 0:
+        if ot and ot.get("hours", 0) > 0:
             ot_amount = round(
-                ot['hours'] * hourly_rate * TR_DEFAULT_OVERTIME_MULTIPLIER, 2,
+                ot["hours"] * hourly_rate * TR_DEFAULT_OVERTIME_MULTIPLIER,
+                2,
             )
-            line_items.append({
-                'kind': 'overtime_approved',
-                'label': f"Onaylı mesai ({ot['requests']} talep)",
-                'hours': round(ot['hours'], 2),
-                'rate': round(hourly_rate * TR_DEFAULT_OVERTIME_MULTIPLIER, 2),
-                'amount': ot_amount,
-                'direction': 'earning',
-            })
+            line_items.append(
+                {
+                    "kind": "overtime_approved",
+                    "label": f"Onaylı mesai ({ot['requests']} talep)",
+                    "hours": round(ot["hours"], 2),
+                    "rate": round(hourly_rate * TR_DEFAULT_OVERTIME_MULTIPLIER, 2),
+                    "amount": ot_amount,
+                    "direction": "earning",
+                }
+            )
 
         added_earnings = 0.0
         post_tax_deductions = 0.0
         for ex in extras_by_staff.get(sid, []):
-            amt = round(float(ex['amount']), 2)
-            kind = ex['kind']
-            if kind in ('bonus', 'meal', 'transport'):
+            amt = round(float(ex["amount"]), 2)
+            kind = ex["kind"]
+            if kind in ("bonus", "meal", "transport"):
                 added_earnings += amt
-                line_items.append({
-                    'kind': kind,
-                    'label': {'bonus': 'Prim', 'meal': 'Yemek', 'transport': 'Yol'}[kind],
-                    'amount': amt,
-                    'direction': 'earning',
-                    'note': ex.get('note'),
-                })
+                line_items.append(
+                    {
+                        "kind": kind,
+                        "label": {"bonus": "Prim", "meal": "Yemek", "transport": "Yol"}[kind],
+                        "amount": amt,
+                        "direction": "earning",
+                        "note": ex.get("note"),
+                    }
+                )
             else:  # advance / deduction
                 post_tax_deductions += amt
-                line_items.append({
-                    'kind': kind,
-                    'label': {'advance': 'Avans mahsubu', 'deduction': 'Kesinti'}[kind],
-                    'amount': amt,
-                    'direction': 'deduction',
-                    'note': ex.get('note'),
-                })
+                line_items.append(
+                    {
+                        "kind": kind,
+                        "label": {"advance": "Avans mahsubu", "deduction": "Kesinti"}[kind],
+                        "amount": amt,
+                        "direction": "deduction",
+                        "note": ex.get("note"),
+                    }
+                )
 
         # İzin etkisi (Task #264 post-review): onaylı leave_requests'ten
         # ay'a düşen gün sayıları → ücretsiz izin günleri NET'ten 8h × hourly
         # düşülür (eksik gün), ücretli izin günleri SGK günü için raporlanır.
         lv = (leaves_by_staff or {}).get(sid) or {}
-        paid_leave_days = int(lv.get('paid_days') or 0)
-        unpaid_leave_days = int(lv.get('unpaid_days') or 0)
+        paid_leave_days = int(lv.get("paid_days") or 0)
+        unpaid_leave_days = int(lv.get("unpaid_days") or 0)
         if unpaid_leave_days > 0:
             unpaid_amount = round(unpaid_leave_days * 8 * hourly_rate, 2)
             post_tax_deductions += unpaid_amount
-            line_items.append({
-                'kind': 'leave_unpaid_deduction',
-                'label': f"Ücretsiz izin kesintisi ({unpaid_leave_days} gün)",
-                'days': unpaid_leave_days,
-                'rate': hourly_rate,
-                'amount': unpaid_amount,
-                'direction': 'deduction',
-            })
+            line_items.append(
+                {
+                    "kind": "leave_unpaid_deduction",
+                    "label": f"Ücretsiz izin kesintisi ({unpaid_leave_days} gün)",
+                    "days": unpaid_leave_days,
+                    "rate": hourly_rate,
+                    "amount": unpaid_amount,
+                    "direction": "deduction",
+                }
+            )
         if paid_leave_days > 0:
-            line_items.append({
-                'kind': 'leave_paid_info',
-                'label': f"Ücretli izin (bilgi, {paid_leave_days} gün)",
-                'days': paid_leave_days,
-                'amount': 0.0,
-                'direction': 'info',
-            })
+            line_items.append(
+                {
+                    "kind": "leave_paid_info",
+                    "label": f"Ücretli izin (bilgi, {paid_leave_days} gün)",
+                    "days": paid_leave_days,
+                    "amount": 0.0,
+                    "direction": "info",
+                }
+            )
 
-        ot_added = sum(
-            li['amount'] for li in line_items if li['kind'] == 'overtime_approved'
-        )
+        ot_added = sum(li["amount"] for li in line_items if li["kind"] == "overtime_approved")
         new_gross = round(
-            row['gross_pay'] + ot_added + added_earnings, 2,
+            row["gross_pay"] + ot_added + added_earnings,
+            2,
         )
 
-        sgk = round(new_gross * rates['sgk_employee'] / 100, 2)
-        unemp = round(new_gross * rates['unemployment'] / 100, 2)
-        income_tax = round(max(0.0, new_gross - sgk - unemp) * rates['income_tax'] / 100, 2)
-        stamp = round(new_gross * rates['stamp_tax'] / 100, 2)
+        sgk = round(new_gross * rates["sgk_employee"] / 100, 2)
+        unemp = round(new_gross * rates["unemployment"] / 100, 2)
+        income_tax = round(max(0.0, new_gross - sgk - unemp) * rates["income_tax"] / 100, 2)
+        stamp = round(new_gross * rates["stamp_tax"] / 100, 2)
         tax_total = round(sgk + unemp + income_tax + stamp, 2)
         net = round(new_gross - tax_total - post_tax_deductions, 2)
 
@@ -1391,29 +1425,32 @@ def _payroll_apply_extras_and_overtime(
         # ücretli izin SGK gününü etkilemez, ücretsiz izin düşer).
         sgk_days = max(0, 30 - unpaid_leave_days)
         eksik_gun = unpaid_leave_days
-        new_row.update({
-            'gross_pay': new_gross,
-            'sgk_employee': sgk,
-            'unemployment': unemp,
-            'income_tax': income_tax,
-            'stamp_tax': stamp,
-            'total_deductions': round(tax_total + post_tax_deductions, 2),
-            'tax_deductions': tax_total,
-            'extra_deductions': round(post_tax_deductions, 2),
-            'extra_earnings': round(ot_added + added_earnings, 2),
-            'leave_days_paid': paid_leave_days,
-            'leave_days_unpaid': unpaid_leave_days,
-            'sgk_days': sgk_days,
-            'eksik_gun': eksik_gun,
-            'net_salary': net,
-            'line_items': line_items,
-        })
+        new_row.update(
+            {
+                "gross_pay": new_gross,
+                "sgk_employee": sgk,
+                "unemployment": unemp,
+                "income_tax": income_tax,
+                "stamp_tax": stamp,
+                "total_deductions": round(tax_total + post_tax_deductions, 2),
+                "tax_deductions": tax_total,
+                "extra_deductions": round(post_tax_deductions, 2),
+                "extra_earnings": round(ot_added + added_earnings, 2),
+                "leave_days_paid": paid_leave_days,
+                "leave_days_unpaid": unpaid_leave_days,
+                "sgk_days": sgk_days,
+                "eksik_gun": eksik_gun,
+                "net_salary": net,
+                "line_items": line_items,
+            }
+        )
         out.append(new_row)
     return out
 
 
 async def _payroll_collect_leaves(
-    tenant_id: str, period_month: str,
+    tenant_id: str,
+    period_month: str,
 ) -> dict[str, dict]:
     """`leave_requests` status=approved + start/end overlap ile ay'a düşen
     gün sayılarını topla → per-staff {paid_days, unpaid_days}. SGK günü ve
@@ -1421,26 +1458,29 @@ async def _payroll_collect_leaves(
 
     `leave_type` 'unpaid' / 'unpaid_leave' / 'ucretsiz' → unpaid; aksi paid.
     """
-    yyyy, mm = period_month.split('-')
-    start_iso = f'{yyyy}-{mm}-01'
+    yyyy, mm = period_month.split("-")
+    start_iso = f"{yyyy}-{mm}-01"
     nm = date(int(yyyy), int(mm), 28) + timedelta(days=4)
     end_iso = (nm - timedelta(days=nm.day)).isoformat()
     p_start = date.fromisoformat(start_iso)
     p_end = date.fromisoformat(end_iso)
     by_staff: dict[str, dict] = {}
-    cursor = db.leave_requests.find({
-        'tenant_id': tenant_id,
-        'status': 'approved',
-        'start_date': {'$lte': end_iso},
-        'end_date': {'$gte': start_iso},
-    }, {'_id': 0, 'staff_id': 1, 'start_date': 1, 'end_date': 1, 'leave_type': 1})
+    cursor = db.leave_requests.find(
+        {
+            "tenant_id": tenant_id,
+            "status": "approved",
+            "start_date": {"$lte": end_iso},
+            "end_date": {"$gte": start_iso},
+        },
+        {"_id": 0, "staff_id": 1, "start_date": 1, "end_date": 1, "leave_type": 1},
+    )
     async for r in cursor:
-        sid = r.get('staff_id')
+        sid = r.get("staff_id")
         if not sid:
             continue
         try:
-            s = date.fromisoformat(str(r.get('start_date') or '')[:10])
-            e = date.fromisoformat(str(r.get('end_date') or '')[:10])
+            s = date.fromisoformat(str(r.get("start_date") or "")[:10])
+            e = date.fromisoformat(str(r.get("end_date") or "")[:10])
         except Exception:
             continue
         s = max(s, p_start)
@@ -1448,14 +1488,14 @@ async def _payroll_collect_leaves(
         if e < s:
             continue
         days = (e - s).days + 1
-        lt = (r.get('leave_type') or '').strip().lower()
-        is_unpaid = lt in ('unpaid', 'unpaid_leave', 'ucretsiz', 'ücretsiz')
-        b = by_staff.setdefault(sid, {'paid_days': 0, 'unpaid_days': 0, 'requests': 0})
+        lt = (r.get("leave_type") or "").strip().lower()
+        is_unpaid = lt in ("unpaid", "unpaid_leave", "ucretsiz", "ücretsiz")
+        b = by_staff.setdefault(sid, {"paid_days": 0, "unpaid_days": 0, "requests": 0})
         if is_unpaid:
-            b['unpaid_days'] += days
+            b["unpaid_days"] += days
         else:
-            b['paid_days'] += days
-        b['requests'] += 1
+            b["paid_days"] += days
+        b["requests"] += 1
     return by_staff
 
 
@@ -1468,26 +1508,31 @@ async def _payroll_collect_overtime(tenant_id: str, period_month: str) -> dict[s
     çağrılmaz. Şema kontrat ile bağlı — değiştirilirse her iki yer birlikte
     güncellenmeli (parity test'i CI'da yakalar).
     """
-    yyyy, mm = period_month.split('-')
-    start_iso = f'{yyyy}-{mm}-01'
+    yyyy, mm = period_month.split("-")
+    start_iso = f"{yyyy}-{mm}-01"
     nm = date(int(yyyy), int(mm), 28) + timedelta(days=4)
     end_iso = (nm - timedelta(days=nm.day)).isoformat()
     by_staff: dict[str, dict] = {}
-    cursor = db.overtime_requests.find({
-        'tenant_id': tenant_id,
-        'status': 'approved',
-        'work_date': {'$gte': start_iso, '$lte': end_iso},
-    }, {'_id': 0, 'staff_id': 1, 'hours': 1})
+    cursor = db.overtime_requests.find(
+        {
+            "tenant_id": tenant_id,
+            "status": "approved",
+            "work_date": {"$gte": start_iso, "$lte": end_iso},
+        },
+        {"_id": 0, "staff_id": 1, "hours": 1},
+    )
     async for r in cursor:
-        sid = r['staff_id']
-        b = by_staff.setdefault(sid, {'hours': 0.0, 'requests': 0})
-        b['hours'] += float(r.get('hours') or 0)
-        b['requests'] += 1
+        sid = r["staff_id"]
+        b = by_staff.setdefault(sid, {"hours": 0.0, "requests": 0})
+        b["hours"] += float(r.get("hours") or 0)
+        b["requests"] += 1
     return by_staff
 
 
 async def _build_payroll_v2(
-    tenant_id: str, month: str, extras: list[dict] | None = None,
+    tenant_id: str,
+    month: str,
+    extras: list[dict] | None = None,
 ) -> tuple[str, list[dict], dict[str, Any]]:
     """Dry-run v2 compute — base + approved overtime + extras → enriched rows
     with line_items. Pure function over DB reads; no writes."""
@@ -1496,38 +1541,41 @@ async def _build_payroll_v2(
     lv_map = await _payroll_collect_leaves(tenant_id, period_month)
     rates = await _get_payroll_tax_rates(tenant_id)
     enriched = _payroll_apply_extras_and_overtime(
-        base, extras or [], ot_map, lv_map, rates,
+        base,
+        extras or [],
+        ot_map,
+        lv_map,
+        rates,
     )
     summary = {
-        'staff_count': len(enriched),
-        'total_gross': round(sum(r['gross_pay'] for r in enriched), 2),
-        'total_net': round(sum(r['net_salary'] for r in enriched), 2),
-        'total_extra_earnings': round(
-            sum(r.get('extra_earnings', 0) for r in enriched), 2),
-        'total_extra_deductions': round(
-            sum(r.get('extra_deductions', 0) for r in enriched), 2),
-        'total_leave_days_paid': sum(r.get('leave_days_paid', 0) for r in enriched),
-        'total_leave_days_unpaid': sum(r.get('leave_days_unpaid', 0) for r in enriched),
-        'currency': TR_CURRENCY,
+        "staff_count": len(enriched),
+        "total_gross": round(sum(r["gross_pay"] for r in enriched), 2),
+        "total_net": round(sum(r["net_salary"] for r in enriched), 2),
+        "total_extra_earnings": round(sum(r.get("extra_earnings", 0) for r in enriched), 2),
+        "total_extra_deductions": round(sum(r.get("extra_deductions", 0) for r in enriched), 2),
+        "total_leave_days_paid": sum(r.get("leave_days_paid", 0) for r in enriched),
+        "total_leave_days_unpaid": sum(r.get("leave_days_unpaid", 0) for r in enriched),
+        "currency": TR_CURRENCY,
     }
     return period_month, enriched, summary
 
 
 def _payroll_run_to_response(
-    run: dict, current_user: User,
+    run: dict,
+    current_user: User,
 ) -> dict:
     """`payroll_runs` doc → API response; IBAN/TC PII mask per row unless
     manage_hr OR self."""
     out = dict(run)
-    out.pop('_id', None)
-    rows = out.get('rows') or []
+    out.pop("_id", None)
+    rows = out.get("rows") or []
     masked: list[dict] = []
-    self_id = str(getattr(current_user, 'id', '') or '')
-    self_email = str(getattr(current_user, 'email', '') or '')
+    self_id = str(getattr(current_user, "id", "") or "")
+    self_email = str(getattr(current_user, "email", "") or "")
     for r in rows:
         m = _mask_hr_pii(r, current_user, self_id=self_id, self_email=self_email)
         masked.append(m or r)
-    out['rows'] = masked
+    out["rows"] = masked
     return out
 
 
@@ -1540,43 +1588,39 @@ def _payroll_run_to_response(
 #   • Diğer herkes 403.
 # Ham `admin` rolü ARTIK YETMEZ — HR Admin yetkisi `manage_hr` perm'i ile
 # açıkça verilmelidir (role-literal gating kaldırıldı).
-_PAYROLL_PRIVILEGED_ROLES = frozenset({'finance', 'super_admin'})
+_PAYROLL_PRIVILEGED_ROLES = frozenset({"finance", "super_admin"})
 
 
 def _payroll_lifecycle_gate(user: User, *, allow_hr_manager: bool) -> None:
-    role = (getattr(user, 'role', '') or '').lower()
+    role = (getattr(user, "role", "") or "").lower()
     # Full-lifecycle gate (finalize dahil).
-    if _user_has_hr_op(user, 'manage_hr') or role in _PAYROLL_PRIVILEGED_ROLES:
+    if _user_has_hr_op(user, "manage_hr") or role in _PAYROLL_PRIVILEGED_ROLES:
         return
     # Draft/revision için ek olarak view_hr_payroll perm'i yeterli.
-    if allow_hr_manager and _user_has_hr_op(user, 'view_hr_payroll'):
+    if allow_hr_manager and _user_has_hr_op(user, "view_hr_payroll"):
         return
     raise HTTPException(
         status_code=403,
-        detail=(
-            "Bordro yaşam döngüsü yetkiniz yok "
-            "(yalnızca HR Admin (manage_hr) / Finance / Süper Admin"
-            + (" / HR Manager (view_hr_payroll)" if allow_hr_manager else "")
-            + ")."
-        ),
+        detail=("Bordro yaşam döngüsü yetkiniz yok (yalnızca HR Admin (manage_hr) / Finance / Süper Admin" + (" / HR Manager (view_hr_payroll)" if allow_hr_manager else "") + ")."),
     )
 
 
 # ---------- Payroll v2 endpoints (Task #264) ----------
 
+
 @router.get("/hr/payroll/runs")
 async def list_payroll_runs(
-    month: str | None = Query(None, pattern=r'^\d{4}-\d{2}$'),
+    month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$"),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr_payroll")),
 ):
     """Tenant'a ait payroll_runs listele — opsiyonel month filtresi."""
-    q: dict[str, Any] = {'tenant_id': current_user.tenant_id}
+    q: dict[str, Any] = {"tenant_id": current_user.tenant_id}
     if month:
-        q['period_month'] = month
-    cursor = db.payroll_runs.find(q, {'_id': 0, 'rows': 0}).sort('created_at', -1)
+        q["period_month"] = month
+    cursor = db.payroll_runs.find(q, {"_id": 0, "rows": 0}).sort("created_at", -1)
     items = await cursor.to_list(200)
-    return {'items': items, 'count': len(items)}
+    return {"items": items, "count": len(items)}
 
 
 @router.get("/hr/payroll/runs/{run_id}")
@@ -1587,7 +1631,8 @@ async def get_payroll_run(
 ):
     """Tek run + line_items detay (PII masked unless manage_hr/self)."""
     run = await db.payroll_runs.find_one(
-        {'id': run_id, 'tenant_id': current_user.tenant_id}, {'_id': 0},
+        {"id": run_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0},
     )
     if not run:
         raise HTTPException(status_code=404, detail="Bordro çalışması bulunamadı")
@@ -1602,14 +1647,20 @@ async def list_payroll_revisions(
 ):
     """Bir run için açılmış tüm revizyonlar (zaman sıralı, audit trail)."""
     run = await db.payroll_runs.find_one(
-        {'id': run_id, 'tenant_id': current_user.tenant_id}, {'_id': 0, 'id': 1},
+        {"id": run_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "id": 1},
     )
     if not run:
         raise HTTPException(status_code=404, detail="Bordro çalışması bulunamadı")
-    items = await db.payroll_revisions.find(
-        {'tenant_id': current_user.tenant_id, 'parent_run_id': run_id}, {'_id': 0},
-    ).sort('created_at', -1).to_list(200)
-    return {'items': items, 'count': len(items)}
+    items = (
+        await db.payroll_revisions.find(
+            {"tenant_id": current_user.tenant_id, "parent_run_id": run_id},
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .to_list(200)
+    )
+    return {"items": items, "count": len(items)}
 
 
 @router.post("/hr/payroll/{month}/save")
@@ -1631,23 +1682,23 @@ async def save_payroll_draft(
 
     existing_locked = await db.payroll_runs.find_one(
         {
-            'tenant_id': current_user.tenant_id,
-            'period_month': month,
-            'status': 'locked',
-        }, {'_id': 0, 'id': 1},
+            "tenant_id": current_user.tenant_id,
+            "period_month": month,
+            "status": "locked",
+        },
+        {"_id": 0, "id": 1},
     )
     if existing_locked:
         raise HTTPException(
             status_code=409,
-            detail=(
-                f"Bu ay ({month}) için kilitlenmiş bir bordro var "
-                f"(run_id={existing_locked['id']}). Değişiklik için revizyon açın."
-            ),
+            detail=(f"Bu ay ({month}) için kilitlenmiş bir bordro var (run_id={existing_locked['id']}). Değişiklik için revizyon açın."),
         )
 
     extras = [ex.model_dump() for ex in payload.extras]
     period_month, rows, summary = await _build_payroll_v2(
-        current_user.tenant_id, month, extras=extras,
+        current_user.tenant_id,
+        month,
+        extras=extras,
     )
     if not rows:
         raise HTTPException(
@@ -1656,31 +1707,31 @@ async def save_payroll_draft(
         )
 
     now_iso = datetime.now(UTC).isoformat()
-    uid = getattr(current_user, 'id', None)
+    uid = getattr(current_user, "id", None)
     filter_q = {
-        'tenant_id': current_user.tenant_id,
-        'period_month': period_month,
-        'status': 'draft',
+        "tenant_id": current_user.tenant_id,
+        "period_month": period_month,
+        "status": "draft",
     }
     update_q = {
-        '$setOnInsert': {
-            'id': str(uuid.uuid4()),
-            'created_at': now_iso,
-            'created_by': uid,
-            'parent_run_id': None,
-            'finalized_at': None,
-            'finalized_by': None,
+        "$setOnInsert": {
+            "id": str(uuid.uuid4()),
+            "created_at": now_iso,
+            "created_by": uid,
+            "parent_run_id": None,
+            "finalized_at": None,
+            "finalized_by": None,
         },
-        '$set': {
-            'tenant_id': current_user.tenant_id,
-            'period_month': period_month,
-            'status': 'draft',
-            'rows': rows,
-            'summary': summary,
-            'extras': extras,
-            'note': payload.note,
-            'updated_at': now_iso,
-            'updated_by': uid,
+        "$set": {
+            "tenant_id": current_user.tenant_id,
+            "period_month": period_month,
+            "status": "draft",
+            "rows": rows,
+            "summary": summary,
+            "extras": extras,
+            "note": payload.note,
+            "updated_at": now_iso,
+            "updated_by": uid,
         },
     }
     try:
@@ -1691,7 +1742,7 @@ async def save_payroll_draft(
         # Post-review P1 (round 1): concurrent insert race; partial unique on
         # (tenant_id, period_month) where status='draft' rejected the
         # second insert. Re-apply update on the now-existing draft.
-        res = await db.payroll_runs.update_one(filter_q, {'$set': update_q['$set']})
+        res = await db.payroll_runs.update_one(filter_q, {"$set": update_q["$set"]})
         is_idempotent_update = True
         upserted_id = None
     # Post-review P1 (round 2): save↔finalize TOCTOU. existing_locked
@@ -1702,43 +1753,46 @@ async def save_payroll_draft(
     # eğer locked varsa ve biz az önce insert ettiysek, draft'ı geri al.
     locked_after = await db.payroll_runs.find_one(
         {
-            'tenant_id': current_user.tenant_id,
-            'period_month': period_month,
-            'status': 'locked',
-        }, {'_id': 0, 'id': 1},
+            "tenant_id": current_user.tenant_id,
+            "period_month": period_month,
+            "status": "locked",
+        },
+        {"_id": 0, "id": 1},
     )
     if locked_after and upserted_id is not None:
         # Bizim insert ettiğimiz draft satırını geri al (rollback).
         try:
-            await db.payroll_runs.delete_one({
-                'tenant_id': current_user.tenant_id,
-                'period_month': period_month,
-                'status': 'draft',
-                '_id': upserted_id,
-            })
+            await db.payroll_runs.delete_one(
+                {
+                    "tenant_id": current_user.tenant_id,
+                    "period_month": period_month,
+                    "status": "draft",
+                    "_id": upserted_id,
+                }
+            )
         except Exception:
             pass
         raise HTTPException(
             status_code=409,
-            detail=(
-                f"Bu ay ({period_month}) için bordro arada kilitlendi "
-                f"(run_id={locked_after['id']}). Değişiklik için revizyon açın."
-            ),
+            detail=(f"Bu ay ({period_month}) için bordro arada kilitlendi (run_id={locked_after['id']}). Değişiklik için revizyon açın."),
         )
-    doc = await db.payroll_runs.find_one(filter_q, {'_id': 0, 'id': 1})
-    run_id = (doc or {}).get('id')
+    doc = await db.payroll_runs.find_one(filter_q, {"_id": 0, "id": 1})
+    run_id = (doc or {}).get("id")
     await _audit(
-        current_user, 'payroll.save_draft', 'payroll_run', run_id or '?',
+        current_user,
+        "payroll.save_draft",
+        "payroll_run",
+        run_id or "?",
         f"Draft bordro kaydedildi (ay={period_month}, satır={len(rows)})",
-        severity='info',
+        severity="info",
     )
     return {
-        'success': True,
-        'run_id': run_id,
-        'period_month': period_month,
-        'status': 'draft',
-        'summary': summary,
-        'is_idempotent_update': is_idempotent_update,
+        "success": True,
+        "run_id": run_id,
+        "period_month": period_month,
+        "status": "draft",
+        "summary": summary,
+        "is_idempotent_update": is_idempotent_update,
     }
 
 
@@ -1756,16 +1810,19 @@ async def finalize_payroll_run(
     _payroll_lifecycle_gate(current_user, allow_hr_manager=False)
 
     run = await db.payroll_runs.find_one(
-        {'id': run_id, 'tenant_id': current_user.tenant_id}, {'_id': 0},
+        {"id": run_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0},
     )
     if not run:
         raise HTTPException(status_code=404, detail="Bordro çalışması bulunamadı")
-    if run.get('status') == 'locked':
+    if run.get("status") == "locked":
         return {
-            'success': True, 'run_id': run_id, 'status': 'locked',
-            'message': 'Zaten kilitli (idempotent).',
+            "success": True,
+            "run_id": run_id,
+            "status": "locked",
+            "message": "Zaten kilitli (idempotent).",
         }
-    if run.get('status') != 'draft':
+    if run.get("status") != "draft":
         raise HTTPException(
             status_code=409,
             detail=f"Sadece draft durumdaki bordro kilitlenebilir (mevcut={run.get('status')}).",
@@ -1774,17 +1831,19 @@ async def finalize_payroll_run(
     now_iso = datetime.now(UTC).isoformat()
     result = await db.payroll_runs.update_one(
         {
-            'id': run_id,
-            'tenant_id': current_user.tenant_id,
-            'status': 'draft',  # CAS guard
+            "id": run_id,
+            "tenant_id": current_user.tenant_id,
+            "status": "draft",  # CAS guard
         },
-        {'$set': {
-            'status': 'locked',
-            'finalized_at': now_iso,
-            'finalized_by': getattr(current_user, 'id', None),
-            'updated_at': now_iso,
-            'updated_by': getattr(current_user, 'id', None),
-        }},
+        {
+            "$set": {
+                "status": "locked",
+                "finalized_at": now_iso,
+                "finalized_by": getattr(current_user, "id", None),
+                "updated_at": now_iso,
+                "updated_by": getattr(current_user, "id", None),
+            }
+        },
     )
     if result.modified_count == 0:
         raise HTTPException(
@@ -1793,14 +1852,19 @@ async def finalize_payroll_run(
         )
 
     await _audit(
-        current_user, 'payroll.finalize', 'payroll_run', run_id,
+        current_user,
+        "payroll.finalize",
+        "payroll_run",
+        run_id,
         f"Bordro kilitlendi (ay={run.get('period_month')})",
-        severity='warning',
+        severity="warning",
     )
     return {
-        'success': True, 'run_id': run_id, 'status': 'locked',
-        'period_month': run.get('period_month'),
-        'finalized_at': now_iso,
+        "success": True,
+        "run_id": run_id,
+        "status": "locked",
+        "period_month": run.get("period_month"),
+        "finalized_at": now_iso,
     }
 
 
@@ -1819,11 +1883,12 @@ async def revise_payroll_run(
     fırlatır — revizyon açılamaz (önce mevcut draft kilitlenmeli)."""
     _payroll_lifecycle_gate(current_user, allow_hr_manager=True)
     parent = await db.payroll_runs.find_one(
-        {'id': run_id, 'tenant_id': current_user.tenant_id}, {'_id': 0},
+        {"id": run_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0},
     )
     if not parent:
         raise HTTPException(status_code=404, detail="Üst bordro bulunamadı")
-    if parent.get('status') != 'locked':
+    if parent.get("status") != "locked":
         raise HTTPException(
             status_code=409,
             detail="Revizyon yalnızca kilitlenmiş bordro üzerinden açılabilir.",
@@ -1831,72 +1896,71 @@ async def revise_payroll_run(
 
     extras = [ex.model_dump() for ex in payload.extras]
     period_month, rows, summary = await _build_payroll_v2(
-        current_user.tenant_id, parent['period_month'], extras=extras,
+        current_user.tenant_id,
+        parent["period_month"],
+        extras=extras,
     )
     now_iso = datetime.now(UTC).isoformat()
     new_run_id = str(uuid.uuid4())
     new_doc = {
-        'id': new_run_id,
-        'tenant_id': current_user.tenant_id,
-        'period_month': period_month,
-        'status': 'draft',
-        'rows': rows,
-        'summary': summary,
-        'extras': extras,
-        'note': f"Revizyon: {payload.reason}",
-        'created_at': now_iso,
-        'created_by': getattr(current_user, 'id', None),
-        'updated_at': now_iso,
-        'updated_by': getattr(current_user, 'id', None),
-        'finalized_at': None,
-        'finalized_by': None,
-        'parent_run_id': run_id,
+        "id": new_run_id,
+        "tenant_id": current_user.tenant_id,
+        "period_month": period_month,
+        "status": "draft",
+        "rows": rows,
+        "summary": summary,
+        "extras": extras,
+        "note": f"Revizyon: {payload.reason}",
+        "created_at": now_iso,
+        "created_by": getattr(current_user, "id", None),
+        "updated_at": now_iso,
+        "updated_by": getattr(current_user, "id", None),
+        "finalized_at": None,
+        "finalized_by": None,
+        "parent_run_id": run_id,
     }
     try:
         await db.payroll_runs.insert_one(new_doc)
     except DuplicateKeyError:
         raise HTTPException(
             status_code=409,
-            detail=(
-                "Bu ay için açık bir taslak zaten var — yeni revizyon açabilmek "
-                "için önce mevcut taslağı kilitleyin (tek-aktif-draft kuralı)."
-            ),
+            detail=("Bu ay için açık bir taslak zaten var — yeni revizyon açabilmek için önce mevcut taslağı kilitleyin (tek-aktif-draft kuralı)."),
         )
 
     diff = {
-        'gross_before': parent.get('summary', {}).get('total_gross'),
-        'gross_after': summary['total_gross'],
-        'net_before': parent.get('summary', {}).get('total_net'),
-        'net_after': summary['total_net'],
-        'staff_before': parent.get('summary', {}).get('staff_count'),
-        'staff_after': summary['staff_count'],
+        "gross_before": parent.get("summary", {}).get("total_gross"),
+        "gross_after": summary["total_gross"],
+        "net_before": parent.get("summary", {}).get("total_net"),
+        "net_after": summary["total_net"],
+        "staff_before": parent.get("summary", {}).get("staff_count"),
+        "staff_after": summary["staff_count"],
     }
     rev_doc = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'parent_run_id': run_id,
-        'new_run_id': new_run_id,
-        'period_month': period_month,
-        'reason': payload.reason,
-        'diff': diff,
-        'created_at': now_iso,
-        'created_by': getattr(current_user, 'id', None),
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "parent_run_id": run_id,
+        "new_run_id": new_run_id,
+        "period_month": period_month,
+        "reason": payload.reason,
+        "diff": diff,
+        "created_at": now_iso,
+        "created_by": getattr(current_user, "id", None),
     }
     await db.payroll_revisions.insert_one(rev_doc)
     await _audit(
-        current_user, 'payroll.revision_open', 'payroll_run', run_id,
-        (
-            f"Revizyon açıldı (ay={period_month}, yeni_draft={new_run_id}, "
-            f"sebep={payload.reason[:80]})"
-        ),
-        severity='warning',
+        current_user,
+        "payroll.revision_open",
+        "payroll_run",
+        run_id,
+        (f"Revizyon açıldı (ay={period_month}, yeni_draft={new_run_id}, sebep={payload.reason[:80]})"),
+        severity="warning",
     )
     return {
-        'success': True,
-        'parent_run_id': run_id,
-        'new_run_id': new_run_id,
-        'status': 'draft',
-        'diff': diff,
+        "success": True,
+        "parent_run_id": run_id,
+        "new_run_id": new_run_id,
+        "status": "draft",
+        "diff": diff,
     }
 
 
@@ -1909,76 +1973,85 @@ async def export_payroll_run_xlsx(
     """Bir run'ı Excel olarak indir (line_items detay)."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
+
     run = await db.payroll_runs.find_one(
-        {'id': run_id, 'tenant_id': current_user.tenant_id}, {'_id': 0},
+        {"id": run_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0},
     )
     if not run:
         raise HTTPException(status_code=404, detail="Bordro çalışması bulunamadı")
     resp_run = _payroll_run_to_response(run, current_user)
-    rows = resp_run.get('rows') or []
+    rows = resp_run.get("rows") or []
 
     wb = Workbook()
     ws = wb.active
     ws.title = f"Bordro {run.get('period_month', '')}"
     headers = [
-        'Personel', 'Departman', 'Toplam Saat', 'Mesai Saat',
-        'Brüt', 'SGK+İşsizlik', 'Vergi+Damga',
-        'Ek Kazanç', 'Ek Kesinti', 'Net', 'Para Birimi',
+        "Personel",
+        "Departman",
+        "Toplam Saat",
+        "Mesai Saat",
+        "Brüt",
+        "SGK+İşsizlik",
+        "Vergi+Damga",
+        "Ek Kazanç",
+        "Ek Kesinti",
+        "Net",
+        "Para Birimi",
     ]
-    header_font = Font(bold=True, color='FFFFFF')
-    header_fill = PatternFill(start_color='1F2937', end_color='1F2937', fill_type='solid')
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="1F2937", end_color="1F2937", fill_type="solid")
     for col, h in enumerate(headers, 1):
         c = ws.cell(row=1, column=col, value=h)
         c.font = header_font
         c.fill = header_fill
     for r_idx, row in enumerate(rows, 2):
-        ws.cell(row=r_idx, column=1, value=row.get('staff_name') or row.get('staff_id'))
-        ws.cell(row=r_idx, column=2, value=row.get('department'))
-        ws.cell(row=r_idx, column=3, value=float(row.get('total_hours') or 0))
-        ws.cell(row=r_idx, column=4, value=float(row.get('overtime_hours') or 0))
-        ws.cell(row=r_idx, column=5, value=float(row.get('gross_pay') or 0))
-        ws.cell(row=r_idx, column=6, value=float(
-            (row.get('sgk_employee') or 0) + (row.get('unemployment') or 0)))
-        ws.cell(row=r_idx, column=7, value=float(
-            (row.get('income_tax') or 0) + (row.get('stamp_tax') or 0)))
-        ws.cell(row=r_idx, column=8, value=float(row.get('extra_earnings') or 0))
-        ws.cell(row=r_idx, column=9, value=float(row.get('extra_deductions') or 0))
-        ws.cell(row=r_idx, column=10, value=float(row.get('net_salary') or 0))
-        ws.cell(row=r_idx, column=11, value=row.get('currency') or TR_CURRENCY)
+        ws.cell(row=r_idx, column=1, value=row.get("staff_name") or row.get("staff_id"))
+        ws.cell(row=r_idx, column=2, value=row.get("department"))
+        ws.cell(row=r_idx, column=3, value=float(row.get("total_hours") or 0))
+        ws.cell(row=r_idx, column=4, value=float(row.get("overtime_hours") or 0))
+        ws.cell(row=r_idx, column=5, value=float(row.get("gross_pay") or 0))
+        ws.cell(row=r_idx, column=6, value=float((row.get("sgk_employee") or 0) + (row.get("unemployment") or 0)))
+        ws.cell(row=r_idx, column=7, value=float((row.get("income_tax") or 0) + (row.get("stamp_tax") or 0)))
+        ws.cell(row=r_idx, column=8, value=float(row.get("extra_earnings") or 0))
+        ws.cell(row=r_idx, column=9, value=float(row.get("extra_deductions") or 0))
+        ws.cell(row=r_idx, column=10, value=float(row.get("net_salary") or 0))
+        ws.cell(row=r_idx, column=11, value=row.get("currency") or TR_CURRENCY)
     for col_idx in range(1, len(headers) + 1):
         ws.column_dimensions[chr(64 + col_idx)].width = 16
 
     # Detail sheet: line_items per staff
-    ws2 = wb.create_sheet('Kalemler')
-    ws2_headers = ['Personel', 'Kalem', 'Açıklama', 'Saat', 'Tarife', 'Tutar', 'Yön', 'Not']
+    ws2 = wb.create_sheet("Kalemler")
+    ws2_headers = ["Personel", "Kalem", "Açıklama", "Saat", "Tarife", "Tutar", "Yön", "Not"]
     for col, h in enumerate(ws2_headers, 1):
         c = ws2.cell(row=1, column=col, value=h)
         c.font = header_font
         c.fill = header_fill
     row_cursor = 2
     for row in rows:
-        name = row.get('staff_name') or row.get('staff_id')
-        for li in row.get('line_items') or []:
+        name = row.get("staff_name") or row.get("staff_id")
+        for li in row.get("line_items") or []:
             ws2.cell(row=row_cursor, column=1, value=name)
-            ws2.cell(row=row_cursor, column=2, value=li.get('kind'))
-            ws2.cell(row=row_cursor, column=3, value=li.get('label'))
-            ws2.cell(row=row_cursor, column=4, value=li.get('hours'))
-            ws2.cell(row=row_cursor, column=5, value=li.get('rate'))
-            ws2.cell(row=row_cursor, column=6, value=li.get('amount'))
-            ws2.cell(row=row_cursor, column=7, value=li.get('direction'))
-            ws2.cell(row=row_cursor, column=8, value=li.get('note'))
+            ws2.cell(row=row_cursor, column=2, value=li.get("kind"))
+            ws2.cell(row=row_cursor, column=3, value=li.get("label"))
+            ws2.cell(row=row_cursor, column=4, value=li.get("hours"))
+            ws2.cell(row=row_cursor, column=5, value=li.get("rate"))
+            ws2.cell(row=row_cursor, column=6, value=li.get("amount"))
+            ws2.cell(row=row_cursor, column=7, value=li.get("direction"))
+            ws2.cell(row=row_cursor, column=8, value=li.get("note"))
             row_cursor += 1
     for col_idx in range(1, len(ws2_headers) + 1):
         ws2.column_dimensions[chr(64 + col_idx)].width = 18
 
     resp = _xlsx_stream(wb)
-    resp.headers['Content-Disposition'] = (
-        f'attachment; filename="payroll_run_{run_id}.xlsx"'
-    )
+    resp.headers["Content-Disposition"] = f'attachment; filename="payroll_run_{run_id}.xlsx"'
     await _audit(
-        current_user, 'payroll.export_xlsx', 'payroll_run', run_id,
+        current_user,
+        "payroll.export_xlsx",
+        "payroll_run",
+        run_id,
         f"Bordro XLSX indirildi (run_id={run_id})",
-        severity='info',
+        severity="info",
     )
     return resp
 
@@ -1987,15 +2060,24 @@ async def export_payroll_run_xlsx(
 # rolleri kendi bordrosuna erişebilir; agency/guest/bilinmeyen rol 403.
 # UserRole enum tabanlı — yeni eklenen roller buraya bilinçli olarak
 # dahil edilmedikçe otomatik olarak reddedilir.
-_PAYROLL_ME_ALLOWED_ROLES = frozenset({
-    'super_admin', 'admin', 'supervisor', 'front_desk', 'housekeeping',
-    'sales', 'finance', 'procurement', 'staff',
-})
+_PAYROLL_ME_ALLOWED_ROLES = frozenset(
+    {
+        "super_admin",
+        "admin",
+        "supervisor",
+        "front_desk",
+        "housekeeping",
+        "sales",
+        "finance",
+        "procurement",
+        "staff",
+    }
+)
 
 
 @router.get("/hr/payroll/me")
 async def get_my_payroll(
-    month: str | None = Query(None, pattern=r'^\d{4}-\d{2}$'),
+    month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$"),
     current_user: User = Depends(get_current_user),
 ):
     """Self-service: kullanıcının kendi locked bordro satırı. Yalnız `locked`
@@ -2007,36 +2089,36 @@ async def get_my_payroll(
     açılsa bile object-level self-match (`staff_id`/e-posta) ile yalnız
     kendi satırı döner.
     """
-    role_lc = (getattr(current_user, 'role', '') or '').lower()
+    role_lc = (getattr(current_user, "role", "") or "").lower()
     if role_lc not in _PAYROLL_ME_ALLOWED_ROLES:
         raise HTTPException(
             status_code=403,
             detail="Bordro self-service yalnız iç staff için açıktır.",
         )
-    self_id = str(getattr(current_user, 'id', '') or '')
-    self_email = (str(getattr(current_user, 'email', '') or '')).strip().lower()
+    self_id = str(getattr(current_user, "id", "") or "")
+    self_email = (str(getattr(current_user, "email", "") or "")).strip().lower()
     q: dict[str, Any] = {
-        'tenant_id': current_user.tenant_id,
-        'status': 'locked',
+        "tenant_id": current_user.tenant_id,
+        "status": "locked",
     }
     if month:
-        q['period_month'] = month
-    runs = await db.payroll_runs.find(q, {'_id': 0}).sort('period_month', -1).to_list(24)
+        q["period_month"] = month
+    runs = await db.payroll_runs.find(q, {"_id": 0}).sort("period_month", -1).to_list(24)
     my_rows: list[dict] = []
     for run in runs:
-        for r in run.get('rows') or []:
-            rid = str(r.get('staff_id') or '')
-            remail = (str(r.get('email') or '')).strip().lower()
-            if (self_id and rid == self_id) or (
-                self_email and remail and remail == self_email
-            ):
-                my_rows.append({
-                    'period_month': run['period_month'],
-                    'run_id': run['id'],
-                    'finalized_at': run.get('finalized_at'),
-                    **r,
-                })
-    return {'items': my_rows, 'count': len(my_rows)}
+        for r in run.get("rows") or []:
+            rid = str(r.get("staff_id") or "")
+            remail = (str(r.get("email") or "")).strip().lower()
+            if (self_id and rid == self_id) or (self_email and remail and remail == self_email):
+                my_rows.append(
+                    {
+                        "period_month": run["period_month"],
+                        "run_id": run["id"],
+                        "finalized_at": run.get("finalized_at"),
+                        **r,
+                    }
+                )
+    return {"items": my_rows, "count": len(my_rows)}
 
 
 @router.get("/hr/payroll/{month}/dept-summary")
@@ -2051,42 +2133,55 @@ async def get_payroll_dept_summary(
 
     Tüm runlar değil, en güncel LOCKED runlardan; locked yoksa son draft'tan
     (manager planlama amaçlı). Tek bir periyot için."""
-    runs = await db.payroll_runs.find(
-        {'tenant_id': current_user.tenant_id, 'period_month': month},
-        {'_id': 0},
-    ).sort('finalized_at', -1).to_list(20)
-    chosen = next((r for r in runs if r.get('status') == 'locked'), None)
+    runs = (
+        await db.payroll_runs.find(
+            {"tenant_id": current_user.tenant_id, "period_month": month},
+            {"_id": 0},
+        )
+        .sort("finalized_at", -1)
+        .to_list(20)
+    )
+    chosen = next((r for r in runs if r.get("status") == "locked"), None)
     if chosen is None:
-        chosen = next((r for r in runs if r.get('status') == 'draft'), None)
+        chosen = next((r for r in runs if r.get("status") == "draft"), None)
     if chosen is None:
-        return {'period_month': month, 'departments': [], 'source': 'none'}
+        return {"period_month": month, "departments": [], "source": "none"}
 
     assigned = _user_assigned_department(current_user)
     by_dept: dict[str, dict] = {}
-    for r in chosen.get('rows') or []:
-        dept = (r.get('department') or 'unknown').strip().lower() or 'unknown'
-        if assigned and dept != assigned.strip().lower() and not _user_has_hr_op(
-            current_user, 'view_hr_payroll',
+    for r in chosen.get("rows") or []:
+        dept = (r.get("department") or "unknown").strip().lower() or "unknown"
+        if (
+            assigned
+            and dept != assigned.strip().lower()
+            and not _user_has_hr_op(
+                current_user,
+                "view_hr_payroll",
+            )
         ):
             continue
-        agg = by_dept.setdefault(dept, {
-            'department': dept,
-            'staff_count': 0,
-            'total_hours': 0.0,
-            'overtime_hours': 0.0,
-            'sgk_days': 0,
-        })
-        agg['staff_count'] += 1
-        agg['total_hours'] = round(agg['total_hours'] + (r.get('total_hours') or 0), 2)
-        agg['overtime_hours'] = round(
-            agg['overtime_hours'] + (r.get('overtime_hours') or 0), 2,
+        agg = by_dept.setdefault(
+            dept,
+            {
+                "department": dept,
+                "staff_count": 0,
+                "total_hours": 0.0,
+                "overtime_hours": 0.0,
+                "sgk_days": 0,
+            },
         )
-        agg['sgk_days'] += int(r.get('sgk_days') or 0)
+        agg["staff_count"] += 1
+        agg["total_hours"] = round(agg["total_hours"] + (r.get("total_hours") or 0), 2)
+        agg["overtime_hours"] = round(
+            agg["overtime_hours"] + (r.get("overtime_hours") or 0),
+            2,
+        )
+        agg["sgk_days"] += int(r.get("sgk_days") or 0)
     return {
-        'period_month': month,
-        'run_id': chosen['id'],
-        'source': chosen.get('status'),
-        'departments': list(by_dept.values()),
+        "period_month": month,
+        "run_id": chosen["id"],
+        "source": chosen.get("status"),
+        "departments": list(by_dept.values()),
     }
 
 
@@ -2108,7 +2203,9 @@ async def get_payroll(
     """
     # Dry-run compute (extras yok — pure baseline)
     period_month, rows, summary = await _build_payroll_v2(
-        current_user.tenant_id, month, extras=[],
+        current_user.tenant_id,
+        month,
+        extras=[],
     )
 
     # Dept-scope (Task #264 post-review round 2): department-manager
@@ -2123,23 +2220,33 @@ async def get_payroll(
         assigned
         and not _user_has_hr_op(current_user, "view_hr_payroll")
         and not _user_has_hr_op(current_user, "manage_hr")
-        and (getattr(current_user, "role", "") or "").lower() not in (
-            "admin", "super_admin", "finance",
+        and (getattr(current_user, "role", "") or "").lower()
+        not in (
+            "admin",
+            "super_admin",
+            "finance",
         )
     )
 
     if is_dept_only:
         a_lc = assigned.strip().lower()  # type: ignore[union-attr]
-        rows = [
-            r for r in rows
-            if (r.get('department') or '').strip().lower() == a_lc
-        ]
+        rows = [r for r in rows if (r.get("department") or "").strip().lower() == a_lc]
         # Monetary alanları strip — yalnız days/hours metrikleri kalsın.
         _AMOUNT_FIELDS = (
-            'gross_pay', 'net_salary', 'sgk_employee', 'unemployment',
-            'income_tax', 'stamp_tax', 'total_deductions', 'tax_deductions',
-            'extra_deductions', 'extra_earnings', 'hourly_rate',
-            'overtime_rate', 'base_salary', 'line_items',
+            "gross_pay",
+            "net_salary",
+            "sgk_employee",
+            "unemployment",
+            "income_tax",
+            "stamp_tax",
+            "total_deductions",
+            "tax_deductions",
+            "extra_deductions",
+            "extra_earnings",
+            "hourly_rate",
+            "overtime_rate",
+            "base_salary",
+            "line_items",
         )
         scoped_rows: list[dict] = []
         for r in rows:
@@ -2148,76 +2255,72 @@ async def get_payroll(
         rows = scoped_rows
         # Summary'i scoped rows üzerinden yeniden hesapla — no-amount.
         summary = {
-            'staff_count': len(rows),
-            'total_hours': round(sum(r.get('total_hours', 0) for r in rows), 2),
-            'overtime_hours': round(
-                sum(r.get('overtime_hours', 0) for r in rows), 2,
+            "staff_count": len(rows),
+            "total_hours": round(sum(r.get("total_hours", 0) for r in rows), 2),
+            "overtime_hours": round(
+                sum(r.get("overtime_hours", 0) for r in rows),
+                2,
             ),
-            'total_leave_days_paid': sum(
-                r.get('leave_days_paid', 0) for r in rows
-            ),
-            'total_leave_days_unpaid': sum(
-                r.get('leave_days_unpaid', 0) for r in rows
-            ),
-            'total_sgk_days': sum(r.get('sgk_days', 0) for r in rows),
-            'scope': 'department_only',
-            'department': assigned,
+            "total_leave_days_paid": sum(r.get("leave_days_paid", 0) for r in rows),
+            "total_leave_days_unpaid": sum(r.get("leave_days_unpaid", 0) for r in rows),
+            "total_sgk_days": sum(r.get("sgk_days", 0) for r in rows),
+            "scope": "department_only",
+            "department": assigned,
         }
 
     # PII mask satırlar üzerinde
-    self_id = str(getattr(current_user, 'id', '') or '')
-    self_email = str(getattr(current_user, 'email', '') or '')
-    masked_rows = [
-        _mask_hr_pii(r, current_user, self_id=self_id, self_email=self_email) or r
-        for r in rows
-    ]
+    self_id = str(getattr(current_user, "id", "") or "")
+    self_email = str(getattr(current_user, "email", "") or "")
+    masked_rows = [_mask_hr_pii(r, current_user, self_id=self_id, self_email=self_email) or r for r in rows]
 
     runs_cursor = db.payroll_runs.find(
-        {'tenant_id': current_user.tenant_id, 'period_month': month},
-        {'_id': 0, 'rows': 0},
-    ).sort('created_at', -1)
+        {"tenant_id": current_user.tenant_id, "period_month": month},
+        {"_id": 0, "rows": 0},
+    ).sort("created_at", -1)
     runs = await runs_cursor.to_list(50)
     if is_dept_only:
         # Run özetlerinden tutar bilgilerini strip.
         for r in runs:
-            s = r.get('summary')
+            s = r.get("summary")
             if isinstance(s, dict):
                 for k in (
-                    'total_gross', 'total_net', 'total_extra_earnings',
-                    'total_extra_deductions',
+                    "total_gross",
+                    "total_net",
+                    "total_extra_earnings",
+                    "total_extra_deductions",
                 ):
                     s.pop(k, None)
-    latest_locked = next((r for r in runs if r.get('status') == 'locked'), None)
-    latest_draft = next((r for r in runs if r.get('status') == 'draft'), None)
+    latest_locked = next((r for r in runs if r.get("status") == "locked"), None)
+    latest_draft = next((r for r in runs if r.get("status") == "draft"), None)
 
     # Geri uyum: legacy finalize edilmiş `payroll_records` — dept-only için
     # legacy satırlar gizlenir (no-amount doktrin).
     legacy: list[dict] = []
     if not is_dept_only:
         legacy = await db.payroll_records.find(
-            {'tenant_id': current_user.tenant_id, 'period_month': month},
-            {'_id': 0},
+            {"tenant_id": current_user.tenant_id, "period_month": month},
+            {"_id": 0},
         ).to_list(500)
 
     payload: dict[str, Any] = {
-        'is_dry_run': True,
-        'period_month': period_month,
-        'payroll': masked_rows,
-        'summary': summary,
-        'staff_count': summary.get('staff_count'),
-        'currency': TR_CURRENCY,
-        'runs': runs,
-        'latest_locked_run': latest_locked,
-        'latest_draft_run': latest_draft,
-        'legacy_payroll_records': legacy,
-        'legacy_count': len(legacy),
+        "is_dry_run": True,
+        "period_month": period_month,
+        "payroll": masked_rows,
+        "summary": summary,
+        "staff_count": summary.get("staff_count"),
+        "currency": TR_CURRENCY,
+        "runs": runs,
+        "latest_locked_run": latest_locked,
+        "latest_draft_run": latest_draft,
+        "legacy_payroll_records": legacy,
+        "legacy_count": len(legacy),
     }
     if not is_dept_only:
-        payload['total_gross_pay'] = summary.get('total_gross')
-        payload['total_net_pay'] = summary.get('total_net')
+        payload["total_gross_pay"] = summary.get("total_gross")
+        payload["total_net_pay"] = summary.get("total_net")
     else:
-        payload['scope'] = 'department_only'
-        payload['department'] = assigned
+        payload["scope"] = "department_only"
+        payload["department"] = assigned
 
     # Backward-compat (F8D-v2 spec 33 contract — payroll numeric typing):
     # top-level `count`/`total_gross`/`total_net` numeric fields. Yeni v2
@@ -2225,17 +2328,18 @@ async def get_payroll(
     # ancak stress contract + dış tüketiciler (legacy export adapters) eski
     # adlandırmaya bağlı. Numeric type guarantee (her zaman number, hiç None):
     # dept-only scope'ta totals=0 (gizli), aksi halde summary'den okunur.
-    payload['count'] = int(summary.get('staff_count') or 0)
+    payload["count"] = int(summary.get("staff_count") or 0)
     if not is_dept_only:
-        payload['total_gross'] = float(summary.get('total_gross') or 0)
-        payload['total_net'] = float(summary.get('total_net') or 0)
+        payload["total_gross"] = float(summary.get("total_gross") or 0)
+        payload["total_net"] = float(summary.get("total_net") or 0)
     else:
-        payload['total_gross'] = 0.0
-        payload['total_net'] = 0.0
+        payload["total_gross"] = 0.0
+        payload["total_net"] = 0.0
     return payload
 
 
 # ============= Performance =============
+
 
 @router.post("/hr/performance")
 async def create_performance_review(
@@ -2254,11 +2358,14 @@ async def create_performance_review(
     # `period` boş ise ad-hoc review sayılır (rapor dönemi yok) → guard
     # uygulanmaz. Aksi halde (tenant_id, staff_id, period) tekil olmalı.
     if payload.period:
-        existing = await db.performance_reviews.find_one({
-            'tenant_id': current_user.tenant_id,
-            'staff_id': payload.staff_id,
-            'period': payload.period,
-        }, {'_id': 0, 'id': 1})
+        existing = await db.performance_reviews.find_one(
+            {
+                "tenant_id": current_user.tenant_id,
+                "staff_id": payload.staff_id,
+                "period": payload.period,
+            },
+            {"_id": 0, "id": 1},
+        )
         if existing:
             raise HTTPException(
                 status_code=409,
@@ -2266,23 +2373,23 @@ async def create_performance_review(
             )
 
     review = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'staff_id': payload.staff_id,
-        'staff_name': staff.get('name'),
-        'reviewer_id': getattr(current_user, 'id', None),
-        'reviewer_name': payload.reviewer_name,
-        'period': payload.period,
-        'overall_score': payload.overall_score,
-        'goals': payload.goals,
-        'strengths': payload.strengths,
-        'improvement_areas': payload.improvement_areas,
-        'template_id': payload.template_id,
-        'competency_scores': payload.competency_scores or {},
-        'reviewed_at': datetime.now(UTC).isoformat(),
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "staff_id": payload.staff_id,
+        "staff_name": staff.get("name"),
+        "reviewer_id": getattr(current_user, "id", None),
+        "reviewer_name": payload.reviewer_name,
+        "period": payload.period,
+        "overall_score": payload.overall_score,
+        "goals": payload.goals,
+        "strengths": payload.strengths,
+        "improvement_areas": payload.improvement_areas,
+        "template_id": payload.template_id,
+        "competency_scores": payload.competency_scores or {},
+        "reviewed_at": datetime.now(UTC).isoformat(),
     }
     await db.performance_reviews.insert_one(review)
-    return {'success': True, 'review_id': review['id']}
+    return {"success": True, "review_id": review["id"]}
 
 
 @router.get("/hr/performance")
@@ -2298,15 +2405,16 @@ async def list_performance_reviews(
     (manage_hr) görebilir. Finance (`view_hr`) ve diğer departman rolleri
     (front_desk/housekeeping/sales) erişemez — cross-department leakage guard.
     """
-    query: dict[str, Any] = {'tenant_id': current_user.tenant_id}
+    query: dict[str, Any] = {"tenant_id": current_user.tenant_id}
     if staff_id:
-        query['staff_id'] = staff_id
-    items = await db.performance_reviews.find(query, {'_id': 0}).sort('reviewed_at', -1).to_list(500)
-    avg = round(sum(i.get('overall_score', 0) for i in items) / len(items), 2) if items else 0
-    return {'items': items, 'total': len(items), 'avg_score': avg}
+        query["staff_id"] = staff_id
+    items = await db.performance_reviews.find(query, {"_id": 0}).sort("reviewed_at", -1).to_list(500)
+    avg = round(sum(i.get("overall_score", 0) for i in items) / len(items), 2) if items else 0
+    return {"items": items, "total": len(items), "avg_score": avg}
 
 
 # ============= Recruitment =============
+
 
 @router.post("/hr/job-posting")
 async def create_job_posting(
@@ -2319,55 +2427,51 @@ async def create_job_posting(
     - public_posting → yalnızca HR yetkisi ile, doğrudan status=active.
     """
     # public_posting için ek yetki gerekir; internal_request herkese açık
-    if payload.request_type == 'public_posting':
-        role = (getattr(current_user, 'role', None) or '').lower()
-        if role not in {'admin', 'supervisor', 'finance'}:
-            raise HTTPException(
-                status_code=403,
-                detail="Doğrudan ilan yayınlamak için HR yöneticisi yetkisi gerekir"
-            )
-        initial_status = 'active'
+    if payload.request_type == "public_posting":
+        role = (getattr(current_user, "role", None) or "").lower()
+        if role not in {"admin", "supervisor", "finance"}:
+            raise HTTPException(status_code=403, detail="Doğrudan ilan yayınlamak için HR yöneticisi yetkisi gerekir")
+        initial_status = "active"
     else:
-        initial_status = 'pending_approval'
+        initial_status = "pending_approval"
 
     job = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'title': payload.title,
-        'department': payload.department,
-        'description': payload.description,
-        'employment_type': payload.employment_type,
-        'location': payload.location,
-        'salary_range': payload.salary_range,
-        'request_type': payload.request_type,
-        'headcount_needed': payload.headcount_needed,
-        'urgency': payload.urgency,
-        'justification': payload.justification,
-        'needed_by': payload.needed_by,
-        'status': initial_status,
-        'applicants_count': 0,
-        'created_by': getattr(current_user, 'id', None),
-        'created_by_name': getattr(current_user, 'name', None) or getattr(current_user, 'email', None),
-        'created_at': datetime.now(UTC).isoformat(),
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "title": payload.title,
+        "department": payload.department,
+        "description": payload.description,
+        "employment_type": payload.employment_type,
+        "location": payload.location,
+        "salary_range": payload.salary_range,
+        "request_type": payload.request_type,
+        "headcount_needed": payload.headcount_needed,
+        "urgency": payload.urgency,
+        "justification": payload.justification,
+        "needed_by": payload.needed_by,
+        "status": initial_status,
+        "applicants_count": 0,
+        "created_by": getattr(current_user, "id", None),
+        "created_by_name": getattr(current_user, "name", None) or getattr(current_user, "email", None),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.job_postings.insert_one(job)
 
     # Yöneticiye bildirim — onay gerektiren talepler için
-    if initial_status == 'pending_approval':
+    if initial_status == "pending_approval":
         await _notify_hr_managers(
             current_user.tenant_id,
-            kind='hr_request',
-            title='Yeni personel talebi',
+            kind="hr_request",
+            title="Yeni personel talebi",
             body=(
                 f"{job.get('created_by_name') or 'Bir müdür'} • "
-                f"{payload.department} • {payload.title} ({payload.headcount_needed} kişi)"
-                + (f" • aciliyet: {payload.urgency}" if payload.urgency != 'normal' else '')
+                f"{payload.department} • {payload.title} ({payload.headcount_needed} kişi)" + (f" • aciliyet: {payload.urgency}" if payload.urgency != "normal" else "")
             ),
-            link=f'/hr?tab=recruitment&job={job["id"]}',
-            ref_id=job['id'],
+            link=f"/hr?tab=recruitment&job={job['id']}",
+            ref_id=job["id"],
         )
 
-    return {'success': True, 'job_id': job['id'], 'status': initial_status}
+    return {"success": True, "job_id": job["id"], "status": initial_status}
 
 
 @router.post("/hr/job-posting/{job_id}/approve")
@@ -2377,33 +2481,35 @@ async def approve_job_posting(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
-    job = await db.job_postings.find_one({'tenant_id': current_user.tenant_id, 'id': job_id})
+    job = await db.job_postings.find_one({"tenant_id": current_user.tenant_id, "id": job_id})
     if not job:
         raise HTTPException(status_code=404, detail="Talep bulunamadı")
-    if job.get('status') not in ('pending_approval', None):
+    if job.get("status") not in ("pending_approval", None):
         raise HTTPException(status_code=400, detail="Bu talep zaten karara bağlanmış")
     await db.job_postings.update_one(
-        {'tenant_id': current_user.tenant_id, 'id': job_id},
-        {'$set': {
-            'status': 'active',
-            'approved_by': getattr(current_user, 'id', None),
-            'approved_by_name': getattr(current_user, 'name', None),
-            'approved_at': datetime.now(UTC).isoformat(),
-            'decision_note': payload.note,
-        }}
+        {"tenant_id": current_user.tenant_id, "id": job_id},
+        {
+            "$set": {
+                "status": "active",
+                "approved_by": getattr(current_user, "id", None),
+                "approved_by_name": getattr(current_user, "name", None),
+                "approved_at": datetime.now(UTC).isoformat(),
+                "decision_note": payload.note,
+            }
+        },
     )
     # Talep sahibine bildirim
-    if job.get('created_by'):
+    if job.get("created_by"):
         await _notify_user(
             current_user.tenant_id,
-            user_id=job['created_by'],
-            kind='hr_request_approved',
-            title='Personel talebiniz onaylandı',
+            user_id=job["created_by"],
+            kind="hr_request_approved",
+            title="Personel talebiniz onaylandı",
             body=f"{job.get('title')} • aday eklemeye açıldı",
-            link=f'/hr?tab=recruitment&job={job_id}',
+            link=f"/hr?tab=recruitment&job={job_id}",
             ref_id=job_id,
         )
-    return {'success': True, 'status': 'active'}
+    return {"success": True, "status": "active"}
 
 
 @router.post("/hr/job-posting/{job_id}/reject")
@@ -2413,29 +2519,31 @@ async def reject_job_posting(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
-    job = await db.job_postings.find_one({'tenant_id': current_user.tenant_id, 'id': job_id})
+    job = await db.job_postings.find_one({"tenant_id": current_user.tenant_id, "id": job_id})
     if not job:
         raise HTTPException(status_code=404, detail="Talep bulunamadı")
     await db.job_postings.update_one(
-        {'tenant_id': current_user.tenant_id, 'id': job_id},
-        {'$set': {
-            'status': 'rejected',
-            'rejected_by': getattr(current_user, 'id', None),
-            'rejected_at': datetime.now(UTC).isoformat(),
-            'decision_note': payload.note,
-        }}
+        {"tenant_id": current_user.tenant_id, "id": job_id},
+        {
+            "$set": {
+                "status": "rejected",
+                "rejected_by": getattr(current_user, "id", None),
+                "rejected_at": datetime.now(UTC).isoformat(),
+                "decision_note": payload.note,
+            }
+        },
     )
-    if job.get('created_by'):
+    if job.get("created_by"):
         await _notify_user(
             current_user.tenant_id,
-            user_id=job['created_by'],
-            kind='hr_request_rejected',
-            title='Personel talebiniz reddedildi',
-            body=(payload.note or job.get('title') or '—'),
-            link=f'/hr?tab=recruitment&job={job_id}',
+            user_id=job["created_by"],
+            kind="hr_request_rejected",
+            title="Personel talebiniz reddedildi",
+            body=(payload.note or job.get("title") or "—"),
+            link=f"/hr?tab=recruitment&job={job_id}",
             ref_id=job_id,
         )
-    return {'success': True, 'status': 'rejected'}
+    return {"success": True, "status": "rejected"}
 
 
 @router.get("/hr/job-postings")
@@ -2443,11 +2551,11 @@ async def list_job_postings(
     status: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
-    query: dict[str, Any] = {'tenant_id': current_user.tenant_id}
+    query: dict[str, Any] = {"tenant_id": current_user.tenant_id}
     if status:
-        query['status'] = status
-    items = await db.job_postings.find(query, {'_id': 0}).sort('created_at', -1).to_list(500)
-    return {'items': items, 'total': len(items)}
+        query["status"] = status
+    items = await db.job_postings.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return {"items": items, "total": len(items)}
 
 
 @router.post("/hr/job-posting/{job_id}/close")
@@ -2456,117 +2564,109 @@ async def close_job_posting(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
-    res = await db.job_postings.update_one(
-        {'tenant_id': current_user.tenant_id, 'id': job_id},
-        {'$set': {'status': 'closed', 'closed_at': datetime.now(UTC).isoformat()}}
-    )
+    res = await db.job_postings.update_one({"tenant_id": current_user.tenant_id, "id": job_id}, {"$set": {"status": "closed", "closed_at": datetime.now(UTC).isoformat()}})
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="İş ilanı bulunamadı")
-    return {'success': True}
+    return {"success": True}
 
 
 # ============= F&B COMPLETE SUITE =============
 
+
 async def _get_ingredient_map(tenant_id: str):
-    ingredients = await db.ingredients.find({'tenant_id': tenant_id}, {'_id': 0}).to_list(1000)
-    return {ing['id']: ing for ing in ingredients}, ingredients
+    ingredients = await db.ingredients.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
+    return {ing["id"]: ing for ing in ingredients}, ingredients
 
 
 def _enrich_recipe_cost(recipe: dict, ingredient_map: dict[str, dict]):
     enriched_lines = []
     total_cost = 0
-    for line in recipe.get('ingredients', []):
-        ingredient = ingredient_map.get(line.get('ingredient_id'))
-        unit_cost = line.get('unit_cost') or (ingredient.get('unit_cost') if ingredient else 0)
-        quantity = line.get('quantity', 1)
-        waste_pct = line.get('waste_pct', 0)
+    for line in recipe.get("ingredients", []):
+        ingredient = ingredient_map.get(line.get("ingredient_id"))
+        unit_cost = line.get("unit_cost") or (ingredient.get("unit_cost") if ingredient else 0)
+        quantity = line.get("quantity", 1)
+        waste_pct = line.get("waste_pct", 0)
         line_cost = unit_cost * quantity * (1 + waste_pct / 100)
         total_cost += line_cost
 
-        enriched_lines.append({
-            'ingredient_id': line.get('ingredient_id'),
-            'ingredient_name': line.get('ingredient_name') or (ingredient.get('name') if ingredient else 'Unknown'),
-            'unit': line.get('unit') or (ingredient.get('unit') if ingredient else ''),
-            'quantity': quantity,
-            'unit_cost': round(unit_cost, 2),
-            'waste_pct': waste_pct,
-            'line_cost': round(line_cost, 2),
-            'supplier': ingredient.get('supplier') if ingredient else None
-        })
+        enriched_lines.append(
+            {
+                "ingredient_id": line.get("ingredient_id"),
+                "ingredient_name": line.get("ingredient_name") or (ingredient.get("name") if ingredient else "Unknown"),
+                "unit": line.get("unit") or (ingredient.get("unit") if ingredient else ""),
+                "quantity": quantity,
+                "unit_cost": round(unit_cost, 2),
+                "waste_pct": waste_pct,
+                "line_cost": round(line_cost, 2),
+                "supplier": ingredient.get("supplier") if ingredient else None,
+            }
+        )
 
-    recipe['cost_breakdown'] = enriched_lines
-    recipe['total_cost'] = round(total_cost, 2)
-    selling_price = recipe.get('selling_price', 0)
-    recipe['gp_percentage'] = round(((selling_price - total_cost) / selling_price * 100), 1) if selling_price else 0
-    recipe['ingredient_count'] = len(enriched_lines)
+    recipe["cost_breakdown"] = enriched_lines
+    recipe["total_cost"] = round(total_cost, 2)
+    selling_price = recipe.get("selling_price", 0)
+    recipe["gp_percentage"] = round(((selling_price - total_cost) / selling_price * 100), 1) if selling_price else 0
+    recipe["ingredient_count"] = len(enriched_lines)
     return recipe
 
 
 @router.post("/fnb/recipes")
-async def create_recipe(recipe_data: dict, current_user: User = Depends(get_current_user),
+async def create_recipe(
+    recipe_data: dict,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v99 DW
 ):
     ingredient_map, _ = await _get_ingredient_map(current_user.tenant_id)
 
     recipe = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'dish_name': recipe_data.get('recipe_name') or recipe_data.get('dish_name', 'Unnamed Recipe'),
-        'category': recipe_data.get('category', 'general'),
-        'portion_size': recipe_data.get('portion_size', '1 portion'),
-        'preparation_time': recipe_data.get('preparation_time', 15),
-        'ingredients': recipe_data.get('ingredients', []),
-        'selling_price': recipe_data.get('selling_price', 0),
-        'active': True,
-        'created_at': datetime.now(UTC).isoformat()
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "dish_name": recipe_data.get("recipe_name") or recipe_data.get("dish_name", "Unnamed Recipe"),
+        "category": recipe_data.get("category", "general"),
+        "portion_size": recipe_data.get("portion_size", "1 portion"),
+        "preparation_time": recipe_data.get("preparation_time", 15),
+        "ingredients": recipe_data.get("ingredients", []),
+        "selling_price": recipe_data.get("selling_price", 0),
+        "active": True,
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
     recipe = _enrich_recipe_cost(recipe, ingredient_map)
     await db.recipes.insert_one(recipe)
 
-    return {
-        'success': True,
-        'recipe_id': recipe['id'],
-        'gp_percentage': recipe['gp_percentage'],
-        'total_cost': recipe['total_cost']
-    }
+    return {"success": True, "recipe_id": recipe["id"], "gp_percentage": recipe["gp_percentage"], "total_cost": recipe["total_cost"]}
 
 
 @router.get("/fnb/recipes")
 async def get_recipes(current_user: User = Depends(get_current_user)):
     ingredient_map, _ = await _get_ingredient_map(current_user.tenant_id)
-    recipes = await db.recipes.find(
-        {'tenant_id': current_user.tenant_id, 'active': True},
-        {'_id': 0}
-    ).sort('dish_name', 1).to_list(200)
+    recipes = await db.recipes.find({"tenant_id": current_user.tenant_id, "active": True}, {"_id": 0}).sort("dish_name", 1).to_list(200)
 
     enriched = [_enrich_recipe_cost(dict(recipe), ingredient_map) for recipe in recipes]
-    avg_gp = sum([r.get('gp_percentage', 0) for r in enriched]) / len(enriched) if enriched else 0
-    avg_food_cost = sum([r.get('total_cost', 0) for r in enriched]) / len(enriched) if enriched else 0
+    avg_gp = sum([r.get("gp_percentage", 0) for r in enriched]) / len(enriched) if enriched else 0
+    avg_food_cost = sum([r.get("total_cost", 0) for r in enriched]) / len(enriched) if enriched else 0
 
-    return {
-        'recipes': enriched,
-        'total': len(enriched),
-        'avg_gp': round(avg_gp, 1),
-        'avg_food_cost': round(avg_food_cost, 2)
-    }
+    return {"recipes": enriched, "total": len(enriched), "avg_gp": round(avg_gp, 1), "avg_food_cost": round(avg_food_cost, 2)}
 
 
 @router.get("/fnb/recipes/{recipe_id}")
 async def get_recipe(recipe_id: str, current_user: User = Depends(get_current_user)):
-    recipe = await db.recipes.find_one({'tenant_id': current_user.tenant_id, 'id': recipe_id}, {'_id': 0})
+    recipe = await db.recipes.find_one({"tenant_id": current_user.tenant_id, "id": recipe_id}, {"_id": 0})
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
     ingredient_map, _ = await _get_ingredient_map(current_user.tenant_id)
     recipe = _enrich_recipe_cost(recipe, ingredient_map)
-    return {'recipe': recipe}
+    return {"recipe": recipe}
 
 
 @router.put("/fnb/recipes/{recipe_id}")
-async def update_recipe(recipe_id: str, recipe_data: dict, current_user: User = Depends(get_current_user),
+async def update_recipe(
+    recipe_id: str,
+    recipe_data: dict,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v96 DW
 ):
-    recipe = await db.recipes.find_one({'tenant_id': current_user.tenant_id, 'id': recipe_id})
+    recipe = await db.recipes.find_one({"tenant_id": current_user.tenant_id, "id": recipe_id})
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
@@ -2574,96 +2674,85 @@ async def update_recipe(recipe_id: str, recipe_data: dict, current_user: User = 
     ingredient_map, _ = await _get_ingredient_map(current_user.tenant_id)
     updated = _enrich_recipe_cost(updated, ingredient_map)
 
-    await db.recipes.update_one(
-        {'tenant_id': current_user.tenant_id, 'id': recipe_id},
-        {'$set': updated}
-    )
-    updated.pop('_id', None)
-    return {'success': True, 'recipe': updated}
+    await db.recipes.update_one({"tenant_id": current_user.tenant_id, "id": recipe_id}, {"$set": updated})
+    updated.pop("_id", None)
+    return {"success": True, "recipe": updated}
+
 
 @router.post("/fnb/beo")
-async def create_beo(beo_data: dict, current_user: User = Depends(get_current_user),
+async def create_beo(
+    beo_data: dict,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v99 DW
 ):
-    beo = {
-        'id': str(uuid.uuid4()), 'tenant_id': current_user.tenant_id,
-        **beo_data, 'status': 'confirmed',
-        'created_at': datetime.now(UTC).isoformat()
-    }
+    beo = {"id": str(uuid.uuid4()), "tenant_id": current_user.tenant_id, **beo_data, "status": "confirmed", "created_at": datetime.now(UTC).isoformat()}
     await db.banquet_event_orders.insert_one(beo)
-    return {'success': True, 'beo_id': beo['id'], 'message': 'BEO olusturuldu'}
+    return {"success": True, "beo_id": beo["id"], "message": "BEO olusturuldu"}
+
 
 # NOTE: Kitchen Display System endpoints moved to pos_fnb_router.py
 
 
 @router.get("/fnb/ingredients")
 async def list_ingredients(current_user: User = Depends(get_current_user)):
-    ingredients = await db.ingredients.find(
-        {'tenant_id': current_user.tenant_id},
-        {'_id': 0}
-    ).sort('name', 1).to_list(500)
+    ingredients = await db.ingredients.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("name", 1).to_list(500)
 
-    low_stock = [ing for ing in ingredients if ing.get('current_stock', 0) <= ing.get('reorder_point', 0)]
-    total_value = sum((ing.get('current_stock', 0) * ing.get('unit_cost', 0)) for ing in ingredients)
+    low_stock = [ing for ing in ingredients if ing.get("current_stock", 0) <= ing.get("reorder_point", 0)]
+    total_value = sum((ing.get("current_stock", 0) * ing.get("unit_cost", 0)) for ing in ingredients)
 
     categories = {}
     for ing in ingredients:
-        cat = ing.get('category', 'other')
+        cat = ing.get("category", "other")
         categories.setdefault(cat, 0)
         categories[cat] += 1
 
-    return {
-        'ingredients': ingredients,
-        'summary': {
-            'total_items': len(ingredients),
-            'low_stock': len(low_stock),
-            'inventory_value': round(total_value, 2),
-            'categories': categories
-        }
-    }
+    return {"ingredients": ingredients, "summary": {"total_items": len(ingredients), "low_stock": len(low_stock), "inventory_value": round(total_value, 2), "categories": categories}}
 
 
 @router.post("/fnb/ingredients")
-async def add_ingredient(ing_data: dict, current_user: User = Depends(get_current_user),
+async def add_ingredient(
+    ing_data: dict,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v99 DW
 ):
     ingredient = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'name': ing_data['name'],
-        'category': ing_data.get('category', 'general'),
-        'unit': ing_data.get('unit', 'kg'),
-        'current_stock': ing_data.get('current_stock', 0),
-        'par_level': ing_data.get('par_level', 0),
-        'reorder_point': ing_data.get('reorder_point', 0),
-        'unit_cost': ing_data.get('unit_cost', 0),
-        'supplier': ing_data.get('supplier'),
-        'last_order_date': ing_data.get('last_order_date'),
-        'created_at': datetime.now(UTC).isoformat()
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "name": ing_data["name"],
+        "category": ing_data.get("category", "general"),
+        "unit": ing_data.get("unit", "kg"),
+        "current_stock": ing_data.get("current_stock", 0),
+        "par_level": ing_data.get("par_level", 0),
+        "reorder_point": ing_data.get("reorder_point", 0),
+        "unit_cost": ing_data.get("unit_cost", 0),
+        "supplier": ing_data.get("supplier"),
+        "last_order_date": ing_data.get("last_order_date"),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.ingredients.insert_one(ingredient)
-    ingredient.pop('_id', None)
-    return {'success': True, 'ingredient': ingredient}
+    ingredient.pop("_id", None)
+    return {"success": True, "ingredient": ingredient}
 
 
 @router.put("/fnb/ingredients/{ingredient_id}")
-async def update_ingredient(ingredient_id: str, ing_data: dict, current_user: User = Depends(get_current_user),
+async def update_ingredient(
+    ingredient_id: str,
+    ing_data: dict,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v99 DW
 ):
-    ingredient = await db.ingredients.find_one({'tenant_id': current_user.tenant_id, 'id': ingredient_id})
+    ingredient = await db.ingredients.find_one({"tenant_id": current_user.tenant_id, "id": ingredient_id})
     if not ingredient:
         raise HTTPException(status_code=404, detail="Ingredient not found")
 
     updated = {**ingredient, **ing_data}
-    await db.ingredients.update_one(
-        {'tenant_id': current_user.tenant_id, 'id': ingredient_id},
-        {'$set': updated}
-    )
-    updated.pop('_id', None)
-    return {'success': True, 'ingredient': updated}
+    await db.ingredients.update_one({"tenant_id": current_user.tenant_id, "id": ingredient_id}, {"$set": updated})
+    updated.pop("_id", None)
+    return {"success": True, "ingredient": updated}
 
 
 # ============= Departments / Positions (HR settings) =============
+
 
 class DepartmentPayload(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
@@ -2687,12 +2776,12 @@ async def list_departments(
 ):
     """Departman master data. Varsayılan: yalnızca aktif. `include_inactive=true`
     pasif kayıtları da döner (settings ekranı için)."""
-    q: dict = {'tenant_id': current_user.tenant_id}
+    q: dict = {"tenant_id": current_user.tenant_id}
     if not include_inactive:
         # Eski kayıtlarda `active` alanı yok → varsayılan aktif say (yok ya da True).
-        q['$or'] = [{'active': {'$exists': False}}, {'active': True}]
-    items = await db.hr_departments.find(q, {'_id': 0}).sort('name', 1).to_list(200)
-    return {'items': items, 'total': len(items)}
+        q["$or"] = [{"active": {"$exists": False}}, {"active": True}]
+    items = await db.hr_departments.find(q, {"_id": 0}).sort("name", 1).to_list(200)
+    return {"items": items, "total": len(items)}
 
 
 @router.post("/hr/departments")
@@ -2701,28 +2790,30 @@ async def create_department(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
-    code = (payload.code or payload.name.lower().replace(' ', '_'))[:40]
-    if await db.hr_departments.find_one(
-        {'tenant_id': current_user.tenant_id, 'code': code}
-    ):
+    code = (payload.code or payload.name.lower().replace(" ", "_"))[:40]
+    if await db.hr_departments.find_one({"tenant_id": current_user.tenant_id, "code": code}):
         raise HTTPException(status_code=409, detail="Bu departman kodu zaten var")
     item = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'name': payload.name,
-        'code': code,
-        'description': payload.description,
-        'active': True,
-        'created_at': datetime.now(UTC).isoformat(),
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "name": payload.name,
+        "code": code,
+        "description": payload.description,
+        "active": True,
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.hr_departments.insert_one(item)
-    item.pop('_id', None)
+    item.pop("_id", None)
     await _audit(
-        current_user, "hr.department.create", "hr_department", item['id'],
+        current_user,
+        "hr.department.create",
+        "hr_department",
+        item["id"],
         f"Departman oluşturuldu: {item['name']} (kod={code})",
-        after=item, severity="info",
+        after=item,
+        severity="info",
     )
-    return {'success': True, 'department': item}
+    return {"success": True, "department": item}
 
 
 @router.delete("/hr/departments/{dept_id}")
@@ -2738,31 +2829,41 @@ async def delete_department(
     sonrası kayıt listede görünmez (`include_inactive=true` ile geri gelir).
     """
     tid = current_user.tenant_id
-    existing = await db.hr_departments.find_one({'tenant_id': tid, 'id': dept_id}, {'_id': 0})
+    existing = await db.hr_departments.find_one({"tenant_id": tid, "id": dept_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Departman bulunamadı")
-    dept_codes = {existing.get('code'), existing.get('name')}
+    dept_codes = {existing.get("code"), existing.get("name")}
     dept_codes.discard(None)
-    active_count = await db.staff_members.count_documents({
-        'tenant_id': tid,
-        'department': {'$in': list(dept_codes)},
-        '$or': [{'active': {'$exists': False}}, {'active': True}],
-    }) if dept_codes else 0
+    active_count = (
+        await db.staff_members.count_documents(
+            {
+                "tenant_id": tid,
+                "department": {"$in": list(dept_codes)},
+                "$or": [{"active": {"$exists": False}}, {"active": True}],
+            }
+        )
+        if dept_codes
+        else 0
+    )
     if active_count > 0:
         raise HTTPException(
             status_code=409,
             detail=f"Departmanda {active_count} aktif personel var. Önce personeli başka departmana taşıyın veya ayrılış işleyin.",
         )
     await db.hr_departments.update_one(
-        {'tenant_id': tid, 'id': dept_id},
-        {'$set': {'active': False, 'deactivated_at': datetime.now(UTC).isoformat()}},
+        {"tenant_id": tid, "id": dept_id},
+        {"$set": {"active": False, "deactivated_at": datetime.now(UTC).isoformat()}},
     )
     await _audit(
-        current_user, "hr.department.deactivate", "hr_department", dept_id,
+        current_user,
+        "hr.department.deactivate",
+        "hr_department",
+        dept_id,
         f"Departman pasifleştirildi: {existing.get('name')}",
-        before=existing, severity="warning",
+        before=existing,
+        severity="warning",
     )
-    return {'success': True, 'soft_deleted': True}
+    return {"success": True, "soft_deleted": True}
 
 
 @router.post("/hr/departments/sync-from-staff")
@@ -2779,34 +2880,35 @@ async def sync_departments_from_staff(
     tid = current_user.tenant_id
     # Mevcut master data code seti.
     existing = await db.hr_departments.find(
-        {'tenant_id': tid}, {'_id': 0, 'code': 1, 'name': 1},
+        {"tenant_id": tid},
+        {"_id": 0, "code": 1, "name": 1},
     ).to_list(500)
-    existing_codes = {(d.get('code') or '').lower() for d in existing if d.get('code')}
-    existing_codes |= {(d.get('name') or '').lower() for d in existing if d.get('name')}
+    existing_codes = {(d.get("code") or "").lower() for d in existing if d.get("code")}
+    existing_codes |= {(d.get("name") or "").lower() for d in existing if d.get("name")}
     # Staff'tan benzersiz departmanlar.
     pipeline = [
-        {'$match': {'tenant_id': tid, 'department': {'$type': 'string', '$ne': ''}}},
-        {'$group': {'_id': '$department', 'count': {'$sum': 1}}},
+        {"$match": {"tenant_id": tid, "department": {"$type": "string", "$ne": ""}}},
+        {"$group": {"_id": "$department", "count": {"$sum": 1}}},
     ]
     seen: dict[str, int] = {}
     async for row in db.staff_members.aggregate(pipeline):
-        key = (row.get('_id') or '').strip()
+        key = (row.get("_id") or "").strip()
         if key:
-            seen[key] = (seen.get(key, 0) + int(row.get('count', 0)))
+            seen[key] = seen.get(key, 0) + int(row.get("count", 0))
     # Users-derived role'lerden (rol→dept) ekle.
     role_to_dept = {
-        'housekeeping': 'housekeeping',
-        'front_desk': 'front_desk',
-        'supervisor': 'management',
-        'finance': 'finance',
-        'sales': 'sales',
-        'admin': 'management',
+        "housekeeping": "housekeeping",
+        "front_desk": "front_desk",
+        "supervisor": "management",
+        "finance": "finance",
+        "sales": "sales",
+        "admin": "management",
     }
     async for u in db.users.find(
-        {'tenant_id': tid, 'is_active': True, 'role': {'$in': list(role_to_dept.keys())}},
-        {'_id': 0, 'role': 1},
+        {"tenant_id": tid, "is_active": True, "role": {"$in": list(role_to_dept.keys())}},
+        {"_id": 0, "role": 1},
     ):
-        d = role_to_dept.get(u.get('role'))
+        d = role_to_dept.get(u.get("role"))
         if d:
             seen[d] = seen.get(d, 0) + 1
     created: list[dict] = []
@@ -2815,26 +2917,29 @@ async def sync_departments_from_staff(
         if code.lower() in existing_codes:
             continue
         item = {
-            'id': str(uuid.uuid4()),
-            'tenant_id': tid,
-            'name': code,
-            'code': code.lower().replace(' ', '_')[:40],
-            'description': f"Personel verisinden senkronize edildi (sayı={count})",
-            'active': True,
-            'created_at': now_iso,
-            'source': 'staff_sync',
+            "id": str(uuid.uuid4()),
+            "tenant_id": tid,
+            "name": code,
+            "code": code.lower().replace(" ", "_")[:40],
+            "description": f"Personel verisinden senkronize edildi (sayı={count})",
+            "active": True,
+            "created_at": now_iso,
+            "source": "staff_sync",
         }
         await db.hr_departments.insert_one(item)
-        item.pop('_id', None)
+        item.pop("_id", None)
         created.append(item)
     if created:
         await _audit(
-            current_user, "hr.department.sync_from_staff", "hr_department", "",
+            current_user,
+            "hr.department.sync_from_staff",
+            "hr_department",
+            "",
             f"{len(created)} departman personelden senkronize edildi",
-            after={'created_codes': [c['code'] for c in created]},
+            after={"created_codes": [c["code"] for c in created]},
             severity="info",
         )
-    return {'success': True, 'created_count': len(created), 'created': created, 'scanned_unique': len(seen)}
+    return {"success": True, "created_count": len(created), "created": created, "scanned_unique": len(seen)}
 
 
 @router.get("/hr/positions")
@@ -2843,13 +2948,13 @@ async def list_positions(
     department: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
-    q: dict = {'tenant_id': current_user.tenant_id}
+    q: dict = {"tenant_id": current_user.tenant_id}
     if not include_inactive:
-        q['$or'] = [{'active': {'$exists': False}}, {'active': True}]
+        q["$or"] = [{"active": {"$exists": False}}, {"active": True}]
     if department:
-        q['department'] = department
-    items = await db.hr_positions.find(q, {'_id': 0}).sort('title', 1).to_list(300)
-    return {'items': items, 'total': len(items)}
+        q["department"] = department
+    items = await db.hr_positions.find(q, {"_id": 0}).sort("title", 1).to_list(300)
+    return {"items": items, "total": len(items)}
 
 
 @router.post("/hr/positions")
@@ -2860,33 +2965,39 @@ async def create_position(
 ):
     # v2 Foundation: pozisyon departmana bağlanmalı (FK semantiği).
     if payload.department:
-        dept = await db.hr_departments.find_one({
-            'tenant_id': current_user.tenant_id,
-            '$or': [{'code': payload.department}, {'name': payload.department}],
-            '$and': [{'$or': [{'active': {'$exists': False}}, {'active': True}]}],
-        })
+        dept = await db.hr_departments.find_one(
+            {
+                "tenant_id": current_user.tenant_id,
+                "$or": [{"code": payload.department}, {"name": payload.department}],
+                "$and": [{"$or": [{"active": {"$exists": False}}, {"active": True}]}],
+            }
+        )
         if not dept:
             raise HTTPException(
                 status_code=400,
                 detail=f"Departman '{payload.department}' master data'da bulunamadı. Önce departmanı oluşturun veya 'Personelden Senkronize Et' aksiyonunu çalıştırın.",
             )
     item = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'title': payload.title,
-        'department': payload.department,
-        'default_hourly_rate': payload.default_hourly_rate,
-        'active': True,
-        'created_at': datetime.now(UTC).isoformat(),
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "title": payload.title,
+        "department": payload.department,
+        "default_hourly_rate": payload.default_hourly_rate,
+        "active": True,
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.hr_positions.insert_one(item)
-    item.pop('_id', None)
+    item.pop("_id", None)
     await _audit(
-        current_user, "hr.position.create", "hr_position", item['id'],
+        current_user,
+        "hr.position.create",
+        "hr_position",
+        item["id"],
         f"Pozisyon oluşturuldu: {item['title']} (dept={payload.department})",
-        after=item, severity="info",
+        after=item,
+        severity="info",
     )
-    return {'success': True, 'position': item}
+    return {"success": True, "position": item}
 
 
 @router.delete("/hr/positions/{pos_id}")
@@ -2897,37 +3008,44 @@ async def delete_position(
 ):
     """Soft-delete (pasifleştirme). Aktif personeli olan pozisyon silinemez."""
     tid = current_user.tenant_id
-    existing = await db.hr_positions.find_one({'tenant_id': tid, 'id': pos_id}, {'_id': 0})
+    existing = await db.hr_positions.find_one({"tenant_id": tid, "id": pos_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Pozisyon bulunamadı")
-    active_count = await db.staff_members.count_documents({
-        'tenant_id': tid,
-        'position': existing.get('title'),
-        '$or': [{'active': {'$exists': False}}, {'active': True}],
-    })
+    active_count = await db.staff_members.count_documents(
+        {
+            "tenant_id": tid,
+            "position": existing.get("title"),
+            "$or": [{"active": {"$exists": False}}, {"active": True}],
+        }
+    )
     if active_count > 0:
         raise HTTPException(
             status_code=409,
             detail=f"Pozisyonda {active_count} aktif personel var. Önce personeli başka pozisyona taşıyın veya ayrılış işleyin.",
         )
     await db.hr_positions.update_one(
-        {'tenant_id': tid, 'id': pos_id},
-        {'$set': {'active': False, 'deactivated_at': datetime.now(UTC).isoformat()}},
+        {"tenant_id": tid, "id": pos_id},
+        {"$set": {"active": False, "deactivated_at": datetime.now(UTC).isoformat()}},
     )
     await _audit(
-        current_user, "hr.position.deactivate", "hr_position", pos_id,
+        current_user,
+        "hr.position.deactivate",
+        "hr_position",
+        pos_id,
         f"Pozisyon pasifleştirildi: {existing.get('title')}",
-        before=existing, severity="warning",
+        before=existing,
+        severity="warning",
     )
-    return {'success': True, 'soft_deleted': True}
+    return {"success": True, "soft_deleted": True}
 
 
 # ============= Staff CRUD (POST/GET/PUT/DELETE/profile) =============
 
+
 def _scrub_encrypted(value):
-    if isinstance(value, str) and value.startswith('aes256gcm:'):
-        return ''
-    return value or ''
+    if isinstance(value, str) and value.startswith("aes256gcm:"):
+        return ""
+    return value or ""
 
 
 @router.post("/hr/staff")
@@ -2943,39 +3061,42 @@ async def add_staff_member(
     Ek finansal alanlar (hourly_rate, monthly_hours, annual_leave_entitlement)
     payroll ve izin bakiyesi hesaplarında kullanılır.
     """
-    if not staff_data.get('name'):
+    if not staff_data.get("name"):
         raise HTTPException(status_code=400, detail="Personel adı zorunludur")
     staff = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'name': staff_data['name'],
-        'email': staff_data.get('email'),
-        'phone': staff_data.get('phone'),
-        'department': staff_data.get('department'),
-        'position': staff_data.get('position'),
-        'hire_date': staff_data.get('hire_date'),
-        'employment_type': staff_data.get('employment_type', 'full_time'),
-        'hourly_rate': staff_data.get('hourly_rate'),
-        'monthly_hours': staff_data.get('monthly_hours'),
-        'annual_leave_entitlement': staff_data.get('annual_leave_entitlement', 14),
-        'performance_score': 0.0,
-        'active': True,
-        'created_at': datetime.now(UTC).isoformat(),
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "name": staff_data["name"],
+        "email": staff_data.get("email"),
+        "phone": staff_data.get("phone"),
+        "department": staff_data.get("department"),
+        "position": staff_data.get("position"),
+        "hire_date": staff_data.get("hire_date"),
+        "employment_type": staff_data.get("employment_type", "full_time"),
+        "hourly_rate": staff_data.get("hourly_rate"),
+        "monthly_hours": staff_data.get("monthly_hours"),
+        "annual_leave_entitlement": staff_data.get("annual_leave_entitlement", 14),
+        "performance_score": 0.0,
+        "active": True,
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.staff_members.insert_one(staff)
     await _audit(
-        current_user, "hr.staff.create", "staff_member", staff['id'],
+        current_user,
+        "hr.staff.create",
+        "staff_member",
+        staff["id"],
         f"Personel oluşturuldu: {staff['name']} (dept={staff.get('department')}, pozisyon={staff.get('position')})",
         after={k: v for k, v in staff.items() if k not in _PII_SALARY_FIELDS},
         severity="info",
     )
-    return {'success': True, 'staff_id': staff['id']}
+    return {"success": True, "staff_id": staff["id"]}
 
 
 @router.get("/hr/staff")
 async def get_staff_list(
     department: str | None = None,
-    source: Literal['hr', 'users', 'all'] = 'hr',
+    source: Literal["hr", "users", "all"] = "hr",
     include_inactive: bool = False,
     employment_type: str | None = None,
     hire_date_from: str | None = None,
@@ -3001,12 +3122,12 @@ async def get_staff_list(
     """
     tid = current_user.tenant_id
     role_to_dept = {
-        'housekeeping': 'housekeeping',
-        'front_desk': 'front_desk',
-        'supervisor': 'management',
-        'finance': 'finance',
-        'sales': 'sales',
-        'admin': 'management',
+        "housekeeping": "housekeeping",
+        "front_desk": "front_desk",
+        "supervisor": "management",
+        "finance": "finance",
+        "sales": "sales",
+        "admin": "management",
     }
 
     # Department-Manager scope override (kullanıcı manage_hr'a sahip değilse).
@@ -3015,65 +3136,71 @@ async def get_staff_list(
         department = scope_dept
 
     explicit: list = []
-    if source in ('hr', 'all'):
-        explicit_query: dict = {'tenant_id': tid}
+    if source in ("hr", "all"):
+        explicit_query: dict = {"tenant_id": tid}
         if not include_inactive:
-            explicit_query['active'] = True
+            explicit_query["active"] = True
         if department:
-            explicit_query['department'] = department
+            explicit_query["department"] = department
         if employment_type:
-            explicit_query['employment_type'] = employment_type
+            explicit_query["employment_type"] = employment_type
         if hire_date_from or hire_date_to:
             rng: dict = {}
             if hire_date_from:
-                rng['$gte'] = hire_date_from
+                rng["$gte"] = hire_date_from
             if hire_date_to:
-                rng['$lte'] = hire_date_to
-            explicit_query['hire_date'] = rng
-        explicit = await db.staff_members.find(explicit_query, {'_id': 0}).to_list(500)
+                rng["$lte"] = hire_date_to
+            explicit_query["hire_date"] = rng
+        explicit = await db.staff_members.find(explicit_query, {"_id": 0}).to_list(500)
 
-    seen_emails = {(s.get('email') or '').lower() for s in explicit if s.get('email')}
+    seen_emails = {(s.get("email") or "").lower() for s in explicit if s.get("email")}
 
     derived: list = []
-    if source in ('users', 'all'):
+    if source in ("users", "all"):
         user_query: dict = {
-            'tenant_id': tid,
-            'is_active': True,
-            'role': {'$in': list(role_to_dept.keys())},
+            "tenant_id": tid,
+            "is_active": True,
+            "role": {"$in": list(role_to_dept.keys())},
         }
         if department:
             roles_in_dept = [r for r, d in role_to_dept.items() if d == department or r == department]
-            user_query['role'] = {'$in': roles_in_dept or ['__none__']}
+            user_query["role"] = {"$in": roles_in_dept or ["__none__"]}
 
         user_projection = {
-            '_id': 0,
-            'id': 1, 'name': 1, 'email': 1, 'phone': 1,
-            'role': 1, 'created_at': 1,
+            "_id": 0,
+            "id": 1,
+            "name": 1,
+            "email": 1,
+            "phone": 1,
+            "role": 1,
+            "created_at": 1,
         }
         cursor = db.users.find(user_query, user_projection).limit(500)
         async for u in cursor:
-            email_raw = (u.get('email') or '')
+            email_raw = u.get("email") or ""
             em = email_raw.lower()
             # `all` modu için dedup; `users` modunda dedup yok (kasıtlı).
-            if source == 'all' and em and em in seen_emails:
+            if source == "all" and em and em in seen_emails:
                 continue
-            role = u.get('role')
+            role = u.get("role")
             email_clean = _scrub_encrypted(email_raw)
-            phone_clean = _scrub_encrypted(u.get('phone'))
-            derived.append({
-                'id': u.get('id'),
-                'tenant_id': tid,
-                'name': u.get('name') or email_clean or 'Personel',
-                'email': email_clean,
-                'phone': phone_clean,
-                'department': role_to_dept.get(role, role or 'other'),
-                'position': role or 'staff',
-                'hire_date': (u.get('created_at') or '')[:10],
-                'employment_type': 'full_time',
-                'performance_score': 0.0,
-                'active': True,
-                'derived_from': 'users',
-            })
+            phone_clean = _scrub_encrypted(u.get("phone"))
+            derived.append(
+                {
+                    "id": u.get("id"),
+                    "tenant_id": tid,
+                    "name": u.get("name") or email_clean or "Personel",
+                    "email": email_clean,
+                    "phone": phone_clean,
+                    "department": role_to_dept.get(role, role or "other"),
+                    "position": role or "staff",
+                    "hire_date": (u.get("created_at") or "")[:10],
+                    "employment_type": "full_time",
+                    "performance_score": 0.0,
+                    "active": True,
+                    "derived_from": "users",
+                }
+            )
             if em:
                 seen_emails.add(em)
 
@@ -3081,18 +3208,14 @@ async def get_staff_list(
     # Rol-bazlı PII maskeleme (post-query, response serializer aşamasında).
     # Personel DİZİNİ: finance burada PII'yi maskeli görür (operatör kararı —
     # bordro uçlarında unmask kalır, genel dizinde değil).
-    self_id = str(getattr(current_user, 'id', '') or '')
-    self_email = str(getattr(current_user, 'email', '') or '')
-    masked = [
-        _mask_hr_pii(s, current_user, self_id=self_id, self_email=self_email,
-                     allow_finance_unmask=False)
-        for s in combined
-    ]
+    self_id = str(getattr(current_user, "id", "") or "")
+    self_email = str(getattr(current_user, "email", "") or "")
+    masked = [_mask_hr_pii(s, current_user, self_id=self_id, self_email=self_email, allow_finance_unmask=False) for s in combined]
     # Privileged rows (manage_hr / super_admin / self-service) are returned
     # UNMASKED and may carry raw BSON types (Decimal128 salary, datetime
     # hire_date) that 500 at FastAPI's encode step. Total-serialize the page
     # without changing masking or RBAC.
-    return {'staff': [json_safe(s) for s in masked], 'total': len(masked), 'source': source}
+    return {"staff": [json_safe(s) for s in masked], "total": len(masked), "source": source}
 
 
 @router.get("/hr/system-users")
@@ -3109,7 +3232,7 @@ async def get_system_users(
     # Implementation: delegate to /hr/staff?source=users semantics.
     return await get_staff_list(
         department=None,
-        source='users',
+        source="users",
         include_inactive=False,
         employment_type=None,
         hire_date_from=None,
@@ -3134,18 +3257,25 @@ async def get_staff_performance_summary(
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     _authorize_staff_access(staff, current_user, require_manage=True)
-    reviews = await db.performance_reviews.find({
-        'staff_id': staff_id,
-        'tenant_id': current_user.tenant_id,
-    }, {'_id': 0}).sort('reviewed_at', -1).to_list(10)
+    reviews = (
+        await db.performance_reviews.find(
+            {
+                "staff_id": staff_id,
+                "tenant_id": current_user.tenant_id,
+            },
+            {"_id": 0},
+        )
+        .sort("reviewed_at", -1)
+        .to_list(10)
+    )
 
-    avg_score = sum([r.get('overall_score', 0) for r in reviews]) / len(reviews) if reviews else 0
+    avg_score = sum([r.get("overall_score", 0) for r in reviews]) / len(reviews) if reviews else 0
 
     return {
-        'staff_id': staff_id,
-        'recent_reviews': reviews,
-        'avg_performance_score': round(avg_score, 2),
-        'total_reviews': len(reviews),
+        "staff_id": staff_id,
+        "recent_reviews": reviews,
+        "avg_performance_score": round(avg_score, 2),
+        "total_reviews": len(reviews),
     }
 
 
@@ -3155,10 +3285,8 @@ class StaffUpdatePayload(BaseModel):
     phone: str | None = Field(None, max_length=40)
     department: str | None = Field(None, max_length=80)
     position: str | None = Field(None, max_length=120)
-    hire_date: str | None = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
-    employment_type: Literal[
-        'full_time', 'part_time', 'seasonal', 'contract', 'intern'
-    ] | None = None
+    hire_date: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    employment_type: Literal["full_time", "part_time", "seasonal", "contract", "intern"] | None = None
     hourly_rate: float | None = Field(None, ge=0, le=100000)
     monthly_hours: float | None = Field(None, ge=0, le=400)
     annual_leave_entitlement: int | None = Field(None, ge=0, le=365)
@@ -3178,53 +3306,39 @@ async def update_staff_member(
     alanları (email/phone/name) güncellenebilir; rol/departman/maaş gibi
     alanlar Kullanıcı Yönetimi üzerinden değiştirilir.
     """
-    existing = await db.staff_members.find_one(
-        {'tenant_id': current_user.tenant_id, 'id': staff_id}
-    )
+    existing = await db.staff_members.find_one({"tenant_id": current_user.tenant_id, "id": staff_id})
     if existing:
-        update = {
-            k: v for k, v in payload.model_dump(exclude_unset=True).items()
-            if v is not None
-        }
+        update = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
         if not update:
-            return {'success': True, 'updated_fields': 0}
-        update['updated_at'] = datetime.now(UTC).isoformat()
-        await db.staff_members.update_one(
-            {'tenant_id': current_user.tenant_id, 'id': staff_id},
-            {'$set': update}
-        )
+            return {"success": True, "updated_fields": 0}
+        update["updated_at"] = datetime.now(UTC).isoformat()
+        await db.staff_members.update_one({"tenant_id": current_user.tenant_id, "id": staff_id}, {"$set": update})
         # Audit: salary alanı değiştiyse severity=warning, diğerleri info.
         sev = "warning" if any(k in update for k in _PII_SALARY_FIELDS) else "info"
         await _audit(
-            current_user, "hr.staff.update", "staff_member", staff_id,
+            current_user,
+            "hr.staff.update",
+            "staff_member",
+            staff_id,
             f"Personel güncellendi (alan sayısı={len(update) - 1})",
-            before={k: existing.get(k) for k in update.keys() if k != 'updated_at'},
+            before={k: existing.get(k) for k in update.keys() if k != "updated_at"},
             after={k: v for k, v in update.items() if k not in _PII_SALARY_FIELDS},
             severity=sev,
         )
-        return {'success': True, 'updated_fields': len(update) - 1, 'source': 'staff'}
+        return {"success": True, "updated_fields": len(update) - 1, "source": "staff"}
 
     # Users-derived path — sadece iletişim alanları
-    user = await db.users.find_one(
-        {'tenant_id': current_user.tenant_id, 'id': staff_id, 'is_active': True},
-        {'_id': 0, 'id': 1}
-    )
+    user = await db.users.find_one({"tenant_id": current_user.tenant_id, "id": staff_id, "is_active": True}, {"_id": 0, "id": 1})
     if not user:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
 
     raw = payload.model_dump(exclude_unset=True)
-    allowed = {k: v for k, v in raw.items() if k in {'name', 'email', 'phone'} and v is not None}
+    allowed = {k: v for k, v in raw.items() if k in {"name", "email", "phone"} and v is not None}
     if not allowed:
-        raise HTTPException(
-            status_code=400,
-            detail="Türetilmiş personel için yalnızca isim, e-posta ve telefon güncellenebilir."
-        )
-    allowed['updated_at'] = datetime.now(UTC).isoformat()
-    await db.users.update_one(
-        {'tenant_id': current_user.tenant_id, 'id': staff_id},
-        {'$set': allowed}
-    )
-    return {'success': True, 'updated_fields': len(allowed) - 1, 'source': 'users'}
+        raise HTTPException(status_code=400, detail="Türetilmiş personel için yalnızca isim, e-posta ve telefon güncellenebilir.")
+    allowed["updated_at"] = datetime.now(UTC).isoformat()
+    await db.users.update_one({"tenant_id": current_user.tenant_id, "id": staff_id}, {"$set": allowed})
+    return {"success": True, "updated_fields": len(allowed) - 1, "source": "users"}
 
 
 @router.delete("/hr/staff/{staff_id}")
@@ -3241,36 +3355,46 @@ async def delete_staff_member(
     """
     now_iso = datetime.now(UTC).isoformat()
     res = await db.staff_members.update_one(
-        {'tenant_id': current_user.tenant_id, 'id': staff_id},
-        {'$set': {
-            'active': False,
-            'deactivated_at': now_iso,
-        }}
+        {"tenant_id": current_user.tenant_id, "id": staff_id},
+        {
+            "$set": {
+                "active": False,
+                "deactivated_at": now_iso,
+            }
+        },
     )
     if res.matched_count > 0:
         await _audit(
-            current_user, "hr.staff.deactivate", "staff_member", staff_id,
+            current_user,
+            "hr.staff.deactivate",
+            "staff_member",
+            staff_id,
             "Personel pasifleştirildi (HR-managed)",
             severity="warning",
         )
-        return {'success': True, 'source': 'staff', 'deactivated_at': now_iso}
+        return {"success": True, "source": "staff", "deactivated_at": now_iso}
 
     # Users-derived ayrılış
     res2 = await db.users.update_one(
-        {'tenant_id': current_user.tenant_id, 'id': staff_id, 'is_active': True},
-        {'$set': {
-            'is_active': False,
-            'deactivated_at': now_iso,
-        }}
+        {"tenant_id": current_user.tenant_id, "id": staff_id, "is_active": True},
+        {
+            "$set": {
+                "is_active": False,
+                "deactivated_at": now_iso,
+            }
+        },
     )
     if res2.matched_count == 0:
         raise HTTPException(status_code=404, detail="Personel bulunamadı veya zaten ayrılmış")
     await _audit(
-        current_user, "hr.staff.deactivate", "user_account", staff_id,
+        current_user,
+        "hr.staff.deactivate",
+        "user_account",
+        staff_id,
         "Kullanıcı hesabı pasifleştirildi (users-derived staff)",
         severity="warning",
     )
-    return {'success': True, 'source': 'users', 'deactivated_at': now_iso}
+    return {"success": True, "source": "users", "deactivated_at": now_iso}
 
 
 @router.get("/hr/staff/{staff_id}/profile")
@@ -3291,85 +3415,120 @@ async def get_staff_profile(
     today = _today_local()
     start_30 = today - timedelta(days=30)
 
-    attendance = await db.attendance_records.find({
-        'tenant_id': current_user.tenant_id,
-        'staff_id': staff_id,
-        'date': {'$gte': start_30.isoformat(), '$lte': today.isoformat()},
-    }, {'_id': 0}).sort('date', -1).to_list(100)
-
-    leaves = await db.leave_requests.find({
-        'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
-    }, {'_id': 0}).sort('created_at', -1).to_list(100)
-
-    reviews = await db.performance_reviews.find({
-        'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
-    }, {'_id': 0}).sort('reviewed_at', -1).to_list(50)
-
-    payroll = await db.payroll_records.find({
-        'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
-    }, {'_id': 0}).sort('period_month', -1).to_list(12)
-
-    shifts = await db.shift_schedules.find({
-        'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
-        'shift_date': {'$gte': today.isoformat()},
-    }, {'_id': 0}).sort('shift_date', 1).to_list(20)
-
-    total_hours = round(sum(r.get('total_hours', 0) for r in attendance), 2)
-    days_present = len({r['date'] for r in attendance if r.get('clock_out')})
-    avg_score = (
-        round(sum(r.get('overall_score', 0) for r in reviews) / len(reviews), 2)
-        if reviews else 0
+    attendance = (
+        await db.attendance_records.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "staff_id": staff_id,
+                "date": {"$gte": start_30.isoformat(), "$lte": today.isoformat()},
+            },
+            {"_id": 0},
+        )
+        .sort("date", -1)
+        .to_list(100)
     )
 
-    balance = await db.leave_balances.find_one({
-        'tenant_id': current_user.tenant_id,
-        'staff_id': staff_id,
-        'year': today.year,
-    }, {'_id': 0})
+    leaves = (
+        await db.leave_requests.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "staff_id": staff_id,
+            },
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .to_list(100)
+    )
+
+    reviews = (
+        await db.performance_reviews.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "staff_id": staff_id,
+            },
+            {"_id": 0},
+        )
+        .sort("reviewed_at", -1)
+        .to_list(50)
+    )
+
+    payroll = (
+        await db.payroll_records.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "staff_id": staff_id,
+            },
+            {"_id": 0},
+        )
+        .sort("period_month", -1)
+        .to_list(12)
+    )
+
+    shifts = (
+        await db.shift_schedules.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "staff_id": staff_id,
+                "shift_date": {"$gte": today.isoformat()},
+            },
+            {"_id": 0},
+        )
+        .sort("shift_date", 1)
+        .to_list(20)
+    )
+
+    total_hours = round(sum(r.get("total_hours", 0) for r in attendance), 2)
+    days_present = len({r["date"] for r in attendance if r.get("clock_out")})
+    avg_score = round(sum(r.get("overall_score", 0) for r in reviews) / len(reviews), 2) if reviews else 0
+
+    balance = await db.leave_balances.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "staff_id": staff_id,
+            "year": today.year,
+        },
+        {"_id": 0},
+    )
 
     # v2 Foundation: rol-bazlı PII maskeleme — staff kayıt + bordro satırları.
-    self_id = str(getattr(current_user, 'id', '') or '')
-    self_email = str(getattr(current_user, 'email', '') or '')
+    self_id = str(getattr(current_user, "id", "") or "")
+    self_email = str(getattr(current_user, "email", "") or "")
     staff_masked = _mask_hr_pii(staff, current_user, self_id=self_id, self_email=self_email) or staff
-    payroll_masked = [
-        _mask_hr_pii(p, current_user, self_id=self_id, self_email=self_email) or p for p in payroll
-    ]
+    payroll_masked = [_mask_hr_pii(p, current_user, self_id=self_id, self_email=self_email) or p for p in payroll]
     # Performans notları hassas — Finance (`view_hr`) gizlenir, sadece manage_hr
     # veya kendi kaydı görebilir. Aksi halde içerik boşaltılır (UI tab gizler).
-    is_self = bool(
-        (self_id and str(staff.get('id') or '') == self_id) or
-        (self_email and (staff.get('email') or '').strip().lower() == self_email)
-    )
+    is_self = bool((self_id and str(staff.get("id") or "") == self_id) or (self_email and (staff.get("email") or "").strip().lower() == self_email))
     can_view_perf = _user_has_hr_op(current_user, "manage_hr") or is_self
     perf_section = {
-        'items': reviews if can_view_perf else [],
-        'avg_score': avg_score if can_view_perf else 0,
-        'total': len(reviews) if can_view_perf else 0,
-        'redacted': not can_view_perf,
+        "items": reviews if can_view_perf else [],
+        "avg_score": avg_score if can_view_perf else 0,
+        "total": len(reviews) if can_view_perf else 0,
+        "redacted": not can_view_perf,
     }
     return {
-        'staff': staff_masked,
-        'attendance': {
-            'records': attendance,
-            'total_hours_30d': total_hours,
-            'days_present_30d': days_present,
+        "staff": staff_masked,
+        "attendance": {
+            "records": attendance,
+            "total_hours_30d": total_hours,
+            "days_present_30d": days_present,
         },
-        'leaves': {
-            'items': leaves,
-            'total': len(leaves),
-            'pending': sum(1 for leave in leaves if leave.get('status') == 'pending'),
+        "leaves": {
+            "items": leaves,
+            "total": len(leaves),
+            "pending": sum(1 for leave in leaves if leave.get("status") == "pending"),
         },
-        'leave_balance': balance,
-        'performance': perf_section,
-        'payroll': {
-            'recent': payroll_masked,
-            'count': len(payroll),
+        "leave_balance": balance,
+        "performance": perf_section,
+        "payroll": {
+            "recent": payroll_masked,
+            "count": len(payroll),
         },
-        'upcoming_shifts': shifts,
+        "upcoming_shifts": shifts,
     }
 
 
 # ============= Leave Balance (yıllık izin bakiyesi) =============
+
 
 class LeaveBalancePayload(BaseModel):
     staff_id: str = Field(..., min_length=1)
@@ -3390,47 +3549,47 @@ async def get_leave_balance(
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     _authorize_staff_access(staff, current_user)
-    balance = await db.leave_balances.find_one({
-        'tenant_id': current_user.tenant_id,
-        'staff_id': staff_id,
-        'year': yr,
-    }, {'_id': 0})
+    balance = await db.leave_balances.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "staff_id": staff_id,
+            "year": yr,
+        },
+        {"_id": 0},
+    )
     # İş Kanunu m.53 default: 14 gün yıllık ücretli izin
-    annual_ent = balance.get('annual_entitlement', 14) if balance else 14
-    carry = balance.get('carry_over', 0) if balance else 0
-    sick_ent = balance.get('sick_entitlement', 5) if balance else 5
+    annual_ent = balance.get("annual_entitlement", 14) if balance else 14
+    carry = balance.get("carry_over", 0) if balance else 0
+    sick_ent = balance.get("sick_entitlement", 5) if balance else 5
 
-    approved = await db.leave_requests.find({
-        'tenant_id': current_user.tenant_id,
-        'staff_id': staff_id,
-        'status': 'approved',
-        'start_date': {'$gte': f'{yr}-01-01', '$lte': f'{yr}-12-31'},
-    }, {'_id': 0}).to_list(500)
-    used_annual = sum(
-        leave.get('total_days', 0) for leave in approved
-        if leave.get('leave_type') == 'annual'
-    )
-    used_sick = sum(
-        leave.get('total_days', 0) for leave in approved
-        if leave.get('leave_type') == 'sick'
-    )
+    approved = await db.leave_requests.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "staff_id": staff_id,
+            "status": "approved",
+            "start_date": {"$gte": f"{yr}-01-01", "$lte": f"{yr}-12-31"},
+        },
+        {"_id": 0},
+    ).to_list(500)
+    used_annual = sum(leave.get("total_days", 0) for leave in approved if leave.get("leave_type") == "annual")
+    used_sick = sum(leave.get("total_days", 0) for leave in approved if leave.get("leave_type") == "sick")
     total_annual = annual_ent + carry
     return {
-        'staff_id': staff_id,
-        'staff_name': staff.get('name'),
-        'year': yr,
-        'configured': bool(balance),
-        'annual': {
-            'entitlement': annual_ent,
-            'carry_over': carry,
-            'total': total_annual,
-            'used': used_annual,
-            'remaining': max(0, total_annual - used_annual),
+        "staff_id": staff_id,
+        "staff_name": staff.get("name"),
+        "year": yr,
+        "configured": bool(balance),
+        "annual": {
+            "entitlement": annual_ent,
+            "carry_over": carry,
+            "total": total_annual,
+            "used": used_annual,
+            "remaining": max(0, total_annual - used_annual),
         },
-        'sick': {
-            'entitlement': sick_ent,
-            'used': used_sick,
-            'remaining': max(0, sick_ent - used_sick),
+        "sick": {
+            "entitlement": sick_ent,
+            "used": used_sick,
+            "remaining": max(0, sick_ent - used_sick),
         },
     }
 
@@ -3445,26 +3604,24 @@ async def set_leave_balance(
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     doc = {
-        'tenant_id': current_user.tenant_id,
-        'staff_id': payload.staff_id,
-        'year': payload.year,
-        'annual_entitlement': payload.annual_entitlement,
-        'carry_over': payload.carry_over or 0,
-        'sick_entitlement': (
-            payload.sick_entitlement if payload.sick_entitlement is not None else 5
-        ),
-        'updated_at': datetime.now(UTC).isoformat(),
+        "tenant_id": current_user.tenant_id,
+        "staff_id": payload.staff_id,
+        "year": payload.year,
+        "annual_entitlement": payload.annual_entitlement,
+        "carry_over": payload.carry_over or 0,
+        "sick_entitlement": (payload.sick_entitlement if payload.sick_entitlement is not None else 5),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
     await db.leave_balances.update_one(
         {
-            'tenant_id': current_user.tenant_id,
-            'staff_id': payload.staff_id,
-            'year': payload.year,
+            "tenant_id": current_user.tenant_id,
+            "staff_id": payload.staff_id,
+            "year": payload.year,
         },
-        {'$set': doc},
+        {"$set": doc},
         upsert=True,
     )
-    return {'success': True}
+    return {"success": True}
 
 
 # ============= Shifts (vardiya planlaması) =============
@@ -3511,31 +3668,37 @@ async def _acquire_shift_lock_interval(
     `d_perf.py` this collapses back into a TOCTOU race.
     """
     lock_filter = {
-        'tenant_id': tenant_id,
-        'staff_id': staff_id,
-        'shift_date': shift_date,
-        '$or': [
-            {'intervals': {'$exists': False}},
-            {'intervals': {
-                '$not': {'$elemMatch': {
-                    'start_time': {'$lt': end_time},
-                    'end_time': {'$gt': start_time},
-                }}
-            }},
+        "tenant_id": tenant_id,
+        "staff_id": staff_id,
+        "shift_date": shift_date,
+        "$or": [
+            {"intervals": {"$exists": False}},
+            {
+                "intervals": {
+                    "$not": {
+                        "$elemMatch": {
+                            "start_time": {"$lt": end_time},
+                            "end_time": {"$gt": start_time},
+                        }
+                    }
+                }
+            },
         ],
     }
     lock_update = {
-        '$setOnInsert': {
-            'tenant_id': tenant_id,
-            'staff_id': staff_id,
-            'shift_date': shift_date,
-            'created_at': now_iso,
+        "$setOnInsert": {
+            "tenant_id": tenant_id,
+            "staff_id": staff_id,
+            "shift_date": shift_date,
+            "created_at": now_iso,
         },
-        '$push': {'intervals': {
-            'shift_id': shift_id,
-            'start_time': start_time,
-            'end_time': end_time,
-        }},
+        "$push": {
+            "intervals": {
+                "shift_id": shift_id,
+                "start_time": start_time,
+                "end_time": end_time,
+            }
+        },
     }
     # `DuplicateKeyError` iki ayrı senaryoda fırlayabilir:
     #   (a) Gerçek overlap: doc zaten var, filtre overlap nedeniyle
@@ -3551,25 +3714,24 @@ async def _acquire_shift_lock_interval(
     for _attempt in range(3):
         try:
             await db.shift_schedule_locks.find_one_and_update(
-                lock_filter, lock_update, upsert=True,
+                lock_filter,
+                lock_update,
+                upsert=True,
             )
             return
         except DuplicateKeyError as e:
             last_exc = e
             existing_doc = await db.shift_schedule_locks.find_one(
                 {
-                    'tenant_id': tenant_id,
-                    'staff_id': staff_id,
-                    'shift_date': shift_date,
+                    "tenant_id": tenant_id,
+                    "staff_id": staff_id,
+                    "shift_date": shift_date,
                 },
-                {'_id': 0, 'intervals': 1},
+                {"_id": 0, "intervals": 1},
             )
             conflicting = None
-            for iv in (existing_doc or {}).get('intervals') or []:
-                if (
-                    iv.get('start_time', '') < end_time
-                    and iv.get('end_time', '') > start_time
-                ):
+            for iv in (existing_doc or {}).get("intervals") or []:
+                if iv.get("start_time", "") < end_time and iv.get("end_time", "") > start_time:
                     conflicting = iv
                     break
             if conflicting:
@@ -3589,10 +3751,7 @@ async def _acquire_shift_lock_interval(
     # 3 retry sonrası hâlâ DuplicateKeyError + overlap yok: patolojik.
     raise HTTPException(
         status_code=503,
-        detail=(
-            "Vardiya kilidi alınamadı, lütfen tekrar deneyin "
-            f"(son hata: {last_exc})"
-        ),
+        detail=(f"Vardiya kilidi alınamadı, lütfen tekrar deneyin (son hata: {last_exc})"),
     )
 
 
@@ -3631,16 +3790,14 @@ async def _acquire_shift_lock_for_shift(
             now_iso=now_iso,
         )
         return
-    next_date = (
-        date.fromisoformat(shift_date) + timedelta(days=1)
-    ).isoformat()
+    next_date = (date.fromisoformat(shift_date) + timedelta(days=1)).isoformat()
     # Leg 1: günün geri kalanı (start_time → 24:00 sentinel).
     await _acquire_shift_lock_interval(
         tenant_id=tenant_id,
         staff_id=staff_id,
         shift_date=shift_date,
         start_time=start_time,
-        end_time='24:00',
+        end_time="24:00",
         shift_id=shift_id,
         now_iso=now_iso,
     )
@@ -3651,7 +3808,7 @@ async def _acquire_shift_lock_for_shift(
             tenant_id=tenant_id,
             staff_id=staff_id,
             shift_date=next_date,
-            start_time='00:00',
+            start_time="00:00",
             end_time=end_time,
             shift_id=shift_id,
             now_iso=now_iso,
@@ -3686,9 +3843,7 @@ async def _release_shift_lock_for_shift(
         shift_id=shift_id,
     )
     if crosses_midnight:
-        next_date = (
-            date.fromisoformat(shift_date) + timedelta(days=1)
-        ).isoformat()
+        next_date = (date.fromisoformat(shift_date) + timedelta(days=1)).isoformat()
         await _release_shift_lock_interval(
             tenant_id=tenant_id,
             staff_id=staff_id,
@@ -3714,11 +3869,11 @@ async def _release_shift_lock_interval(
     try:
         await db.shift_schedule_locks.update_one(
             {
-                'tenant_id': tenant_id,
-                'staff_id': staff_id,
-                'shift_date': shift_date,
+                "tenant_id": tenant_id,
+                "staff_id": staff_id,
+                "shift_date": shift_date,
             },
-            {'$pull': {'intervals': {'shift_id': shift_id}}},
+            {"$pull": {"intervals": {"shift_id": shift_id}}},
         )
     except Exception:  # pragma: no cover - defensive, never block parent
         pass
@@ -3726,10 +3881,10 @@ async def _release_shift_lock_interval(
 
 class ShiftPayload(BaseModel):
     staff_id: str = Field(..., min_length=1)
-    shift_date: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
-    shift_type: Literal['morning', 'afternoon', 'evening', 'night', 'split'] = 'morning'
-    start_time: str = Field(..., pattern=r'^\d{2}:\d{2}$')
-    end_time: str = Field(..., pattern=r'^\d{2}:\d{2}$')
+    shift_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    shift_type: Literal["morning", "afternoon", "evening", "night", "split"] = "morning"
+    start_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
+    end_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
     crosses_midnight: bool = False
     notes: str | None = Field(None, max_length=300)
 
@@ -3738,22 +3893,24 @@ class ShiftPayload(BaseModel):
 # günlerinde personele vardiya atanamaz. `_apply_leave_to_shifts` final
 # onayda `shift_schedules` üstüne status='on_leave' satırı upsert eder;
 # bu helper o satırları (veya klasik leave_requests) tarama yapar.
-LEAVE_APPROVED_STATUSES = ('approved', 'hr_approved')
+LEAVE_APPROVED_STATUSES = ("approved", "hr_approved")
 
 
 async def _staff_has_approved_leave_on(
-    tenant_id: str, staff_id: str, date_iso: str,
+    tenant_id: str,
+    staff_id: str,
+    date_iso: str,
 ) -> dict | None:
     """O gün için onaylı izin var mı? Varsa leave doc'unu döner, yoksa None."""
     doc = await db.leave_requests.find_one(
         {
-            'tenant_id': tenant_id,
-            'staff_id': staff_id,
-            'status': {'$in': list(LEAVE_APPROVED_STATUSES)},
-            'start_date': {'$lte': date_iso},
-            'end_date': {'$gte': date_iso},
+            "tenant_id": tenant_id,
+            "staff_id": staff_id,
+            "status": {"$in": list(LEAVE_APPROVED_STATUSES)},
+            "start_date": {"$lte": date_iso},
+            "end_date": {"$gte": date_iso},
         },
-        {'_id': 0, 'id': 1, 'leave_type': 1, 'start_date': 1, 'end_date': 1},
+        {"_id": 0, "id": 1, "leave_type": 1, "start_date": 1, "end_date": 1},
     )
     return doc
 
@@ -3762,22 +3919,21 @@ async def _staff_is_active(tenant_id: str, staff_id: str) -> bool:
     """Pasif (active=False) staff_members'a vardiya atanmaz. Users-türevli
     derived staff için is_active=True kabul edilir."""
     sm = await db.staff_members.find_one(
-        {'id': staff_id, 'tenant_id': tenant_id},
-        {'_id': 0, 'active': 1},
+        {"id": staff_id, "tenant_id": tenant_id},
+        {"_id": 0, "active": 1},
     )
     if sm:
-        return sm.get('active', True) is not False
+        return sm.get("active", True) is not False
     # users türevli kayıt → _verify_staff_in_tenant zaten is_active=True filtreler.
     return True
 
 
-def _shift_datetimes(shift_date: str, start_time: str, end_time: str,
-                     crosses_midnight: bool) -> tuple[datetime, datetime]:
+def _shift_datetimes(shift_date: str, start_time: str, end_time: str, crosses_midnight: bool) -> tuple[datetime, datetime]:
     """Compute (start_dt, end_dt) for a shift record. Naive UTC datetimes;
     only used for relative overlap math, not wall-clock conversions."""
     d = date.fromisoformat(shift_date)
-    sh, sm = (int(x) for x in start_time.split(':'))
-    eh, em = (int(x) for x in end_time.split(':'))
+    sh, sm = (int(x) for x in start_time.split(":"))
+    eh, em = (int(x) for x in end_time.split(":"))
     start_dt = datetime(d.year, d.month, d.day, sh, sm)
     end_d = d + timedelta(days=1) if crosses_midnight else d
     end_dt = datetime(end_d.year, end_d.month, end_d.day, eh, em)
@@ -3804,34 +3960,28 @@ async def create_shift_v2(
     # Task #263: onaylı izin günlerinde vardiya atanamaz (lock acquire
     # öncesi, sahte 409 yaratmamak için).
     leave = await _staff_has_approved_leave_on(
-        current_user.tenant_id, payload.staff_id, payload.shift_date,
+        current_user.tenant_id,
+        payload.staff_id,
+        payload.shift_date,
     )
     if leave:
         raise HTTPException(
             status_code=409,
-            detail=(
-                f"{payload.shift_date} tarihinde {staff.get('name')} "
-                f"onaylı izinde ({leave.get('leave_type')}, "
-                f"{leave.get('start_date')} → {leave.get('end_date')}). "
-                f"Vardiya atanamaz."
-            ),
+            detail=(f"{payload.shift_date} tarihinde {staff.get('name')} onaylı izinde ({leave.get('leave_type')}, {leave.get('start_date')} → {leave.get('end_date')}). Vardiya atanamaz."),
         )
     if payload.crosses_midnight:
         # Gece vardiyası ertesi güne sarktığı için sonraki günü de izinde
         # geçiriyorsa engellenir.
-        next_iso = (
-            date.fromisoformat(payload.shift_date) + timedelta(days=1)
-        ).isoformat()
+        next_iso = (date.fromisoformat(payload.shift_date) + timedelta(days=1)).isoformat()
         leave_next = await _staff_has_approved_leave_on(
-            current_user.tenant_id, payload.staff_id, next_iso,
+            current_user.tenant_id,
+            payload.staff_id,
+            next_iso,
         )
         if leave_next:
             raise HTTPException(
                 status_code=409,
-                detail=(
-                    f"Gece vardiyası {next_iso} gününe sarkıyor ve o gün "
-                    f"personel onaylı izinde."
-                ),
+                detail=(f"Gece vardiyası {next_iso} gününe sarkıyor ve o gün personel onaylı izinde."),
             )
 
     # Task #255: Gece vardiyaları artık tek kayıtta planlanabilir
@@ -3881,22 +4031,21 @@ async def create_shift_v2(
     )
     d = date.fromisoformat(payload.shift_date)
 
-    end_date = (d + timedelta(days=1)).isoformat() if payload.crosses_midnight \
-        else payload.shift_date
+    end_date = (d + timedelta(days=1)).isoformat() if payload.crosses_midnight else payload.shift_date
     item = {
-        'id': shift_id,
-        'tenant_id': current_user.tenant_id,
-        'staff_id': payload.staff_id,
-        'staff_name': staff.get('name'),
-        'shift_date': payload.shift_date,
-        'shift_type': payload.shift_type,
-        'start_time': payload.start_time,
-        'end_time': payload.end_time,
-        'crosses_midnight': payload.crosses_midnight,
-        'end_date': end_date,
-        'notes': payload.notes,
-        'status': 'scheduled',
-        'created_at': datetime.now(UTC).isoformat(),
+        "id": shift_id,
+        "tenant_id": current_user.tenant_id,
+        "staff_id": payload.staff_id,
+        "staff_name": staff.get("name"),
+        "shift_date": payload.shift_date,
+        "shift_type": payload.shift_type,
+        "start_time": payload.start_time,
+        "end_time": payload.end_time,
+        "crosses_midnight": payload.crosses_midnight,
+        "end_date": end_date,
+        "notes": payload.notes,
+        "status": "scheduled",
+        "created_at": datetime.now(UTC).isoformat(),
     }
     # Task #254 follow-up: lock acquired ama insert başarısızsa lock
     # entry'sini geri al → orphan lock + future false 409 olmasın.
@@ -3910,8 +4059,8 @@ async def create_shift_v2(
             shift_id=shift_id,
         )
         raise
-    item.pop('_id', None)
-    return {'success': True, 'shift': item}
+    item.pop("_id", None)
+    return {"success": True, "shift": item}
 
 
 @router.get("/hr/shifts")
@@ -3923,14 +4072,8 @@ async def list_shifts(
     current_user: User = Depends(get_current_user),
 ):
     today = _today_local()
-    start_dt = (
-        datetime.fromisoformat(start).date() if start
-        else today - timedelta(days=7)
-    )
-    end_dt = (
-        datetime.fromisoformat(end).date() if end
-        else today + timedelta(days=14)
-    )
+    start_dt = datetime.fromisoformat(start).date() if start else today - timedelta(days=7)
+    end_dt = datetime.fromisoformat(end).date() if end else today + timedelta(days=14)
     # Task #257: overnight (crosses_midnight) vardiyalar bitiş gününde de
     # görünmeli. Frontend ertesi gün hücresinde "← 06:00 (önceki gün)"
     # rozeti çizebilmek için, sorgu penceresinden bir gün önce başlayan
@@ -3938,17 +4081,17 @@ async def list_shifts(
     # döner, sadece tarih penceresi genişletilir.
     pre_start_dt = start_dt - timedelta(days=1)
     query: dict[str, Any] = {
-        'tenant_id': current_user.tenant_id,
-        '$or': [
-            {'shift_date': {'$gte': start_dt.isoformat(), '$lte': end_dt.isoformat()}},
+        "tenant_id": current_user.tenant_id,
+        "$or": [
+            {"shift_date": {"$gte": start_dt.isoformat(), "$lte": end_dt.isoformat()}},
             {
-                'shift_date': pre_start_dt.isoformat(),
-                'crosses_midnight': True,
+                "shift_date": pre_start_dt.isoformat(),
+                "crosses_midnight": True,
             },
         ],
     }
     if staff_id:
-        query['staff_id'] = staff_id
+        query["staff_id"] = staff_id
 
     # Task #263: department filter — staff_members.department üzerinden
     # `staff_id $in` listesine indirgenir; users-türevli derived staff
@@ -3956,62 +4099,62 @@ async def list_shifts(
     if department:
         dept_ids: set[str] = set()
         sm_cursor = db.staff_members.find(
-            {'tenant_id': current_user.tenant_id, 'department': department},
-            {'_id': 0, 'id': 1},
+            {"tenant_id": current_user.tenant_id, "department": department},
+            {"_id": 0, "id": 1},
         )
         async for s in sm_cursor:
-            dept_ids.add(s['id'])
+            dept_ids.add(s["id"])
         usr_cursor = db.users.find(
             {
-                'tenant_id': current_user.tenant_id,
-                'is_active': True,
-                'role': department,
+                "tenant_id": current_user.tenant_id,
+                "is_active": True,
+                "role": department,
             },
-            {'_id': 0, 'id': 1},
+            {"_id": 0, "id": 1},
         )
         async for u in usr_cursor:
-            dept_ids.add(u['id'])
+            dept_ids.add(u["id"])
         if not dept_ids:
             return {
-                'items': [], 'total': 0,
-                'range': {'start': start_dt.isoformat(), 'end': end_dt.isoformat()},
-                'department': department,
+                "items": [],
+                "total": 0,
+                "range": {"start": start_dt.isoformat(), "end": end_dt.isoformat()},
+                "department": department,
             }
-        if 'staff_id' in query:
-            if query['staff_id'] not in dept_ids:
+        if "staff_id" in query:
+            if query["staff_id"] not in dept_ids:
                 return {
-                    'items': [], 'total': 0,
-                    'range': {'start': start_dt.isoformat(), 'end': end_dt.isoformat()},
-                    'department': department,
+                    "items": [],
+                    "total": 0,
+                    "range": {"start": start_dt.isoformat(), "end": end_dt.isoformat()},
+                    "department": department,
                 }
         else:
-            query['staff_id'] = {'$in': list(dept_ids)}
+            query["staff_id"] = {"$in": list(dept_ids)}
 
-    items = await db.shift_schedules.find(
-        query, {'_id': 0}
-    ).sort('shift_date', 1).to_list(2000)
+    items = await db.shift_schedules.find(query, {"_id": 0}).sort("shift_date", 1).to_list(2000)
 
     # Personel adıyla zenginleştir (hem staff_members hem türeyen users)
     staff_map = await _get_staff_map(current_user.tenant_id)
-    user_cursor = db.users.find({
-        'tenant_id': current_user.tenant_id,
-        'is_active': True,
-        'role': {'$in': [
-            'housekeeping', 'front_desk', 'supervisor',
-            'finance', 'sales', 'admin'
-        ]},
-    }, {'_id': 0, 'id': 1, 'name': 1})
+    user_cursor = db.users.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "is_active": True,
+            "role": {"$in": ["housekeeping", "front_desk", "supervisor", "finance", "sales", "admin"]},
+        },
+        {"_id": 0, "id": 1, "name": 1},
+    )
     async for u in user_cursor:
-        if u['id'] not in staff_map:
-            staff_map[u['id']] = {'id': u['id'], 'name': u.get('name') or 'Personel'}
+        if u["id"] not in staff_map:
+            staff_map[u["id"]] = {"id": u["id"], "name": u.get("name") or "Personel"}
     for item in items:
-        if not item.get('staff_name'):
-            sm = staff_map.get(item.get('staff_id'), {})
-            item['staff_name'] = sm.get('name', item.get('staff_id'))
+        if not item.get("staff_name"):
+            sm = staff_map.get(item.get("staff_id"), {})
+            item["staff_name"] = sm.get("name", item.get("staff_id"))
     return {
-        'items': items,
-        'total': len(items),
-        'range': {'start': start_dt.isoformat(), 'end': end_dt.isoformat()},
+        "items": items,
+        "total": len(items),
+        "range": {"start": start_dt.isoformat(), "end": end_dt.isoformat()},
     }
 
 
@@ -4027,39 +4170,39 @@ async def delete_shift(
     # üzerinde stale kalır ve aynı saat aralığında yeni create false 409
     # döner.
     existing = await db.shift_schedules.find_one(
-        {'tenant_id': current_user.tenant_id, 'id': shift_id},
-        {'_id': 0, 'staff_id': 1, 'shift_date': 1, 'crosses_midnight': 1},
+        {"tenant_id": current_user.tenant_id, "id": shift_id},
+        {"_id": 0, "staff_id": 1, "shift_date": 1, "crosses_midnight": 1},
     )
     if not existing:
         raise HTTPException(status_code=404, detail="Vardiya bulunamadı")
-    res = await db.shift_schedules.delete_one(
-        {'tenant_id': current_user.tenant_id, 'id': shift_id}
-    )
+    res = await db.shift_schedules.delete_one({"tenant_id": current_user.tenant_id, "id": shift_id})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Vardiya bulunamadı")
     await _release_shift_lock_for_shift(
         tenant_id=current_user.tenant_id,
-        staff_id=existing.get('staff_id'),
-        shift_date=existing.get('shift_date'),
-        crosses_midnight=bool(existing.get('crosses_midnight', False)),
+        staff_id=existing.get("staff_id"),
+        shift_date=existing.get("shift_date"),
+        crosses_midnight=bool(existing.get("crosses_midnight", False)),
         shift_id=shift_id,
     )
-    return {'success': True}
+    return {"success": True}
 
 
 # ============= Bulk shift create (Task #263) =============
 
+
 class BulkShiftPayload(BaseModel):
     """Toplu vardiya oluştur — (staff_ids × dates) × tek şablon."""
+
     staff_ids: list[str] = Field(..., min_length=1, max_length=200)
     dates: list[str] = Field(..., min_length=1, max_length=62)
-    shift_type: Literal['morning', 'afternoon', 'evening', 'night', 'split'] = 'morning'
-    start_time: str = Field(..., pattern=r'^\d{2}:\d{2}$')
-    end_time: str = Field(..., pattern=r'^\d{2}:\d{2}$')
+    shift_type: Literal["morning", "afternoon", "evening", "night", "split"] = "morning"
+    start_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
+    end_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
     crosses_midnight: bool = False
     notes: str | None = Field(None, max_length=300)
 
-    @field_validator('dates')
+    @field_validator("dates")
     @classmethod
     def _valid_dates(cls, v: list[str]) -> list[str]:
         for d in v:
@@ -4088,20 +4231,13 @@ async def create_shifts_bulk(
         if payload.end_time >= payload.start_time:
             raise HTTPException(
                 status_code=422,
-                detail=(
-                    f"Gece vardiyası işaretlendi ama bitiş saati "
-                    f"({payload.end_time}) başlangıç saatinden "
-                    f"({payload.start_time}) önce olmalı."
-                ),
+                detail=(f"Gece vardiyası işaretlendi ama bitiş saati ({payload.end_time}) başlangıç saatinden ({payload.start_time}) önce olmalı."),
             )
     else:
         if payload.end_time <= payload.start_time:
             raise HTTPException(
                 status_code=422,
-                detail=(
-                    f"Vardiya bitiş saati ({payload.end_time}) başlangıç "
-                    f"saatinden ({payload.start_time}) sonra olmalı."
-                ),
+                detail=(f"Vardiya bitiş saati ({payload.end_time}) başlangıç saatinden ({payload.start_time}) sonra olmalı."),
             )
 
     created: list[dict] = []
@@ -4112,43 +4248,57 @@ async def create_shifts_bulk(
         staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
         if not staff:
             for d_iso in payload.dates:
-                skipped.append({
-                    'staff_id': staff_id, 'shift_date': d_iso,
-                    'reason': 'staff_not_found',
-                })
+                skipped.append(
+                    {
+                        "staff_id": staff_id,
+                        "shift_date": d_iso,
+                        "reason": "staff_not_found",
+                    }
+                )
             continue
         if not await _staff_is_active(current_user.tenant_id, staff_id):
             for d_iso in payload.dates:
-                skipped.append({
-                    'staff_id': staff_id, 'shift_date': d_iso,
-                    'reason': 'staff_inactive',
-                })
+                skipped.append(
+                    {
+                        "staff_id": staff_id,
+                        "shift_date": d_iso,
+                        "reason": "staff_inactive",
+                    }
+                )
             continue
 
         for d_iso in payload.dates:
             # Leave check (start + opsiyonel next day).
             leave = await _staff_has_approved_leave_on(
-                current_user.tenant_id, staff_id, d_iso,
+                current_user.tenant_id,
+                staff_id,
+                d_iso,
             )
             if leave:
-                skipped.append({
-                    'staff_id': staff_id, 'shift_date': d_iso,
-                    'reason': 'on_approved_leave',
-                    'leave_type': leave.get('leave_type'),
-                })
+                skipped.append(
+                    {
+                        "staff_id": staff_id,
+                        "shift_date": d_iso,
+                        "reason": "on_approved_leave",
+                        "leave_type": leave.get("leave_type"),
+                    }
+                )
                 continue
             if payload.crosses_midnight:
-                next_iso = (
-                    date.fromisoformat(d_iso) + timedelta(days=1)
-                ).isoformat()
+                next_iso = (date.fromisoformat(d_iso) + timedelta(days=1)).isoformat()
                 leave_n = await _staff_has_approved_leave_on(
-                    current_user.tenant_id, staff_id, next_iso,
+                    current_user.tenant_id,
+                    staff_id,
+                    next_iso,
                 )
                 if leave_n:
-                    skipped.append({
-                        'staff_id': staff_id, 'shift_date': d_iso,
-                        'reason': 'overnight_overlaps_leave',
-                    })
+                    skipped.append(
+                        {
+                            "staff_id": staff_id,
+                            "shift_date": d_iso,
+                            "reason": "overnight_overlaps_leave",
+                        }
+                    )
                     continue
 
             shift_id = str(uuid.uuid4())
@@ -4164,33 +4314,33 @@ async def create_shifts_bulk(
                     now_iso=now_iso_base,
                 )
             except HTTPException as exc:
-                skipped.append({
-                    'staff_id': staff_id, 'shift_date': d_iso,
-                    'reason': 'conflict' if exc.status_code == 409 else 'lock_failed',
-                    'detail': str(exc.detail),
-                })
+                skipped.append(
+                    {
+                        "staff_id": staff_id,
+                        "shift_date": d_iso,
+                        "reason": "conflict" if exc.status_code == 409 else "lock_failed",
+                        "detail": str(exc.detail),
+                    }
+                )
                 continue
 
             d_obj = date.fromisoformat(d_iso)
-            end_date_iso = (
-                (d_obj + timedelta(days=1)).isoformat()
-                if payload.crosses_midnight else d_iso
-            )
+            end_date_iso = (d_obj + timedelta(days=1)).isoformat() if payload.crosses_midnight else d_iso
             item = {
-                'id': shift_id,
-                'tenant_id': current_user.tenant_id,
-                'staff_id': staff_id,
-                'staff_name': staff.get('name'),
-                'shift_date': d_iso,
-                'shift_type': payload.shift_type,
-                'start_time': payload.start_time,
-                'end_time': payload.end_time,
-                'crosses_midnight': payload.crosses_midnight,
-                'end_date': end_date_iso,
-                'notes': payload.notes,
-                'status': 'scheduled',
-                'created_at': datetime.now(UTC).isoformat(),
-                'created_via': 'bulk',
+                "id": shift_id,
+                "tenant_id": current_user.tenant_id,
+                "staff_id": staff_id,
+                "staff_name": staff.get("name"),
+                "shift_date": d_iso,
+                "shift_type": payload.shift_type,
+                "start_time": payload.start_time,
+                "end_time": payload.end_time,
+                "crosses_midnight": payload.crosses_midnight,
+                "end_date": end_date_iso,
+                "notes": payload.notes,
+                "status": "scheduled",
+                "created_at": datetime.now(UTC).isoformat(),
+                "created_via": "bulk",
             }
             try:
                 await db.shift_schedules.insert_one(item)
@@ -4202,26 +4352,34 @@ async def create_shifts_bulk(
                     crosses_midnight=payload.crosses_midnight,
                     shift_id=shift_id,
                 )
-                skipped.append({
-                    'staff_id': staff_id, 'shift_date': d_iso,
-                    'reason': 'insert_failed',
-                })
+                skipped.append(
+                    {
+                        "staff_id": staff_id,
+                        "shift_date": d_iso,
+                        "reason": "insert_failed",
+                    }
+                )
                 continue
-            item.pop('_id', None)
-            created.append({
-                'id': shift_id, 'staff_id': staff_id, 'shift_date': d_iso,
-            })
+            item.pop("_id", None)
+            created.append(
+                {
+                    "id": shift_id,
+                    "staff_id": staff_id,
+                    "shift_date": d_iso,
+                }
+            )
 
     return {
-        'success': True,
-        'created_count': len(created),
-        'skipped_count': len(skipped),
-        'created': created,
-        'skipped': skipped,
+        "success": True,
+        "created_count": len(created),
+        "skipped_count": len(skipped),
+        "created": created,
+        "skipped": skipped,
     }
 
 
 # ============= Recruitment Applicants =============
+
 
 class ApplicantPayload(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
@@ -4232,7 +4390,7 @@ class ApplicantPayload(BaseModel):
 
 
 class ApplicantStatusPayload(BaseModel):
-    status: Literal['new', 'screening', 'interview', 'offer', 'hired', 'rejected']
+    status: Literal["new", "screening", "interview", "offer", "hired", "rejected"]
     note: str | None = Field(None, max_length=500)
 
 
@@ -4243,36 +4401,34 @@ async def add_applicant(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
-    job = await db.job_postings.find_one(
-        {'tenant_id': current_user.tenant_id, 'id': job_id}
-    )
+    job = await db.job_postings.find_one({"tenant_id": current_user.tenant_id, "id": job_id})
     if not job:
         raise HTTPException(status_code=404, detail="İş ilanı bulunamadı")
-    if job.get('status') != 'active':
+    if job.get("status") != "active":
         raise HTTPException(
             status_code=400,
             detail="Sadece aktif (yayında) ilanlara aday eklenebilir",
         )
     item = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'job_id': job_id,
-        'job_title': job.get('title'),
-        'name': payload.name,
-        'email': payload.email,
-        'phone': payload.phone,
-        'notes': payload.notes,
-        'cv_url': payload.cv_url,
-        'status': 'new',
-        'created_at': datetime.now(UTC).isoformat(),
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "job_id": job_id,
+        "job_title": job.get("title"),
+        "name": payload.name,
+        "email": payload.email,
+        "phone": payload.phone,
+        "notes": payload.notes,
+        "cv_url": payload.cv_url,
+        "status": "new",
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.job_applicants.insert_one(item)
     await db.job_postings.update_one(
-        {'tenant_id': current_user.tenant_id, 'id': job_id},
-        {'$inc': {'applicants_count': 1}},
+        {"tenant_id": current_user.tenant_id, "id": job_id},
+        {"$inc": {"applicants_count": 1}},
     )
-    item.pop('_id', None)
-    return {'success': True, 'applicant': item}
+    item.pop("_id", None)
+    return {"success": True, "applicant": item}
 
 
 @router.get("/hr/job-postings/{job_id}/applicants")
@@ -4281,57 +4437,67 @@ async def list_applicants(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr")),
 ):
-    items = await db.job_applicants.find({
-        'tenant_id': current_user.tenant_id,
-        'job_id': job_id,
-    }, {'_id': 0}).sort('created_at', -1).to_list(500)
+    items = (
+        await db.job_applicants.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "job_id": job_id,
+            },
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .to_list(500)
+    )
     counts: dict[str, int] = {}
     for it in items:
-        s = it.get('status', 'new')
+        s = it.get("status", "new")
         counts[s] = counts.get(s, 0) + 1
-    return {'items': items, 'total': len(items), 'counts': counts}
+    return {"items": items, "total": len(items), "counts": counts}
 
 
 async def _trigger_staff_onboarding(applicant: dict, tenant_id: str, actor_id: str, current_user: User):
     staff_id = str(uuid.uuid4())
 
     staff = {
-        'id': staff_id,
-        'tenant_id': tenant_id,
-        'name': applicant['name'],
-        'email': applicant.get('email'),
-        'phone': applicant.get('phone'),
-        'department': None,
-        'position': None,
-        'hire_date': _today_local().isoformat(),
-        'employment_type': 'full_time',
-        'performance_score': 0.0,
-        'active': False,
-        'created_at': datetime.now(UTC).isoformat(),
-        'onboarding_status': 'pending',
+        "id": staff_id,
+        "tenant_id": tenant_id,
+        "name": applicant["name"],
+        "email": applicant.get("email"),
+        "phone": applicant.get("phone"),
+        "department": None,
+        "position": None,
+        "hire_date": _today_local().isoformat(),
+        "employment_type": "full_time",
+        "performance_score": 0.0,
+        "active": False,
+        "created_at": datetime.now(UTC).isoformat(),
+        "onboarding_status": "pending",
     }
     await db.staff_members.insert_one(staff)
 
     checklist = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': tenant_id,
-        'staff_id': staff_id,
-        'applicant_id': applicant['id'],
-        'status': 'pending',
-        'steps': [
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant_id,
+        "staff_id": staff_id,
+        "applicant_id": applicant["id"],
+        "status": "pending",
+        "steps": [
             {"key": "document_id", "title": "Kimlik belgesi / nüfus cüzdanı sureti", "completed": False, "completed_at": None, "document_id": None},
             {"key": "document_criminal_record", "title": "Adli sicil belgesi (sabıka kaydı)", "completed": False, "completed_at": None, "document_id": None},
             {"key": "document_health_certificate", "title": "Sağlık raporu", "completed": False, "completed_at": None, "document_id": None},
             {"key": "orientation", "title": "Oryantasyon eğitimi planla", "completed": False, "completed_at": None, "training_id": None},
-            {"key": "equipment", "title": "Zimmet tanımla (üniforma, kart, telsiz vb.)", "completed": False, "completed_at": None, "equipment_id": None}
+            {"key": "equipment", "title": "Zimmet tanımla (üniforma, kart, telsiz vb.)", "completed": False, "completed_at": None, "equipment_id": None},
         ],
-        'created_at': datetime.now(UTC).isoformat(),
-        'updated_at': datetime.now(UTC).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
     await db.staff_onboarding.insert_one(checklist)
 
     await _audit(
-        current_user, "hr.staff.onboarding_start", "staff_member", staff_id,
+        current_user,
+        "hr.staff.onboarding_start",
+        "staff_member",
+        staff_id,
         f"Personel onboarding süreci başlatıldı (Staff ID: {staff_id})",
         severity="info",
     )
@@ -4344,33 +4510,34 @@ async def update_applicant_status(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
-    applicant = await db.job_applicants.find_one(
-        {'tenant_id': current_user.tenant_id, 'id': applicant_id}
-    )
+    applicant = await db.job_applicants.find_one({"tenant_id": current_user.tenant_id, "id": applicant_id})
     if not applicant:
         raise HTTPException(status_code=404, detail="Aday bulunamadı")
 
     old_status = applicant.get("status")
 
     res = await db.job_applicants.update_one(
-        {'tenant_id': current_user.tenant_id, 'id': applicant_id},
-        {'$set': {
-            'status': payload.status,
-            'status_note': payload.note,
-            'status_updated_by': getattr(current_user, 'id', None),
-            'status_updated_at': datetime.now(UTC).isoformat(),
-        }},
+        {"tenant_id": current_user.tenant_id, "id": applicant_id},
+        {
+            "$set": {
+                "status": payload.status,
+                "status_note": payload.note,
+                "status_updated_by": getattr(current_user, "id", None),
+                "status_updated_at": datetime.now(UTC).isoformat(),
+            }
+        },
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Aday bulunamadı")
 
     if payload.status == "hired" and old_status != "hired":
-        await _trigger_staff_onboarding(applicant, current_user.tenant_id, getattr(current_user, 'id', None), current_user)
+        await _trigger_staff_onboarding(applicant, current_user.tenant_id, getattr(current_user, "id", None), current_user)
 
-    return {'success': True, 'status': payload.status}
+    return {"success": True, "status": payload.status}
 
 
 # ============= Staff Onboarding Workflow =============
+
 
 class OnboardingStepCompletePayload(BaseModel):
     reference_id: str | None = Field(None, max_length=100)
@@ -4384,15 +4551,11 @@ async def get_staff_onboarding_status(
     _perm=Depends(require_op("view_hr")),
 ):
     """Fetches the onboarding checklist and progress for a staff member."""
-    checklist = await db.staff_onboarding.find_one(
-        {"tenant_id": current_user.tenant_id, "staff_id": staff_id}, {"_id": 0}
-    )
+    checklist = await db.staff_onboarding.find_one({"tenant_id": current_user.tenant_id, "staff_id": staff_id}, {"_id": 0})
     if not checklist:
         raise HTTPException(status_code=404, detail="Onboarding kaydı bulunamadı")
 
-    staff = await db.staff_members.find_one(
-        {"tenant_id": current_user.tenant_id, "id": staff_id}, {"_id": 0}
-    )
+    staff = await db.staff_members.find_one({"tenant_id": current_user.tenant_id, "id": staff_id}, {"_id": 0})
     return {"checklist": checklist, "staff": staff}
 
 
@@ -4405,9 +4568,7 @@ async def complete_onboarding_step(
     _perm=Depends(require_op("manage_hr")),
 ):
     """Marks a specific onboarding step as completed."""
-    checklist = await db.staff_onboarding.find_one(
-        {"tenant_id": current_user.tenant_id, "staff_id": staff_id}
-    )
+    checklist = await db.staff_onboarding.find_one({"tenant_id": current_user.tenant_id, "staff_id": staff_id})
     if not checklist:
         raise HTTPException(status_code=404, detail="Onboarding kaydı bulunamadı")
 
@@ -4436,19 +4597,9 @@ async def complete_onboarding_step(
 
     new_status = "completed" if completed_steps == len(steps) else "in_progress"
 
-    await db.staff_onboarding.update_one(
-        {"tenant_id": current_user.tenant_id, "staff_id": staff_id},
-        {"$set": {
-            "steps": steps,
-            "status": new_status,
-            "updated_at": datetime.now(UTC).isoformat()
-        }}
-    )
+    await db.staff_onboarding.update_one({"tenant_id": current_user.tenant_id, "staff_id": staff_id}, {"$set": {"steps": steps, "status": new_status, "updated_at": datetime.now(UTC).isoformat()}})
 
-    await db.staff_members.update_one(
-        {"tenant_id": current_user.tenant_id, "id": staff_id},
-        {"$set": {"onboarding_status": new_status, "updated_at": datetime.now(UTC).isoformat()}}
-    )
+    await db.staff_members.update_one({"tenant_id": current_user.tenant_id, "id": staff_id}, {"$set": {"onboarding_status": new_status, "updated_at": datetime.now(UTC).isoformat()}})
 
     return {"success": True, "status": new_status}
 
@@ -4460,46 +4611,27 @@ async def finalize_onboarding(
     _perm=Depends(require_op("manage_hr")),
 ):
     """Finalizes onboarding, validating that all steps are complete, and activates the staff member."""
-    checklist = await db.staff_onboarding.find_one(
-        {"tenant_id": current_user.tenant_id, "staff_id": staff_id}
-    )
+    checklist = await db.staff_onboarding.find_one({"tenant_id": current_user.tenant_id, "staff_id": staff_id})
     if not checklist:
         raise HTTPException(status_code=404, detail="Onboarding kaydı bulunamadı")
 
     steps = checklist.get("steps") or []
     incomplete = [s["title"] for s in steps if not s.get("completed")]
     if incomplete:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Onboarding tamamlanamaz. Eksik adımlar var: {incomplete}"
-        )
+        raise HTTPException(status_code=409, detail=f"Onboarding tamamlanamaz. Eksik adımlar var: {incomplete}")
 
     now = datetime.now(UTC).isoformat()
-    await db.staff_onboarding.update_one(
-        {"tenant_id": current_user.tenant_id, "staff_id": staff_id},
-        {"$set": {"status": "completed", "completed_at": now, "updated_at": now}}
-    )
+    await db.staff_onboarding.update_one({"tenant_id": current_user.tenant_id, "staff_id": staff_id}, {"$set": {"status": "completed", "completed_at": now, "updated_at": now}})
 
-    await db.staff_members.update_one(
-        {"tenant_id": current_user.tenant_id, "id": staff_id},
-        {"$set": {
-            "active": True,
-            "onboarding_status": "completed",
-            "updated_at": now
-        }}
-    )
+    await db.staff_members.update_one({"tenant_id": current_user.tenant_id, "id": staff_id}, {"$set": {"active": True, "onboarding_status": "completed", "updated_at": now}})
 
-    await _audit(
-        current_user, "hr.staff.onboarding_complete", "staff_member", staff_id,
-        f"Personel onboarding süreci başarıyla tamamlandı ve aktif edildi. (Staff ID: {staff_id})",
-        severity="info"
-    )
+    await _audit(current_user, "hr.staff.onboarding_complete", "staff_member", staff_id, f"Personel onboarding süreci başarıyla tamamlandı ve aktif edildi. (Staff ID: {staff_id})", severity="info")
 
     return {"success": True}
 
 
-
 # ============= Performance Templates =============
+
 
 class CompetencyItem(BaseModel):
     name: str = Field(..., max_length=100)
@@ -4516,10 +4648,17 @@ class PerformanceTemplatePayload(BaseModel):
 async def list_performance_templates(
     current_user: User = Depends(get_current_user),
 ):
-    items = await db.performance_templates.find({
-        'tenant_id': current_user.tenant_id,
-    }, {'_id': 0}).sort('name', 1).to_list(100)
-    return {'items': items, 'total': len(items)}
+    items = (
+        await db.performance_templates.find(
+            {
+                "tenant_id": current_user.tenant_id,
+            },
+            {"_id": 0},
+        )
+        .sort("name", 1)
+        .to_list(100)
+    )
+    return {"items": items, "total": len(items)}
 
 
 @router.post("/hr/performance-templates")
@@ -4529,16 +4668,16 @@ async def create_performance_template(
     _perm=Depends(require_op("manage_hr")),
 ):
     item = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'name': payload.name,
-        'description': payload.description,
-        'competencies': [c.model_dump() for c in payload.competencies],
-        'created_at': datetime.now(UTC).isoformat(),
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "name": payload.name,
+        "description": payload.description,
+        "competencies": [c.model_dump() for c in payload.competencies],
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.performance_templates.insert_one(item)
-    item.pop('_id', None)
-    return {'success': True, 'template': item}
+    item.pop("_id", None)
+    return {"success": True, "template": item}
 
 
 @router.delete("/hr/performance-templates/{tpl_id}")
@@ -4547,13 +4686,15 @@ async def delete_performance_template(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
-    res = await db.performance_templates.delete_one({
-        'tenant_id': current_user.tenant_id,
-        'id': tpl_id,
-    })
+    res = await db.performance_templates.delete_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "id": tpl_id,
+        }
+    )
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Şablon bulunamadı")
-    return {'success': True}
+    return {"success": True}
 
 
 # ============================================================================
@@ -4575,16 +4716,17 @@ TR_ANNUAL_OVERTIME_CAP_HOURS = 270
 # settings.severance_daily_cap kullanılabilir.
 SEVERANCE_DAYS_PER_YEAR = 30
 TR_SEVERANCE_DAILY_CAP_DEFAULT = 1797.32  # 2026 H1 — günlük brüt tavanı
-HR_ELEVATED_ROLES = {'admin', 'owner', 'supervisor', 'manager', 'hr', 'finance'}
+HR_ELEVATED_ROLES = {"admin", "owner", "supervisor", "manager", "hr", "finance"}
 # Belge boyut sınırı (MongoDB document ~16MB üst sınırı; güvenli marj).
 DOC_MAX_BYTES = 5 * 1024 * 1024
 
 
 # ============= 1. Mesai Talebi =============
 
+
 class OvertimeRequestPayload(BaseModel):
     staff_id: str = Field(..., min_length=1, max_length=128)
-    work_date: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
+    work_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
     hours: float = Field(..., gt=0, le=12)
     reason: str = Field(..., min_length=3, max_length=1000)
 
@@ -4592,21 +4734,24 @@ class OvertimeRequestPayload(BaseModel):
 class OvertimeDecisionPayload(BaseModel):
     # Task #263: 2-aşamalı onay. pending → dept_approve → dept_approved →
     # approve → approved. Reject note ZORUNLU.
-    action: Literal['dept_approve', 'approve', 'reject']
+    action: Literal["dept_approve", "approve", "reject"]
     note: str | None = Field(None, max_length=500)
 
 
 async def _yearly_overtime_hours(tenant_id: str, staff_id: str, year: int) -> float:
     """Onaylanmış (status=approved) yıllık fazla mesai toplamı."""
-    cursor = db.overtime_requests.find({
-        'tenant_id': tenant_id,
-        'staff_id': staff_id,
-        'status': 'approved',
-        'work_date': {'$gte': f'{year}-01-01', '$lte': f'{year}-12-31'},
-    }, {'_id': 0, 'hours': 1})
+    cursor = db.overtime_requests.find(
+        {
+            "tenant_id": tenant_id,
+            "staff_id": staff_id,
+            "status": "approved",
+            "work_date": {"$gte": f"{year}-01-01", "$lte": f"{year}-12-31"},
+        },
+        {"_id": 0, "hours": 1},
+    )
     total = 0.0
     async for d in cursor:
-        total += float(d.get('hours') or 0)
+        total += float(d.get("hours") or 0)
     return total
 
 
@@ -4619,34 +4764,34 @@ async def create_overtime_request(
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     # Self-service guard: yetkisi olmayan kullanıcı sadece kendi adına talep açabilir.
-    if getattr(current_user, 'role', None) not in HR_ELEVATED_ROLES:
-        user_email = (getattr(current_user, 'email', None) or '').lower()
-        staff_email = (staff.get('email') or '').lower()
+    if getattr(current_user, "role", None) not in HR_ELEVATED_ROLES:
+        user_email = (getattr(current_user, "email", None) or "").lower()
+        staff_email = (staff.get("email") or "").lower()
         if not user_email or user_email != staff_email:
             raise HTTPException(status_code=403, detail="Sadece kendi adınıza talep açabilirsiniz")
     item = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'staff_id': payload.staff_id,
-        'staff_name': staff.get('name'),
-        'work_date': payload.work_date,
-        'hours': payload.hours,
-        'reason': payload.reason,
-        'status': 'pending',
-        'requested_by': getattr(current_user, 'id', None),
-        'requested_at': datetime.now(UTC).isoformat(),
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "staff_id": payload.staff_id,
+        "staff_name": staff.get("name"),
+        "work_date": payload.work_date,
+        "hours": payload.hours,
+        "reason": payload.reason,
+        "status": "pending",
+        "requested_by": getattr(current_user, "id", None),
+        "requested_at": datetime.now(UTC).isoformat(),
     }
     await db.overtime_requests.insert_one(item)
-    item.pop('_id', None)
+    item.pop("_id", None)
     await _notify_hr_managers(
         current_user.tenant_id,
-        kind='overtime_request',
+        kind="overtime_request",
         title=f"Mesai talebi: {staff.get('name')}",
         body=f"{payload.work_date} — {payload.hours:g} saat. Sebep: {payload.reason[:120]}",
         link=f"/hr-complete?tab=overtime",
-        ref_id=item['id'],
+        ref_id=item["id"],
     )
-    return {'success': True, 'overtime_request': item}
+    return {"success": True, "overtime_request": item}
 
 
 @router.get("/hr/overtime-requests")
@@ -4655,16 +4800,16 @@ async def list_overtime_requests(
     status: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
-    query: dict[str, Any] = {'tenant_id': current_user.tenant_id}
+    query: dict[str, Any] = {"tenant_id": current_user.tenant_id}
     if staff_id:
-        query['staff_id'] = staff_id
+        query["staff_id"] = staff_id
     if status:
-        query['status'] = status
-    items = await db.overtime_requests.find(query, {'_id': 0}).sort('requested_at', -1).to_list(500)
-    counts = {'pending': 0, 'approved': 0, 'rejected': 0}
+        query["status"] = status
+    items = await db.overtime_requests.find(query, {"_id": 0}).sort("requested_at", -1).to_list(500)
+    counts = {"pending": 0, "approved": 0, "rejected": 0}
     for it in items:
-        counts[it.get('status', 'pending')] = counts.get(it.get('status', 'pending'), 0) + 1
-    return {'items': items, 'total': len(items), 'counts': counts}
+        counts[it.get("status", "pending")] = counts.get(it.get("status", "pending"), 0) + 1
+    return {"items": items, "total": len(items), "counts": counts}
 
 
 @router.post("/hr/overtime-request/{req_id}/decision")
@@ -4674,16 +4819,19 @@ async def decide_overtime_request(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
-    req = await db.overtime_requests.find_one({
-        'tenant_id': current_user.tenant_id, 'id': req_id,
-    })
+    req = await db.overtime_requests.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "id": req_id,
+        }
+    )
     if not req:
         raise HTTPException(status_code=404, detail="Talep bulunamadı")
 
-    current_status = req.get('status', 'pending')
+    current_status = req.get("status", "pending")
 
-    if payload.action == 'reject':
-        if current_status not in ('pending', 'dept_approved'):
+    if payload.action == "reject":
+        if current_status not in ("pending", "dept_approved"):
             raise HTTPException(
                 status_code=400,
                 detail=f"Talep zaten karara bağlanmış (status={current_status})",
@@ -4693,90 +4841,90 @@ async def decide_overtime_request(
                 status_code=400,
                 detail="Red için gerekçe (note) zorunludur",
             )
-        new_status = 'rejected'
-        notify_kind = 'overtime_rejected'
+        new_status = "rejected"
+        notify_kind = "overtime_rejected"
         notify_title = "Mesai talebiniz reddedildi"
-    elif payload.action == 'dept_approve':
-        if current_status != 'pending':
+    elif payload.action == "dept_approve":
+        if current_status != "pending":
             raise HTTPException(
                 status_code=400,
                 detail=f"Departman onayı sadece pending durumdan verilebilir (mevcut: {current_status})",
             )
-        new_status = 'dept_approved'
-        notify_kind = 'overtime_dept_approved'
+        new_status = "dept_approved"
+        notify_kind = "overtime_dept_approved"
         notify_title = "Mesai talebiniz departman onayı aldı (final onay bekleniyor)"
     else:  # 'approve' (final HR/Finance) — Task #263: strict chain enforcement
-        if current_status != 'dept_approved':
+        if current_status != "dept_approved":
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    f"Final onay sadece departman onayından sonra verilebilir "
-                    f"(mevcut: {current_status}). Önce 'dept_approve' aşaması gerekli."
-                ),
+                detail=(f"Final onay sadece departman onayından sonra verilebilir (mevcut: {current_status}). Önce 'dept_approve' aşaması gerekli."),
             )
         # 270h/yıl kontrolü (İş K. m.41/3) — final aşamada
-        year = int(req['work_date'][:4])
+        year = int(req["work_date"][:4])
         already = await _yearly_overtime_hours(
-            current_user.tenant_id, req['staff_id'], year,
+            current_user.tenant_id,
+            req["staff_id"],
+            year,
         )
-        proposed = float(req.get('hours') or 0)
+        proposed = float(req.get("hours") or 0)
         if already + proposed > TR_ANNUAL_OVERTIME_CAP_HOURS:
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    f"Yıllık 270 saat fazla mesai üst sınırı aşılır "
-                    f"(mevcut: {already:g}h, talep: {proposed:g}h, sınır: 270h)"
-                ),
+                detail=(f"Yıllık 270 saat fazla mesai üst sınırı aşılır (mevcut: {already:g}h, talep: {proposed:g}h, sınır: 270h)"),
             )
-        new_status = 'approved'
-        notify_kind = 'overtime_approved'
+        new_status = "approved"
+        notify_kind = "overtime_approved"
         notify_title = "Mesai talebiniz onaylandı"
 
     update_set: dict[str, Any] = {
-        'status': new_status,
-        'decision_note': payload.note,
-        'decided_at': datetime.now(UTC).isoformat(),
+        "status": new_status,
+        "decision_note": payload.note,
+        "decided_at": datetime.now(UTC).isoformat(),
     }
-    history = req.get('decision_history') or []
-    history.append({
-        'stage': payload.action,
-        'status': new_status,
-        'by': getattr(current_user, 'id', None),
-        'at': datetime.now(UTC).isoformat(),
-        'note': payload.note,
-    })
-    update_set['decision_history'] = history
-    if new_status == 'dept_approved':
-        update_set['dept_approved_by'] = getattr(current_user, 'id', None)
-        update_set['dept_approved_at'] = datetime.now(UTC).isoformat()
-    elif new_status == 'approved':
-        update_set['decided_by'] = getattr(current_user, 'id', None)
-        update_set['approved_by'] = getattr(current_user, 'id', None)
-        update_set['approved_at'] = datetime.now(UTC).isoformat()
+    history = req.get("decision_history") or []
+    history.append(
+        {
+            "stage": payload.action,
+            "status": new_status,
+            "by": getattr(current_user, "id", None),
+            "at": datetime.now(UTC).isoformat(),
+            "note": payload.note,
+        }
+    )
+    update_set["decision_history"] = history
+    if new_status == "dept_approved":
+        update_set["dept_approved_by"] = getattr(current_user, "id", None)
+        update_set["dept_approved_at"] = datetime.now(UTC).isoformat()
+    elif new_status == "approved":
+        update_set["decided_by"] = getattr(current_user, "id", None)
+        update_set["approved_by"] = getattr(current_user, "id", None)
+        update_set["approved_at"] = datetime.now(UTC).isoformat()
         # Bordro entegrasyon kontratı: payroll_ready=True (append-only)
-        update_set['payroll_ready'] = True
+        update_set["payroll_ready"] = True
     else:
-        update_set['decided_by'] = getattr(current_user, 'id', None)
+        update_set["decided_by"] = getattr(current_user, "id", None)
 
     await db.overtime_requests.update_one(
-        {'tenant_id': current_user.tenant_id, 'id': req_id},
-        {'$set': update_set},
+        {"tenant_id": current_user.tenant_id, "id": req_id},
+        {"$set": update_set},
     )
 
-    requester = req.get('requested_by')
+    requester = req.get("requested_by")
     if requester:
         await _notify_user(
-            current_user.tenant_id, user_id=requester,
-            kind=notify_kind, title=notify_title,
-            body=f"{req['work_date']} — {req['hours']:g}h. " + (payload.note or ''),
+            current_user.tenant_id,
+            user_id=requester,
+            kind=notify_kind,
+            title=notify_title,
+            body=f"{req['work_date']} — {req['hours']:g}h. " + (payload.note or ""),
             ref_id=req_id,
         )
-    return {'success': True, 'status': new_status}
+    return {"success": True, "status": new_status}
 
 
 @router.get("/hr/overtime/ready-for-payroll")
 async def overtime_ready_for_payroll(
-    month: str = Query(..., pattern=r'^\d{4}-\d{2}$'),
+    month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr")),
 ):
@@ -4785,52 +4933,61 @@ async def overtime_ready_for_payroll(
         {month, total_hours, total_requests, by_staff: [...], items: [...]}
     Her satır: {staff_id, staff_name, hours, work_date, request_id,
     approved_at, multiplier=1.5 (TR varsayılan)}."""
-    yyyy, mm = month.split('-')
-    start_iso = f'{yyyy}-{mm}-01'
+    yyyy, mm = month.split("-")
+    start_iso = f"{yyyy}-{mm}-01"
     nm = date(int(yyyy), int(mm), 28) + timedelta(days=4)
     end_iso = (nm - timedelta(days=nm.day)).isoformat()
-    cursor = db.overtime_requests.find({
-        'tenant_id': current_user.tenant_id,
-        'status': 'approved',
-        'work_date': {'$gte': start_iso, '$lte': end_iso},
-    }, {'_id': 0}).sort('work_date', 1)
+    cursor = db.overtime_requests.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "status": "approved",
+            "work_date": {"$gte": start_iso, "$lte": end_iso},
+        },
+        {"_id": 0},
+    ).sort("work_date", 1)
     items: list[dict] = []
     by_staff: dict[str, dict] = {}
     total_hours = 0.0
     async for r in cursor:
-        hours = float(r.get('hours') or 0)
+        hours = float(r.get("hours") or 0)
         total_hours += hours
-        sid = r['staff_id']
-        by_staff.setdefault(sid, {
-            'staff_id': sid,
-            'staff_name': r.get('staff_name'),
-            'hours': 0.0,
-            'requests': 0,
-        })
-        by_staff[sid]['hours'] = round(by_staff[sid]['hours'] + hours, 2)
-        by_staff[sid]['requests'] += 1
-        items.append({
-            'request_id': r['id'],
-            'staff_id': sid,
-            'staff_name': r.get('staff_name'),
-            'work_date': r['work_date'],
-            'hours': hours,
-            'approved_at': r.get('approved_at') or r.get('decided_at'),
-            'multiplier': TR_DEFAULT_OVERTIME_MULTIPLIER,
-        })
+        sid = r["staff_id"]
+        by_staff.setdefault(
+            sid,
+            {
+                "staff_id": sid,
+                "staff_name": r.get("staff_name"),
+                "hours": 0.0,
+                "requests": 0,
+            },
+        )
+        by_staff[sid]["hours"] = round(by_staff[sid]["hours"] + hours, 2)
+        by_staff[sid]["requests"] += 1
+        items.append(
+            {
+                "request_id": r["id"],
+                "staff_id": sid,
+                "staff_name": r.get("staff_name"),
+                "work_date": r["work_date"],
+                "hours": hours,
+                "approved_at": r.get("approved_at") or r.get("decided_at"),
+                "multiplier": TR_DEFAULT_OVERTIME_MULTIPLIER,
+            }
+        )
     return {
-        'month': month,
-        'range': {'start': start_iso, 'end': end_iso},
-        'total_hours': round(total_hours, 2),
-        'total_requests': len(items),
-        'overtime_multiplier': TR_DEFAULT_OVERTIME_MULTIPLIER,
-        'currency': TR_CURRENCY,
-        'by_staff': sorted(by_staff.values(), key=lambda x: x['staff_name'] or ''),
-        'items': items,
+        "month": month,
+        "range": {"start": start_iso, "end": end_iso},
+        "total_hours": round(total_hours, 2),
+        "total_requests": len(items),
+        "overtime_multiplier": TR_DEFAULT_OVERTIME_MULTIPLIER,
+        "currency": TR_CURRENCY,
+        "by_staff": sorted(by_staff.values(), key=lambda x: x["staff_name"] or ""),
+        "items": items,
     }
 
 
 # ============= 2. Vardiya Değişim Talebi =============
+
 
 class ShiftSwapRequestPayload(BaseModel):
     shift_id: str = Field(..., min_length=1)
@@ -4839,7 +4996,7 @@ class ShiftSwapRequestPayload(BaseModel):
 
 
 class ShiftSwapDecisionPayload(BaseModel):
-    action: Literal['approve', 'reject']
+    action: Literal["approve", "reject"]
     note: str | None = Field(None, max_length=500)
 
 
@@ -4848,74 +5005,82 @@ async def create_shift_swap(
     payload: ShiftSwapRequestPayload,
     current_user: User = Depends(get_current_user),
 ):
-    shift = await db.shift_schedules.find_one({
-        'tenant_id': current_user.tenant_id, 'id': payload.shift_id,
-    })
+    shift = await db.shift_schedules.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "id": payload.shift_id,
+        }
+    )
     if not shift:
         raise HTTPException(status_code=404, detail="Vardiya bulunamadı")
     target = await _verify_staff_in_tenant(payload.target_staff_id, current_user.tenant_id)
     if not target:
         raise HTTPException(status_code=404, detail="Hedef personel bulunamadı")
-    if shift['staff_id'] == payload.target_staff_id:
+    if shift["staff_id"] == payload.target_staff_id:
         raise HTTPException(status_code=400, detail="Hedef personel mevcut sahibinin aynısı olamaz")
     # Self-service guard: yetkisiz kullanıcı sadece kendi vardiyasını değişime sunabilir.
-    if getattr(current_user, 'role', None) not in HR_ELEVATED_ROLES:
-        user_email = (getattr(current_user, 'email', None) or '').lower()
+    if getattr(current_user, "role", None) not in HR_ELEVATED_ROLES:
+        user_email = (getattr(current_user, "email", None) or "").lower()
         owner = await db.staff.find_one(
-            {'tenant_id': current_user.tenant_id, 'id': shift['staff_id']},
-            {'_id': 0, 'email': 1},
+            {"tenant_id": current_user.tenant_id, "id": shift["staff_id"]},
+            {"_id": 0, "email": 1},
         )
-        owner_email = ((owner or {}).get('email') or '').lower()
+        owner_email = ((owner or {}).get("email") or "").lower()
         if not user_email or user_email != owner_email:
             raise HTTPException(status_code=403, detail="Sadece kendi vardiyanızı değişime sunabilirsiniz")
     item = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'shift_id': payload.shift_id,
-        'shift_date': shift.get('shift_date'),
-        'shift_type': shift.get('shift_type'),
-        'from_staff_id': shift['staff_id'],
-        'from_staff_name': shift.get('staff_name'),
-        'target_staff_id': payload.target_staff_id,
-        'target_staff_name': target.get('name'),
-        'reason': payload.reason,
-        'status': 'pending',
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "shift_id": payload.shift_id,
+        "shift_date": shift.get("shift_date"),
+        "shift_type": shift.get("shift_type"),
+        "from_staff_id": shift["staff_id"],
+        "from_staff_name": shift.get("staff_name"),
+        "target_staff_id": payload.target_staff_id,
+        "target_staff_name": target.get("name"),
+        "reason": payload.reason,
+        "status": "pending",
         # Çift onay akışı: önce hedef personelin rızası, sonra İK kararı.
-        'target_consent_status': 'pending',
-        'target_consent_at': None,
-        'target_consent_note': None,
-        'requested_by': getattr(current_user, 'id', None),
-        'requested_at': datetime.now(UTC).isoformat(),
+        "target_consent_status": "pending",
+        "target_consent_at": None,
+        "target_consent_note": None,
+        "requested_by": getattr(current_user, "id", None),
+        "requested_at": datetime.now(UTC).isoformat(),
     }
     await db.shift_swap_requests.insert_one(item)
-    item.pop('_id', None)
+    item.pop("_id", None)
     # Hedef personele bildirim — rıza bekleniyor.
-    target_user = await db.users.find_one(
-        {'tenant_id': current_user.tenant_id, 'email': (target.get('email') or '').lower()},
-        {'_id': 0, 'id': 1},
-    ) if target.get('email') else None
-    if target_user and target_user.get('id'):
+    target_user = (
+        await db.users.find_one(
+            {"tenant_id": current_user.tenant_id, "email": (target.get("email") or "").lower()},
+            {"_id": 0, "id": 1},
+        )
+        if target.get("email")
+        else None
+    )
+    if target_user and target_user.get("id"):
         await _notify_user(
-            current_user.tenant_id, user_id=target_user['id'],
-            kind='shift_swap_consent_request',
+            current_user.tenant_id,
+            user_id=target_user["id"],
+            kind="shift_swap_consent_request",
             title="Vardiya devralma talebi",
             body=f"{shift.get('staff_name')} {shift.get('shift_date')} {shift.get('shift_type')} vardiyasını size devretmek istiyor",
             link="/hr/shifts",
-            ref_id=item['id'],
+            ref_id=item["id"],
         )
     await _notify_hr_managers(
         current_user.tenant_id,
-        kind='shift_swap_request',
+        kind="shift_swap_request",
         title="Vardiya değişim talebi (hedef onayı bekliyor)",
         body=f"{shift.get('staff_name')} → {target.get('name')} ({shift.get('shift_date')} {shift.get('shift_type')})",
         link="/hr/shifts",
-        ref_id=item['id'],
+        ref_id=item["id"],
     )
-    return {'success': True, 'request': item}
+    return {"success": True, "request": item}
 
 
 class ShiftSwapConsentPayload(BaseModel):
-    action: Literal['approve', 'reject']
+    action: Literal["approve", "reject"]
     note: str | None = Field(None, max_length=500)
 
 
@@ -4926,55 +5091,61 @@ async def consent_shift_swap(
     current_user: User = Depends(get_current_user),
 ):
     """Hedef personelin vardiyayı devralmaya rıza/red bildirmesi."""
-    req = await db.shift_swap_requests.find_one({
-        'tenant_id': current_user.tenant_id, 'id': req_id,
-    })
+    req = await db.shift_swap_requests.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "id": req_id,
+        }
+    )
     if not req:
         raise HTTPException(status_code=404, detail="Talep bulunamadı")
-    if req.get('status') != 'pending':
+    if req.get("status") != "pending":
         raise HTTPException(status_code=400, detail="Talep zaten karara bağlanmış")
-    if req.get('target_consent_status') != 'pending':
+    if req.get("target_consent_status") != "pending":
         raise HTTPException(status_code=400, detail="Bu talebe daha önce yanıt verilmiş")
 
     # Sadece hedef personel rıza verebilir (yöneticiler dahil değil — etik gereği bizzat hedef).
     target = await db.staff.find_one(
-        {'tenant_id': current_user.tenant_id, 'id': req['target_staff_id']},
-        {'_id': 0, 'email': 1},
+        {"tenant_id": current_user.tenant_id, "id": req["target_staff_id"]},
+        {"_id": 0, "email": 1},
     )
-    user_email = (getattr(current_user, 'email', None) or '').lower()
-    target_email = ((target or {}).get('email') or '').lower()
+    user_email = (getattr(current_user, "email", None) or "").lower()
+    target_email = ((target or {}).get("email") or "").lower()
     if not user_email or user_email != target_email:
         raise HTTPException(status_code=403, detail="Bu talep size ait değil — sadece hedef personel yanıtlayabilir")
 
-    new_consent = 'approved' if payload.action == 'approve' else 'rejected'
-    new_status = req.get('status') if new_consent == 'approved' else 'rejected'
+    new_consent = "approved" if payload.action == "approve" else "rejected"
+    new_status = req.get("status") if new_consent == "approved" else "rejected"
     # Atomik update: target_consent_status hâlâ 'pending' iken yaz; aksi halde başka bir
     # eşzamanlı çağrı yanıt vermiş demektir (race koruması).
     res = await db.shift_swap_requests.update_one(
         {
-            'tenant_id': current_user.tenant_id,
-            'id': req_id,
-            'target_consent_status': 'pending',
+            "tenant_id": current_user.tenant_id,
+            "id": req_id,
+            "target_consent_status": "pending",
         },
-        {'$set': {
-            'target_consent_status': new_consent,
-            'target_consent_at': datetime.now(UTC).isoformat(),
-            'target_consent_note': payload.note,
-            'status': new_status,
-        }},
+        {
+            "$set": {
+                "target_consent_status": new_consent,
+                "target_consent_at": datetime.now(UTC).isoformat(),
+                "target_consent_note": payload.note,
+                "status": new_status,
+            }
+        },
     )
     if res.modified_count == 0:
         raise HTTPException(status_code=409, detail="Bu talebe bu sırada başka bir yanıt verildi")
     # Talep sahibine bildir.
-    if req.get('requested_by'):
+    if req.get("requested_by"):
         await _notify_user(
-            current_user.tenant_id, user_id=req['requested_by'],
-            kind=f'shift_swap_consent_{new_consent}',
+            current_user.tenant_id,
+            user_id=req["requested_by"],
+            kind=f"shift_swap_consent_{new_consent}",
             title=f"Hedef personel vardiyayı {('kabul etti' if new_consent == 'approved' else 'reddetti')}",
-            body=f"{req.get('shift_date')} {req.get('shift_type')} — " + (payload.note or ''),
+            body=f"{req.get('shift_date')} {req.get('shift_type')} — " + (payload.note or ""),
             ref_id=req_id,
         )
-    return {'success': True, 'target_consent_status': new_consent, 'status': new_status}
+    return {"success": True, "target_consent_status": new_consent, "status": new_status}
 
 
 @router.get("/hr/shift-swap-requests")
@@ -4982,11 +5153,11 @@ async def list_shift_swap_requests(
     status: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
-    query: dict[str, Any] = {'tenant_id': current_user.tenant_id}
+    query: dict[str, Any] = {"tenant_id": current_user.tenant_id}
     if status:
-        query['status'] = status
-    items = await db.shift_swap_requests.find(query, {'_id': 0}).sort('requested_at', -1).to_list(500)
-    return {'items': items, 'total': len(items)}
+        query["status"] = status
+    items = await db.shift_swap_requests.find(query, {"_id": 0}).sort("requested_at", -1).to_list(500)
+    return {"items": items, "total": len(items)}
 
 
 @router.post("/hr/shift-swap-request/{req_id}/decision")
@@ -4996,23 +5167,26 @@ async def decide_shift_swap(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
-    req = await db.shift_swap_requests.find_one({
-        'tenant_id': current_user.tenant_id, 'id': req_id,
-    })
+    req = await db.shift_swap_requests.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "id": req_id,
+        }
+    )
     if not req:
         raise HTTPException(status_code=404, detail="Talep bulunamadı")
-    if req.get('status') != 'pending':
+    if req.get("status") != "pending":
         raise HTTPException(status_code=400, detail="Bu talep zaten karara bağlanmış")
 
-    if payload.action == 'approve':
+    if payload.action == "approve":
         # Çift onay gate: hedef personelin rızası alınmadan İK onaylayamaz.
-        if req.get('target_consent_status') != 'approved':
+        if req.get("target_consent_status") != "approved":
             raise HTTPException(
                 status_code=409,
                 detail="Hedef personel henüz rıza vermedi — önce rıza beklenmeli",
             )
         # Atomik swap: shift'i target_staff_id'ye devret
-        target = await _verify_staff_in_tenant(req['target_staff_id'], current_user.tenant_id)
+        target = await _verify_staff_in_tenant(req["target_staff_id"], current_user.tenant_id)
         if not target:
             raise HTTPException(status_code=400, detail="Hedef personel artık aktif değil")
         # Task #254 follow-up: swap, overlap lock'ı `from_staff` → `target`
@@ -5027,12 +5201,11 @@ async def decide_shift_swap(
         #   4) Başarılıysa from_staff lock entry'sini release et.
         original_shift = await db.shift_schedules.find_one(
             {
-                'tenant_id': current_user.tenant_id,
-                'id': req['shift_id'],
-                'staff_id': req['from_staff_id'],
+                "tenant_id": current_user.tenant_id,
+                "id": req["shift_id"],
+                "staff_id": req["from_staff_id"],
             },
-            {'_id': 0, 'shift_date': 1, 'start_time': 1, 'end_time': 1,
-             'crosses_midnight': 1},
+            {"_id": 0, "shift_date": 1, "start_time": 1, "end_time": 1, "crosses_midnight": 1},
         )
         if not original_shift:
             raise HTTPException(
@@ -5040,40 +5213,42 @@ async def decide_shift_swap(
                 detail="Vardiya bu sürede değişti veya silindi — talebi yeniden değerlendirin",
             )
         swap_now_iso = datetime.now(UTC).isoformat()
-        orig_crosses = bool(original_shift.get('crosses_midnight', False))
+        orig_crosses = bool(original_shift.get("crosses_midnight", False))
         await _acquire_shift_lock_for_shift(
             tenant_id=current_user.tenant_id,
-            staff_id=req['target_staff_id'],
-            shift_date=original_shift.get('shift_date'),
-            start_time=original_shift.get('start_time'),
-            end_time=original_shift.get('end_time'),
+            staff_id=req["target_staff_id"],
+            shift_date=original_shift.get("shift_date"),
+            start_time=original_shift.get("start_time"),
+            end_time=original_shift.get("end_time"),
             crosses_midnight=orig_crosses,
-            shift_id=req['shift_id'],
+            shift_id=req["shift_id"],
             now_iso=swap_now_iso,
         )
         # Atomik filtre: vardiyanın hâlâ orijinal sahibinde olduğunu doğrula.
         # Aksi halde başka bir swap zaten uygulanmış demektir (race koruması).
         upd = await db.shift_schedules.update_one(
             {
-                'tenant_id': current_user.tenant_id,
-                'id': req['shift_id'],
-                'staff_id': req['from_staff_id'],
+                "tenant_id": current_user.tenant_id,
+                "id": req["shift_id"],
+                "staff_id": req["from_staff_id"],
             },
-            {'$set': {
-                'staff_id': req['target_staff_id'],
-                'staff_name': target.get('name'),
-                'swapped_from': req['from_staff_id'],
-                'swapped_at': swap_now_iso,
-            }},
+            {
+                "$set": {
+                    "staff_id": req["target_staff_id"],
+                    "staff_name": target.get("name"),
+                    "swapped_from": req["from_staff_id"],
+                    "swapped_at": swap_now_iso,
+                }
+            },
         )
         if upd.matched_count == 0:
             # Rollback: target için almış olduğumuz lock'ı bırak.
             await _release_shift_lock_for_shift(
                 tenant_id=current_user.tenant_id,
-                staff_id=req['target_staff_id'],
-                shift_date=original_shift.get('shift_date'),
+                staff_id=req["target_staff_id"],
+                shift_date=original_shift.get("shift_date"),
                 crosses_midnight=orig_crosses,
-                shift_id=req['shift_id'],
+                shift_id=req["shift_id"],
             )
             raise HTTPException(
                 status_code=409,
@@ -5082,41 +5257,45 @@ async def decide_shift_swap(
         # Sahiplik transferi başarılı: from_staff lock entry'sini bırak.
         await _release_shift_lock_for_shift(
             tenant_id=current_user.tenant_id,
-            staff_id=req['from_staff_id'],
-            shift_date=original_shift.get('shift_date'),
+            staff_id=req["from_staff_id"],
+            shift_date=original_shift.get("shift_date"),
             crosses_midnight=orig_crosses,
-            shift_id=req['shift_id'],
+            shift_id=req["shift_id"],
         )
-        new_status = 'approved'
+        new_status = "approved"
     else:
-        new_status = 'rejected'
+        new_status = "rejected"
 
     await db.shift_swap_requests.update_one(
-        {'tenant_id': current_user.tenant_id, 'id': req_id},
-        {'$set': {
-            'status': new_status,
-            'decision_note': payload.note,
-            'decided_by': getattr(current_user, 'id', None),
-            'decided_at': datetime.now(UTC).isoformat(),
-        }},
+        {"tenant_id": current_user.tenant_id, "id": req_id},
+        {
+            "$set": {
+                "status": new_status,
+                "decision_note": payload.note,
+                "decided_by": getattr(current_user, "id", None),
+                "decided_at": datetime.now(UTC).isoformat(),
+            }
+        },
     )
-    if req.get('requested_by'):
+    if req.get("requested_by"):
         await _notify_user(
-            current_user.tenant_id, user_id=req['requested_by'],
-            kind=f'shift_swap_{new_status}',
+            current_user.tenant_id,
+            user_id=req["requested_by"],
+            kind=f"shift_swap_{new_status}",
             title=f"Vardiya değişimi {('onaylandı' if new_status == 'approved' else 'reddedildi')}",
-            body=f"{req.get('shift_date')} {req.get('shift_type')} — " + (payload.note or ''),
+            body=f"{req.get('shift_date')} {req.get('shift_type')} — " + (payload.note or ""),
             ref_id=req_id,
         )
-    return {'success': True, 'status': new_status}
+    return {"success": True, "status": new_status}
 
 
 # ============= 3. Maaş Geçmişi / Zam Kaydı =============
 
+
 class SalaryChangePayload(BaseModel):
     new_hourly_rate: float = Field(..., gt=0, le=100000)
-    effective_date: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
-    change_type: Literal['raise', 'promotion', 'correction', 'demotion'] = 'raise'
+    effective_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    change_type: Literal["raise", "promotion", "correction", "demotion"] = "raise"
     reason: str | None = Field(None, max_length=500)
 
 
@@ -5130,34 +5309,36 @@ async def create_salary_change(
     staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
-    old_rate = float(staff.get('hourly_rate') or TR_DEFAULT_HOURLY_RATE)
+    old_rate = float(staff.get("hourly_rate") or TR_DEFAULT_HOURLY_RATE)
     delta_pct = round(((payload.new_hourly_rate - old_rate) / old_rate) * 100, 2) if old_rate else 0
     record = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'staff_id': staff_id,
-        'staff_name': staff.get('name'),
-        'old_hourly_rate': old_rate,
-        'new_hourly_rate': payload.new_hourly_rate,
-        'delta_pct': delta_pct,
-        'effective_date': payload.effective_date,
-        'change_type': payload.change_type,
-        'reason': payload.reason,
-        'created_by': getattr(current_user, 'id', None),
-        'created_at': datetime.now(UTC).isoformat(),
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "staff_id": staff_id,
+        "staff_name": staff.get("name"),
+        "old_hourly_rate": old_rate,
+        "new_hourly_rate": payload.new_hourly_rate,
+        "delta_pct": delta_pct,
+        "effective_date": payload.effective_date,
+        "change_type": payload.change_type,
+        "reason": payload.reason,
+        "created_by": getattr(current_user, "id", None),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.salary_history.insert_one(record)
     # Aktüel ücreti güncelle (basit yaklaşım: effective_date geçmişse hemen uygula)
     if payload.effective_date <= _today_local().isoformat():
         await db.staff_members.update_one(
-            {'tenant_id': current_user.tenant_id, 'id': staff_id},
-            {'$set': {
-                'hourly_rate': payload.new_hourly_rate,
-                'updated_at': datetime.now(UTC).isoformat(),
-            }},
+            {"tenant_id": current_user.tenant_id, "id": staff_id},
+            {
+                "$set": {
+                    "hourly_rate": payload.new_hourly_rate,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            },
         )
-    record.pop('_id', None)
-    return {'success': True, 'record': record, 'applied_now': payload.effective_date <= _today_local().isoformat()}
+    record.pop("_id", None)
+    return {"success": True, "record": record, "applied_now": payload.effective_date <= _today_local().isoformat()}
 
 
 @router.get("/hr/staff/{staff_id}/salary-history")
@@ -5175,21 +5356,30 @@ async def list_salary_history(
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     _authorize_staff_access(staff, current_user)
-    items = await db.salary_history.find({
-        'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
-    }, {'_id': 0}).sort('effective_date', -1).to_list(500)
+    items = (
+        await db.salary_history.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "staff_id": staff_id,
+            },
+            {"_id": 0},
+        )
+        .sort("effective_date", -1)
+        .to_list(500)
+    )
     # v2 Foundation: maaş alanları rol-bazlı maskelenir — sadece manage_hr unmask.
-    self_id = str(getattr(current_user, 'id', '') or '')
-    self_email = str(getattr(current_user, 'email', '') or '')
+    self_id = str(getattr(current_user, "id", "") or "")
+    self_email = str(getattr(current_user, "email", "") or "")
     masked = [_mask_hr_pii(it, current_user, self_id=self_id, self_email=self_email) or it for it in items]
-    return {'items': masked, 'total': len(masked)}
+    return {"items": masked, "total": len(masked)}
 
 
 # ============= 4. İşten Ayrılma Süreci =============
 
+
 class TerminationPayload(BaseModel):
-    reason: Literal['resign', 'dismiss', 'mutual', 'retire', 'end_of_contract', 'death']
-    last_day: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
+    reason: Literal["resign", "dismiss", "mutual", "retire", "end_of_contract", "death"]
+    last_day: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
     notice_period_days: int = Field(0, ge=0, le=180)
     exit_interview_notes: str | None = Field(None, max_length=4000)
     severance_override: float | None = Field(None, ge=0, le=10_000_000)
@@ -5210,18 +5400,18 @@ def _calc_severance_tr(
     çıkmaz. İhbar tazminatı + birikmiş izin alacağı ayrı hesaplanır.
     """
     if not hire_date_str:
-        return {'years_of_service': 0, 'severance_amount': 0, 'note': 'İşe başlama tarihi yok'}
+        return {"years_of_service": 0, "severance_amount": 0, "note": "İşe başlama tarihi yok"}
     try:
         hire = date.fromisoformat(hire_date_str)
         last = date.fromisoformat(last_day_str)
     except ValueError:
-        return {'years_of_service': 0, 'severance_amount': 0, 'note': 'Geçersiz tarih'}
+        return {"years_of_service": 0, "severance_amount": 0, "note": "Geçersiz tarih"}
     days = (last - hire).days
     if days < 365:
         return {
-            'years_of_service': round(days / 365, 2),
-            'severance_amount': 0,
-            'note': '1 yıldan az kıdem — kıdem tazminatına hak kazanılmaz',
+            "years_of_service": round(days / 365, 2),
+            "severance_amount": 0,
+            "note": "1 yıldan az kıdem — kıdem tazminatına hak kazanılmaz",
         }
     years = days / 365.0
     raw_daily = monthly_gross / 30.0
@@ -5229,17 +5419,17 @@ def _calc_severance_tr(
     capped = raw_daily > cap
     daily_gross = min(raw_daily, cap)
     severance = round(years * SEVERANCE_DAYS_PER_YEAR * daily_gross, 2)
-    note = f'{years:.2f} yıl × 30 gün × {daily_gross:.2f} TL/gün'
+    note = f"{years:.2f} yıl × 30 gün × {daily_gross:.2f} TL/gün"
     if capped:
-        note += f' (yasal tavan uygulandı; ham günlük: {raw_daily:.2f} TL)'
+        note += f" (yasal tavan uygulandı; ham günlük: {raw_daily:.2f} TL)"
     return {
-        'years_of_service': round(years, 2),
-        'daily_gross': round(daily_gross, 2),
-        'raw_daily_gross': round(raw_daily, 2),
-        'daily_cap_applied': capped,
-        'daily_cap': round(cap, 2),
-        'severance_amount': severance,
-        'note': note,
+        "years_of_service": round(years, 2),
+        "daily_gross": round(daily_gross, 2),
+        "raw_daily_gross": round(raw_daily, 2),
+        "daily_cap_applied": capped,
+        "daily_cap": round(cap, 2),
+        "severance_amount": severance,
+        "note": note,
     }
 
 
@@ -5254,76 +5444,81 @@ async def terminate_staff(
     staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
-    if staff.get('terminated_at'):
+    if staff.get("terminated_at"):
         raise HTTPException(status_code=400, detail="Personel zaten ayrılmış")
 
     # Task #270: outstanding equipment soft-block. Returning all assigned items
     # surfaces the list to the caller so the off-boarding dialog can offer a
     # quick "iade alındı" action before forcing termination.
-    outstanding = await db.staff_equipment.find(
-        {'tenant_id': current_user.tenant_id, 'staff_id': staff_id, 'status': 'assigned'},
-        {'_id': 0},
-    ).sort('assigned_at', -1).to_list(500)
+    outstanding = (
+        await db.staff_equipment.find(
+            {"tenant_id": current_user.tenant_id, "staff_id": staff_id, "status": "assigned"},
+            {"_id": 0},
+        )
+        .sort("assigned_at", -1)
+        .to_list(500)
+    )
     if outstanding and not force_release:
         raise HTTPException(
             status_code=409,
             detail={
-                'code': 'outstanding_equipment',
-                'message': (
-                    f"Personelin üzerinde {len(outstanding)} adet iade alınmamış zimmet var. "
-                    "Önce iade alın veya 'force_release=true' ile devam edin."
-                ),
-                'outstanding_equipment': outstanding,
+                "code": "outstanding_equipment",
+                "message": (f"Personelin üzerinde {len(outstanding)} adet iade alınmamış zimmet var. Önce iade alın veya 'force_release=true' ile devam edin."),
+                "outstanding_equipment": outstanding,
             },
         )
 
-    monthly_hours = float(staff.get('monthly_hours') or TR_DEFAULT_MONTHLY_HOURS)
-    hourly_rate = float(staff.get('hourly_rate') or TR_DEFAULT_HOURLY_RATE)
+    monthly_hours = float(staff.get("monthly_hours") or TR_DEFAULT_MONTHLY_HOURS)
+    hourly_rate = float(staff.get("hourly_rate") or TR_DEFAULT_HOURLY_RATE)
     monthly_gross = monthly_hours * hourly_rate
 
     # Tenant'a özel kıdem tavan override'ı (settings.severance_daily_cap) — yoksa default.
-    tenant_settings = await db.tenant_settings.find_one(
-        {'tenant_id': current_user.tenant_id}, {'_id': 0, 'severance_daily_cap': 1},
-    ) or {}
+    tenant_settings = (
+        await db.tenant_settings.find_one(
+            {"tenant_id": current_user.tenant_id},
+            {"_id": 0, "severance_daily_cap": 1},
+        )
+        or {}
+    )
     severance_calc = _calc_severance_tr(
-        staff.get('hire_date'), payload.last_day, monthly_gross,
-        daily_cap=tenant_settings.get('severance_daily_cap'),
+        staff.get("hire_date"),
+        payload.last_day,
+        monthly_gross,
+        daily_cap=tenant_settings.get("severance_daily_cap"),
     )
-    final_severance = (
-        payload.severance_override
-        if payload.severance_override is not None
-        else severance_calc['severance_amount']
-    )
+    final_severance = payload.severance_override if payload.severance_override is not None else severance_calc["severance_amount"]
 
     record = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'staff_id': staff_id,
-        'staff_name': staff.get('name'),
-        'reason': payload.reason,
-        'last_day': payload.last_day,
-        'notice_period_days': payload.notice_period_days,
-        'exit_interview_notes': payload.exit_interview_notes,
-        'monthly_gross_at_exit': round(monthly_gross, 2),
-        'severance_calc': severance_calc,
-        'severance_paid': final_severance,
-        'eligible_for_rehire': payload.eligible_for_rehire,
-        'processed_by': getattr(current_user, 'id', None),
-        'processed_at': datetime.now(UTC).isoformat(),
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "staff_id": staff_id,
+        "staff_name": staff.get("name"),
+        "reason": payload.reason,
+        "last_day": payload.last_day,
+        "notice_period_days": payload.notice_period_days,
+        "exit_interview_notes": payload.exit_interview_notes,
+        "monthly_gross_at_exit": round(monthly_gross, 2),
+        "severance_calc": severance_calc,
+        "severance_paid": final_severance,
+        "eligible_for_rehire": payload.eligible_for_rehire,
+        "processed_by": getattr(current_user, "id", None),
+        "processed_at": datetime.now(UTC).isoformat(),
     }
     await db.staff_terminations.insert_one(record)
 
     await db.staff_members.update_one(
-        {'tenant_id': current_user.tenant_id, 'id': staff_id},
-        {'$set': {
-            'active': False,
-            'terminated_at': datetime.now(UTC).isoformat(),
-            'termination_reason': payload.reason,
-            'last_day': payload.last_day,
-        }},
+        {"tenant_id": current_user.tenant_id, "id": staff_id},
+        {
+            "$set": {
+                "active": False,
+                "terminated_at": datetime.now(UTC).isoformat(),
+                "termination_reason": payload.reason,
+                "last_day": payload.last_day,
+            }
+        },
     )
-    record.pop('_id', None)
-    return {'success': True, 'termination': record}
+    record.pop("_id", None)
+    return {"success": True, "termination": record}
 
 
 @router.get("/hr/staff/{staff_id}/termination")
@@ -5337,20 +5532,21 @@ async def get_termination_record(
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     _authorize_staff_access(staff, current_user)
     rec = await db.staff_terminations.find_one(
-        {'tenant_id': current_user.tenant_id, 'staff_id': staff_id},
-        {'_id': 0},
-        sort=[('processed_at', -1)],
+        {"tenant_id": current_user.tenant_id, "staff_id": staff_id},
+        {"_id": 0},
+        sort=[("processed_at", -1)],
     )
-    return {'record': rec}
+    return {"record": rec}
 
 
 # ============= 5. Eğitim/Sertifika Takibi =============
 
+
 class CertificationPayload(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     issuer: str | None = Field(None, max_length=200)
-    issue_date: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
-    expiry_date: str | None = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
+    issue_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    expiry_date: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     certificate_no: str | None = Field(None, max_length=100)
     file_url: str | None = Field(None, max_length=500)
     notes: str | None = Field(None, max_length=1000)
@@ -5367,22 +5563,22 @@ async def add_certification(
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     item = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'staff_id': staff_id,
-        'staff_name': staff.get('name'),
-        'name': payload.name,
-        'issuer': payload.issuer,
-        'issue_date': payload.issue_date,
-        'expiry_date': payload.expiry_date,
-        'certificate_no': payload.certificate_no,
-        'file_url': payload.file_url,
-        'notes': payload.notes,
-        'created_at': datetime.now(UTC).isoformat(),
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "staff_id": staff_id,
+        "staff_name": staff.get("name"),
+        "name": payload.name,
+        "issuer": payload.issuer,
+        "issue_date": payload.issue_date,
+        "expiry_date": payload.expiry_date,
+        "certificate_no": payload.certificate_no,
+        "file_url": payload.file_url,
+        "notes": payload.notes,
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.staff_certifications.insert_one(item)
-    item.pop('_id', None)
-    return {'success': True, 'certification': item}
+    item.pop("_id", None)
+    return {"success": True, "certification": item}
 
 
 @router.get("/hr/staff/{staff_id}/certifications")
@@ -5394,13 +5590,21 @@ async def list_staff_certifications(
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     _authorize_staff_access(staff, current_user)
-    items = await db.staff_certifications.find({
-        'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
-    }, {'_id': 0}).sort('issue_date', -1).to_list(500)
+    items = (
+        await db.staff_certifications.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "staff_id": staff_id,
+            },
+            {"_id": 0},
+        )
+        .sort("issue_date", -1)
+        .to_list(500)
+    )
     today = _today_local().isoformat()
-    expiring = sum(1 for it in items if it.get('expiry_date') and it['expiry_date'] >= today)
-    expired = sum(1 for it in items if it.get('expiry_date') and it['expiry_date'] < today)
-    return {'items': items, 'total': len(items), 'active': expiring, 'expired': expired}
+    expiring = sum(1 for it in items if it.get("expiry_date") and it["expiry_date"] >= today)
+    expired = sum(1 for it in items if it.get("expiry_date") and it["expiry_date"] < today)
+    return {"items": items, "total": len(items), "active": expiring, "expired": expired}
 
 
 @router.delete("/hr/certifications/{cert_id}")
@@ -5409,12 +5613,15 @@ async def delete_certification(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
-    res = await db.staff_certifications.delete_one({
-        'tenant_id': current_user.tenant_id, 'id': cert_id,
-    })
+    res = await db.staff_certifications.delete_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "id": cert_id,
+        }
+    )
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Sertifika bulunamadı")
-    return {'success': True}
+    return {"success": True}
 
 
 @router.get("/hr/certifications/expiring")
@@ -5425,20 +5632,30 @@ async def list_expiring_certifications(
     """Önümüzdeki N gün içinde süresi dolan sertifikalar (compliance dashboard)."""
     today = _today_local()
     end = (today + timedelta(days=days_ahead)).isoformat()
-    items = await db.staff_certifications.find({
-        'tenant_id': current_user.tenant_id,
-        'expiry_date': {'$gte': today.isoformat(), '$lte': end},
-    }, {'_id': 0}).sort('expiry_date', 1).to_list(500)
-    return {'items': items, 'total': len(items), 'window_days': days_ahead}
+    items = (
+        await db.staff_certifications.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "expiry_date": {"$gte": today.isoformat(), "$lte": end},
+            },
+            {"_id": 0},
+        )
+        .sort("expiry_date", 1)
+        .to_list(500)
+    )
+    return {"items": items, "total": len(items), "window_days": days_ahead}
 
 
 # ============= 6. Personel Belgeleri (PDF/sözleşme yükleme) =============
 
-ALLOWED_DOC_TYPES = {'contract', 'id', 'diploma', 'health', 'insurance', 'tax', 'other'}
+ALLOWED_DOC_TYPES = {"contract", "id", "diploma", "health", "insurance", "tax", "other"}
 ALLOWED_DOC_MIME = {
-    'application/pdf', 'image/png', 'image/jpeg', 'image/webp',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
 # F8S § 64 (2026-05-24): Path traversal / unsafe filename hardening.
@@ -5451,24 +5668,24 @@ ALLOWED_DOC_MIME = {
 #      (CR/LF/quote header injection vektörleri dahil temizlenir).
 #   4) Boş kalırsa fallback "document".
 #   5) 200 char hard cap (filesystem + header sanity).
-_FILENAME_SAFE_RE = re.compile(r'[^A-Za-z0-9._\- ]')
+_FILENAME_SAFE_RE = re.compile(r"[^A-Za-z0-9._\- ]")
 
 
 def _sanitize_doc_filename(raw: str | None) -> str:
     if not raw:
-        return 'document'
-    name = str(raw).replace('\\', '/').rsplit('/', 1)[-1]
-    name = name.lstrip('.')
-    name = _FILENAME_SAFE_RE.sub('_', name).strip()
-    return (name or 'document')[:200]
+        return "document"
+    name = str(raw).replace("\\", "/").rsplit("/", 1)[-1]
+    name = name.lstrip(".")
+    name = _FILENAME_SAFE_RE.sub("_", name).strip()
+    return (name or "document")[:200]
 
 
 @router.post("/hr/staff/{staff_id}/documents")
 async def upload_staff_document(
     staff_id: str,
     file: UploadFile = File(...),
-    doc_type: str = Query('other', max_length=20),
-    label: str = Query('', max_length=200),
+    doc_type: str = Query("other", max_length=20),
+    label: str = Query("", max_length=200),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
@@ -5492,7 +5709,9 @@ async def upload_staff_document(
     # content_type'ı saldırgan-beyanlı değerden değil, TESPIT edilen gerçek
     # türden türet.
     verified_content_type = validate_document_bytes(
-        content, declared_mime=file.content_type, max_bytes=DOC_MAX_BYTES,
+        content,
+        declared_mime=file.content_type,
+        max_bytes=DOC_MAX_BYTES,
         field_label="Belge",
     )
 
@@ -5505,30 +5724,30 @@ async def upload_staff_document(
         safe_filename,
         content,
         metadata={
-            'tenant_id': current_user.tenant_id,
-            'staff_id': staff_id,
-            'doc_type': doc_type,
-            'content_type': verified_content_type,
+            "tenant_id": current_user.tenant_id,
+            "staff_id": staff_id,
+            "doc_type": doc_type,
+            "content_type": verified_content_type,
         },
     )
     item = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'staff_id': staff_id,
-        'staff_name': staff.get('name'),
-        'doc_type': doc_type,
-        'label': safe_label or 'Belge',
-        'filename': safe_filename,
-        'content_type': verified_content_type,
-        'size_bytes': len(content),
-        'gridfs_id': str(gridfs_id),
-        'storage': 'gridfs',
-        'uploaded_by': getattr(current_user, 'id', None),
-        'uploaded_at': datetime.now(UTC).isoformat(),
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "staff_id": staff_id,
+        "staff_name": staff.get("name"),
+        "doc_type": doc_type,
+        "label": safe_label or "Belge",
+        "filename": safe_filename,
+        "content_type": verified_content_type,
+        "size_bytes": len(content),
+        "gridfs_id": str(gridfs_id),
+        "storage": "gridfs",
+        "uploaded_by": getattr(current_user, "id", None),
+        "uploaded_at": datetime.now(UTC).isoformat(),
     }
     await db.staff_documents.insert_one(item)
-    response = {k: v for k, v in item.items() if k != '_id'}
-    return {'success': True, 'document': response}
+    response = {k: v for k, v in item.items() if k != "_id"}
+    return {"success": True, "document": response}
 
 
 @router.get("/hr/staff/{staff_id}/documents")
@@ -5541,11 +5760,15 @@ async def list_staff_documents(
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     _authorize_staff_access(staff, current_user)
-    items = await db.staff_documents.find(
-        {'tenant_id': current_user.tenant_id, 'staff_id': staff_id},
-        {'_id': 0, 'data_b64': 0},  # Legacy binary alanı liste yanıtında olmasın
-    ).sort('uploaded_at', -1).to_list(500)
-    return {'items': items, 'total': len(items)}
+    items = (
+        await db.staff_documents.find(
+            {"tenant_id": current_user.tenant_id, "staff_id": staff_id},
+            {"_id": 0, "data_b64": 0},  # Legacy binary alanı liste yanıtında olmasın
+        )
+        .sort("uploaded_at", -1)
+        .to_list(500)
+    )
+    return {"items": items, "total": len(items)}
 
 
 @router.get("/hr/documents/{doc_id}/download")
@@ -5559,30 +5782,35 @@ async def download_staff_document(
     bağlı olduğu staff üzerinden yapılır. Bu, kendi sözleşmesini/diplomasını
     indirebilen self-service kullanıcı durumunu kapsar.
     """
-    doc = await db.staff_documents.find_one({
-        'tenant_id': current_user.tenant_id, 'id': doc_id,
-    })
+    doc = await db.staff_documents.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "id": doc_id,
+        }
+    )
     if not doc:
         raise HTTPException(status_code=404, detail="Belge bulunamadı")
     # Doc'un sahibi olan staff'ı yükleyip per-record authz uygula.
-    doc_staff_id = doc.get('staff_id')
+    doc_staff_id = doc.get("staff_id")
     if doc_staff_id:
         doc_staff = await _verify_staff_in_tenant(doc_staff_id, current_user.tenant_id)
         _authorize_staff_access(doc_staff, current_user)
 
     # GridFS'ten oku; eski (data_b64) kayıtlar için geriye dönük destek.
-    if doc.get('gridfs_id'):
+    if doc.get("gridfs_id"):
         try:
-            gridfs_oid = ObjectId(doc['gridfs_id'])
+            gridfs_oid = ObjectId(doc["gridfs_id"])
         except Exception:
             raise HTTPException(status_code=404, detail="Belge depolamada bulunamadı")
         # Defense-in-depth: GridFS bucket tenant-aware proxy bypass'lı (_raw_db) olduğundan
         # metadata.tenant_id'yi tekrar doğrula. Meta kaydı zaten scoped ama belge bütünlüğü
         # için cross-check yapıyoruz.
-        gf_meta = await _hr_docs_bucket.find({
-            '_id': gridfs_oid,
-            'metadata.tenant_id': current_user.tenant_id,
-        }).to_list(1)
+        gf_meta = await _hr_docs_bucket.find(
+            {
+                "_id": gridfs_oid,
+                "metadata.tenant_id": current_user.tenant_id,
+            }
+        ).to_list(1)
         if not gf_meta:
             raise HTTPException(status_code=404, detail="Belge depolamada bulunamadı")
         try:
@@ -5590,21 +5818,21 @@ async def download_staff_document(
             raw = await stream.read()
         except Exception:
             raise HTTPException(status_code=404, detail="Belge depolamada bulunamadı")
-    elif doc.get('data_b64'):
-        raw = base64.b64decode(doc['data_b64'])
+    elif doc.get("data_b64"):
+        raw = base64.b64decode(doc["data_b64"])
     else:
         raise HTTPException(status_code=410, detail="Belge içeriği yok")
 
     # F8S § 64: defense-in-depth — legacy kayıtlarda raw filename varsa
     # download anında da sanitize et (Content-Disposition header injection guard).
-    dl_filename = _sanitize_doc_filename(doc.get('filename')) or doc_id
+    dl_filename = _sanitize_doc_filename(doc.get("filename")) or doc_id
     headers = {
-        'Content-Disposition': f'attachment; filename="{dl_filename}"',
-        'Content-Length': str(len(raw)),
+        "Content-Disposition": f'attachment; filename="{dl_filename}"',
+        "Content-Length": str(len(raw)),
     }
     return StreamingResponse(
         iter([raw]),
-        media_type=doc.get('content_type', 'application/octet-stream'),
+        media_type=doc.get("content_type", "application/octet-stream"),
         headers=headers,
     )
 
@@ -5615,24 +5843,31 @@ async def delete_staff_document(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
-    doc = await db.staff_documents.find_one({
-        'tenant_id': current_user.tenant_id, 'id': doc_id,
-    })
+    doc = await db.staff_documents.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "id": doc_id,
+        }
+    )
     if not doc:
         raise HTTPException(status_code=404, detail="Belge bulunamadı")
     # Önce GridFS chunk'larını temizle (varsa); sonra meta kaydını sil.
-    if doc.get('gridfs_id'):
+    if doc.get("gridfs_id"):
         try:
-            await _hr_docs_bucket.delete(ObjectId(doc['gridfs_id']))
+            await _hr_docs_bucket.delete(ObjectId(doc["gridfs_id"]))
         except Exception:
             pass  # Çoktan silinmiş olabilir — meta silmeyi engellemesin.
-    await db.staff_documents.delete_one({
-        'tenant_id': current_user.tenant_id, 'id': doc_id,
-    })
-    return {'success': True}
+    await db.staff_documents.delete_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "id": doc_id,
+        }
+    )
+    return {"success": True}
 
 
 # ============= 6b. Kıdem Tazminatı Tavanı Ayarı =============
+
 
 class SeveranceCapPayload(BaseModel):
     daily_cap: float = Field(..., gt=0, le=100000, description="Günlük brüt tavanı TL")
@@ -5643,15 +5878,19 @@ async def get_severance_cap(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr")),
 ):
-    s = await db.tenant_settings.find_one(
-        {'tenant_id': current_user.tenant_id}, {'_id': 0, 'severance_daily_cap': 1, 'severance_cap_updated_at': 1},
-    ) or {}
+    s = (
+        await db.tenant_settings.find_one(
+            {"tenant_id": current_user.tenant_id},
+            {"_id": 0, "severance_daily_cap": 1, "severance_cap_updated_at": 1},
+        )
+        or {}
+    )
     return {
-        'daily_cap': s.get('severance_daily_cap') or TR_SEVERANCE_DAILY_CAP_DEFAULT,
-        'is_default': not s.get('severance_daily_cap'),
-        'updated_at': s.get('severance_cap_updated_at'),
-        'monthly_cap_estimate': round((s.get('severance_daily_cap') or TR_SEVERANCE_DAILY_CAP_DEFAULT) * 30, 2),
-        'note': "Hazine yarıyıl açıklamasıyla (Ocak/Temmuz) güncellenmeli. Boş bırakılırsa default tavan uygulanır.",
+        "daily_cap": s.get("severance_daily_cap") or TR_SEVERANCE_DAILY_CAP_DEFAULT,
+        "is_default": not s.get("severance_daily_cap"),
+        "updated_at": s.get("severance_cap_updated_at"),
+        "monthly_cap_estimate": round((s.get("severance_daily_cap") or TR_SEVERANCE_DAILY_CAP_DEFAULT) * 30, 2),
+        "note": "Hazine yarıyıl açıklamasıyla (Ocak/Temmuz) güncellenmeli. Boş bırakılırsa default tavan uygulanır.",
     }
 
 
@@ -5662,22 +5901,26 @@ async def set_severance_cap(
     _perm=Depends(require_op("manage_hr")),
 ):
     await db.tenant_settings.update_one(
-        {'tenant_id': current_user.tenant_id},
-        {'$set': {
-            'severance_daily_cap': payload.daily_cap,
-            'severance_cap_updated_at': datetime.now(UTC).isoformat(),
-            'severance_cap_updated_by': getattr(current_user, 'id', None),
-        }},
+        {"tenant_id": current_user.tenant_id},
+        {
+            "$set": {
+                "severance_daily_cap": payload.daily_cap,
+                "severance_cap_updated_at": datetime.now(UTC).isoformat(),
+                "severance_cap_updated_by": getattr(current_user, "id", None),
+            }
+        },
         upsert=True,
     )
-    return {'success': True, 'daily_cap': payload.daily_cap}
+    return {"success": True, "daily_cap": payload.daily_cap}
 
 
 # ============= 6c. Bordro Vergi Oranları Ayarı =============
 
+
 class PayrollTaxRatesPayload(BaseModel):
     """Bordro kesinti oranları (YÜZDE). Örn. sgk_employee=14.0 → %14.
     Üst sınır negatif/aşırı yüksek oranları reddeder (le=100)."""
+
     sgk_employee: float = Field(..., ge=0, le=100, description="SGK işçi payı %")
     unemployment: float = Field(..., ge=0, le=100, description="İşsizlik sigortası işçi payı %")
     income_tax: float = Field(..., ge=0, le=100, description="Gelir vergisi %")
@@ -5689,22 +5932,23 @@ async def get_payroll_tax_rates(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr")),
 ):
-    s = await db.tenant_settings.find_one(
-        {'tenant_id': current_user.tenant_id},
-        {'_id': 0, 'payroll_tax_rates': 1, 'payroll_tax_rates_updated_at': 1},
-    ) or {}
-    overrides = s.get('payroll_tax_rates') or {}
+    s = (
+        await db.tenant_settings.find_one(
+            {"tenant_id": current_user.tenant_id},
+            {"_id": 0, "payroll_tax_rates": 1, "payroll_tax_rates_updated_at": 1},
+        )
+        or {}
+    )
+    overrides = s.get("payroll_tax_rates") or {}
     effective = await _get_payroll_tax_rates(current_user.tenant_id)
     return {
-        'rates': effective,
-        'defaults': dict(TR_PAYROLL_TAX_RATES_DEFAULT),
-        'is_default': not (isinstance(overrides, dict) and overrides),
-        'updated_at': s.get('payroll_tax_rates_updated_at'),
-        'can_edit': _user_has_hr_op(current_user, 'manage_hr'),
-        'note': (
-            "Oranlar yüzde cinsindendir (ör. 14 = %14). Boş bırakılırsa "
-            "varsayılan oranlar uygulanır. Değişiklik yalnızca ileriye dönük "
-            "yeni hesaplamalarda geçerlidir; kilitli bordrolar değişmez."
+        "rates": effective,
+        "defaults": dict(TR_PAYROLL_TAX_RATES_DEFAULT),
+        "is_default": not (isinstance(overrides, dict) and overrides),
+        "updated_at": s.get("payroll_tax_rates_updated_at"),
+        "can_edit": _user_has_hr_op(current_user, "manage_hr"),
+        "note": (
+            "Oranlar yüzde cinsindendir (ör. 14 = %14). Boş bırakılırsa varsayılan oranlar uygulanır. Değişiklik yalnızca ileriye dönük yeni hesaplamalarda geçerlidir; kilitli bordrolar değişmez."
         ),
     }
 
@@ -5716,44 +5960,52 @@ async def set_payroll_tax_rates(
     _perm=Depends(require_op("manage_hr")),
 ):
     new_rates = {
-        'sgk_employee': payload.sgk_employee,
-        'unemployment': payload.unemployment,
-        'income_tax': payload.income_tax,
-        'stamp_tax': payload.stamp_tax,
+        "sgk_employee": payload.sgk_employee,
+        "unemployment": payload.unemployment,
+        "income_tax": payload.income_tax,
+        "stamp_tax": payload.stamp_tax,
     }
-    before = await db.tenant_settings.find_one(
-        {'tenant_id': current_user.tenant_id},
-        {'_id': 0, 'payroll_tax_rates': 1},
-    ) or {}
+    before = (
+        await db.tenant_settings.find_one(
+            {"tenant_id": current_user.tenant_id},
+            {"_id": 0, "payroll_tax_rates": 1},
+        )
+        or {}
+    )
     now_iso = datetime.now(UTC).isoformat()
     await db.tenant_settings.update_one(
-        {'tenant_id': current_user.tenant_id},
-        {'$set': {
-            'payroll_tax_rates': new_rates,
-            'payroll_tax_rates_updated_at': now_iso,
-            'payroll_tax_rates_updated_by': getattr(current_user, 'id', None),
-        }},
+        {"tenant_id": current_user.tenant_id},
+        {
+            "$set": {
+                "payroll_tax_rates": new_rates,
+                "payroll_tax_rates_updated_at": now_iso,
+                "payroll_tax_rates_updated_by": getattr(current_user, "id", None),
+            }
+        },
         upsert=True,
     )
     await _audit(
-        current_user, 'hr.payroll_tax_rates.update', 'tenant_settings',
+        current_user,
+        "hr.payroll_tax_rates.update",
+        "tenant_settings",
         current_user.tenant_id,
         "Bordro vergi oranları güncellendi",
-        before=before.get('payroll_tax_rates') or None,
+        before=before.get("payroll_tax_rates") or None,
         after=new_rates,
-        severity='info',
+        severity="info",
     )
-    return {'success': True, 'rates': new_rates, 'updated_at': now_iso}
+    return {"success": True, "rates": new_rates, "updated_at": now_iso}
 
 
 # ============= 7. Performans Hedef Check-in =============
 
+
 class GoalCheckinPayload(BaseModel):
     goal_text: str = Field(..., min_length=1, max_length=1000)
     progress_pct: int = Field(..., ge=0, le=100)
-    status: Literal['on_track', 'at_risk', 'blocked', 'done'] = 'on_track'
+    status: Literal["on_track", "at_risk", "blocked", "done"] = "on_track"
     note: str | None = Field(None, max_length=2000)
-    checkin_date: str | None = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
+    checkin_date: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
 
 
 @router.post("/hr/performance/{review_id}/checkin")
@@ -5762,27 +6014,30 @@ async def add_goal_checkin(
     payload: GoalCheckinPayload,
     current_user: User = Depends(get_current_user),
 ):
-    review = await db.performance_reviews.find_one({
-        'tenant_id': current_user.tenant_id, 'id': review_id,
-    })
+    review = await db.performance_reviews.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "id": review_id,
+        }
+    )
     if not review:
         raise HTTPException(status_code=404, detail="Performans değerlendirmesi bulunamadı")
     item = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'review_id': review_id,
-        'staff_id': review.get('staff_id'),
-        'goal_text': payload.goal_text,
-        'progress_pct': payload.progress_pct,
-        'status': payload.status,
-        'note': payload.note,
-        'checkin_date': payload.checkin_date or _today_local().isoformat(),
-        'created_by': getattr(current_user, 'id', None),
-        'created_at': datetime.now(UTC).isoformat(),
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "review_id": review_id,
+        "staff_id": review.get("staff_id"),
+        "goal_text": payload.goal_text,
+        "progress_pct": payload.progress_pct,
+        "status": payload.status,
+        "note": payload.note,
+        "checkin_date": payload.checkin_date or _today_local().isoformat(),
+        "created_by": getattr(current_user, "id", None),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.performance_checkins.insert_one(item)
-    item.pop('_id', None)
-    return {'success': True, 'checkin': item}
+    item.pop("_id", None)
+    return {"success": True, "checkin": item}
 
 
 @router.get("/hr/performance/{review_id}/checkins")
@@ -5790,10 +6045,18 @@ async def list_goal_checkins(
     review_id: str,
     current_user: User = Depends(get_current_user),
 ):
-    items = await db.performance_checkins.find({
-        'tenant_id': current_user.tenant_id, 'review_id': review_id,
-    }, {'_id': 0}).sort('checkin_date', -1).to_list(500)
-    return {'items': items, 'total': len(items)}
+    items = (
+        await db.performance_checkins.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "review_id": review_id,
+            },
+            {"_id": 0},
+        )
+        .sort("checkin_date", -1)
+        .to_list(500)
+    )
+    return {"items": items, "total": len(items)}
 
 
 @router.delete("/hr/performance/checkins/{checkin_id}")
@@ -5802,15 +6065,19 @@ async def delete_goal_checkin(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
-    res = await db.performance_checkins.delete_one({
-        'tenant_id': current_user.tenant_id, 'id': checkin_id,
-    })
+    res = await db.performance_checkins.delete_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "id": checkin_id,
+        }
+    )
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Check-in bulunamadı")
-    return {'success': True}
+    return {"success": True}
 
 
 # ============= Coverage Rules + Weekly Hours (Task #263 / T002) =============
+
 
 class CoverageRulePayload(BaseModel):
     """Departman-bazlı minimum kapasite kuralı.
@@ -5818,9 +6085,10 @@ class CoverageRulePayload(BaseModel):
     weekday: 0-6 (Pzt-Pzr) veya -1 (her gün).
     shift_type: 'morning'|'afternoon'|'evening'|'night'|'split'|'any'.
     """
+
     department: str = Field(..., min_length=1, max_length=100)
     weekday: int = Field(..., ge=-1, le=6)
-    shift_type: Literal['morning', 'afternoon', 'evening', 'night', 'split', 'any'] = 'any'
+    shift_type: Literal["morning", "afternoon", "evening", "night", "split", "any"] = "any"
     min_staff: int = Field(..., ge=1, le=200)
     note: str | None = Field(None, max_length=300)
 
@@ -5842,27 +6110,27 @@ async def create_coverage_rule(
     # `idempotent_replay` flag so callers (and the stress harness) can tell a
     # replay from a fresh insert.
     item = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'department': payload.department,
-        'weekday': payload.weekday,
-        'shift_type': payload.shift_type,
-        'min_staff': payload.min_staff,
-        'note': payload.note,
-        'created_by': getattr(current_user, 'id', None),
-        'created_at': datetime.now(UTC).isoformat(),
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "department": payload.department,
+        "weekday": payload.weekday,
+        "shift_type": payload.shift_type,
+        "min_staff": payload.min_staff,
+        "note": payload.note,
+        "created_by": getattr(current_user, "id", None),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     try:
         await db.hr_coverage_rules.insert_one(item)
     except DuplicateKeyError:
         existing = await db.hr_coverage_rules.find_one(
             {
-                'tenant_id': current_user.tenant_id,
-                'department': payload.department,
-                'weekday': payload.weekday,
-                'shift_type': payload.shift_type,
+                "tenant_id": current_user.tenant_id,
+                "department": payload.department,
+                "weekday": payload.weekday,
+                "shift_type": payload.shift_type,
             },
-            {'_id': 0},
+            {"_id": 0},
         )
         # Race-safe: the row that won the insert is now visible. If it somehow
         # vanished between the failed insert and this read, surface the
@@ -5872,9 +6140,9 @@ async def create_coverage_rule(
                 status_code=409,
                 detail="Kapsama kuralı çakışması (eşzamanlı oluşturma).",
             )
-        return {'success': True, 'rule': existing, 'idempotent_replay': True}
-    item.pop('_id', None)
-    return {'success': True, 'rule': item, 'idempotent_replay': False}
+        return {"success": True, "rule": existing, "idempotent_replay": True}
+    item.pop("_id", None)
+    return {"success": True, "rule": item, "idempotent_replay": False}
 
 
 @router.get("/hr/coverage-rules")
@@ -5883,13 +6151,11 @@ async def list_coverage_rules(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr")),
 ):
-    query: dict[str, Any] = {'tenant_id': current_user.tenant_id}
+    query: dict[str, Any] = {"tenant_id": current_user.tenant_id}
     if department:
-        query['department'] = department
-    items = await db.hr_coverage_rules.find(
-        query, {'_id': 0}
-    ).sort([('department', 1), ('weekday', 1)]).to_list(500)
-    return {'items': items, 'total': len(items)}
+        query["department"] = department
+    items = await db.hr_coverage_rules.find(query, {"_id": 0}).sort([("department", 1), ("weekday", 1)]).to_list(500)
+    return {"items": items, "total": len(items)}
 
 
 @router.delete("/hr/coverage-rules/{rule_id}")
@@ -5898,34 +6164,38 @@ async def delete_coverage_rule(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
-    res = await db.hr_coverage_rules.delete_one({
-        'tenant_id': current_user.tenant_id, 'id': rule_id,
-    })
+    res = await db.hr_coverage_rules.delete_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "id": rule_id,
+        }
+    )
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Kural bulunamadı")
-    return {'success': True}
+    return {"success": True}
 
 
 async def _build_staff_department_map(tenant_id: str) -> dict[str, str]:
     """staff_id → department lookup (staff_members + users.role fallback)."""
     out: dict[str, str] = {}
     async for s in db.staff_members.find(
-        {'tenant_id': tenant_id}, {'_id': 0, 'id': 1, 'department': 1},
+        {"tenant_id": tenant_id},
+        {"_id": 0, "id": 1, "department": 1},
     ):
-        out[s['id']] = s.get('department') or 'unknown'
+        out[s["id"]] = s.get("department") or "unknown"
     async for u in db.users.find(
-        {'tenant_id': tenant_id, 'is_active': True},
-        {'_id': 0, 'id': 1, 'role': 1},
+        {"tenant_id": tenant_id, "is_active": True},
+        {"_id": 0, "id": 1, "role": 1},
     ):
-        if u['id'] not in out:
-            out[u['id']] = u.get('role') or 'staff'
+        if u["id"] not in out:
+            out[u["id"]] = u.get("role") or "staff"
     return out
 
 
 @router.get("/hr/coverage/check")
 async def coverage_check(
-    start: str = Query(..., pattern=r'^\d{4}-\d{2}-\d{2}$'),
-    end: str = Query(..., pattern=r'^\d{4}-\d{2}-\d{2}$'),
+    start: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    end: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr")),
 ):
@@ -5935,25 +6205,26 @@ async def coverage_check(
     end_d = date.fromisoformat(end)
     if end_d < start_d:
         raise HTTPException(status_code=400, detail="end < start")
-    rules = await db.hr_coverage_rules.find(
-        {'tenant_id': current_user.tenant_id}, {'_id': 0}
-    ).to_list(500)
+    rules = await db.hr_coverage_rules.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).to_list(500)
     if not rules:
-        return {'rules_count': 0, 'gaps': [], 'days_checked': (end_d - start_d).days + 1}
+        return {"rules_count": 0, "gaps": [], "days_checked": (end_d - start_d).days + 1}
 
-    shifts = await db.shift_schedules.find({
-        'tenant_id': current_user.tenant_id,
-        'shift_date': {'$gte': start, '$lte': end},
-        'status': {'$ne': 'on_leave'},
-    }, {'_id': 0, 'staff_id': 1, 'shift_date': 1, 'shift_type': 1, 'status': 1}).to_list(20000)
+    shifts = await db.shift_schedules.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "shift_date": {"$gte": start, "$lte": end},
+            "status": {"$ne": "on_leave"},
+        },
+        {"_id": 0, "staff_id": 1, "shift_date": 1, "shift_type": 1, "status": 1},
+    ).to_list(20000)
     staff_dept = await _build_staff_department_map(current_user.tenant_id)
 
     # bucket[(date,dept,shift_type)] = set(staff_ids)
     bucket: dict[tuple[str, str, str], set[str]] = {}
     for s in shifts:
-        dept = staff_dept.get(s['staff_id'], 'unknown')
-        key = (s['shift_date'], dept, s.get('shift_type') or 'any')
-        bucket.setdefault(key, set()).add(s['staff_id'])
+        dept = staff_dept.get(s["staff_id"], "unknown")
+        key = (s["shift_date"], dept, s.get("shift_type") or "any")
+        bucket.setdefault(key, set()).add(s["staff_id"])
 
     gaps: list[dict] = []
     cur = start_d
@@ -5961,40 +6232,42 @@ async def coverage_check(
         d_iso = cur.isoformat()
         wd = cur.weekday()
         for r in rules:
-            if r['weekday'] not in (-1, wd):
+            if r["weekday"] not in (-1, wd):
                 continue
             # count = belirli shift_type ise tek bucket; 'any' ise tüm shift_type'lar
-            if r['shift_type'] == 'any':
+            if r["shift_type"] == "any":
                 staff_set: set[str] = set()
                 for k, v in bucket.items():
-                    if k[0] == d_iso and k[1] == r['department']:
+                    if k[0] == d_iso and k[1] == r["department"]:
                         staff_set |= v
                 actual = len(staff_set)
             else:
-                actual = len(bucket.get((d_iso, r['department'], r['shift_type']), set()))
-            if actual < r['min_staff']:
-                gaps.append({
-                    'date': d_iso,
-                    'weekday': wd,
-                    'department': r['department'],
-                    'shift_type': r['shift_type'],
-                    'min_staff': r['min_staff'],
-                    'actual': actual,
-                    'gap': r['min_staff'] - actual,
-                    'rule_id': r['id'],
-                })
+                actual = len(bucket.get((d_iso, r["department"], r["shift_type"]), set()))
+            if actual < r["min_staff"]:
+                gaps.append(
+                    {
+                        "date": d_iso,
+                        "weekday": wd,
+                        "department": r["department"],
+                        "shift_type": r["shift_type"],
+                        "min_staff": r["min_staff"],
+                        "actual": actual,
+                        "gap": r["min_staff"] - actual,
+                        "rule_id": r["id"],
+                    }
+                )
         cur += timedelta(days=1)
     return {
-        'range': {'start': start, 'end': end},
-        'rules_count': len(rules),
-        'gaps': gaps,
-        'gaps_count': len(gaps),
+        "range": {"start": start, "end": end},
+        "rules_count": len(rules),
+        "gaps": gaps,
+        "gaps_count": len(gaps),
     }
 
 
 @router.get("/hr/shifts/weekly-hours")
 async def shifts_weekly_hours(
-    week_start: str = Query(..., pattern=r'^\d{4}-\d{2}-\d{2}$'),
+    week_start: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr")),
 ):
@@ -6002,18 +6275,22 @@ async def shifts_weekly_hours(
     >45h üzeri 'overtime estimate' uyarı flag'i."""
     start_d = date.fromisoformat(week_start)
     end_d = start_d + timedelta(days=6)
-    items = await db.shift_schedules.find({
-        'tenant_id': current_user.tenant_id,
-        'shift_date': {'$gte': start_d.isoformat(), '$lte': end_d.isoformat()},
-        'status': {'$ne': 'on_leave'},
-    }, {'_id': 0, 'staff_id': 1, 'staff_name': 1, 'shift_date': 1,
-        'start_time': 1, 'end_time': 1, 'crosses_midnight': 1}).to_list(5000)
+    items = await db.shift_schedules.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "shift_date": {"$gte": start_d.isoformat(), "$lte": end_d.isoformat()},
+            "status": {"$ne": "on_leave"},
+        },
+        {"_id": 0, "staff_id": 1, "staff_name": 1, "shift_date": 1, "start_time": 1, "end_time": 1, "crosses_midnight": 1},
+    ).to_list(5000)
 
     def _hours_of(sh: dict) -> float:
         try:
             sdt, edt = _shift_datetimes(
-                sh['shift_date'], sh['start_time'], sh['end_time'],
-                bool(sh.get('crosses_midnight', False)),
+                sh["shift_date"],
+                sh["start_time"],
+                sh["end_time"],
+                bool(sh.get("crosses_midnight", False)),
             )
             return round((edt - sdt).total_seconds() / 3600.0, 2)
         except Exception:
@@ -6021,31 +6298,35 @@ async def shifts_weekly_hours(
 
     agg: dict[str, dict] = {}
     for sh in items:
-        sid = sh['staff_id']
-        agg.setdefault(sid, {
-            'staff_id': sid,
-            'staff_name': sh.get('staff_name'),
-            'total_hours': 0.0,
-            'shifts_count': 0,
-        })
-        agg[sid]['total_hours'] = round(agg[sid]['total_hours'] + _hours_of(sh), 2)
-        agg[sid]['shifts_count'] += 1
+        sid = sh["staff_id"]
+        agg.setdefault(
+            sid,
+            {
+                "staff_id": sid,
+                "staff_name": sh.get("staff_name"),
+                "total_hours": 0.0,
+                "shifts_count": 0,
+            },
+        )
+        agg[sid]["total_hours"] = round(agg[sid]["total_hours"] + _hours_of(sh), 2)
+        agg[sid]["shifts_count"] += 1
     out: list[dict] = []
     for v in agg.values():
-        v['overtime_estimate'] = round(max(0.0, v['total_hours'] - 45.0), 2)
-        v['exceeds_legal_week'] = v['total_hours'] > 45.0
+        v["overtime_estimate"] = round(max(0.0, v["total_hours"] - 45.0), 2)
+        v["exceeds_legal_week"] = v["total_hours"] > 45.0
         out.append(v)
-    out.sort(key=lambda x: (-x['total_hours'], x['staff_name'] or ''))
+    out.sort(key=lambda x: (-x["total_hours"], x["staff_name"] or ""))
     return {
-        'week_start': start_d.isoformat(),
-        'week_end': end_d.isoformat(),
-        'legal_weekly_hours': 45,
-        'items': out,
-        'total_staff': len(out),
+        "week_start": start_d.isoformat(),
+        "week_end": end_d.isoformat(),
+        "legal_weekly_hours": 45,
+        "items": out,
+        "total_staff": len(out),
     }
 
 
 # ============= Attendance v2 — Missing Clockout + Late/Early + Dept Summary (Task #263 / T005) =============
+
 
 @router.post("/hr/attendance/flag-missing")
 async def flag_missing_clockouts(
@@ -6056,73 +6337,72 @@ async def flag_missing_clockouts(
     """Cron tetikleyici: belirtilen tarihten (varsayılan: dün) önceki
     `clock_out=null` kayıtlarını `missing_clockout=True` ile flag'ler.
     Bugünün açık kayıtları (henüz mesai bitmedi) DOKUNULMAZ."""
-    cutoff = (
-        date.fromisoformat(cutoff_date) if cutoff_date
-        else _today_local() - timedelta(days=1)
-    )
+    cutoff = date.fromisoformat(cutoff_date) if cutoff_date else _today_local() - timedelta(days=1)
     res = await db.attendance_records.update_many(
         {
-            'tenant_id': current_user.tenant_id,
-            'date': {'$lte': cutoff.isoformat()},
-            'clock_out': None,
-            '$or': [
-                {'missing_clockout': {'$exists': False}},
-                {'missing_clockout': False},
+            "tenant_id": current_user.tenant_id,
+            "date": {"$lte": cutoff.isoformat()},
+            "clock_out": None,
+            "$or": [
+                {"missing_clockout": {"$exists": False}},
+                {"missing_clockout": False},
             ],
         },
-        {'$set': {
-            'missing_clockout': True,
-            'missing_clockout_flagged_at': datetime.now(UTC).isoformat(),
-        }},
+        {
+            "$set": {
+                "missing_clockout": True,
+                "missing_clockout_flagged_at": datetime.now(UTC).isoformat(),
+            }
+        },
     )
     return {
-        'success': True,
-        'flagged_count': res.modified_count,
-        'cutoff_date': cutoff.isoformat(),
+        "success": True,
+        "flagged_count": res.modified_count,
+        "cutoff_date": cutoff.isoformat(),
     }
 
 
 def _parse_hhmm_on_date(d_iso: str, hhmm: str) -> datetime:
-    sh, sm = (int(x) for x in hhmm.split(':'))
+    sh, sm = (int(x) for x in hhmm.split(":"))
     dd = date.fromisoformat(d_iso)
     return datetime(dd.year, dd.month, dd.day, sh, sm, tzinfo=UTC)
 
 
 def _derive_late_early(record: dict, shift: dict | None) -> dict:
     """Vardiya start/end ile karşılaştırarak late/early dakika hesabı."""
-    out = {'late_minutes': 0, 'early_minutes': 0, 'shift_matched': False}
+    out = {"late_minutes": 0, "early_minutes": 0, "shift_matched": False}
     if not shift:
         return out
     try:
-        sched_start = _parse_hhmm_on_date(shift['shift_date'], shift['start_time'])
-        end_dt = date.fromisoformat(shift['shift_date']) + (
-            timedelta(days=1) if shift.get('crosses_midnight') else timedelta()
-        )
+        sched_start = _parse_hhmm_on_date(shift["shift_date"], shift["start_time"])
+        end_dt = date.fromisoformat(shift["shift_date"]) + (timedelta(days=1) if shift.get("crosses_midnight") else timedelta())
         sched_end = datetime(
-            end_dt.year, end_dt.month, end_dt.day,
-            int(shift['end_time'].split(':')[0]),
-            int(shift['end_time'].split(':')[1]),
+            end_dt.year,
+            end_dt.month,
+            end_dt.day,
+            int(shift["end_time"].split(":")[0]),
+            int(shift["end_time"].split(":")[1]),
             tzinfo=UTC,
         )
     except Exception:
         return out
-    out['shift_matched'] = True
-    ci = record.get('clock_in')
-    co = record.get('clock_out')
+    out["shift_matched"] = True
+    ci = record.get("clock_in")
+    co = record.get("clock_out")
     if ci:
         try:
-            ci_dt = datetime.fromisoformat(ci.replace('Z', '+00:00'))
+            ci_dt = datetime.fromisoformat(ci.replace("Z", "+00:00"))
             delta_min = int((ci_dt - sched_start).total_seconds() / 60)
             if delta_min > 0:
-                out['late_minutes'] = delta_min
+                out["late_minutes"] = delta_min
         except Exception:
             pass
     if co:
         try:
-            co_dt = datetime.fromisoformat(co.replace('Z', '+00:00'))
+            co_dt = datetime.fromisoformat(co.replace("Z", "+00:00"))
             delta_min = int((sched_end - co_dt).total_seconds() / 60)
             if delta_min > 0:
-                out['early_minutes'] = delta_min
+                out["early_minutes"] = delta_min
         except Exception:
             pass
     return out
@@ -6137,41 +6417,49 @@ async def attendance_department_summary(
 ):
     """Departman bazlı çalışma saati özet kartları."""
     start_dt, end_dt = _parse_date_range(start, end, days=30)
-    records = await db.attendance_records.find({
-        'tenant_id': current_user.tenant_id,
-        'date': {'$gte': start_dt.isoformat(), '$lte': end_dt.isoformat()},
-    }, {'_id': 0}).to_list(5000)
+    records = await db.attendance_records.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "date": {"$gte": start_dt.isoformat(), "$lte": end_dt.isoformat()},
+        },
+        {"_id": 0},
+    ).to_list(5000)
     staff_dept = await _build_staff_department_map(current_user.tenant_id)
     agg: dict[str, dict] = {}
     for r in records:
-        dept = staff_dept.get(r['staff_id'], 'unknown')
-        agg.setdefault(dept, {
-            'department': dept,
-            'total_hours': 0.0,
-            'records_count': 0,
-            'staff_set': set(),
-            'missing_clockouts': 0,
-        })
-        agg[dept]['total_hours'] = round(
-            agg[dept]['total_hours'] + float(r.get('total_hours') or 0), 2,
+        dept = staff_dept.get(r["staff_id"], "unknown")
+        agg.setdefault(
+            dept,
+            {
+                "department": dept,
+                "total_hours": 0.0,
+                "records_count": 0,
+                "staff_set": set(),
+                "missing_clockouts": 0,
+            },
         )
-        agg[dept]['records_count'] += 1
-        agg[dept]['staff_set'].add(r['staff_id'])
-        if r.get('missing_clockout'):
-            agg[dept]['missing_clockouts'] += 1
+        agg[dept]["total_hours"] = round(
+            agg[dept]["total_hours"] + float(r.get("total_hours") or 0),
+            2,
+        )
+        agg[dept]["records_count"] += 1
+        agg[dept]["staff_set"].add(r["staff_id"])
+        if r.get("missing_clockout"):
+            agg[dept]["missing_clockouts"] += 1
     out = []
     for v in agg.values():
-        v['unique_staff'] = len(v['staff_set'])
-        del v['staff_set']
+        v["unique_staff"] = len(v["staff_set"])
+        del v["staff_set"]
         out.append(v)
-    out.sort(key=lambda x: -x['total_hours'])
+    out.sort(key=lambda x: -x["total_hours"])
     return {
-        'range': {'start': start_dt.isoformat(), 'end': end_dt.isoformat()},
-        'departments': out,
+        "range": {"start": start_dt.isoformat(), "end": end_dt.isoformat()},
+        "departments": out,
     }
 
 
 # ============= Excel Exports (Task #263 / T005) =============
+
 
 def _xlsx_stream(workbook) -> StreamingResponse:
     """openpyxl Workbook → StreamingResponse helper. Filename caller'a ait."""
@@ -6186,104 +6474,116 @@ def _xlsx_stream(workbook) -> StreamingResponse:
 
 @router.get("/hr/shifts/export/xlsx")
 async def export_shifts_xlsx(
-    start: str = Query(..., pattern=r'^\d{4}-\d{2}-\d{2}$'),
-    end: str = Query(..., pattern=r'^\d{4}-\d{2}-\d{2}$'),
+    start: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    end: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr")),
 ):
     """Vardiya planı Excel — departman başına ayrı sayfa."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
-    items = await db.shift_schedules.find({
-        'tenant_id': current_user.tenant_id,
-        'shift_date': {'$gte': start, '$lte': end},
-    }, {'_id': 0}).sort('shift_date', 1).to_list(20000)
+
+    items = (
+        await db.shift_schedules.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "shift_date": {"$gte": start, "$lte": end},
+            },
+            {"_id": 0},
+        )
+        .sort("shift_date", 1)
+        .to_list(20000)
+    )
     staff_dept = await _build_staff_department_map(current_user.tenant_id)
     wb = Workbook()
     wb.remove(wb.active)
     by_dept: dict[str, list[dict]] = {}
     for it in items:
-        d = staff_dept.get(it['staff_id'], 'unknown')
+        d = staff_dept.get(it["staff_id"], "unknown")
         by_dept.setdefault(d, []).append(it)
     if not by_dept:
-        ws = wb.create_sheet('Boş')
-        ws['A1'] = 'Bu aralıkta vardiya yok'
+        ws = wb.create_sheet("Boş")
+        ws["A1"] = "Bu aralıkta vardiya yok"
     else:
-        header_font = Font(bold=True, color='FFFFFF')
-        header_fill = PatternFill(start_color='1F2937', end_color='1F2937', fill_type='solid')
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="1F2937", end_color="1F2937", fill_type="solid")
         for dept, rows in sorted(by_dept.items()):
-            sheet_name = (dept or 'Bölüm')[:30]
+            sheet_name = (dept or "Bölüm")[:30]
             ws = wb.create_sheet(sheet_name)
-            headers = ['Tarih', 'Personel', 'Vardiya', 'Başlangıç', 'Bitiş', 'Gece', 'Durum', 'Not']
+            headers = ["Tarih", "Personel", "Vardiya", "Başlangıç", "Bitiş", "Gece", "Durum", "Not"]
             for col, h in enumerate(headers, 1):
                 c = ws.cell(row=1, column=col, value=h)
                 c.font = header_font
                 c.fill = header_fill
             for r_idx, it in enumerate(rows, 2):
-                ws.cell(row=r_idx, column=1, value=it.get('shift_date'))
-                ws.cell(row=r_idx, column=2, value=it.get('staff_name') or it.get('staff_id'))
-                ws.cell(row=r_idx, column=3, value=it.get('shift_type'))
-                ws.cell(row=r_idx, column=4, value=it.get('start_time'))
-                ws.cell(row=r_idx, column=5, value=it.get('end_time'))
-                ws.cell(row=r_idx, column=6, value='Evet' if it.get('crosses_midnight') else 'Hayır')
-                ws.cell(row=r_idx, column=7, value=it.get('status'))
-                ws.cell(row=r_idx, column=8, value=(it.get('notes') or '')[:200])
+                ws.cell(row=r_idx, column=1, value=it.get("shift_date"))
+                ws.cell(row=r_idx, column=2, value=it.get("staff_name") or it.get("staff_id"))
+                ws.cell(row=r_idx, column=3, value=it.get("shift_type"))
+                ws.cell(row=r_idx, column=4, value=it.get("start_time"))
+                ws.cell(row=r_idx, column=5, value=it.get("end_time"))
+                ws.cell(row=r_idx, column=6, value="Evet" if it.get("crosses_midnight") else "Hayır")
+                ws.cell(row=r_idx, column=7, value=it.get("status"))
+                ws.cell(row=r_idx, column=8, value=(it.get("notes") or "")[:200])
             for col_idx in range(1, len(headers) + 1):
                 ws.column_dimensions[chr(64 + col_idx)].width = 16
     resp = _xlsx_stream(wb)
-    resp.headers['Content-Disposition'] = f'attachment; filename="vardiyalar_{start}_{end}.xlsx"'
+    resp.headers["Content-Disposition"] = f'attachment; filename="vardiyalar_{start}_{end}.xlsx"'
     return resp
 
 
 @router.get("/hr/attendance/export/xlsx")
 async def export_attendance_xlsx(
-    month: str = Query(..., pattern=r'^\d{4}-\d{2}$'),
+    month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr")),
 ):
     """Puantaj aylık: personel × gün matrisi (saat değerleri)."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
-    yyyy, mm = month.split('-')
+
+    yyyy, mm = month.split("-")
     start = date(int(yyyy), int(mm), 1)
     nm = start.replace(day=28) + timedelta(days=4)
     end = nm - timedelta(days=nm.day)
-    records = await db.attendance_records.find({
-        'tenant_id': current_user.tenant_id,
-        'date': {'$gte': start.isoformat(), '$lte': end.isoformat()},
-    }, {'_id': 0}).to_list(10000)
+    records = await db.attendance_records.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "date": {"$gte": start.isoformat(), "$lte": end.isoformat()},
+        },
+        {"_id": 0},
+    ).to_list(10000)
     staff_map = await _get_staff_map(current_user.tenant_id)
     days_in_month = (end - start).days + 1
     # matrix[staff_id][day_num] = hours
     matrix: dict[str, dict[int, float]] = {}
     name_map: dict[str, str] = {}
     for r in records:
-        sid = r['staff_id']
-        d_num = int(r['date'][-2:])
+        sid = r["staff_id"]
+        d_num = int(r["date"][-2:])
         matrix.setdefault(sid, {})
-        matrix[sid][d_num] = round(matrix[sid].get(d_num, 0.0) + float(r.get('total_hours') or 0), 2)
+        matrix[sid][d_num] = round(matrix[sid].get(d_num, 0.0) + float(r.get("total_hours") or 0), 2)
         if sid not in name_map:
             sm = staff_map.get(sid)
-            name_map[sid] = (sm or {}).get('name') or r.get('staff_name') or sid
+            name_map[sid] = (sm or {}).get("name") or r.get("staff_name") or sid
 
     wb = Workbook()
     ws = wb.active
-    ws.title = f'Puantaj {month}'
-    header_font = Font(bold=True, color='FFFFFF')
-    header_fill = PatternFill(start_color='1F2937', end_color='1F2937', fill_type='solid')
-    ws.cell(row=1, column=1, value='Personel').font = header_font
+    ws.title = f"Puantaj {month}"
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="1F2937", end_color="1F2937", fill_type="solid")
+    ws.cell(row=1, column=1, value="Personel").font = header_font
     ws.cell(row=1, column=1).fill = header_fill
     for d in range(1, days_in_month + 1):
         c = ws.cell(row=1, column=1 + d, value=d)
         c.font = header_font
         c.fill = header_fill
-        c.alignment = Alignment(horizontal='center')
+        c.alignment = Alignment(horizontal="center")
     total_col = days_in_month + 2
-    tc = ws.cell(row=1, column=total_col, value='Toplam')
+    tc = ws.cell(row=1, column=total_col, value="Toplam")
     tc.font = header_font
     tc.fill = header_fill
     row_idx = 2
-    for sid in sorted(matrix.keys(), key=lambda s: name_map.get(s, '')):
+    for sid in sorted(matrix.keys(), key=lambda s: name_map.get(s, "")):
         ws.cell(row=row_idx, column=1, value=name_map.get(sid, sid))
         total = 0.0
         for d in range(1, days_in_month + 1):
@@ -6293,53 +6593,61 @@ async def export_attendance_xlsx(
                 total += v
         ws.cell(row=row_idx, column=total_col, value=round(total, 2)).font = Font(bold=True)
         row_idx += 1
-    ws.column_dimensions['A'].width = 28
+    ws.column_dimensions["A"].width = 28
     resp = _xlsx_stream(wb)
-    resp.headers['Content-Disposition'] = f'attachment; filename="puantaj_{month}.xlsx"'
+    resp.headers["Content-Disposition"] = f'attachment; filename="puantaj_{month}.xlsx"'
     return resp
 
 
 @router.get("/hr/leave/export/xlsx")
 async def export_leave_xlsx(
-    start: str = Query(..., pattern=r'^\d{4}-\d{2}-\d{2}$'),
-    end: str = Query(..., pattern=r'^\d{4}-\d{2}-\d{2}$'),
+    start: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    end: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr")),
 ):
     """İzin geçmişi Excel."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
+
     # Task #263 review carryover: range overlap doctrini —
     # `start_date<=end AND end_date>=start` (eski $or pencereyi tamamen
     # kapsayan izinleri kaçırıyordu).
-    items = await db.leave_requests.find({
-        'tenant_id': current_user.tenant_id,
-        'start_date': {'$lte': end},
-        'end_date': {'$gte': start},
-    }, {'_id': 0}).sort('start_date', -1).to_list(5000)
+    items = (
+        await db.leave_requests.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "start_date": {"$lte": end},
+                "end_date": {"$gte": start},
+            },
+            {"_id": 0},
+        )
+        .sort("start_date", -1)
+        .to_list(5000)
+    )
     wb = Workbook()
     ws = wb.active
-    ws.title = 'İzin Geçmişi'
-    headers = ['Personel', 'Tip', 'Başlangıç', 'Bitiş', 'Gün', 'Durum', 'Sebep', 'Onay Notu']
-    header_font = Font(bold=True, color='FFFFFF')
-    header_fill = PatternFill(start_color='1F2937', end_color='1F2937', fill_type='solid')
+    ws.title = "İzin Geçmişi"
+    headers = ["Personel", "Tip", "Başlangıç", "Bitiş", "Gün", "Durum", "Sebep", "Onay Notu"]
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="1F2937", end_color="1F2937", fill_type="solid")
     for col, h in enumerate(headers, 1):
         c = ws.cell(row=1, column=col, value=h)
         c.font = header_font
         c.fill = header_fill
     for r_idx, it in enumerate(items, 2):
-        ws.cell(row=r_idx, column=1, value=it.get('staff_name') or it.get('staff_id'))
-        ws.cell(row=r_idx, column=2, value=it.get('leave_type'))
-        ws.cell(row=r_idx, column=3, value=it.get('start_date'))
-        ws.cell(row=r_idx, column=4, value=it.get('end_date'))
-        ws.cell(row=r_idx, column=5, value=it.get('total_days'))
-        ws.cell(row=r_idx, column=6, value=it.get('status'))
-        ws.cell(row=r_idx, column=7, value=(it.get('reason') or '')[:200])
-        ws.cell(row=r_idx, column=8, value=(it.get('decision_note') or '')[:200])
+        ws.cell(row=r_idx, column=1, value=it.get("staff_name") or it.get("staff_id"))
+        ws.cell(row=r_idx, column=2, value=it.get("leave_type"))
+        ws.cell(row=r_idx, column=3, value=it.get("start_date"))
+        ws.cell(row=r_idx, column=4, value=it.get("end_date"))
+        ws.cell(row=r_idx, column=5, value=it.get("total_days"))
+        ws.cell(row=r_idx, column=6, value=it.get("status"))
+        ws.cell(row=r_idx, column=7, value=(it.get("reason") or "")[:200])
+        ws.cell(row=r_idx, column=8, value=(it.get("decision_note") or "")[:200])
     for col_idx in range(1, len(headers) + 1):
         ws.column_dimensions[chr(64 + col_idx)].width = 18
     resp = _xlsx_stream(wb)
-    resp.headers['Content-Disposition'] = f'attachment; filename="izinler_{start}_{end}.xlsx"'
+    resp.headers["Content-Disposition"] = f'attachment; filename="izinler_{start}_{end}.xlsx"'
     return resp
 
 
@@ -6352,32 +6660,40 @@ async def export_overtime_xlsx(
     """Mesai geçmişi Excel — yıl bazlı."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
-    items = await db.overtime_requests.find({
-        'tenant_id': current_user.tenant_id,
-        'work_date': {'$gte': f'{year}-01-01', '$lte': f'{year}-12-31'},
-    }, {'_id': 0}).sort('work_date', -1).to_list(5000)
+
+    items = (
+        await db.overtime_requests.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "work_date": {"$gte": f"{year}-01-01", "$lte": f"{year}-12-31"},
+            },
+            {"_id": 0},
+        )
+        .sort("work_date", -1)
+        .to_list(5000)
+    )
     wb = Workbook()
     ws = wb.active
-    ws.title = f'Mesai {year}'
-    headers = ['Personel', 'Tarih', 'Saat', 'Sebep', 'Durum', 'Onay Notu', 'Bordro Hazır']
-    header_font = Font(bold=True, color='FFFFFF')
-    header_fill = PatternFill(start_color='1F2937', end_color='1F2937', fill_type='solid')
+    ws.title = f"Mesai {year}"
+    headers = ["Personel", "Tarih", "Saat", "Sebep", "Durum", "Onay Notu", "Bordro Hazır"]
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="1F2937", end_color="1F2937", fill_type="solid")
     for col, h in enumerate(headers, 1):
         c = ws.cell(row=1, column=col, value=h)
         c.font = header_font
         c.fill = header_fill
     for r_idx, it in enumerate(items, 2):
-        ws.cell(row=r_idx, column=1, value=it.get('staff_name') or it.get('staff_id'))
-        ws.cell(row=r_idx, column=2, value=it.get('work_date'))
-        ws.cell(row=r_idx, column=3, value=float(it.get('hours') or 0))
-        ws.cell(row=r_idx, column=4, value=(it.get('reason') or '')[:200])
-        ws.cell(row=r_idx, column=5, value=it.get('status'))
-        ws.cell(row=r_idx, column=6, value=(it.get('decision_note') or '')[:200])
-        ws.cell(row=r_idx, column=7, value='Evet' if it.get('payroll_ready') else 'Hayır')
+        ws.cell(row=r_idx, column=1, value=it.get("staff_name") or it.get("staff_id"))
+        ws.cell(row=r_idx, column=2, value=it.get("work_date"))
+        ws.cell(row=r_idx, column=3, value=float(it.get("hours") or 0))
+        ws.cell(row=r_idx, column=4, value=(it.get("reason") or "")[:200])
+        ws.cell(row=r_idx, column=5, value=it.get("status"))
+        ws.cell(row=r_idx, column=6, value=(it.get("decision_note") or "")[:200])
+        ws.cell(row=r_idx, column=7, value="Evet" if it.get("payroll_ready") else "Hayır")
     for col_idx in range(1, len(headers) + 1):
         ws.column_dimensions[chr(64 + col_idx)].width = 18
     resp = _xlsx_stream(wb)
-    resp.headers['Content-Disposition'] = f'attachment; filename="mesai_{year}.xlsx"'
+    resp.headers["Content-Disposition"] = f'attachment; filename="mesai_{year}.xlsx"'
     return resp
 
 
@@ -6398,21 +6714,29 @@ async def export_overtime_xlsx(
 # ---------- Zimmet (Staff Equipment) ----------
 
 EQUIPMENT_ITEM_TYPES = {
-    'uniform', 'card', 'key', 'radio', 'laptop', 'phone',
-    'tablet', 'tool', 'vehicle', 'other',
+    "uniform",
+    "card",
+    "key",
+    "radio",
+    "laptop",
+    "phone",
+    "tablet",
+    "tool",
+    "vehicle",
+    "other",
 }
-EQUIPMENT_STATUSES = {'assigned', 'returned', 'lost', 'damaged'}
-EQUIPMENT_CONDITIONS = {'good', 'fair', 'poor', 'lost', 'damaged'}
+EQUIPMENT_STATUSES = {"assigned", "returned", "lost", "damaged"}
+EQUIPMENT_CONDITIONS = {"good", "fair", "poor", "lost", "damaged"}
 
 
 class EquipmentAssignPayload(BaseModel):
     item_type: str = Field(..., max_length=20)
     item_label: str = Field(..., min_length=1, max_length=200)
     serial_no: str | None = Field(None, max_length=100)
-    assigned_at: str | None = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
+    assigned_at: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     notes: str | None = Field(None, max_length=1000)
 
-    @field_validator('item_type')
+    @field_validator("item_type")
     @classmethod
     def _valid_type(cls, v: str) -> str:
         if v not in EQUIPMENT_ITEM_TYPES:
@@ -6421,11 +6745,11 @@ class EquipmentAssignPayload(BaseModel):
 
 
 class EquipmentReturnPayload(BaseModel):
-    returned_at: str | None = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
-    condition_on_return: str = Field('good', max_length=20)
+    returned_at: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    condition_on_return: str = Field("good", max_length=20)
     notes: str | None = Field(None, max_length=1000)
 
-    @field_validator('condition_on_return')
+    @field_validator("condition_on_return")
     @classmethod
     def _valid_condition(cls, v: str) -> str:
         if v not in EQUIPMENT_CONDITIONS:
@@ -6446,30 +6770,32 @@ async def assign_equipment(
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     now_iso = datetime.now(UTC).isoformat()
     item = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'staff_id': staff_id,
-        'staff_name': staff.get('name'),
-        'item_type': payload.item_type,
-        'item_label': payload.item_label,
-        'serial_no': payload.serial_no,
-        'assigned_at': payload.assigned_at or _today_local().isoformat(),
-        'returned_at': None,
-        'condition_on_return': None,
-        'status': 'assigned',
-        'notes': payload.notes,
-        'assigned_by': getattr(current_user, 'id', None),
-        'created_at': now_iso,
-        'updated_at': now_iso,
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "staff_id": staff_id,
+        "staff_name": staff.get("name"),
+        "item_type": payload.item_type,
+        "item_label": payload.item_label,
+        "serial_no": payload.serial_no,
+        "assigned_at": payload.assigned_at or _today_local().isoformat(),
+        "returned_at": None,
+        "condition_on_return": None,
+        "status": "assigned",
+        "notes": payload.notes,
+        "assigned_by": getattr(current_user, "id", None),
+        "created_at": now_iso,
+        "updated_at": now_iso,
     }
     await db.staff_equipment.insert_one(item)
-    item.pop('_id', None)
+    item.pop("_id", None)
     await _audit(
-        current_user, action='equipment.assign', entity_type='staff_equipment',
-        entity_id=item['id'],
-        details={'staff_id': staff_id, 'item_type': payload.item_type, 'item_label': payload.item_label},
+        current_user,
+        action="equipment.assign",
+        entity_type="staff_equipment",
+        entity_id=item["id"],
+        details={"staff_id": staff_id, "item_type": payload.item_type, "item_label": payload.item_label},
     )
-    return {'success': True, 'equipment': item}
+    return {"success": True, "equipment": item}
 
 
 @router.get("/hr/staff/{staff_id}/equipment")
@@ -6483,16 +6809,16 @@ async def list_staff_equipment(
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     _authorize_staff_access(staff, current_user)
-    q: dict[str, Any] = {'tenant_id': current_user.tenant_id, 'staff_id': staff_id}
+    q: dict[str, Any] = {"tenant_id": current_user.tenant_id, "staff_id": staff_id}
     if status:
         if status not in EQUIPMENT_STATUSES:
             raise HTTPException(status_code=400, detail=f"Geçersiz durum. İzinli: {sorted(EQUIPMENT_STATUSES)}")
-        q['status'] = status
-    items = await db.staff_equipment.find(q, {'_id': 0}).sort('assigned_at', -1).to_list(500)
-    active = sum(1 for it in items if it.get('status') == 'assigned')
-    returned = sum(1 for it in items if it.get('status') == 'returned')
-    lost = sum(1 for it in items if it.get('status') in ('lost', 'damaged'))
-    return {'items': items, 'total': len(items), 'active': active, 'returned': returned, 'lost_or_damaged': lost}
+        q["status"] = status
+    items = await db.staff_equipment.find(q, {"_id": 0}).sort("assigned_at", -1).to_list(500)
+    active = sum(1 for it in items if it.get("status") == "assigned")
+    returned = sum(1 for it in items if it.get("status") == "returned")
+    lost = sum(1 for it in items if it.get("status") in ("lost", "damaged"))
+    return {"items": items, "total": len(items), "active": active, "returned": returned, "lost_or_damaged": lost}
 
 
 @router.post("/hr/equipment/{equipment_id}/return")
@@ -6503,31 +6829,37 @@ async def return_equipment(
     _perm=Depends(require_op("manage_hr")),
 ):
     """Zimmeti iade al — status: assigned → returned (veya lost/damaged)."""
-    eq = await db.staff_equipment.find_one({
-        'tenant_id': current_user.tenant_id, 'id': equipment_id,
-    })
+    eq = await db.staff_equipment.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "id": equipment_id,
+        }
+    )
     if not eq:
         raise HTTPException(status_code=404, detail="Zimmet kaydı bulunamadı")
-    if eq.get('status') != 'assigned':
+    if eq.get("status") != "assigned":
         raise HTTPException(status_code=409, detail=f"Bu zimmet zaten {eq.get('status')} durumunda")
     cond = payload.condition_on_return
-    new_status = 'lost' if cond == 'lost' else ('damaged' if cond == 'damaged' else 'returned')
+    new_status = "lost" if cond == "lost" else ("damaged" if cond == "damaged" else "returned")
     update = {
-        'status': new_status,
-        'returned_at': payload.returned_at or _today_local().isoformat(),
-        'condition_on_return': cond,
-        'notes': (eq.get('notes') or '') + (f"\n[iade] {payload.notes}" if payload.notes else ''),
-        'returned_by': getattr(current_user, 'id', None),
-        'updated_at': datetime.now(UTC).isoformat(),
+        "status": new_status,
+        "returned_at": payload.returned_at or _today_local().isoformat(),
+        "condition_on_return": cond,
+        "notes": (eq.get("notes") or "") + (f"\n[iade] {payload.notes}" if payload.notes else ""),
+        "returned_by": getattr(current_user, "id", None),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
-    await db.staff_equipment.update_one({'tenant_id': current_user.tenant_id, 'id': equipment_id}, {'$set': update})
+    await db.staff_equipment.update_one({"tenant_id": current_user.tenant_id, "id": equipment_id}, {"$set": update})
     await _audit(
-        current_user, action='equipment.return', entity_type='staff_equipment',
+        current_user,
+        action="equipment.return",
+        entity_type="staff_equipment",
         entity_id=equipment_id,
-        before={'status': 'assigned'}, after={'status': new_status},
-        details={'condition': cond},
+        before={"status": "assigned"},
+        after={"status": new_status},
+        details={"condition": cond},
     )
-    return {'success': True, 'status': new_status}
+    return {"success": True, "status": new_status}
 
 
 @router.delete("/hr/equipment/{equipment_id}")
@@ -6537,17 +6869,23 @@ async def delete_equipment(
     _perm=Depends(require_op("manage_hr")),
 ):
     """Zimmet kaydı sil (yanlış giriş düzeltme)."""
-    res = await db.staff_equipment.delete_one({
-        'tenant_id': current_user.tenant_id, 'id': equipment_id,
-    })
+    res = await db.staff_equipment.delete_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "id": equipment_id,
+        }
+    )
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Zimmet kaydı bulunamadı")
     await _audit(
-        current_user, action='equipment.delete', entity_type='staff_equipment',
-        entity_id=equipment_id, details=f'Zimmet kaydı silindi: {equipment_id}',
-        severity='warning',
+        current_user,
+        action="equipment.delete",
+        entity_type="staff_equipment",
+        entity_id=equipment_id,
+        details=f"Zimmet kaydı silindi: {equipment_id}",
+        severity="warning",
     )
-    return {'success': True}
+    return {"success": True}
 
 
 @router.get("/hr/equipment/outstanding")
@@ -6556,33 +6894,41 @@ async def list_outstanding_equipment(
     _perm=Depends(require_op("view_hr")),
 ):
     """Tüm tenant için iade alınmamış zimmet listesi (offboarding kontrolü)."""
-    items = await db.staff_equipment.find({
-        'tenant_id': current_user.tenant_id, 'status': 'assigned',
-    }, {'_id': 0}).sort('assigned_at', -1).to_list(2000)
-    return {'items': items, 'total': len(items)}
+    items = (
+        await db.staff_equipment.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "status": "assigned",
+            },
+            {"_id": 0},
+        )
+        .sort("assigned_at", -1)
+        .to_list(2000)
+    )
+    return {"items": items, "total": len(items)}
 
 
 # ---------- Uyarılar (Staff Warnings) ----------
 
-WARNING_TYPES = {'verbal', 'written', 'final'}
-WARNING_SEVERITIES = {'low', 'medium', 'high'}
+WARNING_TYPES = {"verbal", "written", "final"}
+WARNING_SEVERITIES = {"low", "medium", "high"}
 
 
 class WarningPayload(BaseModel):
     warning_type: str = Field(..., max_length=20)
-    severity: str = Field('medium', max_length=10)
+    severity: str = Field("medium", max_length=10)
     reason: str = Field(..., min_length=3, max_length=2000)
     related_performance_id: str | None = Field(None, max_length=100)
-    issued_at: str | None = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
+    issued_at: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
 
-    @field_validator('warning_type')
+    @field_validator("warning_type")
     @classmethod
     def _valid_type(cls, v: str) -> str:
         if v not in WARNING_TYPES:
             raise ValueError(f"Geçersiz uyarı tipi. İzinli: {sorted(WARNING_TYPES)}")
         return v
 
-    @field_validator('severity')
+    @field_validator("severity")
     @classmethod
     def _valid_severity(cls, v: str) -> str:
         if v not in WARNING_SEVERITIES:
@@ -6603,31 +6949,33 @@ async def add_warning(
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     now_iso = datetime.now(UTC).isoformat()
     item = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'staff_id': staff_id,
-        'staff_name': staff.get('name'),
-        'warning_type': payload.warning_type,
-        'severity': payload.severity,
-        'reason': payload.reason,
-        'related_performance_id': payload.related_performance_id,
-        'issued_at': payload.issued_at or _today_local().isoformat(),
-        'issued_by': getattr(current_user, 'id', None),
-        'acknowledged_at': None,
-        'acknowledged_by': None,
-        'created_at': now_iso,
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "staff_id": staff_id,
+        "staff_name": staff.get("name"),
+        "warning_type": payload.warning_type,
+        "severity": payload.severity,
+        "reason": payload.reason,
+        "related_performance_id": payload.related_performance_id,
+        "issued_at": payload.issued_at or _today_local().isoformat(),
+        "issued_by": getattr(current_user, "id", None),
+        "acknowledged_at": None,
+        "acknowledged_by": None,
+        "created_at": now_iso,
     }
     await db.staff_warnings.insert_one(item)
-    item.pop('_id', None)
+    item.pop("_id", None)
     # Audit severity: written/final → warning; verbal → info.
-    audit_sev = 'warning' if payload.warning_type in ('written', 'final') else 'info'
+    audit_sev = "warning" if payload.warning_type in ("written", "final") else "info"
     await _audit(
-        current_user, action='warning.issue', entity_type='staff_warnings',
-        entity_id=item['id'],
-        details={'staff_id': staff_id, 'warning_type': payload.warning_type, 'severity': payload.severity},
+        current_user,
+        action="warning.issue",
+        entity_type="staff_warnings",
+        entity_id=item["id"],
+        details={"staff_id": staff_id, "warning_type": payload.warning_type, "severity": payload.severity},
         severity=audit_sev,
     )
-    return {'success': True, 'warning': item}
+    return {"success": True, "warning": item}
 
 
 @router.get("/hr/staff/{staff_id}/warnings")
@@ -6640,15 +6988,23 @@ async def list_staff_warnings(
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     _authorize_staff_access(staff, current_user)
-    items = await db.staff_warnings.find({
-        'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
-    }, {'_id': 0}).sort('issued_at', -1).to_list(500)
-    by_type = {'verbal': 0, 'written': 0, 'final': 0}
+    items = (
+        await db.staff_warnings.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "staff_id": staff_id,
+            },
+            {"_id": 0},
+        )
+        .sort("issued_at", -1)
+        .to_list(500)
+    )
+    by_type = {"verbal": 0, "written": 0, "final": 0}
     for it in items:
-        wt = it.get('warning_type')
+        wt = it.get("warning_type")
         if wt in by_type:
             by_type[wt] += 1
-    return {'items': items, 'total': len(items), 'by_type': by_type}
+    return {"items": items, "total": len(items), "by_type": by_type}
 
 
 @router.post("/hr/warnings/{warning_id}/acknowledge")
@@ -6657,28 +7013,39 @@ async def acknowledge_warning(
     current_user: User = Depends(get_current_user),
 ):
     """Uyarıyı 'okudum' olarak işaretle (personel self-service)."""
-    warn = await db.staff_warnings.find_one({
-        'tenant_id': current_user.tenant_id, 'id': warning_id,
-    })
+    warn = await db.staff_warnings.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "id": warning_id,
+        }
+    )
     if not warn:
         raise HTTPException(status_code=404, detail="Uyarı bulunamadı")
     # Self-service: yalnız uyarı sahibi personel veya manage_hr olan kullanıcı
     # ack edebilir. Dept-scope view_hr ack'i kapalı — disiplin sicilinin
     # tebliğ statüsü kritik (İş K. m.25/II tebellüğ kanıtı).
-    staff = await _verify_staff_in_tenant(warn.get('staff_id'), current_user.tenant_id)
+    staff = await _verify_staff_in_tenant(warn.get("staff_id"), current_user.tenant_id)
     _authorize_staff_access(staff, current_user, require_manage=True)
-    if warn.get('acknowledged_at'):
-        return {'success': True, 'already_acknowledged': True, 'acknowledged_at': warn['acknowledged_at']}
+    if warn.get("acknowledged_at"):
+        return {"success": True, "already_acknowledged": True, "acknowledged_at": warn["acknowledged_at"]}
     now_iso = datetime.now(UTC).isoformat()
-    await db.staff_warnings.update_one({'tenant_id': current_user.tenant_id, 'id': warning_id}, {'$set': {
-        'acknowledged_at': now_iso,
-        'acknowledged_by': getattr(current_user, 'id', None),
-    }})
-    await _audit(
-        current_user, action='warning.acknowledge', entity_type='staff_warnings',
-        entity_id=warning_id, details=f'Uyarı tebellüğ edildi: {warning_id}',
+    await db.staff_warnings.update_one(
+        {"tenant_id": current_user.tenant_id, "id": warning_id},
+        {
+            "$set": {
+                "acknowledged_at": now_iso,
+                "acknowledged_by": getattr(current_user, "id", None),
+            }
+        },
     )
-    return {'success': True, 'acknowledged_at': now_iso}
+    await _audit(
+        current_user,
+        action="warning.acknowledge",
+        entity_type="staff_warnings",
+        entity_id=warning_id,
+        details=f"Uyarı tebellüğ edildi: {warning_id}",
+    )
+    return {"success": True, "acknowledged_at": now_iso}
 
 
 @router.get("/hr/warnings/active")
@@ -6688,11 +7055,14 @@ async def list_active_warnings(
 ):
     """Aktif (yazılı/son ihtar) uyarılar — staff list rozetleri için kullanılır.
     Sözlü uyarılar bilgi amaçlıdır, listeye dahil edilmez."""
-    items = await db.staff_warnings.find({
-        'tenant_id': current_user.tenant_id,
-        'warning_type': {'$in': ['written', 'final']},
-    }, {'_id': 0, 'staff_id': 1, 'warning_type': 1, 'issued_at': 1}).to_list(2000)
-    return {'items': items, 'total': len(items)}
+    items = await db.staff_warnings.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "warning_type": {"$in": ["written", "final"]},
+        },
+        {"_id": 0, "staff_id": 1, "warning_type": 1, "issued_at": 1},
+    ).to_list(2000)
+    return {"items": items, "total": len(items)}
 
 
 @router.delete("/hr/warnings/{warning_id}")
@@ -6702,20 +7072,25 @@ async def delete_warning(
     _perm=Depends(require_op("manage_hr")),
 ):
     """Uyarı sil (yanlış kayıt düzeltme — audit warning)."""
-    warn = await db.staff_warnings.find_one({
-        'tenant_id': current_user.tenant_id, 'id': warning_id,
-    })
+    warn = await db.staff_warnings.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "id": warning_id,
+        }
+    )
     if not warn:
         raise HTTPException(status_code=404, detail="Uyarı bulunamadı")
-    await db.staff_warnings.delete_one({'tenant_id': current_user.tenant_id, 'id': warning_id})
+    await db.staff_warnings.delete_one({"tenant_id": current_user.tenant_id, "id": warning_id})
     await _audit(
-        current_user, action='warning.delete', entity_type='staff_warnings',
+        current_user,
+        action="warning.delete",
+        entity_type="staff_warnings",
         entity_id=warning_id,
         details=f"Uyarı silindi: {warn.get('warning_type', 'unknown')}",
-        severity='warning',
-        before={'warning_type': warn.get('warning_type'), 'reason': warn.get('reason', '')[:100]},
+        severity="warning",
+        before={"warning_type": warn.get("warning_type"), "reason": warn.get("reason", "")[:100]},
     )
-    return {'success': True}
+    return {"success": True}
 
 
 # ---------- Eğitimler (Staff Trainings — sertifikadan ayrı) ----------
@@ -6726,8 +7101,14 @@ async def delete_warning(
 # raporlama (`/hr/trainings/expiring`) sertifika raporundan bağımsız çıkar.
 
 TRAINING_TYPES = {
-    'hygiene', 'safety', 'orientation', 'technical',
-    'language', 'leadership', 'compliance', 'other',
+    "hygiene",
+    "safety",
+    "orientation",
+    "technical",
+    "language",
+    "leadership",
+    "compliance",
+    "other",
 }
 
 
@@ -6735,13 +7116,13 @@ class TrainingPayload(BaseModel):
     training_type: str = Field(..., max_length=20)
     title: str = Field(..., min_length=1, max_length=200)
     provider: str | None = Field(None, max_length=200)
-    completed_at: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
-    valid_until: str | None = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
+    completed_at: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    valid_until: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     hours: float | None = Field(None, ge=0, le=1000)
     score: float | None = Field(None, ge=0, le=100)
     notes: str | None = Field(None, max_length=1000)
 
-    @field_validator('training_type')
+    @field_validator("training_type")
     @classmethod
     def _valid_type(cls, v: str) -> str:
         if v not in TRAINING_TYPES:
@@ -6763,29 +7144,31 @@ async def add_training(
     if payload.valid_until and payload.valid_until < payload.completed_at:
         raise HTTPException(status_code=400, detail="Geçerlilik tarihi tamamlanma tarihinden önce olamaz")
     item = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'staff_id': staff_id,
-        'staff_name': staff.get('name'),
-        'training_type': payload.training_type,
-        'title': payload.title,
-        'provider': payload.provider,
-        'completed_at': payload.completed_at,
-        'valid_until': payload.valid_until,
-        'hours': payload.hours,
-        'score': payload.score,
-        'notes': payload.notes,
-        'recorded_by': getattr(current_user, 'id', None),
-        'created_at': datetime.now(UTC).isoformat(),
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "staff_id": staff_id,
+        "staff_name": staff.get("name"),
+        "training_type": payload.training_type,
+        "title": payload.title,
+        "provider": payload.provider,
+        "completed_at": payload.completed_at,
+        "valid_until": payload.valid_until,
+        "hours": payload.hours,
+        "score": payload.score,
+        "notes": payload.notes,
+        "recorded_by": getattr(current_user, "id", None),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     await db.staff_trainings.insert_one(item)
-    item.pop('_id', None)
+    item.pop("_id", None)
     await _audit(
-        current_user, action='training.add', entity_type='staff_trainings',
-        entity_id=item['id'],
-        details={'staff_id': staff_id, 'training_type': payload.training_type, 'title': payload.title},
+        current_user,
+        action="training.add",
+        entity_type="staff_trainings",
+        entity_id=item["id"],
+        details={"staff_id": staff_id, "training_type": payload.training_type, "title": payload.title},
     )
-    return {'success': True, 'training': item}
+    return {"success": True, "training": item}
 
 
 @router.get("/hr/staff/{staff_id}/trainings")
@@ -6798,13 +7181,21 @@ async def list_staff_trainings(
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     _authorize_staff_access(staff, current_user)
-    items = await db.staff_trainings.find({
-        'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
-    }, {'_id': 0}).sort('completed_at', -1).to_list(500)
+    items = (
+        await db.staff_trainings.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "staff_id": staff_id,
+            },
+            {"_id": 0},
+        )
+        .sort("completed_at", -1)
+        .to_list(500)
+    )
     today = _today_local().isoformat()
-    expired = sum(1 for it in items if it.get('valid_until') and it['valid_until'] < today)
-    valid = sum(1 for it in items if not it.get('valid_until') or it['valid_until'] >= today)
-    return {'items': items, 'total': len(items), 'valid': valid, 'expired': expired}
+    expired = sum(1 for it in items if it.get("valid_until") and it["valid_until"] < today)
+    valid = sum(1 for it in items if not it.get("valid_until") or it["valid_until"] >= today)
+    return {"items": items, "total": len(items), "valid": valid, "expired": expired}
 
 
 @router.delete("/hr/trainings/{training_id}")
@@ -6814,17 +7205,23 @@ async def delete_training(
     _perm=Depends(require_op("manage_hr")),
 ):
     """Eğitim kaydı sil."""
-    res = await db.staff_trainings.delete_one({
-        'tenant_id': current_user.tenant_id, 'id': training_id,
-    })
+    res = await db.staff_trainings.delete_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "id": training_id,
+        }
+    )
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Eğitim kaydı bulunamadı")
     await _audit(
-        current_user, action='training.delete', entity_type='staff_trainings',
-        entity_id=training_id, details=f'Eğitim kaydı silindi: {training_id}',
-        severity='warning',
+        current_user,
+        action="training.delete",
+        entity_type="staff_trainings",
+        entity_id=training_id,
+        details=f"Eğitim kaydı silindi: {training_id}",
+        severity="warning",
     )
-    return {'success': True}
+    return {"success": True}
 
 
 @router.get("/hr/trainings/expiring")
@@ -6836,8 +7233,15 @@ async def list_expiring_trainings(
     """N gün içinde tazelenmesi gereken eğitimler (compliance dashboard)."""
     today = _today_local()
     end = (today + timedelta(days=days_ahead)).isoformat()
-    items = await db.staff_trainings.find({
-        'tenant_id': current_user.tenant_id,
-        'valid_until': {'$gte': today.isoformat(), '$lte': end},
-    }, {'_id': 0}).sort('valid_until', 1).to_list(1000)
-    return {'items': items, 'total': len(items), 'window_days': days_ahead}
+    items = (
+        await db.staff_trainings.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "valid_until": {"$gte": today.isoformat(), "$lte": end},
+            },
+            {"_id": 0},
+        )
+        .sort("valid_until", 1)
+        .to_list(1000)
+    )
+    return {"items": items, "total": len(items), "window_days": days_ahead}

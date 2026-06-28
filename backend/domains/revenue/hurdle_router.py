@@ -5,6 +5,7 @@ Tarih bazlı minimum kabul edilebilir oran (revenue management eşiği).
 - Specificity önceliği: room_type+channel > room_type > channel > all
 - Yetki: manage_rates
 """
+
 from __future__ import annotations
 
 import logging
@@ -48,7 +49,7 @@ class HurdleRate(BaseModel):
     date_from: str = Field(..., description="ISO date YYYY-MM-DD")
     date_to: str = Field(..., description="ISO date YYYY-MM-DD")
     room_type: str | None = Field(None, max_length=64)  # None → tüm tipler
-    channel: str | None = Field(None, max_length=64)    # None → tüm kanallar
+    channel: str | None = Field(None, max_length=64)  # None → tüm kanallar
     min_rate: float = Field(..., ge=0)
     currency: str = Field("TRY", min_length=3, max_length=3)
     note: str | None = None
@@ -89,15 +90,14 @@ def _specificity(h: dict) -> int:
 
 # ---------- CRUD ----------
 
+
 @router.get("/", response_model=list[HurdleRate])
 async def list_hurdles(
     user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),
 ):
     db = get_system_db()
-    cur = db.hurdle_rates.find(
-        {"tenant_id": user.tenant_id, "active": True}
-    ).sort([("date_from", 1), ("name", 1)])
+    cur = db.hurdle_rates.find({"tenant_id": user.tenant_id, "active": True}).sort([("date_from", 1), ("name", 1)])
     out: list[dict[str, Any]] = []
     async for d in cur:
         d.pop("_id", None)
@@ -138,9 +138,13 @@ async def update_hurdle(
 
     # Tarih güncellemesi varsa doğrula
     if "date_from" in changes or "date_to" in changes:
-        existing = await db.hurdle_rates.find_one({
-            "id": hurdle_id, "tenant_id": user.tenant_id, "active": True,
-        })
+        existing = await db.hurdle_rates.find_one(
+            {
+                "id": hurdle_id,
+                "tenant_id": user.tenant_id,
+                "active": True,
+            }
+        )
         if not existing:
             raise HTTPException(404, "Hurdle bulunamadı")
         df = changes.get("date_from", existing["date_from"])
@@ -185,6 +189,7 @@ async def delete_hurdle(
 
 
 # ---------- Check ----------
+
 
 @router.get("/check")
 async def check_rate(

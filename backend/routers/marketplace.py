@@ -4,6 +4,7 @@ Tüm modülleri / entegrasyonları / kredi paketlerini tek noktadan satar.
 iyzico Checkout Form üzerinden ödeme alır, başarılı ödeme sonrası
 `tenant_subscriptions` koleksiyonuna abonelik kaydı düşer.
 """
+
 from __future__ import annotations
 
 import logging
@@ -105,6 +106,7 @@ def _db():
     would cause duplicate-key insert errors and miss-filtering. Use raw.
     """
     from core.database import _raw_db
+
     return _raw_db
 
 
@@ -137,8 +139,7 @@ async def _seed_products_if_empty() -> None:
     # Deactivate legacy QR product — that module is included free in all plans.
     await db.marketplace_products.update_one(
         {"key": "qr_room_management"},
-        {"$set": {"active": False, "updated_at": _now_iso(),
-                  "deactivated_reason": "Tüm planlarda ücretsiz olarak dahildir"}},
+        {"$set": {"active": False, "updated_at": _now_iso(), "deactivated_reason": "Tüm planlarda ücretsiz olarak dahildir"}},
     )
 
 
@@ -172,6 +173,7 @@ class StartTrialRequest(BaseModel):
 @router.get("/products")
 async def list_products() -> dict:
     from core.iyzico import is_configured
+
     await _seed_products_if_empty()
     db = _db()
     cur = db.marketplace_products.find({"active": True}, {"_id": 0}).sort("name", 1)
@@ -206,9 +208,7 @@ async def purchase(
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")
     db = _db()
-    product = await db.marketplace_products.find_one(
-        {"key": payload.product_key, "active": True}, {"_id": 0}
-    )
+    product = await db.marketplace_products.find_one({"key": payload.product_key, "active": True}, {"_id": 0})
     if not product:
         raise HTTPException(status_code=404, detail="Ürün bulunamadı")
     if not is_configured():
@@ -234,9 +234,7 @@ async def purchase(
     }
     await db.marketplace_orders.insert_one({**order_doc})
 
-    callback = public_callback_url(
-        f"/api/module-store/purchase/callback?order_id={order_id}"
-    )
+    callback = public_callback_url(f"/api/module-store/purchase/callback?order_id={order_id}")
     name_parts = (current_user.name or "Otel Sahibi").split()
     first = name_parts[0] if name_parts else "Otel"
     last = " ".join(name_parts[1:]) if len(name_parts) > 1 else "Sahibi"
@@ -276,20 +274,21 @@ async def purchase(
             "country": "Turkey",
             "address": (tenant or {}).get("address") or "Türkiye",
         },
-        "basketItems": [{
-            "id": product["key"],
-            "name": product["name"][:80],
-            "category1": "Dijital",
-            "itemType": "VIRTUAL",
-            "price": str(product["price_try"]),
-        }],
+        "basketItems": [
+            {
+                "id": product["key"],
+                "name": product["name"][:80],
+                "category1": "Dijital",
+                "itemType": "VIRTUAL",
+                "price": str(product["price_try"]),
+            }
+        ],
     }
     res = init_checkout_form(iyzico_payload)
     if res.get("status") != "success":
         await db.marketplace_orders.update_one(
             {"order_id": order_id},
-            {"$set": {"status": "init_failed", "error": res.get("errorMessage"),
-                      "updated_at": _now_iso()}},
+            {"$set": {"status": "init_failed", "error": res.get("errorMessage"), "updated_at": _now_iso()}},
         )
         raise HTTPException(
             status_code=502,
@@ -298,9 +297,7 @@ async def purchase(
 
     await db.marketplace_orders.update_one(
         {"order_id": order_id},
-        {"$set": {"iyzico_token": res.get("token"),
-                  "payment_page_url": res.get("paymentPageUrl"),
-                  "updated_at": _now_iso()}},
+        {"$set": {"iyzico_token": res.get("token"), "payment_page_url": res.get("paymentPageUrl"), "updated_at": _now_iso()}},
     )
     return {
         "order_id": order_id,
@@ -324,15 +321,12 @@ async def start_trial(
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")
     db = _db()
-    product = await db.marketplace_products.find_one(
-        {"key": payload.product_key, "active": True}, {"_id": 0}
-    )
+    product = await db.marketplace_products.find_one({"key": payload.product_key, "active": True}, {"_id": 0})
     if not product:
         raise HTTPException(status_code=404, detail="Ürün bulunamadı")
     trial_days = product.get("trial_days")
     if not trial_days or trial_days <= 0:
-        raise HTTPException(status_code=400,
-                            detail="Bu ürün için ücretsiz deneme yok")
+        raise HTTPException(status_code=400, detail="Bu ürün için ücretsiz deneme yok")
 
     # Atomic idempotent activation. The unique partial index on
     # (tenant_id, product_key, status=active) guarantees only one ACTIVE
@@ -390,21 +384,18 @@ async def start_trial(
     # If a paid (non-trial) subscription already exists for this product,
     # block trial start to avoid downgrading the user's status.
     if not sub.get("trial") and not is_new:
-        raise HTTPException(
-            status_code=409,
-            detail="Bu modül için zaten aktif bir ücretli abonelik var"
-        )
+        raise HTTPException(status_code=409, detail="Bu modül için zaten aktif bir ücretli abonelik var")
 
     if is_new:
         # Post-activation hook (provisioning) — only on first creation.
         if product["key"] == "af_sadakat":
             try:
                 from core.afsadakat_provisioner import provision_tenant
+
                 await provision_tenant(current_user.tenant_id)
             except Exception as e:
                 logger.exception("[marketplace] afsadakat trial provision failed: %s", e)
-        logger.info("[marketplace] trial started tenant=%s product=%s until=%s",
-                    current_user.tenant_id, product["key"], sub["end_date"])
+        logger.info("[marketplace] trial started tenant=%s product=%s until=%s", current_user.tenant_id, product["key"], sub["end_date"])
 
     return {
         "ok": True,
@@ -421,6 +412,7 @@ async def start_trial(
 async def purchase_callback(order_id: str) -> dict:
     """iyzico callback. Atomic + idempotent subscription activation."""
     from core.iyzico import retrieve_checkout_form
+
     db = _db()
     order = await db.marketplace_orders.find_one({"order_id": order_id}, {"_id": 0})
     if not order:
@@ -450,13 +442,10 @@ async def purchase_callback(order_id: str) -> dict:
         # Just log the latest attempt for diagnostics.
         await db.marketplace_orders.update_one(
             {"order_id": order_id},
-            {"$set": {"last_validation_error": res.get("errorMessage"),
-                      "last_validation_at": _now_iso()}},
+            {"$set": {"last_validation_error": res.get("errorMessage"), "last_validation_at": _now_iso()}},
         )
-        logger.warning("[marketplace] order=%s validation failed (retryable): %s",
-                       order_id, res.get("errorMessage"))
-        raise HTTPException(status_code=400,
-                            detail=res.get("errorMessage") or "Ödeme doğrulanamadı")
+        logger.warning("[marketplace] order=%s validation failed (retryable): %s", order_id, res.get("errorMessage"))
+        raise HTTPException(status_code=400, detail=res.get("errorMessage") or "Ödeme doğrulanamadı")
 
     # Activate FIRST (subscription/credit grant). Activation is idempotent
     # via order_id uniqueness so safe to retry. Mark order completed only
@@ -464,16 +453,12 @@ async def purchase_callback(order_id: str) -> dict:
     try:
         await _activate_subscription(order)
     except Exception as e:
-        logger.exception("[marketplace] activation failed for order=%s: %s",
-                         order_id, e)
-        raise HTTPException(status_code=500,
-                            detail="Aktivasyon hatası; lütfen birkaç dakika sonra tekrar deneyin")
+        logger.exception("[marketplace] activation failed for order=%s: %s", order_id, e)
+        raise HTTPException(status_code=500, detail="Aktivasyon hatası; lütfen birkaç dakika sonra tekrar deneyin")
 
     await db.marketplace_orders.update_one(
         {"order_id": order_id, "status": "pending"},
-        {"$set": {"status": "completed",
-                  "iyzico_payment_id": res.get("paymentId"),
-                  "completed_at": _now_iso()}},
+        {"$set": {"status": "completed", "iyzico_payment_id": res.get("paymentId"), "completed_at": _now_iso()}},
     )
     return {"status": "completed", "product_key": order["product_key"]}
 
@@ -499,16 +484,18 @@ async def _activate_subscription(order: dict) -> None:
     # double-extend a subscription — even in the "extend existing"
     # branch where tenant_subscriptions.order_id is not persisted.
     from pymongo.errors import DuplicateKeyError
+
     try:
-        await db.tenant_subscription_activations.insert_one({
-            "order_id": order["order_id"],
-            "tenant_id": tenant_id,
-            "product_key": product_key,
-            "activated_at": _now_iso(),
-        })
+        await db.tenant_subscription_activations.insert_one(
+            {
+                "order_id": order["order_id"],
+                "tenant_id": tenant_id,
+                "product_key": product_key,
+                "activated_at": _now_iso(),
+            }
+        )
     except DuplicateKeyError:
-        logger.info("[marketplace] order=%s already activated (atomic guard)",
-                    order["order_id"])
+        logger.info("[marketplace] order=%s already activated (atomic guard)", order["order_id"])
         return
 
     # Credit pack: top up the mailing credits balance.
@@ -518,27 +505,26 @@ async def _activate_subscription(order: dict) -> None:
         await db.mailing_credits.update_one(
             {"tenant_id": tenant_id},
             {
-                "$inc": {"balance": int(credits),
-                         "lifetime_purchased": int(credits)},
-                "$setOnInsert": {"tenant_id": tenant_id,
-                                 "created_at": _now_iso()},
+                "$inc": {"balance": int(credits), "lifetime_purchased": int(credits)},
+                "$setOnInsert": {"tenant_id": tenant_id, "created_at": _now_iso()},
                 "$set": {"updated_at": _now_iso()},
             },
             upsert=True,
         )
-        await db.tenant_subscriptions.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "product_key": product_key,
-            "status": "active",
-            "start_date": now.isoformat(),
-            "end_date": None,
-            "credits_granted": int(credits),
-            "order_id": order["order_id"],
-            "created_at": _now_iso(),
-        })
-        logger.info("[marketplace] tenant=%s credits +%s for %s",
-                    tenant_id, credits, product_key)
+        await db.tenant_subscriptions.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "product_key": product_key,
+                "status": "active",
+                "start_date": now.isoformat(),
+                "end_date": None,
+                "credits_granted": int(credits),
+                "order_id": order["order_id"],
+                "created_at": _now_iso(),
+            }
+        )
+        logger.info("[marketplace] tenant=%s credits +%s for %s", tenant_id, credits, product_key)
         return
 
     # Post-activation hooks: external modules need provisioning.
@@ -546,17 +532,19 @@ async def _activate_subscription(order: dict) -> None:
         if product_key == "af_sadakat":
             try:
                 from core.afsadakat_provisioner import provision_tenant
+
                 await provision_tenant(tenant_id)
             except Exception as e:
-                logger.exception("[marketplace] afsadakat provision failed for %s: %s",
-                                 tenant_id, e)
+                logger.exception("[marketplace] afsadakat provision failed for %s: %s", tenant_id, e)
 
     # Subscription: extend existing active sub, or create new one.
-    existing = await db.tenant_subscriptions.find_one({
-        "tenant_id": tenant_id,
-        "product_key": product_key,
-        "status": "active",
-    })
+    existing = await db.tenant_subscriptions.find_one(
+        {
+            "tenant_id": tenant_id,
+            "product_key": product_key,
+            "status": "active",
+        }
+    )
     new_end = now + timedelta(days=duration_days or 30)
     if existing and existing.get("end_date"):
         try:
@@ -567,25 +555,23 @@ async def _activate_subscription(order: dict) -> None:
             pass
         await db.tenant_subscriptions.update_one(
             {"id": existing["id"]},
-            {"$set": {"end_date": new_end.isoformat(),
-                      "last_renewal_order_id": order["order_id"],
-                      "updated_at": _now_iso()}},
+            {"$set": {"end_date": new_end.isoformat(), "last_renewal_order_id": order["order_id"], "updated_at": _now_iso()}},
         )
-        logger.info("[marketplace] tenant=%s extended %s until %s",
-                    tenant_id, product_key, new_end.isoformat())
+        logger.info("[marketplace] tenant=%s extended %s until %s", tenant_id, product_key, new_end.isoformat())
     else:
-        await db.tenant_subscriptions.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "product_key": product_key,
-            "status": "active",
-            "start_date": now.isoformat(),
-            "end_date": new_end.isoformat(),
-            "order_id": order["order_id"],
-            "created_at": _now_iso(),
-        })
-        logger.info("[marketplace] tenant=%s activated %s until %s",
-                    tenant_id, product_key, new_end.isoformat())
+        await db.tenant_subscriptions.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "product_key": product_key,
+                "status": "active",
+                "start_date": now.isoformat(),
+                "end_date": new_end.isoformat(),
+                "order_id": order["order_id"],
+                "created_at": _now_iso(),
+            }
+        )
+        logger.info("[marketplace] tenant=%s activated %s until %s", tenant_id, product_key, new_end.isoformat())
 
     await _post_activate()
 
@@ -594,6 +580,7 @@ async def _activate_subscription(order: dict) -> None:
 def _is_platform_admin(user: User) -> bool:
     """Platform-wide admin (Syroce staff). Manages product catalog."""
     from core.security import _is_super_admin
+
     if _is_super_admin(user):
         return True
     role = (user.role or "").lower()
@@ -606,6 +593,7 @@ def _is_platform_admin(user: User) -> bool:
 def _is_tenant_admin(user: User) -> bool:
     """Hotel-level admin. May only see own tenant's data."""
     from core.security import _is_super_admin
+
     if _is_super_admin(user):
         return True
     role = (user.role or "").lower()
@@ -648,8 +636,7 @@ async def admin_upsert_product(
     doc = payload.model_dump()
     await db.marketplace_products.update_one(
         {"key": doc["key"]},
-        {"$set": {**doc, "updated_at": _now_iso()},
-         "$setOnInsert": {"created_at": _now_iso()}},
+        {"$set": {**doc, "updated_at": _now_iso()}, "$setOnInsert": {"created_at": _now_iso()}},
         upsert=True,
     )
     return {"ok": True, "key": doc["key"]}
@@ -663,9 +650,7 @@ async def admin_delete_product(
 ) -> dict:
     _require_platform_admin(current_user)
     db = _db()
-    await db.marketplace_products.update_one(
-        {"key": key}, {"$set": {"active": False, "updated_at": _now_iso()}}
-    )
+    await db.marketplace_products.update_one({"key": key}, {"$set": {"active": False, "updated_at": _now_iso()}})
     return {"ok": True}
 
 
@@ -680,12 +665,7 @@ async def list_my_orders(
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")
     db = _db()
-    cur = (
-        db.marketplace_orders
-        .find({"tenant_id": current_user.tenant_id}, {"_id": 0})
-        .sort("created_at", -1)
-        .limit(limit)
-    )
+    cur = db.marketplace_orders.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("created_at", -1).limit(limit)
     return {"orders": [doc async for doc in cur]}
 
 
@@ -697,10 +677,5 @@ async def admin_list_all_orders(
 ) -> dict:
     _require_platform_admin(current_user)
     db = _db()
-    cur = (
-        db.marketplace_orders
-        .find({}, {"_id": 0})
-        .sort("created_at", -1)
-        .limit(limit)
-    )
+    cur = db.marketplace_orders.find({}, {"_id": 0}).sort("created_at", -1).limit(limit)
     return {"orders": [doc async for doc in cur]}

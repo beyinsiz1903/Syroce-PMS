@@ -11,6 +11,7 @@ Correlation Layer:
   Cross-references DORA metrics with channel health to find:
   "deploy artti → drift azaldi mi?" etc.
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -31,9 +32,7 @@ async def compute_dora_metrics(
     if environment:
         query["environment"] = environment
 
-    deploys = await db.deploy_events.find(
-        query, {"_id": 0}
-    ).sort("started_at", 1).to_list(5000)
+    deploys = await db.deploy_events.find(query, {"_id": 0}).sort("started_at", 1).to_list(5000)
 
     if not deploys:
         return _empty_dora(days, environment)
@@ -47,9 +46,7 @@ async def compute_dora_metrics(
     first_deploy = deploys[0].get("started_at", cutoff)
     last_deploy = deploys[-1].get("started_at", datetime.now(UTC).isoformat())
     try:
-        span_days = max(1, (
-            datetime.fromisoformat(last_deploy) - datetime.fromisoformat(first_deploy)
-        ).days)
+        span_days = max(1, (datetime.fromisoformat(last_deploy) - datetime.fromisoformat(first_deploy)).days)
     except (ValueError, TypeError):
         span_days = max(1, days)
 
@@ -172,10 +169,16 @@ async def compute_dora_channel_correlation(
 
     # Channel health: drift events
     drift_first = await _count_timeline_events(
-        tenant_id, "inventory_alignment", start_point, mid_point,
+        tenant_id,
+        "inventory_alignment",
+        start_point,
+        mid_point,
     )
     drift_second = await _count_timeline_events(
-        tenant_id, "inventory_alignment", mid_point, now_iso,
+        tenant_id,
+        "inventory_alignment",
+        mid_point,
+        now_iso,
     )
 
     # Sync events
@@ -192,51 +195,55 @@ async def compute_dora_channel_correlation(
     if dora_first["total"] > 0 or dora_second["total"] > 0:
         freq_delta = dora_second["total"] - dora_first["total"]
         drift_delta = drift_second - drift_first
-        correlations.append({
-            "name": "deploy_frequency_vs_drift",
-            "question": "Deploy artti → drift azaldi mi?",
-            "first_half": {"deploys": dora_first["total"], "drift_events": drift_first},
-            "second_half": {"deploys": dora_second["total"], "drift_events": drift_second},
-            "deploy_change": freq_delta,
-            "drift_change": drift_delta,
-            "inference": _infer_correlation(freq_delta, -drift_delta),
-        })
+        correlations.append(
+            {
+                "name": "deploy_frequency_vs_drift",
+                "question": "Deploy artti → drift azaldi mi?",
+                "first_half": {"deploys": dora_first["total"], "drift_events": drift_first},
+                "second_half": {"deploys": dora_second["total"], "drift_events": drift_second},
+                "deploy_change": freq_delta,
+                "drift_change": drift_delta,
+                "inference": _infer_correlation(freq_delta, -drift_delta),
+            }
+        )
 
     # Correlation 2: Failure rate vs sync success
     cfr_first = round((dora_first["failed"] / max(1, dora_first["total"])) * 100, 1)
     cfr_second = round((dora_second["failed"] / max(1, dora_second["total"])) * 100, 1)
-    correlations.append({
-        "name": "failure_rate_vs_sync",
-        "question": "Change failure rate dustu → sync success artti mi?",
-        "first_half": {
-            "change_failure_rate": cfr_first,
-            "sync_success": sync_first.get("success", 0),
-            "sync_total": sync_first.get("total", 0),
-        },
-        "second_half": {
-            "change_failure_rate": cfr_second,
-            "sync_success": sync_second.get("success", 0),
-            "sync_total": sync_second.get("total", 0),
-        },
-        "cfr_change": round(cfr_second - cfr_first, 1),
-        "sync_success_change": sync_second.get("success", 0) - sync_first.get("success", 0),
-        "inference": _infer_correlation(
-            -(cfr_second - cfr_first),
-            sync_second.get("success", 0) - sync_first.get("success", 0),
-        ),
-    })
+    correlations.append(
+        {
+            "name": "failure_rate_vs_sync",
+            "question": "Change failure rate dustu → sync success artti mi?",
+            "first_half": {
+                "change_failure_rate": cfr_first,
+                "sync_success": sync_first.get("success", 0),
+                "sync_total": sync_first.get("total", 0),
+            },
+            "second_half": {
+                "change_failure_rate": cfr_second,
+                "sync_success": sync_second.get("success", 0),
+                "sync_total": sync_second.get("total", 0),
+            },
+            "cfr_change": round(cfr_second - cfr_first, 1),
+            "sync_success_change": sync_second.get("success", 0) - sync_first.get("success", 0),
+            "inference": _infer_correlation(
+                -(cfr_second - cfr_first),
+                sync_second.get("success", 0) - sync_first.get("success", 0),
+            ),
+        }
+    )
 
     # Correlation 3: MTTR vs import failures
-    correlations.append({
-        "name": "mttr_vs_import_failures",
-        "question": "MTTR iyilesti → import failure azaldi mi?",
-        "first_half": {"import_failures": import_first},
-        "second_half": {"import_failures": import_second},
-        "import_failure_change": import_second - import_first,
-        "inference": "improving" if import_second < import_first else (
-            "stable" if import_second == import_first else "degrading"
-        ),
-    })
+    correlations.append(
+        {
+            "name": "mttr_vs_import_failures",
+            "question": "MTTR iyilesti → import failure azaldi mi?",
+            "first_half": {"import_failures": import_first},
+            "second_half": {"import_failures": import_second},
+            "import_failure_change": import_second - import_first,
+            "inference": "improving" if import_second < import_first else ("stable" if import_second == import_first else "degrading"),
+        }
+    )
 
     return {
         "period_days": days,
@@ -248,15 +255,18 @@ async def compute_dora_channel_correlation(
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
+
 async def _count_deploys(start: str, end: str) -> dict[str, int]:
     pipeline = [
         {"$match": {"started_at": {"$gte": start, "$lte": end}}},
-        {"$group": {
-            "_id": None,
-            "total": {"$sum": 1},
-            "success": {"$sum": {"$cond": [{"$eq": ["$status", "success"]}, 1, 0]}},
-            "failed": {"$sum": {"$cond": [{"$ne": ["$status", "success"]}, 1, 0]}},
-        }},
+        {
+            "$group": {
+                "_id": None,
+                "total": {"$sum": 1},
+                "success": {"$sum": {"$cond": [{"$eq": ["$status", "success"]}, 1, 0]}},
+                "failed": {"$sum": {"$cond": [{"$ne": ["$status", "success"]}, 1, 0]}},
+            }
+        },
     ]
     results = await db.deploy_events.aggregate(pipeline).to_list(1)
     if results:
@@ -265,7 +275,10 @@ async def _count_deploys(start: str, end: str) -> dict[str, int]:
 
 
 async def _count_timeline_events(
-    tenant_id: str | None, entity_type: str, start: str, end: str,
+    tenant_id: str | None,
+    entity_type: str,
+    start: str,
+    end: str,
 ) -> int:
     query: dict[str, Any] = {
         "entity_type": entity_type,
@@ -277,7 +290,9 @@ async def _count_timeline_events(
 
 
 async def _count_sync_results(
-    tenant_id: str | None, start: str, end: str,
+    tenant_id: str | None,
+    start: str,
+    end: str,
 ) -> dict[str, int]:
     query: dict[str, Any] = {"created_at": {"$gte": start, "$lte": end}}
     if tenant_id:
@@ -285,11 +300,13 @@ async def _count_sync_results(
 
     pipeline = [
         {"$match": query},
-        {"$group": {
-            "_id": None,
-            "total": {"$sum": 1},
-            "success": {"$sum": {"$cond": [{"$eq": ["$status", "succeeded"]}, 1, 0]}},
-        }},
+        {
+            "$group": {
+                "_id": None,
+                "total": {"$sum": 1},
+                "success": {"$sum": {"$cond": [{"$eq": ["$status", "succeeded"]}, 1, 0]}},
+            }
+        },
     ]
     results = await db.cm_sync_jobs.aggregate(pipeline).to_list(1)
     if results:
@@ -298,7 +315,9 @@ async def _count_sync_results(
 
 
 async def _count_import_failures(
-    tenant_id: str | None, start: str, end: str,
+    tenant_id: str | None,
+    start: str,
+    end: str,
 ) -> int:
     query: dict[str, Any] = {
         "status": {"$in": ["failed", "error"]},

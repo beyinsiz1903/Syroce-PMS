@@ -2,6 +2,7 @@
 Revenue / Pricing Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
+
 from __future__ import annotations
 
 import logging
@@ -28,8 +29,11 @@ logger = logging.getLogger(__name__)
 try:
     from cache_manager import cached
 except ImportError:
+
     def cached(ttl=300, key_prefix=""):
-        def decorator(func): return func
+        def decorator(func):
+            return func
+
         return decorator
 
 
@@ -37,6 +41,7 @@ router = APIRouter(prefix="/api", tags=["Revenue / Pricing"])
 
 
 # ── Inline Models ──
+
 
 class RatePlanFilter(BaseModel):
     channel: ChannelType | None = None
@@ -83,6 +88,7 @@ class DynamicRestrictionsRequest(BaseModel):
 
 class DemandForecast(BaseModel):
     """Demand forecast model"""
+
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
@@ -97,6 +103,7 @@ class DemandForecast(BaseModel):
 
 class CompetitorRate(BaseModel):
     """Competitor rate scraping"""
+
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
@@ -138,13 +145,7 @@ async def train_demand_forecast_model(
 
     # Get historical bookings
     bookings = []
-    async for booking in db.bookings.find({
-        'tenant_id': current_user.tenant_id,
-        'created_at': {
-            '$gte': start_dt.isoformat(),
-            '$lte': end_dt.isoformat()
-        }
-    }):
+    async for booking in db.bookings.find({"tenant_id": current_user.tenant_id, "created_at": {"$gte": start_dt.isoformat(), "$lte": end_dt.isoformat()}}):
         bookings.append(booking)
 
     # Fail-closed: real ML demand-forecast training runs in the dedicated ML
@@ -153,21 +154,13 @@ async def train_demand_forecast_model(
     # not actually train. Report the real available training-sample count and
     # direct the caller to the real pipeline.
     return {
-        'success': False,
-        'model_trained': False,
-        'data_available': False,
-        'samples_available': len(bookings),
-        'historical_days': historical_days,
-        'message': (
-            'Talep tahmin modeli bu uctan egitilmiyor. Gercek ML egitimi adanmis '
-            'ML servisi (ml_service) uzerinden calisir; bu uctan sahte dogruluk/MAE '
-            'uretilmez.'
-        ),
+        "success": False,
+        "model_trained": False,
+        "data_available": False,
+        "samples_available": len(bookings),
+        "historical_days": historical_days,
+        "message": ("Talep tahmin modeli bu uctan egitilmiyor. Gercek ML egitimi adanmis ML servisi (ml_service) uzerinden calisir; bu uctan sahte dogruluk/MAE uretilmez."),
     }
-
-
-
-
 
 
 @router.post("/rms/ai-pricing/competitor-scrape")
@@ -195,20 +188,13 @@ async def scrape_competitor_rates(
     # fabricate competitor rates or persist invented numbers (the previous
     # implementation wrote `100 + len(name)*5` as if scraped). Return unavailable.
     return {
-        'success': False,
-        'data_available': False,
-        'date': date,
-        'rates_scraped': 0,
-        'competitor_rates': [],
-        'message': (
-            'Rakip fiyat veri kaynagi (Google Hotels / Booking.com / Expedia API) '
-            'yapilandirilmamis. Sahte rakip fiyati uretilmez.'
-        ),
+        "success": False,
+        "data_available": False,
+        "date": date,
+        "rates_scraped": 0,
+        "competitor_rates": [],
+        "message": ("Rakip fiyat veri kaynagi (Google Hotels / Booking.com / Expedia API) yapilandirilmamis. Sahte rakip fiyati uretilmez."),
     }
-
-
-
-
 
 
 @router.post("/rms/ai-pricing/calculate-elasticity")
@@ -235,26 +221,25 @@ async def calculate_price_elasticity(
     # as the requested one (a misleading calculation).
     room_ids: list[str] = []
     async for _room in db.rooms.find(
-        {'tenant_id': current_user.tenant_id, 'room_type': room_type},
-        {'_id': 0, 'id': 1},
+        {"tenant_id": current_user.tenant_id, "room_type": room_type},
+        {"_id": 0, "id": 1},
     ):
-        if _room.get('id'):
-            room_ids.append(_room['id'])
+        if _room.get("id"):
+            room_ids.append(_room["id"])
 
-    room_match: list[dict] = [{'room_type': room_type}]
+    room_match: list[dict] = [{"room_type": room_type}]
     if room_ids:
-        room_match.append({'room_id': {'$in': room_ids}})
+        room_match.append({"room_id": {"$in": room_ids}})
 
     # Collect price-demand pairs
     bookings = []
-    async for booking in db.bookings.find({
-        'tenant_id': current_user.tenant_id,
-        'created_at': {
-            '$gte': start_dt.isoformat(),
-            '$lte': end_dt.isoformat()
-        },
-        '$or': room_match,
-    }):
+    async for booking in db.bookings.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "created_at": {"$gte": start_dt.isoformat(), "$lte": end_dt.isoformat()},
+            "$or": room_match,
+        }
+    ):
         bookings.append(booking)
 
     # Real price elasticity from observed booking data. We build a price ->
@@ -267,24 +252,21 @@ async def calculate_price_elasticity(
     import math
 
     insufficient = {
-        'room_type': room_type,
-        'analysis_period_days': analysis_days,
-        'bookings_analyzed': len(bookings),
-        'data_available': False,
-        'message': (
-            'Fiyat esnekligi icin yeterli fiyat-talep verisi yok (farkli fiyat '
-            'seviyelerinde yeterli rezervasyon gerekir).'
-        ),
+        "room_type": room_type,
+        "analysis_period_days": analysis_days,
+        "bookings_analyzed": len(bookings),
+        "data_available": False,
+        "message": ("Fiyat esnekligi icin yeterli fiyat-talep verisi yok (farkli fiyat seviyelerinde yeterli rezervasyon gerekir)."),
     }
 
     prices: list[float] = []
     for b in bookings:
-        amt = b.get('total_amount') or 0
+        amt = b.get("total_amount") or 0
         if amt <= 0:
             continue
         try:
-            _ci = datetime.fromisoformat(str(b.get('check_in')).replace('Z', '+00:00'))
-            _co = datetime.fromisoformat(str(b.get('check_out')).replace('Z', '+00:00'))
+            _ci = datetime.fromisoformat(str(b.get("check_in")).replace("Z", "+00:00"))
+            _co = datetime.fromisoformat(str(b.get("check_out")).replace("Z", "+00:00"))
             _nights = max(1, (_co.date() - _ci.date()).days)
         except Exception:
             _nights = 1
@@ -340,45 +322,41 @@ async def calculate_price_elasticity(
     revenue_lift_pct = round(((best_rev - rev_at_avg) / rev_at_avg) * 100, 1) if rev_at_avg > 0 else 0.0
 
     if slope < -1:
-        interpretation = 'Esnek talep: fiyat artisi toplam geliri dusurur (talep fiyata duyarli).'
-        sensitivity = 'High'
+        interpretation = "Esnek talep: fiyat artisi toplam geliri dusurur (talep fiyata duyarli)."
+        sensitivity = "High"
         recommendations = [
-            'Esnek talep: agresif fiyat artislarindan kacinin, doluluk odakli fiyatlayin.',
-            'Hafta ici / hafta sonu ayrimi ile dinamik fiyatlama uygulayin.',
+            "Esnek talep: agresif fiyat artislarindan kacinin, doluluk odakli fiyatlayin.",
+            "Hafta ici / hafta sonu ayrimi ile dinamik fiyatlama uygulayin.",
         ]
     elif slope < 0:
-        interpretation = 'Inelastik talep: olcap fiyat artislari toplam geliri artirabilir.'
-        sensitivity = 'Low'
+        interpretation = "Inelastik talep: olcap fiyat artislari toplam geliri artirabilir."
+        sensitivity = "Low"
         recommendations = [
-            'Inelastik talep: yuksek talepli tarihlerde fiyati kademeli artirin.',
-            'Hafta ici / hafta sonu ayrimi ile dinamik fiyatlama uygulayin.',
+            "Inelastik talep: yuksek talepli tarihlerde fiyati kademeli artirin.",
+            "Hafta ici / hafta sonu ayrimi ile dinamik fiyatlama uygulayin.",
         ]
     else:
-        interpretation = 'Pozitif egim: karistirici faktorler/veri gurultusu olabilir, dikkatli yorumlayin.'
-        sensitivity = 'Unknown'
+        interpretation = "Pozitif egim: karistirici faktorler/veri gurultusu olabilir, dikkatli yorumlayin."
+        sensitivity = "Unknown"
         recommendations = [
-            'Daha guvenilir esneklik icin daha genis fiyat-talep verisi toplayin.',
+            "Daha guvenilir esneklik icin daha genis fiyat-talep verisi toplayin.",
         ]
 
     return {
-        'room_type': room_type,
-        'analysis_period_days': analysis_days,
-        'avg_historical_price': round(avg_price, 2),
-        'bookings_analyzed': len(bookings),
-        'price_points_used': len(pts),
-        'data_available': True,
-        'elasticity_coefficient': round(slope, 2),
-        'fit_r2': round(r2, 2),
-        'interpretation': interpretation,
-        'optimal_price_point': round(best_p, 2),
-        'expected_revenue_lift': f"{revenue_lift_pct}%",
-        'price_sensitivity': sensitivity,
-        'recommendations': recommendations,
+        "room_type": room_type,
+        "analysis_period_days": analysis_days,
+        "avg_historical_price": round(avg_price, 2),
+        "bookings_analyzed": len(bookings),
+        "price_points_used": len(pts),
+        "data_available": True,
+        "elasticity_coefficient": round(slope, 2),
+        "fit_r2": round(r2, 2),
+        "interpretation": interpretation,
+        "optimal_price_point": round(best_p, 2),
+        "expected_revenue_lift": f"{revenue_lift_pct}%",
+        "price_sensitivity": sensitivity,
+        "recommendations": recommendations,
     }
-
-
-
-
 
 
 @router.post("/rms/ai-pricing/auto-publish-rates")
@@ -411,10 +389,7 @@ async def auto_publish_rates_based_on_forecast(
     """
     # Get demand forecast
     forecasts = []
-    async for forecast in db.demand_forecasts.find({
-        'tenant_id': current_user.tenant_id,
-        'date': {'$gte': start_date, '$lte': end_date}
-    }).sort('date', 1):
+    async for forecast in db.demand_forecasts.find({"tenant_id": current_user.tenant_id, "date": {"$gte": start_date, "$lte": end_date}}).sort("date", 1):
         forecasts.append(forecast)
 
     # Fail-closed: never fabricate demand forecasts. If the tenant has no real
@@ -422,21 +397,18 @@ async def auto_publish_rates_based_on_forecast(
     # that would drive real (channel-published) rate changes.
     if not forecasts:
         return {
-            'success': False,
-            'data_available': False,
-            'dry_run': dry_run,
-            'start_date': start_date,
-            'end_date': end_date,
-            'strategy': strategy,
-            'rates_published': 0,
-            'rates_persisted': 0,
-            'outbox_events_emitted': 0,
-            'published_rates': [],
-            'avg_rate': 0,
-            'message': (
-                'Bu tarih araliginda gercek talep tahmini bulunmuyor. Sahte tahmin '
-                'uretilmez; once talep tahmini olusturun.'
-            ),
+            "success": False,
+            "data_available": False,
+            "dry_run": dry_run,
+            "start_date": start_date,
+            "end_date": end_date,
+            "strategy": strategy,
+            "rates_published": 0,
+            "rates_persisted": 0,
+            "outbox_events_emitted": 0,
+            "published_rates": [],
+            "avg_rate": 0,
+            "message": ("Bu tarih araliginda gercek talep tahmini bulunmuyor. Sahte tahmin uretilmez; once talep tahmini olusturun."),
         }
 
     # Base nightly rate is derived from the tenant's real recent per-night prices
@@ -444,16 +416,18 @@ async def auto_publish_rates_based_on_forecast(
     # if we cannot derive a real base rate.
     base_start = (datetime.now(UTC) - timedelta(days=90)).isoformat()
     night_prices: list[float] = []
-    async for _b in db.bookings.find({
-        'tenant_id': current_user.tenant_id,
-        'check_in': {'$gte': base_start},
-        'status': {'$nin': ['cancelled', 'no_show']},
-        'total_amount': {'$gt': 0},
-    }):
-        _amt = _b.get('total_amount') or 0
+    async for _b in db.bookings.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "check_in": {"$gte": base_start},
+            "status": {"$nin": ["cancelled", "no_show"]},
+            "total_amount": {"$gt": 0},
+        }
+    ):
+        _amt = _b.get("total_amount") or 0
         try:
-            _ci = datetime.fromisoformat(str(_b.get('check_in')).replace('Z', '+00:00'))
-            _co = datetime.fromisoformat(str(_b.get('check_out')).replace('Z', '+00:00'))
+            _ci = datetime.fromisoformat(str(_b.get("check_in")).replace("Z", "+00:00"))
+            _co = datetime.fromisoformat(str(_b.get("check_out")).replace("Z", "+00:00"))
             _nights = max(1, (_co.date() - _ci.date()).days)
         except Exception:
             _nights = 1
@@ -461,21 +435,18 @@ async def auto_publish_rates_based_on_forecast(
 
     if not night_prices:
         return {
-            'success': False,
-            'data_available': False,
-            'dry_run': dry_run,
-            'start_date': start_date,
-            'end_date': end_date,
-            'strategy': strategy,
-            'rates_published': 0,
-            'rates_persisted': 0,
-            'outbox_events_emitted': 0,
-            'published_rates': [],
-            'avg_rate': 0,
-            'message': (
-                'Gercek taban fiyat (son 90 gun) hesaplanamadi; yeterli rezervasyon '
-                'verisi yok. Fiyat yayinlanmadi.'
-            ),
+            "success": False,
+            "data_available": False,
+            "dry_run": dry_run,
+            "start_date": start_date,
+            "end_date": end_date,
+            "strategy": strategy,
+            "rates_published": 0,
+            "rates_persisted": 0,
+            "outbox_events_emitted": 0,
+            "published_rates": [],
+            "avg_rate": 0,
+            "message": ("Gercek taban fiyat (son 90 gun) hesaplanamadi; yeterli rezervasyon verisi yok. Fiyat yayinlanmadi."),
         }
 
     # Fail-closed: every forecast row MUST carry a real numeric occupancy. We
@@ -487,47 +458,41 @@ async def auto_publish_rates_based_on_forecast(
     # out-of-range occupancy aborts the whole publish rather than guessing.
     normalized: list[tuple] = []
     for _f in forecasts:
-        _raw_occ = _f.get('forecasted_occupancy')
+        _raw_occ = _f.get("forecasted_occupancy")
         if isinstance(_raw_occ, bool) or not isinstance(_raw_occ, (int, float)):
             return {
-                'success': False,
-                'data_available': False,
-                'dry_run': dry_run,
-                'start_date': start_date,
-                'end_date': end_date,
-                'strategy': strategy,
-                'rates_published': 0,
-                'rates_persisted': 0,
-                'outbox_events_emitted': 0,
-                'published_rates': [],
-                'avg_rate': 0,
-                'message': (
-                    'Talep tahmini kayitlarinda gecerli sayisal doluluk degeri '
-                    'eksik. Sahte doluluk varsayilmaz; fiyat yayinlanmadi.'
-                ),
+                "success": False,
+                "data_available": False,
+                "dry_run": dry_run,
+                "start_date": start_date,
+                "end_date": end_date,
+                "strategy": strategy,
+                "rates_published": 0,
+                "rates_persisted": 0,
+                "outbox_events_emitted": 0,
+                "published_rates": [],
+                "avg_rate": 0,
+                "message": ("Talep tahmini kayitlarinda gecerli sayisal doluluk degeri eksik. Sahte doluluk varsayilmaz; fiyat yayinlanmadi."),
             }
         _occ = float(_raw_occ)
         if _occ > 1:  # stored as percentage (0-100) -> fraction
             _occ = _occ / 100.0
         if not (0.0 <= _occ <= 1.0):
             return {
-                'success': False,
-                'data_available': False,
-                'dry_run': dry_run,
-                'start_date': start_date,
-                'end_date': end_date,
-                'strategy': strategy,
-                'rates_published': 0,
-                'rates_persisted': 0,
-                'outbox_events_emitted': 0,
-                'published_rates': [],
-                'avg_rate': 0,
-                'message': (
-                    'Talep tahmini doluluk degeri gecerli aralik disinda. Fiyat '
-                    'yayinlanmadi.'
-                ),
+                "success": False,
+                "data_available": False,
+                "dry_run": dry_run,
+                "start_date": start_date,
+                "end_date": end_date,
+                "strategy": strategy,
+                "rates_published": 0,
+                "rates_persisted": 0,
+                "outbox_events_emitted": 0,
+                "published_rates": [],
+                "avg_rate": 0,
+                "message": ("Talep tahmini doluluk degeri gecerli aralik disinda. Fiyat yayinlanmadi."),
             }
-        normalized.append((_f.get('date'), _occ))
+        normalized.append((_f.get("date"), _occ))
 
     # Calculate recommended rates
     published_rates = []
@@ -545,13 +510,7 @@ async def auto_publish_rates_based_on_forecast(
 
         recommended_rate = round(base_rate * multiplier, 2)
 
-        published_rates.append({
-            'date': forecast_date,
-            'forecasted_occupancy': round(occupancy * 100, 1),
-            'recommended_rate': recommended_rate,
-            'published': (not dry_run),
-            'strategy': strategy
-        })
+        published_rates.append({"date": forecast_date, "forecasted_occupancy": round(occupancy * 100, 1), "recommended_rate": recommended_rate, "published": (not dry_run), "strategy": strategy})
 
     # Side effects (persistence + outbox) are gated behind the dry_run flag.
     # When dry_run=True (default) NOTHING below runs → no writes, no outbox
@@ -563,19 +522,21 @@ async def auto_publish_rates_based_on_forecast(
         ops = [
             UpdateOne(
                 {
-                    'tenant_id': current_user.tenant_id,
-                    'date': r['date'],
-                    'strategy': strategy,
+                    "tenant_id": current_user.tenant_id,
+                    "date": r["date"],
+                    "strategy": strategy,
                 },
-                {'$set': {
-                    'tenant_id': current_user.tenant_id,
-                    'date': r['date'],
-                    'strategy': strategy,
-                    'recommended_rate': r['recommended_rate'],
-                    'forecasted_occupancy': r['forecasted_occupancy'],
-                    'published_at': now_iso,
-                    'published_by': current_user.email,
-                }},
+                {
+                    "$set": {
+                        "tenant_id": current_user.tenant_id,
+                        "date": r["date"],
+                        "strategy": strategy,
+                        "recommended_rate": r["recommended_rate"],
+                        "forecasted_occupancy": r["forecasted_occupancy"],
+                        "published_at": now_iso,
+                        "published_by": current_user.email,
+                    }
+                },
                 upsert=True,
             )
             for r in published_rates
@@ -588,42 +549,34 @@ async def auto_publish_rates_based_on_forecast(
                 db,
                 tenant_id=current_user.tenant_id,
                 event_type=RATE_UPDATED,
-                entity_type='ai_pricing_publication',
+                entity_type="ai_pricing_publication",
                 entity_id=f"{current_user.tenant_id}:{r['date']}:{strategy}",
                 payload={
-                    'date': r['date'],
-                    'recommended_rate': r['recommended_rate'],
-                    'strategy': strategy,
-                    'source': 'ai_auto_publish',
+                    "date": r["date"],
+                    "recommended_rate": r["recommended_rate"],
+                    "strategy": strategy,
+                    "source": "ai_auto_publish",
                 },
             )
             outbox_events_emitted += 1
 
     return {
-        'success': True,
-        'dry_run': dry_run,
-        'start_date': start_date,
-        'end_date': end_date,
-        'strategy': strategy,
-        'rates_published': len(published_rates),
-        'rates_persisted': rates_persisted,
-        'outbox_events_emitted': outbox_events_emitted,
-        'published_rates': published_rates,
-        'avg_rate': (
-            round(sum(r['recommended_rate'] for r in published_rates) / len(published_rates), 2)
-            if published_rates else 0
-        ),
-        'note': (
-            'Dry-run: recommendations computed only; no rates persisted and no '
-            'channel/outbox events emitted.'
-            if dry_run else
-            'Rates persisted to ai_pricing_publications and queued for channel '
-            'delivery via outbox.'
+        "success": True,
+        "dry_run": dry_run,
+        "start_date": start_date,
+        "end_date": end_date,
+        "strategy": strategy,
+        "rates_published": len(published_rates),
+        "rates_persisted": rates_persisted,
+        "outbox_events_emitted": outbox_events_emitted,
+        "published_rates": published_rates,
+        "avg_rate": (round(sum(r["recommended_rate"] for r in published_rates) / len(published_rates), 2) if published_rates else 0),
+        "note": (
+            "Dry-run: recommendations computed only; no rates persisted and no channel/outbox events emitted."
+            if dry_run
+            else "Rates persisted to ai_pricing_publications and queued for channel delivery via outbox."
         ),
     }
 
 
 # ============= RBAC 2.0 (ENHANCED ACCESS CONTROL) =============
-
-
-

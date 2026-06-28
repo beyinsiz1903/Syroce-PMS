@@ -7,6 +7,7 @@ This module is a thin backward-compatible wrapper.
 Legacy callers that import encrypt_credential / decrypt_credential / mask_credential
 continue to work without changes.
 """
+
 import logging
 import os
 

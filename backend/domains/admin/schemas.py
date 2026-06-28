@@ -2,6 +2,7 @@
 Admin Domain — Schemas
 Request/response models extracted from admin/router.py.
 """
+
 from enum import Enum
 from typing import Literal
 
@@ -64,8 +65,8 @@ class DemoRequest(BaseModel):
     name: str
     email: str
     phone: str
-    hotel_name: str = Field(..., alias='hotelName')
-    room_count: str = Field(..., alias='roomCount')
+    hotel_name: str = Field(..., alias="hotelName")
+    room_count: str = Field(..., alias="roomCount")
 
 
 class PmsLiteLeadStatus(str, Enum):
@@ -98,6 +99,7 @@ class UpdateGrantedPermissionsRequest(BaseModel):
     operasyonlar bu listeye eklenebilir. Whitelist dışı bir izin
     gönderilirse endpoint 400 ile reddeder.
     """
+
     permissions: list[str] = Field(default_factory=list)
 
 

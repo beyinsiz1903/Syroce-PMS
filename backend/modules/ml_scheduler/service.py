@@ -2,6 +2,7 @@
 ML Model Scheduled Execution Engine.
 Manages periodic execution of Revenue ML, Operational AI, Guest Intelligence models.
 """
+
 import asyncio
 import logging
 import uuid
@@ -89,9 +90,7 @@ class MLSchedulerService:
         self.db = db
 
     async def get_schedule_policies(self, tenant_id: str) -> list:
-        policies = await self.db.ml_schedule_policies.find(
-            {"tenant_id": tenant_id}, {"_id": 0}
-        ).to_list(50)
+        policies = await self.db.ml_schedule_policies.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(50)
         if not policies:
             # seed defaults
             for mt, cfg in DEFAULT_SCHEDULES.items():
@@ -101,8 +100,7 @@ class MLSchedulerService:
                 policies.append(p)
         return policies
 
-    async def update_schedule(self, tenant_id: str, model_type: str,
-                              interval_hours: int | None = None, enabled: bool | None = None) -> dict:
+    async def update_schedule(self, tenant_id: str, model_type: str, interval_hours: int | None = None, enabled: bool | None = None) -> dict:
         update = {"updated_at": datetime.now(UTC).isoformat()}
         if interval_hours is not None:
             update["interval_hours"] = interval_hours
@@ -125,9 +123,7 @@ class MLSchedulerService:
         )
         return running is not None
 
-    async def trigger_execution(self, tenant_id: str, model_type: str,
-                                property_id: str | None = None,
-                                triggered_by: str = "manual") -> dict:
+    async def trigger_execution(self, tenant_id: str, model_type: str, property_id: str | None = None, triggered_by: str = "manual") -> dict:
         """Trigger a model execution."""
         if await self._prevent_duplicate(tenant_id, model_type):
             return {"success": False, "error": "Execution already running", "status": "skipped"}
@@ -157,15 +153,18 @@ class MLSchedulerService:
 
             if model_type == ModelType.REVENUE_ML:
                 from modules.data_intelligence.revenue_ml_pipeline import revenue_pipeline
+
                 result = await revenue_pipeline.run_pipeline(tenant_id)
                 confidence = result.get("confidence_score", 0.75)
             elif model_type == ModelType.OPERATIONAL_AI:
                 from modules.data_intelligence.operational_ai import operational_ai
+
                 result = await operational_ai.get_dashboard(tenant_id)
                 # sabit 0.82 kaldırıldı: gerçek confidence result'tan; yoksa 0.0 (fabrikasyon yok)
                 confidence = result.get("confidence_score", result.get("confidence", 0.0)) if isinstance(result, dict) else 0.0
             elif model_type == ModelType.GUEST_INTELLIGENCE:
                 from modules.data_intelligence.guest_intelligence import guest_intelligence
+
                 result = await guest_intelligence.get_dashboard(tenant_id, 30)
                 confidence = result.get("confidence_score", result.get("confidence", 0.0)) if isinstance(result, dict) else 0.0
 
@@ -186,14 +185,16 @@ class MLSchedulerService:
 
             await self.db.ml_execution_jobs.update_one(
                 {"id": job_id},
-                {"$set": {
-                    "status": ExecutionStatus.COMPLETED,
-                    "completed_at": end.isoformat(),
-                    "duration_ms": duration_ms,
-                    "result_snapshot_id": snapshot["id"],
-                    "confidence_avg": confidence,
-                    "updated_at": end.isoformat(),
-                }},
+                {
+                    "$set": {
+                        "status": ExecutionStatus.COMPLETED,
+                        "completed_at": end.isoformat(),
+                        "duration_ms": duration_ms,
+                        "result_snapshot_id": snapshot["id"],
+                        "confidence_avg": confidence,
+                        "updated_at": end.isoformat(),
+                    }
+                },
             )
 
             # update schedule
@@ -211,38 +212,39 @@ class MLSchedulerService:
             end = datetime.now(UTC)
             await self.db.ml_execution_jobs.update_one(
                 {"id": job_id},
-                {"$set": {
-                    "status": ExecutionStatus.FAILED,
-                    "error_message": str(e)[:500],
-                    "completed_at": end.isoformat(),
-                    "duration_ms": int((end - start).total_seconds() * 1000),
-                    "updated_at": end.isoformat(),
-                }},
+                {
+                    "$set": {
+                        "status": ExecutionStatus.FAILED,
+                        "error_message": str(e)[:500],
+                        "completed_at": end.isoformat(),
+                        "duration_ms": int((end - start).total_seconds() * 1000),
+                        "updated_at": end.isoformat(),
+                    }
+                },
             )
             await self._log_alert(tenant_id, model_type, job_id, f"Execution failed: {str(e)[:200]}")
 
     async def _log_alert(self, tenant_id: str, model_type: str, job_id: str, message: str):
-        await self.db.system_alerts.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "source": "ml_scheduler",
-            "severity": "high",
-            "title": f"ML Execution Alert: {model_type}",
-            "message": message,
-            "entity_type": "ml_execution_job",
-            "entity_id": job_id,
-            "acknowledged": False,
-            "created_at": datetime.now(UTC).isoformat(),
-        })
+        await self.db.system_alerts.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "source": "ml_scheduler",
+                "severity": "high",
+                "title": f"ML Execution Alert: {model_type}",
+                "message": message,
+                "entity_type": "ml_execution_job",
+                "entity_id": job_id,
+                "acknowledged": False,
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
 
-    async def get_execution_history(self, tenant_id: str, model_type: str | None = None,
-                                     limit: int = 20) -> list:
+    async def get_execution_history(self, tenant_id: str, model_type: str | None = None, limit: int = 20) -> list:
         q = {"tenant_id": tenant_id}
         if model_type:
             q["model_type"] = model_type
-        return await self.db.ml_execution_jobs.find(
-            q, {"_id": 0}
-        ).sort("created_at", -1).to_list(limit)
+        return await self.db.ml_execution_jobs.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
 
     async def get_stale_models(self, tenant_id: str) -> list:
         """Find models whose last run exceeds the stale threshold."""

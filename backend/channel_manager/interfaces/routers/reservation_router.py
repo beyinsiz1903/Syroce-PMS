@@ -1,4 +1,5 @@
 """Reservation import, review queue, batch, ACK, audit-trail endpoints."""
+
 import logging
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -32,6 +33,7 @@ class ReprocessReviewRequest(BaseModel):
 
 # ─── Reservation Import ──────────────────────────────────────────
 
+
 @router.post("/reservations/pull")
 async def trigger_reservation_pull(
     req: TriggerImportRequest,
@@ -58,7 +60,10 @@ async def list_imported_reservations(
 ):
     svc = ReservationImportService()
     reservations = await svc.get_imported_reservations(
-        current_user.tenant_id, connector_id, status, limit,
+        current_user.tenant_id,
+        connector_id,
+        status,
+        limit,
     )
     return {"reservations": reservations, "count": len(reservations)}
 
@@ -96,8 +101,10 @@ async def reprocess_review_reservation(
     try:
         override = req.room_type_override if req else None
         result = await svc.reprocess_review(
-            current_user.tenant_id, reservation_id,
-            current_user.id, override,
+            current_user.tenant_id,
+            reservation_id,
+            current_user.id,
+            override,
         )
         return result
     except ValueError as e:
@@ -113,7 +120,9 @@ async def dismiss_review_reservation(
     svc = ReservationImportService()
     try:
         result = await svc.dismiss_review(
-            current_user.tenant_id, reservation_id, current_user.id,
+            current_user.tenant_id,
+            reservation_id,
+            current_user.id,
         )
         return result
     except ValueError as e:
@@ -128,8 +137,10 @@ async def approve_review(
 ):
     svc = ReservationImportService()
     result = await svc.approve_review(
-        current_user.tenant_id, req.reservation_id,
-        current_user.id, req.room_type_override,
+        current_user.tenant_id,
+        req.reservation_id,
+        current_user.id,
+        req.room_type_override,
     )
     return result
 
@@ -196,14 +207,20 @@ async def get_reservation_lineage(
         return {"reservation": detail, "lineage": [detail]}
 
     from core.database import db
-    lineage_docs = await db["cm_imported_reservations"].find(
-        {
-            "tenant_id": current_user.tenant_id,
-            "connector_id": connector_id,
-            "external_reservation_id": external_id,
-        },
-        {"_id": 0},
-    ).sort("created_at", 1).to_list(50)
+
+    lineage_docs = (
+        await db["cm_imported_reservations"]
+        .find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "connector_id": connector_id,
+                "external_reservation_id": external_id,
+            },
+            {"_id": 0},
+        )
+        .sort("created_at", 1)
+        .to_list(50)
+    )
 
     return {
         "reservation": detail,

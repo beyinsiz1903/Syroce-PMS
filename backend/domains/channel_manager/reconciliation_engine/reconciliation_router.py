@@ -16,6 +16,7 @@ Endpoints:
   GET  /api/channel-manager/reconciliation/metrics       — Reconciliation metrics
   GET  /api/channel-manager/reconciliation/worker/status — Worker status
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -51,6 +52,7 @@ router = APIRouter(
 
 # ── Request Models ────────────────────────────────────────────────────
 
+
 class ResolveCaseRequest(BaseModel):
     resolution: str
 
@@ -70,6 +72,7 @@ class RunWithSnapshotsRequest(BaseModel):
 
 
 # ── List Cases ────────────────────────────────────────────────────────
+
 
 @router.get("/cases")
 async def list_reconciliation_cases(
@@ -94,14 +97,22 @@ async def list_reconciliation_cases(
     if severity:
         q["severity"] = severity
 
-    cases = await db[COLL_RECONCILIATION_CASES].find(
-        q, _NO_ID,
-    ).sort("created_at", -1).limit(limit).to_list(limit)
+    cases = (
+        await db[COLL_RECONCILIATION_CASES]
+        .find(
+            q,
+            _NO_ID,
+        )
+        .sort("created_at", -1)
+        .limit(limit)
+        .to_list(limit)
+    )
 
     return {"cases": cases, "count": len(cases)}
 
 
 # ── Get Case Detail ───────────────────────────────────────────────────
+
 
 @router.get("/cases/{case_id}")
 async def get_case_detail(
@@ -117,6 +128,7 @@ async def get_case_detail(
 
 # ── Resolve Case ──────────────────────────────────────────────────────
 
+
 @router.post("/cases/{case_id}/resolve")
 async def resolve_case(
     case_id: str,
@@ -131,16 +143,20 @@ async def resolve_case(
     if case.get("status") in ["resolved", "ignored", "dismissed"]:
         raise HTTPException(status_code=400, detail="Case already closed")
 
-    await repo.update_reconciliation_case(case_id, {
-        "status": CaseStatus.RESOLVED.value,
-        "resolution": req.resolution,
-        "resolved_by": current_user.id,
-        "resolved_at": datetime.now(UTC).isoformat(),
-    })
+    await repo.update_reconciliation_case(
+        case_id,
+        {
+            "status": CaseStatus.RESOLVED.value,
+            "resolution": req.resolution,
+            "resolved_by": current_user.id,
+            "resolved_at": datetime.now(UTC).isoformat(),
+        },
+    )
     return {"message": "Case resolved", "case_id": case_id}
 
 
 # ── Ignore Case ───────────────────────────────────────────────────────
+
 
 @router.post("/cases/{case_id}/ignore")
 async def ignore_case(
@@ -156,16 +172,20 @@ async def ignore_case(
     if case.get("status") in ["resolved", "ignored", "dismissed"]:
         raise HTTPException(status_code=400, detail="Case already closed")
 
-    await repo.update_reconciliation_case(case_id, {
-        "status": CaseStatus.IGNORED.value,
-        "dismiss_reason": req.reason,
-        "resolved_by": current_user.id,
-        "resolved_at": datetime.now(UTC).isoformat(),
-    })
+    await repo.update_reconciliation_case(
+        case_id,
+        {
+            "status": CaseStatus.IGNORED.value,
+            "dismiss_reason": req.reason,
+            "resolved_by": current_user.id,
+            "resolved_at": datetime.now(UTC).isoformat(),
+        },
+    )
     return {"message": "Case ignored", "case_id": case_id}
 
 
 # ── Acknowledge Case ─────────────────────────────────────────────────
+
 
 @router.post("/cases/{case_id}/acknowledge")
 async def acknowledge_case(
@@ -179,19 +199,23 @@ async def acknowledge_case(
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
 
-    await repo.update_reconciliation_case(case_id, {
-        "status": CaseStatus.ACKNOWLEDGED.value,
-        "details": {
-            **(case.get("details") or {}),
-            "acknowledged_by": current_user.id,
-            "acknowledged_at": datetime.now(UTC).isoformat(),
-            "acknowledge_note": req.note,
+    await repo.update_reconciliation_case(
+        case_id,
+        {
+            "status": CaseStatus.ACKNOWLEDGED.value,
+            "details": {
+                **(case.get("details") or {}),
+                "acknowledged_by": current_user.id,
+                "acknowledged_at": datetime.now(UTC).isoformat(),
+                "acknowledge_note": req.note,
+            },
         },
-    })
+    )
     return {"message": "Case acknowledged", "case_id": case_id}
 
 
 # ── Trigger Manual Run ────────────────────────────────────────────────
+
 
 @router.post("/run")
 async def trigger_reconciliation(
@@ -204,6 +228,7 @@ async def trigger_reconciliation(
 
 
 # ── Run With Snapshots (Test) ─────────────────────────────────────────
+
 
 @router.post("/run-with-snapshots")
 async def run_with_snapshots(
@@ -225,6 +250,7 @@ async def run_with_snapshots(
 
 
 # ── Dashboard Data ────────────────────────────────────────────────────
+
 
 @router.get("/dashboard")
 async def get_dashboard_data(
@@ -270,10 +296,16 @@ async def get_dashboard_data(
         type_breakdown[doc["_id"]] = doc["count"]
 
     # Recent cases (last 20)
-    recent_cases = await db[COLL_RECONCILIATION_CASES].find(
-        {"tenant_id": tenant_id} | ({"provider": provider} if provider else {}),
-        _NO_ID,
-    ).sort("created_at", -1).limit(20).to_list(20)
+    recent_cases = (
+        await db[COLL_RECONCILIATION_CASES]
+        .find(
+            {"tenant_id": tenant_id} | ({"provider": provider} if provider else {}),
+            _NO_ID,
+        )
+        .sort("created_at", -1)
+        .limit(20)
+        .to_list(20)
+    )
 
     total_open = sum(severity_counts.values())
 
@@ -288,6 +320,7 @@ async def get_dashboard_data(
 
 
 # ── Metrics ───────────────────────────────────────────────────────────
+
 
 @router.get("/metrics")
 async def get_reconciliation_metrics(
@@ -332,6 +365,7 @@ async def get_reconciliation_metrics(
 
 
 # ── Worker Status ─────────────────────────────────────────────────────
+
 
 @router.get("/worker/status")
 async def get_worker_status(

@@ -8,6 +8,7 @@ Integrates with:
 - modules/platform_scaling/revenue_ml.py (existing ML models)
 - modules/platform_scaling/revenue_autopricing.py (existing auto-pricing workflow)
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -49,18 +50,13 @@ class RevenueMLPipeline:
 
     # ── Full Pipeline Execution ──
 
-    async def run_pipeline(self, tenant_id: str, room_type: str | None = None,
-                           target_date: str | None = None,
-                           property_id: str | None = None) -> dict[str, Any]:
+    async def run_pipeline(self, tenant_id: str, room_type: str | None = None, target_date: str | None = None, property_id: str | None = None) -> dict[str, Any]:
         """Execute the full revenue ML pipeline for a tenant/room_type."""
         run_id = str(uuid.uuid4())
         started_at = datetime.now(UTC)
 
         # Resolve room types
-        room_types = [room_type] if room_type else await db.rooms.distinct(
-            "room_type", {"tenant_id": tenant_id,
-                          "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]}
-        )
+        room_types = [room_type] if room_type else await db.rooms.distinct("room_type", {"tenant_id": tenant_id, "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]})
         if not room_types:
             room_types = ["Standard"]
 
@@ -81,10 +77,7 @@ class RevenueMLPipeline:
         # Step 5: Generate recommendations per room type
         recommendations = []
         for rt in room_types:
-            rec = await self._generate_recommendation(
-                tenant_id, rt, demand, elasticity_results.get(rt, {}),
-                at_risk, conversion, property_id
-            )
+            rec = await self._generate_recommendation(tenant_id, rt, demand, elasticity_results.get(rt, {}), at_risk, conversion, property_id)
             if rec:
                 recommendations.append(rec)
 
@@ -109,8 +102,7 @@ class RevenueMLPipeline:
         await db.revenue_ml_snapshots.insert_one(snapshot)
 
         # Step 7: Model execution log
-        await self._log_execution(tenant_id, run_id, "revenue_ml_pipeline",
-                                  "success", len(recommendations), started_at)
+        await self._log_execution(tenant_id, run_id, "revenue_ml_pipeline", "success", len(recommendations), started_at)
 
         return {
             "run_id": run_id,
@@ -119,27 +111,23 @@ class RevenueMLPipeline:
             "recommendations": recommendations,
             "signals": {
                 "demand_summary": self._summarize_demand(demand),
-                "elasticity_summary": {rt: {
-                    "coefficient": e.get("elasticity_coefficient", 0),
-                    "interpretation": e.get("interpretation", "unknown"),
-                } for rt, e in elasticity_results.items()},
+                "elasticity_summary": {
+                    rt: {
+                        "coefficient": e.get("elasticity_coefficient", 0),
+                        "interpretation": e.get("interpretation", "unknown"),
+                    }
+                    for rt, e in elasticity_results.items()
+                },
                 "cancellation_risk": {
                     "at_risk_count": at_risk.get("at_risk_count", 0),
                     "at_risk_revenue": at_risk.get("total_at_risk_revenue", 0),
                 },
-                "conversion_rates": {
-                    r["source"]: r["conversion_rate"]
-                    for r in conversion.get("by_source", [])[:5]
-                },
+                "conversion_rates": {r["source"]: r["conversion_rate"] for r in conversion.get("by_source", [])[:5]},
             },
             "generated_at": started_at.isoformat(),
         }
 
-    async def _generate_recommendation(
-        self, tenant_id: str, room_type: str,
-        demand: dict, elasticity: dict, at_risk: dict,
-        conversion: dict, property_id: str | None
-    ) -> dict[str, Any] | None:
+    async def _generate_recommendation(self, tenant_id: str, room_type: str, demand: dict, elasticity: dict, at_risk: dict, conversion: dict, property_id: str | None) -> dict[str, Any] | None:
         """Generate a single ADR recommendation for a room type."""
         # Get current average price
         rooms = await db.rooms.find(
@@ -155,8 +143,7 @@ class RevenueMLPipeline:
         # Signals
         demand_signal = self._extract_demand_signal(demand)
         pace_signal = self._extract_pace_signal(demand)
-        cancel_risk = at_risk.get("at_risk_count", 0) / max(
-            at_risk.get("at_risk_count", 0) + 10, 1)
+        cancel_risk = at_risk.get("at_risk_count", 0) / max(at_risk.get("at_risk_count", 0) + 10, 1)
         price_sensitivity = elasticity.get("elasticity_coefficient", -1.0)
 
         # ADR adjustment logic
@@ -166,51 +153,40 @@ class RevenueMLPipeline:
         # Demand signal
         if demand_signal > 0.75:
             adjustment += 0.08
-            reasons.append({"signal": "demand", "direction": "up",
-                           "detail": f"Yuksek talep ({demand_signal:.0%})", "impact": 0.08})
+            reasons.append({"signal": "demand", "direction": "up", "detail": f"Yuksek talep ({demand_signal:.0%})", "impact": 0.08})
         elif demand_signal > 0.55:
             adjustment += 0.03
-            reasons.append({"signal": "demand", "direction": "up",
-                           "detail": f"Orta talep ({demand_signal:.0%})", "impact": 0.03})
+            reasons.append({"signal": "demand", "direction": "up", "detail": f"Orta talep ({demand_signal:.0%})", "impact": 0.03})
         elif demand_signal < 0.35:
             adjustment -= 0.05
-            reasons.append({"signal": "demand", "direction": "down",
-                           "detail": f"Dusuk talep ({demand_signal:.0%})", "impact": -0.05})
+            reasons.append({"signal": "demand", "direction": "down", "detail": f"Dusuk talep ({demand_signal:.0%})", "impact": -0.05})
 
         # Pace signal
         if pace_signal > 0.7:
             adjustment += 0.04
-            reasons.append({"signal": "pace", "direction": "up",
-                           "detail": "Guclu rezervasyon hizi", "impact": 0.04})
+            reasons.append({"signal": "pace", "direction": "up", "detail": "Guclu rezervasyon hizi", "impact": 0.04})
         elif pace_signal < 0.3:
             adjustment -= 0.03
-            reasons.append({"signal": "pace", "direction": "down",
-                           "detail": "Yavas rezervasyon hizi", "impact": -0.03})
+            reasons.append({"signal": "pace", "direction": "down", "detail": "Yavas rezervasyon hizi", "impact": -0.03})
 
         # Cancellation risk
         if cancel_risk > 0.3:
             adjustment -= 0.02
-            reasons.append({"signal": "cancellation_risk", "direction": "down",
-                           "detail": f"Yuksek iptal riski ({cancel_risk:.0%})", "impact": -0.02})
+            reasons.append({"signal": "cancellation_risk", "direction": "down", "detail": f"Yuksek iptal riski ({cancel_risk:.0%})", "impact": -0.02})
 
         # Price sensitivity
         if price_sensitivity > -0.5:  # inelastic
             adjustment += 0.03
-            reasons.append({"signal": "price_sensitivity", "direction": "up",
-                           "detail": "Fiyat duyarsiz talep", "impact": 0.03})
+            reasons.append({"signal": "price_sensitivity", "direction": "up", "detail": "Fiyat duyarsiz talep", "impact": 0.03})
         elif price_sensitivity < -1.2:  # very elastic
             adjustment -= 0.03
-            reasons.append({"signal": "price_sensitivity", "direction": "down",
-                           "detail": "Fiyata cok duyarli talep", "impact": -0.03})
+            reasons.append({"signal": "price_sensitivity", "direction": "down", "detail": "Fiyata cok duyarli talep", "impact": -0.03})
 
         suggested_rate = round(current_avg * (1 + adjustment), 2)
         change_pct = round(abs(suggested_rate - current_avg) / current_avg * 100, 2)
 
         # Confidence calculation
-        confidence = self._calculate_confidence(
-            demand_signal, pace_signal, cancel_risk, price_sensitivity,
-            elasticity.get("data_points", 0)
-        )
+        confidence = self._calculate_confidence(demand_signal, pace_signal, cancel_risk, price_sensitivity, elasticity.get("data_points", 0))
 
         # Confidence band
         if confidence >= HIGH_CONFIDENCE:
@@ -224,10 +200,8 @@ class RevenueMLPipeline:
         auto_eligible = confidence >= HUMAN_OVERRIDE_THRESHOLD and change_pct <= 15
 
         # Build recommendation reason summary
-        direction = "increase" if suggested_rate > current_avg else (
-            "decrease" if suggested_rate < current_avg else "hold")
-        reason_text = f"ML Pipeline: {direction} ({change_pct}%) - " + ", ".join(
-            [r["detail"] for r in reasons[:3]])
+        direction = "increase" if suggested_rate > current_avg else ("decrease" if suggested_rate < current_avg else "hold")
+        reason_text = f"ML Pipeline: {direction} ({change_pct}%) - " + ", ".join([r["detail"] for r in reasons[:3]])
 
         rec_data = {
             "room_type": room_type,
@@ -289,20 +263,14 @@ class RevenueMLPipeline:
         avg_otb = sum(otb_values) / max(len(otb_values), 1)
         return min(avg_otb / max(total_rooms, 1), 1.0)
 
-    def _calculate_confidence(self, demand: float, pace: float,
-                              cancel_risk: float, sensitivity: float,
-                              data_points: int) -> float:
+    def _calculate_confidence(self, demand: float, pace: float, cancel_risk: float, sensitivity: float, data_points: int) -> float:
         """Calculate composite confidence score."""
         # Base confidence from data availability
         data_conf = min(data_points / 50, 1.0) * 0.3
 
         # Signal consistency - if signals agree, higher confidence
-        signals_positive = sum([
-            demand > 0.5, pace > 0.5, cancel_risk < 0.2, sensitivity > -1.0
-        ])
-        signals_negative = sum([
-            demand < 0.5, pace < 0.5, cancel_risk > 0.3, sensitivity < -1.0
-        ])
+        signals_positive = sum([demand > 0.5, pace > 0.5, cancel_risk < 0.2, sensitivity > -1.0])
+        signals_negative = sum([demand < 0.5, pace < 0.5, cancel_risk > 0.3, sensitivity < -1.0])
         consistency = max(signals_positive, signals_negative) / 4
         signal_conf = consistency * 0.5
 
@@ -337,26 +305,34 @@ class RevenueMLPipeline:
         Sprint 33: 7 sequential ML/DB calls → asyncio.gather (~5-7× speedup).
         """
         import asyncio as _asyncio
-        demand, price_points, at_risk, conversion, recent_recs, recent_runs, autopricing_dash = \
-            await _asyncio.gather(
-                self.demand_model.forecast_demand(tenant_id, 14),
-                self.elasticity_model.get_optimal_price_points(tenant_id),
-                self.cancellation_model.get_at_risk_bookings(tenant_id, 0.25),
-                self.booking_prob_model.get_portfolio_conversion_rates(tenant_id),
-                db.pricing_recommendations.find(
-                    {"tenant_id": tenant_id, "source": "ml_pipeline"},
-                    {"_id": 0},
-                ).sort("created_at", -1).limit(20).to_list(20),
-                db.revenue_ml_snapshots.find(
-                    {"tenant_id": tenant_id},
-                    {"_id": 0},
-                ).sort("generated_at", -1).limit(5).to_list(5),
-                autopricing.get_autopricing_dashboard(tenant_id),
-                return_exceptions=True,
+
+        demand, price_points, at_risk, conversion, recent_recs, recent_runs, autopricing_dash = await _asyncio.gather(
+            self.demand_model.forecast_demand(tenant_id, 14),
+            self.elasticity_model.get_optimal_price_points(tenant_id),
+            self.cancellation_model.get_at_risk_bookings(tenant_id, 0.25),
+            self.booking_prob_model.get_portfolio_conversion_rates(tenant_id),
+            db.pricing_recommendations.find(
+                {"tenant_id": tenant_id, "source": "ml_pipeline"},
+                {"_id": 0},
             )
+            .sort("created_at", -1)
+            .limit(20)
+            .to_list(20),
+            db.revenue_ml_snapshots.find(
+                {"tenant_id": tenant_id},
+                {"_id": 0},
+            )
+            .sort("generated_at", -1)
+            .limit(5)
+            .to_list(5),
+            autopricing.get_autopricing_dashboard(tenant_id),
+            return_exceptions=True,
+        )
+
         # Defensive defaults if any call failed
         def _ok(v, default):
             return default if isinstance(v, Exception) else v
+
         demand = _ok(demand, {})
         price_points = _ok(price_points, [])
         at_risk = _ok(at_risk, {})
@@ -383,20 +359,20 @@ class RevenueMLPipeline:
 
     # ── Model Execution Logging ──
 
-    async def _log_execution(self, tenant_id: str, run_id: str,
-                             model_type: str, status: str,
-                             output_count: int, started_at: datetime):
-        await db.model_execution_logs.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "run_id": run_id,
-            "model_type": model_type,
-            "status": status,
-            "output_count": output_count,
-            "started_at": started_at.isoformat(),
-            "completed_at": datetime.now(UTC).isoformat(),
-            "duration_ms": int((datetime.now(UTC) - started_at).total_seconds() * 1000),
-        })
+    async def _log_execution(self, tenant_id: str, run_id: str, model_type: str, status: str, output_count: int, started_at: datetime):
+        await db.model_execution_logs.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "run_id": run_id,
+                "model_type": model_type,
+                "status": status,
+                "output_count": output_count,
+                "started_at": started_at.isoformat(),
+                "completed_at": datetime.now(UTC).isoformat(),
+                "duration_ms": int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+            }
+        )
 
 
 # Singleton

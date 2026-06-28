@@ -5,6 +5,7 @@ dispatches to all enabled partner adapters for the tenant, retries
 transient failures with exponential backoff and parks unrecoverable
 messages in a dead-letter state for manual replay.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -54,9 +55,7 @@ class XchangeBus:
             return
         try:
             await self.db.xchange_deliveries.create_index(
-                [("tenant_id", ASCENDING),
-                 ("message_id", ASCENDING),
-                 ("partner_code", ASCENDING)],
+                [("tenant_id", ASCENDING), ("message_id", ASCENDING), ("partner_code", ASCENDING)],
                 unique=True,
                 name="uniq_tenant_msg_partner",
             )
@@ -79,8 +78,12 @@ class XchangeBus:
         return [doc async for doc in cur]
 
     async def upsert_partner_config(
-        self, tenant_id: str, partner_code: str, *,
-        config: dict[str, Any], enabled: bool = True,
+        self,
+        tenant_id: str,
+        partner_code: str,
+        *,
+        config: dict[str, Any],
+        enabled: bool = True,
     ) -> dict[str, Any]:
         if partner_code not in PARTNERS:
             raise ValueError(f"Unknown partner: {partner_code}")
@@ -108,8 +111,7 @@ class XchangeBus:
         module = importlib.import_module(partner.adapter_module)
         # Convention: each adapter file exports a *Adapter class
         adapter_cls = next(
-            (v for k, v in vars(module).items()
-             if isinstance(v, type) and k.endswith("Adapter") and k != "BaseAdapter"),
+            (v for k, v in vars(module).items() if isinstance(v, type) and k.endswith("Adapter") and k != "BaseAdapter"),
             None,
         )
         if not adapter_cls:
@@ -119,8 +121,7 @@ class XchangeBus:
         return adapter
 
     # ── Delivery records ───────────────────────────────────────
-    async def _record(self, envelope: XchangeEnvelope, partner_code: str,
-                      status: DeliveryStatus, *, result: DeliveryResult | None = None) -> str:
+    async def _record(self, envelope: XchangeEnvelope, partner_code: str, status: DeliveryStatus, *, result: DeliveryResult | None = None) -> str:
         delivery_id = str(uuid.uuid4())
         doc = {
             "id": delivery_id,
@@ -141,26 +142,31 @@ class XchangeBus:
             "envelope": envelope.model_dump(mode="json"),
         }
         if result:
-            doc.update({
-                "request_excerpt": result.request_payload_excerpt,
-                "response_excerpt": result.response_excerpt,
-                "dry_run": result.dry_run,
-                "last_error": result.error,
-                "attempts": 1,
-            })
+            doc.update(
+                {
+                    "request_excerpt": result.request_payload_excerpt,
+                    "response_excerpt": result.response_excerpt,
+                    "dry_run": result.dry_run,
+                    "last_error": result.error,
+                    "attempts": 1,
+                }
+            )
         await self.db.xchange_deliveries.insert_one(doc)
         return delivery_id
 
     async def _update_delivery(self, delivery_id: str, **patch) -> None:
         patch["updated_at"] = datetime.now(UTC).isoformat()
-        await self.db.xchange_deliveries.update_one(
-            {"id": delivery_id}, {"$set": patch}
-        )
+        await self.db.xchange_deliveries.update_one({"id": delivery_id}, {"$set": patch})
 
     # ── Public publish API ─────────────────────────────────────
     async def publish(
-        self, *, tenant_id: str, message_type: MessageType, payload: dict[str, Any],
-        correlation_id: str | None = None, message_id: str | None = None,
+        self,
+        *,
+        tenant_id: str,
+        message_type: MessageType,
+        payload: dict[str, Any],
+        correlation_id: str | None = None,
+        message_id: str | None = None,
     ) -> dict[str, Any]:
         """Build an envelope and dispatch to all enabled partners.
 
@@ -188,10 +194,7 @@ class XchangeBus:
                 continue
 
             # Filter by capability
-            supports = any(
-                c.message_type == message_type and c.direction == Direction.OUTBOUND
-                for c in partner_def.capabilities
-            )
+            supports = any(c.message_type == message_type and c.direction == Direction.OUTBOUND for c in partner_def.capabilities)
             if not supports:
                 results.append({"partner": partner_code, "skipped": "capability_unsupported"})
                 continue
@@ -222,13 +225,15 @@ class XchangeBus:
             try:
                 await self.db.xchange_deliveries.insert_one(claim)
             except DuplicateKeyError:
-                existing = await self.db.xchange_deliveries.find_one({
-                    "tenant_id": envelope.tenant_id,
-                    "message_id": envelope.message_id,
-                    "partner_code": partner_code,
-                }, {"id": 1})
-                results.append({"partner": partner_code, "skipped": "duplicate",
-                                "delivery_id": (existing or {}).get("id")})
+                existing = await self.db.xchange_deliveries.find_one(
+                    {
+                        "tenant_id": envelope.tenant_id,
+                        "message_id": envelope.message_id,
+                        "partner_code": partner_code,
+                    },
+                    {"id": 1},
+                )
+                results.append({"partner": partner_code, "skipped": "duplicate", "delivery_id": (existing or {}).get("id")})
                 continue
 
             try:
@@ -237,10 +242,7 @@ class XchangeBus:
             except Exception as e:
                 result = DeliveryResult(ok=False, error=f"adapter_exception: {e!r}")
 
-            status = (
-                DeliveryStatus.DELIVERED if result.ok
-                else DeliveryStatus.FAILED
-            )
+            status = DeliveryStatus.DELIVERED if result.ok else DeliveryStatus.FAILED
             await self._update_delivery(
                 delivery_id,
                 status=status.value,
@@ -258,13 +260,15 @@ class XchangeBus:
                     next_attempt_at=(datetime.now(UTC) + timedelta(seconds=_RETRY_DELAYS[0])).isoformat(),
                 )
 
-            results.append({
-                "partner": partner_code,
-                "delivery_id": delivery_id,
-                "ok": result.ok,
-                "dry_run": result.dry_run,
-                "error": result.error,
-            })
+            results.append(
+                {
+                    "partner": partner_code,
+                    "delivery_id": delivery_id,
+                    "ok": result.ok,
+                    "dry_run": result.dry_run,
+                    "error": result.error,
+                }
+            )
 
         return {
             "message_id": envelope.message_id,
@@ -285,9 +289,7 @@ class XchangeBus:
             env_data["direction"] = Direction(env_data["direction"])
         envelope = XchangeEnvelope(**env_data)
         partner_code = doc["partner_code"]
-        pc = await self.db.xchange_partner_configs.find_one(
-            {"tenant_id": envelope.tenant_id, "partner_code": partner_code}
-        )
+        pc = await self.db.xchange_partner_configs.find_one({"tenant_id": envelope.tenant_id, "partner_code": partner_code})
         if not pc:
             raise ValueError("partner not configured")
         try:
@@ -296,9 +298,7 @@ class XchangeBus:
         except Exception as e:
             result = DeliveryResult(ok=False, error=f"adapter_exception: {e!r}")
         attempts = int(doc.get("attempts", 0)) + 1
-        next_status = DeliveryStatus.DELIVERED if result.ok else (
-            DeliveryStatus.DEAD_LETTER if attempts >= _MAX_ATTEMPTS else DeliveryStatus.FAILED
-        )
+        next_status = DeliveryStatus.DELIVERED if result.ok else (DeliveryStatus.DEAD_LETTER if attempts >= _MAX_ATTEMPTS else DeliveryStatus.FAILED)
         next_attempt = None
         if next_status == DeliveryStatus.FAILED:
             delay = _RETRY_DELAYS[min(attempts - 1, len(_RETRY_DELAYS) - 1)]
@@ -321,7 +321,6 @@ class XchangeBus:
             "error": result.error,
         }
 
-
     # ── Background retry worker ────────────────────────────────
     async def run_retry_cycle(self, *, batch: int = 25) -> int:
         """Scan for due retries, dispatch them, advance to DLQ as needed.
@@ -331,18 +330,18 @@ class XchangeBus:
         """
         await self.ensure_indexes()
         now_iso = datetime.now(UTC).isoformat()
-        cur = self.db.xchange_deliveries.find({
-            "status": DeliveryStatus.FAILED.value,
-            "next_attempt_at": {"$lte": now_iso},
-        }).limit(batch)
+        cur = self.db.xchange_deliveries.find(
+            {
+                "status": DeliveryStatus.FAILED.value,
+                "next_attempt_at": {"$lte": now_iso},
+            }
+        ).limit(batch)
         processed = 0
         async for doc in cur:
             # Atomically claim by clearing next_attempt_at
             claimed = await self.db.xchange_deliveries.find_one_and_update(
-                {"id": doc["id"], "status": DeliveryStatus.FAILED.value,
-                 "next_attempt_at": doc.get("next_attempt_at")},
-                {"$set": {"status": DeliveryStatus.IN_FLIGHT.value,
-                          "next_attempt_at": None}},
+                {"id": doc["id"], "status": DeliveryStatus.FAILED.value, "next_attempt_at": doc.get("next_attempt_at")},
+                {"$set": {"status": DeliveryStatus.IN_FLIGHT.value, "next_attempt_at": None}},
             )
             if not claimed:
                 continue
@@ -369,7 +368,9 @@ class XchangeBus:
                 _xchange_retry_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
             except Exception as e:
                 _xchange_retry_tracker.log_exception(
-                    logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                    logger,
+                    e,
+                    TransientFailureTracker.OUTER_LOOP_KEY,
                     context="retry loop tick",
                     non_transient_msg="%s retry loop error: %s",
                 )

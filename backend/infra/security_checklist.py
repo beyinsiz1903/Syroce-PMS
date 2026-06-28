@@ -3,6 +3,7 @@ Security Go-Live Checklist — Tenant isolation tests, RBAC validation,
 credential masking verification, secret leakage detection, audit completeness,
 rate limiting readiness, admin endpoint protection, and log filtering.
 """
+
 import logging
 import os
 from datetime import UTC, datetime
@@ -26,8 +27,14 @@ class SecurityChecklistValidator:
             return {"status": "not_connected", "pass": False}
 
         tenant_scoped_collections = [
-            "bookings", "rooms", "guests", "folios", "invoices",
-            "payments", "housekeeping_tasks", "maintenance_work_orders",
+            "bookings",
+            "rooms",
+            "guests",
+            "folios",
+            "invoices",
+            "payments",
+            "housekeeping_tasks",
+            "maintenance_work_orders",
         ]
         results = {}
         for coll in tenant_scoped_collections:
@@ -62,6 +69,7 @@ class SecurityChecklistValidator:
             user_count = await self._db["users"].estimated_document_count()
 
             from models.enums import ROLE_PERMISSIONS
+
             defined_roles = list(ROLE_PERMISSIONS.keys()) if ROLE_PERMISSIONS else []
 
             return {
@@ -79,6 +87,7 @@ class SecurityChecklistValidator:
         """Verify credential masking module is available and functional."""
         try:
             from modules.security_hardening.data_masking import mask_sensitive_data
+
             test_data = {"credit_card": "4111111111111111", "name": "Test User"}
             masked = mask_sensitive_data(test_data) if callable(mask_sensitive_data) else test_data
             masking_works = masked != test_data or True
@@ -101,6 +110,7 @@ class SecurityChecklistValidator:
     def check_secret_leakage(self) -> dict[str, Any]:
         """Scan for potential secret leakage in environment."""
         from infra.production_config import production_config
+
         result = production_config.detect_leaked_secrets()
         return {
             "check": "secret_leakage",
@@ -115,10 +125,7 @@ class SecurityChecklistValidator:
 
         try:
             total_logs = await self._db["audit_logs"].estimated_document_count()
-            recent = await self._db["audit_logs"].find_one(
-                {}, {"_id": 0, "action": 1, "created_at": 1},
-                sort=[("created_at", -1)]
-            )
+            recent = await self._db["audit_logs"].find_one({}, {"_id": 0, "action": 1, "created_at": 1}, sort=[("created_at", -1)])
             return {
                 "check": "audit_completeness",
                 "total_audit_entries": total_logs,
@@ -133,6 +140,7 @@ class SecurityChecklistValidator:
         """Check if rate limiting middleware is configured."""
         try:
             from rate_limiter import RateLimiter  # noqa: F401
+
             return {
                 "check": "rate_limiting",
                 "module_available": True,
@@ -164,6 +172,7 @@ class SecurityChecklistValidator:
         """Check if sensitive data is filtered from logs."""
         try:
             from modules.security_hardening.data_masking import mask_sensitive_data  # noqa: F401
+
             return {
                 "check": "log_filtering",
                 "masking_module_available": True,

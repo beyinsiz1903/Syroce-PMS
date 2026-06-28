@@ -5,6 +5,7 @@ HotelRunner Provider — Data Schemas
 Provider-specific request/response contracts.
 Centralizes validation and documentation.
 """
+
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -12,6 +13,7 @@ from typing import Any
 @dataclass
 class HotelRunnerRoom:
     """Parsed room from GET /rooms."""
+
     inv_code: str = ""
     name: str = ""
     rate_plans: list[dict[str, Any]] = field(default_factory=list)
@@ -22,6 +24,7 @@ class HotelRunnerRoom:
 @dataclass
 class HotelRunnerChannel:
     """Parsed channel from GET /infos/channels."""
+
     code: str = ""
     name: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
@@ -30,6 +33,7 @@ class HotelRunnerChannel:
 @dataclass
 class HotelRunnerConnectedChannel:
     """Parsed connected channel."""
+
     code: str = ""
     name: str = ""
     status: str = ""
@@ -39,6 +43,7 @@ class HotelRunnerConnectedChannel:
 @dataclass
 class HotelRunnerReservation:
     """Parsed reservation from GET /reservations."""
+
     reservation_id: str = ""
     hr_number: str = ""
     status: str = ""
@@ -64,6 +69,7 @@ class HotelRunnerReservation:
 @dataclass
 class HotelRunnerReservationPage:
     """Parsed reservation page."""
+
     reservations: list[HotelRunnerReservation] = field(default_factory=list)
     current_page: int = 1
     total_pages: int = 1
@@ -73,6 +79,7 @@ class HotelRunnerReservationPage:
 @dataclass
 class ProviderResult:
     """Standardized result from any provider operation."""
+
     success: bool
     data: Any = None
     error: str = ""
@@ -84,6 +91,7 @@ class ProviderResult:
 @dataclass
 class InventoryDailyPayload:
     """Payload for PUT /rooms/daily."""
+
     inv_code: str
     date: str
     availability: int | None = None
@@ -98,6 +106,7 @@ class InventoryDailyPayload:
 @dataclass
 class InventoryDateRangePayload:
     """Payload for PUT /rooms."""
+
     inv_code: str
     start_date: str
     end_date: str

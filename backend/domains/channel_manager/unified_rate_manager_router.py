@@ -22,6 +22,7 @@ Endpoints:
   GET  /holidays                 — Tatil donemleri
   GET  /stop-sale-summary        — Stop sale ozet
 """
+
 import asyncio
 import logging
 import uuid
@@ -47,6 +48,7 @@ router = APIRouter(
 
 
 # ── Request / Response Models ────────────────────────────────────
+
 
 class RoomTypeValuesItem(BaseModel):
     room_type_code: str
@@ -110,15 +112,14 @@ class PricingSettingsRequest(BaseModel):
 
 # ── Provider Detection ───────────────────────────────────────────
 
+
 async def _tenant_configured_provider(tenant_id: str) -> str | None:
     """Otelin super_admin tarafindan secilmis kanal yoneticisi altyapisi.
 
     Yalnizca gecerli bir deger ("exely"/"hotelrunner") dondurur; alan yoksa
     veya tanimsizsa None doner (=> otomatik tespit korunur, pilot_drift=0).
     """
-    tdoc = await db.tenants.find_one(
-        {"id": tenant_id}, {"_id": 0, "channel_manager_provider": 1}
-    )
+    tdoc = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "channel_manager_provider": 1})
     val = (tdoc or {}).get("channel_manager_provider")
     return val if val in ("exely", "hotelrunner") else None
 
@@ -136,25 +137,20 @@ async def _detect_active_provider(tenant_id: str, prefer: str | None = None) -> 
     Secim YOKSA (alan null/tanimsiz): eski davranis korunur (pilot_drift=0) —
     `prefer` yumusak tercih (varsa o, yoksa varsayilan sira HR > Exely).
     """
-    hr_conn = await db.hotelrunner_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    )
+    hr_conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
     if not hr_conn:
-        pc = await db.provider_connections.find_one(
-            {"tenant_id": tenant_id, "provider": "hotelrunner", "status": "active"}
-        )
+        pc = await db.provider_connections.find_one({"tenant_id": tenant_id, "provider": "hotelrunner", "status": "active"})
         if pc:
-            legacy = await db.hotelrunner_connections.find_one(
-                {"tenant_id": tenant_id}, {"_id": 0, "cached_rooms": 1}
-            )
-            hr_conn = {"tenant_id": tenant_id, "is_active": True,
-                        "hr_id": pc.get("credentials", {}).get("hr_id", ""),
-                        "environment": pc.get("environment", "live"),
-                        "cached_rooms": (legacy or {}).get("cached_rooms", [])}
+            legacy = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id}, {"_id": 0, "cached_rooms": 1})
+            hr_conn = {
+                "tenant_id": tenant_id,
+                "is_active": True,
+                "hr_id": pc.get("credentials", {}).get("hr_id", ""),
+                "environment": pc.get("environment", "live"),
+                "cached_rooms": (legacy or {}).get("cached_rooms", []),
+            }
 
-    exely_conn = await db.exely_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    )
+    exely_conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
 
     # Per-tenant secili altyapi (super_admin) OTORITERDIR; istemci (prefer) ezemez.
     configured = await _tenant_configured_provider(tenant_id)
@@ -162,21 +158,15 @@ async def _detect_active_provider(tenant_id: str, prefer: str | None = None) -> 
     if configured is not None:
         if prefer is not None and prefer != configured:
             # Istemci secilmeyen saglayiciyi istedi -> FAIL-CLOSED.
-            return {"provider": None, "connection": None,
-                    "configured_provider": configured,
-                    "configuration_error": "provider_not_selected"}
+            return {"provider": None, "connection": None, "configured_provider": configured, "configuration_error": "provider_not_selected"}
         if configured == "exely":
             if exely_conn:
                 return {"provider": "exely", "connection": exely_conn}
-            return {"provider": None, "connection": None,
-                    "configured_provider": "exely",
-                    "configuration_error": "connection_missing"}
+            return {"provider": None, "connection": None, "configured_provider": "exely", "configuration_error": "connection_missing"}
         # configured == "hotelrunner"
         if hr_conn:
             return {"provider": "hotelrunner", "connection": hr_conn}
-        return {"provider": None, "connection": None,
-                "configured_provider": "hotelrunner",
-                "configuration_error": "connection_missing"}
+        return {"provider": None, "connection": None, "configured_provider": "hotelrunner", "configuration_error": "connection_missing"}
 
     # Secim yok -> eski otomatik tespit (yumusak prefer + varsayilan sira HR > Exely).
     if prefer == "exely" and exely_conn:
@@ -197,6 +187,7 @@ async def _detect_active_provider(tenant_id: str, prefer: str | None = None) -> 
 
 # ── Detect Provider Endpoint ─────────────────────────────────────
 
+
 @router.get("/detect-provider")
 async def detect_provider(current_user: User = Depends(get_current_user)):
     """Aktif kanal saglayicilari tespit et.
@@ -212,9 +203,7 @@ async def detect_provider(current_user: User = Depends(get_current_user)):
     hr_detect = await _detect_active_provider(tenant_id, prefer="hotelrunner")
     hr_conn = hr_detect["connection"] if hr_detect["provider"] == "hotelrunner" else None
 
-    exely_conn = await db.exely_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    )
+    exely_conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
 
     # Otel icin super_admin bir altyapi sectiyse, operatore YALNIZCA o
     # saglayici gosterilir (fail-closed: secilenin baglantisi yoksa liste bos).
@@ -222,17 +211,21 @@ async def detect_provider(current_user: User = Depends(get_current_user)):
 
     available: list[dict] = []
     if hr_conn and configured in (None, "hotelrunner"):
-        available.append({
-            "provider": "hotelrunner",
-            "provider_name": "HotelRunner",
-            "room_count": len(hr_conn.get("cached_rooms", [])),
-        })
+        available.append(
+            {
+                "provider": "hotelrunner",
+                "provider_name": "HotelRunner",
+                "room_count": len(hr_conn.get("cached_rooms", [])),
+            }
+        )
     if exely_conn and configured in (None, "exely"):
-        available.append({
-            "provider": "exely",
-            "provider_name": "Exely",
-            "room_count": len(exely_conn.get("room_types", [])),
-        })
+        available.append(
+            {
+                "provider": "exely",
+                "provider_name": "Exely",
+                "room_count": len(exely_conn.get("room_types", [])),
+            }
+        )
 
     if not available:
         return {
@@ -254,6 +247,7 @@ async def detect_provider(current_user: User = Depends(get_current_user)):
 
 
 # ── Unified Grid ─────────────────────────────────────────────────
+
 
 @router.get("/grid")
 async def get_unified_grid(
@@ -283,17 +277,25 @@ async def get_unified_grid(
 
     if explicit and detection["provider"] != provider:
         return {
-            "grid": [], "room_types": [], "rate_plans": [],
-            "pricing_settings": {}, "currency": "TRY",
-            "start_date": start_date, "end_date": end_date,
+            "grid": [],
+            "room_types": [],
+            "rate_plans": [],
+            "pricing_settings": {},
+            "currency": "TRY",
+            "start_date": start_date,
+            "end_date": end_date,
             "provider": provider,
         }
 
     if not detection["provider"]:
         return {
-            "grid": [], "room_types": [], "rate_plans": [],
-            "pricing_settings": {}, "currency": "TRY",
-            "start_date": start_date, "end_date": end_date,
+            "grid": [],
+            "room_types": [],
+            "rate_plans": [],
+            "pricing_settings": {},
+            "currency": "TRY",
+            "start_date": start_date,
+            "end_date": end_date,
             "provider": None,
         }
 
@@ -311,17 +313,19 @@ async def _build_hr_grid(tenant_id, conn, start_date, end_date):
     cached_rooms = conn.get("cached_rooms", [])
     if not cached_rooms:
         return {
-            "grid": [], "room_types": [], "rate_plans": [],
-            "pricing_settings": {}, "currency": "TRY",
-            "start_date": start_date, "end_date": end_date,
+            "grid": [],
+            "room_types": [],
+            "rate_plans": [],
+            "pricing_settings": {},
+            "currency": "TRY",
+            "start_date": start_date,
+            "end_date": end_date,
             "provider": "hotelrunner",
         }
 
     room_types, rate_plans = _extract_hr_room_types(cached_rooms)
 
-    mappings = await db.hotelrunner_room_mappings.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).to_list(100)
+    mappings = await db.hotelrunner_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(100)
     mapping_by_inv = {m.get("hr_inv_code", ""): m.get("pms_room_type", "") for m in mappings}
 
     calendar_data = await db.hr_rate_calendar.find(
@@ -353,30 +357,41 @@ async def _build_hr_grid(tenant_id, conn, start_date, end_date):
             if (rt["code"], rp["code"]) not in valid_pairs:
                 continue
             dates_data = _build_dates(
-                start_date, end_date, rt["code"], rp["code"],
-                cal_index, pms_type, counts, room_ids_by_type, active_bookings,
+                start_date,
+                end_date,
+                rt["code"],
+                rp["code"],
+                cal_index,
+                pms_type,
+                counts,
+                room_ids_by_type,
+                active_bookings,
             )
-            grid.append({
-                "room_type_code": rt["code"],
-                "room_type_name": rt["name"],
-                "rate_plan_code": rp["code"],
-                "rate_plan_name": rp["name"],
-                "pms_room_type": pms_type or rt["name"],
-                "total_rooms": counts["total"],
-                "dates": dates_data,
-            })
+            grid.append(
+                {
+                    "room_type_code": rt["code"],
+                    "room_type_name": rt["name"],
+                    "rate_plan_code": rp["code"],
+                    "rate_plan_name": rp["name"],
+                    "pms_room_type": pms_type or rt["name"],
+                    "total_rooms": counts["total"],
+                    "dates": dates_data,
+                }
+            )
 
-    pricing_docs = await db.hr_pricing_settings.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).to_list(200)
+    pricing_docs = await db.hr_pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
     pricing_map = {doc["room_type_code"]: doc.get("pricing_type", "per_person") for doc in pricing_docs}
 
     currency = cached_rooms[0].get("sales_currency", "TRY") if cached_rooms else "TRY"
 
     return {
-        "grid": grid, "room_types": room_types, "rate_plans": rate_plans,
-        "pricing_settings": pricing_map, "currency": currency,
-        "start_date": start_date, "end_date": end_date,
+        "grid": grid,
+        "room_types": room_types,
+        "rate_plans": rate_plans,
+        "pricing_settings": pricing_map,
+        "currency": currency,
+        "start_date": start_date,
+        "end_date": end_date,
         "provider": "hotelrunner",
     }
 
@@ -386,9 +401,7 @@ async def _build_exely_grid(tenant_id, conn, start_date, end_date):
     room_types = conn.get("room_types", [])
     rate_plans = conn.get("rate_plans", [])
 
-    mappings = await db.exely_room_mappings.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).to_list(100)
+    mappings = await db.exely_room_mappings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(100)
 
     calendar_data = await db.rate_calendar.find(
         {"tenant_id": tenant_id, "date": {"$gte": start_date, "$lte": end_date}},
@@ -415,35 +428,47 @@ async def _build_exely_grid(tenant_id, conn, start_date, end_date):
 
         for rp in rate_plans:
             dates_data = _build_dates(
-                start_date, end_date, rt["code"], rp["code"],
-                cal_index, pms_type or rt["name"], counts, room_ids_by_type, active_bookings,
+                start_date,
+                end_date,
+                rt["code"],
+                rp["code"],
+                cal_index,
+                pms_type or rt["name"],
+                counts,
+                room_ids_by_type,
+                active_bookings,
             )
-            grid.append({
-                "room_type_code": rt["code"],
-                "room_type_name": rt["name"],
-                "rate_plan_code": rp["code"],
-                "rate_plan_name": rp["name"],
-                "pms_room_type": pms_type or rt["name"],
-                "total_rooms": counts["total"],
-                "dates": dates_data,
-            })
+            grid.append(
+                {
+                    "room_type_code": rt["code"],
+                    "room_type_name": rt["name"],
+                    "rate_plan_code": rp["code"],
+                    "rate_plan_name": rp["name"],
+                    "pms_room_type": pms_type or rt["name"],
+                    "total_rooms": counts["total"],
+                    "dates": dates_data,
+                }
+            )
 
-    pricing_docs = await db.pricing_settings.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).to_list(200)
+    pricing_docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
     pricing_map = {doc["room_type_code"]: doc.get("pricing_type", "per_person") for doc in pricing_docs}
 
     currency = conn.get("currency", "TRY")
 
     return {
-        "grid": grid, "room_types": room_types, "rate_plans": rate_plans,
-        "pricing_settings": pricing_map, "currency": currency,
-        "start_date": start_date, "end_date": end_date,
+        "grid": grid,
+        "room_types": room_types,
+        "rate_plans": rate_plans,
+        "pricing_settings": pricing_map,
+        "currency": currency,
+        "start_date": start_date,
+        "end_date": end_date,
         "provider": "exely",
     }
 
 
 # ── Shared Grid Helpers ──────────────────────────────────────────
+
 
 def _extract_hr_room_types(cached_rooms):
     room_types_map = {}
@@ -461,9 +486,7 @@ def _extract_hr_room_types(cached_rooms):
 
 
 async def _get_room_counts(tenant_id):
-    rooms = await db.rooms.find(
-        {"tenant_id": tenant_id}, {"_id": 0, "id": 1, "room_type": 1, "status": 1}
-    ).to_list(500)
+    rooms = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0, "id": 1, "room_type": 1, "status": 1}).to_list(500)
     room_counts = {}
     room_ids_by_type = {}
     for r in rooms:
@@ -504,8 +527,7 @@ def _count_sold(pms_room_type, day_str, room_ids_by_type, active_bookings):
     return sold
 
 
-def _build_dates(start_date, end_date, rt_code, rp_code,
-                 cal_index, pms_type, counts, room_ids_by_type, active_bookings):
+def _build_dates(start_date, end_date, rt_code, rp_code, cal_index, pms_type, counts, room_ids_by_type, active_bookings):
     dates_data = []
     d = datetime.strptime(start_date, "%Y-%m-%d").date()
     end = datetime.strptime(end_date, "%Y-%m-%d").date()
@@ -519,20 +541,23 @@ def _build_dates(start_date, end_date, rt_code, rp_code,
             real_avail = max(base_avail - sold_count, 0)
         else:
             real_avail = max(counts["total"] - sold_count, 0)
-        dates_data.append({
-            "date": ds,
-            "rate": entry.get("rate"),
-            "availability": real_avail,
-            "base_availability": base_avail if base_avail is not None else counts["total"],
-            "sold": sold_count,
-            "min_stay": entry.get("min_stay", 1),
-            "stop_sell": entry.get("stop_sell", False),
-        })
+        dates_data.append(
+            {
+                "date": ds,
+                "rate": entry.get("rate"),
+                "availability": real_avail,
+                "base_availability": base_avail if base_avail is not None else counts["total"],
+                "sold": sold_count,
+                "min_stay": entry.get("min_stay", 1),
+                "stop_sell": entry.get("stop_sell", False),
+            }
+        )
         d += timedelta(days=1)
     return dates_data
 
 
 # ── Room Types ───────────────────────────────────────────────────
+
 
 @router.get("/room-types")
 async def get_unified_room_types(current_user: User = Depends(get_current_user)):
@@ -546,15 +571,11 @@ async def get_unified_room_types(current_user: User = Depends(get_current_user))
     conn = detection["connection"]
     if detection["provider"] == "hotelrunner":
         room_types, rate_plans = _extract_hr_room_types(conn.get("cached_rooms", []))
-        pricing_docs = await db.hr_pricing_settings.find(
-            {"tenant_id": tenant_id}, {"_id": 0}
-        ).to_list(200)
+        pricing_docs = await db.hr_pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
     else:
         room_types = conn.get("room_types", [])
         rate_plans = conn.get("rate_plans", [])
-        pricing_docs = await db.pricing_settings.find(
-            {"tenant_id": tenant_id}, {"_id": 0}
-        ).to_list(200)
+        pricing_docs = await db.pricing_settings.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(200)
 
     pricing_map = {doc["room_type_code"]: doc.get("pricing_type", "per_person") for doc in pricing_docs}
 
@@ -567,6 +588,7 @@ async def get_unified_room_types(current_user: User = Depends(get_current_user))
 
 
 # ── Bulk Grid Update ─────────────────────────────────────────────
+
 
 @router.post("/bulk-grid-update")
 async def unified_bulk_grid_update(
@@ -584,25 +606,20 @@ async def unified_bulk_grid_update(
     # Otherwise (None / "all" / unknown) fan out to every active provider.
     targets: list[dict] = []
 
-    hr_conn = await db.hotelrunner_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    )
+    hr_conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
     if not hr_conn:
-        pc = await db.provider_connections.find_one(
-            {"tenant_id": tenant_id, "provider": "hotelrunner", "status": "active"}
-        )
+        pc = await db.provider_connections.find_one({"tenant_id": tenant_id, "provider": "hotelrunner", "status": "active"})
         if pc:
-            legacy = await db.hotelrunner_connections.find_one(
-                {"tenant_id": tenant_id}, {"_id": 0, "cached_rooms": 1}
-            )
-            hr_conn = {"tenant_id": tenant_id, "is_active": True,
-                        "hr_id": pc.get("credentials", {}).get("hr_id", ""),
-                        "environment": pc.get("environment", "live"),
-                        "cached_rooms": (legacy or {}).get("cached_rooms", [])}
+            legacy = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id}, {"_id": 0, "cached_rooms": 1})
+            hr_conn = {
+                "tenant_id": tenant_id,
+                "is_active": True,
+                "hr_id": pc.get("credentials", {}).get("hr_id", ""),
+                "environment": pc.get("environment", "live"),
+                "cached_rooms": (legacy or {}).get("cached_rooms", []),
+            }
 
-    exely_conn = await db.exely_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    )
+    exely_conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
 
     # Per-tenant secili altyapi (super_admin) OTORITERDIR; istemcinin
     # request.provider'i bunu ezemez: configured-exely otel yalnizca Exely'ye
@@ -636,7 +653,9 @@ async def unified_bulk_grid_update(
 
     logger.info(
         "[UNIFIED] bulk-grid-update fan-out targets=%s tenant=%s primary=%s",
-        [t["provider"] for t in targets], tenant_id, request.provider,
+        [t["provider"] for t in targets],
+        tenant_id,
+        request.provider,
     )
 
     # Keep `detection` / `provider_type` populated for downstream code that
@@ -721,11 +740,13 @@ async def unified_bulk_grid_update(
             if "ctd" in update_fields and v_ctd is not None:
                 set_fields["ctd"] = v_ctd
 
-            bulk_ops.append(UpdateOne(
-                {"tenant_id": tenant_id, "room_type_code": rt_code, "rate_plan_code": rp_code, "date": ds},
-                {"$set": set_fields},
-                upsert=True,
-            ))
+            bulk_ops.append(
+                UpdateOne(
+                    {"tenant_id": tenant_id, "room_type_code": rt_code, "rate_plan_code": rp_code, "date": ds},
+                    {"$set": set_fields},
+                    upsert=True,
+                )
+            )
             saved += 1
             d += timedelta(days=1)
 
@@ -740,11 +761,22 @@ async def unified_bulk_grid_update(
         try:
             if tgt["provider"] == "hotelrunner":
                 cnt = await _push_to_hotelrunner(
-                    tenant_id, request, pairs, per_room_map, update_fields, selected_days_set,
+                    tenant_id,
+                    request,
+                    pairs,
+                    per_room_map,
+                    update_fields,
+                    selected_days_set,
                 )
             else:
                 cnt = await _push_to_exely(
-                    tenant_id, tgt["connection"], request, pairs, per_room_map, update_fields, selected_days_set,
+                    tenant_id,
+                    tgt["connection"],
+                    request,
+                    pairs,
+                    per_room_map,
+                    update_fields,
+                    selected_days_set,
                 )
             channel_push_count += cnt or 0
             pushed_providers.append(tgt["provider"])
@@ -755,8 +787,15 @@ async def unified_bulk_grid_update(
     agency_push_count = 0
     if request.agency_ids:
         agency_push_count = await _push_to_agencies(
-            tenant_id, request.agency_ids, pairs, per_room_map,
-            request, update_fields, selected_days_set, now, current_user.id,
+            tenant_id,
+            request.agency_ids,
+            pairs,
+            per_room_map,
+            request,
+            update_fields,
+            selected_days_set,
+            now,
+            current_user.id,
         )
 
     msg = f"{saved} kayit guncellendi"
@@ -780,6 +819,7 @@ async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_f
     """HotelRunner'a arka planda push gonder."""
     try:
         from domains.channel_manager.providers.hotelrunner.factory import get_provider as _get_provider
+
         logger.info("[UNIFIED] HR push baslatiliyor tenant=%s", tenant_id)
         provider, conn = await _get_provider(tenant_id)
         if not provider:
@@ -818,23 +858,35 @@ async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_f
         push_stop = (rv.stop_sell if rv else request.stop_sell) if "stop_sell" in update_fields else None
         push_min = (rv.min_stay if rv else request.min_stay) if "min_stay" in update_fields else None
 
-        push_tasks.append({
-            "rt": hr_inv_code,
-            "pms_rt": rt_code,
-            "rate": push_rate, "avail": push_avail,
-            "stop": push_stop, "minstay": push_min,
-            "start_date": request.start_date, "end_date": request.end_date,
-            "days": sorted(selected_days_set) if selected_days_set else None,
-        })
+        push_tasks.append(
+            {
+                "rt": hr_inv_code,
+                "pms_rt": rt_code,
+                "rate": push_rate,
+                "avail": push_avail,
+                "stop": push_stop,
+                "minstay": push_min,
+                "start_date": request.start_date,
+                "end_date": request.end_date,
+                "days": sorted(selected_days_set) if selected_days_set else None,
+            }
+        )
 
     if push_tasks:
+
         async def _single_push(t, prov):
             try:
-                logger.info("[UNIFIED] HR push: rt=%s tarih=%s→%s rate=%s avail=%s",
-                            t["rt"], t["start_date"], t["end_date"], t["rate"], t["avail"])
+                logger.info("[UNIFIED] HR push: rt=%s tarih=%s→%s rate=%s avail=%s", t["rt"], t["start_date"], t["end_date"], t["rate"], t["avail"])
                 result = await _push_with_retry(
-                    prov, t["rt"], t["start_date"], t["end_date"],
-                    rate=t["rate"], avail=t["avail"], stop=t["stop"], minstay=t["minstay"], days=t["days"],
+                    prov,
+                    t["rt"],
+                    t["start_date"],
+                    t["end_date"],
+                    rate=t["rate"],
+                    avail=t["avail"],
+                    stop=t["stop"],
+                    minstay=t["minstay"],
+                    days=t["days"],
                 )
                 logger.info("[UNIFIED] HR push result rt=%s: %s", t["rt"], result)
                 return t, result
@@ -852,10 +904,16 @@ async def _push_to_hotelrunner(tenant_id, request, pairs, per_room_map, update_f
                 t, result = res
                 if not result.get("success") and "rate limit" in str(result.get("error", "")).lower():
                     await enqueue_failed_push(
-                        t_id, t["rt"], t["start_date"], t["end_date"],
-                        rate=t["rate"], avail=t["avail"],
-                        stop=t["stop"], minstay=t["minstay"],
-                        days=t.get("days"), error=result.get("error", ""),
+                        t_id,
+                        t["rt"],
+                        t["start_date"],
+                        t["end_date"],
+                        rate=t["rate"],
+                        avail=t["avail"],
+                        stop=t["stop"],
+                        minstay=t["minstay"],
+                        days=t.get("days"),
+                        error=result.get("error", ""),
                         retry_after_seconds=result.get("retry_after_seconds", 65),
                     )
                     await schedule_auto_retry(t_id, result.get("retry_after_seconds", 65) + 5)
@@ -876,6 +934,7 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
     """
     try:
         from domains.channel_manager.credential_vault import get_decrypted_credentials
+
         hotel_code = conn.get("hotel_code", "")
         creds = await get_decrypted_credentials(tenant_id, "exely", hotel_code)
         if not creds:
@@ -883,11 +942,10 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
             if not creds.get("username"):
                 logger.warning("[UNIFIED] Exely credentials bulunamadi tenant=%s", tenant_id)
                 return 0
-        logger.info("[UNIFIED] Exely push baslatiliyor tenant=%s hotel_code=%s user=%s",
-                    tenant_id, hotel_code, creds.get("username", "?"))
+        logger.info("[UNIFIED] Exely push baslatiliyor tenant=%s hotel_code=%s user=%s", tenant_id, hotel_code, creds.get("username", "?"))
         from domains.channel_manager.providers.exely.provider import ExelyProvider
-        kwargs = {"username": creds.get("username", ""), "password": creds.get("password", ""), "hotel_code": hotel_code,
-                  "connection_id": f"{tenant_id}:{hotel_code}"}
+
+        kwargs = {"username": creds.get("username", ""), "password": creds.get("password", ""), "hotel_code": hotel_code, "connection_id": f"{tenant_id}:{hotel_code}"}
         if conn.get("endpoint_url"):
             kwargs["endpoint_url"] = conn["endpoint_url"]
         provider = ExelyProvider(**kwargs)
@@ -921,8 +979,7 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
     missing = [c for c in rt_codes_norm if c not in hr_to_pms]
     if missing:
         rm = await db.room_mappings.find(
-            {"tenant_id": tenant_id, "provider": "hotelrunner",
-             "provider_room_code": {"$in": missing}, "is_active": True},
+            {"tenant_id": tenant_id, "provider": "hotelrunner", "provider_room_code": {"$in": missing}, "is_active": True},
             {"_id": 0, "provider_room_code": 1, "pms_room_type_name": 1, "pms_room_type_id": 1},
         ).to_list(200)
         for m in rm:
@@ -945,8 +1002,7 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
             pms_to_exely_codes.setdefault(pt, []).append(rc)
     # 2) Birlesik room_mappings (provider=exely): provider_room_id -> Exely API kodu
     rm_exely = await db.room_mappings.find(
-        {"tenant_id": tenant_id, "provider": "exely",
-         "provider_room_code": {"$in": pms_types}, "is_active": True},
+        {"tenant_id": tenant_id, "provider": "exely", "provider_room_code": {"$in": pms_types}, "is_active": True},
         {"_id": 0, "provider_room_code": 1, "provider_room_id": 1},
     ).to_list(200)
     for m in rm_exely:
@@ -957,7 +1013,7 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
 
     # Exely connection'in kendi room_code'lari (Exely sekmesinden gelen pair'lar zaten bu formatta)
     native_exely_codes: set[str] = set()
-    for rt in (conn.get("room_types") or []):
+    for rt in conn.get("room_types") or []:
         c = rt.get("code")
         if c:
             native_exely_codes.add(str(c))
@@ -976,7 +1032,8 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         if not filtered:
             logger.warning(
                 "[UNIFIED] Exely: secilen rate plan'larin hicbiri connection'da yok selected=%s valid=%s, push iptal",
-                selected_exely_plans, sorted(valid_plan_set),
+                selected_exely_plans,
+                sorted(valid_plan_set),
             )
             return 0
         exely_rate_plans = filtered
@@ -989,7 +1046,10 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
 
     logger.info(
         "[UNIFIED] Exely mapping: HR->PMS=%s PMS->Exely=%s native_exely=%s rate_plans=%s",
-        hr_to_pms, pms_to_exely_codes, sorted(native_exely_codes), exely_rate_plans,
+        hr_to_pms,
+        pms_to_exely_codes,
+        sorted(native_exely_codes),
+        exely_rate_plans,
     )
 
     # rt_code -> liste[Exely room code] cevirisini yap (HR akisi VEYA dogrudan Exely akisi)
@@ -1030,36 +1090,43 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
 
         for ex_code in exely_codes:
             for rp in exely_rate_plans:
+
                 async def _push(rt=ex_code, rp=rp, rate=push_rate, avail=push_avail, stop=push_stop, minstay=push_min, src=rt_code, cur=push_currency):
                     try:
                         logger.info("[UNIFIED] Exely push: src=%s rt=%s rp=%s rate=%s avail=%s", src, rt, rp, rate, avail)
                         result = await provider.push_ari(
-                            room_type_code=rt, rate_plan_code=rp,
-                            start_date=request.start_date, end_date=request.end_date,
-                            availability=avail, rate_amount=rate,
+                            room_type_code=rt,
+                            rate_plan_code=rp,
+                            start_date=request.start_date,
+                            end_date=request.end_date,
+                            availability=avail,
+                            rate_amount=rate,
                             currency=cur,
-                            stop_sell=stop, min_stay=minstay,
+                            stop_sell=stop,
+                            min_stay=minstay,
                         )
                         logger.info("[UNIFIED] Exely push result rt=%s rp=%s: %s", rt, rp, result)
                         return result
                     except Exception as e:
                         logger.error("[UNIFIED] Exely push error rt=%s rp=%s: %s", rt, rp, e)
+
                 push_tasks.append(_push())
 
     if push_tasks:
+
         async def _bg(tasks):
             try:
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 logger.info("[UNIFIED] Exely background push completed: %d tasks", len(results))
             except Exception as e:
                 logger.error("[UNIFIED] Exely background push error: %s", e)
+
         asyncio.create_task(_bg(push_tasks))
 
     return len(push_tasks)
 
 
-async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map,
-                            request, update_fields, selected_days_set, now, user_id):
+async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map, request, update_fields, selected_days_set, now, user_id):
     """Secilen acentelere fiyat/musaitlik bilgisi kaydet."""
     if not agency_ids:
         return 0
@@ -1135,12 +1202,13 @@ async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map,
                 if "stop_sell" in update_fields and v_stop is not None:
                     set_fields["stop_sell"] = v_stop
 
-                bulk_ops.append(UpdateOne(
-                    {"tenant_id": tenant_id, "agency_id": agency_id,
-                     "room_type_code": rt_code, "rate_plan_code": rp_code, "date": ds},
-                    {"$set": set_fields},
-                    upsert=True,
-                ))
+                bulk_ops.append(
+                    UpdateOne(
+                        {"tenant_id": tenant_id, "agency_id": agency_id, "room_type_code": rt_code, "rate_plan_code": rp_code, "date": ds},
+                        {"$set": set_fields},
+                        upsert=True,
+                    )
+                )
                 d += timedelta(days=1)
 
     if bulk_ops:
@@ -1151,6 +1219,7 @@ async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map,
     # instead of polling. Best-effort; webhook_retry_service handles DLQ.
     try:
         from routers.webhook_retry_service import fire_webhooks_with_retry
+
         events_to_fire = []
         if "rate" in update_fields:
             events_to_fire.append("rates.updated")
@@ -1168,15 +1237,14 @@ async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map,
             for agency_id in valid_agency_ids:
                 payload = dict(payload_base, agency_id=agency_id)
                 for ev in events_to_fire:
-                    asyncio.create_task(
-                        fire_webhooks_with_retry(tenant_id, agency_id, ev, payload)
-                    )
+                    asyncio.create_task(fire_webhooks_with_retry(tenant_id, agency_id, ev, payload))
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("agency rates webhook dispatch failed: %s", exc)
 
     # Bust agency list cache so urm UI sees fresh last_rate_push timestamps
     try:
         from cache_manager import cache as _cache
+
         _cache.invalidate_tenant_cache(tenant_id, "urm_agencies")
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("urm_agencies cache invalidate skipped: %s", exc)
@@ -1185,6 +1253,7 @@ async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map,
 
 
 # ── Agency Endpoints ─────────────────────────────────────────────
+
 
 @router.get("/agencies")
 @cached(ttl=300, key_prefix="urm_agencies")  # 5dk cache (Tur 2 fix)
@@ -1199,9 +1268,7 @@ async def list_agencies_for_rates(current_user: User = Depends(get_current_user)
 
     # Get override counts per agency
     for agency in agencies:
-        override_count = await db.agency_rate_overrides.count_documents(
-            {"tenant_id": tenant_id, "agency_id": agency["id"]}
-        )
+        override_count = await db.agency_rate_overrides.count_documents({"tenant_id": tenant_id, "agency_id": agency["id"]})
         agency["has_custom_rates"] = override_count > 0
         agency["override_count"] = override_count
 
@@ -1284,13 +1351,12 @@ async def delete_agency_rate_overrides(
 ):
     """Acentenin tum ozel fiyat tanimlarini sil."""
     tenant_id = current_user.tenant_id
-    result = await db.agency_rate_overrides.delete_many(
-        {"tenant_id": tenant_id, "agency_id": agency_id}
-    )
+    result = await db.agency_rate_overrides.delete_many({"tenant_id": tenant_id, "agency_id": agency_id})
     return {"deleted": result.deleted_count, "message": f"{result.deleted_count} fiyat tanimi silindi"}
 
 
 # ── Push Providers ───────────────────────────────────────────────
+
 
 @router.get("/push-providers")
 async def get_push_providers(current_user: User = Depends(get_current_user)):
@@ -1298,19 +1364,11 @@ async def get_push_providers(current_user: User = Depends(get_current_user)):
     tenant_id = current_user.tenant_id
     providers = []
 
-    hr_conn = await db.hotelrunner_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    )
-    exely_conn = await db.exely_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-    )
+    hr_conn = await db.hotelrunner_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
+    exely_conn = await db.exely_connections.find_one({"tenant_id": tenant_id, "is_active": True}, {"_id": 0})
 
-    hr_flags = await db.connector_flags.find_one(
-        {"tenant_id": tenant_id, "provider": "hotelrunner"}, {"_id": 0}
-    )
-    ex_flags = await db.connector_flags.find_one(
-        {"tenant_id": tenant_id, "provider": "exely"}, {"_id": 0}
-    )
+    hr_flags = await db.connector_flags.find_one({"tenant_id": tenant_id, "provider": "hotelrunner"}, {"_id": 0})
+    ex_flags = await db.connector_flags.find_one({"tenant_id": tenant_id, "provider": "exely"}, {"_id": 0})
 
     def _derive_mode(flags, conn_doc):
         if flags:
@@ -1337,25 +1395,24 @@ async def get_push_providers(current_user: User = Depends(get_current_user)):
             providers.append({"slug": "exely", "name": "Exely", "mode": ex_mode})
 
     # Syroce B2B provider — aktif acente varsa ekle
-    active_agency_count = await db.agencies.count_documents(
-        {"tenant_id": tenant_id, "status": "active"}
-    )
+    active_agency_count = await db.agencies.count_documents({"tenant_id": tenant_id, "status": "active"})
     if active_agency_count > 0:
-        api_key_count = await db.agency_api_keys.count_documents(
-            {"tenant_id": tenant_id, "is_active": True}
+        api_key_count = await db.agency_api_keys.count_documents({"tenant_id": tenant_id, "is_active": True})
+        providers.append(
+            {
+                "slug": "syroce_b2b",
+                "name": "Syroce B2B",
+                "mode": "live",
+                "agency_count": active_agency_count,
+                "api_key_count": api_key_count,
+            }
         )
-        providers.append({
-            "slug": "syroce_b2b",
-            "name": "Syroce B2B",
-            "mode": "live",
-            "agency_count": active_agency_count,
-            "api_key_count": api_key_count,
-        })
 
     return {"providers": providers}
 
 
 # ── Pricing Settings ─────────────────────────────────────────────
+
 
 @router.get("/pricing-settings")
 async def get_pricing_settings(current_user: User = Depends(get_current_user)):
@@ -1401,13 +1458,15 @@ async def update_pricing_settings(
             raise HTTPException(status_code=400, detail=f"Gecersiz fiyatlandirma tipi: {item.pricing_type}")
         await db[collection].update_one(
             {"tenant_id": tenant_id, "room_type_code": item.room_type_code},
-            {"$set": {
-                "tenant_id": tenant_id,
-                "room_type_code": item.room_type_code,
-                "pricing_type": item.pricing_type,
-                "updated_at": now,
-                "updated_by": current_user.id,
-            }},
+            {
+                "$set": {
+                    "tenant_id": tenant_id,
+                    "room_type_code": item.room_type_code,
+                    "pricing_type": item.pricing_type,
+                    "updated_at": now,
+                    "updated_by": current_user.id,
+                }
+            },
             upsert=True,
         )
         updated += 1
@@ -1416,6 +1475,7 @@ async def update_pricing_settings(
 
 
 # ── Stop Sale Summary ────────────────────────────────────────────
+
 
 @router.get("/circuit-breakers")
 async def get_circuit_breakers(
@@ -1472,15 +1532,18 @@ async def get_circuit_breakers(
             }
 
     for p in ("hotelrunner", "exely"):
-        by_provider.setdefault(p, {
-            "provider": p,
-            "state": CircuitState.CLOSED.value,
-            "failure_count": 0,
-            "failure_threshold": 5,
-            "recovery_timeout": 60,
-            "last_failure": None,
-            "connection_id": "",
-        })
+        by_provider.setdefault(
+            p,
+            {
+                "provider": p,
+                "state": CircuitState.CLOSED.value,
+                "failure_count": 0,
+                "failure_threshold": 5,
+                "recovery_timeout": 60,
+                "last_failure": None,
+                "connection_id": "",
+            },
+        )
 
     return {"breakers": list(by_provider.values())}
 
@@ -1523,17 +1586,20 @@ async def get_stop_sale_summary(
     stops = []
     for r in results:
         code = r["_id"]
-        stops.append({
-            "room_type_code": code,
-            "room_type_name": rt_map.get(code, code),
-            "dates": sorted(r["dates"]),
-            "count": r["count"],
-        })
+        stops.append(
+            {
+                "room_type_code": code,
+                "room_type_name": rt_map.get(code, code),
+                "dates": sorted(r["dates"]),
+                "count": r["count"],
+            }
+        )
 
     return {"stops": stops}
 
 
 # ── Stop Sale Schedules (CRUD) ───────────────────────────────────
+
 
 class StopSaleScheduleCreate(BaseModel):
     name: str
@@ -1557,9 +1623,7 @@ async def list_unified_stop_sale_schedules(
     current_user: User = Depends(get_current_user),
 ):
     tenant_id = current_user.tenant_id
-    docs = await db.stop_sale_schedules.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).sort("start_date", 1).to_list(200)
+    docs = await db.stop_sale_schedules.find({"tenant_id": tenant_id}, {"_id": 0}).sort("start_date", 1).to_list(200)
     return {"schedules": docs}
 
 
@@ -1598,9 +1662,7 @@ async def delete_unified_stop_sale_schedule(
     _perm=Depends(require_op("manage_rates")),  # v101 DW
 ):
     tenant_id = current_user.tenant_id
-    result = await db.stop_sale_schedules.delete_one(
-        {"tenant_id": tenant_id, "id": schedule_id}
-    )
+    result = await db.stop_sale_schedules.delete_one({"tenant_id": tenant_id, "id": schedule_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Zamanlayici bulunamadi")
     return {"message": "Zamanlayici silindi"}
@@ -1637,13 +1699,16 @@ async def update_unified_stop_sale_schedule(
 
 # ── Holidays ─────────────────────────────────────────────────────
 
+
 @router.get("/holidays")
 async def get_holidays(current_user: User = Depends(get_current_user)):
     """Tatil donemlerini dondurur."""
     # Import from existing router to reuse logic
     from datetime import date
+
     try:
         from domains.channel_manager.rate_utils import get_holiday_periods as _get_holiday_periods
+
         now = date.today()
         all_periods = []
         for y in [now.year, now.year + 1]:

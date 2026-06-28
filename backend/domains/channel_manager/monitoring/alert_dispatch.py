@@ -13,6 +13,7 @@ Dispatch architecture:
                     ├── Slack (optional, tenant-config or OPS_ALERT_SLACK_WEBHOOK_URL)
                     └── Email (optional, tenant-config or OPS_ALERT_EMAIL_TO)
 """
+
 import logging
 import os
 from datetime import UTC, datetime
@@ -40,10 +41,12 @@ DEFAULT_SLACK_SEVERITIES = ["critical", "high"]
 
 # ── Configuration CRUD ────────────────────────────────────────────────
 
+
 async def get_dispatch_config(tenant_id: str = "system") -> dict[str, Any]:
     """Get alert dispatch configuration."""
     config = await db[COLL_ALERT_CONFIG].find_one(
-        {"tenant_id": tenant_id}, _NO_ID,
+        {"tenant_id": tenant_id},
+        _NO_ID,
     )
     if not config:
         return {
@@ -101,6 +104,7 @@ async def test_slack_webhook(webhook_url: str) -> dict[str, Any]:
 
     # v109 Bug DAL round-7 follow-up #3: webhook_url is tenant-configurable.
     from integrations.xchange.safety import EgressDenied, safe_post_async
+
     try:
         resp = await safe_post_async(webhook_url, timeout=10.0, json=payload)
         if resp.status_code == 200:
@@ -114,6 +118,7 @@ async def test_slack_webhook(webhook_url: str) -> dict[str, Any]:
 
 # ── Alert Dispatch ────────────────────────────────────────────────────
 
+
 def _csv_env(name: str) -> list[str]:
     raw = (os.environ.get(name) or "").strip()
     if not raw:
@@ -126,9 +131,21 @@ def _csv_env(name: str) -> list[str]:
 # "last_publish_error" and "REDIS_URL" both get redacted. Operators get a
 # placeholder ("***") so they still know the field was present.
 _REDACT_SUBSTRINGS = (
-    "password", "secret", "token", "api_key", "apikey", "auth",
-    "url", "uri", "dsn", "credential", "cookie", "session",
-    "error", "stack", "trace",
+    "password",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "auth",
+    "url",
+    "uri",
+    "dsn",
+    "credential",
+    "cookie",
+    "session",
+    "error",
+    "stack",
+    "trace",
 )
 
 
@@ -183,7 +200,8 @@ async def dispatch_alert(alert: dict[str, Any], tenant_id: str = "system") -> di
     # channel" — get_dispatch_config returns a synthesised default in
     # both cases, so we can't rely on it for that distinction.
     raw_doc = await db[COLL_ALERT_CONFIG].find_one(
-        {"tenant_id": tenant_id}, _NO_ID,
+        {"tenant_id": tenant_id},
+        _NO_ID,
     )
     has_tenant_config = raw_doc is not None
     config = raw_doc or await get_dispatch_config(tenant_id)
@@ -231,7 +249,7 @@ def _env_severity_allowlist() -> list[str]:
     order = ["info", "warning", "high", "critical"]
     if floor not in order:
         floor = "warning"
-    return order[order.index(floor):]
+    return order[order.index(floor) :]
 
 
 async def _send_email_alert(recipients: list[str], alert: dict[str, Any]) -> bool:
@@ -250,23 +268,15 @@ async def _send_email_alert(recipients: list[str], alert: dict[str, Any]) -> boo
     ts = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
 
     subject = f"[Syroce {severity}] {title}"
-    ctx_lines = "".join(
-        f"<li><code>{k}</code>: {str(v)[:300]}</li>"
-        for k, v in context.items()
-    ) or "<li><em>none</em></li>"
+    ctx_lines = "".join(f"<li><code>{k}</code>: {str(v)[:300]}</li>" for k, v in context.items()) or "<li><em>none</em></li>"
     html = (
         f"<h2>{title}</h2>"
         f"<p><strong>Severity:</strong> {severity}<br>"
         f"<strong>Type:</strong> <code>{alert_type}</code><br>"
         f"<strong>When:</strong> {ts}</p>"
-        f"<p>{message}</p>"
-        + (f"<p><em>Runbook:</em> {runbook}</p>" if runbook else "")
-        + f"<details><summary>Context</summary><ul>{ctx_lines}</ul></details>"
+        f"<p>{message}</p>" + (f"<p><em>Runbook:</em> {runbook}</p>" if runbook else "") + f"<details><summary>Context</summary><ul>{ctx_lines}</ul></details>"
     )
-    text = (
-        f"{title}\nSeverity: {severity}\nType: {alert_type}\nWhen: {ts}\n\n"
-        f"{message}\n" + (f"Runbook: {runbook}\n" if runbook else "")
-    )
+    text = f"{title}\nSeverity: {severity}\nType: {alert_type}\nWhen: {ts}\n\n{message}\n" + (f"Runbook: {runbook}\n" if runbook else "")
 
     sent_any = False
     for addr in recipients:
@@ -277,7 +287,8 @@ async def _send_email_alert(recipients: list[str], alert: dict[str, Any]) -> boo
             else:
                 logger.warning(
                     "alert email send returned not-sent: to=%s err=%s",
-                    addr, res.get("error"),
+                    addr,
+                    res.get("error"),
                 )
         except Exception as exc:
             logger.exception("alert email send failed to=%s: %s", addr, exc)
@@ -327,6 +338,7 @@ async def _send_slack_alert(webhook_url: str, alert: dict[str, Any]) -> bool:
 
     # v109 Bug DAL round-7 follow-up #3: webhook_url is tenant-configurable.
     from integrations.xchange.safety import EgressDenied, safe_post_async
+
     try:
         resp = await safe_post_async(webhook_url, timeout=10.0, json=payload)
         if resp.status_code == 200:

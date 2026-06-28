@@ -3,6 +3,7 @@ security
 
 Auto-split sub-router (shared imports/classes inlined).
 """
+
 """
 Domain Router: Analytics
 
@@ -24,9 +25,9 @@ _FD_WRITE = Depends(_require_role("super_admin", "admin", "front_desk"))
 try:
     from routers.pms_availability import check_room_availability
 except Exception:  # pragma: no cover
+
     async def check_room_availability(*args, **kwargs):
         return {"available": False, "rooms": []}
-
 
 
 # --------------------------------------------------------------------------
@@ -34,55 +35,9 @@ except Exception:  # pragma: no cover
 # --------------------------------------------------------------------------
 
 
-
-
-
-
-
 # rbac-allow: cache-rbac — FO booking search operasyonel
 
 # rbac-allow: cache-rbac — FO available rooms operasyonel
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 _SYSTEM_HEALTH_CACHE: dict = {"ts": 0.0, "payload": None}
@@ -93,26 +48,21 @@ router = APIRouter(prefix="/api", tags=["analytics"])
 
 # ── GET /security/login-logs ──
 @router.get("/security/login-logs")
-async def get_security_login_logs(
-    limit: int = 50,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
+async def get_security_login_logs(limit: int = 50, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Get security login logs (successful and failed attempts)"""
     current_user = await get_current_user(credentials)
 
     # Create login logs collection if not exists
     logs = []
 
-    async for log in db.login_logs.find({
-        'tenant_id': current_user.tenant_id
-    }).sort('timestamp', -1).limit(limit):
-        log.pop('_id', None)
+    async for log in db.login_logs.find({"tenant_id": current_user.tenant_id}).sort("timestamp", -1).limit(limit):
+        log.pop("_id", None)
         logs.append(log)
 
     # Gercek giris kaydi yoksa sahte log uretme; fail-closed bos don.
     return {
-        'logs': logs,
-        'total': len(logs),
-        'data_available': len(logs) > 0,
-        'message': None if logs else 'Giris kaydi bulunamadi.',
+        "logs": logs,
+        "total": len(logs),
+        "data_available": len(logs) > 0,
+        "message": None if logs else "Giris kaydi bulunamadi.",
     }

@@ -3,6 +3,7 @@ pos_core
 
 Auto-split sub-router (shared imports/classes inlined).
 """
+
 """
 PMS / POS & F&B Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
@@ -39,27 +40,26 @@ from modules.pms_core.role_permission_service import require_op  # v89 DW
 try:
     from websocket_server import broadcast_kitchen_orders
 except Exception:  # pragma: no cover
+
     async def broadcast_kitchen_orders(tenant_id: str, orders: Any):
         return None
 
 
 async def _get_active_kitchen_orders(tenant_id: str, statuses: list[str] | None = None):
-    query = {'tenant_id': tenant_id}
+    query = {"tenant_id": tenant_id}
     if statuses:
-        query['status'] = {'$in': statuses}
+        query["status"] = {"$in": statuses}
     else:
-        query['status'] = {'$in': ['pending', 'preparing']}
-    return await db.kitchen_orders.find(query, {'_id': 0}).sort(
-        [('priority', -1), ('ordered_at', 1)]
-    ).to_list(200)
+        query["status"] = {"$in": ["pending", "preparing"]}
+    return await db.kitchen_orders.find(query, {"_id": 0}).sort([("priority", -1), ("ordered_at", 1)]).to_list(200)
 
 
 async def _next_kitchen_order_number(tenant_id: str) -> int:
-    last_order = await db.kitchen_orders.find({'tenant_id': tenant_id}).sort('order_number', -1).limit(1).to_list(1)
+    last_order = await db.kitchen_orders.find({"tenant_id": tenant_id}).sort("order_number", -1).limit(1).to_list(1)
     if not last_order:
         return 1
     try:
-        return int(last_order[0].get('order_number', 0)) + 1
+        return int(last_order[0].get("order_number", 0)) + 1
     except (TypeError, ValueError):
         return 1
 
@@ -122,9 +122,7 @@ async def _get_pos_business_date(tenant_id: str) -> str:
     than naive UTC midnight. Falls back to UTC date when unset.
     """
     try:
-        settings = await db.tenant_settings.find_one(
-            {"tenant_id": tenant_id}, {"_id": 0, "business_date": 1}
-        )
+        settings = await db.tenant_settings.find_one({"tenant_id": tenant_id}, {"_id": 0, "business_date": 1})
         if settings and settings.get("business_date"):
             return str(settings["business_date"])
     except Exception as exc:  # pragma: no cover - defensive
@@ -132,9 +130,7 @@ async def _get_pos_business_date(tenant_id: str) -> str:
     return datetime.now(UTC).date().isoformat()
 
 
-async def _next_adisyon_number(
-    tenant_id: str, outlet_id: str | None, business_date: str
-) -> int:
+async def _next_adisyon_number(tenant_id: str, outlet_id: str | None, business_date: str) -> int:
     """Atomic, daily-resetting, per-outlet sequential adisyon number."""
     await _ensure_adisyon_counter_index()
     key = {
@@ -158,9 +154,7 @@ async def _next_adisyon_number(
             # Concurrent first-insert raced us; the row now exists, retry $inc.
             continue
     # Last resort: plain increment without upsert (row guaranteed to exist).
-    doc = await db.pos_adisyon_counters.find_one_and_update(
-        key, {"$inc": {"seq": 1}}, return_document=ReturnDocument.AFTER
-    )
+    doc = await db.pos_adisyon_counters.find_one_and_update(key, {"$inc": {"seq": 1}}, return_document=ReturnDocument.AFTER)
     return int(doc["seq"]) if doc else 1
 
 
@@ -182,16 +176,12 @@ async def _auto_kds_and_kot(order: "POSOrder", tenant_id: str, ordered_by: str) 
     if not items:
         return
 
-    table_label = order.table_number or (
-        f"Oda {order.booking_id}" if order.booking_id else None
-    )
+    table_label = order.table_number or (f"Oda {order.booking_id}" if order.booking_id else None)
 
     # 1. KDS ticket (idempotent on the order id).
     try:
         idemp = f"pos-{order.id}"
-        existing = await db.kitchen_orders.find_one(
-            {"tenant_id": tenant_id, "idempotency_key": idemp}, {"_id": 0}
-        )
+        existing = await db.kitchen_orders.find_one({"tenant_id": tenant_id, "idempotency_key": idemp}, {"_id": 0})
         if not existing:
             kds_doc = {
                 "id": str(uuid.uuid4()),
@@ -238,14 +228,8 @@ async def _auto_kds_and_kot(order: "POSOrder", tenant_id: str, ordered_by: str) 
                 routing = await resolve_kot_printer(tenant_id, order.outlet_id, station)
                 routing_warning = None
                 if not routing.get("matched"):
-                    routing_warning = (
-                        f"({order.outlet_id or 'default'}/{station}) icin kayitli "
-                        f"yazici yok; '{routing['printer_id']}' istasyon adina "
-                        f"yonlendirildi"
-                    )
-                    logging.warning(
-                        "auto KOT for order %s: %s", order.id, routing_warning
-                    )
+                    routing_warning = f"({order.outlet_id or 'default'}/{station}) icin kayitli yazici yok; '{routing['printer_id']}' istasyon adina yonlendirildi"
+                    logging.warning("auto KOT for order %s: %s", order.id, routing_warning)
                 await enqueue_print_job(
                     tenant_id=tenant_id,
                     kind="kitchen",
@@ -263,9 +247,7 @@ async def _auto_kds_and_kot(order: "POSOrder", tenant_id: str, ordered_by: str) 
                     routing_warning=routing_warning,
                 )
             except Exception as exc:  # pragma: no cover - best effort
-                logging.warning(
-                    f"auto KOT print failed for order {order.id}/{station}: {exc}"
-                )
+                logging.warning(f"auto KOT print failed for order {order.id}/{station}: {exc}")
     except Exception as exc:  # pragma: no cover - import/best effort
         logging.warning(f"auto KOT print unavailable for order {order.id}: {exc}")
 
@@ -276,7 +258,7 @@ def calculate_table_duration(opened_at: Any) -> int:
         return 0
     try:
         if isinstance(opened_at, str):
-            dt = datetime.fromisoformat(opened_at.replace('Z', '+00:00'))
+            dt = datetime.fromisoformat(opened_at.replace("Z", "+00:00"))
         else:
             dt = opened_at
         if dt.tzinfo is None:
@@ -288,15 +270,13 @@ def calculate_table_duration(opened_at: Any) -> int:
 
 def create_default_table_layout() -> list[dict[str, Any]]:
     """Return a generic 8-table layout for first-time setup."""
-    return [
-        {'id': str(uuid.uuid4()), 'number': str(i + 1), 'capacity': 4, 'status': 'available', 'zone': 'main'}
-        for i in range(8)
-    ]
+    return [{"id": str(uuid.uuid4()), "number": str(i + 1), "capacity": 4, "status": "available", "zone": "main"} for i in range(8)]
 
 
 async def recalculate_folio_balance(folio_id: str, tenant_id: str) -> float:
     """F&B post sonrası bakiye yeniden hesabı — core helper'a delege (fail-closed)."""
     from core.utils import calculate_folio_balance
+
     return await calculate_folio_balance(folio_id, tenant_id)
 
 
@@ -434,8 +414,7 @@ async def _persist_pos_order_atomic(
             # order/intent write.
             raise HTTPException(
                 status_code=503,
-                detail=("POS sipariş yazımı atomik garanti sağlayamıyor "
-                        "(Mongo replica set gerekli)."),
+                detail=("POS sipariş yazımı atomik garanti sağlayamıyor (Mongo replica set gerekli)."),
             )
         # Dev opt-in: best-effort non-transactional fallback. The pos_orders
         # unique index still provides idempotency; the outbox idempotency_key
@@ -445,18 +424,20 @@ async def _persist_pos_order_atomic(
 
 def get_menu_recommendation(_guest_profile: dict | None = None) -> list[str]:
     """Heuristic menu recommendation stub — to be replaced by ML model."""
-    return ['Chef\'s Special', 'Local Wine Pairing', 'Seasonal Dessert']
+    return ["Chef's Special", "Local Wine Pairing", "Seasonal Dessert"]
+
 
 logger = logging.getLogger(__name__)
 
 try:
     from cache_manager import cached
 except ImportError:
+
     def cached(ttl=300, key_prefix=""):
-        def decorator(func): return func
+        def decorator(func):
+            return func
+
         return decorator
-
-
 
 
 # ── Inline Models ──
@@ -554,6 +535,7 @@ class UpdateOrderStatusRequest(BaseModel):
 
 class TableLayout(BaseModel):
     """Table layout for restaurant floor plan"""
+
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
@@ -572,6 +554,7 @@ class TableLayout(BaseModel):
 
 class KitchenOrderItem(BaseModel):
     """Kitchen order item for KDS"""
+
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
@@ -590,6 +573,7 @@ class KitchenOrderItem(BaseModel):
 
 class Alert(BaseModel):
     """Universal alert model"""
+
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
@@ -606,18 +590,7 @@ class Alert(BaseModel):
     read_at: datetime | None = None
 
 
-
-
-
-
-
-
-
 # ============= PHOTO UPLOAD (KAT HİZMETLERİ İÇİN) =============
-
-
-
-
 
 
 # rbac-allow: cache-rbac — POS F&B orders operasyonel
@@ -625,66 +598,13 @@ class Alert(BaseModel):
 # ============= HOTEL INVENTORY MANAGEMENT =============
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ============= CHANNEL MANAGER ENHANCEMENTS =============
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ============= HOTEL INTERNAL MESSAGING =============
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 # ===== 5. MESSAGING MODULE (WHATSAPP / SMS / AUTO MESSAGES) =====
-
-
-
-
 
 
 # NOTE: GET /pos/orders moved to pos_router.py — canonical implementation
@@ -702,22 +622,13 @@ class Alert(BaseModel):
 # ============= MAINTENANCE TASKS ENDPOINT =============
 
 
-
-
-
 # 2. GET /api/pos/mobile/order/{order_id} - Get detailed order info
-
-
 
 
 # 3. PUT /api/pos/mobile/order/{order_id}/status - Update order status
 
 
-
-
 # 4. GET /api/pos/mobile/order-history - Get order history with filters
-
-
 
 
 # ============================================================================
@@ -727,21 +638,13 @@ class Alert(BaseModel):
 # 5. GET /api/pos/mobile/inventory-movements - Get stock movements
 
 
-
-
 # 6. GET /api/pos/mobile/stock-levels - Get current stock levels
-
-
 
 
 # 7. GET /api/pos/mobile/low-stock-alerts - Get low stock alerts
 
 
-
-
 # 8. POST /api/pos/mobile/stock-adjust - Adjust stock (Warehouse/F&B Manager only)
-
-
 
 
 # ============================================================================
@@ -752,10 +655,10 @@ class Alert(BaseModel):
 
 
 _ME_RECOMMENDATIONS = {
-    'Stars':       'Yıldız ürün - menüde öne çıkar, kaliteyi koru, fiyat esnekliğini test et',
-    'Plowhorses':  'İş ineği - maliyeti düşür (porsiyon/tedarikçi), üst-satış kombinasyonu öner',
-    'Puzzles':     'Bulmaca - tanıtım/sunum iyileştir, menüde üst sıraya taşı, ad değiştir',
-    'Dogs':        'Köpek - menüden çıkar veya tarifi yeniden tasarla',
+    "Stars": "Yıldız ürün - menüde öne çıkar, kaliteyi koru, fiyat esnekliğini test et",
+    "Plowhorses": "İş ineği - maliyeti düşür (porsiyon/tedarikçi), üst-satış kombinasyonu öner",
+    "Puzzles": "Bulmaca - tanıtım/sunum iyileştir, menüde üst sıraya taşı, ad değiştir",
+    "Dogs": "Köpek - menüden çıkar veya tarifi yeniden tasarla",
 }
 
 
@@ -772,50 +675,51 @@ async def _build_menu_engineering(
     Karlılık eşiği = ağırlıklı ortalama katkı payı (CM/birim).
     """
     # 1) Menü kataloğu — fiyat + maliyet için
-    catalog_raw = await db.pos_menu_items.find(
-        {'tenant_id': tenant_id}, {'_id': 0}
-    ).to_list(500)
+    catalog_raw = await db.pos_menu_items.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(500)
     catalog: dict[str, dict[str, Any]] = {}
     for it in catalog_raw:
-        nm = it.get('name') or it.get('item_name')
+        nm = it.get("name") or it.get("item_name")
         if not nm:
             continue
         catalog[nm] = {
-            'price': float(it.get('price', 0) or 0),
-            'cost': float(it.get('cost', 0) or 0),
-            'menu_category': it.get('category') or 'Diğer',
+            "price": float(it.get("price", 0) or 0),
+            "cost": float(it.get("cost", 0) or 0),
+            "menu_category": it.get("category") or "Diğer",
         }
 
     # 2) Sipariş satırlarını topla
     order_filter: dict[str, Any] = {
-        'tenant_id': tenant_id,
-        'created_at': {'$gte': start_iso, '$lte': end_iso},
+        "tenant_id": tenant_id,
+        "created_at": {"$gte": start_iso, "$lte": end_iso},
     }
     if outlet_id:
-        order_filter['outlet_id'] = outlet_id
+        order_filter["outlet_id"] = outlet_id
 
-    orders = await db.pos_orders.find(order_filter, {'_id': 0, 'items': 1}).to_list(20000)
+    orders = await db.pos_orders.find(order_filter, {"_id": 0, "items": 1}).to_list(20000)
 
     agg: dict[str, dict[str, float]] = {}
     for order in orders:
-        for line in order.get('items', []) or []:
-            nm = line.get('item_name') or line.get('name') or 'Bilinmiyor'
-            qty = float(line.get('quantity', 1) or 1)
-            line_price = float(line.get('price', 0) or 0)
-            row = agg.setdefault(nm, {'qty': 0.0, 'revenue': 0.0})
-            row['qty'] += qty
-            row['revenue'] += qty * line_price
+        for line in order.get("items", []) or []:
+            nm = line.get("item_name") or line.get("name") or "Bilinmiyor"
+            qty = float(line.get("quantity", 1) or 1)
+            line_price = float(line.get("price", 0) or 0)
+            row = agg.setdefault(nm, {"qty": 0.0, "revenue": 0.0})
+            row["qty"] += qty
+            row["revenue"] += qty * line_price
 
     if not agg:
         return {
-            'period': {'start_date': start_iso[:10], 'end_date': end_iso[:10]},
-            'outlet_id': outlet_id,
-            'stars': 0, 'plowhorses': 0, 'puzzles': 0, 'dogs': 0,
-            'menu_items': [],
-            'thresholds': {'popularity_pct': 0, 'avg_cm_per_unit': 0},
-            'totals': {'items': 0, 'units_sold': 0, 'revenue': 0.0, 'contribution_margin': 0.0},
-            'cost_estimation_used': False,
-            'cost_estimated_items': 0,
+            "period": {"start_date": start_iso[:10], "end_date": end_iso[:10]},
+            "outlet_id": outlet_id,
+            "stars": 0,
+            "plowhorses": 0,
+            "puzzles": 0,
+            "dogs": 0,
+            "menu_items": [],
+            "thresholds": {"popularity_pct": 0, "avg_cm_per_unit": 0},
+            "totals": {"items": 0, "units_sold": 0, "revenue": 0.0, "contribution_margin": 0.0},
+            "cost_estimation_used": False,
+            "cost_estimated_items": 0,
         }
 
     # 3) Birim ekonomisi — gerçek katalog maliyeti varsa onu kullan; yoksa %35
@@ -826,28 +730,30 @@ async def _build_menu_engineering(
     total_cm = 0.0
     for nm, row in agg.items():
         cat = catalog.get(nm, {})
-        unit_price = cat.get('price') or (row['revenue'] / row['qty'] if row['qty'] else 0)
-        _real_cost = cat.get('cost')
+        unit_price = cat.get("price") or (row["revenue"] / row["qty"] if row["qty"] else 0)
+        _real_cost = cat.get("cost")
         cost_estimated = not (isinstance(_real_cost, (int, float)) and not isinstance(_real_cost, bool) and _real_cost > 0)
         unit_cost = (unit_price * 0.35) if cost_estimated else float(_real_cost)
-        cost_total = unit_cost * row['qty']
-        cm_total = row['revenue'] - cost_total
-        cm_per_unit = cm_total / row['qty'] if row['qty'] else 0
-        margin_pct = (cm_total / row['revenue'] * 100) if row['revenue'] else 0
-        enriched.append({
-            '_name': nm,
-            '_menu_cat': cat.get('menu_category', 'Diğer'),
-            '_qty': row['qty'],
-            '_revenue': row['revenue'],
-            '_cost': cost_total,
-            '_cm_total': cm_total,
-            '_cm_unit': cm_per_unit,
-            '_margin_pct': margin_pct,
-            '_unit_price': unit_price,
-            '_unit_cost': unit_cost,
-            '_cost_estimated': cost_estimated,
-        })
-        total_qty += row['qty']
+        cost_total = unit_cost * row["qty"]
+        cm_total = row["revenue"] - cost_total
+        cm_per_unit = cm_total / row["qty"] if row["qty"] else 0
+        margin_pct = (cm_total / row["revenue"] * 100) if row["revenue"] else 0
+        enriched.append(
+            {
+                "_name": nm,
+                "_menu_cat": cat.get("menu_category", "Diğer"),
+                "_qty": row["qty"],
+                "_revenue": row["revenue"],
+                "_cost": cost_total,
+                "_cm_total": cm_total,
+                "_cm_unit": cm_per_unit,
+                "_margin_pct": margin_pct,
+                "_unit_price": unit_price,
+                "_unit_cost": unit_cost,
+                "_cost_estimated": cost_estimated,
+            }
+        )
+        total_qty += row["qty"]
         total_cm += cm_total
 
     # 4) Eşikler
@@ -857,63 +763,66 @@ async def _build_menu_engineering(
 
     # 5) Sınıflandırma
     out_items = []
-    counts = {'Stars': 0, 'Plowhorses': 0, 'Puzzles': 0, 'Dogs': 0}
+    counts = {"Stars": 0, "Plowhorses": 0, "Puzzles": 0, "Dogs": 0}
     for e in enriched:
-        pop_pct = (e['_qty'] / total_qty * 100) if total_qty else 0
+        pop_pct = (e["_qty"] / total_qty * 100) if total_qty else 0
         high_pop = pop_pct >= pop_threshold_pct
-        high_cm = e['_cm_unit'] >= cm_threshold
+        high_cm = e["_cm_unit"] >= cm_threshold
         if high_pop and high_cm:
-            cls = 'Stars'
+            cls = "Stars"
         elif high_pop and not high_cm:
-            cls = 'Plowhorses'
+            cls = "Plowhorses"
         elif not high_pop and high_cm:
-            cls = 'Puzzles'
+            cls = "Puzzles"
         else:
-            cls = 'Dogs'
+            cls = "Dogs"
         counts[cls] += 1
-        out_items.append({
-            'item_name': e['_name'],
-            'menu_category': e['_menu_cat'],
-            'category': cls,                # frontend bunu rozet için kullanıyor
-            'classification': cls,
-            'quantity_sold': int(e['_qty']),
-            'revenue': round(e['_revenue'], 2),
-            'unit_price': round(e['_unit_price'], 2),
-            'unit_cost': round(e['_unit_cost'], 2),
-            'cost_estimated': e['_cost_estimated'],
-            'contribution_margin': round(e['_cm_total'], 2),
-            'cm_per_unit': round(e['_cm_unit'], 2),
-            'profit_margin': round(e['_margin_pct'], 1),
-            'popularity_pct': round(pop_pct, 2),
-            'recommendation': _ME_RECOMMENDATIONS[cls],
-        })
+        out_items.append(
+            {
+                "item_name": e["_name"],
+                "menu_category": e["_menu_cat"],
+                "category": cls,  # frontend bunu rozet için kullanıyor
+                "classification": cls,
+                "quantity_sold": int(e["_qty"]),
+                "revenue": round(e["_revenue"], 2),
+                "unit_price": round(e["_unit_price"], 2),
+                "unit_cost": round(e["_unit_cost"], 2),
+                "cost_estimated": e["_cost_estimated"],
+                "contribution_margin": round(e["_cm_total"], 2),
+                "cm_per_unit": round(e["_cm_unit"], 2),
+                "profit_margin": round(e["_margin_pct"], 1),
+                "popularity_pct": round(pop_pct, 2),
+                "recommendation": _ME_RECOMMENDATIONS[cls],
+            }
+        )
 
     # Yıldızlar önce, köpekler sonra
-    rank = {'Stars': 0, 'Puzzles': 1, 'Plowhorses': 2, 'Dogs': 3}
-    out_items.sort(key=lambda x: (rank[x['classification']], -x['revenue']))
+    rank = {"Stars": 0, "Puzzles": 1, "Plowhorses": 2, "Dogs": 3}
+    out_items.sort(key=lambda x: (rank[x["classification"]], -x["revenue"]))
 
     return {
-        'period': {'start_date': start_iso[:10], 'end_date': end_iso[:10]},
-        'outlet_id': outlet_id,
-        'stars': counts['Stars'],
-        'plowhorses': counts['Plowhorses'],
-        'puzzles': counts['Puzzles'],
-        'dogs': counts['Dogs'],
-        'menu_items': out_items,
-        'cost_estimation_used': any(e['_cost_estimated'] for e in enriched),
-        'cost_estimated_items': sum(1 for e in enriched if e['_cost_estimated']),
-        'thresholds': {
-            'popularity_pct': round(pop_threshold_pct, 2),
-            'avg_cm_per_unit': round(cm_threshold, 2),
-            'method': 'Kasavana-Smith (1/N × 70% popülerlik, ağırlıklı CM ortalaması)',
+        "period": {"start_date": start_iso[:10], "end_date": end_iso[:10]},
+        "outlet_id": outlet_id,
+        "stars": counts["Stars"],
+        "plowhorses": counts["Plowhorses"],
+        "puzzles": counts["Puzzles"],
+        "dogs": counts["Dogs"],
+        "menu_items": out_items,
+        "cost_estimation_used": any(e["_cost_estimated"] for e in enriched),
+        "cost_estimated_items": sum(1 for e in enriched if e["_cost_estimated"]),
+        "thresholds": {
+            "popularity_pct": round(pop_threshold_pct, 2),
+            "avg_cm_per_unit": round(cm_threshold, 2),
+            "method": "Kasavana-Smith (1/N × 70% popülerlik, ağırlıklı CM ortalaması)",
         },
-        'totals': {
-            'items': n_items,
-            'units_sold': int(total_qty),
-            'revenue': round(sum(e['_revenue'] for e in enriched), 2),
-            'contribution_margin': round(total_cm, 2),
+        "totals": {
+            "items": n_items,
+            "units_sold": int(total_qty),
+            "revenue": round(sum(e["_revenue"] for e in enriched), 2),
+            "contribution_margin": round(total_cm, 2),
         },
     }
+
 
 router = APIRouter(prefix="/api", tags=["PMS / POS & F&B"])
 
@@ -927,21 +836,23 @@ async def create_pos_transaction(
 ):
     """Create POS transaction"""
     transaction = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'transaction_date': datetime.now(UTC).date().isoformat(),
-        'transaction_time': datetime.now(UTC).time().isoformat(),
-        'amount': request.amount,
-        'payment_method': request.payment_method,
-        'folio_id': request.folio_id,
-        'status': 'completed',
-        'processed_by': current_user.id,
-        'created_at': datetime.now(UTC).isoformat()
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "transaction_date": datetime.now(UTC).date().isoformat(),
+        "transaction_time": datetime.now(UTC).time().isoformat(),
+        "amount": request.amount,
+        "payment_method": request.payment_method,
+        "folio_id": request.folio_id,
+        "status": "completed",
+        "processed_by": current_user.id,
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
     transaction_copy = transaction.copy()
     await db.pos_transactions.insert_one(transaction_copy)
     return transaction
+
+
 # ── POST /pos/check-split ──
 @router.post("/pos/check-split")
 async def split_check(
@@ -962,45 +873,38 @@ async def split_check(
     - By item
     - Custom amounts
     """
-    transaction = await db.pos_transactions.find_one({
-        'id': transaction_id,
-        'tenant_id': current_user.tenant_id
-    })
+    transaction = await db.pos_transactions.find_one({"id": transaction_id, "tenant_id": current_user.tenant_id})
 
     if not transaction:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    total_amount = transaction.get('total_amount', 0)
+    total_amount = transaction.get("total_amount", 0)
     # Item field is stored as 'order_items' on POS orders; older transactions used 'items'.
-    items = transaction.get('order_items') or transaction.get('items', [])
+    items = transaction.get("order_items") or transaction.get("items", [])
     # Legacy fallback: transactions closed before the v2 close handler
     # snapshotted order_items into the txn doc may have no items field.
     # Fetch from pos_orders via order_id (tenant-scoped) so split_check
     # still works for old data. This is the safety net for the same-class
     # bug fixed in pos_fnb_service_v2.complete_order (CI 2026-05-25).
     if not items:
-        order_id = transaction.get('order_id')
+        order_id = transaction.get("order_id")
         if order_id:
             parent_order = await db.pos_orders.find_one(
-                {'id': order_id, 'tenant_id': current_user.tenant_id},
-                {'order_items': 1, '_id': 0},
+                {"id": order_id, "tenant_id": current_user.tenant_id},
+                {"order_items": 1, "_id": 0},
             )
             if parent_order:
-                items = parent_order.get('order_items', []) or []
+                items = parent_order.get("order_items", []) or []
 
     split_transactions = []
 
-    if split_type == 'equal':
+    if split_type == "equal":
         # Equal split
         amount_per_split = total_amount / split_count
         for i in range(split_count):
-            split_transactions.append({
-                'split_number': i + 1,
-                'amount': round(amount_per_split, 2),
-                'items': 'All items (split equally)'
-            })
+            split_transactions.append({"split_number": i + 1, "amount": round(amount_per_split, 2), "items": "All items (split equally)"})
 
-    elif split_type == 'by_item':
+    elif split_type == "by_item":
         # By item (from split_details)
         if not split_details:
             raise HTTPException(status_code=400, detail="split_details required for by_item split")
@@ -1010,15 +914,15 @@ async def split_check(
         # `{name, price}`. split_check must read BOTH (CI 2026-05-25 D —
         # without this, valid indices produced 0.0 splits silently).
         def _line_amount(it):
-            for key in ('total', 'price'):
+            for key in ("total", "price"):
                 v = it.get(key)
                 if v is not None:
                     try:
                         return float(v)
                     except (TypeError, ValueError):
                         pass
-            unit = it.get('unit_price')
-            qty = it.get('quantity', 1)
+            unit = it.get("unit_price")
+            qty = it.get("quantity", 1)
             if unit is not None:
                 try:
                     return float(unit) * float(qty or 1)
@@ -1027,13 +931,13 @@ async def split_check(
             return 0.0
 
         def _line_label(it):
-            return it.get('item_name') or it.get('name')
+            return it.get("item_name") or it.get("name")
 
         total_raw_indices = 0
         total_valid_indices = 0
         for split_num, item_indices in split_details.items():
             safe_indices = []
-            for raw_idx in (item_indices or []):
+            for raw_idx in item_indices or []:
                 total_raw_indices += 1
                 try:
                     idx_int = int(raw_idx)
@@ -1048,19 +952,12 @@ async def split_check(
                 split_number = int(split_num)
             except (TypeError, ValueError):
                 split_number = len(split_transactions) + 1
-            split_transactions.append({
-                'split_number': split_number,
-                'amount': round(split_amount, 2),
-                'items': split_items
-            })
+            split_transactions.append({"split_number": split_number, "amount": round(split_amount, 2), "items": split_items})
 
         if total_raw_indices > 0 and total_valid_indices == 0:
-            raise HTTPException(
-                status_code=400,
-                detail="by_item split: no valid item indices in split_details (all out of range or non-numeric)"
-            )
+            raise HTTPException(status_code=400, detail="by_item split: no valid item indices in split_details (all out of range or non-numeric)")
 
-    elif split_type == 'custom':
+    elif split_type == "custom":
         # Custom amounts
         if not split_details:
             raise HTTPException(status_code=400, detail="split_details required for custom split")
@@ -1074,11 +971,7 @@ async def split_check(
                 split_number = int(split_num)
             except (TypeError, ValueError):
                 split_number = len(split_transactions) + 1
-            split_transactions.append({
-                'split_number': split_number,
-                'amount': round(amount_f, 2),
-                'items': 'Custom split'
-            })
+            split_transactions.append({"split_number": split_number, "amount": round(amount_f, 2), "items": "Custom split"})
 
     # Update original transaction.
     # SECURITY: tenant_id filter required (same bug class as KDS IDOR fixed
@@ -1086,33 +979,28 @@ async def split_check(
     # tenant scope, so this update logically cannot cross tenants — but
     # leaving the filter open invites regressions if a future caller skips
     # the find_one. Keep both call-sites tenant-scoped.
-    await db.pos_transactions.update_one(
-        {'id': transaction_id, 'tenant_id': current_user.tenant_id},
-        {'$set': {
-            'status': 'split',
-            'split_type': split_type,
-            'split_count': len(split_transactions)
-        }}
-    )
+    await db.pos_transactions.update_one({"id": transaction_id, "tenant_id": current_user.tenant_id}, {"$set": {"status": "split", "split_type": split_type, "split_count": len(split_transactions)}})
 
-    splits_total = round(sum(float(s.get('amount', 0) or 0) for s in split_transactions), 2)
+    splits_total = round(sum(float(s.get("amount", 0) or 0) for s in split_transactions), 2)
     expected_total = round(float(total_amount or 0), 2)
     total_validation = {
-        'expected': expected_total,
-        'actual': splits_total,
-        'delta': round(splits_total - expected_total, 2),
-        'match': abs(splits_total - expected_total) < 0.01,
+        "expected": expected_total,
+        "actual": splits_total,
+        "delta": round(splits_total - expected_total, 2),
+        "match": abs(splits_total - expected_total) < 0.01,
     }
 
     return {
-        'success': True,
-        'original_transaction_id': transaction_id,
-        'original_amount': expected_total,
-        'split_type': split_type,
-        'split_count': len(split_transactions),
-        'splits': split_transactions,
-        'total_validation': total_validation,
+        "success": True,
+        "original_transaction_id": transaction_id,
+        "original_amount": expected_total,
+        "split_type": split_type,
+        "split_count": len(split_transactions),
+        "splits": split_transactions,
+        "total_validation": total_validation,
     }
+
+
 # ── POST /pos/transfer-table ──
 @router.post("/pos/transfer-table")
 async def transfer_table(
@@ -1126,12 +1014,7 @@ async def transfer_table(
 ):
     """Transfer items from one table to another"""
     # Get active transaction from source table
-    source_transaction = await db.pos_transactions.find_one({
-        'tenant_id': current_user.tenant_id,
-        'outlet_id': outlet_id,
-        'table_number': from_table,
-        'status': 'open'
-    })
+    source_transaction = await db.pos_transactions.find_one({"tenant_id": current_user.tenant_id, "outlet_id": outlet_id, "table_number": from_table, "status": "open"})
 
     if not source_transaction:
         raise HTTPException(status_code=404, detail=f"No active transaction found for table {from_table}")
@@ -1141,21 +1024,82 @@ async def transfer_table(
         # SECURITY: tenant_id filter required even though source_transaction
         # was fetched tenant-scoped above — defense-in-depth against future
         # refactors that might skip the read.
-        await db.pos_transactions.update_one(
-            {'id': source_transaction.get('id'), 'tenant_id': current_user.tenant_id},
-            {'$set': {'table_number': to_table}}
-        )
+        await db.pos_transactions.update_one({"id": source_transaction.get("id"), "tenant_id": current_user.tenant_id}, {"$set": {"table_number": to_table}})
 
         return {
-            'success': True,
-            'message': f'Table {from_table} transferred to {to_table}',
-            'transaction_id': source_transaction.get('id'),
-            'items_transferred': len(source_transaction.get('items', []))
+            "success": True,
+            "message": f"Table {from_table} transferred to {to_table}",
+            "transaction_id": source_transaction.get("id"),
+            "items_transferred": len(source_transaction.get("items", [])),
         }
 
     else:
-        # Transfer specific items (not implemented in MVP)
-        raise HTTPException(status_code=501, detail="Partial transfer not yet implemented")
+        # Partial Transfer
+        if not items_to_transfer:
+            raise HTTPException(status_code=400, detail="items_to_transfer list is required for partial transfer")
+
+        src_items = source_transaction.get("items", [])
+        transferred_items = []
+        remaining_items = []
+
+        # Assuming items_to_transfer is a list of 0-based indices or a unique field like 'id'.
+        # Since the type hint is list[int], let's assume it's indices or an internal id.
+        # Often POS items don't have stable IDs in nested arrays, we'll assume they are indices for MVP.
+        # But wait, sorting out by index could be tricky. Let's do it by index.
+        for idx, item in enumerate(src_items):
+            if idx in items_to_transfer:
+                transferred_items.append(item)
+            else:
+                remaining_items.append(item)
+
+        if not transferred_items:
+            raise HTTPException(status_code=400, detail="None of the specified items were found in the transaction")
+
+        # Recalculate source totals
+        new_source_total = sum(item.get("price", 0) * item.get("quantity", 1) for item in remaining_items)
+
+        # Get or create target transaction
+        target_transaction = await db.pos_transactions.find_one({"tenant_id": current_user.tenant_id, "outlet_id": outlet_id, "table_number": to_table, "status": "open"})
+
+        if target_transaction:
+            # Append items and recalculate
+            new_target_items = target_transaction.get("items", []) + transferred_items
+            new_target_total = sum(item.get("price", 0) * item.get("quantity", 1) for item in new_target_items)
+
+            await db.pos_transactions.update_one(
+                {"_id": target_transaction["_id"]}, {"$set": {"items": new_target_items, "total_amount": new_target_total, "updated_at": datetime.now(UTC).isoformat()}}
+            )
+            target_id = target_transaction.get("id")
+        else:
+            # Create new target transaction
+            target_id = str(uuid.uuid4())
+            new_target_total = sum(item.get("price", 0) * item.get("quantity", 1) for item in transferred_items)
+            new_doc = {
+                "id": target_id,
+                "tenant_id": current_user.tenant_id,
+                "outlet_id": outlet_id,
+                "table_number": to_table,
+                "status": "open",
+                "items": transferred_items,
+                "total_amount": new_target_total,
+                "created_at": datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
+                "created_by": current_user.username,
+            }
+            await db.pos_transactions.insert_one(new_doc)
+
+        # Update source transaction
+        await db.pos_transactions.update_one({"_id": source_transaction["_id"]}, {"$set": {"items": remaining_items, "total_amount": new_source_total, "updated_at": datetime.now(UTC).isoformat()}})
+
+        return {
+            "success": True,
+            "message": f"Partially transferred {len(transferred_items)} items to table {to_table}",
+            "source_transaction_id": source_transaction.get("id"),
+            "target_transaction_id": target_id,
+            "items_transferred": len(transferred_items),
+        }
+
+
 # ── POST /pos/happy-hour ──
 @router.post("/pos/happy-hour")
 async def apply_happy_hour_discount(
@@ -1173,30 +1117,25 @@ async def apply_happy_hour_discount(
     - Category-specific (e.g., only beverages)
     """
     happy_hour = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'outlet_id': outlet_id,
-        'discount_pct': discount_pct,
-        'start_time': start_time,
-        'end_time': end_time,
-        'applicable_categories': applicable_categories,
-        'active': True,
-        'created_at': datetime.now(UTC).isoformat()
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "outlet_id": outlet_id,
+        "discount_pct": discount_pct,
+        "start_time": start_time,
+        "end_time": end_time,
+        "applicable_categories": applicable_categories,
+        "active": True,
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
     await db.happy_hour_rules.insert_one(happy_hour)
 
-    return {
-        'success': True,
-        'happy_hour_id': happy_hour['id'],
-        'message': f'Happy hour created: {discount_pct}% off {start_time}-{end_time}'
-    }
+    return {"success": True, "happy_hour_id": happy_hour["id"], "message": f"Happy hour created: {discount_pct}% off {start_time}-{end_time}"}
+
+
 # ── GET /pos/table-layout/{outlet_id} ──
 @router.get("/pos/table-layout/{outlet_id}")
-async def get_table_layout(
-    outlet_id: str,
-    current_user: User = Depends(get_current_user)
-):
+async def get_table_layout(outlet_id: str, current_user: User = Depends(get_current_user)):
     """
     Get restaurant floor plan with table layout
     - Visual table arrangement
@@ -1204,74 +1143,76 @@ async def get_table_layout(
     - Current transactions
     """
     tables = []
-    raw_tables = await db.table_layouts.find({
-        'tenant_id': current_user.tenant_id,
-        'outlet_id': outlet_id
-    }).to_list(length=None)
+    raw_tables = await db.table_layouts.find({"tenant_id": current_user.tenant_id, "outlet_id": outlet_id}).to_list(length=None)
     # Batch-fetch all open transactions referenced by tables
-    txn_ids = [t.get('current_transaction_id') for t in raw_tables if t.get('current_transaction_id')]
+    txn_ids = [t.get("current_transaction_id") for t in raw_tables if t.get("current_transaction_id")]
     txns_by_id: dict = {}
     if txn_ids:
         async for tx in db.pos_transactions.find(
-            {'id': {'$in': txn_ids}, 'tenant_id': current_user.tenant_id},
-            {'_id': 0, 'id': 1, 'total_amount': 1, 'guests': 1},
+            {"id": {"$in": txn_ids}, "tenant_id": current_user.tenant_id},
+            {"_id": 0, "id": 1, "total_amount": 1, "guests": 1},
         ):
-            txns_by_id[tx['id']] = tx
+            txns_by_id[tx["id"]] = tx
     for table in raw_tables:
-        transaction = txns_by_id.get(table.get('current_transaction_id'))
+        transaction = txns_by_id.get(table.get("current_transaction_id"))
 
-        tables.append({
-            'id': table.get('id'),
-            'table_number': table.get('table_number'),
-            'seats': table.get('seats'),
-            'position': {
-                'x': table.get('position_x'),
-                'y': table.get('position_y')
-            },
-            'shape': table.get('shape'),
-            'width': table.get('width'),
-            'height': table.get('height'),
-            'status': table.get('status'),
-            'server_assigned': table.get('server_assigned'),
-            'current_bill': round(transaction.get('total_amount', 0), 2) if transaction else 0,
-            'guest_count': transaction.get('guests', 0) if transaction else 0,
-            'duration_minutes': calculate_table_duration(table) if table.get('status') == 'occupied' else 0
-        })
+        tables.append(
+            {
+                "id": table.get("id"),
+                "table_number": table.get("table_number"),
+                "seats": table.get("seats"),
+                "position": {"x": table.get("position_x"), "y": table.get("position_y")},
+                "shape": table.get("shape"),
+                "width": table.get("width"),
+                "height": table.get("height"),
+                "status": table.get("status"),
+                "server_assigned": table.get("server_assigned"),
+                "current_bill": round(transaction.get("total_amount", 0), 2) if transaction else 0,
+                "guest_count": transaction.get("guests", 0) if transaction else 0,
+                "duration_minutes": calculate_table_duration(table) if table.get("status") == "occupied" else 0,
+            }
+        )
 
     # If no tables exist, only auto-create when outlet is real (avoid 500 for unknown ids)
     if not tables:
-        outlet = await db.pos_outlets.find_one({
-            'id': outlet_id,
-            'tenant_id': current_user.tenant_id,
-        })
+        outlet = await db.pos_outlets.find_one(
+            {
+                "id": outlet_id,
+                "tenant_id": current_user.tenant_id,
+            }
+        )
         if not outlet:
             raise HTTPException(status_code=404, detail="Outlet bulunamadi")
         default_tables = create_default_table_layout(current_user.tenant_id, outlet_id)
         for table_data in default_tables:
             await db.table_layouts.insert_one(table_data)
-            tables.append({
-                'id': table_data['id'],
-                'table_number': table_data['table_number'],
-                'seats': table_data['seats'],
-                'position': {'x': table_data['position_x'], 'y': table_data['position_y']},
-                'shape': table_data['shape'],
-                'width': table_data['width'],
-                'height': table_data['height'],
-                'status': 'available',
-                'server_assigned': None,
-                'current_bill': 0,
-                'guest_count': 0,
-                'duration_minutes': 0
-            })
+            tables.append(
+                {
+                    "id": table_data["id"],
+                    "table_number": table_data["table_number"],
+                    "seats": table_data["seats"],
+                    "position": {"x": table_data["position_x"], "y": table_data["position_y"]},
+                    "shape": table_data["shape"],
+                    "width": table_data["width"],
+                    "height": table_data["height"],
+                    "status": "available",
+                    "server_assigned": None,
+                    "current_bill": 0,
+                    "guest_count": 0,
+                    "duration_minutes": 0,
+                }
+            )
 
     return {
-        'outlet_id': outlet_id,
-        'total_tables': len(tables),
-        'available': sum(1 for t in tables if t['status'] == 'available'),
-        'occupied': sum(1 for t in tables if t['status'] == 'occupied'),
-        'reserved': sum(1 for t in tables if t['status'] == 'reserved'),
-        'tables': tables
+        "outlet_id": outlet_id,
+        "total_tables": len(tables),
+        "available": sum(1 for t in tables if t["status"] == "available"),
+        "occupied": sum(1 for t in tables if t["status"] == "occupied"),
+        "reserved": sum(1 for t in tables if t["status"] == "reserved"),
+        "tables": tables,
     }
+
+
 # ── POST /pos/table-layout/update ──
 @router.post("/pos/table-layout/update")
 async def update_table_layout(
@@ -1286,68 +1227,65 @@ async def update_table_layout(
     """Update table layout - drag & drop positioning"""
     updates = {}
     if position_x is not None:
-        updates['position_x'] = position_x
+        updates["position_x"] = position_x
     if position_y is not None:
-        updates['position_y'] = position_y
+        updates["position_y"] = position_y
     if seats is not None:
-        updates['seats'] = seats
+        updates["seats"] = seats
     if server_assigned is not None:
-        updates['server_assigned'] = server_assigned
+        updates["server_assigned"] = server_assigned
 
-    await db.table_layouts.update_one(
-        {'id': table_id, 'tenant_id': current_user.tenant_id},
-        {'$set': updates}
-    )
+    await db.table_layouts.update_one({"id": table_id, "tenant_id": current_user.tenant_id}, {"$set": updates})
 
-    return {'success': True, 'message': 'Table layout updated'}
+    return {"success": True, "message": "Table layout updated"}
+
+
 # ── GET /pos/split-bill-ui/{transaction_id} ──
 @router.get("/pos/split-bill-ui/{transaction_id}")
-async def get_split_bill_ui_data(
-    transaction_id: str,
-    current_user: User = Depends(get_current_user)
-):
+async def get_split_bill_ui_data(transaction_id: str, current_user: User = Depends(get_current_user)):
     """
     Get transaction data formatted for split bill UI
     - Line items with selection
     - Multiple payment methods
     - Split strategies
     """
-    transaction = await db.pos_transactions.find_one({
-        'id': transaction_id,
-        'tenant_id': current_user.tenant_id
-    })
+    transaction = await db.pos_transactions.find_one({"id": transaction_id, "tenant_id": current_user.tenant_id})
 
     if not transaction:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    items = transaction.get('items', [])
+    items = transaction.get("items", [])
 
     # Format items for split UI
     formatted_items = []
     for idx, item in enumerate(items):
-        formatted_items.append({
-            'index': idx,
-            'name': item.get('name'),
-            'quantity': item.get('quantity', 1),
-            'unit_price': item.get('price', 0),
-            'total': item.get('price', 0) * item.get('quantity', 1),
-            'selected_for_split': False,
-            'split_assignee': None  # Which guest (1, 2, 3, etc.)
-        })
+        formatted_items.append(
+            {
+                "index": idx,
+                "name": item.get("name"),
+                "quantity": item.get("quantity", 1),
+                "unit_price": item.get("price", 0),
+                "total": item.get("price", 0) * item.get("quantity", 1),
+                "selected_for_split": False,
+                "split_assignee": None,  # Which guest (1, 2, 3, etc.)
+            }
+        )
 
     return {
-        'transaction_id': transaction_id,
-        'table_number': transaction.get('table_number'),
-        'total_amount': transaction.get('total_amount', 0),
-        'items': formatted_items,
-        'split_strategies': [
-            {'id': 'equal', 'name': 'Equal Split', 'description': 'Split bill equally among N people'},
-            {'id': 'by_item', 'name': 'By Item', 'description': 'Assign items to specific people'},
-            {'id': 'percentage', 'name': 'By Percentage', 'description': 'Split by custom percentages'},
-            {'id': 'custom', 'name': 'Custom Amount', 'description': 'Enter custom amounts for each person'}
+        "transaction_id": transaction_id,
+        "table_number": transaction.get("table_number"),
+        "total_amount": transaction.get("total_amount", 0),
+        "items": formatted_items,
+        "split_strategies": [
+            {"id": "equal", "name": "Equal Split", "description": "Split bill equally among N people"},
+            {"id": "by_item", "name": "By Item", "description": "Assign items to specific people"},
+            {"id": "percentage", "name": "By Percentage", "description": "Split by custom percentages"},
+            {"id": "custom", "name": "Custom Amount", "description": "Enter custom amounts for each person"},
         ],
-        'payment_methods': ['cash', 'card', 'mobile', 'room_charge']
+        "payment_methods": ["cash", "card", "mobile", "room_charge"],
     }
+
+
 # ── POST /pos/room-charge-restrictions ──
 @router.post("/pos/room-charge-restrictions")
 async def set_room_charge_restrictions(
@@ -1366,34 +1304,27 @@ async def set_room_charge_restrictions(
     - Time restrictions (e.g., no charges 2am-6am)
     """
     restrictions = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'max_daily_charge': max_daily_charge,
-        'require_supervisor_approval': require_supervisor_approval,
-        'allowed_categories': allowed_categories or ['food', 'beverage', 'minibar'],
-        'restricted_hours': restricted_hours,
-        'created_at': datetime.now(UTC).isoformat(),
-        'created_by': current_user.name
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "max_daily_charge": max_daily_charge,
+        "require_supervisor_approval": require_supervisor_approval,
+        "allowed_categories": allowed_categories or ["food", "beverage", "minibar"],
+        "restricted_hours": restricted_hours,
+        "created_at": datetime.now(UTC).isoformat(),
+        "created_by": current_user.name,
     }
 
     # Store or update restrictions
-    existing = await db.pos_room_charge_restrictions.find_one({
-        'tenant_id': current_user.tenant_id
-    })
+    existing = await db.pos_room_charge_restrictions.find_one({"tenant_id": current_user.tenant_id})
 
     if existing:
-        await db.pos_room_charge_restrictions.update_one(
-            {'tenant_id': current_user.tenant_id},
-            {'$set': restrictions}
-        )
+        await db.pos_room_charge_restrictions.update_one({"tenant_id": current_user.tenant_id}, {"$set": restrictions})
     else:
         await db.pos_room_charge_restrictions.insert_one(restrictions)
 
-    return {
-        'success': True,
-        'message': 'Room charge restrictions updated',
-        'restrictions': restrictions
-    }
+    return {"success": True, "message": "Room charge restrictions updated", "restrictions": restrictions}
+
+
 # ── POST /pos/validate-room-charge ──
 @router.post("/pos/validate-room-charge")
 async def validate_room_charge(
@@ -1409,56 +1340,49 @@ async def validate_room_charge(
     - Return validation result
     """
     # Get restrictions
-    restrictions = await db.pos_room_charge_restrictions.find_one({
-        'tenant_id': current_user.tenant_id
-    })
+    restrictions = await db.pos_room_charge_restrictions.find_one({"tenant_id": current_user.tenant_id})
 
-    validation_result = {
-        'allowed': True,
-        'reason': None,
-        'requires_approval': False
-    }
+    validation_result = {"allowed": True, "reason": None, "requires_approval": False}
 
     if restrictions:
         # Check max daily charge
-        if restrictions.get('max_daily_charge'):
+        if restrictions.get("max_daily_charge"):
             # Get today's charges
             today = datetime.now().date().isoformat()
             daily_total = 0
-            async for charge in db.folio_charges.find({
-                'booking_id': booking_id,
-                'date': {'$gte': today}
-            }):
-                daily_total += charge.get('total', 0)
+            async for charge in db.folio_charges.find({"booking_id": booking_id, "date": {"$gte": today}}):
+                daily_total += charge.get("total", 0)
 
-            if daily_total + amount > restrictions['max_daily_charge']:
-                validation_result['allowed'] = False
-                validation_result['reason'] = f"Exceeds daily limit of ${restrictions['max_daily_charge']}"
+            if daily_total + amount > restrictions["max_daily_charge"]:
+                validation_result["allowed"] = False
+                validation_result["reason"] = f"Exceeds daily limit of ${restrictions['max_daily_charge']}"
                 return validation_result
 
         # Check allowed categories
-        if restrictions.get('allowed_categories'):
-            if category not in restrictions['allowed_categories']:
-                validation_result['allowed'] = False
-                validation_result['reason'] = f"Category '{category}' not allowed for room charge"
+        if restrictions.get("allowed_categories"):
+            if category not in restrictions["allowed_categories"]:
+                validation_result["allowed"] = False
+                validation_result["reason"] = f"Category '{category}' not allowed for room charge"
                 return validation_result
 
         # Check restricted hours
-        if restrictions.get('restricted_hours'):
+        if restrictions.get("restricted_hours"):
             current_time = datetime.now().time()
-            start_time = datetime.strptime(restrictions['restricted_hours']['start'], '%H:%M').time()
-            end_time = datetime.strptime(restrictions['restricted_hours']['end'], '%H:%M').time()
+            start_time = datetime.strptime(restrictions["restricted_hours"]["start"], "%H:%M").time()
+            end_time = datetime.strptime(restrictions["restricted_hours"]["end"], "%H:%M").time()
 
             if start_time <= current_time <= end_time:
-                validation_result['allowed'] = False
-                validation_result['reason'] = f"Room charges restricted between {restrictions['restricted_hours']['start']}-{restrictions['restricted_hours']['end']}"
+                validation_result["allowed"] = False
+                validation_result["reason"] = f"Room charges restricted between {restrictions['restricted_hours']['start']}-{restrictions['restricted_hours']['end']}"
                 return validation_result
 
         # Check if approval required
-        if restrictions.get('require_supervisor_approval'):
-            validation_result['requires_approval'] = True
+        if restrictions.get("require_supervisor_approval"):
+            validation_result["requires_approval"] = True
 
     return validation_result
+
+
 # ── POST /pos/create-order ──
 @router.post("/pos/create-order")
 async def create_pos_order(
@@ -1492,17 +1416,15 @@ async def create_pos_order(
     # adisyon number, re-create the KDS ticket, or re-print the KOT. The atomic
     # persist below still defends the rare concurrent-first-submit race.
     if idempotency_key:
-        prior = await db.pos_orders.find_one(
-            {"tenant_id": tenant_id, "idempotency_key": idempotency_key}, {"_id": 0}
-        )
+        prior = await db.pos_orders.find_one({"tenant_id": tenant_id, "idempotency_key": idempotency_key}, {"_id": 0})
         if prior:
             return {
-                'success': True,
-                'message': 'POS order created',
-                'idempotent_replay': True,
-                'charge_status': 'queued' if prior.get('folio_id') else 'none',
-                'order_id': prior.get('id'),
-                'order': prior,
+                "success": True,
+                "message": "POS order created",
+                "idempotent_replay": True,
+                "charge_status": "queued" if prior.get("folio_id") else "none",
+                "order_id": prior.get("id"),
+                "order": prior,
             }
 
     folio_id = data.folio_id
@@ -1513,19 +1435,15 @@ async def create_pos_order(
     guest_id = None
     booking_id = data.booking_id
     if data.booking_id:
-        booking = await db.bookings.find_one({'id': data.booking_id, 'tenant_id': tenant_id})
+        booking = await db.bookings.find_one({"id": data.booking_id, "tenant_id": tenant_id})
         if booking:
-            guest_id = booking['guest_id']
+            guest_id = booking["guest_id"]
 
     # Waiter-terminal room charge: the touch terminal only knows the in-house
     # booking_id (folio ids are behind a finance-gated endpoint). When the check
     # is charged to the room we resolve the booking's OPEN folio here so the
     # charges actually post — instead of silently creating an unposted order.
-    if (
-        not folio_id
-        and booking_id
-        and (data.payment_method or "").lower() == "room_charge"
-    ):
+    if not folio_id and booking_id and (data.payment_method or "").lower() == "room_charge":
         open_folio = await db.folios.find_one(
             {
                 "booking_id": booking_id,
@@ -1543,7 +1461,7 @@ async def create_pos_order(
 
     folio_booking_id = booking_id
     if folio_id:
-        folio = await db.folios.find_one({'id': folio_id, 'tenant_id': tenant_id})
+        folio = await db.folios.find_one({"id": folio_id, "tenant_id": tenant_id})
         if not folio:
             raise HTTPException(status_code=404, detail="Folio not found")
         # Closed-folio guard (parity with the other folio-charge endpoints,
@@ -1551,15 +1469,15 @@ async def create_pos_order(
         # never be posted to a folio that is no longer open (closed /
         # checked-out / transferred / voided). Posting to a non-open folio
         # creates financial inconsistency.
-        folio_status = folio.get('status') or FolioStatus.OPEN.value
+        folio_status = folio.get("status") or FolioStatus.OPEN.value
         if folio_status != FolioStatus.OPEN.value:
             raise HTTPException(
                 status_code=400,
                 detail="Kapalı/çıkışı yapılmış folyoya POS hesabı kesilemez",
             )
-        folio_booking_id = folio.get('booking_id') or booking_id or ""
-        if guest_id is None and folio.get('guest_id'):
-            guest_id = folio.get('guest_id')
+        folio_booking_id = folio.get("booking_id") or booking_id or ""
+        if guest_id is None and folio.get("guest_id"):
+            guest_id = folio.get("guest_id")
 
     # Build order items
     order_items_list = []
@@ -1567,26 +1485,20 @@ async def create_pos_order(
 
     for item_data in data.order_items:
         # Get menu item
-        menu_item = await db.pos_menu_items.find_one({
-            'id': item_data.item_id,
-            'tenant_id': tenant_id
-        })
+        menu_item = await db.pos_menu_items.find_one({"id": item_data.item_id, "tenant_id": tenant_id})
 
         if not menu_item:
             continue
 
         quantity = item_data.quantity
-        total_price = menu_item['unit_price'] * quantity
+        total_price = menu_item["unit_price"] * quantity
         subtotal += total_price
 
-        order_items_list.append(POSOrderItem(
-            item_id=menu_item['id'],
-            item_name=menu_item['item_name'],
-            category=POSCategory(menu_item['category']),
-            quantity=quantity,
-            unit_price=menu_item['unit_price'],
-            total_price=total_price
-        ))
+        order_items_list.append(
+            POSOrderItem(
+                item_id=menu_item["id"], item_name=menu_item["item_name"], category=POSCategory(menu_item["category"]), quantity=quantity, unit_price=menu_item["unit_price"], total_price=total_price
+            )
+        )
 
     # Calculate tax (18% VAT for Turkey)
     tax_amount = subtotal * 0.18
@@ -1629,14 +1541,14 @@ async def create_pos_order(
                 tenant_id=tenant_id,
                 folio_id=folio_id,
                 booking_id=folio_booking_id,
-                charge_category=ChargeCategory.FOOD if order_item.category in ['food', 'dessert', 'appetizer'] else ChargeCategory.BEVERAGE,
+                charge_category=ChargeCategory.FOOD if order_item.category in ["food", "dessert", "appetizer"] else ChargeCategory.BEVERAGE,
                 description=f"POS: {order_item.item_name} x {order_item.quantity}",
                 quantity=order_item.quantity,
                 unit_price=order_item.unit_price,
                 amount=order_item.total_price,
                 tax_amount=order_item.total_price * 0.18,
                 total=order_item.total_price * 1.18,
-                voided=False
+                voided=False,
             )
             cdoc = charge.model_dump()
             cdoc["source_pos_order_id"] = order.id
@@ -1683,15 +1595,17 @@ async def create_pos_order(
         await _auto_kds_and_kot(order, tenant_id, current_user.name)
 
     return {
-        'success': True,
-        'message': 'POS order created',
-        'idempotent_replay': replay,
+        "success": True,
+        "message": "POS order created",
+        "idempotent_replay": replay,
         # Folyoya yazılan POS hesabı artık async (outbox) postlanır; sipariş
         # kaydı + niyet durable, charge'lar consumer tarafından idempotent uygulanır.
-        'charge_status': 'queued' if (folio_id and charge_docs) else 'none',
-        'order_id': effective_order.get('id'),
-        'order': effective_order,
+        "charge_status": "queued" if (folio_id and charge_docs) else "none",
+        "order_id": effective_order.get("id"),
+        "order": effective_order,
     }
+
+
 # ── GET /pos/menu-engineering ──
 @router.get("/pos/menu-engineering")
 async def get_menu_engineering(

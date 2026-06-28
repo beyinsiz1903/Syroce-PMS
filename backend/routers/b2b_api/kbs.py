@@ -3,6 +3,7 @@ kbs
 
 Auto-split sub-router (shared imports/classes inlined).
 """
+
 """
 Syroce Open API — Kapsamli Otel PMS Entegrasyon API'si
 ======================================================
@@ -101,8 +102,8 @@ from models.schemas import User
 logger = logging.getLogger(__name__)
 
 
-
 # ── Helpers ──────────────────────────────────────────────────────
+
 
 def _now_iso():
     return datetime.now(UTC).isoformat()
@@ -152,13 +153,16 @@ async def _agency_owns_block(tenant_id: str, agency_id: str, block_id: str) -> d
 
 # ── API Key Auth Dependency ──────────────────────────────────────
 
+
 async def get_b2b_agency(x_api_key: str | None = Header(None, alias="X-API-Key")):
     """API key ile acente kimlik dogrulamasi + per-subrouter scope kontrolu."""
     from ._scope import authenticate_b2b_agency
+
     return await authenticate_b2b_agency(x_api_key, required_scope="kbs")
 
 
 # ── Request Models ───────────────────────────────────────────────
+
 
 class B2BReservationCreate(BaseModel):
     room_type: str
@@ -204,29 +208,9 @@ async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
 # ═════════════════════════════════════════════════════════════════
 
 
-
-
-
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # B2B ENDPOINTS — Syroce Acente Sistemi (API Key Auth)
 # ═════════════════════════════════════════════════════════════════
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -236,22 +220,9 @@ async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
 VALID_WEBHOOK_EVENTS = {"reservation.created", "reservation.cancelled", "reservation.updated", "rates.updated", "availability.updated"}
 
 
-
-
-
-
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # GUEST & LOYALTY — Misafir ve Sadakat Programi
 # ═════════════════════════════════════════════════════════════════
-
-
-
-
-
 
 
 class LoyaltyPointsUpdate(BaseModel):
@@ -260,14 +231,9 @@ class LoyaltyPointsUpdate(BaseModel):
     operation: str = "add"
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # HOUSEKEEPING — Kat Hizmetleri
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class HousekeepingStatusUpdate(BaseModel):
@@ -275,12 +241,9 @@ class HousekeepingStatusUpdate(BaseModel):
     notes: str = ""
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # KBS / POLICE NOTIFICATION — Emniyet Bildirim Sistemi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class KBSReportCreate(BaseModel):
@@ -289,13 +252,10 @@ class KBSReportCreate(BaseModel):
     notes: str = ""
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # PASSPORT / ID — Kimlik ve Pasaport Okuma
 # ═════════════════════════════════════════════════════════════════
+
 
 class IdentityScanData(BaseModel):
     guest_id: str
@@ -314,14 +274,9 @@ class IdentityScanData(BaseModel):
     raw_ocr_data: dict | None = None
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # LOST & FOUND — Kayip Esya
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class LostFoundCreate(BaseModel):
@@ -334,8 +289,6 @@ class LostFoundCreate(BaseModel):
     room_number: str = ""
 
 
-
-
 class LostFoundUpdate(BaseModel):
     status: str | None = None
     guest_name: str | None = None
@@ -343,12 +296,9 @@ class LostFoundUpdate(BaseModel):
     claimed_by: str | None = None
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # WAKE-UP CALLS — Uyandirma Servisi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class WakeUpCallCreate(BaseModel):
@@ -361,21 +311,16 @@ class WakeUpCallCreate(BaseModel):
     recurring_until: str = ""  # YYYY-MM-DD
 
 
-
-
 class WakeUpCallUpdate(BaseModel):
     wake_time: str | None = None
     status: str | None = None
     notes: str | None = None
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # GUEST JOURNEY — Misafir Yolculugu
 # ═════════════════════════════════════════════════════════════════
+
 
 class B2BOnlineCheckin(BaseModel):
     booking_id: str
@@ -387,10 +332,6 @@ class B2BOnlineCheckin(BaseModel):
     nationality: str | None = None
 
 
-
-
-
-
 class B2BGuestRequest(BaseModel):
     booking_id: str
     request_type: str  # concierge, spa, room_service, maintenance, transport, other
@@ -398,14 +339,9 @@ class B2BGuestRequest(BaseModel):
     priority: str = "normal"
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # CONCIERGE & SPA — Concierge ve Spa Hizmetleri
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class ConciergeRequest(BaseModel):
@@ -417,10 +353,6 @@ class ConciergeRequest(BaseModel):
     guest_count: int = 1
 
 
-
-
-
-
 class SpaBookingCreate(BaseModel):
     booking_id: str
     service_id: str
@@ -430,12 +362,9 @@ class SpaBookingCreate(BaseModel):
     notes: str = ""
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # MICE & GROUPS — Grup ve Toplanti Yonetimi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class GroupBlockCreate(BaseModel):
@@ -452,10 +381,6 @@ class GroupBlockCreate(BaseModel):
     notes: str = ""
 
 
-
-
-
-
 class RoomingListEntry(BaseModel):
     guest_name: str
     room_type: str = ""
@@ -468,12 +393,9 @@ class RoomingListUpload(BaseModel):
     guests: list[RoomingListEntry]
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # FOLIO & BILLING — Folio ve Fatura
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class FolioChargeCreate(BaseModel):
@@ -481,6 +403,7 @@ class FolioChargeCreate(BaseModel):
     description: str = Field(..., min_length=1)
     amount: float = Field(..., gt=0, le=1000000)
     quantity: int = Field(1, ge=1, le=9999)
+
 
 router = APIRouter(prefix="/api/b2b", tags=["B2B API - Syroce"])
 
@@ -498,29 +421,47 @@ async def b2b_kbs_guest_list(
     target_date = date or datetime.now(UTC).strftime("%Y-%m-%d")
 
     # v65 Bug DB: cross-agency IDOR — pasaport/TC PII leak (sadece kendi acentenin misafirleri)
-    bookings = await db.bookings.find(
-        {
-            "tenant_id": tenant_id,
-            "agency_id": agency["agency_id"],
-            "status": {"$in": ["checked_in", "confirmed", "guaranteed"]},
-            "check_in": {"$gte": target_date + "T00:00:00", "$lte": target_date + "T23:59:59"},
-        },
-        {"_id": 0, "id": 1, "guest_id": 1, "guest_name": 1, "guest_email": 1, "guest_phone": 1,
-         "room_number": 1, "check_in": 1, "check_out": 1, "adults": 1, "children": 1,
-         "status": 1, "confirmation_code": 1},
-    ).sort("check_in", 1).to_list(limit)
+    bookings = (
+        await db.bookings.find(
+            {
+                "tenant_id": tenant_id,
+                "agency_id": agency["agency_id"],
+                "status": {"$in": ["checked_in", "confirmed", "guaranteed"]},
+                "check_in": {"$gte": target_date + "T00:00:00", "$lte": target_date + "T23:59:59"},
+            },
+            {
+                "_id": 0,
+                "id": 1,
+                "guest_id": 1,
+                "guest_name": 1,
+                "guest_email": 1,
+                "guest_phone": 1,
+                "room_number": 1,
+                "check_in": 1,
+                "check_out": 1,
+                "adults": 1,
+                "children": 1,
+                "status": 1,
+                "confirmation_code": 1,
+            },
+        )
+        .sort("check_in", 1)
+        .to_list(limit)
+    )
 
     from security.encrypted_lookup import decrypt_guest_doc
+
     for b in bookings:
         # v65 PII fix (architect): guest_id ile join (name-based değil — homonym leak engeli)
         gid = b.get("guest_id")
         if not gid:
             continue
-        guest = decrypt_guest_doc(await db.guests.find_one(
-            {"tenant_id": tenant_id, "id": gid},
-            {"_id": 0, "nationality": 1, "id_number": 1, "passport_number": 1,
-             "birth_date": 1, "gender": 1},
-        ))
+        guest = decrypt_guest_doc(
+            await db.guests.find_one(
+                {"tenant_id": tenant_id, "id": gid},
+                {"_id": 0, "nationality": 1, "id_number": 1, "passport_number": 1, "birth_date": 1, "gender": 1},
+            )
+        )
         if guest:
             b["nationality"] = guest.get("nationality", "")
             b["id_number"] = guest.get("id_number", "")
@@ -540,6 +481,8 @@ async def b2b_kbs_guest_list(
         "reports": kbs_reports,
         "report_count": len(kbs_reports),
     }
+
+
 # ── POST /kbs/report ──
 @router.post("/kbs/report")
 async def b2b_kbs_create_report(
@@ -566,6 +509,8 @@ async def b2b_kbs_create_report(
     report.pop("_id", None)
 
     return {"ok": True, "report": report}
+
+
 # ── GET /kbs/report/{report_id} ──
 @router.get("/kbs/report/{report_id}")
 async def b2b_kbs_get_report(report_id: str, agency: dict = Depends(get_b2b_agency)):

@@ -8,6 +8,7 @@ Endpoints:
   PUT    /api/hotel-content              - Update hotel content
   POST   /api/hotel-content/distribute   - Update publish list (atomic, additive by default)
 """
+
 import uuid
 from datetime import UTC, datetime
 
@@ -39,6 +40,7 @@ def _require_hotel_staff(user: User):
 
 # ─── Models ──────────────────────────────────────────────────────
 
+
 class RoomTypeContent(BaseModel):
     room_type: str
     name: str = ""
@@ -49,10 +51,12 @@ class RoomTypeContent(BaseModel):
     amenities: list[str] = []
     bed_type: str = ""
 
+
 class ServiceContent(BaseModel):
     name: str
     description: str = ""
     icon: str = ""
+
 
 class HotelContentUpdate(BaseModel):
     hotel_name: str = ""
@@ -64,6 +68,7 @@ class HotelContentUpdate(BaseModel):
     amenities: list[str] = []
     room_types: list[RoomTypeContent] = []
     services: list[ServiceContent] = []
+
 
 class ContentDistributeRequest(BaseModel):
     agency_ids: list[str]
@@ -77,6 +82,7 @@ class ContentDistributeRequest(BaseModel):
 
 
 # ─── Helpers ─────────────────────────────────────────────────────
+
 
 def _validate_content_for_distribute(content: dict) -> list[str]:
     """Dagitim oncesi icerigin minimum dolu oldugunu dogrula. Hata listesi doner."""
@@ -95,15 +101,14 @@ def _validate_content_for_distribute(content: dict) -> list[str]:
 
 # ─── Endpoints ───────────────────────────────────────────────────
 
+
 @router.get("/hotel-content")
 async def get_hotel_content(current_user: User = Depends(get_current_user)):
     """Otel içeriğini getir."""
     _require_hotel_staff(current_user)
     tenant_id = current_user.tenant_id
 
-    content = await db.hotel_content.find_one(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    )
+    content = await db.hotel_content.find_one({"tenant_id": tenant_id}, {"_id": 0})
     if not content:
         # Auto-initialize from tenant and rooms
         tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
@@ -211,8 +216,7 @@ async def distribute_content(
     if errors:
         raise HTTPException(
             status_code=400,
-            detail={"code": "content_incomplete", "errors": errors,
-                    "message": "Dağıtımdan önce eksikleri tamamlayın: " + " ".join(errors)},
+            detail={"code": "content_incomplete", "errors": errors, "message": "Dağıtımdan önce eksikleri tamamlayın: " + " ".join(errors)},
         )
 
     now = _now_iso()
@@ -223,12 +227,14 @@ async def distribute_content(
     # FIX #4 (atomik): MongoDB update_many tek-cagri atomik bir mutasyondur.
     add_res = await db.agencies.update_many(
         {"id": {"$in": data.agency_ids}, "tenant_id": tenant_id, "status": "active"},
-        {"$set": {
-            "published_content": True,
-            "published_at": now,
-            "published_by": user_id,
-            "published_content_version": content_version,
-        }},
+        {
+            "$set": {
+                "published_content": True,
+                "published_at": now,
+                "published_by": user_id,
+                "published_content_version": content_version,
+            }
+        },
     )
 
     removed = 0
@@ -246,9 +252,7 @@ async def distribute_content(
         removed = rem_res.modified_count or 0
 
     # Toplam su anki yayinda
-    total_published = await db.agencies.count_documents(
-        {"tenant_id": tenant_id, "published_content": True}
-    )
+    total_published = await db.agencies.count_documents({"tenant_id": tenant_id, "published_content": True})
 
     return {
         "ok": True,
@@ -257,10 +261,7 @@ async def distribute_content(
         "total_published": total_published,
         "total_selected": len(data.agency_ids),
         "content_version": content_version,
-        "message": (
-            f"{add_res.modified_count or 0} acente yayına eklendi"
-            + (f", {removed} acente yayından kaldırıldı" if removed else "")
-        ),
+        "message": (f"{add_res.modified_count or 0} acente yayına eklendi" + (f", {removed} acente yayından kaldırıldı" if removed else "")),
     }
 
 
@@ -277,7 +278,8 @@ async def distribute_preview(
         return {"to_add": 0, "to_remove": 0, "currently_published": 0, "selected": 0}
 
     currently_published_ids = [
-        d["id"] async for d in db.agencies.find(
+        d["id"]
+        async for d in db.agencies.find(
             {"tenant_id": tenant_id, "published_content": True},
             {"_id": 0, "id": 1},
         )

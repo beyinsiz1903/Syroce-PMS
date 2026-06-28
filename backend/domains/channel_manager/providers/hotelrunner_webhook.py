@@ -11,6 +11,7 @@ TIMELINE: Every webhook writes received -> normalized -> deduplicated stages.
 UNIFIED CALLBACK: Single /callback endpoint for HotelRunner "Dönüş adresi" config.
 HotelRunner sends ALL events (new, modify, cancel) to one URL — auto-detected via state field.
 """
+
 import json
 import logging
 
@@ -43,6 +44,7 @@ router = APIRouter(
 # precedence; the global HOTELRUNNER_WEBHOOK_SECRET remains a backward-compat
 # fallback only when no per-property secret exists. Neither set → fail-closed.
 
+
 def _source_ip(request: Request) -> str:
     try:
         client = getattr(request, "client", None)
@@ -59,7 +61,10 @@ def _log_webhook_reject(reason: str, source_ip: str, tenant_hint: str, hr_id_hin
     """
     logger.warning(
         "[HR-WEBHOOK][SECURITY] reject reason=%s source_ip=%s tenant_hint=%s hr_id_hint=%s",
-        reason, source_ip or "unknown", tenant_hint or "-", hr_id_hint or "-",
+        reason,
+        source_ip or "unknown",
+        tenant_hint or "-",
+        hr_id_hint or "-",
     )
 
 
@@ -84,12 +89,7 @@ def _extract_signature_hints(request: Request, raw: bytes) -> tuple[str, str]:
         if isinstance(body, dict):
             if not tenant_hint:
                 tenant_hint = body.get("tenant_id") or ""
-            hr_id_hint = (
-                body.get("hr_id")
-                or body.get("hotel_id")
-                or body.get("property_id")
-                or ""
-            )
+            hr_id_hint = body.get("hr_id") or body.get("hotel_id") or body.get("property_id") or ""
     except Exception:
         pass
     return str(tenant_hint), str(hr_id_hint)
@@ -108,7 +108,8 @@ async def _lookup_signing_connection(tenant_hint: str, hr_id_hint: str) -> dict 
         query["hr_id"] = str(hr_id_hint)
     try:
         return await db.hotelrunner_connections.find_one(
-            query, {"_id": 0, "tenant_id": 1, "hr_id": 1},
+            query,
+            {"_id": 0, "tenant_id": 1, "hr_id": 1},
         )
     except Exception:
         return None
@@ -187,16 +188,8 @@ async def _verify_hotelrunner_signature(request: Request) -> None:
             detail="Webhook signing not configured (set HOTELRUNNER_WEBHOOK_SECRET)",
         )
 
-    sig_header = (
-        request.headers.get("X-HotelRunner-Signature")
-        or request.headers.get("X-Signature")
-        or ""
-    ).strip()
-    ts_header = (
-        request.headers.get("X-HotelRunner-Timestamp")
-        or request.headers.get("X-Timestamp")
-        or ""
-    ).strip()
+    sig_header = (request.headers.get("X-HotelRunner-Signature") or request.headers.get("X-Signature") or "").strip()
+    ts_header = (request.headers.get("X-HotelRunner-Timestamp") or request.headers.get("X-Timestamp") or "").strip()
     if not (sig_header and ts_header):
         _log_webhook_reject("missing_headers", source_ip, tenant_hint, hr_id_hint)
         raise HTTPException(status_code=401, detail="Missing signature headers")
@@ -223,8 +216,12 @@ async def _verify_hotelrunner_signature(request: Request) -> None:
 
 # ── Webhook Batch Processor ──────────────────────────────────────────
 
+
 async def _process_webhook_batch(
-    tenant_id: str, property_id: str, reservations: list, event_type: str,
+    tenant_id: str,
+    property_id: str,
+    reservations: list,
+    event_type: str,
     source_ip: str = "system",
 ):
     """Background task: process webhook reservations through ingest pipeline.
@@ -326,6 +323,7 @@ async def _resolve_tenant_from_callback(body: dict, request: Request) -> str:
 
 # ── UNIFIED CALLBACK — Single endpoint for HotelRunner "Dönüş adresi" ──
 
+
 @router.post("/callback")
 async def unified_callback(
     request: Request,
@@ -371,13 +369,15 @@ async def unified_callback(
             if "status" not in res:
                 res["status"] = "cancelled"
 
-    logger.info(
-        f"[CALLBACK] Received {event_type}: {len(reservations)} reservation(s) "
-        f"from {source_ip}, tenant={tenant_id}"
-    )
+    logger.info(f"[CALLBACK] Received {event_type}: {len(reservations)} reservation(s) from {source_ip}, tenant={tenant_id}")
 
     background_tasks.add_task(
-        _process_webhook_batch, tenant_id, property_id, reservations, event_type, source_ip,
+        _process_webhook_batch,
+        tenant_id,
+        property_id,
+        reservations,
+        event_type,
+        source_ip,
     )
 
     return {
@@ -389,6 +389,7 @@ async def unified_callback(
 
 
 # ── Webhook Endpoints ────────────────────────────────────────────────
+
 
 @router.post("/webhooks/reservations")
 async def webhook_reservations(
@@ -405,11 +406,7 @@ async def webhook_reservations(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    tenant_id = (
-        _verified_tenant(request)
-        or request.headers.get("X-Tenant-ID")
-        or request.query_params.get("tenant_id")
-    )
+    tenant_id = _verified_tenant(request) or request.headers.get("X-Tenant-ID") or request.query_params.get("tenant_id")
     if not tenant_id:
         tenant_id = body.get("tenant_id", "")
     if not tenant_id:
@@ -420,7 +417,12 @@ async def webhook_reservations(
     source_ip = request.client.host if request.client else "unknown"
 
     background_tasks.add_task(
-        _process_webhook_batch, tenant_id, property_id, reservations, "reservation_create", source_ip,
+        _process_webhook_batch,
+        tenant_id,
+        property_id,
+        reservations,
+        "reservation_create",
+        source_ip,
     )
 
     return {
@@ -442,11 +444,7 @@ async def webhook_modifications(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    tenant_id = (
-        _verified_tenant(request)
-        or request.headers.get("X-Tenant-ID")
-        or request.query_params.get("tenant_id")
-    )
+    tenant_id = _verified_tenant(request) or request.headers.get("X-Tenant-ID") or request.query_params.get("tenant_id")
     if not tenant_id:
         tenant_id = body.get("tenant_id", "")
     if not tenant_id:
@@ -457,7 +455,12 @@ async def webhook_modifications(
     source_ip = request.client.host if request.client else "unknown"
 
     background_tasks.add_task(
-        _process_webhook_batch, tenant_id, property_id, reservations, "reservation_modify", source_ip,
+        _process_webhook_batch,
+        tenant_id,
+        property_id,
+        reservations,
+        "reservation_modify",
+        source_ip,
     )
     return {"status": "accepted", "count": len(reservations)}
 
@@ -474,11 +477,7 @@ async def webhook_cancellations(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    tenant_id = (
-        _verified_tenant(request)
-        or request.headers.get("X-Tenant-ID")
-        or request.query_params.get("tenant_id")
-    )
+    tenant_id = _verified_tenant(request) or request.headers.get("X-Tenant-ID") or request.query_params.get("tenant_id")
     if not tenant_id:
         tenant_id = body.get("tenant_id", "")
     if not tenant_id:
@@ -494,12 +493,18 @@ async def webhook_cancellations(
             res["status"] = "cancelled"
 
     background_tasks.add_task(
-        _process_webhook_batch, tenant_id, property_id, reservations, "reservation_cancel", source_ip,
+        _process_webhook_batch,
+        tenant_id,
+        property_id,
+        reservations,
+        "reservation_cancel",
+        source_ip,
     )
     return {"status": "accepted", "count": len(reservations)}
 
 
 # ── Raw Events API ───────────────────────────────────────────────────
+
 
 @router.get("/logs/events")
 async def get_raw_events(
@@ -512,9 +517,7 @@ async def get_raw_events(
     if status:
         query["status"] = status
 
-    events = await db.hotelrunner_raw_events.find(
-        query, {"_id": 0, "payload": 0}
-    ).sort("received_at", -1).to_list(limit)
+    events = await db.hotelrunner_raw_events.find(query, {"_id": 0, "payload": 0}).sort("received_at", -1).to_list(limit)
     return {"events": events, "count": len(events)}
 
 
@@ -524,10 +527,14 @@ async def get_error_events(
     current_user: User = Depends(get_current_user),
 ):
     """Get failed ingest events."""
-    events = await db.hotelrunner_raw_events.find(
-        {"tenant_id": current_user.tenant_id, "status": "error"},
-        {"_id": 0},
-    ).sort("received_at", -1).to_list(limit)
+    events = (
+        await db.hotelrunner_raw_events.find(
+            {"tenant_id": current_user.tenant_id, "status": "error"},
+            {"_id": 0},
+        )
+        .sort("received_at", -1)
+        .to_list(limit)
+    )
     return {"events": events, "count": len(events)}
 
 

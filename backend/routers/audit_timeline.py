@@ -3,6 +3,7 @@ Audit Timeline — API Foundations
 Provides timeline-friendly audit log queries, entity audit trails,
 and summary endpoints for the upcoming Audit Timeline Panel.
 """
+
 import csv
 import io
 import logging
@@ -126,7 +127,8 @@ async def get_audit_timeline(
         query["actor_id"] = actor_id
     if action:
         from security.query_safety import safe_search_term
-        if (_a := safe_search_term(action)):
+
+        if _a := safe_search_term(action):
             query["operation_name"] = {"$regex": _a, "$options": "i"}
     if severity:
         query["severity"] = severity
@@ -134,11 +136,13 @@ async def get_audit_timeline(
         query["target_type"] = entity_type
     if ip_address:
         from security.query_safety import safe_search_term
-        if (_ip := safe_search_term(ip_address)):
+
+        if _ip := safe_search_term(ip_address):
             query["ip_address"] = {"$regex": _ip, "$options": "i"}
     if user_agent:
         from security.query_safety import safe_search_term
-        if (_ua := safe_search_term(user_agent)):
+
+        if _ua := safe_search_term(user_agent):
             query["user_agent"] = {"$regex": _ua, "$options": "i"}
 
     try:
@@ -150,9 +154,7 @@ async def get_audit_timeline(
         # They are also PII-heavy; the per-entity audit-trail endpoints serve
         # them on demand. Dropping them here keeps the timeline 200-stable.
         projection = {"_id": 0, "before_snapshot": 0, "after_snapshot": 0}
-        logs = await db.audit_logs.find(query, projection).sort(
-            "timestamp", -1
-        ).limit(limit + 1).to_list(limit + 1)
+        logs = await db.audit_logs.find(query, projection).sort("timestamp", -1).limit(limit + 1).to_list(limit + 1)
 
         has_more = len(logs) > limit
         if has_more:
@@ -210,9 +212,7 @@ async def get_entity_audit_trail(
         "target_id": entity_id,
     }
 
-    logs = await db.audit_logs.find(query, {"_id": 0}).sort(
-        "timestamp", -1
-    ).limit(limit).to_list(limit)
+    logs = await db.audit_logs.find(query, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
 
     # Compute diffs between snapshots
     trail = []
@@ -267,25 +267,27 @@ async def get_audit_summary(
 
     pipeline = [
         {"$match": {"tenant_id": ctx.tenant_id, "timestamp": {"$gte": since}}},
-        {"$facet": {
-            "by_severity": [
-                {"$group": {"_id": "$severity", "count": {"$sum": 1}}},
-            ],
-            "by_operation": [
-                {"$group": {"_id": "$operation_name", "count": {"$sum": 1}}},
-                {"$sort": {"count": -1}},
-                {"$limit": 10},
-            ],
-            "by_actor": [
-                {"$group": {"_id": "$actor_id", "count": {"$sum": 1}}},
-                {"$sort": {"count": -1}},
-                {"$limit": 10},
-            ],
-            "by_result": [
-                {"$group": {"_id": "$result_status", "count": {"$sum": 1}}},
-            ],
-            "total": [{"$count": "count"}],
-        }},
+        {
+            "$facet": {
+                "by_severity": [
+                    {"$group": {"_id": "$severity", "count": {"$sum": 1}}},
+                ],
+                "by_operation": [
+                    {"$group": {"_id": "$operation_name", "count": {"$sum": 1}}},
+                    {"$sort": {"count": -1}},
+                    {"$limit": 10},
+                ],
+                "by_actor": [
+                    {"$group": {"_id": "$actor_id", "count": {"$sum": 1}}},
+                    {"$sort": {"count": -1}},
+                    {"$limit": 10},
+                ],
+                "by_result": [
+                    {"$group": {"_id": "$result_status", "count": {"$sum": 1}}},
+                ],
+                "total": [{"$count": "count"}],
+            }
+        },
     ]
 
     result = await db.audit_logs.aggregate(pipeline).to_list(1)
@@ -322,6 +324,7 @@ async def verify_audit_chain(
     ctx = OperationContext.from_user(current_user)
     try:
         from core.audit_chain import verify_chain
+
         result = await verify_chain(ctx.tenant_id, limit=limit)
         return result
     except Exception:
@@ -392,51 +395,61 @@ async def get_urgent_message_report(
 
     pipeline = [
         {"$match": match_stage},
-        {"$facet": {
-            "events": [
-                {"$sort": {"timestamp": -1}},
-                {"$skip": int(offset)},
-                {"$limit": int(limit)},
-                {"$project": {
-                    "_id": 0,
-                    "id": 1,
-                    "timestamp": 1,
-                    "actor_id": 1,
-                    "actor_role": 1,
-                    "after_snapshot": 1,
-                }},
-            ],
-            "by_sender": [
-                {"$group": {
-                    "_id": {
-                        "sender_id": "$actor_id",
-                        "sender_name": "$after_snapshot.from_user_name",
-                        "sender_department": "$after_snapshot.from_department",
+        {
+            "$facet": {
+                "events": [
+                    {"$sort": {"timestamp": -1}},
+                    {"$skip": int(offset)},
+                    {"$limit": int(limit)},
+                    {
+                        "$project": {
+                            "_id": 0,
+                            "id": 1,
+                            "timestamp": 1,
+                            "actor_id": 1,
+                            "actor_role": 1,
+                            "after_snapshot": 1,
+                        }
                     },
-                    "count": {"$sum": 1},
-                }},
-                {"$sort": {"count": -1}},
-                {"$limit": 10},
-            ],
-            "by_recipient_department": [
-                {"$group": {
-                    "_id": "$after_snapshot.to_department",
-                    "count": {"$sum": 1},
-                }},
-                {"$sort": {"count": -1}},
-            ],
-            "by_hour_of_day": [
-                # ISO timestamp `YYYY-MM-DDTHH:MM:SS...` — 11. karakterden
-                # 2 karakter saat dilimini (HH) verir. Tüm saat kayıtları
-                # UTC olduğu için bucket'lar tutarlı.
-                {"$group": {
-                    "_id": {"$substr": ["$timestamp", 11, 2]},
-                    "count": {"$sum": 1},
-                }},
-                {"$sort": {"_id": 1}},
-            ],
-            "total": [{"$count": "count"}],
-        }},
+                ],
+                "by_sender": [
+                    {
+                        "$group": {
+                            "_id": {
+                                "sender_id": "$actor_id",
+                                "sender_name": "$after_snapshot.from_user_name",
+                                "sender_department": "$after_snapshot.from_department",
+                            },
+                            "count": {"$sum": 1},
+                        }
+                    },
+                    {"$sort": {"count": -1}},
+                    {"$limit": 10},
+                ],
+                "by_recipient_department": [
+                    {
+                        "$group": {
+                            "_id": "$after_snapshot.to_department",
+                            "count": {"$sum": 1},
+                        }
+                    },
+                    {"$sort": {"count": -1}},
+                ],
+                "by_hour_of_day": [
+                    # ISO timestamp `YYYY-MM-DDTHH:MM:SS...` — 11. karakterden
+                    # 2 karakter saat dilimini (HH) verir. Tüm saat kayıtları
+                    # UTC olduğu için bucket'lar tutarlı.
+                    {
+                        "$group": {
+                            "_id": {"$substr": ["$timestamp", 11, 2]},
+                            "count": {"$sum": 1},
+                        }
+                    },
+                    {"$sort": {"_id": 1}},
+                ],
+                "total": [{"$count": "count"}],
+            }
+        },
     ]
 
     try:
@@ -459,17 +472,9 @@ async def get_urgent_message_report(
         if (d.get("_id") or {}).get("sender_id")
     ]
 
-    by_recipient_department = [
-        {"department": d.get("_id"), "count": d.get("count", 0)}
-        for d in (data.get("by_recipient_department") or [])
-        if d.get("_id")
-    ]
+    by_recipient_department = [{"department": d.get("_id"), "count": d.get("count", 0)} for d in (data.get("by_recipient_department") or []) if d.get("_id")]
 
-    by_hour_of_day = [
-        {"hour": d.get("_id"), "count": d.get("count", 0)}
-        for d in (data.get("by_hour_of_day") or [])
-        if d.get("_id")
-    ]
+    by_hour_of_day = [{"hour": d.get("_id"), "count": d.get("count", 0)} for d in (data.get("by_hour_of_day") or []) if d.get("_id")]
 
     return {
         "events": data.get("events", []),
@@ -542,12 +547,10 @@ async def get_recalled_messages_report(
     # string ya da None ise filtre uygulanmaz.
     if priority not in (None, "") and priority not in _ALLOWED_RECALL_PRIORITIES:
         from fastapi import HTTPException
+
         raise HTTPException(
             status_code=422,
-            detail=(
-                f"Geçersiz priority değeri: {priority!r}. "
-                f"İzin verilen değerler: {list(_ALLOWED_RECALL_PRIORITIES)}."
-            ),
+            detail=(f"Geçersiz priority değeri: {priority!r}. İzin verilen değerler: {list(_ALLOWED_RECALL_PRIORITIES)}."),
         )
 
     ctx = OperationContext.from_user(current_user)
@@ -555,11 +558,7 @@ async def get_recalled_messages_report(
     # window-expired recall attempts (action ``recall_internal_message_denied``)
     # so admins can spot users who repeatedly bump into the 5-minute limit.
     # Default stays narrow (successful recalls only) for backward compatibility.
-    operation_filter = (
-        {"$in": ["recall_internal_message", "recall_internal_message_denied"]}
-        if include_denied
-        else "recall_internal_message"
-    )
+    operation_filter = {"$in": ["recall_internal_message", "recall_internal_message_denied"]} if include_denied else "recall_internal_message"
     match_stage: dict = {
         "tenant_id": ctx.tenant_id,
         "operation_name": operation_filter,
@@ -575,50 +574,60 @@ async def get_recalled_messages_report(
 
     pipeline = [
         {"$match": match_stage},
-        {"$facet": {
-            "events": [
-                {"$sort": {"timestamp": -1}},
-                {"$skip": int(offset)},
-                {"$limit": int(limit)},
-                {"$project": {
-                    "_id": 0,
-                    "id": 1,
-                    "timestamp": 1,
-                    "actor_id": 1,
-                    "actor_role": 1,
-                    "operation_name": 1,  # Task #36: distinguishes successful recall vs denial
-                    "before_snapshot": 1,
-                    "after_snapshot": 1,
-                }},
-            ],
-            "by_sender": [
-                {"$group": {
-                    "_id": {
-                        "sender_id": "$actor_id",
-                        "sender_name": "$before_snapshot.from_user_name",
-                        "sender_department": "$before_snapshot.from_department",
+        {
+            "$facet": {
+                "events": [
+                    {"$sort": {"timestamp": -1}},
+                    {"$skip": int(offset)},
+                    {"$limit": int(limit)},
+                    {
+                        "$project": {
+                            "_id": 0,
+                            "id": 1,
+                            "timestamp": 1,
+                            "actor_id": 1,
+                            "actor_role": 1,
+                            "operation_name": 1,  # Task #36: distinguishes successful recall vs denial
+                            "before_snapshot": 1,
+                            "after_snapshot": 1,
+                        }
                     },
-                    "count": {"$sum": 1},
-                }},
-                {"$sort": {"count": -1}},
-                {"$limit": 10},
-            ],
-            "by_priority": [
-                {"$group": {
-                    "_id": "$before_snapshot.priority",
-                    "count": {"$sum": 1},
-                }},
-                {"$sort": {"count": -1}},
-            ],
-            "by_hour_of_day": [
-                {"$group": {
-                    "_id": {"$substr": ["$timestamp", 11, 2]},
-                    "count": {"$sum": 1},
-                }},
-                {"$sort": {"_id": 1}},
-            ],
-            "total": [{"$count": "count"}],
-        }},
+                ],
+                "by_sender": [
+                    {
+                        "$group": {
+                            "_id": {
+                                "sender_id": "$actor_id",
+                                "sender_name": "$before_snapshot.from_user_name",
+                                "sender_department": "$before_snapshot.from_department",
+                            },
+                            "count": {"$sum": 1},
+                        }
+                    },
+                    {"$sort": {"count": -1}},
+                    {"$limit": 10},
+                ],
+                "by_priority": [
+                    {
+                        "$group": {
+                            "_id": "$before_snapshot.priority",
+                            "count": {"$sum": 1},
+                        }
+                    },
+                    {"$sort": {"count": -1}},
+                ],
+                "by_hour_of_day": [
+                    {
+                        "$group": {
+                            "_id": {"$substr": ["$timestamp", 11, 2]},
+                            "count": {"$sum": 1},
+                        }
+                    },
+                    {"$sort": {"_id": 1}},
+                ],
+                "total": [{"$count": "count"}],
+            }
+        },
     ]
 
     try:
@@ -641,16 +650,9 @@ async def get_recalled_messages_report(
         if (d.get("_id") or {}).get("sender_id")
     ]
 
-    by_priority = [
-        {"priority": d.get("_id") or "unknown", "count": d.get("count", 0)}
-        for d in (data.get("by_priority") or [])
-    ]
+    by_priority = [{"priority": d.get("_id") or "unknown", "count": d.get("count", 0)} for d in (data.get("by_priority") or [])]
 
-    by_hour_of_day = [
-        {"hour": d.get("_id"), "count": d.get("count", 0)}
-        for d in (data.get("by_hour_of_day") or [])
-        if d.get("_id")
-    ]
+    by_hour_of_day = [{"hour": d.get("_id"), "count": d.get("count", 0)} for d in (data.get("by_hour_of_day") or []) if d.get("_id")]
 
     return {
         "events": data.get("events", []),
@@ -709,9 +711,7 @@ def _build_id_photo_view_match(
     return match
 
 
-def _validate_id_photo_view_date_range(
-    start_date: str | None, end_date: str | None
-) -> None:
+def _validate_id_photo_view_date_range(start_date: str | None, end_date: str | None) -> None:
     """`start_date > end_date` durumu admin'in farkında olmadan filtre
     uyguladığı bir tuzaktır — sessizce boş sonuç döner ve "kayıt yok"
     izlenimi uyandırır. Bunu 422 ile reddederek erken hata fırlatırız.
@@ -721,12 +721,10 @@ def _validate_id_photo_view_date_range(
     """
     if start_date and end_date and start_date > end_date:
         from fastapi import HTTPException
+
         raise HTTPException(
             status_code=422,
-            detail=(
-                f"Tarih aralığı geçersiz: start_date ({start_date!r}) "
-                f"end_date ({end_date!r}) değerinden sonra olamaz."
-            ),
+            detail=(f"Tarih aralığı geçersiz: start_date ({start_date!r}) end_date ({end_date!r}) değerinden sonra olamaz."),
         )
 
 
@@ -787,46 +785,54 @@ async def get_id_photo_view_report(
 
     pipeline = [
         {"$match": match_stage},
-        {"$facet": {
-            "events": [
-                {"$sort": {"timestamp": -1}},
-                {"$skip": int(offset)},
-                {"$limit": int(limit)},
-                {"$project": {
-                    "_id": 0,
-                    "id": 1,
-                    "timestamp": 1,
-                    "actor_id": 1,
-                    "actor_role": 1,
-                    "target_id": 1,
-                    "after_snapshot": 1,
-                }},
-            ],
-            "by_actor": [
-                {"$group": {"_id": "$actor_id", "count": {"$sum": 1}}},
-                {"$sort": {"count": -1}},
-                {"$limit": 10},
-            ],
-            "by_booking": [
-                {"$group": {
-                    "_id": "$after_snapshot.booking_id",
-                    "count": {"$sum": 1},
-                }},
-                {"$sort": {"count": -1}},
-                {"$limit": 10},
-            ],
-            "by_hour_of_day": [
-                # ISO timestamp `YYYY-MM-DDTHH:MM:SS...` — 11. karakterden
-                # 2 karakter saat dilimini (HH) verir. Tüm saat kayıtları
-                # UTC olduğu için bucket'lar tutarlı.
-                {"$group": {
-                    "_id": {"$substr": ["$timestamp", 11, 2]},
-                    "count": {"$sum": 1},
-                }},
-                {"$sort": {"_id": 1}},
-            ],
-            "total": [{"$count": "count"}],
-        }},
+        {
+            "$facet": {
+                "events": [
+                    {"$sort": {"timestamp": -1}},
+                    {"$skip": int(offset)},
+                    {"$limit": int(limit)},
+                    {
+                        "$project": {
+                            "_id": 0,
+                            "id": 1,
+                            "timestamp": 1,
+                            "actor_id": 1,
+                            "actor_role": 1,
+                            "target_id": 1,
+                            "after_snapshot": 1,
+                        }
+                    },
+                ],
+                "by_actor": [
+                    {"$group": {"_id": "$actor_id", "count": {"$sum": 1}}},
+                    {"$sort": {"count": -1}},
+                    {"$limit": 10},
+                ],
+                "by_booking": [
+                    {
+                        "$group": {
+                            "_id": "$after_snapshot.booking_id",
+                            "count": {"$sum": 1},
+                        }
+                    },
+                    {"$sort": {"count": -1}},
+                    {"$limit": 10},
+                ],
+                "by_hour_of_day": [
+                    # ISO timestamp `YYYY-MM-DDTHH:MM:SS...` — 11. karakterden
+                    # 2 karakter saat dilimini (HH) verir. Tüm saat kayıtları
+                    # UTC olduğu için bucket'lar tutarlı.
+                    {
+                        "$group": {
+                            "_id": {"$substr": ["$timestamp", 11, 2]},
+                            "count": {"$sum": 1},
+                        }
+                    },
+                    {"$sort": {"_id": 1}},
+                ],
+                "total": [{"$count": "count"}],
+            }
+        },
     ]
 
     try:
@@ -838,23 +844,11 @@ async def get_id_photo_view_report(
     data = result[0] if result else {}
     total = (data.get("total") or [{}])[0].get("count", 0) if data.get("total") else 0
 
-    by_actor = [
-        {"actor_id": d.get("_id"), "count": d.get("count", 0)}
-        for d in (data.get("by_actor") or [])
-        if d.get("_id")
-    ]
+    by_actor = [{"actor_id": d.get("_id"), "count": d.get("count", 0)} for d in (data.get("by_actor") or []) if d.get("_id")]
 
-    by_booking = [
-        {"booking_id": d.get("_id"), "count": d.get("count", 0)}
-        for d in (data.get("by_booking") or [])
-        if d.get("_id")
-    ]
+    by_booking = [{"booking_id": d.get("_id"), "count": d.get("count", 0)} for d in (data.get("by_booking") or []) if d.get("_id")]
 
-    by_hour_of_day = [
-        {"hour": d.get("_id"), "count": d.get("count", 0)}
-        for d in (data.get("by_hour_of_day") or [])
-        if d.get("_id")
-    ]
+    by_hour_of_day = [{"hour": d.get("_id"), "count": d.get("count", 0)} for d in (data.get("by_hour_of_day") or []) if d.get("_id")]
 
     return {
         "events": data.get("events", []),
@@ -914,35 +908,37 @@ async def export_id_photo_view_report_csv(
         checkin_id=checkin_id,
     )
 
-    cursor = db.audit_logs.find(match_stage, {"_id": 0}).sort(
-        "timestamp", -1
-    ).limit(_ID_PHOTO_VIEW_CSV_MAX_ROWS)
+    cursor = db.audit_logs.find(match_stage, {"_id": 0}).sort("timestamp", -1).limit(_ID_PHOTO_VIEW_CSV_MAX_ROWS)
     rows = await cursor.to_list(_ID_PHOTO_VIEW_CSV_MAX_ROWS)
 
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow([
-        "timestamp",
-        "actor_id",
-        "actor_role",
-        "checkin_id",
-        "booking_id",
-        "photo_id",
-        "sha256",
-        "content_type",
-    ])
+    writer.writerow(
+        [
+            "timestamp",
+            "actor_id",
+            "actor_role",
+            "checkin_id",
+            "booking_id",
+            "photo_id",
+            "sha256",
+            "content_type",
+        ]
+    )
     for row in rows:
         snap = row.get("after_snapshot") or {}
-        writer.writerow([
-            row.get("timestamp") or "",
-            row.get("actor_id") or "",
-            row.get("actor_role") or "",
-            row.get("target_id") or "",
-            snap.get("booking_id") or "",
-            snap.get("photo_id") or "",
-            snap.get("sha256") or "",
-            snap.get("content_type") or "",
-        ])
+        writer.writerow(
+            [
+                row.get("timestamp") or "",
+                row.get("actor_id") or "",
+                row.get("actor_role") or "",
+                row.get("target_id") or "",
+                snap.get("booking_id") or "",
+                snap.get("photo_id") or "",
+                snap.get("sha256") or "",
+                snap.get("content_type") or "",
+            ]
+        )
 
     csv_bytes = buf.getvalue().encode("utf-8-sig")  # Excel'in TR karakterler için BOM beklemesi
     filename = f"kvkk-id-photo-views-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.csv"
@@ -970,10 +966,12 @@ def _group_by_time(logs: list) -> list:
         if hour_key not in buckets:
             buckets[hour_key] = {"time_bucket": hour_key, "count": 0, "events": []}
         buckets[hour_key]["count"] += 1
-        buckets[hour_key]["events"].append({
-            "id": log.get("id"),
-            "operation": log.get("operation_name"),
-            "severity": log.get("severity"),
-            "target_type": log.get("target_type"),
-        })
+        buckets[hour_key]["events"].append(
+            {
+                "id": log.get("id"),
+                "operation": log.get("operation_name"),
+                "severity": log.get("severity"),
+                "target_type": log.get("target_type"),
+            }
+        )
     return list(buckets.values())

@@ -2,6 +2,7 @@
 Email Service - AWS SES SMTP Implementation
 Gerçek e-posta gönderimi için AWS SES kullanır
 """
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -21,15 +22,15 @@ class EmailService:
 
     def __init__(self):
         # Email mode: "production" veya "mock"
-        self.mode = os.environ.get('EMAIL_MODE', 'production')
+        self.mode = os.environ.get("EMAIL_MODE", "production")
 
         # AWS SES SMTP Settings
-        self.smtp_host = os.environ.get('SMTP_HOST', 'email-smtp.eu-central-1.amazonaws.com')
-        self.smtp_port = int(os.environ.get('SMTP_PORT', '587'))
-        self.smtp_username = os.environ.get('SMTP_USERNAME', '')
-        self.smtp_password = os.environ.get('SMTP_PASSWORD', '')
-        self.sender_email = os.environ.get('SENDER_EMAIL', 'info@syroce.com')
-        self.sender_name = os.environ.get('SENDER_NAME', 'Syroce')
+        self.smtp_host = os.environ.get("SMTP_HOST", "email-smtp.eu-central-1.amazonaws.com")
+        self.smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+        self.smtp_username = os.environ.get("SMTP_USERNAME", "")
+        self.smtp_password = os.environ.get("SMTP_PASSWORD", "")
+        self.sender_email = os.environ.get("SENDER_EMAIL", "info@syroce.com")
+        self.sender_name = os.environ.get("SENDER_NAME", "Syroce")
 
         logger.info(f"📧 Email Service initialized in {self.mode} mode")
         if self.mode == "production" and self.smtp_username:
@@ -42,12 +43,14 @@ class EmailService:
     def generate_reset_token(self) -> str:
         """Şifre sıfırlama token'ı oluştur"""
         import secrets
+
         return secrets.token_urlsafe(32)
 
     def _create_verification_email_html(self, code: str, name: str = None) -> str:
         """HTML formatted verification email"""
         # Bug CN (architect Round-2): name & code attacker-controlled (registration form)
         from core.mailing_safe import safe_html_value
+
         name = safe_html_value(name) if name else None
         code = safe_html_value(code)
         return f"""
@@ -74,7 +77,7 @@ class EmailService:
                     <h1>✨ Syroce'ye Hoş Geldiniz!</h1>
                 </div>
                 <div class="content">
-                    <p>Merhaba{' ' + name if name else ''},</p>
+                    <p>Merhaba{" " + name if name else ""},</p>
                     <p>Syroce hesabınızı oluşturmak için e-posta adresinizi doğrulamanız gerekiyor.</p>
                     <p><strong>Doğrulama kodunuz:</strong></p>
                     <div class="code-box">{code}</div>
@@ -95,6 +98,7 @@ class EmailService:
         """HTML formatted password reset email"""
         # Bug CN (architect Round-2): name from user profile, code backend-generated but escape defansif
         from core.mailing_safe import safe_html_value
+
         name = safe_html_value(name) if name else None
         code = safe_html_value(code)
         return f"""
@@ -121,7 +125,7 @@ class EmailService:
                     <h1>🔐 Şifre Sıfırlama</h1>
                 </div>
                 <div class="content">
-                    <p>Merhaba{' ' + name if name else ''},</p>
+                    <p>Merhaba{" " + name if name else ""},</p>
                     <p>Syroce hesabınız için şifre sıfırlama talebinde bulundunuz.</p>
                     <p><strong>Şifre sıfırlama kodunuz:</strong></p>
                     <div class="code-box">{code}</div>
@@ -144,6 +148,7 @@ class EmailService:
         """HTML formatted welcome email"""
         # Bug CN (architect Round-2): name from registration form
         from core.mailing_safe import safe_html_value
+
         name = safe_html_value(name)
         return f"""
         <!DOCTYPE html>
@@ -207,37 +212,36 @@ class EmailService:
         try:
             # If attachments are present, use mixed root with alternative inside
             if attachments:
-                msg = MIMEMultipart('mixed')
-                msg['Subject'] = subject
-                msg['From'] = f"{self.sender_name} <{self.sender_email}>"
-                msg['To'] = to_email
-                alt = MIMEMultipart('alternative')
-                alt.attach(MIMEText(text_content, 'plain', 'utf-8'))
-                alt.attach(MIMEText(html_content, 'html', 'utf-8'))
+                msg = MIMEMultipart("mixed")
+                msg["Subject"] = subject
+                msg["From"] = f"{self.sender_name} <{self.sender_email}>"
+                msg["To"] = to_email
+                alt = MIMEMultipart("alternative")
+                alt.attach(MIMEText(text_content, "plain", "utf-8"))
+                alt.attach(MIMEText(html_content, "html", "utf-8"))
                 msg.attach(alt)
                 for filename, mime_type, content in attachments:
                     try:
-                        if mime_type and mime_type.lower().startswith('application/pdf'):
-                            part = MIMEApplication(content, _subtype='pdf')
-                        elif mime_type and mime_type.lower().startswith('text/'):
-                            part = MIMEText(content.decode('utf-8', errors='replace'),
-                                            mime_type.split('/', 1)[1], 'utf-8')
+                        if mime_type and mime_type.lower().startswith("application/pdf"):
+                            part = MIMEApplication(content, _subtype="pdf")
+                        elif mime_type and mime_type.lower().startswith("text/"):
+                            part = MIMEText(content.decode("utf-8", errors="replace"), mime_type.split("/", 1)[1], "utf-8")
                         else:
-                            maintype, _, subtype = (mime_type or 'application/octet-stream').partition('/')
-                            part = MIMEBase(maintype or 'application', subtype or 'octet-stream')
+                            maintype, _, subtype = (mime_type or "application/octet-stream").partition("/")
+                            part = MIMEBase(maintype or "application", subtype or "octet-stream")
                             part.set_payload(content)
                             encoders.encode_base64(part)
-                        part.add_header('Content-Disposition', 'attachment', filename=filename)
+                        part.add_header("Content-Disposition", "attachment", filename=filename)
                         msg.attach(part)
                     except Exception as _ae:
                         logger.warning(f"attachment {filename} skipped: {_ae}")
             else:
-                msg = MIMEMultipart('alternative')
-                msg['Subject'] = subject
-                msg['From'] = f"{self.sender_name} <{self.sender_email}>"
-                msg['To'] = to_email
-                msg.attach(MIMEText(text_content, 'plain', 'utf-8'))
-                msg.attach(MIMEText(html_content, 'html', 'utf-8'))
+                msg = MIMEMultipart("alternative")
+                msg["Subject"] = subject
+                msg["From"] = f"{self.sender_name} <{self.sender_email}>"
+                msg["To"] = to_email
+                msg.attach(MIMEText(text_content, "plain", "utf-8"))
+                msg.attach(MIMEText(html_content, "html", "utf-8"))
 
             # Connect to SMTP server
             server = smtplib.SMTP(self.smtp_host, self.smtp_port)
@@ -261,7 +265,7 @@ class EmailService:
         subject = "Syroce - E-posta Doğrulama Kodu"
         html_content = self._create_verification_email_html(code, name)
         text_content = f"""
-Merhaba{' ' + name if name else ''},
+Merhaba{" " + name if name else ""},
 
 Syroce hesabınızı oluşturmak için e-posta adresinizi doğrulamanız gerekiyor.
 
@@ -278,16 +282,16 @@ Bu kodu kimseyle paylaşmayın.
             return self._send_email_smtp(email, subject, html_content, text_content)
         else:
             # Mock mode - print to console
-            logger.info("\n" + "="*60)
+            logger.info("\n" + "=" * 60)
             logger.info("📧 E-POSTA DOĞRULAMA KODU")
-            logger.info("="*60)
+            logger.info("=" * 60)
             logger.info(f"Alıcı: {email}")
             if name:
                 logger.info(f"İsim: {name}")
             logger.info(f"Kod: {code}")
             logger.info("Geçerlilik: 15 dakika")
             logger.info(f"Gönderim Zamanı: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            logger.info("="*60 + "\n")
+            logger.info("=" * 60 + "\n")
             return True
 
     async def send_password_reset_code(self, email: str, code: str, name: str = None) -> bool:
@@ -295,7 +299,7 @@ Bu kodu kimseyle paylaşmayın.
         subject = "Syroce - Şifre Sıfırlama Kodu"
         html_content = self._create_password_reset_email_html(code, name)
         text_content = f"""
-Merhaba{' ' + name if name else ''},
+Merhaba{" " + name if name else ""},
 
 Syroce hesabınız için şifre sıfırlama talebinde bulundunuz.
 
@@ -314,16 +318,16 @@ Bu talebi siz yapmadınız mı? Güvenle bu e-postayı görmezden gelebilirsiniz
             return self._send_email_smtp(email, subject, html_content, text_content)
         else:
             # Mock mode - print to console
-            logger.info("\n" + "="*60)
+            logger.info("\n" + "=" * 60)
             logger.info("🔐 ŞİFRE SIFIRLAMA KODU")
-            logger.info("="*60)
+            logger.info("=" * 60)
             logger.info(f"Alıcı: {email}")
             if name:
                 logger.info(f"İsim: {name}")
             logger.info(f"Kod: {code}")
             logger.info("Geçerlilik: 15 dakika")
             logger.info(f"Gönderim Zamanı: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            logger.info("="*60 + "\n")
+            logger.info("=" * 60 + "\n")
             return True
 
     async def send_welcome_email(self, email: str, name: str) -> bool:
@@ -346,15 +350,16 @@ Destek: info@syroce.com
             return self._send_email_smtp(email, subject, html_content, text_content)
         else:
             # Mock mode - print to console
-            logger.info("\n" + "="*60)
+            logger.info("\n" + "=" * 60)
             logger.info("🎉 HOŞGELDİN E-POSTASI")
-            logger.info("="*60)
+            logger.info("=" * 60)
             logger.info(f"Alıcı: {email}")
             logger.info(f"İsim: {name}")
             logger.info("Mesaj: Hesabınız başarıyla oluşturuldu!")
             logger.info(f"Gönderim Zamanı: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            logger.info("="*60 + "\n")
+            logger.info("=" * 60 + "\n")
             return True
+
 
 # Global email service instance
 email_service = EmailService()

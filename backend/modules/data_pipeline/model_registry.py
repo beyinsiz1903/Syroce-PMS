@@ -1,6 +1,7 @@
 """
 Model Registry - Model version tracking, training metrics, and lifecycle management.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -24,9 +25,7 @@ class ModelRegistry:
 
     MODEL_TYPES = ["revenue_ml", "operational_ai", "guest_intelligence"]
 
-    async def register_model(self, tenant_id: str, model_type: str,
-                             dataset_id: str, training_metrics: dict[str, Any],
-                             description: str = "") -> dict[str, Any]:
+    async def register_model(self, tenant_id: str, model_type: str, dataset_id: str, training_metrics: dict[str, Any], description: str = "") -> dict[str, Any]:
         """Register a new model version after training."""
         model_id = str(uuid.uuid4())
         version = await self._next_version(tenant_id, model_type)
@@ -80,11 +79,13 @@ class ModelRegistry:
         now = datetime.now(UTC).isoformat()
         await db.model_registry.update_one(
             {"id": model_id},
-            {"$set": {
-                "status": ModelStatus.DEPLOYED,
-                "deployment.deployed_at": now,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "status": ModelStatus.DEPLOYED,
+                    "deployment.deployed_at": now,
+                    "updated_at": now,
+                }
+            },
         )
         return {"model_id": model_id, "status": "deployed", "deployed_at": now}
 
@@ -95,14 +96,11 @@ class ModelRegistry:
             {"_id": 0},
         )
 
-    async def list_models(self, tenant_id: str, model_type: str | None = None,
-                          limit: int = 20) -> list[dict]:
+    async def list_models(self, tenant_id: str, model_type: str | None = None, limit: int = 20) -> list[dict]:
         q: dict[str, Any] = {"tenant_id": tenant_id}
         if model_type:
             q["model_type"] = model_type
-        return await db.model_registry.find(
-            q, {"_id": 0}
-        ).sort("created_at", -1).to_list(limit)
+        return await db.model_registry.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
 
     async def update_prediction_stats(self, model_id: str, confidence: float):
         """Update prediction statistics for a deployed model."""
@@ -116,12 +114,14 @@ class ModelRegistry:
         now = datetime.now(UTC).isoformat()
         await db.model_registry.update_one(
             {"id": model_id},
-            {"$set": {
-                "deployment.predictions_made": count,
-                "deployment.avg_confidence": new_avg,
-                "deployment.last_prediction_at": now,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "deployment.predictions_made": count,
+                    "deployment.avg_confidence": new_avg,
+                    "deployment.last_prediction_at": now,
+                    "updated_at": now,
+                }
+            },
         )
 
     async def get_stale_models(self, tenant_id: str, stale_hours: int = 24) -> list[dict]:
@@ -143,11 +143,13 @@ class ModelRegistry:
         """Get model registry summary."""
         pipeline = [
             {"$match": {"tenant_id": tenant_id}},
-            {"$group": {
-                "_id": {"type": "$model_type", "status": "$status"},
-                "count": {"$sum": 1},
-                "latest": {"$max": "$created_at"},
-            }},
+            {
+                "$group": {
+                    "_id": {"type": "$model_type", "status": "$status"},
+                    "count": {"$sum": 1},
+                    "latest": {"$max": "$created_at"},
+                }
+            },
         ]
         results = await db.model_registry.aggregate(pipeline).to_list(50)
 

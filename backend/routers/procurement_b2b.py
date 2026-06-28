@@ -3,6 +3,7 @@
 Links local inventory critical stock levels (reorder_level) to the Supplies Marketplace.
 Generates order proposals and submits approved orders directly to vendors via the Vendor Portal.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -40,7 +41,7 @@ class B2BApproveRequest(BaseModel):
 @router.get("/proposals")
 async def get_replenishment_proposals(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_hr")),  # or other procurement view perm
+    _perm=Depends(require_op("view_finance_reports")),  # Fixed permission
 ):
     """Scan local critical stock and match with approved marketplace vendors."""
     db = get_system_db()
@@ -50,10 +51,7 @@ async def get_replenishment_proposals(
     local_items = await db.inventory_items.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(1000)
 
     # 2. Filter for low stock (quantity <= reorder_level)
-    low_stock_items = [
-        item for item in local_items
-        if float(item.get("quantity", 0)) <= float(item.get("reorder_level", 0))
-    ]
+    low_stock_items = [item for item in local_items if float(item.get("quantity", 0)) <= float(item.get("reorder_level", 0))]
 
     proposals_by_vendor: dict[str, dict[str, Any]] = {}
 
@@ -66,10 +64,7 @@ async def get_replenishment_proposals(
         if sku:
             product = await db.mp_products.find_one({"sku": sku, "is_active": True})
         if not product and name:
-            product = await db.mp_products.find_one({
-                "name": {"$regex": f"^{name}$", "$options": "i"},
-                "is_active": True
-            })
+            product = await db.mp_products.find_one({"name": {"$regex": f"^{name}$", "$options": "i"}, "is_active": True})
 
         if not product:
             continue
@@ -95,15 +90,11 @@ async def get_replenishment_proposals(
             "mp_product_id": product["id"],
             "unit": product.get("unit", "adet"),
             "unit_price": product["price_try"],
-            "total_price": round(product["price_try"] * target_qty, 2)
+            "total_price": round(product["price_try"] * target_qty, 2),
         }
 
         if vendor_id not in proposals_by_vendor:
-            proposals_by_vendor[vendor_id] = {
-                "vendor_id": vendor_id,
-                "vendor_name": vendor.get("company_name", ""),
-                "lines": []
-            }
+            proposals_by_vendor[vendor_id] = {"vendor_id": vendor_id, "vendor_name": vendor.get("company_name", ""), "lines": []}
         proposals_by_vendor[vendor_id]["lines"].append(proposal_line)
 
     return {"proposals": list(proposals_by_vendor.values())}
@@ -113,7 +104,7 @@ async def get_replenishment_proposals(
 async def approve_replenishment_orders(
     payload: B2BApproveRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),
+    _perm=Depends(require_op("manage_city_ledger")),
 ):
     """Group approved items by vendor and submit orders directly to marketplace."""
     db = get_system_db()
@@ -141,10 +132,7 @@ async def approve_replenishment_orders(
 
     # 2. Place orders per vendor
     for vid, group_lines in lines_by_vendor.items():
-        order_lines = [
-            OrderLineIn(product_id=line.mp_product_id, quantity=line.quantity)
-            for line in group_lines
-        ]
+        order_lines = [OrderLineIn(product_id=line.mp_product_id, quantity=line.quantity) for line in group_lines]
 
         order_create = OrderCreate(
             lines=order_lines,
@@ -152,15 +140,11 @@ async def approve_replenishment_orders(
             shipping_address=payload.shipping_address,
             contact_name=payload.contact_name,
             contact_phone=payload.contact_phone,
-            notes=payload.notes or "Otomatik kritik stok siparişi"
+            notes=payload.notes or "Otomatik kritik stok siparişi",
         )
 
         # place_order decreases stock and inserts order_doc
-        order_doc = await place_order(
-            payload=order_create,
-            hotel_tenant_id=tenant_id,
-            hotel_name=hotel_name
-        )
+        order_doc = await place_order(payload=order_create, hotel_tenant_id=tenant_id, hotel_name=hotel_name)
         placed_orders.append(order_doc)
 
         # Write trace/audit mappings for local tracking
@@ -173,15 +157,12 @@ async def approve_replenishment_orders(
                 "order_id": order_doc["id"],
                 "order_no": order_doc["order_no"],
                 "quantity": line.quantity,
-                "created_at": datetime.now(UTC).isoformat()
+                "created_at": datetime.now(UTC).isoformat(),
             }
             await db.procurement_b2b_replenishments.insert_one(replenishment_trace)
 
     return {
         "success": True,
         "message": f"{len(placed_orders)} adet tedarikçi siparişi başarıyla oluşturuldu.",
-        "orders": [
-            {"order_id": o["id"], "order_no": o["order_no"], "vendor_name": o["vendor_name"], "total": o["total"]}
-            for o in placed_orders
-        ]
+        "orders": [{"order_id": o["id"], "order_no": o["order_no"], "vendor_name": o["vendor_name"], "total": o["total"]} for o in placed_orders],
     }

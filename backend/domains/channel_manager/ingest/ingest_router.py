@@ -7,6 +7,7 @@ and injecting test events.
 
 Prefix: /api/channel-manager/ingest/
 """
+
 import logging
 from typing import Any
 
@@ -42,6 +43,7 @@ router = APIRouter(
 
 # ── Request Models ────────────────────────────────────────────────────
 
+
 class InjectEventRequest(BaseModel):
     provider: str  # hotelrunner | exely
     property_id: str
@@ -51,6 +53,7 @@ class InjectEventRequest(BaseModel):
 
 
 # ── Pipeline Status ───────────────────────────────────────────────────
+
 
 @router.get("/status")
 async def get_ingest_status(
@@ -74,6 +77,7 @@ async def get_ingest_status(
 
 
 # ── Event Injection (for testing and manual ingestion) ────────────────
+
 
 @router.post("/inject")
 async def inject_event(
@@ -185,6 +189,7 @@ async def inject_and_process(
 
 # ── Worker Controls ───────────────────────────────────────────────────
 
+
 @router.post("/workers/process")
 async def trigger_process(
     current_user: User = Depends(get_current_user),
@@ -230,6 +235,7 @@ async def get_workers_status(
 
 # ── Raw Events Query ──────────────────────────────────────────────────
 
+
 @router.get("/events")
 async def list_ingest_events(
     property_id: str = Query("prop-001"),
@@ -240,7 +246,11 @@ async def list_ingest_events(
 ):
     """List raw channel events with optional filters."""
     events = await repo.get_raw_events(
-        current_user.tenant_id, property_id, provider, status, limit,
+        current_user.tenant_id,
+        property_id,
+        provider,
+        status,
+        limit,
     )
     return {"events": events, "count": len(events)}
 

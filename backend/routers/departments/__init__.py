@@ -2,6 +2,7 @@
 Aggregator package — auto-split from departments.py.
 Public API: from routers.departments import router
 """
+
 from fastapi import APIRouter
 
 from .bookings import router as _bookings_r

@@ -7,6 +7,7 @@ PMS kullanıcısı JWT'si ile korunur; Quick-ID'ye servis anahtarı (QUICKID_SER
 Ayrıca admin kullanıcılar OpenAI/Gemini API anahtarlarını uygulama içinden
 yönetebilir (şifreli olarak `quick_id_settings` koleksiyonunda saklanır).
 """
+
 import base64
 import hashlib
 import logging
@@ -114,8 +115,7 @@ def _dec(value: str | None) -> tuple | None:
         return f.decrypt(value.encode("utf-8")).decode("utf-8")
     except (InvalidToken, ValueError, TypeError) as e:
         logger.error(
-            "Quick-ID API key çözülemedi — anahtar rotasyonu yapıldıysa "
-            "QUICKID_SETTINGS_ENC_KEY_OLD ayarlayın ve kayıtları tekrar girin: %s",
+            "Quick-ID API key çözülemedi — anahtar rotasyonu yapıldıysa QUICKID_SETTINGS_ENC_KEY_OLD ayarlayın ve kayıtları tekrar girin: %s",
             e,
         )
         return "__DECRYPT_FAILED__"
@@ -179,8 +179,8 @@ def _service_headers(user, api_keys: dict | None = None) -> dict:
             headers["X-Gemini-Key"] = api_keys["gemini"]
     elif api_keys and (api_keys.get("openai") or api_keys.get("gemini")):
         logger.error(
-            "QUICKID_URL güvensiz (HTTP+remote): API anahtarları header üzerinden "
-            "iletilmeyecek. Loopback ya da HTTPS kullanın. URL=%s", QUICKID_URL,
+            "QUICKID_URL güvensiz (HTTP+remote): API anahtarları header üzerinden iletilmeyecek. Loopback ya da HTTPS kullanın. URL=%s",
+            QUICKID_URL,
         )
     return headers
 
@@ -196,23 +196,25 @@ def _demo_scan_result() -> dict:
         "success": True,
         "demo_mode": True,
         "extracted_data": {
-            "documents": [{
-                "first_name": "AYŞE",
-                "last_name": "DEMO",
-                "id_number": "12345678901",
-                "document_type": "tc_kimlik",
-                "document_number": "A12345678",
-                "birth_date": "1990-05-15",
-                "gender": "female",
-                "nationality": "TR",
-                "issue_date": "2020-01-01",
-                "expiry_date": "2030-01-01",
-                "mother_name": "FATMA",
-                "father_name": "MEHMET",
-                "birth_place": "İSTANBUL",
-                "is_valid": True,
-                "warnings": ["Demo verisi - OCR sağlayıcı yapılandırılmamış"],
-            }],
+            "documents": [
+                {
+                    "first_name": "AYŞE",
+                    "last_name": "DEMO",
+                    "id_number": "12345678901",
+                    "document_type": "tc_kimlik",
+                    "document_number": "A12345678",
+                    "birth_date": "1990-05-15",
+                    "gender": "female",
+                    "nationality": "TR",
+                    "issue_date": "2020-01-01",
+                    "expiry_date": "2030-01-01",
+                    "mother_name": "FATMA",
+                    "father_name": "MEHMET",
+                    "birth_place": "İSTANBUL",
+                    "is_valid": True,
+                    "warnings": ["Demo verisi - OCR sağlayıcı yapılandırılmamış"],
+                }
+            ],
             "document_count": 1,
         },
         "scan": {
@@ -283,10 +285,15 @@ async def scan_id(
                 detail_raw = r.text
             detail_lower = str(detail_raw).lower()
             ocr_unavailable_signals = [
-                "api anahtarı", "api key",
-                "tüm sağlayıcılar", "tum saglayicilar", "all providers",
-                "tesseract", "ocr",
-                "openai", "gemini",
+                "api anahtarı",
+                "api key",
+                "tüm sağlayıcılar",
+                "tum saglayicilar",
+                "all providers",
+                "tesseract",
+                "ocr",
+                "openai",
+                "gemini",
             ]
             if r.status_code in (500, 502, 503) or any(s in detail_lower for s in ocr_unavailable_signals):
                 if QUICKID_DEMO_ENABLED:
@@ -325,6 +332,7 @@ async def providers(current_user=Depends(get_current_user)):
 
 
 # ===================== AYARLAR (admin) =====================
+
 
 class QuickIdSettingsUpdate(BaseModel):
     openai_api_key: str | None = None  # None: değiştirme; "": temizle
@@ -445,6 +453,7 @@ async def test_quick_id_keys(current_user=Depends(get_current_user)):
 
 # ===================== BIYOMETRIK (face-compare + liveness) =====================
 
+
 @router.post("/biometric/face-compare")
 async def biometric_face_compare(
     payload: dict = Body(...),
@@ -542,6 +551,7 @@ async def biometric_liveness_check(
 
 # ===================== ÖN CHECK-IN (QR) =====================
 
+
 @router.post("/precheckin/create")
 async def precheckin_create(
     payload: dict = Body(...),
@@ -588,11 +598,11 @@ _RL_BUCKETS: dict = defaultdict(deque)
 _RL_ATTEMPTS: dict = defaultdict(int)
 _RL_LOCKED_UNTIL: dict = defaultdict(float)
 _RL_LOCK = Lock()
-_RL_INFO_LIMIT = 30      # token başına 60 sn'de en fazla 30 info isteği
+_RL_INFO_LIMIT = 30  # token başına 60 sn'de en fazla 30 info isteği
 _RL_INFO_WINDOW = 60
-_RL_SCAN_LIMIT = 5       # token başına 60 sn'de en fazla 5 scan
+_RL_SCAN_LIMIT = 5  # token başına 60 sn'de en fazla 5 scan
 _RL_SCAN_WINDOW = 60
-_RL_MAX_ATTEMPTS = 10    # token başına toplam 10 başarısız sonrası 30 dk kilit
+_RL_MAX_ATTEMPTS = 10  # token başına toplam 10 başarısız sonrası 30 dk kilit
 _RL_LOCKOUT_SEC = 1800
 
 

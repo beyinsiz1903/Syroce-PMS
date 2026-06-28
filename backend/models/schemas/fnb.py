@@ -1,4 +1,5 @@
 """Auto-split from schemas.py — domain: fnb."""
+
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -30,6 +31,7 @@ class Outlet(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class Ingredient(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -47,12 +49,14 @@ class Ingredient(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class RecipeIngredient(BaseModel):
     ingredient_id: str
     ingredient_name: str
     quantity: float
     unit: MeasurementUnit
     cost: float
+
 
 class Recipe(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -70,6 +74,7 @@ class Recipe(BaseModel):
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
 
 class POSOrder(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -95,6 +100,7 @@ class POSOrder(BaseModel):
     served_at: datetime | None = None
     notes: str | None = None
 
+
 class StockConsumption(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -102,7 +108,6 @@ class StockConsumption(BaseModel):
     ingredient_id: str
     ingredient_name: str
     consumed_quantity: float
-
 
 
 # Marketplace Models
@@ -119,10 +124,12 @@ class Product(BaseModel):
     in_stock: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class OrderCreate(BaseModel):
     items: list[dict[str, Any]]
     total_amount: float
     delivery_address: str
+
 
 class Order(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -133,5 +140,3 @@ class Order(BaseModel):
     status: str = "pending"
     delivery_address: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
-

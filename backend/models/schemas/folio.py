@@ -1,4 +1,5 @@
 """Auto-split from schemas.py — domain: folio."""
+
 import uuid
 from datetime import UTC, datetime
 
@@ -24,6 +25,7 @@ class FolioCreate(BaseModel):
     company_id: str | None = None
     notes: str | None = None
 
+
 class Folio(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -45,6 +47,7 @@ class Folio(BaseModel):
     payor_type: str | None = None
     payor_id: str | None = None
 
+
 class ChargeCreate(BaseModel):
     charge_category: ChargeCategory
     description: str = Field(..., min_length=1, max_length=500)
@@ -60,6 +63,7 @@ class ChargeCreate(BaseModel):
         if (self.discount_amount or 0) > 0 and not (self.discount_reason and self.discount_reason.strip()):
             raise ValueError("İndirim için neden zorunludur")
         return self
+
 
 class FolioCharge(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -86,12 +90,14 @@ class FolioCharge(BaseModel):
     voided_by: str | None = None
     voided_at: datetime | None = None
 
+
 class PaymentCreate(BaseModel):
     amount: float = Field(..., gt=0, le=1e9)
     method: PaymentMethod
     payment_type: PaymentType
     reference: str | None = Field(None, max_length=200)
     notes: str | None = Field(None, max_length=2000)
+
 
 class Payment(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -112,6 +118,7 @@ class Payment(BaseModel):
     processed_by: str | None = None
     processed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class FolioOperationCreate(BaseModel):
     operation_type: FolioOperationType
     from_folio_id: str
@@ -119,6 +126,7 @@ class FolioOperationCreate(BaseModel):
     charge_ids: list[str] = []  # For transfer operations
     amount: float | None = None
     reason: str
+
 
 class Package(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -146,6 +154,7 @@ class FolioOperation(BaseModel):
     performed_by: str
     performed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class CityTaxRule(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -159,5 +168,3 @@ class CityTaxRule(BaseModel):
     max_nights: int | None = None
     active: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
-

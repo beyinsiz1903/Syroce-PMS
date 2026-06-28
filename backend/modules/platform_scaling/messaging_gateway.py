@@ -3,6 +3,7 @@ Enterprise Messaging Gateway - Provider-agnostic messaging with
 Twilio (SMS), SendGrid (Email), WhatsApp abstraction.
 Template-based messaging, delivery tracking, retry, audit, consent, rate limiting.
 """
+
 import asyncio
 import logging
 import os
@@ -19,8 +20,10 @@ logger = logging.getLogger(__name__)
 
 # ── Provider Abstraction ──
 
+
 class MessagingProvider:
     """Base provider interface."""
+
     provider_name: str = "base"
 
     async def send(self, to: str, subject: str, body: str, template_vars: dict = None) -> dict[str, Any]:
@@ -32,6 +35,7 @@ class MessagingProvider:
 
 class TwilioProvider(MessagingProvider):
     """Twilio SMS provider (mock-ready, activate with credentials)."""
+
     provider_name = "twilio"
 
     def __init__(self):
@@ -55,6 +59,7 @@ class TwilioProvider(MessagingProvider):
 
 class SendGridProvider(MessagingProvider):
     """SendGrid Email provider (mock-ready, activate with credentials)."""
+
     provider_name = "sendgrid"
 
     def __init__(self):
@@ -76,6 +81,7 @@ class SendGridProvider(MessagingProvider):
 
 class WhatsAppProvider(MessagingProvider):
     """WhatsApp Business provider abstraction."""
+
     provider_name = "whatsapp"
 
     def __init__(self):
@@ -97,8 +103,10 @@ class WhatsAppProvider(MessagingProvider):
 
 # ── Rate Limiter ──
 
+
 class MessageRateLimiter:
     """Per-tenant, per-channel rate limiting."""
+
     def __init__(self, max_per_minute: int = 60, max_per_hour: int = 500):
         self._minute_counters: dict[str, list[float]] = defaultdict(list)
         self._hour_counters: dict[str, list[float]] = defaultdict(list)
@@ -122,6 +130,7 @@ class MessageRateLimiter:
 
 # ── Messaging Gateway ──
 
+
 class MessagingGateway:
     """
     Central messaging service with provider routing, templates,
@@ -138,29 +147,32 @@ class MessagingGateway:
         self.max_retries = 3
 
     async def send_message(
-        self, tenant_id: str, channel: str, to: str,
-        subject: str, body: str, template_id: str | None = None,
-        template_vars: dict | None = None, user_id: str | None = None,
-        guest_id: str | None = None, booking_id: str | None = None,
+        self,
+        tenant_id: str,
+        channel: str,
+        to: str,
+        subject: str,
+        body: str,
+        template_id: str | None = None,
+        template_vars: dict | None = None,
+        user_id: str | None = None,
+        guest_id: str | None = None,
+        booking_id: str | None = None,
     ) -> dict[str, Any]:
         """Send a message through the specified channel with full lifecycle tracking."""
         # Rate limit check
         if not self.rate_limiter.check(tenant_id, channel):
-            return {"success": False, "error": "rate_limit_exceeded",
-                    "message": "Mesaj gonderim limiti asildi"}
+            return {"success": False, "error": "rate_limit_exceeded", "message": "Mesaj gonderim limiti asildi"}
 
         # Consent check
         if guest_id:
             consent = await self._check_consent(tenant_id, guest_id, channel)
             if not consent:
-                return {"success": False, "error": "no_consent",
-                        "message": "Misafir bu kanal icin onay vermemis"}
+                return {"success": False, "error": "no_consent", "message": "Misafir bu kanal icin onay vermemis"}
 
         # Template resolution
         if template_id:
-            template = await db.message_templates.find_one(
-                {"id": template_id, "tenant_id": tenant_id}, {"_id": 0}
-            )
+            template = await db.message_templates.find_one({"id": template_id, "tenant_id": tenant_id}, {"_id": 0})
             if template:
                 subject = template.get("subject", subject)
                 # v41 Bug BG: HTML-escape variables for HTML-rendering channels.
@@ -195,9 +207,7 @@ class MessagingGateway:
         result = await self._send_with_retry(provider, to, subject, body, template_vars, delivery)
         return result
 
-    async def _send_with_retry(self, provider: MessagingProvider, to: str, subject: str,
-                                body: str, template_vars: dict | None,
-                                delivery: dict) -> dict[str, Any]:
+    async def _send_with_retry(self, provider: MessagingProvider, to: str, subject: str, body: str, template_vars: dict | None, delivery: dict) -> dict[str, Any]:
         last_error = ""
         for attempt in range(1, self.max_retries + 1):
             delivery["attempts"] = attempt
@@ -211,19 +221,23 @@ class MessagingGateway:
                     await db.message_deliveries.insert_one(delivery)
 
                     # Audit log
-                    await db.messaging_audit.insert_one({
-                        "id": str(uuid.uuid4()),
-                        "tenant_id": delivery["tenant_id"],
-                        "delivery_id": delivery["id"],
-                        "channel": delivery["channel"],
-                        "to": to,
-                        "status": "delivered",
-                        "provider": provider.provider_name,
-                        "timestamp": delivery["delivered_at"],
-                    })
+                    await db.messaging_audit.insert_one(
+                        {
+                            "id": str(uuid.uuid4()),
+                            "tenant_id": delivery["tenant_id"],
+                            "delivery_id": delivery["id"],
+                            "channel": delivery["channel"],
+                            "to": to,
+                            "status": "delivered",
+                            "provider": provider.provider_name,
+                            "timestamp": delivery["delivered_at"],
+                        }
+                    )
                     return {
-                        "success": True, "delivery_id": delivery["id"],
-                        "provider": provider.provider_name, "mode": result.get("mode"),
+                        "success": True,
+                        "delivery_id": delivery["id"],
+                        "provider": provider.provider_name,
+                        "mode": result.get("mode"),
                     }
                 last_error = result.get("error", "send_failed")
             except Exception as e:
@@ -231,7 +245,7 @@ class MessagingGateway:
                 logger.error(f"Message send attempt {attempt} failed: {e}")
 
             if attempt < self.max_retries:
-                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                await asyncio.sleep(2**attempt)  # Exponential backoff
 
         # All retries exhausted
         delivery["status"] = "failed"
@@ -239,22 +253,25 @@ class MessagingGateway:
         delivery["failed_at"] = datetime.now(UTC).isoformat()
         await db.message_deliveries.insert_one(delivery)
 
-        await db.messaging_audit.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": delivery["tenant_id"],
-            "delivery_id": delivery["id"],
-            "channel": delivery["channel"],
-            "to": to,
-            "status": "failed",
-            "error": last_error,
-            "attempts": self.max_retries,
-            "timestamp": delivery["failed_at"],
-        })
+        await db.messaging_audit.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": delivery["tenant_id"],
+                "delivery_id": delivery["id"],
+                "channel": delivery["channel"],
+                "to": to,
+                "status": "failed",
+                "error": last_error,
+                "attempts": self.max_retries,
+                "timestamp": delivery["failed_at"],
+            }
+        )
         return {"success": False, "delivery_id": delivery["id"], "error": last_error}
 
     def _render_template(self, template: str, vars: dict, escape_html: bool = False) -> str:
         # v41 Bug BG: HTML-escape variables for email/HTML channels.
         import html as _html_mod
+
         result = template
         for key, val in vars.items():
             sv = str(val) if val is not None else ""
@@ -264,9 +281,7 @@ class MessagingGateway:
         return result
 
     async def _check_consent(self, tenant_id: str, guest_id: str, channel: str) -> bool:
-        consent = await db.messaging_consents.find_one(
-            {"tenant_id": tenant_id, "guest_id": guest_id}, {"_id": 0}
-        )
+        consent = await db.messaging_consents.find_one({"tenant_id": tenant_id, "guest_id": guest_id}, {"_id": 0})
         if not consent:
             return True  # Default: opt-in (can be changed per tenant policy)
         opted_out = consent.get("opted_out_channels", [])
@@ -274,8 +289,7 @@ class MessagingGateway:
 
     # ── Template Management ──
 
-    async def create_template(self, tenant_id: str, name: str, channel: str,
-                               subject: str, body: str, user_id: str) -> dict[str, Any]:
+    async def create_template(self, tenant_id: str, name: str, channel: str, subject: str, body: str, user_id: str) -> dict[str, Any]:
         template = {
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,
@@ -300,32 +314,24 @@ class MessagingGateway:
     # ── Delivery Tracking ──
 
     async def get_delivery_status(self, tenant_id: str, delivery_id: str) -> dict[str, Any]:
-        d = await db.message_deliveries.find_one(
-            {"id": delivery_id, "tenant_id": tenant_id}, {"_id": 0}
-        )
+        d = await db.message_deliveries.find_one({"id": delivery_id, "tenant_id": tenant_id}, {"_id": 0})
         if not d:
             return {"success": False, "error": "Delivery not found"}
         return {"success": True, "delivery": d}
 
-    async def get_delivery_history(self, tenant_id: str, guest_id: str | None = None,
-                                    channel: str | None = None, limit: int = 50) -> dict[str, Any]:
+    async def get_delivery_history(self, tenant_id: str, guest_id: str | None = None, channel: str | None = None, limit: int = 50) -> dict[str, Any]:
         query: dict[str, Any] = {"tenant_id": tenant_id}
         if guest_id:
             query["guest_id"] = guest_id
         if channel:
             query["channel"] = channel
-        deliveries = await db.message_deliveries.find(
-            query, {"_id": 0}
-        ).sort("created_at", -1).limit(limit).to_list(limit)
+        deliveries = await db.message_deliveries.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
         return {"count": len(deliveries), "deliveries": deliveries}
 
     # ── Consent Management ──
 
-    async def update_consent(self, tenant_id: str, guest_id: str,
-                              channel: str, opted_in: bool) -> dict[str, Any]:
-        consent = await db.messaging_consents.find_one(
-            {"tenant_id": tenant_id, "guest_id": guest_id}
-        )
+    async def update_consent(self, tenant_id: str, guest_id: str, channel: str, opted_in: bool) -> dict[str, Any]:
+        consent = await db.messaging_consents.find_one({"tenant_id": tenant_id, "guest_id": guest_id})
         if not consent:
             doc = {
                 "id": str(uuid.uuid4()),
@@ -343,8 +349,7 @@ class MessagingGateway:
                 opted_out.append(channel)
             await db.messaging_consents.update_one(
                 {"tenant_id": tenant_id, "guest_id": guest_id},
-                {"$set": {"opted_out_channels": opted_out,
-                           "updated_at": datetime.now(UTC).isoformat()}},
+                {"$set": {"opted_out_channels": opted_out, "updated_at": datetime.now(UTC).isoformat()}},
             )
         return {"success": True, "guest_id": guest_id, "channel": channel, "opted_in": opted_in}
 

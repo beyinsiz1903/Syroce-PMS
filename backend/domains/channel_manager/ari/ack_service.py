@@ -3,6 +3,7 @@ ARI Ack Service.
 
 Processes provider push results: success → ack, failure → retry or dead-letter.
 """
+
 import logging
 
 from . import repositories as repo
@@ -27,19 +28,21 @@ async def process_ack(
     attempt = change_set.get("outbound_attempt_count", 0)
 
     # Log the outbound attempt
-    await repo.insert_outbound_log({
-        "tenant_id": change_set["tenant_id"],
-        "property_id": change_set["property_id"],
-        "provider": provider,
-        "outbound_change_id": outbound_change_id,
-        "provider_delta_hash": change_set.get("provider_delta_hash", ""),
-        "endpoint_or_action": f"{result.provider}:{change_set['change_scope']}",
-        "request_payload": change_set.get("compacted_payload"),
-        "response_payload": result.response_payload,
-        "status_code": result.status_code,
-        "success": result.success,
-        "duration_ms": result.duration_ms,
-    })
+    await repo.insert_outbound_log(
+        {
+            "tenant_id": change_set["tenant_id"],
+            "property_id": change_set["property_id"],
+            "provider": provider,
+            "outbound_change_id": outbound_change_id,
+            "provider_delta_hash": change_set.get("provider_delta_hash", ""),
+            "endpoint_or_action": f"{result.provider}:{change_set['change_scope']}",
+            "request_payload": change_set.get("compacted_payload"),
+            "response_payload": result.response_payload,
+            "status_code": result.status_code,
+            "success": result.success,
+            "duration_ms": result.duration_ms,
+        }
+    )
 
     if result.success:
         await repo.update_change_set_status(cs_id, STATUS_ACKED)
@@ -52,7 +55,8 @@ async def process_ack(
     if error_class == "rate_limited":
         # Rate limited — always retry
         await repo.update_change_set_status(
-            cs_id, STATUS_FAILED_RETRYABLE,
+            cs_id,
+            STATUS_FAILED_RETRYABLE,
             error=f"429 Rate Limited: {result.error}",
             inc_attempt=True,
         )
@@ -61,7 +65,8 @@ async def process_ack(
 
     if error_class == "retryable" and should_retry(attempt + 1):
         await repo.update_change_set_status(
-            cs_id, STATUS_FAILED_RETRYABLE,
+            cs_id,
+            STATUS_FAILED_RETRYABLE,
             error=result.error,
             inc_attempt=True,
         )
@@ -70,7 +75,8 @@ async def process_ack(
 
     # Permanent failure or max retries exhausted
     await repo.update_change_set_status(
-        cs_id, STATUS_FAILED_PERMANENT,
+        cs_id,
+        STATUS_FAILED_PERMANENT,
         error=result.error or f"Permanent failure after {attempt + 1} attempts",
         inc_attempt=True,
     )

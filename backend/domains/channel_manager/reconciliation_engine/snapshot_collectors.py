@@ -7,6 +7,7 @@ Normalize into canonical structure for comparison.
 
 Uses real provider API clients with graceful error handling.
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -35,19 +36,14 @@ async def collect_hotelrunner_snapshot(
     hr_id = credentials.get("hr_id") or credentials.get("hotel_id", "")
 
     if not token or not hr_id:
-        logger.warning(
-            f"HotelRunner snapshot: missing credentials for property={property_id}"
-        )
+        logger.warning(f"HotelRunner snapshot: missing credentials for property={property_id}")
         return []
 
     environment = connection.get("environment", "production")
     provider = HotelRunnerProvider(token=token, hr_id=hr_id, environment=environment)
     since = (datetime.now(UTC) - timedelta(hours=since_hours)).strftime("%Y-%m-%d")
 
-    logger.info(
-        f"HotelRunner snapshot: property={property_id}, "
-        f"window={since_hours}h, since={since}"
-    )
+    logger.info(f"HotelRunner snapshot: property={property_id}, window={since_hours}h, since={since}")
 
     all_reservations: list[dict[str, Any]] = []
     page = 1
@@ -66,9 +62,7 @@ async def collect_hotelrunner_snapshot(
             break
 
         if not result.get("success"):
-            logger.error(
-                f"HotelRunner snapshot failed: {result.get('error', 'unknown')}"
-            )
+            logger.error(f"HotelRunner snapshot failed: {result.get('error', 'unknown')}")
             break
 
         data = result.get("data", {})
@@ -87,10 +81,7 @@ async def collect_hotelrunner_snapshot(
             break
         page += 1
 
-    logger.info(
-        f"HotelRunner snapshot complete: property={property_id}, "
-        f"reservations={len(all_reservations)}"
-    )
+    logger.info(f"HotelRunner snapshot complete: property={property_id}, reservations={len(all_reservations)}")
     return all_reservations
 
 
@@ -113,9 +104,7 @@ async def collect_exely_snapshot(
     endpoint_url = credentials.get("endpoint_url") or credentials.get("soap_url", "")
 
     if not username or not password or not hotel_code:
-        logger.warning(
-            f"Exely snapshot: missing credentials for property={property_id}"
-        )
+        logger.warning(f"Exely snapshot: missing credentials for property={property_id}")
         return []
 
     provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
@@ -127,10 +116,7 @@ async def collect_exely_snapshot(
     from_date = since.strftime("%Y-%m-%d")
     to_date = datetime.now(UTC).strftime("%Y-%m-%d")
 
-    logger.info(
-        f"Exely snapshot: property={property_id}, "
-        f"window={since_hours}h, range={from_date} -> {to_date}"
-    )
+    logger.info(f"Exely snapshot: property={property_id}, window={since_hours}h, range={from_date} -> {to_date}")
 
     try:
         result = await provider.legacy_pull_reservations(from_date=from_date, to_date=to_date)
@@ -153,10 +139,7 @@ async def collect_exely_snapshot(
             ext_id = raw.get("reservation_id", "?")
             logger.warning(f"Normalize error for Exely reservation {ext_id}: {e}")
 
-    logger.info(
-        f"Exely snapshot complete: property={property_id}, "
-        f"reservations={len(canonical_list)}"
-    )
+    logger.info(f"Exely snapshot complete: property={property_id}, reservations={len(canonical_list)}")
     return canonical_list
 
 

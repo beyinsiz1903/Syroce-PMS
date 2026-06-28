@@ -1,6 +1,7 @@
 """
 Security Hardening Router - API endpoints for multi-tenant security.
 """
+
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Query
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/api/security-hardening", tags=["security-hardening"]
 
 
 # --- Tenant Scope ---
+
 
 @router.get("/tenant-scope/check")
 @cached(ttl=60, key_prefix="tenant_scope_check")
@@ -38,6 +40,7 @@ async def get_violations(
 
 # --- Property Permissions ---
 
+
 @router.get("/property-permissions")
 async def get_property_permissions(
     property_id: str | None = None,
@@ -54,9 +57,7 @@ async def check_permission(
     action: str = Query(...),
     tenant: TenantContext = Depends(get_current_tenant),
 ):
-    return await property_permissions.check_permission(
-        tenant.tenant_id, user_id, role, property_id, action
-    )
+    return await property_permissions.check_permission(tenant.tenant_id, user_id, role, property_id, action)
 
 
 @router.get("/property-permissions/roles")
@@ -65,6 +66,7 @@ async def get_role_permissions(tenant: TenantContext = Depends(get_current_tenan
 
 
 # --- Credential Vault ---
+
 
 @router.get("/vault/status")
 async def get_vault_status(tenant: TenantContext = Depends(get_current_tenant)):
@@ -82,8 +84,12 @@ async def store_credential(
     _perm=Depends(require_op("manage_secrets")),  # v88 DW
 ):
     return await credential_vault.store_credential(
-        tenant.tenant_id, credential_type, credential_key,
-        credential_value, description, rotation_days,
+        tenant.tenant_id,
+        credential_type,
+        credential_key,
+        credential_value,
+        description,
+        rotation_days,
     )
 
 
@@ -104,6 +110,7 @@ async def check_leakage(tenant: TenantContext = Depends(get_current_tenant)):
 
 # --- Data Masking ---
 
+
 @router.post("/masking-preview")
 async def preview_masking(
     data: dict[str, Any] = Body(...),
@@ -123,6 +130,7 @@ async def check_masking_coverage(
 
 
 # --- Audit Completeness ---
+
 
 @router.get("/audit-completeness")
 async def check_audit_completeness(

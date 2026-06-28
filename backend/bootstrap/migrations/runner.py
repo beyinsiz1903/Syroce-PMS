@@ -10,6 +10,7 @@ Davranış:
   - Advisory lock sayesinde aynı anda yalnızca bir instance koşar; lock
     alınamazsa runner çift koşmadan atlar.
 """
+
 from __future__ import annotations
 
 import logging
@@ -50,7 +51,8 @@ async def _applied_versions(db) -> set[str]:
     """Ledger'da ``applied`` durumundaki versiyonları döndürür."""
     out: set[str] = set()
     cursor = db[LEDGER_COLLECTION].find(
-        {"status": STATUS_APPLIED}, {"_id": 0, "version": 1},
+        {"status": STATUS_APPLIED},
+        {"_id": 0, "version": 1},
     )
     async for doc in cursor:
         v = doc.get("version")
@@ -59,8 +61,7 @@ async def _applied_versions(db) -> set[str]:
     return out
 
 
-async def _record(db, migration: Migration, *, status: str,
-                  duration_ms: int, error: str | None) -> None:
+async def _record(db, migration: Migration, *, status: str, duration_ms: int, error: str | None) -> None:
     """Ledger'a migration sonucunu upsert eder (versiyona göre)."""
     now = _now_iso()
     doc = {
@@ -93,7 +94,8 @@ async def _apply_one(db, migration: Migration, timeout: float) -> None:
         up_msg = "timeout" if is_timeout else f"{type(up_err).__name__}: {up_err}"
         logger.error(
             "MIGRATION_UP_FAILED version=%s — rollback başlatılıyor: %s",
-            migration.version, up_msg,
+            migration.version,
+            up_msg,
         )
         # ── Rollback: aynı migration'ın down() adımını çağır ──
         try:
@@ -106,26 +108,22 @@ async def _apply_one(db, migration: Migration, timeout: float) -> None:
             )
         except BaseException as down_err:  # noqa: BLE001
             status = STATUS_FAILED
-            err_text = (
-                f"up failed ({up_msg}); down ALSO failed "
-                f"({type(down_err).__name__}: {down_err})"
-            )
+            err_text = f"up failed ({up_msg}); down ALSO failed ({type(down_err).__name__}: {down_err})"
             logger.critical(
-                "MIGRATION_DOWN_FAILED version=%s — geri alma BAŞARISIZ, "
-                "şema tutarsız olabilir: %s", migration.version, down_err,
+                "MIGRATION_DOWN_FAILED version=%s — geri alma BAŞARISIZ, şema tutarsız olabilir: %s",
+                migration.version,
+                down_err,
             )
         duration_ms = int((time.monotonic() - start) * 1000)
-        await _record(db, migration, status=status,
-                      duration_ms=duration_ms, error=err_text)
-        raise MigrationError(
-            f"Migration {migration.version} başarısız ({status}): {err_text}"
-        ) from up_err
+        await _record(db, migration, status=status, duration_ms=duration_ms, error=err_text)
+        raise MigrationError(f"Migration {migration.version} başarısız ({status}): {err_text}") from up_err
 
     duration_ms = int((time.monotonic() - start) * 1000)
-    await _record(db, migration, status=STATUS_APPLIED,
-                  duration_ms=duration_ms, error=None)
+    await _record(db, migration, status=STATUS_APPLIED, duration_ms=duration_ms, error=None)
     logger.info(
-        "MIGRATION_APPLIED version=%s (%d ms)", migration.version, duration_ms,
+        "MIGRATION_APPLIED version=%s (%d ms)",
+        migration.version,
+        duration_ms,
     )
 
 
@@ -154,7 +152,8 @@ async def run_migrations(
         )
         return {
             "status": "up_to_date",
-            "applied": [], "skipped": sorted(applied),
+            "applied": [],
+            "skipped": sorted(applied),
             "total": len(all_migrations),
             "summary": f"0 uygulandı, {len(applied)} zaten uygulanmış",
         }
@@ -163,12 +162,12 @@ async def run_migrations(
     got_lock = await acquire_lock(db, owner, lease_seconds)
     if not got_lock:
         logger.warning(
-            "DB migration: advisory lock alınamadı (başka instance koşuyor) — "
-            "çift koşma engellendi, bu instance atlıyor",
+            "DB migration: advisory lock alınamadı (başka instance koşuyor) — çift koşma engellendi, bu instance atlıyor",
         )
         return {
             "status": "skipped_locked",
-            "applied": [], "skipped": [],
+            "applied": [],
+            "skipped": [],
             "total": len(all_migrations),
             "summary": "advisory lock başka instance'ta — atlandı",
         }
@@ -189,7 +188,8 @@ async def run_migrations(
 
     logger.info(
         "DB migration tamamlandı: %d uygulandı (%s)",
-        len(newly_applied), ", ".join(newly_applied) or "-",
+        len(newly_applied),
+        ", ".join(newly_applied) or "-",
     )
     return {
         "status": "applied",
@@ -214,11 +214,7 @@ async def get_migration_status(db) -> dict[str, Any]:
     by_version = {d.get("version"): d for d in ledger}
     applied = [v for v in known_versions if by_version.get(v, {}).get("status") == STATUS_APPLIED]
     pending = [v for v in known_versions if by_version.get(v, {}).get("status") != STATUS_APPLIED]
-    failed = [
-        {"version": d.get("version"), "status": d.get("status"), "error": d.get("error")}
-        for d in ledger
-        if d.get("status") in (STATUS_FAILED, STATUS_ROLLED_BACK)
-    ]
+    failed = [{"version": d.get("version"), "status": d.get("status"), "error": d.get("error")} for d in ledger if d.get("status") in (STATUS_FAILED, STATUS_ROLLED_BACK)]
     last_error = None
     for d in sorted(ledger, key=lambda x: x.get("updated_at", ""), reverse=True):
         if d.get("error"):

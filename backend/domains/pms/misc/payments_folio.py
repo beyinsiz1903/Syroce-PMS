@@ -1,4 +1,5 @@
 """Auto-split from misc_router.py — backward-compatible sub-router."""
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -18,14 +19,16 @@ logger = logging.getLogger(__name__)
 
 sub_router = APIRouter()
 
+
 @sub_router.post("/payments/intent")
-async def payment_intent(payment_data: dict, current_user: User = Depends(get_current_user),
+async def payment_intent(
+    payment_data: dict,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
-    intent = {'id': str(uuid.uuid4()), 'amount': payment_data['amount'], 'status': 'pending'}
+    intent = {"id": str(uuid.uuid4()), "amount": payment_data["amount"], "status": "pending"}
     await db.payment_intents.insert_one(intent)
-    return {'success': True, 'intent_id': intent['id']}
-
+    return {"success": True, "intent_id": intent["id"]}
 
 
 # NOT: /payments/installment ucu kaldırıldı (sadece silinen PaymentGateway
@@ -33,13 +36,12 @@ async def payment_intent(payment_data: dict, current_user: User = Depends(get_cu
 
 
 @sub_router.post("/payments/create-intent")
-async def create_payment_intent(payment_data: dict, current_user: User = Depends(get_current_user),
+async def create_payment_intent(
+    payment_data: dict,
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
-    intent = {
-        'id': str(uuid.uuid4()), 'amount': payment_data['amount'],
-        'status': 'pending', 'stripe_id': f'pi_mock_{str(uuid.uuid4())[:8]}'
-    }
+    intent = {"id": str(uuid.uuid4()), "amount": payment_data["amount"], "status": "pending", "stripe_id": f"pi_mock_{str(uuid.uuid4())[:8]}"}
     await db.payment_intents.insert_one(intent)
 
 
@@ -51,10 +53,7 @@ async def create_payment_intent(payment_data: dict, current_user: User = Depends
 # ============= MOBILE APP BACKEND =============
 
 
-
-
 # ============= FOLIO & BILLING ENGINE =============
-
 
 
 @sub_router.post("/payment/{payment_id}/void")
@@ -65,40 +64,27 @@ async def void_payment(
     _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
     """Void a payment"""
-    payment = await db.payments.find_one({
-        'id': payment_id,
-        'tenant_id': current_user.tenant_id
-    })
+    payment = await db.payments.find_one({"id": payment_id, "tenant_id": current_user.tenant_id})
 
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
 
-    if payment.get('voided'):
+    if payment.get("voided"):
         raise HTTPException(status_code=400, detail="Payment already voided")
 
     # Update payment
-    await db.payments.update_one(
-        {'id': payment_id},
-        {'$set': {
-            'voided': True,
-            'voided_by': current_user.id,
-            'voided_at': datetime.now(UTC).isoformat(),
-            'void_reason': void_reason
-        }}
-    )
+    await db.payments.update_one({"id": payment_id}, {"$set": {"voided": True, "voided_by": current_user.id, "voided_at": datetime.now(UTC).isoformat(), "void_reason": void_reason}})
 
     # Recalculate folio balance
-    folio_id = payment['folio_id']
+    folio_id = payment["folio_id"]
     balance = await calculate_folio_balance(folio_id, current_user.tenant_id)
-    await db.folios.update_one(
-        {'id': folio_id},
-        {'$set': {'balance': balance}}
-    )
+    await db.folios.update_one({"id": folio_id}, {"$set": {"balance": balance}})
 
     # Task #568 — kritik finansal mutasyon: tamper-evident audit trail'e
     # before/after snapshot ile yaz (IP/UA + hash zinciri otomatik eklenir).
     try:
         from core.audit import log_audit_event
+
         await log_audit_event(
             tenant_id=current_user.tenant_id,
             user_id=current_user.id,
@@ -106,7 +92,7 @@ async def void_payment(
             entity_type="payment",
             entity_id=payment_id,
             details=f"Payment voided on folio {folio_id}: {void_reason}",
-            before_value={"voided": False, "amount": payment.get('amount')},
+            before_value={"voided": False, "amount": payment.get("amount")},
             after_value={"voided": True, "void_reason": void_reason, "voided_by": current_user.id, "new_balance": balance},
             severity="warning",
         )
@@ -115,7 +101,9 @@ async def void_payment(
 
     return {"message": "Payment voided successfully"}
 
+
 # ── Folio by Booking ID (used by ReservationCalendar sidebar) ──
+
 
 @sub_router.get("/folio/booking/{booking_id}")
 async def get_folios_by_booking(booking_id: str, current_user: User = Depends(get_current_user)):
@@ -124,4 +112,3 @@ async def get_folios_by_booking(booking_id: str, current_user: User = Depends(ge
         {"_id": 0},
     ).to_list(20)
     return folios
-

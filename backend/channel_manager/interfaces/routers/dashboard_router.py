@@ -4,6 +4,7 @@ Unified Channel Manager Dashboard Router.
 Aggregates connector health, reservations, failures, push queue,
 and mapping visibility into a single operational overview.
 """
+
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
@@ -45,19 +46,21 @@ async def get_dashboard_overview(
 
     connector_details = []
     for c in connectors:
-        connector_details.append({
-            "id": c.get("id", ""),
-            "display_name": c.get("display_name", ""),
-            "provider": c.get("provider", ""),
-            "status": c.get("status", ""),
-            "property_id": c.get("property_id", ""),
-            "last_successful_sync": c.get("last_successful_sync"),
-            "last_error": c.get("last_error"),
-            "last_error_at": c.get("last_error_at"),
-            "consecutive_failures": c.get("consecutive_failures", 0),
-            "total_syncs": c.get("total_syncs", 0),
-            "total_errors": c.get("total_errors", 0),
-        })
+        connector_details.append(
+            {
+                "id": c.get("id", ""),
+                "display_name": c.get("display_name", ""),
+                "provider": c.get("provider", ""),
+                "status": c.get("status", ""),
+                "property_id": c.get("property_id", ""),
+                "last_successful_sync": c.get("last_successful_sync"),
+                "last_error": c.get("last_error"),
+                "last_error_at": c.get("last_error_at"),
+                "consecutive_failures": c.get("consecutive_failures", 0),
+                "total_syncs": c.get("total_syncs", 0),
+                "total_errors": c.get("total_errors", 0),
+            }
+        )
 
     now = datetime.now(UTC)
     since_24h = (now - timedelta(hours=24)).isoformat()
@@ -74,36 +77,60 @@ async def get_dashboard_overview(
         exely_sync_fail_24h,
         dlq_count,
     ) = await asyncio.gather(
-        db.cm_imported_reservations.count_documents({
-            "tenant_id": tenant_id, "created_at": {"$gte": since_24h},
-        }),
-        db.cm_imported_reservations.count_documents({
-            "tenant_id": tenant_id, "import_status": "failed",
-        }),
-        db.cm_imported_reservations.count_documents({
-            "tenant_id": tenant_id, "import_status": "review",
-        }),
+        db.cm_imported_reservations.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "created_at": {"$gte": since_24h},
+            }
+        ),
+        db.cm_imported_reservations.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "import_status": "failed",
+            }
+        ),
+        db.cm_imported_reservations.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "import_status": "review",
+            }
+        ),
         db.cm_imported_reservations.find(
             {"tenant_id": tenant_id},
-            {"_id": 0, "id": 1, "external_reservation_id": 1, "connector_id": 1,
-             "guest_name": 1, "import_status": 1, "check_in": 1, "check_out": 1,
-             "room_type": 1, "created_at": 1},
-        ).sort("created_at", -1).to_list(10),
-        db.connector_outbox.count_documents({
-            "tenant_id": tenant_id, "status": {"$in": ["pending", "retry"]},
-        }),
-        db.ari_change_sets.count_documents({
-            "tenant_id": tenant_id, "status": "pending",
-        }),
-        db.ari_hard_fail_log.count_documents({
-            "tenant_id": tenant_id, "created_at": {"$gte": since_24h},
-        }),
-        db.exely_sync_logs.count_documents({
-            "tenant_id": tenant_id, "created_at": {"$gte": since_24h},
-        }),
-        db.connector_outbox.count_documents({
-            "tenant_id": tenant_id, "status": "dead_letter",
-        }),
+            {"_id": 0, "id": 1, "external_reservation_id": 1, "connector_id": 1, "guest_name": 1, "import_status": 1, "check_in": 1, "check_out": 1, "room_type": 1, "created_at": 1},
+        )
+        .sort("created_at", -1)
+        .to_list(10),
+        db.connector_outbox.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "status": {"$in": ["pending", "retry"]},
+            }
+        ),
+        db.ari_change_sets.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "status": "pending",
+            }
+        ),
+        db.ari_hard_fail_log.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "created_at": {"$gte": since_24h},
+            }
+        ),
+        db.exely_sync_logs.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "created_at": {"$gte": since_24h},
+            }
+        ),
+        db.connector_outbox.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "status": "dead_letter",
+            }
+        ),
     )
     wire_failures_24h = ari_hard_fail_24h + exely_sync_fail_24h
 
@@ -120,13 +147,12 @@ async def get_dashboard_overview(
 
     async def _safe_suggest(c: dict):
         try:
-            return c, await mapping_svc.suggest_room_mappings(
-                tenant_id, c.get("id", "")
-            )
+            return c, await mapping_svc.suggest_room_mappings(tenant_id, c.get("id", ""))
         except Exception as e:
             logger.warning(
                 "Mapping visibility failed for connector %s: %s",
-                c.get("id", ""), e,
+                c.get("id", ""),
+                e,
             )
             return c, None
 
@@ -145,16 +171,18 @@ async def get_dashboard_overview(
             mapping_visibility["connectors_with_mappings"] += 1
         mapping_visibility["total_review_pending"] += review_count
         mapping_visibility["total_conflicts"] += conflict_count
-        mapping_visibility["provider_summaries"].append({
-            "connector_id": cid,
-            "connector_name": c.get("display_name", ""),
-            "provider": provider,
-            "mapped": summary.get("already_mapped", 0),
-            "auto_matched": summary.get("auto_matched", 0),
-            "needs_review": review_count,
-            "unmatched": summary.get("unmatched", 0),
-            "conflicts": conflict_count,
-        })
+        mapping_visibility["provider_summaries"].append(
+            {
+                "connector_id": cid,
+                "connector_name": c.get("display_name", ""),
+                "provider": provider,
+                "mapped": summary.get("already_mapped", 0),
+                "auto_matched": summary.get("auto_matched", 0),
+                "needs_review": review_count,
+                "unmatched": summary.get("unmatched", 0),
+                "conflicts": conflict_count,
+            }
+        )
 
     return {
         "kpis": {
@@ -187,26 +215,38 @@ async def get_connector_drilldown(
     connector = await repo.get_connector(tenant_id, connector_id)
     if not connector:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=404, detail="Connector bulunamadi")
 
-    recent_failures = await db.ari_hard_fail_log.find(
-        {"tenant_id": tenant_id, "connector_id": connector_id},
-        {"_id": 0},
-    ).sort("created_at", -1).to_list(20)
+    recent_failures = (
+        await db.ari_hard_fail_log.find(
+            {"tenant_id": tenant_id, "connector_id": connector_id},
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .to_list(20)
+    )
 
-    queue_items = await db.connector_outbox.find(
-        {"tenant_id": tenant_id, "connector_id": connector_id,
-         "status": {"$in": ["pending", "retry", "dead_letter"]}},
-        {"_id": 0},
-    ).sort("created_at", -1).to_list(50)
+    queue_items = (
+        await db.connector_outbox.find(
+            {"tenant_id": tenant_id, "connector_id": connector_id, "status": {"$in": ["pending", "retry", "dead_letter"]}},
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .to_list(50)
+    )
 
-    res_stats = await db.cm_imported_reservations.aggregate([
-        {"$match": {"tenant_id": tenant_id, "connector_id": connector_id}},
-        {"$group": {
-            "_id": "$import_status",
-            "count": {"$sum": 1},
-        }},
-    ]).to_list(20)
+    res_stats = await db.cm_imported_reservations.aggregate(
+        [
+            {"$match": {"tenant_id": tenant_id, "connector_id": connector_id}},
+            {
+                "$group": {
+                    "_id": "$import_status",
+                    "count": {"$sum": 1},
+                }
+            },
+        ]
+    ).to_list(20)
     res_stats_dict = {r["_id"]: r["count"] for r in res_stats}
 
     mapping_svc = AutoMappingService(repo=repo)

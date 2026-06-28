@@ -4,6 +4,7 @@ Environment Configuration for HotelRunner Connector.
 Supports: sandbox, mock, production environments.
 Each environment defines its own base URLs, timeouts, and feature flags.
 """
+
 from typing import Any
 
 from pydantic import BaseModel
@@ -11,6 +12,7 @@ from pydantic import BaseModel
 
 class EnvironmentConfig(BaseModel):
     """Configuration for a specific runtime environment."""
+
     name: str
     api_base_url: str
     sandbox: bool = True

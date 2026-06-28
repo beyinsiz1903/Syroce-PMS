@@ -1,6 +1,7 @@
 """Activity Scheduler — Spa dışı genel aktiviteler (Golf, Tenis, Yoga, Bisiklet…)
 Kaynak (eğitmen/kort/ekipman) atama, çakışma kontrolü, saatlik takvim.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -52,9 +53,7 @@ async def _guest_names_by_id(tenant_id: str, guest_ids: list[str]) -> dict[str, 
     if not ids:
         return {}
     db = get_system_db()
-    rows = await db.guests.find(
-        {"tenant_id": tenant_id, "id": {"$in": ids}}
-    ).to_list(len(ids))
+    rows = await db.guests.find({"tenant_id": tenant_id, "id": {"$in": ids}}).to_list(len(ids))
     out: dict[str, str] = {}
     for r in rows:
         name = _guest_display_name(r)
@@ -79,6 +78,7 @@ class Activity(BaseModel):
 
 class ActivityResource(BaseModel):
     """Eğitmen, kort, sahil, ekipman vb."""
+
     id: str | None = None
     name: str
     kind: str = Field("instructor", pattern="^(instructor|venue|equipment)$")
@@ -121,9 +121,7 @@ async def _ensure_indexes() -> None:
             [("tenant_id", 1), ("resource_id", 1), ("starts_at", 1)],
             name="actbook_resource_time",
         )
-        await db.activity_bookings.create_index(
-            [("tenant_id", 1), ("guest_id", 1), ("starts_at", -1)]
-        )
+        await db.activity_bookings.create_index([("tenant_id", 1), ("guest_id", 1), ("starts_at", -1)])
         _INDEXES_INITIALIZED = True
     except Exception:
         # Index oluşturulamazsa flag set edilmez → bir sonraki çağrıda yeniden denenir.
@@ -161,17 +159,13 @@ async def create_activity(body: Activity, user: User = Depends(get_current_user)
 @router.delete("/{activity_id}", status_code=204)
 async def delete_activity(activity_id: str, user: User = Depends(get_current_user)):
     db = get_system_db()
-    await db.activities.update_one(
-        {"id": activity_id, "tenant_id": user.tenant_id}, {"$set": {"active": False}}
-    )
+    await db.activities.update_one({"id": activity_id, "tenant_id": user.tenant_id}, {"$set": {"active": False}})
     return None
 
 
 # ── Resources ────────────────────────────────────────
 @router.get("/resources", response_model=list[ActivityResource])
-async def list_resources(
-    kind: str | None = None, user: User = Depends(get_current_user)
-):
+async def list_resources(kind: str | None = None, user: User = Depends(get_current_user)):
     await _ensure_indexes()
     db = get_system_db()
     q: dict[str, Any] = {"tenant_id": user.tenant_id, "active": True}
@@ -198,9 +192,7 @@ async def create_resource(body: ActivityResource, user: User = Depends(get_curre
 @router.delete("/resources/{resource_id}", status_code=204)
 async def delete_resource(resource_id: str, user: User = Depends(get_current_user)):
     db = get_system_db()
-    await db.activity_resources.update_one(
-        {"id": resource_id, "tenant_id": user.tenant_id}, {"$set": {"active": False}}
-    )
+    await db.activity_resources.update_one({"id": resource_id, "tenant_id": user.tenant_id}, {"$set": {"active": False}})
     return None
 
 
@@ -226,35 +218,31 @@ async def list_bookings(
     docs = await db.activity_bookings.find(q).sort("starts_at", 1).to_list(500)
     for d in docs:
         d.pop("_id", None)
-    names = await _guest_names_by_id(
-        user.tenant_id, [d.get("guest_id") for d in docs]
-    )
+    names = await _guest_names_by_id(user.tenant_id, [d.get("guest_id") for d in docs])
     for d in docs:
         d["guest_name"] = names.get(d.get("guest_id"))
     return docs
 
 
 @router.post("/bookings", response_model=ActivityBooking, status_code=201)
-async def create_booking(
-    body: ActivityBookingCreate, user: User = Depends(get_current_user)
-):
+async def create_booking(body: ActivityBookingCreate, user: User = Depends(get_current_user)):
     await _ensure_indexes()
     db = get_system_db()
-    activity = await db.activities.find_one(
-        {"id": body.activity_id, "tenant_id": user.tenant_id, "active": True}
-    )
+    activity = await db.activities.find_one({"id": body.activity_id, "tenant_id": user.tenant_id, "active": True})
     if not activity:
         raise HTTPException(404, "Aktivite bulunamadı")
     duration = body.duration_min or activity.get("duration_min", 60)
     ends_at = _add_minutes(body.starts_at, duration)
     # Çakışma kontrolü: aynı kaynak + zaman dilimi
-    clash = await db.activity_bookings.find_one({
-        "tenant_id": user.tenant_id,
-        "resource_id": body.resource_id,
-        "status": {"$ne": "cancelled"},
-        "starts_at": {"$lt": ends_at},
-        "ends_at": {"$gt": body.starts_at},
-    })
+    clash = await db.activity_bookings.find_one(
+        {
+            "tenant_id": user.tenant_id,
+            "resource_id": body.resource_id,
+            "status": {"$ne": "cancelled"},
+            "starts_at": {"$lt": ends_at},
+            "ends_at": {"$gt": body.starts_at},
+        }
+    )
     if clash:
         raise HTTPException(409, "Kaynak bu zaman diliminde dolu")
     doc = {
@@ -292,31 +280,35 @@ async def availability(
 ):
     """Verilen tarih için her kaynağın boş slot'larını döner (basit özet)."""
     db = get_system_db()
-    activity = await db.activities.find_one(
-        {"id": activity_id, "tenant_id": user.tenant_id}
-    )
+    activity = await db.activities.find_one({"id": activity_id, "tenant_id": user.tenant_id})
     if not activity:
         raise HTTPException(404, "Aktivite bulunamadı")
-    resources = await db.activity_resources.find({
-        "tenant_id": user.tenant_id,
-        "active": True,
-        "$or": [
-            {"activity_types": activity.get("type")},
-            {"activity_types": []},
-        ],
-    }).to_list(200)
+    resources = await db.activity_resources.find(
+        {
+            "tenant_id": user.tenant_id,
+            "active": True,
+            "$or": [
+                {"activity_types": activity.get("type")},
+                {"activity_types": []},
+            ],
+        }
+    ).to_list(200)
     out = []
     for r in resources:
-        bookings = await db.activity_bookings.find({
-            "tenant_id": user.tenant_id,
-            "resource_id": r["id"],
-            "status": {"$ne": "cancelled"},
-            "starts_at": {"$gte": f"{date}T00:00:00", "$lte": f"{date}T23:59:59"},
-        }).to_list(100)
-        out.append({
-            "resource_id": r["id"],
-            "resource_name": r["name"],
-            "kind": r.get("kind"),
-            "booked": [{"starts_at": b["starts_at"], "ends_at": b["ends_at"]} for b in bookings],
-        })
+        bookings = await db.activity_bookings.find(
+            {
+                "tenant_id": user.tenant_id,
+                "resource_id": r["id"],
+                "status": {"$ne": "cancelled"},
+                "starts_at": {"$gte": f"{date}T00:00:00", "$lte": f"{date}T23:59:59"},
+            }
+        ).to_list(100)
+        out.append(
+            {
+                "resource_id": r["id"],
+                "resource_name": r["name"],
+                "kind": r.get("kind"),
+                "booked": [{"starts_at": b["starts_at"], "ends_at": b["ends_at"]} for b in bookings],
+            }
+        )
     return {"date": date, "activity_id": activity_id, "resources": out}

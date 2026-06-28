@@ -9,6 +9,7 @@ Environment:
     REDIS_SENTINEL_MASTER — Sentinel master name (sentinel mode)
     REDIS_MAX_CONNECTIONS — Pool size (default: 100)
 """
+
 import asyncio
 import logging
 import os
@@ -80,16 +81,14 @@ class RedisClusterManager:
 
                 if self._mode == "cluster":
                     from redis.asyncio.cluster import RedisCluster
-                    self._redis = RedisCluster.from_url(
-                        self._url, **pool_kwargs
-                    )
+
+                    self._redis = RedisCluster.from_url(self._url, **pool_kwargs)
                 elif self._mode == "sentinel":
                     from redis.asyncio.sentinel import Sentinel
+
                     sentinel_hosts = self._parse_sentinel_hosts()
                     sentinel = Sentinel(sentinel_hosts, socket_timeout=5)
-                    self._redis = sentinel.master_for(
-                        self._sentinel_master, **pool_kwargs
-                    )
+                    self._redis = sentinel.master_for(self._sentinel_master, **pool_kwargs)
                 else:
                     self._redis = aioredis.from_url(self._url, **pool_kwargs)
 
@@ -100,12 +99,16 @@ class RedisClusterManager:
 
                 # Create dedicated connections for pubsub and locks
                 self._pubsub_redis = aioredis.from_url(
-                    self._url, decode_responses=True,
-                    socket_connect_timeout=5, socket_timeout=30,
+                    self._url,
+                    decode_responses=True,
+                    socket_connect_timeout=5,
+                    socket_timeout=30,
                 )
                 self._lock_redis = aioredis.from_url(
-                    self._url, decode_responses=True,
-                    socket_connect_timeout=5, socket_timeout=10,
+                    self._url,
+                    decode_responses=True,
+                    socket_connect_timeout=5,
+                    socket_timeout=10,
                 )
                 return True
 
@@ -129,7 +132,7 @@ class RedisClusterManager:
     async def reconnect_with_backoff(self, max_retries: int = 10) -> bool:
         """Reconnect with exponential backoff."""
         for attempt in range(max_retries):
-            backoff = min(1.0 * (2 ** attempt), 30.0)
+            backoff = min(1.0 * (2**attempt), 30.0)
             logger.info(f"Redis reconnect attempt {attempt + 1}/{max_retries} in {backoff}s")
             await asyncio.sleep(backoff)
             if await self.connect():
@@ -160,18 +163,20 @@ class RedisClusterManager:
             latency_ms = round((time.time() - start) * 1000, 2)
 
             info = await self._redis.info("server", "memory", "clients", "stats")
-            result.update({
-                "status": "healthy",
-                "latency_ms": latency_ms,
-                "redis_version": info.get("redis_version", "unknown"),
-                "connected_clients": info.get("connected_clients", 0),
-                "used_memory_human": info.get("used_memory_human", "N/A"),
-                "used_memory_peak_human": info.get("used_memory_peak_human", "N/A"),
-                "uptime_seconds": info.get("uptime_in_seconds", 0),
-                "total_commands_processed": info.get("total_commands_processed", 0),
-                "keyspace_hits": info.get("keyspace_hits", 0),
-                "keyspace_misses": info.get("keyspace_misses", 0),
-            })
+            result.update(
+                {
+                    "status": "healthy",
+                    "latency_ms": latency_ms,
+                    "redis_version": info.get("redis_version", "unknown"),
+                    "connected_clients": info.get("connected_clients", 0),
+                    "used_memory_human": info.get("used_memory_human", "N/A"),
+                    "used_memory_peak_human": info.get("used_memory_peak_human", "N/A"),
+                    "uptime_seconds": info.get("uptime_in_seconds", 0),
+                    "total_commands_processed": info.get("total_commands_processed", 0),
+                    "keyspace_hits": info.get("keyspace_hits", 0),
+                    "keyspace_misses": info.get("keyspace_misses", 0),
+                }
+            )
 
             if self._mode == "cluster":
                 try:

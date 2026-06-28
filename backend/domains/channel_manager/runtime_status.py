@@ -2,6 +2,7 @@
 Channel Manager — Runtime Status
 Aggregates health and operational status across all CM subsystems.
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -21,35 +22,47 @@ class CMRuntimeStatus:
         now = datetime.now(UTC)
 
         # Active connections
-        connections = await db.channel_connections.find(
-            {"tenant_id": tenant_id, "status": "active"}, {"_id": 0}
-        ).to_list(100)
+        connections = await db.channel_connections.find({"tenant_id": tenant_id, "status": "active"}, {"_id": 0}).to_list(100)
 
         # Recent sync logs (last hour)
         one_hour_ago = (now - timedelta(hours=1)).isoformat()
-        recent_syncs = await db.channel_sync_logs.count_documents({
-            "tenant_id": tenant_id,
-            "timestamp": {"$gte": one_hour_ago},
-        })
-        failed_syncs = await db.channel_sync_logs.count_documents({
-            "tenant_id": tenant_id,
-            "timestamp": {"$gte": one_hour_ago},
-            "status": "error",
-        })
+        recent_syncs = await db.channel_sync_logs.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "timestamp": {"$gte": one_hour_ago},
+            }
+        )
+        failed_syncs = await db.channel_sync_logs.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "timestamp": {"$gte": one_hour_ago},
+                "status": "error",
+            }
+        )
 
         # Recent drift scans
-        recent_drifts = await db.drift_scan_results.find(
-            {"tenant_id": tenant_id},
-            {"_id": 0, "drifts_found": 1, "critical_drifts": 1, "scanned_at": 1},
-        ).sort("timestamp", -1).limit(1).to_list(1)
+        recent_drifts = (
+            await db.drift_scan_results.find(
+                {"tenant_id": tenant_id},
+                {"_id": 0, "drifts_found": 1, "critical_drifts": 1, "scanned_at": 1},
+            )
+            .sort("timestamp", -1)
+            .limit(1)
+            .to_list(1)
+        )
 
         last_drift = recent_drifts[0] if recent_drifts else None
 
         # Recent reconciliations
-        recent_recon = await db.reconciliation_results.find(
-            {"tenant_id": tenant_id},
-            {"_id": 0, "status": 1, "auto_fixed": 1, "manual_review": 1, "reconciled_at": 1},
-        ).sort("timestamp", -1).limit(1).to_list(1)
+        recent_recon = (
+            await db.reconciliation_results.find(
+                {"tenant_id": tenant_id},
+                {"_id": 0, "status": 1, "auto_fixed": 1, "manual_review": 1, "reconciled_at": 1},
+            )
+            .sort("timestamp", -1)
+            .limit(1)
+            .to_list(1)
+        )
 
         last_recon = recent_recon[0] if recent_recon else None
 
@@ -93,9 +106,7 @@ class CMRuntimeStatus:
     @staticmethod
     async def get_provider_health(tenant_id: str) -> list[dict[str, Any]]:
         """Get health status per OTA provider."""
-        connections = await db.channel_connections.find(
-            {"tenant_id": tenant_id}, {"_id": 0}
-        ).to_list(100)
+        connections = await db.channel_connections.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(100)
 
         results = []
         for conn in connections:
@@ -106,14 +117,16 @@ class CMRuntimeStatus:
                 {"_id": 0},
                 sort=[("timestamp", -1)],
             )
-            results.append({
-                "provider": channel,
-                "connection_id": conn.get("id"),
-                "status": conn.get("status"),
-                "circuit_state": circuit_state,
-                "last_sync": last_sync_log.get("timestamp") if last_sync_log else None,
-                "last_sync_status": last_sync_log.get("status") if last_sync_log else None,
-            })
+            results.append(
+                {
+                    "provider": channel,
+                    "connection_id": conn.get("id"),
+                    "status": conn.get("status"),
+                    "circuit_state": circuit_state,
+                    "last_sync": last_sync_log.get("timestamp") if last_sync_log else None,
+                    "last_sync_status": last_sync_log.get("status") if last_sync_log else None,
+                }
+            )
         return results
 
 

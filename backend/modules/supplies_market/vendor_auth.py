@@ -4,6 +4,7 @@ Tokens carry `scope=vendor` and `vendor_id`, are signed with the same
 JWT_SECRET but verified via this module's dependency so a hotel user
 JWT cannot access vendor endpoints (and vice versa).
 """
+
 from __future__ import annotations
 
 import logging
@@ -26,6 +27,7 @@ if not JWT_SECRET:
     if os.environ.get("STRICT_JWT_SECRET") == "1" or os.environ.get("ENV", "").lower() == "production":
         raise RuntimeError("JWT_SECRET environment variable is required in production (STRICT_JWT_SECRET=1 or ENV=production set).")
     import secrets as _secrets
+
     JWT_SECRET = _secrets.token_urlsafe(64)
     logger.warning("⚠️ JWT_SECRET unset; vendor_auth using random per-process secret (DEV ONLY).")
 JWT_ALGORITHM = "HS256"
@@ -65,9 +67,7 @@ async def get_current_vendor_id(
     if not credentials or not credentials.credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing token")
     try:
-        payload: dict[str, Any] = jwt.decode(
-            credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM]
-        )
+        payload: dict[str, Any] = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired") from None
     except jwt.InvalidTokenError:

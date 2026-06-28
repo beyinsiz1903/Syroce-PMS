@@ -4,6 +4,7 @@ Shared by HotelRunner, Exely, and any future provider.
 
 Raw Event Store → Idempotency Guard → Versioned Decision Engine → PMS Import
 """
+
 import hashlib
 import json
 import logging
@@ -20,6 +21,7 @@ def _compute_payload_hash(payload: dict[str, Any]) -> str:
     """Deterministic hash of payload for change detection."""
     canonical = json.dumps(payload, sort_keys=True, default=str)
     return hashlib.sha256(canonical.encode()).hexdigest()[:16]
+
 
 PROVIDER_COLLECTIONS = {
     "hotelrunner": {
@@ -43,8 +45,12 @@ def _col(provider: str, key: str):
 
 
 async def _create_unmatched_hold_for_reservation(
-    provider: str, tenant_id: str, external_id: str,
-    channel: str, res_doc: dict[str, Any], col,
+    provider: str,
+    tenant_id: str,
+    external_id: str,
+    channel: str,
+    res_doc: dict[str, Any],
+    col,
 ) -> None:
     """Eslestirilemeyen (pending_mapping) rezervasyon icin tutma + alarm.
 
@@ -55,9 +61,7 @@ async def _create_unmatched_hold_for_reservation(
 
     rooms = res_doc.get("rooms") or []
     first = rooms[0] if rooms else {}
-    guest_name = (
-        f"{res_doc.get('guest_firstname', '')} {res_doc.get('guest_lastname', '')}"
-    ).strip()
+    guest_name = (f"{res_doc.get('guest_firstname', '')} {res_doc.get('guest_lastname', '')}").strip()
     try:
         hold = await create_unmatched_reservation_hold(
             provider=provider,
@@ -81,14 +85,15 @@ async def _create_unmatched_hold_for_reservation(
                 {"$set": {"pms_booking_id": hold["booking_id"]}},
             )
     except Exception as e:  # noqa: BLE001 - tutma asla ingest'i kirmamali
-        logger.exception(
-            f"[{provider.upper()}] unmatched hold olusturma hatasi {external_id}: {e}"
-        )
+        logger.exception(f"[{provider.upper()}] unmatched hold olusturma hatasi {external_id}: {e}")
 
 
 async def _release_unmatched_hold_for_reservation(
-    provider: str, tenant_id: str, external_id: str,
-    reason: str, delete_hold: bool = False,
+    provider: str,
+    tenant_id: str,
+    external_id: str,
+    reason: str,
+    delete_hold: bool = False,
 ) -> None:
     """Tutmayi serbest birak (rebind icin delete_hold=True, iptal icin False)."""
     from .unmatched_hold import release_unmatched_reservation_hold
@@ -101,14 +106,17 @@ async def _release_unmatched_hold_for_reservation(
             delete_hold=delete_hold,
         )
     except Exception as e:  # noqa: BLE001
-        logger.warning(
-            f"[{provider.upper()}] unmatched hold release hatasi {external_id}: {e}"
-        )
+        logger.warning(f"[{provider.upper()}] unmatched hold release hatasi {external_id}: {e}")
 
 
 async def store_raw_event(
-    provider: str, tenant_id: str, event_type: str,
-    external_id: str, channel: str, payload: dict[str, Any], source: str = "webhook",
+    provider: str,
+    tenant_id: str,
+    event_type: str,
+    external_id: str,
+    channel: str,
+    payload: dict[str, Any],
+    source: str = "webhook",
     provider_event_id: str | None = None,
 ) -> str:
     event_id = str(uuid.uuid4())
@@ -137,7 +145,9 @@ async def store_raw_event(
 
 
 def _build_provider_event_id(
-    raw_payload: dict[str, Any], external_id: str, event_type: str,
+    raw_payload: dict[str, Any],
+    external_id: str,
+    event_type: str,
     payload_hash: str,
 ) -> str:
     """Deterministic ID for the pre-insert catchup dedup guard.
@@ -148,19 +158,15 @@ def _build_provider_event_id(
     for ad-hoc replay tools) we fall back to the payload hash so the
     same byte-identical payload still dedupes.
     """
-    last_modified = (
-        raw_payload.get("last_modify")
-        or raw_payload.get("updated_at")
-        or raw_payload.get("modified_at")
-        or raw_payload.get("LastModifyDateTime")
-        or ""
-    )
+    last_modified = raw_payload.get("last_modify") or raw_payload.get("updated_at") or raw_payload.get("modified_at") or raw_payload.get("LastModifyDateTime") or ""
     version_key = str(last_modified) if last_modified else f"hash:{payload_hash}"
     return f"{external_id}_{event_type}_{version_key}"
 
 
 async def _check_provider_event_recorded(
-    provider: str, tenant_id: str, provider_event_id: str,
+    provider: str,
+    tenant_id: str,
+    provider_event_id: str,
 ) -> dict | None:
     """Provider-scoped pre-insert guard.
 
@@ -192,8 +198,12 @@ async def mark_event_processed(provider: str, event_id: str, status: str = "proc
 
 
 async def check_idempotency(
-    provider: str, tenant_id: str, external_id: str,
-    event_type: str, provider_last_modified: str = "", payload_hash: str = "",
+    provider: str,
+    tenant_id: str,
+    external_id: str,
+    event_type: str,
+    provider_last_modified: str = "",
+    payload_hash: str = "",
 ) -> dict[str, Any]:
     """
     Versioned idempotency guard:
@@ -204,8 +214,7 @@ async def check_idempotency(
     """
     existing = await _col(provider, "reservations").find_one(
         {"tenant_id": tenant_id, "external_id": external_id},
-        {"_id": 0, "state": 1, "pms_status": 1, "delivery_confirmed": 1,
-         "provider_last_modified_at": 1, "provider_payload_hash": 1},
+        {"_id": 0, "state": 1, "pms_status": 1, "delivery_confirmed": 1, "provider_last_modified_at": 1, "provider_payload_hash": 1},
     )
 
     if not existing:
@@ -254,15 +263,22 @@ async def check_room_mapping(provider: str, tenant_id: str, rooms: list) -> bool
 
 
 async def process_reservation(
-    provider: str, tenant_id: str, canonical: dict[str, Any],
-    event_type: str, event_id: str, payload_hash: str = "",
+    provider: str,
+    tenant_id: str,
+    canonical: dict[str, Any],
+    event_type: str,
+    event_id: str,
+    payload_hash: str = "",
 ) -> dict[str, Any]:
     external_id = canonical["external_id"]
     channel = canonical["channel"]
     provider_last_modified = canonical.get("provider_last_modified_at", "")
 
     idem = await check_idempotency(
-        provider, tenant_id, external_id, event_type,
+        provider,
+        tenant_id,
+        external_id,
+        event_type,
         provider_last_modified=provider_last_modified,
         payload_hash=payload_hash,
     )
@@ -324,7 +340,12 @@ async def process_reservation(
         await col.insert_one(res_doc)
         if not has_mapping:
             await _create_unmatched_hold_for_reservation(
-                provider, tenant_id, external_id, channel, res_doc, col,
+                provider,
+                tenant_id,
+                external_id,
+                channel,
+                res_doc,
+                col,
             )
         await mark_event_processed(provider, event_id, "processed")
         logger.info(f"[{provider.upper()}] Created {external_id} from {channel}")
@@ -334,18 +355,30 @@ async def process_reservation(
         res_doc["pms_status"] = "updated" if has_mapping else "pending_mapping"
         # Remove provider_version from $set to avoid conflict with $inc
         res_doc.pop("provider_version", None)
-        await col.update_one({"tenant_id": tenant_id, "external_id": external_id}, {
-            "$set": res_doc,
-            "$inc": {"provider_version": 1},
-        })
+        await col.update_one(
+            {"tenant_id": tenant_id, "external_id": external_id},
+            {
+                "$set": res_doc,
+                "$inc": {"provider_version": 1},
+            },
+        )
         if not has_mapping:
             await _create_unmatched_hold_for_reservation(
-                provider, tenant_id, external_id, channel, res_doc, col,
+                provider,
+                tenant_id,
+                external_id,
+                channel,
+                res_doc,
+                col,
             )
         else:
             # Eslestirme cozulmus olabilir -> varsa tutmayi rebind ile serbest birak.
             await _release_unmatched_hold_for_reservation(
-                provider, tenant_id, external_id, "mapping_resolved", delete_hold=True,
+                provider,
+                tenant_id,
+                external_id,
+                "mapping_resolved",
+                delete_hold=True,
             )
         await mark_event_processed(provider, event_id, "processed")
         logger.info(f"[{provider.upper()}] Updated {external_id} from {channel}")
@@ -354,17 +387,26 @@ async def process_reservation(
     elif action == "cancel":
         await col.update_one(
             {"tenant_id": tenant_id, "external_id": external_id},
-            {"$set": {
-                "state": "cancelled", "pms_status": "cancellation_pending",
-                "cancelled_at": now, "synced_at": now, "raw_event_id": event_id,
-                "provider_event_id": event_id,
-                "provider_last_modified_at": provider_last_modified,
-                "provider_payload_hash": payload_hash,
-            }},
+            {
+                "$set": {
+                    "state": "cancelled",
+                    "pms_status": "cancellation_pending",
+                    "cancelled_at": now,
+                    "synced_at": now,
+                    "raw_event_id": event_id,
+                    "provider_event_id": event_id,
+                    "provider_last_modified_at": provider_last_modified,
+                    "provider_payload_hash": payload_hash,
+                }
+            },
         )
         # Iptal: varsa eslesmeyen-tutmanin sentinel kilitlerini serbest birak.
         await _release_unmatched_hold_for_reservation(
-            provider, tenant_id, external_id, "ota_cancelled", delete_hold=False,
+            provider,
+            tenant_id,
+            external_id,
+            "ota_cancelled",
+            delete_hold=False,
         )
         await mark_event_processed(provider, event_id, "processed")
         logger.info(f"[{provider.upper()}] Cancelled {external_id} from {channel}")
@@ -375,8 +417,12 @@ async def process_reservation(
 
 
 async def ingest_reservation(
-    provider: str, tenant_id: str, raw_payload: dict[str, Any],
-    normalizer, event_type: str = "reservation", source: str = "pull",
+    provider: str,
+    tenant_id: str,
+    raw_payload: dict[str, Any],
+    normalizer,
+    event_type: str = "reservation",
+    source: str = "pull",
 ) -> dict[str, Any]:
     """
     Full pipeline entry point. Provider passes its own normalizer function.
@@ -398,33 +444,34 @@ async def ingest_reservation(
     channel = raw_payload.get("channel", "direct")
     payload_hash = _compute_payload_hash(raw_payload)
     provider_event_id = _build_provider_event_id(
-        raw_payload, external_id, event_type, payload_hash,
+        raw_payload,
+        external_id,
+        event_type,
+        payload_hash,
     )
 
     # Pre-insert dedup guard: short-circuit re-fetched catchup events.
     try:
         existing = await _check_provider_event_recorded(
-            provider, tenant_id, provider_event_id,
+            provider,
+            tenant_id,
+            provider_event_id,
         )
     except Exception as e:
         # The check is a best-effort optimisation. If it fails we fall
         # through to the normal insert + downstream idempotency path,
         # which still protects correctness via `check_idempotency`.
-        logger.warning(
-            f"[{provider.upper()}] pre-insert dedup check failed for "
-            f"{provider_event_id}: {e}"
-        )
+        logger.warning(f"[{provider.upper()}] pre-insert dedup check failed for {provider_event_id}: {e}")
         existing = None
     if existing is not None:
         try:
             from domains.channel_manager.monitoring.dedup_counter import (
                 record_skip,
             )
+
             await record_skip(tenant_id, provider)
         except Exception as e:
-            logger.warning(
-                f"[{provider.upper()}] dedup_counter.record_skip failed: {e}"
-            )
+            logger.warning(f"[{provider.upper()}] dedup_counter.record_skip failed: {e}")
         logger.info(
             f"[CATCHUP-DEDUP] [{provider.upper()}] skipping already-recorded "
             f"event provider_event_id={provider_event_id} "
@@ -440,8 +487,14 @@ async def ingest_reservation(
         }
 
     event_id = await store_raw_event(
-        provider, tenant_id, event_type, external_id, channel, raw_payload,
-        source, provider_event_id=provider_event_id,
+        provider,
+        tenant_id,
+        event_type,
+        external_id,
+        channel,
+        raw_payload,
+        source,
+        provider_event_id=provider_event_id,
     )
     try:
         canonical = normalizer(raw_payload, source)
@@ -453,17 +506,18 @@ async def ingest_reservation(
         return {"success": False, "event_id": event_id, "error": str(e)}
 
 
-async def log_sync(provider: str, tenant_id: str, sync_type: str, status: str,
-                    duration_ms: int = 0, records: int = 0, error: str | None = None, user_name: str = "system"):
-    await _col(provider, "sync_logs").insert_one({
-        "id": str(uuid.uuid4()),
-        "tenant_id": tenant_id,
-        "provider": provider,
-        "timestamp": datetime.now(UTC).isoformat(),
-        "sync_type": sync_type,
-        "status": status,
-        "duration_ms": duration_ms,
-        "records_synced": records,
-        "error_message": error,
-        "initiator": user_name,
-    })
+async def log_sync(provider: str, tenant_id: str, sync_type: str, status: str, duration_ms: int = 0, records: int = 0, error: str | None = None, user_name: str = "system"):
+    await _col(provider, "sync_logs").insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "provider": provider,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "sync_type": sync_type,
+            "status": status,
+            "duration_ms": duration_ms,
+            "records_synced": records,
+            "error_message": error,
+            "initiator": user_name,
+        }
+    )

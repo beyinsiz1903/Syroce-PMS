@@ -14,6 +14,7 @@ Scope model (fail-closed for scoped keys, backward-compatible for legacy keys):
 A key can therefore be provisioned with least-privilege access to a subset of
 sub-routers; any sub-router outside the granted scope returns 403.
 """
+
 import hashlib
 from datetime import UTC, datetime
 
@@ -62,10 +63,7 @@ def normalize_scopes(scopes) -> list[str] | None:
     if invalid:
         raise HTTPException(
             status_code=400,
-            detail=(
-                f"Gecersiz scope(lar): {', '.join(invalid)}. "
-                f"Gecerli scope'lar: {', '.join(B2B_SCOPES)}"
-            ),
+            detail=(f"Gecersiz scope(lar): {', '.join(invalid)}. Gecerli scope'lar: {', '.join(B2B_SCOPES)}"),
         )
     # Preserve canonical ordering, de-duplicated.
     return [s for s in B2B_SCOPES if s in set(cleaned)]
@@ -86,9 +84,7 @@ async def authenticate_b2b_agency(x_api_key: str | None, required_scope: str | N
         raise HTTPException(status_code=401, detail="API key gerekli")
 
     key_hash = _hash_api_key(x_api_key)
-    key_doc = await sysdb.agency_api_keys.find_one(
-        {"key_hash": key_hash, "is_active": True}, {"_id": 0}
-    )
+    key_doc = await sysdb.agency_api_keys.find_one({"key_hash": key_hash, "is_active": True}, {"_id": 0})
     if not key_doc:
         raise HTTPException(status_code=401, detail="Gecersiz veya devre disi API key")
 

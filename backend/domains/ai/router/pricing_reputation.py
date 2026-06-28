@@ -3,6 +3,7 @@ pricing_reputation
 
 Auto-split sub-router (shared imports/classes inlined).
 """
+
 """
 AI / ML Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
@@ -29,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 class GuestPersona(BaseModel):
-    id: str = _PydField(default_factory=lambda: __import__('uuid').uuid4().hex)
+    id: str = _PydField(default_factory=lambda: __import__("uuid").uuid4().hex)
     tenant_id: str
     guest_id: str
     persona_type: str
@@ -41,7 +42,7 @@ class GuestPersona(BaseModel):
 
 
 class MaintenanceAlert(BaseModel):
-    id: str = _PydField(default_factory=lambda: __import__('uuid').uuid4().hex)
+    id: str = _PydField(default_factory=lambda: __import__("uuid").uuid4().hex)
     tenant_id: str
     room_id: str
     equipment_type: str
@@ -53,68 +54,70 @@ class MaintenanceAlert(BaseModel):
     created_at: datetime = _PydField(default_factory=lambda: datetime.now(UTC))
 
 
-async def create_predictive_maintenance_task(
-    tenant_id: str, room_id: str, room_number: str, title: str, severity: str, alert_id: str
-) -> None:
+async def create_predictive_maintenance_task(tenant_id: str, room_id: str, room_number: str, title: str, severity: str, alert_id: str) -> None:
     try:
-        await db.maintenance_tasks.insert_one({
-            'id': uuid.uuid4().hex,
-            'tenant_id': tenant_id,
-            'room_id': room_id,
-            'room_number': room_number,
-            'title': title,
-            'severity': severity,
-            'source_alert_id': alert_id,
-            'status': 'pending',
-            'source': 'predictive_ai',
-            'created_at': datetime.now(UTC).isoformat(),
-        })
+        await db.maintenance_tasks.insert_one(
+            {
+                "id": uuid.uuid4().hex,
+                "tenant_id": tenant_id,
+                "room_id": room_id,
+                "room_number": room_number,
+                "title": title,
+                "severity": severity,
+                "source_alert_id": alert_id,
+                "status": "pending",
+                "source": "predictive_ai",
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
     except Exception:
-        logger.exception('[ai] failed to create predictive maintenance task')
+        logger.exception("[ai] failed to create predictive maintenance task")
 
 
 def distribute_tasks(rooms: list[dict], staff: list[dict], task_type: str) -> list[dict]:
     """Round-robin task distribution across staff members."""
     if not staff:
         return []
-    minutes_per_task = 30 if task_type == 'checkout' else 20
+    minutes_per_task = 30 if task_type == "checkout" else 20
     out = []
     for idx, room in enumerate(rooms):
         member = staff[idx % len(staff)]
-        out.append({
-            'staff_id': member.get('id') or member.get('staff_id'),
-            'staff_name': member.get('name') or member.get('staff_name') or 'Staff',
-            'task': {
-                'room_id': room.get('id') or room.get('room_id'),
-                'type': task_type,
-                'priority': 'high' if task_type == 'checkout' else 'normal',
-                'estimated_minutes': minutes_per_task,
-            },
-            'estimated_minutes': minutes_per_task,
-        })
+        out.append(
+            {
+                "staff_id": member.get("id") or member.get("staff_id"),
+                "staff_name": member.get("name") or member.get("staff_name") or "Staff",
+                "task": {
+                    "room_id": room.get("id") or room.get("room_id"),
+                    "type": task_type,
+                    "priority": "high" if task_type == "checkout" else "normal",
+                    "estimated_minutes": minutes_per_task,
+                },
+                "estimated_minutes": minutes_per_task,
+            }
+        )
     return out
 
 
 def generate_scheduling_recommendations(capacity_pct: float, staff_count: int, total_rooms: int) -> list[str]:
     recs = []
     if capacity_pct >= 110:
-        recs.append('Schedule additional housekeeping staff or extend shifts.')
+        recs.append("Schedule additional housekeeping staff or extend shifts.")
     elif capacity_pct >= 90:
-        recs.append('Capacity is tight — monitor task completion closely.')
+        recs.append("Capacity is tight — monitor task completion closely.")
     else:
-        recs.append('Workload is healthy.')
+        recs.append("Workload is healthy.")
     if staff_count and total_rooms / max(staff_count, 1) > 18:
-        recs.append('Consider rebalancing room-to-staff ratio.')
+        recs.append("Consider rebalancing room-to-staff ratio.")
     return recs
 
 
 def get_tier_benefits(tier: str) -> list[str]:
     matrix = {
-        'silver': ['Welcome drink', 'Late checkout 1h'],
-        'gold': ['Room upgrade subject to availability', 'Late checkout 2h', '10% F&B discount'],
-        'platinum': ['Guaranteed upgrade', 'Late checkout 4h', '20% F&B discount', 'Lounge access'],
+        "silver": ["Welcome drink", "Late checkout 1h"],
+        "gold": ["Room upgrade subject to availability", "Late checkout 2h", "10% F&B discount"],
+        "platinum": ["Guaranteed upgrade", "Late checkout 4h", "20% F&B discount", "Lounge access"],
     }
-    return matrix.get((tier or '').lower(), [])
+    return matrix.get((tier or "").lower(), [])
 
 
 logger = logging.getLogger(__name__)
@@ -122,182 +125,51 @@ logger = logging.getLogger(__name__)
 try:
     from cache_manager import cached
 except ImportError:
+
     def cached(ttl=300, key_prefix=""):
-        def decorator(func): return func
+        def decorator(func):
+            return func
+
         return decorator
-
-
-
-
-
-
 
 
 # ============= AI DYNAMIC PRICING (MARKET LEADER FEATURE) =============
 
 
-
-
-
-
-
 # ============= WHATSAPP BUSINESS INTEGRATION =============
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ============= HOUSEKEEPING AI PREDICTIONS =============
 
 
-
-
-
-
-
 # ============= PREDICTIVE ANALYTICS (GAME-CHANGER #2) =============
-
-
-
-
-
-
-
-
 
 
 # ============= SOCIAL MEDIA COMMAND CENTER (GAME-CHANGER #3) =============
 
 
-
-
-
-
-
-
-
-
 # ============= REVENUE AUTOPILOT (GAME-CHANGER #4) =============
-
-
-
-
-
-
-
-
 
 
 # ============= GUEST DNA PROFILE (GAME-CHANGER #5) =============
 
 
-
-
 # ============= DYNAMIC STAFFING AI (GAME-CHANGER #6) =============
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ============= DELUXE+ ENTERPRISE FEATURES =============
 
 
-
-
-
 # ============= MAINTENANCE WORK ORDERS =============
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ============= LOYALTY PROGRAM ENHANCEMENTS =============
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ============= AI HOUSEKEEPING SCHEDULER =============
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ============= MONITORING & LOGGING ENDPOINTS =============
-
-
-
 
 
 # ============= NEW ENHANCEMENTS: OTA, GUEST PROFILE, HK MOBILE, RMS, MESSAGING, POS =============
@@ -329,12 +201,9 @@ async def get_ai_pricing_recommendation(
             target_date = datetime.now().strftime("%Y-%m-%d")
 
         from domains.ai.dynamic_pricing_engine import get_pricing_engine
+
         engine = get_pricing_engine(db)
-        recommendation = await engine.recommend_price(
-            current_user.tenant_id,
-            room_type,
-            target_date
-        )
+        recommendation = await engine.recommend_price(current_user.tenant_id, room_type, target_date)
         return recommendation
     except Exception:
         # Fail-closed: beklenmeyen bir hatada uydurma taban fiyat (eski sabit 150)
@@ -361,13 +230,11 @@ async def get_ai_pricing_recommendation(
             "data_available": False,
             "source": "unavailable",
         }
+
+
 # ── GET /pricing/competitor-rates ──
 @router.get("/pricing/competitor-rates")
-async def get_competitor_rates(
-    room_type: str,
-    target_date: str,
-    current_user: User = Depends(get_current_user)
-):
+async def get_competitor_rates(room_type: str, target_date: str, current_user: User = Depends(get_current_user)):
     """Rakip otel fiyatları (yalnızca gerçek competitor_rates kayıtları)"""
     from domains.ai.dynamic_pricing_engine import get_pricing_engine
 
@@ -375,6 +242,8 @@ async def get_competitor_rates(
     rates = await engine.get_competitor_rates(current_user.tenant_id, target_date, room_type)
 
     return rates
+
+
 # ── GET /reputation/overview ──
 @router.get("/reputation/overview")
 async def get_reputation_overview(current_user: User = Depends(get_current_user)):
@@ -385,12 +254,11 @@ async def get_reputation_overview(current_user: User = Depends(get_current_user)
     overview = await manager.aggregate_reviews(current_user.tenant_id)
 
     return overview
+
+
 # ── GET /reputation/trends ──
 @router.get("/reputation/trends")
-async def get_reputation_trends(
-    days: int = 30,
-    current_user: User = Depends(get_current_user)
-):
+async def get_reputation_trends(days: int = 30, current_user: User = Depends(get_current_user)):
     """Reputation trend analizi"""
     from domains.ai.reputation_manager import get_reputation_manager
 
@@ -398,6 +266,8 @@ async def get_reputation_trends(
     trends = await manager.get_reputation_trends(current_user.tenant_id, days)
 
     return trends
+
+
 # ── POST /reputation/suggest-response ──
 @router.post("/reputation/suggest-response")
 async def suggest_review_response(
@@ -409,14 +279,11 @@ async def suggest_review_response(
     from domains.ai.reputation_manager import get_reputation_manager
 
     manager = get_reputation_manager(db)
-    response = await manager.suggest_response(
-        review_data['review_text'],
-        review_data.get('rating', 3)
-    )
+    response = await manager.suggest_response(review_data["review_text"], review_data.get("rating", 3))
 
-    return {
-        'suggested_response': response
-    }
+    return {"suggested_response": response}
+
+
 # ── GET /reputation/negative-alerts ──
 @router.get("/reputation/negative-alerts")
 async def get_negative_review_alerts(current_user: User = Depends(get_current_user)):
@@ -426,8 +293,4 @@ async def get_negative_review_alerts(current_user: User = Depends(get_current_us
     manager = get_reputation_manager(db)
     alerts = await manager.detect_negative_reviews(current_user.tenant_id)
 
-    return {
-        'negative_reviews': alerts,
-        'total': len(alerts),
-        'requires_action': len(alerts) > 0
-    }
+    return {"negative_reviews": alerts, "total": len(alerts), "requires_action": len(alerts) > 0}

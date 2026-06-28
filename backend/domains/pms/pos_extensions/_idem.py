@@ -5,6 +5,7 @@ domain (pms, spa, golf) cross-domain import yapmadan aynı idempotency
 yardımcılarını kullanabilsin. Mevcut pms-içi import'lar bozulmasın diye bu
 modül aynı isimleri (ve aynı `_INDEXES_READY` cache nesnesini) re-export eder.
 """
+
 from __future__ import annotations
 
 from shared_kernel.pos_idem import (

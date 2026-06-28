@@ -3,6 +3,7 @@ Bootstrap: Dependency Container
 Centralizes all shared dependencies (db, cache, auth, config) for the application.
 Re-exports from core.database to provide a single canonical DB connection.
 """
+
 from core.database import db
 
 

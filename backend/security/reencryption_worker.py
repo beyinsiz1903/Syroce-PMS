@@ -15,6 +15,7 @@ Usage:
   job = await worker.start_job(key_id="...")
   status = await worker.get_job_status(job["job_id"])
 """
+
 import asyncio
 import logging
 from datetime import UTC, datetime
@@ -29,6 +30,7 @@ COLL_JOB_AUDIT = "reencryption_audit"
 
 class JobState(str, Enum):
     """Re-encryption job states."""
+
     PENDING = "pending"
     RUNNING = "running"
     PAUSED = "paused"
@@ -47,6 +49,7 @@ class ReencryptionWorker:
     def _get_db(self):
         if self._db is None:
             from core.tenant_db import get_system_db
+
             self._db = get_system_db()
         return self._db
 
@@ -250,7 +253,7 @@ class ReencryptionWorker:
                     remaining = job["total_documents"] - job["processed_documents"]
                     if rate > 0:
                         eta_seconds = remaining / rate
-                        eta = (datetime.now(UTC).timestamp() + eta_seconds)
+                        eta = datetime.now(UTC).timestamp() + eta_seconds
                 except Exception:
                     pass
 
@@ -427,10 +430,14 @@ class ReencryptionWorker:
             offset = job.get("current_offset", 0)
 
         # Get all document IDs to process
-        cursor = col.find(
-            {"_enc_version": {"$exists": True}},  # Only already-encrypted docs
-            {"_id": 1},
-        ).skip(offset).batch_size(batch_size)
+        cursor = (
+            col.find(
+                {"_enc_version": {"$exists": True}},  # Only already-encrypted docs
+                {"_id": 1},
+            )
+            .skip(offset)
+            .batch_size(batch_size)
+        )
 
         doc_ids = [doc["_id"] async for doc in cursor]
         len(doc_ids)
@@ -440,7 +447,7 @@ class ReencryptionWorker:
         failed_ids = []
 
         for i in range(0, len(doc_ids), batch_size):
-            batch_ids = doc_ids[i:i + batch_size]
+            batch_ids = doc_ids[i : i + batch_size]
 
             for doc_id in batch_ids:
                 try:
@@ -474,7 +481,10 @@ class ReencryptionWorker:
                     failed_ids.append(str(doc_id))
                     logger.warning(
                         "Re-encryption failed: job=%s collection=%s doc=%s error=%s",
-                        job_id, collection_name, doc_id, e,
+                        job_id,
+                        collection_name,
+                        doc_id,
+                        e,
                     )
 
             # Checkpoint progress
@@ -508,7 +518,10 @@ class ReencryptionWorker:
 
         logger.info(
             "Re-encryption collection done: job=%s collection=%s processed=%d failed=%d",
-            job_id, collection_name, processed, failed,
+            job_id,
+            collection_name,
+            processed,
+            failed,
         )
 
     # ── Audit ──────────────────────────────────────────────────────
@@ -526,9 +539,7 @@ class ReencryptionWorker:
             query["job_id"] = job_id
 
         total = await db[COLL_JOB_AUDIT].count_documents(query)
-        items = await db[COLL_JOB_AUDIT].find(
-            query, {"_id": 0}
-        ).sort("timestamp", -1).limit(limit).to_list(limit)
+        items = await db[COLL_JOB_AUDIT].find(query, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
 
         return {"items": items, "total": total}
 
@@ -544,14 +555,16 @@ class ReencryptionWorker:
         """Write audit log entry."""
         db = self._get_db()
         try:
-            await db[COLL_JOB_AUDIT].insert_one({
-                "job_id": job_id,
-                "action": action,
-                "actor": actor,
-                "details": details or {},
-                "severity": severity,
-                "timestamp": datetime.now(UTC).isoformat(),
-            })
+            await db[COLL_JOB_AUDIT].insert_one(
+                {
+                    "job_id": job_id,
+                    "action": action,
+                    "actor": actor,
+                    "details": details or {},
+                    "severity": severity,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
         except Exception:
             logger.exception("Failed to write re-encryption audit log")
 

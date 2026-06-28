@@ -9,6 +9,7 @@ Her faz kendi modülünde (`bootstrap/phases/<faz>.py`):
 Bu dosya yalnızca dış API uyumluluğu (mevcut import path'leri) için var.
 Yeni kod doğrudan `bootstrap.phases` paketinden de import edebilir.
 """
+
 from bootstrap.phases import (
     ensure_audit_indexes,
     ensure_performance_indexes,

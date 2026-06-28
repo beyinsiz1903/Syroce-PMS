@@ -8,6 +8,7 @@ uçlar + admin'in görünür rolleri yapılandırdığı ayar uçları.
 ``routers/room_qr_requests.py``'de. Bu router ``router_registry.py`` üzerinden
 ``/api`` altına mount edilir.
 """
+
 from __future__ import annotations
 
 import logging
@@ -28,6 +29,7 @@ router = APIRouter(prefix="/api", tags=["Guest Requests"])
 
 # ── Admin: görünürlük ayarı ────────────────────────────────────────────
 
+
 class VisibleRolesUpdate(BaseModel):
     visible_roles: list[str] = Field(default_factory=list)
 
@@ -39,10 +41,7 @@ async def get_guest_request_settings(
 ):
     """Yapılandırılmış görünür roller + seçilebilir rol kataloğu (admin)."""
     roles = await gr.get_visible_roles(current_user.tenant_id)
-    available = [
-        {"value": r, "label": gr.STAFF_ROLE_LABELS.get(r, r)}
-        for r in sorted(gr.STAFF_ROLE_WHITELIST)
-    ]
+    available = [{"value": r, "label": gr.STAFF_ROLE_LABELS.get(r, r)} for r in sorted(gr.STAFF_ROLE_WHITELIST)]
     return {
         "visible_roles": roles,
         "available_roles": available,
@@ -63,6 +62,7 @@ async def update_guest_request_settings(
 
 # ── Personel: erişim + thread akışı ────────────────────────────────────
 
+
 @router.get("/messaging/guest-requests/access")
 async def guest_request_access(
     current_user: User = Depends(get_current_user),
@@ -78,9 +78,7 @@ async def list_guest_request_threads(
 ):
     """Oda bazlı thread özetleri + okunmamış misafir mesajı sayıları."""
     threads = await gr.list_threads_for_staff(current_user.tenant_id)
-    unread_map = await gr.count_unread_for_staff(
-        current_user.tenant_id, current_user.id
-    )
+    unread_map = await gr.count_unread_for_staff(current_user.tenant_id, current_user.id)
     total_unread = 0
     for t in threads:
         u = int(unread_map.get(t["room_id"], 0) or 0)
@@ -157,7 +155,5 @@ async def mark_guest_request_thread_read(
     current_user: User = Depends(gr.require_guest_request_access),
 ):
     """Odadaki misafir mesajlarını bu personel için okundu işaretler."""
-    modified = await gr.mark_thread_read(
-        current_user.tenant_id, room_id, current_user.id
-    )
+    modified = await gr.mark_thread_read(current_user.tenant_id, room_id, current_user.id)
     return {"success": True, "modified": modified}

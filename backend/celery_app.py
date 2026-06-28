@@ -14,14 +14,10 @@ from redis_ssl import celery_ssl_conf, normalize_redis_url_for_redis_py
 load_dotenv()
 
 # Redis as message broker
-REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
 # Create Celery app
-celery_app = Celery(
-    'hotel_pms',
-    broker=REDIS_URL,
-    backend=REDIS_URL
-)
+celery_app = Celery("hotel_pms", broker=REDIS_URL, backend=REDIS_URL)
 
 # ── Managed Redis TLS (rediss://) ───────────────────────────────────
 # DigitalOcean Managed Caching / Valkey enforces TLS. kombu only opens an SSL
@@ -35,7 +31,7 @@ _redis_ssl = celery_ssl_conf(REDIS_URL)
 if _redis_ssl:
     celery_app.conf.broker_use_ssl = _redis_ssl
     celery_app.conf.redis_backend_use_ssl = _redis_ssl
-    os.environ['REDIS_URL'] = normalize_redis_url_for_redis_py(REDIS_URL)
+    os.environ["REDIS_URL"] = normalize_redis_url_for_redis_py(REDIS_URL)
 
 # ── Logging hardening (secret/PII sanitizer + quiet httpx request URLs) ──
 # Celery hijacks the root logger and installs its own handlers AFTER import, so
@@ -60,39 +56,31 @@ try:
         harden_logging()
 except Exception as _celery_log_err:  # pragma: no cover - defensive
     import logging as _logging
-    _logging.getLogger(__name__).warning(
-        "Celery log hardening skipped: %s", _celery_log_err
-    )
+
+    _logging.getLogger(__name__).warning("Celery log hardening skipped: %s", _celery_log_err)
 
 # Celery configuration
 celery_app.conf.update(
     # Task settings
-    task_serializer='json',
-    accept_content=['json'],
-    result_serializer='json',
-    timezone='UTC',
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="UTC",
     enable_utc=True,
-
     # Task execution
     task_acks_late=True,
     task_reject_on_worker_lost=True,
     task_time_limit=3600,  # 1 hour max
     task_soft_time_limit=3000,  # 50 minutes warning
-
     # Worker settings
     worker_prefetch_multiplier=4,
     worker_max_tasks_per_child=1000,
-
     # Result backend
     result_expires=86400,  # 24 hours
-    result_backend_transport_options={
-        'master_name': 'mymaster'
-    },
-
+    result_backend_transport_options={"master_name": "mymaster"},
     # Broker settings
     broker_connection_retry_on_startup=True,
     broker_connection_max_retries=10,
-
     # Beat schedule for periodic tasks
     beat_schedule={
         # Night audit dispatcher (Task #362) — runs every minute and enqueues a
@@ -101,154 +89,134 @@ celery_app.conf.update(
         # closed every hotel's financial day at the same instant regardless of
         # timezone. An atomic per-local-day claim makes it safe even if multiple
         # beat processes run (autoscale) — at most one dispatch per tenant/day.
-        'night-audit-dispatch': {
-            'task': 'celery_tasks.night_audit_dispatch_task',
-            'schedule': crontab(minute='*'),
+        "night-audit-dispatch": {
+            "task": "celery_tasks.night_audit_dispatch_task",
+            "schedule": crontab(minute="*"),
         },
-
         # Folio close event (e-Fatura readiness) — off-hot-path outbox sweep that
         # emits the reference-based folio.closed.v1 SXI event for newly-closed
         # folios. No-op unless PUBLIC_APP_URL + FOLIO_EVENT_EMIT_SINCE are set and
         # a subscriber tenant has a partner supporting FOLIO_CLOSE OUTBOUND.
-        'folio-closed-event-sweep': {
-            'task': 'celery_tasks.folio_closed_event_sweep_task',
-            'schedule': crontab(minute='*/5'),
+        "folio-closed-event-sweep": {
+            "task": "celery_tasks.folio_closed_event_sweep_task",
+            "schedule": crontab(minute="*/5"),
         },
-
         # KBS dispatcher (Task #570) — PMS-içi otomatik polis konaklama bildirimi.
         # Her dakika bekleyen KBS kuyruğunu claim eder, KBS uç noktasına gönderir
         # ve complete/fail eder. Fail-closed: KBS_API_URL/KBS_API_TOKEN yoksa
         # (ve KBS_TEST_MODE kapalıysa) no-op döner + operatörü throttled uyarır;
         # sahte başarı YAZILMAZ. Harici masaüstü ajan/bot artık gerekmez.
-        'kbs-dispatch': {
-            'task': 'celery_tasks.kbs_dispatch_task',
-            'schedule': crontab(minute='*'),
+        "kbs-dispatch": {
+            "task": "celery_tasks.kbs_dispatch_task",
+            "schedule": crontab(minute="*"),
         },
-
         # KBS gece güvenlik taraması (Task #570) — night-audit ile aynı kalıp:
         # her dakika tick'ler, her kiracının YEREL saatiyle 00:00'ında kapanan
         # günün gönderilmemiş konaklamalarını yeniden enqueue eder (DST-aware,
         # atomik per-local-day claim). Gün içinde gözden kaçanları yakalar.
-        'kbs-nightly-sweep-dispatch': {
-            'task': 'celery_tasks.kbs_nightly_sweep_dispatch_task',
-            'schedule': crontab(minute='*'),
+        "kbs-nightly-sweep-dispatch": {
+            "task": "celery_tasks.kbs_nightly_sweep_dispatch_task",
+            "schedule": crontab(minute="*"),
         },
-
         # Contact Center Faz 2 (Task #648) — çağrı kaydı retention sweep.
         # Her gün 02:30'da süresi dolan (CC_RECORDING_RETENTION_DAYS) kayıtları
         # ayrı nesne deposundan siler ve recording_ref'i kaldırır. Fail-closed:
         # kayıt deposu yapılandırılmamışsa no-op.
-        'cc-purge-expired-recordings': {
-            'task': 'celery_tasks.purge_expired_call_recordings_task',
-            'schedule': crontab(hour=2, minute=30),
+        "cc-purge-expired-recordings": {
+            "task": "celery_tasks.purge_expired_call_recordings_task",
+            "schedule": crontab(hour=2, minute=30),
         },
-
         # Data archival - runs weekly on Sunday at 3 AM
-        'archive-old-data': {
-            'task': 'celery_tasks.archive_old_data_task',
-            'schedule': crontab(day_of_week=0, hour=3, minute=0),
+        "archive-old-data": {
+            "task": "celery_tasks.archive_old_data_task",
+            "schedule": crontab(day_of_week=0, hour=3, minute=0),
         },
-
         # Clean old notifications - runs daily at 4 AM
-        'clean-notifications': {
-            'task': 'celery_tasks.clean_old_notifications_task',
-            'schedule': crontab(hour=4, minute=0),
+        "clean-notifications": {
+            "task": "celery_tasks.clean_old_notifications_task",
+            "schedule": crontab(hour=4, minute=0),
         },
-
         # Generate daily reports - runs at 1 AM
-        'generate-daily-reports': {
-            'task': 'celery_tasks.generate_daily_reports_task',
-            'schedule': crontab(hour=1, minute=0),
+        "generate-daily-reports": {
+            "task": "celery_tasks.generate_daily_reports_task",
+            "schedule": crontab(hour=1, minute=0),
         },
-
         # Check maintenance SLA - runs every hour
-        'check-maintenance-sla': {
-            'task': 'celery_tasks.check_maintenance_sla_task',
-            'schedule': crontab(minute=0),  # Every hour at :00
+        "check-maintenance-sla": {
+            "task": "celery_tasks.check_maintenance_sla_task",
+            "schedule": crontab(minute=0),  # Every hour at :00
         },
-
         # Update occupancy forecast - runs every 6 hours
-        'update-occupancy-forecast': {
-            'task': 'celery_tasks.update_occupancy_forecast_task',
-            'schedule': crontab(minute=0, hour='*/6'),  # 0, 6, 12, 18
+        "update-occupancy-forecast": {
+            "task": "celery_tasks.update_occupancy_forecast_task",
+            "schedule": crontab(minute=0, hour="*/6"),  # 0, 6, 12, 18
         },
-
         # Process pending e-faturas - runs every 30 minutes
-        'process-efaturas': {
-            'task': 'celery_tasks.process_pending_efaturas_task',
-            'schedule': crontab(minute='*/30'),
+        "process-efaturas": {
+            "task": "celery_tasks.process_pending_efaturas_task",
+            "schedule": crontab(minute="*/30"),
         },
-
         # Cache warming - runs every 10 minutes
-        'warm-cache': {
-            'task': 'celery_tasks.warm_cache_task',
-            'schedule': crontab(minute='*/10'),
+        "warm-cache": {
+            "task": "celery_tasks.warm_cache_task",
+            "schedule": crontab(minute="*/10"),
         },
-
         # Database health check - runs every 5 minutes
-        'db-health-check': {
-            'task': 'celery_tasks.database_health_check_task',
-            'schedule': crontab(minute='*/5'),
+        "db-health-check": {
+            "task": "celery_tasks.database_health_check_task",
+            "schedule": crontab(minute="*/5"),
         },
-
         # HRv2 Shadow Automation — 6 saatte bir snapshot
-        'hrv2-shadow-snapshot': {
-            'task': 'celery_tasks.hrv2_shadow_snapshot_task',
-            'schedule': crontab(minute=0, hour='*/6'),
+        "hrv2-shadow-snapshot": {
+            "task": "celery_tasks.hrv2_shadow_snapshot_task",
+            "schedule": crontab(minute=0, hour="*/6"),
         },
-
         # HRv2 Shadow Automation — Gunluk ozet (00:00 UTC)
-        'hrv2-daily-summary': {
-            'task': 'celery_tasks.hrv2_daily_summary_task',
-            'schedule': crontab(hour=0, minute=0),
+        "hrv2-daily-summary": {
+            "task": "celery_tasks.hrv2_daily_summary_task",
+            "schedule": crontab(hour=0, minute=0),
         },
-
         # HRv2 Shadow Automation — Retention cleanup (Pazar 05:00 UTC)
-        'hrv2-retention-cleanup': {
-            'task': 'celery_tasks.hrv2_retention_cleanup_task',
-            'schedule': crontab(day_of_week=0, hour=5, minute=0),
+        "hrv2-retention-cleanup": {
+            "task": "celery_tasks.hrv2_retention_cleanup_task",
+            "schedule": crontab(day_of_week=0, hour=5, minute=0),
         },
-
         # F8N Task #224 — Auto-resolve duplicate room-night locks (daily 03:30 UTC).
         # Touches only auto_safe / auto_safe_all_inactive groups; manual_required
         # groups are logged so monitoring can alert if they accumulate.
         # Retention (Task #237): the `rnl_auto_resolve_runs` history collection
         # is pruned inline at the end of each run (default 365 days, overridable
         # via `RNL_AUTO_RESOLVE_RUN_RETENTION_DAYS`). No separate beat entry.
-        'rnl-duplicate-auto-resolve': {
-            'task': 'celery_tasks.rnl_duplicate_auto_resolve_task',
-            'schedule': crontab(hour=3, minute=30),
+        "rnl-duplicate-auto-resolve": {
+            "task": "celery_tasks.rnl_duplicate_auto_resolve_task",
+            "schedule": crontab(hour=3, minute=30),
         },
-
         # F8N Task #234 — Heartbeat monitor for the daily RNL duplicate
         # auto-resolve job. Alerts when no successful run has happened in
         # ~36h (silent dead-scheduler failure mode that the outcome-based
         # Task #228 alert can't see). Runs hourly at :15.
-        'rnl-duplicate-heartbeat-check': {
-            'task': 'celery_tasks.rnl_duplicate_heartbeat_check_task',
-            'schedule': crontab(minute=15),
+        "rnl-duplicate-heartbeat-check": {
+            "task": "celery_tasks.rnl_duplicate_heartbeat_check_task",
+            "schedule": crontab(minute=15),
         },
-
         # Task #242 — Alert ops by email when a duplicate-prevention unique-index
         # backstop stays deferred (safeguard OFF) past a grace window. Runs
         # hourly at :45; the task attempts the build (self-heal), tracks deferral
         # duration in Mongo, and emails ops via the shared alert dispatcher.
-        'unique-backstop-deferral-check': {
-            'task': 'celery_tasks.unique_backstop_deferral_check_task',
-            'schedule': crontab(minute=45),
+        "unique-backstop-deferral-check": {
+            "task": "celery_tasks.unique_backstop_deferral_check_task",
+            "schedule": crontab(minute=45),
         },
-
         # Outbox terminal-state retention (Atlas Query Targeting 2026-06-17) —
         # daily off-peak janitor that deletes outbox_events rows in terminal
         # states (processed/failed/parked) older than OUTBOX_TERMINAL_RETENTION_
         # DAYS (default 14) in bounded batches. NEVER touches pending/retry/
         # processing. Prevents the unbounded terminal backlog that makes the
         # every-minute outbox monitoring count scan grow without bound.
-        'outbox-terminal-retention-cleanup': {
-            'task': 'celery_tasks.outbox_terminal_retention_task',
-            'schedule': crontab(hour=4, minute=30),
+        "outbox-terminal-retention-cleanup": {
+            "task": "celery_tasks.outbox_terminal_retention_task",
+            "schedule": crontab(hour=4, minute=30),
         },
-
         # Revenue Autopilot dispatcher (Rota 1-A) — runs every minute and enqueues
         # each active tenant's deterministic optimization cycle when its LOCAL
         # configured time arrives (DST-aware, tenant_settings.timezone; default
@@ -260,11 +228,10 @@ celery_app.conf.update(
         # webhook Outbox/other workers). In full_auto mode the cycle emits per-
         # room_type/date RATE_UPDATED outbox events (idempotent); supervised/
         # advisory keep pending_approval.
-        'revenue-autopilot-dispatch': {
-            'task': 'celery_tasks.revenue_autopilot_dispatch_task',
-            'schedule': crontab(minute='*'),
+        "revenue-autopilot-dispatch": {
+            "task": "celery_tasks.revenue_autopilot_dispatch_task",
+            "schedule": crontab(minute="*"),
         },
-
         # Stress dead-PENDING outbox residue sweep (Plan A — Task #620) —
         # dedicated nightly beat (03:50 UTC, non-colliding slot) that sweeps the
         # stress tenant's no-consumer guest.checked_in/out.v1 PENDING backlog so
@@ -274,20 +241,19 @@ celery_app.conf.update(
         # STRESS_OUTBOX_SWEEP_ENABLED=true AND E2E_STRESS_TENANT_ID is set AND
         # the tenant is not the pilot; otherwise a silent metric-only no-op
         # (so dev / unconfigured prod behaviour is unchanged). 24h age guard.
-        'stress-outbox-residue-sweep': {
-            'task': 'celery_tasks.stress_outbox_residue_sweep_task',
-            'schedule': crontab(hour=3, minute=50),
+        "stress-outbox-residue-sweep": {
+            "task": "celery_tasks.stress_outbox_residue_sweep_task",
+            "schedule": crontab(hour=3, minute=50),
         },
-
         # Autonomous collection dispatch (every minute): per-tenant no-show penalty
         # + check-in-day VCC capture at each tenant's local AUTOCOLLECT_LOCAL_HOUR
         # (default 04:00, after night audit sets no_show). Atomic per-local-day
         # claim (autonomous_collection_runs) -> at most one dispatch per tenant/day.
-        'autonomous-collection-dispatch': {
-            'task': 'celery_tasks.autonomous_collection_dispatch_task',
-            'schedule': crontab(minute='*'),
+        "autonomous-collection-dispatch": {
+            "task": "celery_tasks.autonomous_collection_dispatch_task",
+            "schedule": crontab(minute="*"),
         },
-    }
+    },
 )
 
 # Import tasks directly (celery_tasks is a module, not a package)
@@ -295,7 +261,8 @@ try:
     import celery_tasks  # noqa: F401
 except ImportError as e:
     import logging
+
     logging.getLogger(__name__).warning(f"celery_tasks import failed: {e}")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     celery_app.start()

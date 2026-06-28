@@ -30,6 +30,7 @@ Override the tenant without editing the script:
 Pilot guard: refuses to run when the resolved tenant id equals
 `PILOT_TENANT_ID` — stress entitlement must never touch the pilot.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -52,8 +53,7 @@ async def main() -> int:
     pilot_tid = os.environ.get("PILOT_TENANT_ID") or ""
     if pilot_tid and tenant_id == pilot_tid:
         print(
-            f"ERROR: refusing to enable {FEATURE_KEY} — resolved tenant {tenant_id} "
-            f"equals PILOT_TENANT_ID. Stress entitlement must not touch pilot.",
+            f"ERROR: refusing to enable {FEATURE_KEY} — resolved tenant {tenant_id} equals PILOT_TENANT_ID. Stress entitlement must not touch pilot.",
             file=sys.stderr,
         )
         return 3
@@ -61,29 +61,18 @@ async def main() -> int:
     client = AsyncIOMotorClient(mongo)
     db = client["syroce-pms"]
 
-    tenant = await db.tenants.find_one(
-        {"id": tenant_id}, {"_id": 0, "name": 1, "features": 1}
-    )
+    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "name": 1, "features": 1})
     if not tenant:
         print(f"ERROR: tenant {tenant_id} not found", file=sys.stderr)
         return 2
 
     current = tenant.get("features") or {}
     if current.get(FEATURE_KEY) is True:
-        print(
-            f"OK: tenant '{tenant.get('name')}' ({tenant_id}) already has "
-            f"{FEATURE_KEY} enabled — nothing to do."
-        )
+        print(f"OK: tenant '{tenant.get('name')}' ({tenant_id}) already has {FEATURE_KEY} enabled — nothing to do.")
         return 0
 
-    res = await db.tenants.update_one(
-        {"id": tenant_id}, {"$set": {f"features.{FEATURE_KEY}": True}}
-    )
-    print(
-        f"Stress tenant '{tenant.get('name')}' ({tenant_id}): "
-        f"enabled feature {FEATURE_KEY} "
-        f"(matched={res.matched_count}, modified={res.modified_count})."
-    )
+    res = await db.tenants.update_one({"id": tenant_id}, {"$set": {f"features.{FEATURE_KEY}": True}})
+    print(f"Stress tenant '{tenant.get('name')}' ({tenant_id}): enabled feature {FEATURE_KEY} (matched={res.matched_count}, modified={res.modified_count}).")
 
     # Sanity check — confirm post-write state so a silent no-op surfaces.
     after = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "features": 1})

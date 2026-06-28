@@ -14,6 +14,7 @@ previously-issued token. The path lives under ``/api/public`` and declares no
 middleware sets no context for it, so every collection read passes an explicit
 ``tenant_id`` filter (no cross-tenant exposure).
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -110,8 +111,13 @@ async def fetch_folio_einvoice_data(
         booking_doc = await db.bookings.find_one(
             {"id": folio["booking_id"], "tenant_id": tenant_id},
             {
-                "_id": 0, "check_in": 1, "check_out": 1, "room_id": 1,
-                "room_number": 1, "adults": 1, "children": 1,
+                "_id": 0,
+                "check_in": 1,
+                "check_out": 1,
+                "room_id": 1,
+                "room_number": 1,
+                "adults": 1,
+                "children": 1,
             },
         )
         if booking_doc:
@@ -120,9 +126,7 @@ async def fetch_folio_einvoice_data(
     # Audit the PII disclosure with a synthetic, clearly-non-human actor.
     from core.helpers import create_audit_log
 
-    actor = SimpleNamespace(
-        id="efatura-fetch-token", name="e-Fatura Fetch Token", role="system"
-    )
+    actor = SimpleNamespace(id="efatura-fetch-token", name="e-Fatura Fetch Token", role="system")
     await create_audit_log(
         tenant_id,
         actor,

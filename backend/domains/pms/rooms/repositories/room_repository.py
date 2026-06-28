@@ -2,6 +2,7 @@
 PMS Domain — Room Repository
 Data access layer for room operations. No FastAPI dependencies.
 """
+
 from datetime import UTC, datetime
 from typing import Any
 
@@ -15,9 +16,14 @@ class RoomRepository:
 
     @classmethod
     async def find_by_tenant(
-        cls, tenant_id: str, *, status: str | None = None,
-        room_type: str | None = None, floor: str | None = None,
-        limit: int = 100, offset: int = 0,
+        cls,
+        tenant_id: str,
+        *,
+        status: str | None = None,
+        room_type: str | None = None,
+        floor: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         query: dict[str, Any] = {"tenant_id": tenant_id}
         if status:
@@ -32,15 +38,11 @@ class RoomRepository:
 
     @classmethod
     async def find_one(cls, tenant_id: str, room_id: str) -> dict[str, Any] | None:
-        return await cls.collection.find_one(
-            {"tenant_id": tenant_id, "id": room_id}, {"_id": 0}
-        )
+        return await cls.collection.find_one({"tenant_id": tenant_id, "id": room_id}, {"_id": 0})
 
     @classmethod
     async def find_by_number(cls, tenant_id: str, room_number: str) -> dict[str, Any] | None:
-        return await cls.collection.find_one(
-            {"tenant_id": tenant_id, "room_number": room_number}, {"_id": 0}
-        )
+        return await cls.collection.find_one({"tenant_id": tenant_id, "room_number": room_number}, {"_id": 0})
 
     @classmethod
     async def count(cls, tenant_id: str, query_filter: dict | None = None) -> int:
@@ -63,16 +65,18 @@ class RoomRepository:
 
     @classmethod
     async def update_status(cls, tenant_id: str, room_id: str, new_status: str) -> bool:
-        return await cls.update(tenant_id, room_id, {
-            "status": new_status,
-            "updated_at": datetime.now(UTC).isoformat(),
-        })
+        return await cls.update(
+            tenant_id,
+            room_id,
+            {
+                "status": new_status,
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        )
 
     @classmethod
     async def delete(cls, tenant_id: str, room_id: str) -> bool:
-        result = await cls.collection.delete_one(
-            {"tenant_id": tenant_id, "id": room_id}
-        )
+        result = await cls.collection.delete_one({"tenant_id": tenant_id, "id": room_id})
         return result.deleted_count > 0
 
     @classmethod

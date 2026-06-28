@@ -20,6 +20,7 @@ Behaviour:
 - Unknown values are mapped to "Diğer" (only logged, not changed unless --aggressive).
 - Idempotent: re-running is safe.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -102,11 +103,7 @@ def canonicalize(raw: Any) -> str | None:
 
 async def run(tenant: str | None, dry_run: bool, aggressive: bool) -> None:
     # Mirror backend/start.sh precedence: MONGO_URL wins, else MONGO_ATLAS_URI.
-    mongo_url = (
-        os.environ.get("MONGO_URL")
-        or os.environ.get("MONGO_ATLAS_URI")
-        or "mongodb://localhost:27017"
-    )
+    mongo_url = os.environ.get("MONGO_URL") or os.environ.get("MONGO_ATLAS_URI") or "mongodb://localhost:27017"
     db_name = os.environ.get("DB_NAME", "syroce-pms")
     client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
     db = client[db_name]
@@ -142,10 +139,7 @@ async def run(tenant: str | None, dry_run: bool, aggressive: bool) -> None:
             skipped_canonical += 1
             continue
 
-        print(
-            f"  {'[DRY] ' if dry_run else ''}{doc.get('pr_no', doc['_id'])}: "
-            f"{current!r} → {target!r}"
-        )
+        print(f"  {'[DRY] ' if dry_run else ''}{doc.get('pr_no', doc['_id'])}: {current!r} → {target!r}")
         if not dry_run:
             await coll.update_one({"_id": doc["_id"]}, {"$set": {"department": target}})
         updated += 1

@@ -14,6 +14,7 @@ Guardrails:
   - Every action logged to event_timeline
   - Failed auto-action generates a new alert
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -43,9 +44,7 @@ async def execute_auto_action(
     action_id = str(uuid4())
 
     # Guardrail 1: Eligibility check
-    eligible, ineligibility_reason = await _check_eligibility(
-        action_type, tenant_id, now
-    )
+    eligible, ineligibility_reason = await _check_eligibility(action_type, tenant_id, now)
     if not eligible:
         result = {
             "action_id": action_id,
@@ -115,12 +114,11 @@ async def get_auto_action_history(
     query: dict[str, Any] = {}
     if tenant_id:
         query["tenant_id"] = tenant_id
-    return await db[COLL_AUTO_ACTIONS].find(
-        query, {"_id": 0}
-    ).sort("executed_at", -1).limit(limit).to_list(limit)
+    return await db[COLL_AUTO_ACTIONS].find(query, {"_id": 0}).sort("executed_at", -1).limit(limit).to_list(limit)
 
 
 # ── Reconciliation action ──────────────────────────────────────────
+
 
 async def _execute_reconciliation(
     action_id: str,
@@ -134,9 +132,7 @@ async def _execute_reconciliation(
     try:
         from domains.channel_manager.reconciliation_engine.drift_reconciliation import reconciliation_engine
 
-        recon_result = await reconciliation_engine.reconcile(
-            tenant_id, auto_fix=True
-        )
+        recon_result = await reconciliation_engine.reconcile(tenant_id, auto_fix=True)
 
         status = recon_result.get("status", "unknown")
         return {
@@ -175,9 +171,8 @@ async def _execute_reconciliation(
 
 # ── Guardrails ──────────────────────────────────────────────────────
 
-async def _check_eligibility(
-    action_type: str, tenant_id: str, now: datetime
-) -> tuple:
+
+async def _check_eligibility(action_type: str, tenant_id: str, now: datetime) -> tuple:
     """Check if auto-action is eligible (cooldown + singularity)."""
     # Cooldown check: same action_type + tenant within cooldown window
     cooldown_cutoff = (now - timedelta(minutes=AUTO_ACTION_COOLDOWN_MINUTES)).isoformat()
@@ -210,6 +205,7 @@ async def _check_eligibility(
 
 # ── Logging & Timeline ──────────────────────────────────────────────
 
+
 async def _log_action(result: dict[str, Any]) -> None:
     """Persist auto-action to history collection."""
     try:
@@ -222,6 +218,7 @@ async def _write_timeline(result: dict[str, Any]) -> None:
     """Write auto-action to event timeline for auditability."""
     try:
         from controlplane.timeline_writer import get_timeline_writer
+
         writer = get_timeline_writer()
         await writer.append(
             tenant_id=result.get("tenant_id", ""),
@@ -247,6 +244,7 @@ async def _fire_action_failure_alert(result: dict[str, Any]) -> None:
     """Fire a new alert when an auto-action fails."""
     try:
         from .alerting import AlertSeverity, get_alerting_engine
+
         engine = get_alerting_engine()
         await engine.fire(
             trigger="auto_action_failure",

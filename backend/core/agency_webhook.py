@@ -26,6 +26,7 @@ gecmez. Sozlesme/webhook_url/shared_secret cozulemezse fail-closed permanent.
 agency_id<->tenant_id eslemesi PMS cekirdegine gomulmez (Karar 7); bu modul SXI
 kenarinda izole durur.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -74,9 +75,7 @@ _OUTBOUND_TIMEOUT = float(os.getenv("AGENCY_WEBHOOK_TIMEOUT_SECONDS", "15") or "
 
 def _serialize_body(payload: dict[str, Any]) -> bytes:
     """Deterministik govde serilestirme. Imzalanan ve gonderilen bytes AYNIDIR."""
-    return json.dumps(
-        payload, sort_keys=True, separators=(",", ":"), default=str
-    ).encode("utf-8")
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
 
 
 def _outbound_canonical_query(query: str) -> str:
@@ -87,9 +86,7 @@ def _outbound_canonical_query(query: str) -> str:
     return urlencode(items, quote_via=quote_plus)
 
 
-def _sign_outbound(
-    *, key_id: str, shared_secret: str, webhook_url: str, body: bytes
-) -> dict[str, str]:
+def _sign_outbound(*, key_id: str, shared_secret: str, webhook_url: str, body: bytes) -> dict[str, str]:
     """Outbound imza header'larini uretir. Imza, inbound ile simetrik kanonik
     string-to-sign uzerinden (tek kaynak reuse) hesaplanir."""
     from routers.agency_v1.auth import _build_string_to_sign
@@ -121,9 +118,7 @@ def _sign_outbound(
     }
 
 
-async def _resolve_outbound_secret(
-    sysdb, tenant_id: str, agency_id: str
-) -> dict | None:
+async def _resolve_outbound_secret(sysdb, tenant_id: str, agency_id: str) -> dict | None:
     """(tenant_id, agency_id) icin aktif imza kimligini cozer. agency_signing_secrets
     _id=key_id ile saklanir; burada (tenant, agency) ile aktif olani bulup
     shared_secret'i AAD-bagli cozeriz. Cozulemezse fail-closed None."""
@@ -198,9 +193,7 @@ async def dispatch_agency_webhook(event: dict[str, Any]) -> tuple[bool, str]:
     admitted = True
     if circuit_breaker_store.enabled:
         try:
-            _state, admitted = await circuit_breaker_store.try_acquire(
-                cb_key, _CB_RECOVERY_TIMEOUT, _CB_HALF_OPEN_MAX
-            )
+            _state, admitted = await circuit_breaker_store.try_acquire(cb_key, _CB_RECOVERY_TIMEOUT, _CB_HALF_OPEN_MAX)
         except Exception:  # pragma: no cover - CB store hatasi -> fail-open dene
             admitted = True
     if not admitted:
@@ -217,9 +210,7 @@ async def dispatch_agency_webhook(event: dict[str, Any]) -> tuple[bool, str]:
     )
 
     try:
-        resp = await safe_post_async(
-            webhook_url, timeout=_OUTBOUND_TIMEOUT, content=body, headers=headers
-        )
+        resp = await safe_post_async(webhook_url, timeout=_OUTBOUND_TIMEOUT, content=body, headers=headers)
     except EgressDenied as e:
         # SSRF/private/yanlis konfig -> sonsuz retry anlamsiz; DLQ + alarm.
         return False, f"permanent: egress denied: {str(e)[:200]}"
@@ -231,7 +222,9 @@ async def dispatch_agency_webhook(event: dict[str, Any]) -> tuple[bool, str]:
         await _cb_record_failure(cb_key)
         logger.warning(
             "Agency webhook delivery error: event=%s agency=%s err=%s",
-            event_id, agency_id, type(e).__name__,
+            event_id,
+            agency_id,
+            type(e).__name__,
         )
         return False, f"retryable: delivery error: {type(e).__name__}"
 

@@ -17,6 +17,7 @@ Notification routing (config-driven, no-op if URLs absent):
   critical → cp_drift_alerts + log + ALERT_WEBHOOK_URL
   severe   → cp_drift_alerts + log + ALERT_WEBHOOK_URL + ESCALATION_WEBHOOK_URL + auto-action
 """
+
 import logging
 import os
 from datetime import UTC, datetime, timedelta
@@ -171,9 +172,7 @@ async def get_drift_alerts(
     if acknowledged is not None:
         query["acknowledged"] = acknowledged
 
-    return await db[COLL_DRIFT_ALERTS].find(
-        query, {"_id": 0}
-    ).sort("fired_at", -1).limit(limit).to_list(limit)
+    return await db[COLL_DRIFT_ALERTS].find(query, {"_id": 0}).sort("fired_at", -1).limit(limit).to_list(limit)
 
 
 async def acknowledge_drift_alert(alert_id: str, acknowledged_by: str = "operator") -> bool:
@@ -197,9 +196,7 @@ async def get_drift_alert_summary(tenant_id: str | None = None) -> dict[str, Any
     if tenant_id:
         query["tenant_id"] = tenant_id
 
-    active_alerts = await db[COLL_DRIFT_ALERTS].find(
-        query, {"_id": 0}
-    ).sort("fired_at", -1).limit(100).to_list(100)
+    active_alerts = await db[COLL_DRIFT_ALERTS].find(query, {"_id": 0}).sort("fired_at", -1).limit(100).to_list(100)
 
     by_severity = {"warning": 0, "critical": 0, "severe": 0}
     for a in active_alerts:
@@ -225,9 +222,8 @@ async def get_drift_alert_summary(tenant_id: str | None = None) -> dict[str, Any
 
 # ── Internal helpers ──────────────────────────────────────────────
 
-async def _collect_drift_evidence(
-    tenant_id: str, window_start: str, now: datetime
-) -> dict[str, Any]:
+
+async def _collect_drift_evidence(tenant_id: str, window_start: str, now: datetime) -> dict[str, Any]:
     """Collect drift evidence from timeline events and alignment data."""
     # Look for drift events in the event timeline
     drift_events = await db.event_timeline.find(
@@ -254,6 +250,7 @@ async def _collect_drift_evidence(
 
     # Also check current alignment for live drift count
     from .inventory_alignment import compute_inventory_alignment
+
     try:
         current = await compute_inventory_alignment(tenant_id=tenant_id, days_ahead=14)
         live_drift = current.get("drift_count", 0)
@@ -301,12 +298,14 @@ async def _check_post_recon_drift(tenant_id: str, window_start: str) -> bool:
     recon_ts = last_recon.get("timestamp", "")
 
     # Check if drift events exist AFTER this reconciliation
-    post_recon_drifts = await db.event_timeline.count_documents({
-        "tenant_id": tenant_id,
-        "entity_type": "inventory_alignment",
-        "stage": "drift_detected",
-        "timestamp": {"$gt": recon_ts},
-    })
+    post_recon_drifts = await db.event_timeline.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "entity_type": "inventory_alignment",
+            "stage": "drift_detected",
+            "timestamp": {"$gt": recon_ts},
+        }
+    )
 
     return post_recon_drifts > 0
 
@@ -314,6 +313,7 @@ async def _check_post_recon_drift(tenant_id: str, window_start: str) -> bool:
 async def _get_current_alignment(tenant_id: str) -> dict[str, Any]:
     """Get current alignment status without full computation."""
     from .inventory_alignment import compute_inventory_alignment
+
     try:
         return await compute_inventory_alignment(tenant_id=tenant_id, days_ahead=7)
     except Exception as e:
@@ -370,12 +370,14 @@ async def _fire_drift_alert(
     provider_details = []
     for pb in alignment.get("provider_breakdown", []):
         if pb.get("drift_count", 0) > 0:
-            provider_details.append({
-                "provider": pb.get("provider", "unknown"),
-                "connector_id": pb.get("connector_id", ""),
-                "drift_count": pb.get("drift_count", 0),
-                "snapshots_checked": pb.get("snapshots_checked", 0),
-            })
+            provider_details.append(
+                {
+                    "provider": pb.get("provider", "unknown"),
+                    "connector_id": pb.get("connector_id", ""),
+                    "drift_count": pb.get("drift_count", 0),
+                    "snapshots_checked": pb.get("snapshots_checked", 0),
+                }
+            )
 
     # Determine drift_or_stale
     freshness = alignment.get("freshness", "unknown")
@@ -416,12 +418,12 @@ async def _fire_drift_alert(
     }
 
     # Log
-    log_fn = logger.critical if severity == "severe" else (
-        logger.warning if severity == "critical" else logger.info
-    )
+    log_fn = logger.critical if severity == "severe" else (logger.warning if severity == "critical" else logger.info)
     log_fn(
         "DRIFT ALERT [%s] tenant=%s: %s | providers=%s | drift_nights=%d",
-        severity.upper(), tenant_id, reason,
+        severity.upper(),
+        tenant_id,
+        reason,
         evidence.get("providers_with_drift", []),
         evidence.get("total_drift_nights", 0),
     )
@@ -447,6 +449,7 @@ async def _fire_drift_alert(
     if severity == "severe":
         try:
             from .auto_actions import execute_auto_action
+
             action_result = await execute_auto_action(
                 action_type="reconciliation",
                 tenant_id=tenant_id,
@@ -459,10 +462,12 @@ async def _fire_drift_alert(
             # Update persisted alert
             await db[COLL_DRIFT_ALERTS].update_one(
                 {"alert_id": alert["alert_id"]},
-                {"$set": {
-                    "auto_action_triggered": True,
-                    "auto_action_result": action_result,
-                }},
+                {
+                    "$set": {
+                        "auto_action_triggered": True,
+                        "auto_action_result": action_result,
+                    }
+                },
             )
         except Exception as e:
             logger.exception("Auto-action failed for drift alert: %s", e)
@@ -479,6 +484,7 @@ async def _send_webhook_notification(alert: dict[str, Any], url_env_key: str) ->
 
     try:
         import aiohttp
+
         severity = alert.get("severity", "unknown")
         payload_data = alert.get("payload", {})
         severity_emoji = {"severe": ":rotating_light:", "critical": ":warning:", "warning": ":large_yellow_circle:"}
@@ -519,7 +525,8 @@ async def _send_webhook_notification(alert: dict[str, Any], url_env_key: str) ->
 
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                webhook_url, json=slack_payload,
+                webhook_url,
+                json=slack_payload,
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
                 if resp.status >= 400:

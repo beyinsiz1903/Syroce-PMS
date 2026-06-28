@@ -15,6 +15,7 @@ Syroce → Af-sadakat olay yayını için özel modül.
 
 Yerel modda (AFSADAKAT_BASE_URL set değil) `emit_event` sessizce no-op.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -51,17 +52,12 @@ def _now_iso() -> str:
 
 
 def _is_external_configured() -> bool:
-    return bool(
-        os.environ.get("AFSADAKAT_BASE_URL")
-        and os.environ.get("AFSADAKAT_ADMIN_TOKEN")
-    )
+    return bool(os.environ.get("AFSADAKAT_BASE_URL") and os.environ.get("AFSADAKAT_ADMIN_TOKEN"))
 
 
 async def _get_tenant_creds(tenant_id: str) -> dict[str, Any] | None:
     """Tenant'ın Af-sadakat kayıt dokümanı (pms_api_key + ext_tenant_id)."""
-    return await db.integration_afsadakat_tenants.find_one(
-        {"tenant_id": tenant_id, "status": "active"}, {"_id": 0}
-    )
+    return await db.integration_afsadakat_tenants.find_one({"tenant_id": tenant_id, "status": "active"}, {"_id": 0})
 
 
 def _sign(api_key: str, body: bytes) -> str:
@@ -71,6 +67,7 @@ def _sign(api_key: str, body: bytes) -> str:
 
 
 # ── Public API ──────────────────────────────────────────────────────────────
+
 
 async def emit_event(
     tenant_id: str,
@@ -113,12 +110,12 @@ async def emit_event(
         asyncio.create_task(_try_deliver(event_id))
         return event_id
     except Exception as exc:  # outbound asla iş akışını bozmamalı
-        logger.warning("[afsadakat-out] emit failed tenant=%s type=%s err=%s",
-                       tenant_id, event_type, exc)
+        logger.warning("[afsadakat-out] emit failed tenant=%s type=%s err=%s", tenant_id, event_type, exc)
         return None
 
 
 # ── Delivery ────────────────────────────────────────────────────────────────
+
 
 async def _try_deliver(event_id: str) -> bool:
     """Tek bir olay için teslim denemesi. Sonuç başarısızsa outbox'ta kalır.
@@ -138,9 +135,7 @@ async def _try_deliver(event_id: str) -> bool:
             # Başka worker zaten alıyor veya event sent/failed
             return True
 
-        evt = await db.integration_afsadakat_outbox.find_one(
-            {"id": event_id}, {"_id": 0}
-        )
+        evt = await db.integration_afsadakat_outbox.find_one({"id": event_id}, {"_id": 0})
         if not evt:
             return True
 
@@ -151,11 +146,13 @@ async def _try_deliver(event_id: str) -> bool:
             # Konfigürasyon eksik — failed olarak işaretle (sonsuz pending bırakma)
             await db.integration_afsadakat_outbox.update_one(
                 {"id": event_id},
-                {"$set": {
-                    "status": "failed",
-                    "last_error": "missing creds or AFSADAKAT_BASE_URL",
-                    "updated_at": _now_iso(),
-                }},
+                {
+                    "$set": {
+                        "status": "failed",
+                        "last_error": "missing creds or AFSADAKAT_BASE_URL",
+                        "updated_at": _now_iso(),
+                    }
+                },
             )
             return False
 
@@ -183,16 +180,19 @@ async def _try_deliver(event_id: str) -> bool:
         # Use rebinding-safe transport. EgressDenied → mark failed (caller
         # already maps non-2xx into retry/fail outbox state).
         from integrations.xchange.safety import EgressDenied, safe_post_async
+
         try:
             r = await safe_post_async(url, timeout=HTTP_TIMEOUT_S, content=raw, headers=headers)
         except EgressDenied as _ed:
             await db.integration_afsadakat_outbox.update_one(
                 {"id": event_id},
-                {"$set": {
-                    "status": "failed",
-                    "last_error": f"egress_denied: {_ed}",
-                    "updated_at": _now_iso(),
-                }},
+                {
+                    "$set": {
+                        "status": "failed",
+                        "last_error": f"egress_denied: {_ed}",
+                        "updated_at": _now_iso(),
+                    }
+                },
             )
             return False
 
@@ -200,12 +200,14 @@ async def _try_deliver(event_id: str) -> bool:
         if 200 <= r.status_code < 300:
             await db.integration_afsadakat_outbox.update_one(
                 {"id": event_id},
-                {"$set": {
-                    "status": "sent",
-                    "delivered_at": _now_iso(),
-                    "response_status": r.status_code,
-                    "updated_at": _now_iso(),
-                }},
+                {
+                    "$set": {
+                        "status": "sent",
+                        "delivered_at": _now_iso(),
+                        "response_status": r.status_code,
+                        "updated_at": _now_iso(),
+                    }
+                },
             )
             return True
 
@@ -215,14 +217,16 @@ async def _try_deliver(event_id: str) -> bool:
         backoff = _BACKOFF_S[min(attempts - 1, len(_BACKOFF_S) - 1)]
         await db.integration_afsadakat_outbox.update_one(
             {"id": event_id},
-            {"$set": {
-                "status": new_status,
-                "attempts": attempts,
-                "last_error": f"HTTP {r.status_code}: {r.text[:200]}",
-                "response_status": r.status_code,
-                "next_attempt_at": (_now() + timedelta(seconds=backoff)).isoformat(),
-                "updated_at": _now_iso(),
-            }},
+            {
+                "$set": {
+                    "status": new_status,
+                    "attempts": attempts,
+                    "last_error": f"HTTP {r.status_code}: {r.text[:200]}",
+                    "response_status": r.status_code,
+                    "next_attempt_at": (_now() + timedelta(seconds=backoff)).isoformat(),
+                    "updated_at": _now_iso(),
+                }
+            },
         )
         return False
     except Exception as exc:
@@ -230,16 +234,17 @@ async def _try_deliver(event_id: str) -> bool:
         backoff = _BACKOFF_S[min(attempts - 1, len(_BACKOFF_S) - 1)]
         await db.integration_afsadakat_outbox.update_one(
             {"id": event_id},
-            {"$set": {
-                "status": "failed" if attempts >= MAX_ATTEMPTS else "pending",
-                "attempts": attempts,
-                "last_error": str(exc)[:300],
-                "next_attempt_at": (_now() + timedelta(seconds=backoff)).isoformat(),
-                "updated_at": _now_iso(),
-            }},
+            {
+                "$set": {
+                    "status": "failed" if attempts >= MAX_ATTEMPTS else "pending",
+                    "attempts": attempts,
+                    "last_error": str(exc)[:300],
+                    "next_attempt_at": (_now() + timedelta(seconds=backoff)).isoformat(),
+                    "updated_at": _now_iso(),
+                }
+            },
         )
-        logger.warning("[afsadakat-out] delivery failed event=%s err=%s",
-                       event_id, exc)
+        logger.warning("[afsadakat-out] delivery failed event=%s err=%s", event_id, exc)
         return False
 
 

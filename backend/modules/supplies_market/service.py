@@ -1,4 +1,5 @@
 """Business logic for the supplies marketplace."""
+
 from __future__ import annotations
 
 import logging
@@ -69,6 +70,7 @@ def _promotion_active(promo: dict) -> bool:
     if not valid_until:
         return True
     from datetime import UTC, datetime, time
+
     raw = str(valid_until).strip()
     try:
         if len(raw) == 10 and raw[4] == "-" and raw[7] == "-":
@@ -105,11 +107,7 @@ def resolve_effective_price(product: dict, qty: int) -> dict:
     tier_price = float(applied_tier["price_try"]) if applied_tier else base_price
 
     # En iyi promosyon: aktif + min_qty karşılanır + en yüksek discount_pct
-    candidate_promos = [
-        p for p in (product.get("promotions") or [])
-        if (p.get("min_qty") is None or qty >= int(p.get("min_qty") or 0))
-        and _promotion_active(p)
-    ]
+    candidate_promos = [p for p in (product.get("promotions") or []) if (p.get("min_qty") is None or qty >= int(p.get("min_qty") or 0)) and _promotion_active(p)]
     applied_promo = None
     if candidate_promos:
         applied_promo = max(candidate_promos, key=lambda p: float(p.get("discount_pct", 0)))

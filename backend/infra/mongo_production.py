@@ -2,6 +2,7 @@
 MongoDB Production Validator — Connection pool monitoring, replica set detection,
 slow query metrics, index validation, schema drift detection, and collection health.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -11,15 +12,32 @@ logger = logging.getLogger("infra.mongo_production")
 
 # Collections that must exist with indexes
 CRITICAL_COLLECTIONS = [
-    "users", "tenants", "bookings", "rooms", "guests", "folios",
-    "invoices", "payments", "companies", "rates", "channel_connections",
-    "audit_logs", "loyalty_programs", "loyalty_transactions",
+    "users",
+    "tenants",
+    "bookings",
+    "rooms",
+    "guests",
+    "folios",
+    "invoices",
+    "payments",
+    "companies",
+    "rates",
+    "channel_connections",
+    "audit_logs",
+    "loyalty_programs",
+    "loyalty_transactions",
 ]
 
 SECONDARY_COLLECTIONS = [
-    "event_bus_log", "messaging_delivery_logs", "observability_traces",
-    "alert_history", "pipeline_runs", "analytics_export_history",
-    "notification_queue", "housekeeping_tasks", "maintenance_work_orders",
+    "event_bus_log",
+    "messaging_delivery_logs",
+    "observability_traces",
+    "alert_history",
+    "pipeline_runs",
+    "analytics_export_history",
+    "notification_queue",
+    "housekeeping_tasks",
+    "maintenance_work_orders",
 ]
 
 EXPECTED_INDEXES = {
@@ -76,13 +94,15 @@ class MongoProductionValidator:
             rs_status = await self._db.command("replSetGetStatus")
             members = []
             for m in rs_status.get("members", []):
-                members.append({
-                    "name": m.get("name"),
-                    "state_str": m.get("stateStr"),
-                    "health": m.get("health"),
-                    "uptime": m.get("uptime", 0),
-                    "optime_date": str(m.get("optimeDate", "")),
-                })
+                members.append(
+                    {
+                        "name": m.get("name"),
+                        "state_str": m.get("stateStr"),
+                        "health": m.get("health"),
+                        "uptime": m.get("uptime", 0),
+                        "optime_date": str(m.get("optimeDate", "")),
+                    }
+                )
             return {
                 "is_replica_set": True,
                 "set_name": rs_status.get("set", "unknown"),
@@ -104,17 +124,17 @@ class MongoProductionValidator:
 
             slow_queries = []
             if current_level > 0:
-                cursor = self._db["system.profile"].find(
-                    {"millis": {"$gte": threshold_ms}}
-                ).sort("millis", -1).limit(20)
+                cursor = self._db["system.profile"].find({"millis": {"$gte": threshold_ms}}).sort("millis", -1).limit(20)
                 async for doc in cursor:
-                    slow_queries.append({
-                        "operation": doc.get("op", "unknown"),
-                        "namespace": doc.get("ns", "unknown"),
-                        "millis": doc.get("millis", 0),
-                        "timestamp": str(doc.get("ts", "")),
-                        "query_shape": str(doc.get("command", {}))[:200],
-                    })
+                    slow_queries.append(
+                        {
+                            "operation": doc.get("op", "unknown"),
+                            "namespace": doc.get("ns", "unknown"),
+                            "millis": doc.get("millis", 0),
+                            "timestamp": str(doc.get("ts", "")),
+                            "query_shape": str(doc.get("command", {}))[:200],
+                        }
+                    )
 
             return {
                 "profiling_level": current_level,
@@ -166,9 +186,7 @@ class MongoProductionValidator:
         drift_report = {}
         for coll_name in CRITICAL_COLLECTIONS[:8]:
             try:
-                sample = await self._db[coll_name].find_one(
-                    {}, {"_id": 0}
-                )
+                sample = await self._db[coll_name].find_one({}, {"_id": 0})
                 if sample:
                     drift_report[coll_name] = {
                         "field_count": len(sample.keys()),

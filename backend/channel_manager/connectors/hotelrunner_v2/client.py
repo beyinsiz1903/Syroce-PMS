@@ -9,6 +9,7 @@ Auth: token + hr_id as query params on every request.
 Timeouts: connect 5s, read 20s.
 Every response → typed Result dataclass.
 """
+
 import logging
 import time
 import uuid as _uuid
@@ -34,6 +35,7 @@ _TIMEOUT = httpx.Timeout(20.0, connect=5.0)
 @dataclass
 class HRv2Response:
     """Structured result from every HTTP call."""
+
     success: bool
     status_code: int = 0
     data: dict[str, Any] = field(default_factory=dict)
@@ -69,17 +71,11 @@ class HRv2Client:
     async def get(self, path: str, *, params: dict[str, str] | None = None, correlation_id: str = "") -> HRv2Response:
         return await self._request("GET", path, params=params, correlation_id=correlation_id)
 
-    async def put(self, path: str, *, params: dict[str, str] | None = None,
-                  json_body: dict | None = None, form_data: dict | None = None,
-                  correlation_id: str = "") -> HRv2Response:
-        return await self._request("PUT", path, params=params, json_body=json_body,
-                                   form_data=form_data, correlation_id=correlation_id)
+    async def put(self, path: str, *, params: dict[str, str] | None = None, json_body: dict | None = None, form_data: dict | None = None, correlation_id: str = "") -> HRv2Response:
+        return await self._request("PUT", path, params=params, json_body=json_body, form_data=form_data, correlation_id=correlation_id)
 
-    async def post(self, path: str, *, params: dict[str, str] | None = None,
-                   json_body: dict | None = None, form_data: dict | None = None,
-                   correlation_id: str = "") -> HRv2Response:
-        return await self._request("POST", path, params=params, json_body=json_body,
-                                   form_data=form_data, correlation_id=correlation_id)
+    async def post(self, path: str, *, params: dict[str, str] | None = None, json_body: dict | None = None, form_data: dict | None = None, correlation_id: str = "") -> HRv2Response:
+        return await self._request("POST", path, params=params, json_body=json_body, form_data=form_data, correlation_id=correlation_id)
 
     async def _request(
         self,
@@ -124,15 +120,11 @@ class HRv2Client:
                     raise HRv2ParseError(f"Invalid JSON from {path}")
 
                 if data.get("status") == "error":
-                    return HRv2Response(success=False, status_code=resp.status_code,
-                                        data=data, error=data.get("error", "API error"),
-                                        duration_ms=dur, correlation_id=corr_id)
+                    return HRv2Response(success=False, status_code=resp.status_code, data=data, error=data.get("error", "API error"), duration_ms=dur, correlation_id=corr_id)
 
-                return HRv2Response(success=True, status_code=resp.status_code,
-                                    data=data, duration_ms=dur, correlation_id=corr_id)
+                return HRv2Response(success=True, status_code=resp.status_code, data=data, duration_ms=dur, correlation_id=corr_id)
 
-            except (HRv2AuthError, HRv2RateLimitError, HRv2ServerError,
-                    HRv2ValidationError, HRv2ParseError):
+            except (HRv2AuthError, HRv2RateLimitError, HRv2ServerError, HRv2ValidationError, HRv2ParseError):
                 raise
             except httpx.ConnectError:
                 raise HRv2TimeoutError(f"Cannot connect to HotelRunner ({path})")

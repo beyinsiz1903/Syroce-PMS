@@ -29,6 +29,7 @@ one B2B reservation consumes ``rooms * nights`` from the matching block, so
 period). A single-room 3-night booking consumes 3. ``nights`` is derived from the
 stay dates inside ``reserve_allotment`` (upstream validates check_out > check_in).
 """
+
 from __future__ import annotations
 
 import logging
@@ -120,29 +121,39 @@ async def reserve_allotment(snapshot, room_type: str, check_in: str, check_out: 
             # (room-nights).
             "$expr": {
                 "$gt": [
-                    {"$size": {"$filter": {
-                        "input": {"$ifNull": ["$allotments", []]},
-                        "as": "a",
-                        "cond": {"$and": [
-                            {"$eq": ["$$a.room_type", room_type]},
-                            {"$eq": ["$$a.period_start", ps]},
-                            {"$eq": ["$$a.period_end", pe]},
-                            {"$lte": [
-                                {"$add": [{"$ifNull": ["$$a.rooms_used", 0]}, units]},
-                                {"$ifNull": ["$$a.rooms_allocated", 0]},
-                            ]},
-                        ]},
-                    }}},
+                    {
+                        "$size": {
+                            "$filter": {
+                                "input": {"$ifNull": ["$allotments", []]},
+                                "as": "a",
+                                "cond": {
+                                    "$and": [
+                                        {"$eq": ["$$a.room_type", room_type]},
+                                        {"$eq": ["$$a.period_start", ps]},
+                                        {"$eq": ["$$a.period_end", pe]},
+                                        {
+                                            "$lte": [
+                                                {"$add": [{"$ifNull": ["$$a.rooms_used", 0]}, units]},
+                                                {"$ifNull": ["$$a.rooms_allocated", 0]},
+                                            ]
+                                        },
+                                    ]
+                                },
+                            }
+                        }
+                    },
                     0,
                 ]
             },
         },
         {"$inc": {"allotments.$[elem].rooms_used": units}},
-        array_filters=[{
-            "elem.room_type": room_type,
-            "elem.period_start": ps,
-            "elem.period_end": pe,
-        }],
+        array_filters=[
+            {
+                "elem.room_type": room_type,
+                "elem.period_start": ps,
+                "elem.period_end": pe,
+            }
+        ],
         return_document=ReturnDocument.AFTER,
         projection={"_id": 0, "id": 1},
     )
@@ -177,12 +188,14 @@ async def release_allotment(handle: dict | None) -> None:
         await sysdb.agency_contracts.update_one(
             {"id": handle["contract_id"], "tenant_id": handle["tenant_id"]},
             {"$inc": {"allotments.$[elem].rooms_used": -units}},
-            array_filters=[{
-                "elem.room_type": handle["room_type"],
-                "elem.period_start": handle["period_start"],
-                "elem.period_end": handle["period_end"],
-                "elem.rooms_used": {"$gte": units},
-            }],
+            array_filters=[
+                {
+                    "elem.room_type": handle["room_type"],
+                    "elem.period_start": handle["period_start"],
+                    "elem.period_end": handle["period_end"],
+                    "elem.rooms_used": {"$gte": units},
+                }
+            ],
         )
     except Exception:  # noqa: BLE001 — compensation must never mask the original error
         logger.exception("release_allotment failed (counter may need manual reconcile): %s", handle)
@@ -228,8 +241,7 @@ async def reserve_credit(snapshot, amount: float):
             "Kredi limiti asildi: acente icin tanimli kredi limiti yetersiz",
             402,
         )
-    return {"kind": "credit", "agency_id": snapshot.agency_id,
-            "tenant_id": snapshot.tenant_id, "amount": amount}
+    return {"kind": "credit", "agency_id": snapshot.agency_id, "tenant_id": snapshot.tenant_id, "amount": amount}
 
 
 async def release_credit(handle: dict | None) -> None:
@@ -242,8 +254,7 @@ async def release_credit(handle: dict | None) -> None:
     sysdb = get_system_db()
     try:
         await sysdb.agencies.update_one(
-            {"id": handle["agency_id"], "tenant_id": handle["tenant_id"],
-             "current_debt": {"$gte": amount}},
+            {"id": handle["agency_id"], "tenant_id": handle["tenant_id"], "current_debt": {"$gte": amount}},
             {"$inc": {"current_debt": -amount}},
         )
     except Exception:  # noqa: BLE001 — compensation must never mask the original error

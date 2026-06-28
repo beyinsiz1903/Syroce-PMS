@@ -14,6 +14,7 @@ Faz 3 — handler tablosu:
 Per-tenant signature: payload.tenant_id varsa o tenant'ın webhook_secret'ı
 ile imza doğrulanır. Yoksa env CAPX_WEBHOOK_SECRET fallback.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -84,9 +85,7 @@ async def _resolve_secret(payload_tenant_id: str | None) -> str:
 def _verify(body: bytes, secret: str, signature: str | None) -> bool:
     if not secret or not signature:
         return False
-    expected = "sha256=" + hmac.new(
-        secret.encode("utf-8"), body, hashlib.sha256
-    ).hexdigest()
+    expected = "sha256=" + hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
 
 
@@ -148,7 +147,9 @@ async def capx_inbound_tenant(
     if not _verify(body, secret, x_capx_signature):
         logger.warning(
             "CapX inbound: invalid signature (event_id=%s tenant=%s type=%s)",
-            x_capx_event_id, (tenant_id or "")[:8], x_capx_event_type,
+            x_capx_event_id,
+            (tenant_id or "")[:8],
+            x_capx_event_type,
         )
         raise HTTPException(status_code=401, detail="invalid signature")
 
@@ -160,12 +161,7 @@ async def capx_inbound_tenant(
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="invalid JSON body") from None
 
-    event_type = (
-        x_capx_event_type
-        or payload.get("event_type")
-        or payload.get("type")
-        or "unknown"
-    )
+    event_type = x_capx_event_type or payload.get("event_type") or payload.get("type") or "unknown"
 
     sysdb = get_system_db()
     await _ensure_idempotency_index()
@@ -189,7 +185,9 @@ async def capx_inbound_tenant(
             {"_id": 1, "handler_result": 1},
         )
         return {
-            "ok": True, "duplicate": True, "received": True,
+            "ok": True,
+            "duplicate": True,
+            "received": True,
             "event_id": x_capx_event_id,
             "handler": (existing or {}).get("handler_result") or {},
         }
@@ -198,15 +196,19 @@ async def capx_inbound_tenant(
     try:
         if event_type == "match.created":
             handler_result = await handle_match_created(
-                tenant_id=tenant_id, payload=payload,
+                tenant_id=tenant_id,
+                payload=payload,
             )
         elif event_type == "match.cancelled":
             handler_result = await handle_match_cancelled(
-                tenant_id=tenant_id, payload=payload,
+                tenant_id=tenant_id,
+                payload=payload,
             )
         elif event_type == "counter_offer":
             handler_result = await record_counter_offer(
-                event_id=x_capx_event_id, payload=payload, tenant_id=tenant_id,
+                event_id=x_capx_event_id,
+                payload=payload,
+                tenant_id=tenant_id,
             )
         elif event_type == "rate_update":
             handler_result = await _handle_rate_update(
@@ -215,7 +217,9 @@ async def capx_inbound_tenant(
     except Exception as exc:
         logger.exception(
             "CapX inbound handler error (type=%s, tenant=%s): %s",
-            event_type, (tenant_id or "")[:8], exc,
+            event_type,
+            (tenant_id or "")[:8],
+            exc,
         )
         # Spec §6 ack-with-error: 200 dön, retry tetikleme.
         handler_result = {"handled": False, "error": str(exc)}
@@ -230,12 +234,15 @@ async def capx_inbound_tenant(
 
     logger.info(
         "CapX inbound (tenant): type=%s event_id=%s tenant=%s action=%s",
-        event_type, x_capx_event_id, (tenant_id or "")[:8],
+        event_type,
+        x_capx_event_id,
+        (tenant_id or "")[:8],
         handler_result.get("action") or handler_result.get("kind") or "?",
     )
 
     return {
-        "ok": True, "received": True,
+        "ok": True,
+        "received": True,
         "event_id": x_capx_event_id,
         "event_type": event_type,
         "handler": handler_result,
@@ -261,8 +268,7 @@ async def capx_inbound(
     tenant_id_hint = payload_peek.get("tenant_id")
     secret = await _resolve_secret(tenant_id_hint)
     if not _verify(body, secret, x_capx_signature):
-        logger.warning("CapX webhook: invalid signature (event_id=%s tenant=%s)",
-                       x_capx_event_id, (tenant_id_hint or "")[:8])
+        logger.warning("CapX webhook: invalid signature (event_id=%s tenant=%s)", x_capx_event_id, (tenant_id_hint or "")[:8])
         raise HTTPException(status_code=401, detail="invalid signature")
 
     if not x_capx_event_id:
@@ -297,7 +303,9 @@ async def capx_inbound(
     try:
         if event_type == "counter_offer":
             handler_result = await record_counter_offer(
-                event_id=x_capx_event_id, payload=payload, tenant_id=tenant_id,
+                event_id=x_capx_event_id,
+                payload=payload,
+                tenant_id=tenant_id,
             )
         elif event_type == "rate_update":
             handler_result = await _handle_rate_update(payload)
@@ -307,8 +315,7 @@ async def capx_inbound(
         logger.exception("CapX inbound handler error (type=%s): %s", event_type, exc)
         handler_result = {"error": str(exc)}
 
-    logger.info("CapX inbound event: type=%s event_id=%s tenant=%s",
-                event_type, x_capx_event_id, (tenant_id or "")[:8])
+    logger.info("CapX inbound event: type=%s event_id=%s tenant=%s", event_type, x_capx_event_id, (tenant_id or "")[:8])
 
     return {
         "ok": True,

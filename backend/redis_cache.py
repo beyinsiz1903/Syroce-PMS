@@ -2,6 +2,7 @@
 Redis-based Ultra-Fast Cache System
 %100 Performance with Distributed Caching
 """
+
 import logging
 import os
 
@@ -31,7 +32,7 @@ class RedisCache:
             decode_responses=False,  # We'll handle encoding
             socket_connect_timeout=1,
             socket_timeout=1,
-            max_connections=100
+            max_connections=100,
         )
         self._hits = 0
         self._misses = 0
@@ -42,9 +43,9 @@ class RedisCache:
 
         # Add args
         for arg in args:
-            if hasattr(arg, 'tenant_id'):
+            if hasattr(arg, "tenant_id"):
                 key_parts.append(f"t:{arg.tenant_id}")
-            elif hasattr(arg, 'id'):
+            elif hasattr(arg, "id"):
                 key_parts.append(f"u:{arg.id}")
 
         # Add kwargs
@@ -99,21 +100,17 @@ class RedisCache:
         hit_rate = (self._hits / total * 100) if total > 0 else 0
 
         try:
-            info = self.redis_client.info('memory')
-            memory_used = info.get('used_memory_human', 'N/A')
+            info = self.redis_client.info("memory")
+            memory_used = info.get("used_memory_human", "N/A")
         except Exception:
-            memory_used = 'N/A'
+            memory_used = "N/A"
 
-        return {
-            'hits': self._hits,
-            'misses': self._misses,
-            'hit_rate': round(hit_rate, 2),
-            'memory_used': memory_used,
-            'connected': self.redis_client.ping()
-        }
+        return {"hits": self._hits, "misses": self._misses, "hit_rate": round(hit_rate, 2), "memory_used": memory_used, "connected": self.redis_client.ping()}
+
 
 # Global Redis cache instance
 redis_cache = None
+
 
 def init_redis_cache():
     """Initialize Redis cache"""
@@ -128,8 +125,10 @@ def init_redis_cache():
         redis_cache = None
     return redis_cache
 
+
 def redis_cached(ttl: int = 30, key_prefix: str = ""):
     """Redis cache decorator for ultra-fast responses"""
+
     def decorator(func: Callable):
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -155,4 +154,5 @@ def redis_cached(ttl: int = 30, key_prefix: str = ""):
             return result
 
         return wrapper
+
     return decorator

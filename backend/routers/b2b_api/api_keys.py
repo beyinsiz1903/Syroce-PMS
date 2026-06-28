@@ -3,6 +3,7 @@ api_keys
 
 Auto-split sub-router (shared imports/classes inlined).
 """
+
 """
 Syroce Open API — Kapsamli Otel PMS Entegrasyon API'si
 ======================================================
@@ -106,8 +107,8 @@ from ._scope import normalize_scopes  # Task #174 — per-subrouter scope
 logger = logging.getLogger(__name__)
 
 
-
 # ── Helpers ──────────────────────────────────────────────────────
+
 
 def _now_iso():
     return datetime.now(UTC).isoformat()
@@ -157,24 +158,22 @@ async def _agency_owns_block(tenant_id: str, agency_id: str, block_id: str) -> d
 
 # ── API Key Auth Dependency ──────────────────────────────────────
 
+
 async def get_b2b_agency(x_api_key: str | None = Header(None, alias="X-API-Key")):
     """API key ile acente kimlik dogrulamasi."""
     from core.tenant_db import get_system_db
+
     sysdb = get_system_db()
 
     if not x_api_key:
         raise HTTPException(status_code=401, detail="API key gerekli")
 
     key_hash = _hash_api_key(x_api_key)
-    key_doc = await sysdb.agency_api_keys.find_one(
-        {"key_hash": key_hash, "is_active": True}, {"_id": 0}
-    )
+    key_doc = await sysdb.agency_api_keys.find_one({"key_hash": key_hash, "is_active": True}, {"_id": 0})
     if not key_doc:
         raise HTTPException(status_code=401, detail="Gecersiz veya devre disi API key")
 
-    agency = await sysdb.agencies.find_one(
-        {"id": key_doc["agency_id"], "status": "active"}, {"_id": 0}
-    )
+    agency = await sysdb.agencies.find_one({"id": key_doc["agency_id"], "status": "active"}, {"_id": 0})
     if not agency:
         raise HTTPException(status_code=403, detail="Acente hesabi aktif degil")
 
@@ -196,6 +195,7 @@ async def get_b2b_agency(x_api_key: str | None = Header(None, alias="X-API-Key")
 
 
 # ── Request Models ───────────────────────────────────────────────
+
 
 class B2BReservationCreate(BaseModel):
     room_type: str
@@ -241,29 +241,9 @@ async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
 # ═════════════════════════════════════════════════════════════════
 
 
-
-
-
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # B2B ENDPOINTS — Syroce Acente Sistemi (API Key Auth)
 # ═════════════════════════════════════════════════════════════════
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -273,22 +253,9 @@ async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
 VALID_WEBHOOK_EVENTS = {"reservation.created", "reservation.cancelled", "reservation.updated", "rates.updated", "availability.updated"}
 
 
-
-
-
-
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # GUEST & LOYALTY — Misafir ve Sadakat Programi
 # ═════════════════════════════════════════════════════════════════
-
-
-
-
-
 
 
 class LoyaltyPointsUpdate(BaseModel):
@@ -297,14 +264,9 @@ class LoyaltyPointsUpdate(BaseModel):
     operation: str = "add"
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # HOUSEKEEPING — Kat Hizmetleri
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class HousekeepingStatusUpdate(BaseModel):
@@ -312,12 +274,9 @@ class HousekeepingStatusUpdate(BaseModel):
     notes: str = ""
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # KBS / POLICE NOTIFICATION — Emniyet Bildirim Sistemi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class KBSReportCreate(BaseModel):
@@ -326,13 +285,10 @@ class KBSReportCreate(BaseModel):
     notes: str = ""
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # PASSPORT / ID — Kimlik ve Pasaport Okuma
 # ═════════════════════════════════════════════════════════════════
+
 
 class IdentityScanData(BaseModel):
     guest_id: str
@@ -351,14 +307,9 @@ class IdentityScanData(BaseModel):
     raw_ocr_data: dict | None = None
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # LOST & FOUND — Kayip Esya
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class LostFoundCreate(BaseModel):
@@ -371,8 +322,6 @@ class LostFoundCreate(BaseModel):
     room_number: str = ""
 
 
-
-
 class LostFoundUpdate(BaseModel):
     status: str | None = None
     guest_name: str | None = None
@@ -380,12 +329,9 @@ class LostFoundUpdate(BaseModel):
     claimed_by: str | None = None
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # WAKE-UP CALLS — Uyandirma Servisi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class WakeUpCallCreate(BaseModel):
@@ -398,21 +344,16 @@ class WakeUpCallCreate(BaseModel):
     recurring_until: str = ""  # YYYY-MM-DD
 
 
-
-
 class WakeUpCallUpdate(BaseModel):
     wake_time: str | None = None
     status: str | None = None
     notes: str | None = None
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # GUEST JOURNEY — Misafir Yolculugu
 # ═════════════════════════════════════════════════════════════════
+
 
 class B2BOnlineCheckin(BaseModel):
     booking_id: str
@@ -424,10 +365,6 @@ class B2BOnlineCheckin(BaseModel):
     nationality: str | None = None
 
 
-
-
-
-
 class B2BGuestRequest(BaseModel):
     booking_id: str
     request_type: str  # concierge, spa, room_service, maintenance, transport, other
@@ -435,14 +372,9 @@ class B2BGuestRequest(BaseModel):
     priority: str = "normal"
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # CONCIERGE & SPA — Concierge ve Spa Hizmetleri
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class ConciergeRequest(BaseModel):
@@ -454,10 +386,6 @@ class ConciergeRequest(BaseModel):
     guest_count: int = 1
 
 
-
-
-
-
 class SpaBookingCreate(BaseModel):
     booking_id: str
     service_id: str
@@ -467,12 +395,9 @@ class SpaBookingCreate(BaseModel):
     notes: str = ""
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # MICE & GROUPS — Grup ve Toplanti Yonetimi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class GroupBlockCreate(BaseModel):
@@ -489,10 +414,6 @@ class GroupBlockCreate(BaseModel):
     notes: str = ""
 
 
-
-
-
-
 class RoomingListEntry(BaseModel):
     guest_name: str
     room_type: str = ""
@@ -505,12 +426,9 @@ class RoomingListUpload(BaseModel):
     guests: list[RoomingListEntry]
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # FOLIO & BILLING — Folio ve Fatura
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class FolioChargeCreate(BaseModel):
@@ -518,6 +436,7 @@ class FolioChargeCreate(BaseModel):
     description: str = Field(..., min_length=1)
     amount: float = Field(..., gt=0, le=1000000)
     quantity: int = Field(1, ge=1, le=9999)
+
 
 router = APIRouter(prefix="/api/b2b", tags=["B2B API - Syroce"])
 
@@ -544,24 +463,18 @@ async def create_api_key(
     # Fail-closed scope validation: unknown scope -> 400 (Task #174).
     normalized_scopes = normalize_scopes(scopes)
 
-    agency = await db.agencies.find_one(
-        {"id": agency_id, "tenant_id": tenant_id}, {"_id": 0}
-    )
+    agency = await db.agencies.find_one({"id": agency_id, "tenant_id": tenant_id}, {"_id": 0})
     if not agency:
         raise HTTPException(status_code=404, detail="Acente bulunamadi")
 
     # Check if key already exists
-    existing = await db.agency_api_keys.find_one(
-        {"agency_id": agency_id, "tenant_id": tenant_id, "is_active": True}
-    )
+    existing = await db.agency_api_keys.find_one({"agency_id": agency_id, "tenant_id": tenant_id, "is_active": True})
     if existing:
         raise HTTPException(status_code=409, detail="Bu acente icin zaten aktif bir API key var. Yenilemek icin regenerate endpoint'ini kullanin.")
 
     # Generate + persist via the shared mint helper (single source of truth
     # also used by the B2B connect-request approval flow).
-    raw_key, key_doc = await mint_agency_api_key(
-        db, tenant_id, agency, normalized_scopes, current_user.id
-    )
+    raw_key, key_doc = await mint_agency_api_key(db, tenant_id, agency, normalized_scopes, current_user.id)
 
     return {
         "api_key": raw_key,
@@ -571,6 +484,8 @@ async def create_api_key(
         "scopes": normalized_scopes,
         "message": "API key olusturuldu. Bu key sadece bir kez gosterilir, guvenli bir yerde saklayin.",
     }
+
+
 # ── GET /api-keys/{agency_id} ──
 @router.get("/api-keys/{agency_id}")
 async def get_api_key_info(
@@ -597,6 +512,8 @@ async def get_api_key_info(
         "last_used_at": key_doc.get("last_used_at"),
         "usage_count": key_doc.get("usage_count", 0),
     }
+
+
 # ── DELETE /api-keys/{agency_id} ──
 @router.delete("/api-keys/{agency_id}")
 async def revoke_api_key(
@@ -616,6 +533,8 @@ async def revoke_api_key(
         raise HTTPException(status_code=404, detail="Aktif API key bulunamadi")
 
     return {"ok": True, "message": "API key iptal edildi"}
+
+
 # ── POST /api-keys/{agency_id}/regenerate ──
 @router.post("/api-keys/{agency_id}/regenerate")
 async def regenerate_api_key(
@@ -627,9 +546,7 @@ async def regenerate_api_key(
     _require_hotel_staff(current_user)
     tenant_id = current_user.tenant_id
 
-    agency = await db.agencies.find_one(
-        {"id": agency_id, "tenant_id": tenant_id}, {"_id": 0}
-    )
+    agency = await db.agencies.find_one({"id": agency_id, "tenant_id": tenant_id}, {"_id": 0})
     if not agency:
         raise HTTPException(status_code=404, detail="Acente bulunamadi")
 
@@ -648,9 +565,7 @@ async def regenerate_api_key(
     )
 
     # Generate new key via the shared mint helper (preserves prior scopes).
-    raw_key, key_doc = await mint_agency_api_key(
-        db, tenant_id, agency, preserved_scopes, current_user.id
-    )
+    raw_key, key_doc = await mint_agency_api_key(db, tenant_id, agency, preserved_scopes, current_user.id)
 
     return {
         "api_key": raw_key,

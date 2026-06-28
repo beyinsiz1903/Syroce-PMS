@@ -54,8 +54,7 @@ class UploadSizeLimitMiddleware:
             return
 
         # Headers come as list of (bytes, bytes) tuples.
-        headers = {k.decode("latin-1").lower(): v.decode("latin-1")
-                   for k, v in scope.get("headers", [])}
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
         cl_raw = headers.get("content-length")
         ct_raw = (headers.get("content-type") or "").lower()
         te_raw = (headers.get("transfer-encoding") or "").lower()

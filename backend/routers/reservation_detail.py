@@ -3,6 +3,7 @@ Reservation Detail Router - Comprehensive reservation management endpoints
 Provides full reservation detail view, folio operations, activity logging,
 payment processing, cari transfers, room changes, and front office operations.
 """
+
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -21,8 +22,12 @@ from shared_kernel.idempotency import claim_short_window_dedup, release_idempote
 
 # Bug CP fix — shared role-permission enforcement for financial endpoints
 _rps = RolePermissionService()
+
+
 def _enforce_perm(role: str, op: str) -> None:
     _rps.enforce_permission(role, op)
+
+
 from models.schemas.bookings import BookingCreate
 from modules.reservations.services.create_reservation_service import (
     CreateReservationService,
@@ -55,18 +60,17 @@ def _invalidate_group_bookings_cache(tenant_id: str) -> None:
 def _request_with_idempotency_key(req: Request, key: str) -> Request:
     """Aynı HTTP isteği içinde N alt-rezervasyon yaratırken her birine
     benzersiz Idempotency-Key enjekte eden ince sarmalayıcı."""
-    headers = [
-        (k, v) for k, v in req.scope["headers"]
-        if k.lower() != b"idempotency-key"
-    ]
+    headers = [(k, v) for k, v in req.scope["headers"] if k.lower() != b"idempotency-key"]
     headers.append((b"idempotency-key", key.encode()))
     new_scope = {**req.scope, "headers": headers}
     return Request(new_scope, req.receive)
+
 
 router = APIRouter(prefix="/api/pms", tags=["reservation-detail"])
 
 
 # ── Request/Response Models ──
+
 
 class PaymentRecord(BaseModel):
     # Bug CP fix — financial input validation (positive amounts, sane bounds)
@@ -164,6 +168,7 @@ class GuestUpdate(BaseModel):
 
 class NewGroupBookingRow(BaseModel):
     """Grup oluştururken aynı anda yaratılacak yeni rezervasyon."""
+
     guest_name: str
     room_id: str
     check_in: str
@@ -201,6 +206,7 @@ class DepositRefund(BaseModel):
 
 # ── Helper ──
 
+
 def _clean_doc(doc):
     """Remove MongoDB _id from document."""
     if doc and "_id" in doc:
@@ -229,6 +235,7 @@ async def _log_activity(tenant_id: str, booking_id: str, action: str, actor: str
 
 
 # ── Endpoints ──
+
 
 @router.get("/reservations/{booking_id}/full-detail")
 async def get_reservation_full_detail(
@@ -304,11 +311,13 @@ async def get_reservation_full_detail(
         nightly_rate = round(booking.get("total_amount", 0) / nights, 2) if nights > 0 else 0
         current = ci
         for i in range(nights):
-            daily_rates.append({
-                "date": current.strftime("%Y-%m-%d") if hasattr(current, "strftime") else str(current)[:10],
-                "rate": nightly_rate,
-                "generated": True,
-            })
+            daily_rates.append(
+                {
+                    "date": current.strftime("%Y-%m-%d") if hasattr(current, "strftime") else str(current)[:10],
+                    "rate": nightly_rate,
+                    "generated": True,
+                }
+            )
             current = current + timedelta(days=1)
 
     # Guests associated with this booking
@@ -408,14 +417,15 @@ async def record_payment(
     ref_key = (data.reference or "").strip()
     if ref_key:
         existing = await db.payments.find_one(
-            {"tenant_id": tid, "booking_id": booking_id,
-             "reference": ref_key, "voided": False},
+            {"tenant_id": tid, "booking_id": booking_id, "reference": ref_key, "voided": False},
             {"_id": 0},
         )
         if existing:
-            if (round(float(existing.get("amount") or 0), 2) != round(float(data.amount), 2)
-                    or (existing.get("method") or "") != data.method
-                    or (existing.get("payment_type") or "") != data.payment_type):
+            if (
+                round(float(existing.get("amount") or 0), 2) != round(float(data.amount), 2)
+                or (existing.get("method") or "") != data.method
+                or (existing.get("payment_type") or "") != data.payment_type
+            ):
                 raise HTTPException(
                     status_code=409,
                     detail="Duplicate payment reference with different payload",
@@ -448,6 +458,7 @@ async def record_payment(
         folio = await db.folios.find_one({"booking_id": booking_id, "tenant_id": tid, "status": "open"}, {"_id": 0})
         if not folio:
             from core.utils import generate_folio_number
+
             folio_id = str(uuid.uuid4())
             folio = {
                 "id": folio_id,
@@ -485,10 +496,10 @@ async def record_payment(
         await db.payments.insert_one({**payment})
     except Exception as exc:
         from pymongo.errors import DuplicateKeyError
+
         if isinstance(exc, DuplicateKeyError) and ref_key:
             existing = await db.payments.find_one(
-                {"tenant_id": tid, "booking_id": booking_id,
-                 "reference": ref_key, "voided": False},
+                {"tenant_id": tid, "booking_id": booking_id, "reference": ref_key, "voided": False},
                 {"_id": 0},
             )
             if existing:
@@ -506,14 +517,25 @@ async def record_payment(
         {"$set": {"paid_amount": round(new_paid, 2)}},
     )
 
-    await _log_activity(tid, booking_id, "payment_recorded", current_user.name, {
-        "amount": data.amount, "method": data.method, "payment_type": data.payment_type,
-    })
+    await _log_activity(
+        tid,
+        booking_id,
+        "payment_recorded",
+        current_user.name,
+        {
+            "amount": data.amount,
+            "method": data.method,
+            "payment_type": data.payment_type,
+        },
+    )
 
     # Acente webhook: rezervasyon güncellendi (ödeme alındı → bakiye değişti)
     from routers.webhook_retry_service import schedule_emit_reservation_updated
+
     schedule_emit_reservation_updated(
-        tid, booking_id, "payment_added",
+        tid,
+        booking_id,
+        "payment_added",
         {"payment_id": payment["id"], "amount": data.amount, "method": data.method, "payment_type": data.payment_type},
     )
 
@@ -568,9 +590,17 @@ async def transfer_to_cari(
         {"$set": {"paid_amount": round(new_paid, 2)}},
     )
 
-    await _log_activity(tid, booking_id, "transferred_to_cari", current_user.name, {
-        "amount": data.amount, "cari_account": cari.get("name"), "cari_account_id": data.cari_account_id,
-    })
+    await _log_activity(
+        tid,
+        booking_id,
+        "transferred_to_cari",
+        current_user.name,
+        {
+            "amount": data.amount,
+            "cari_account": cari.get("name"),
+            "cari_account_id": data.cari_account_id,
+        },
+    )
 
     transaction.pop("_id", None)
     return {"success": True, "transaction": transaction}
@@ -595,6 +625,7 @@ async def record_agency_payment(
     folio = await db.folios.find_one({"booking_id": booking_id, "tenant_id": tid, "status": "open"}, {"_id": 0})
     if not folio:
         from core.utils import generate_folio_number
+
         folio_id = str(uuid.uuid4())
         folio = {
             "id": folio_id,
@@ -633,9 +664,16 @@ async def record_agency_payment(
         {"$set": {"paid_amount": round(new_paid, 2)}},
     )
 
-    await _log_activity(tid, booking_id, "agency_payment_recorded", current_user.name, {
-        "amount": data.amount, "agency_name": data.agency_name,
-    })
+    await _log_activity(
+        tid,
+        booking_id,
+        "agency_payment_recorded",
+        current_user.name,
+        {
+            "amount": data.amount,
+            "agency_name": data.agency_name,
+        },
+    )
 
     payment.pop("_id", None)
     return {"success": True, "payment": payment}
@@ -677,6 +715,7 @@ async def split_charge(
         target_folio = await db.folios.find_one({"booking_id": target_booking_id, "tenant_id": tid, "status": "open"}, {"_id": 0})
         if not target_folio:
             from core.utils import generate_folio_number
+
             target_folio = {
                 "id": str(uuid.uuid4()),
                 "tenant_id": tid,
@@ -738,10 +777,18 @@ async def split_charge(
     }
     await db.folio_operations.insert_one({**split_log})
 
-    await _log_activity(tid, booking_id, "charge_split", current_user.name, {
-        "charge_id": data.charge_id, "split_amount": data.split_amount,
-        "target_booking_id": target_booking_id, "reason": data.reason,
-    })
+    await _log_activity(
+        tid,
+        booking_id,
+        "charge_split",
+        current_user.name,
+        {
+            "charge_id": data.charge_id,
+            "split_amount": data.split_amount,
+            "target_booking_id": target_booking_id,
+            "reason": data.reason,
+        },
+    )
 
     new_charge.pop("_id", None)
     return {"success": True, "new_charge": new_charge, "remaining_amount": round(new_original_amount, 2)}
@@ -782,9 +829,7 @@ async def ensure_folio(
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
 
     # Zaten açık folio varsa onu döndür — yeni oluşturma / mutasyon yok.
-    existing = await db.folios.find_one(
-        {"booking_id": booking_id, "tenant_id": tid, "status": "open"}, {"_id": 0}
-    )
+    existing = await db.folios.find_one({"booking_id": booking_id, "tenant_id": tid, "status": "open"}, {"_id": 0})
     if existing:
         return {"success": True, "folio": existing, "created": False, "bound_charges": 0}
 
@@ -797,6 +842,7 @@ async def ensure_folio(
 
     # Yeni açık misafir folyosu oluştur.
     from core.utils import generate_folio_number
+
     folio_id = str(uuid.uuid4())
     folio = {
         "id": folio_id,
@@ -814,9 +860,7 @@ async def ensure_folio(
     # Orphan backfill — yalnızca bu booking kapsamında: folio_id boş veya bu
     # booking'e ait mevcut hiçbir folioya işaret etmeyen masrafları bağla.
     bound = 0
-    async for c in db.folio_charges.find(
-        {"booking_id": booking_id, "tenant_id": tid}, {"_id": 0, "id": 1, "folio_id": 1}
-    ):
+    async for c in db.folio_charges.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0, "id": 1, "folio_id": 1}):
         fid = c.get("folio_id")
         if not fid or fid not in existing_folio_ids:
             await db.folio_charges.update_one(
@@ -828,6 +872,7 @@ async def ensure_folio(
     # Yeni folyonun bakiyesini bağlanan masraflardan yeniden hesapla.
     try:
         from modules.pms_core.folio_hardening_service import FolioHardeningService
+
         await FolioHardeningService()._recalculate_folio_balance(tid, folio_id)
         refreshed = await db.folios.find_one({"id": folio_id, "tenant_id": tid}, {"_id": 0})
         if refreshed:
@@ -836,9 +881,16 @@ async def ensure_folio(
         # Bakiye hesaplaması başarısız olsa bile folio oluştu ve masraflar bağlandı.
         pass
 
-    await _log_activity(tid, booking_id, "folio_ensured", current_user.name, {
-        "folio_id": folio_id, "bound_charges": bound,
-    })
+    await _log_activity(
+        tid,
+        booking_id,
+        "folio_ensured",
+        current_user.name,
+        {
+            "folio_id": folio_id,
+            "bound_charges": bound,
+        },
+    )
 
     folio.pop("_id", None)
     return {"success": True, "folio": folio, "created": True, "bound_charges": bound}
@@ -866,9 +918,15 @@ async def add_reservation_note(
     }
     await db.reservation_notes.insert_one({**note})
 
-    await _log_activity(tid, booking_id, "note_added", current_user.name, {
-        "note_type": data.note_type,
-    })
+    await _log_activity(
+        tid,
+        booking_id,
+        "note_added",
+        current_user.name,
+        {
+            "note_type": data.note_type,
+        },
+    )
 
     note.pop("_id", None)
     return {"success": True, "note": note}
@@ -900,10 +958,12 @@ async def room_change(
     # Update booking
     await db.bookings.update_one(
         {"id": booking_id, "tenant_id": tid},
-        {"$set": {
-            "room_id": data.new_room_id,
-            "room_number": new_room.get("room_number"),
-        }},
+        {
+            "$set": {
+                "room_id": data.new_room_id,
+                "room_number": new_room.get("room_number"),
+            }
+        },
     )
 
     # Release old room
@@ -934,16 +994,25 @@ async def room_change(
     }
     await db.room_move_history.insert_one({**move_record})
 
-    await _log_activity(tid, booking_id, "room_changed", current_user.name, {
-        "from_room": old_room.get("room_number") if old_room else None,
-        "to_room": new_room.get("room_number"),
-        "reason": data.reason,
-    })
+    await _log_activity(
+        tid,
+        booking_id,
+        "room_changed",
+        current_user.name,
+        {
+            "from_room": old_room.get("room_number") if old_room else None,
+            "to_room": new_room.get("room_number"),
+            "reason": data.reason,
+        },
+    )
 
     # Acente webhook: rezervasyon güncellendi (oda değişti)
     from routers.webhook_retry_service import schedule_emit_reservation_updated
+
     schedule_emit_reservation_updated(
-        tid, booking_id, "room_moved",
+        tid,
+        booking_id,
+        "room_moved",
         {"new_room_id": data.new_room_id, "new_room_number": new_room.get("room_number"), "reason": data.reason},
     )
 
@@ -993,15 +1062,24 @@ async def early_checkin(
         }
         await db.extra_charges.insert_one({**charge})
 
-    await _log_activity(tid, booking_id, "early_checkin", current_user.name, {
-        "checkin_time": data.checkin_time or result.get("checked_in_at"),
-        "extra_charge": data.extra_charge,
-    })
+    await _log_activity(
+        tid,
+        booking_id,
+        "early_checkin",
+        current_user.name,
+        {
+            "checkin_time": data.checkin_time or result.get("checked_in_at"),
+            "extra_charge": data.extra_charge,
+        },
+    )
 
     # Acente webhook: rezervasyon güncellendi (erken check-in yapıldı)
     from routers.webhook_retry_service import schedule_emit_reservation_updated
+
     schedule_emit_reservation_updated(
-        tid, booking_id, "checked_in",
+        tid,
+        booking_id,
+        "checked_in",
         {"early_checkin": True, "checkin_time": data.checkin_time or result.get("checked_in_at"), "extra_charge": data.extra_charge},
     )
 
@@ -1042,15 +1120,24 @@ async def late_checkout(
         }
         await db.extra_charges.insert_one({**charge})
 
-    await _log_activity(tid, booking_id, "late_checkout", current_user.name, {
-        "checkout_time": data.checkout_time,
-        "extra_charge": data.extra_charge,
-    })
+    await _log_activity(
+        tid,
+        booking_id,
+        "late_checkout",
+        current_user.name,
+        {
+            "checkout_time": data.checkout_time,
+            "extra_charge": data.extra_charge,
+        },
+    )
 
     # Acente webhook: rezervasyon güncellendi (geç çıkış kaydedildi)
     from routers.webhook_retry_service import schedule_emit_reservation_updated
+
     schedule_emit_reservation_updated(
-        tid, booking_id, "late_checkout_approved",
+        tid,
+        booking_id,
+        "late_checkout_approved",
         {"checkout_time": data.checkout_time, "extra_charge": data.extra_charge},
     )
 
@@ -1169,14 +1256,24 @@ async def record_deposit(
         {"$set": {"paid_amount": round(new_paid, 2)}},
     )
 
-    await _log_activity(tid, booking_id, "deposit_recorded", current_user.name, {
-        "amount": data.amount, "method": data.method,
-    })
+    await _log_activity(
+        tid,
+        booking_id,
+        "deposit_recorded",
+        current_user.name,
+        {
+            "amount": data.amount,
+            "method": data.method,
+        },
+    )
 
     # Acente webhook: rezervasyon güncellendi (depozito alındı)
     from routers.webhook_retry_service import schedule_emit_reservation_updated
+
     schedule_emit_reservation_updated(
-        tid, booking_id, "payment_added",
+        tid,
+        booking_id,
+        "payment_added",
         {"payment_id": payment["id"], "amount": data.amount, "method": data.method, "payment_type": "deposit"},
     )
 
@@ -1219,14 +1316,25 @@ async def add_extra_charge_detail(
     }
     await db.extra_charges.insert_one({**charge})
 
-    await _log_activity(tid, booking_id, "extra_charge_added", current_user.name, {
-        "description": data.description, "amount": total, "category": data.category,
-    })
+    await _log_activity(
+        tid,
+        booking_id,
+        "extra_charge_added",
+        current_user.name,
+        {
+            "description": data.description,
+            "amount": total,
+            "category": data.category,
+        },
+    )
 
     # Acente webhook: rezervasyon güncellendi (ek charge → toplam değişti)
     from routers.webhook_retry_service import schedule_emit_reservation_updated
+
     schedule_emit_reservation_updated(
-        tid, booking_id, "charge_added",
+        tid,
+        booking_id,
+        "charge_added",
         {"charge_id": charge["id"], "amount": total, "category": data.category, "description": data.description},
     )
 
@@ -1253,11 +1361,13 @@ async def update_daily_rates(
     for rate_entry in data.rates:
         await db.daily_rates.update_one(
             {"booking_id": booking_id, "tenant_id": tid, "date": rate_entry.date},
-            {"$set": {
-                "rate": rate_entry.rate,
-                "updated_by": current_user.name,
-                "updated_at": datetime.now(UTC).isoformat(),
-            }},
+            {
+                "$set": {
+                    "rate": rate_entry.rate,
+                    "updated_by": current_user.name,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            },
             upsert=True,
         )
 
@@ -1269,9 +1379,15 @@ async def update_daily_rates(
             {"$set": {"total_amount": round(new_total, 2)}},
         )
 
-    await _log_activity(tid, booking_id, "daily_rates_updated", current_user.name, {
-        "rates_count": len(data.rates),
-    })
+    await _log_activity(
+        tid,
+        booking_id,
+        "daily_rates_updated",
+        current_user.name,
+        {
+            "rates_count": len(data.rates),
+        },
+    )
 
     return {"success": True, "new_total": round(new_total, 2)}
 
@@ -1306,6 +1422,7 @@ async def update_reservation_guest(
             ngram_set_for_update_merged,
         )
         from security.search_normalize import normalized_set_for_update
+
         # Search companions are computed from the PLAINTEXT update BEFORE
         # encryption — name fields are NOT encrypted. name_lower keeps renames
         # prefix-searchable.
@@ -1317,8 +1434,7 @@ async def update_reservation_guest(
                 {"id": booking["guest_id"], "tenant_id": tid},
                 {"_id": 0, "name": 1, "first_name": 1, "last_name": 1},
             )
-            _norm.update(
-                ngram_set_for_update_merged(_g, updates, collection="guests"))
+            _norm.update(ngram_set_for_update_merged(_g, updates, collection="guests"))
         # KVKK: encrypt PII fields at rest (email / phone / id_number) and write
         # their `_hash_<field>` blind-index tokens. Without this, editing a guest
         # from the reservation screen stored PII as PLAINTEXT and left encrypted
@@ -1330,8 +1446,7 @@ async def update_reservation_guest(
         await db.guests.update_one({"id": booking["guest_id"], "tenant_id": tid}, {"$set": updates})
 
         if _plain_name is not None:
-            _bnorm = normalized_set_for_update(
-                {"guest_name": _plain_name}, collection="bookings")
+            _bnorm = normalized_set_for_update({"guest_name": _plain_name}, collection="bookings")
             await db.bookings.update_one(
                 {"id": booking_id, "tenant_id": tid},
                 {"$set": {"guest_name": _plain_name, **_bnorm}},
@@ -1343,6 +1458,7 @@ async def update_reservation_guest(
 
 
 # ── Cari Account Endpoints ──
+
 
 @router.get("/cari-accounts")
 async def list_cari_accounts(current_user: User = Depends(get_current_user)):
@@ -1400,9 +1516,7 @@ async def get_cari_transactions(
     tid = current_user.tenant_id
 
     transactions = []
-    async for t in db.cari_transactions.find(
-        {"cari_account_id": account_id, "tenant_id": tid}, {"_id": 0}
-    ).sort("created_at", -1):
+    async for t in db.cari_transactions.find({"cari_account_id": account_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
         transactions.append(t)
 
     return {"transactions": transactions}
@@ -1513,8 +1627,8 @@ async def transfer_cari_to_agency(
     return {"success": True, "debit": debit_txn, "credit": credit_txn}
 
 
-
 # ── Available Rooms Endpoint ──
+
 
 @router.get("/available-rooms")
 async def get_available_rooms(
@@ -1536,6 +1650,7 @@ async def get_available_rooms(
     # Validate date format & ordering (her iki tarih varsa)
     try:
         from datetime import date as _date
+
         ci_d = _date.fromisoformat(check_in[:10])
         co_d = _date.fromisoformat(check_out[:10])
     except (ValueError, TypeError):
@@ -1545,10 +1660,13 @@ async def get_available_rooms(
 
     # Find bookings that overlap the date range
     occupied_room_ids = set()
-    async for b in db.bookings.find({
-        "tenant_id": tid,
-        "status": {"$nin": ["cancelled", "no_show", "checked_out"]},
-    }, {"_id": 0, "room_id": 1, "check_in": 1, "check_out": 1}):
+    async for b in db.bookings.find(
+        {
+            "tenant_id": tid,
+            "status": {"$nin": ["cancelled", "no_show", "checked_out"]},
+        },
+        {"_id": 0, "room_id": 1, "check_in": 1, "check_out": 1},
+    ):
         b_ci = str(b.get("check_in", ""))[:10]
         b_co = str(b.get("check_out", ""))[:10]
         if b_ci < check_out and b_co > check_in:
@@ -1560,6 +1678,7 @@ async def get_available_rooms(
 
 
 # ── Group Booking Endpoints ──
+
 
 @router.post("/group-bookings")
 async def create_group_booking(
@@ -1602,11 +1721,7 @@ async def create_group_booking(
     # Tüm odaları toplu doğrula (tenant scope)
     requested_room_ids = list({r.room_id for r in data.new_bookings})
     if requested_room_ids:
-        valid_room_ids = {
-            r["id"] async for r in db.rooms.find(
-                {"id": {"$in": requested_room_ids}, "tenant_id": tid}, {"id": 1}
-            )
-        }
+        valid_room_ids = {r["id"] async for r in db.rooms.find({"id": {"$in": requested_room_ids}, "tenant_id": tid}, {"id": 1})}
         for idx, row in enumerate(data.new_bookings, start=1):
             if row.room_id not in valid_room_ids:
                 raise HTTPException(status_code=404, detail=f"{idx}. satır: oda bulunamadı")
@@ -1636,19 +1751,22 @@ async def create_group_booking(
         for idx, row in enumerate(data.new_bookings, start=1):
             guest_id = str(uuid.uuid4())
             from security.guest_write import encrypt_guest_insert
-            _guest_doc = encrypt_guest_insert({
-                "id": guest_id,
-                "tenant_id": tid,
-                "name": row.guest_name.strip(),
-                "email": f"group-{guest_id[:8]}@placeholder.local",
-                "phone": "",
-                "id_number": "",
-                "vip_status": False,
-                "loyalty_points": 0,
-                "total_stays": 0,
-                "total_spend": 0.0,
-                "created_at": datetime.now(UTC).isoformat(),
-            })
+
+            _guest_doc = encrypt_guest_insert(
+                {
+                    "id": guest_id,
+                    "tenant_id": tid,
+                    "name": row.guest_name.strip(),
+                    "email": f"group-{guest_id[:8]}@placeholder.local",
+                    "phone": "",
+                    "id_number": "",
+                    "vip_status": False,
+                    "loyalty_points": 0,
+                    "total_stays": 0,
+                    "total_spend": 0.0,
+                    "created_at": datetime.now(UTC).isoformat(),
+                }
+            )
             await db.guests.insert_one(_guest_doc)
             created_guest_ids.append(guest_id)
 
@@ -1666,14 +1784,8 @@ async def create_group_booking(
                 origin="ui-group",
             )
             sub_request = _request_with_idempotency_key(request, str(uuid.uuid4()))
-            result = await _create_reservation_service.create(
-                booking_data, current_user, sub_request
-            )
-            bid = (
-                result.get("booking_id")
-                or result.get("id")
-                or (result.get("booking") or {}).get("id")
-            )
+            result = await _create_reservation_service.create(booking_data, current_user, sub_request)
+            bid = result.get("booking_id") or result.get("id") or (result.get("booking") or {}).get("id")
             if not bid:
                 raise HTTPException(
                     status_code=500,
@@ -1754,9 +1866,7 @@ async def list_group_bookings(
     # 2) Tüm bookings'i tek $in sorgusunda al
     bookings_by_id: dict[str, dict] = {}
     if all_booking_ids:
-        async for b in db.bookings.find(
-            {"id": {"$in": all_booking_ids}, "tenant_id": tid}, {"_id": 0}
-        ):
+        async for b in db.bookings.find({"id": {"$in": all_booking_ids}, "tenant_id": tid}, {"_id": 0}):
             bookings_by_id[b["id"]] = b
 
     # 3) Bucket: her gruba kendi rezervasyonlarını ata + toplamları hesapla
@@ -1785,10 +1895,9 @@ async def get_group_booking_detail(
         raise HTTPException(status_code=404, detail="Grup rezervasyon bulunamadi")
 
     from security.encrypted_lookup import decrypt_booking_doc, decrypt_guest_doc
+
     bookings_list = []
-    async for b in db.bookings.find(
-        {"id": {"$in": group.get("booking_ids", [])}, "tenant_id": tid}, {"_id": 0}
-    ):
+    async for b in db.bookings.find({"id": {"$in": group.get("booking_ids", [])}, "tenant_id": tid}, {"_id": 0}):
         # PII at-rest: decrypt the booking (guest_email/guest_phone) and the joined
         # guest doc before returning so clients never receive AES envelopes or
         # internal blind-index tokens.
@@ -1920,6 +2029,7 @@ async def group_check_out_all(
 
 # ── Communication Log Endpoints ──
 
+
 @router.post("/reservations/{booking_id}/communication")
 async def add_communication_log(
     booking_id: str,
@@ -1945,9 +2055,16 @@ async def add_communication_log(
     }
     await db.communication_logs.insert_one({**log_entry})
 
-    await _log_activity(tid, booking_id, "communication_logged", current_user.name, {
-        "channel": data.channel, "direction": data.direction,
-    })
+    await _log_activity(
+        tid,
+        booking_id,
+        "communication_logged",
+        current_user.name,
+        {
+            "channel": data.channel,
+            "direction": data.direction,
+        },
+    )
 
     log_entry.pop("_id", None)
     return {"success": True, "log": log_entry}
@@ -1963,15 +2080,14 @@ async def get_communication_logs(
     tid = current_user.tenant_id
 
     logs = []
-    async for entry in db.communication_logs.find(
-        {"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}
-    ).sort("created_at", -1):
+    async for entry in db.communication_logs.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
         logs.append(entry)
 
     return {"logs": logs}
 
 
 # ── Deposit Management Endpoints ──
+
 
 @router.get("/reservations/{booking_id}/deposits")
 async def get_deposits(
@@ -1983,9 +2099,7 @@ async def get_deposits(
     tid = current_user.tenant_id
 
     deposits = []
-    async for d in db.deposits.find(
-        {"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}
-    ).sort("created_at", -1):
+    async for d in db.deposits.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1):
         deposits.append(d)
 
     return {"deposits": deposits}
@@ -2003,9 +2117,7 @@ async def refund_deposit(
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
 
-    deposit = await db.deposits.find_one(
-        {"id": data.deposit_id, "tenant_id": tid}, {"_id": 0}
-    )
+    deposit = await db.deposits.find_one({"id": data.deposit_id, "tenant_id": tid}, {"_id": 0})
     if not deposit:
         raise HTTPException(status_code=404, detail="Depozito bulunamadi")
 
@@ -2034,9 +2146,16 @@ async def refund_deposit(
         {"$set": {"status": new_status, "refunded_amount": data.refund_amount}},
     )
 
-    await _log_activity(tid, booking_id, "deposit_refunded", current_user.name, {
-        "deposit_id": data.deposit_id, "refund_amount": data.refund_amount,
-    })
+    await _log_activity(
+        tid,
+        booking_id,
+        "deposit_refunded",
+        current_user.name,
+        {
+            "deposit_id": data.deposit_id,
+            "refund_amount": data.refund_amount,
+        },
+    )
 
     refund.pop("_id", None)
     return {"success": True, "refund": refund}

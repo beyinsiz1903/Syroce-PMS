@@ -4,6 +4,7 @@ Phase 7 — Production Environment Preparation Service
 Validates infrastructure, security, data safety, and observability
 readiness for production rollout.
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -18,6 +19,7 @@ class ProductionEnvService:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     async def run_full_validation(self, ctx: OperationContext) -> ServiceResult:
@@ -48,11 +50,13 @@ class ProductionEnvService:
             "validated_at": now.isoformat(),
         }
 
-        await self._db.production_env_validations.insert_one({
-            "tenant_id": ctx.tenant_id,
-            "result": result,
-            "validated_at": now.isoformat(),
-        })
+        await self._db.production_env_validations.insert_one(
+            {
+                "tenant_id": ctx.tenant_id,
+                "result": result,
+                "validated_at": now.isoformat(),
+            }
+        )
 
         return ServiceResult.success(result)
 
@@ -70,9 +74,7 @@ class ProductionEnvService:
             critical = True
 
         # Worker readiness
-        worker_tasks = await self._db.celery_task_log.count_documents({
-            "created_at": {"$gte": (datetime.now(UTC) - timedelta(hours=1)).isoformat()}
-        })
+        worker_tasks = await self._db.celery_task_log.count_documents({"created_at": {"$gte": (datetime.now(UTC) - timedelta(hours=1)).isoformat()}})
         if worker_tasks >= 0:
             checks.append({"name": "worker_autoscaling_readiness", "status": "pass"})
         else:
@@ -119,6 +121,7 @@ class ProductionEnvService:
 
         # JWT security
         import os
+
         jwt_secret = os.environ.get("JWT_SECRET", "")
         if jwt_secret and len(jwt_secret) >= 16:
             checks.append({"name": "jwt_secret_strength", "status": "pass"})
@@ -180,6 +183,7 @@ class ProductionEnvService:
 
         # Alert routing
         from modules.observability.alert_enrichment import ALERT_RULES
+
         if len(ALERT_RULES) >= 10:
             checks.append({"name": "alert_routing_active", "status": "pass"})
         else:

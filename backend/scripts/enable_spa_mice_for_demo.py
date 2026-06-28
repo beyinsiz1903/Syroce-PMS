@@ -8,6 +8,7 @@ Run once:
 
 Idempotent — safe to re-run.
 """
+
 import asyncio
 import os
 import sys
@@ -41,10 +42,7 @@ async def main() -> int:
         {"id": DEMO_TENANT_ID},
         {"$set": {"modules.spa": True, "modules.mice": True}},
     )
-    print(
-        f"Demo tenant '{tenant.get('name')}': spa & mice add-ons enabled "
-        f"(matched={res.matched_count}, modified={res.modified_count})."
-    )
+    print(f"Demo tenant '{tenant.get('name')}': spa & mice add-ons enabled (matched={res.matched_count}, modified={res.modified_count}).")
 
     # Sanity check downstream impact
     spa_count = await db.spa_services.count_documents({"tenant_id": DEMO_TENANT_ID})

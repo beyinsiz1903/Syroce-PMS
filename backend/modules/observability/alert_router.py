@@ -19,8 +19,10 @@ router = APIRouter(prefix="/api/alerts", tags=["Alert Enrichment"])
 class EvaluateRequest(BaseModel):
     metrics: dict
 
+
 class AcknowledgeRequest(BaseModel):
     alert_id: str
+
 
 class ResolveRequest(BaseModel):
     alert_id: str
@@ -28,7 +30,9 @@ class ResolveRequest(BaseModel):
 
 
 @router.post("/evaluate")
-async def evaluate_alerts(req: EvaluateRequest, user=Depends(get_current_user),
+async def evaluate_alerts(
+    req: EvaluateRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     ctx = OperationContext.from_user(user)
@@ -48,7 +52,9 @@ async def get_active_alerts(
 
 
 @router.post("/acknowledge")
-async def acknowledge_alert(req: AcknowledgeRequest, user=Depends(get_current_user),
+async def acknowledge_alert(
+    req: AcknowledgeRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     ctx = OperationContext.from_user(user)
@@ -59,7 +65,9 @@ async def acknowledge_alert(req: AcknowledgeRequest, user=Depends(get_current_us
 
 
 @router.post("/resolve")
-async def resolve_alert(req: ResolveRequest, user=Depends(get_current_user),
+async def resolve_alert(
+    req: ResolveRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     ctx = OperationContext.from_user(user)

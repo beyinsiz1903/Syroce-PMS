@@ -19,6 +19,7 @@ Connection schema:
       "property_id": "..."
     }
 """
+
 import logging
 from typing import Any
 
@@ -104,10 +105,9 @@ class BookingAdapter:
         url = f"{base}{path}"
         # v109 Bug DAL round-7 follow-up #3: api_endpoint is tenant-configurable.
         from integrations.xchange.safety import EgressDenied, safe_post_async
+
         try:
-            resp = await safe_post_async(
-                url, timeout=_HTTP_TIMEOUT, json=json_body, auth=(user, pwd)
-            )
+            resp = await safe_post_async(url, timeout=_HTTP_TIMEOUT, json=json_body, auth=(user, pwd))
             ok = 200 <= resp.status_code < 300
             body: Any
             try:
@@ -138,10 +138,9 @@ class BookingAdapter:
         url = f"{base}{path}"
         # v109 Bug DAL round-7 follow-up #3: api_endpoint is tenant-configurable.
         from integrations.xchange.safety import EgressDenied, safe_request_async
+
         try:
-            resp = await safe_request_async(
-                "GET", url, timeout=_HTTP_TIMEOUT, params=params or {}, auth=(user, pwd)
-            )
+            resp = await safe_request_async("GET", url, timeout=_HTTP_TIMEOUT, params=params or {}, auth=(user, pwd))
             ok = 200 <= resp.status_code < 300
             try:
                 body = resp.json()

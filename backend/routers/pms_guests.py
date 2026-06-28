@@ -20,6 +20,7 @@ from shared_kernel.idempotency import (
 
 try:
     from security.field_encryption import get_field_encryption_service
+
     _fenc = get_field_encryption_service()
 except Exception:
     _fenc = None
@@ -27,10 +28,13 @@ except Exception:
 try:
     from cache_manager import cached
 except ImportError:
+
     def cached(ttl=300, key_prefix=""):
         def decorator(func):
             return func
+
         return decorator
+
 
 router = APIRouter(prefix="/api", tags=["pms"])
 
@@ -51,6 +55,7 @@ def _decrypt_guest(doc: dict) -> dict:
     if doc:
         # Never surface the internal trigram token array in API responses.
         from security.search_ngram import strip_ngram_fields
+
         strip_ngram_fields(doc)
     return doc
 
@@ -79,9 +84,7 @@ async def create_guest(
             replay = claim["response"] or {}
             replay_id = replay.get("id")
             if replay_id:
-                doc = await db.guests.find_one(
-                    {"id": replay_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-                )
+                doc = await db.guests.find_one({"id": replay_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
                 if doc:
                     return _decrypt_guest(doc)
             # Cache pointer is stale (guest was hard-deleted out of band) —
@@ -96,11 +99,12 @@ async def create_guest(
     try:
         guest = Guest(tenant_id=current_user.tenant_id, **guest_data.model_dump())
         guest_dict = guest.model_dump()
-        guest_dict['created_at'] = guest_dict['created_at'].isoformat()
+        guest_dict["created_at"] = guest_dict["created_at"].isoformat()
         guest_dict_to_store = _encrypt_guest(guest_dict.copy())
         # Plaintext name companions for index-serviceable prefix search (name is
         # NOT encrypted, so this is safe). Keeps every new guest prefix-searchable.
         from security.search_normalize import apply_collection_normalized_fields
+
         apply_collection_normalized_fields(guest_dict_to_store, collection="guests")
         await db.guests.insert_one(guest_dict_to_store)
         if lock_id:
@@ -131,7 +135,7 @@ async def get_guests(
     _perm=Depends(require_op("view_guest_list")),  # v71 Bug DH (PII)
 ):
     limit, offset = p.limit, p.offset
-    guests_raw = await db.guests.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).skip(offset).limit(limit).to_list(limit)
+    guests_raw = await db.guests.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).skip(offset).limit(limit).to_list(limit)
 
     # Map database fields to model fields
     guests = []
@@ -139,16 +143,16 @@ async def get_guests(
         guest = _decrypt_guest(guest)
 
         # Combine first_name and last_name into name if they exist
-        if 'first_name' in guest and 'last_name' in guest:
-            guest['name'] = f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip()
-        elif 'name' not in guest:
-            guest['name'] = guest.get('email', 'Unknown')
+        if "first_name" in guest and "last_name" in guest:
+            guest["name"] = f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip()
+        elif "name" not in guest:
+            guest["name"] = guest.get("email", "Unknown")
 
         # Use passport_number as id_number if id_number doesn't exist
-        if 'id_number' not in guest and 'passport_number' in guest:
-            guest['id_number'] = guest.get('passport_number', '')
-        elif 'id_number' not in guest:
-            guest['id_number'] = ''
+        if "id_number" not in guest and "passport_number" in guest:
+            guest["id_number"] = guest.get("passport_number", "")
+        elif "id_number" not in guest:
+            guest["id_number"] = ""
 
         guests.append(guest)
 
@@ -203,7 +207,8 @@ async def search_guests(
         regex = {"$regex": safe_q, "$options": "i"}
         query = {
             "tenant_id": tenant_id,
-            "$or": name_conditions + [
+            "$or": name_conditions
+            + [
                 {"email": regex},
                 {"phone": regex},
                 {"id_number": regex},
@@ -222,18 +227,13 @@ async def search_guests(
     # receptionist type the MIDDLE of a name ("ladi" -> "Vladimir") — the prefix
     # path above only catches "starts typing".
     from security.search_ngram import ngram_all_condition, ngram_match
+
     ng_cond = ngram_all_condition(q, collection=_GUEST_COLLECTION)
     guests_raw = primary
     if ng_cond:
         seen = {g.get("id") for g in primary}
-        ng_rows = await db.guests.find(
-            {"tenant_id": tenant_id, **ng_cond}, {"_id": 0}
-        ).sort("name", 1).limit(limit).to_list(limit)
-        extras = [
-            r for r in ng_rows
-            if r.get("id") not in seen
-            and ngram_match(r, q, collection=_GUEST_COLLECTION)
-        ]
+        ng_rows = await db.guests.find({"tenant_id": tenant_id, **ng_cond}, {"_id": 0}).sort("name", 1).limit(limit).to_list(limit)
+        extras = [r for r in ng_rows if r.get("id") not in seen and ngram_match(r, q, collection=_GUEST_COLLECTION)]
         if extras:
             guests_raw = primary + extras
             guests_raw.sort(key=lambda g: (g.get("name") or "").lower())
@@ -248,15 +248,17 @@ async def search_guests(
             g["name"] = g.get("email", "Unknown")
         if "id_number" not in g:
             g["id_number"] = g.get("passport_number", "")
-        results.append({
-            "id": g.get("id", ""),
-            "name": g.get("name", ""),
-            "email": g.get("email", ""),
-            "phone": g.get("phone", ""),
-            "id_number": g.get("id_number", ""),
-            "vip_status": g.get("vip_status", False),
-            "total_stays": g.get("total_stays", 0),
-        })
+        results.append(
+            {
+                "id": g.get("id", ""),
+                "name": g.get("name", ""),
+                "email": g.get("email", ""),
+                "phone": g.get("phone", ""),
+                "id_number": g.get("id_number", ""),
+                "vip_status": g.get("vip_status", False),
+                "total_stays": g.get("total_stays", 0),
+            }
+        )
     return results
 
 
@@ -266,9 +268,7 @@ async def get_guest_by_id(
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("pms")),
 ):
-    guest = await db.guests.find_one(
-        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    guest = await db.guests.find_one({"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not guest:
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
     guest = _decrypt_guest(guest)
@@ -288,22 +288,38 @@ async def update_guest(
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("pms")),
 ):
-    guest = await db.guests.find_one(
-        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    guest = await db.guests.find_one({"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not guest:
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
     allowed = {
-        "name", "email", "phone", "id_type", "id_number",
-        "nationality", "date_of_birth", "address", "city",
-        "postal_code", "country", "gender", "notes",
-        "id_issue_date", "id_expiry_date", "id_issuing_authority",
+        "name",
+        "email",
+        "phone",
+        "id_type",
+        "id_number",
+        "nationality",
+        "date_of_birth",
+        "address",
+        "city",
+        "postal_code",
+        "country",
+        "gender",
+        "notes",
+        "id_issue_date",
+        "id_expiry_date",
+        "id_issuing_authority",
         # v95+ VIP / Alarm alanları
-        "vip_status", "allergies", "dietary_restrictions",
-        "pillow_preference", "room_preference", "important_notes",
-        "anniversary_date", "birthday",
+        "vip_status",
+        "allergies",
+        "dietary_restrictions",
+        "pillow_preference",
+        "room_preference",
+        "important_notes",
+        "anniversary_date",
+        "birthday",
         # v95+ Kara liste (madde 7)
-        "blacklisted", "blacklist_reason",
+        "blacklisted",
+        "blacklist_reason",
     }
     update_fields = {k: v for k, v in data.items() if k in allowed}
     if not update_fields:
@@ -313,6 +329,7 @@ async def update_guest(
     # encryption — name is NOT encrypted). Keeps prefix search consistent on rename.
     from security.search_ngram import ngram_set_for_update_merged
     from security.search_normalize import normalized_set_for_update
+
     _norm = normalized_set_for_update(update_fields, collection="guests")
     # The combined _ng_name must reflect ALL name fields, not just the changed
     # subset, or a name-only rename drops the other name fields' infix trigrams
@@ -327,9 +344,7 @@ async def update_guest(
         {"id": guest_id, "tenant_id": current_user.tenant_id},
         {"$set": update_fields},
     )
-    updated = await db.guests.find_one(
-        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    updated = await db.guests.find_one({"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     return _decrypt_guest(updated)
 
 
@@ -350,17 +365,17 @@ async def delete_guest(
     """
     from datetime import UTC, datetime
 
-    guest = await db.guests.find_one(
-        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    guest = await db.guests.find_one({"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not guest:
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
 
-    active = await db.bookings.count_documents({
-        "tenant_id": current_user.tenant_id,
-        "guest_id": guest_id,
-        "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-    })
+    active = await db.bookings.count_documents(
+        {
+            "tenant_id": current_user.tenant_id,
+            "guest_id": guest_id,
+            "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
+        }
+    )
     if active > 0:
         raise HTTPException(
             status_code=409,
@@ -369,11 +384,13 @@ async def delete_guest(
 
     await db.guests.update_one(
         {"id": guest_id, "tenant_id": current_user.tenant_id},
-        {"$set": {
-            "status": "deleted",
-            "deleted_at": datetime.now(UTC).isoformat(),
-            "deleted_by": getattr(current_user, "id", None),
-        }},
+        {
+            "$set": {
+                "status": "deleted",
+                "deleted_at": datetime.now(UTC).isoformat(),
+                "deleted_by": getattr(current_user, "id", None),
+            }
+        },
     )
     return {"success": True, "guest_id": guest_id, "soft_deleted": True}
 
@@ -404,11 +421,13 @@ async def blacklist_scan(
     if _fenc:
         for field, val in enc_pairs:
             try:
-                or_clauses.extend(_fenc.build_search_query(
-                    collection=_GUEST_COLLECTION,
-                    search_fields=[field],
-                    search_value=val,
-                ))
+                or_clauses.extend(
+                    _fenc.build_search_query(
+                        collection=_GUEST_COLLECTION,
+                        search_fields=[field],
+                        search_value=val,
+                    )
+                )
             except Exception:
                 or_clauses.append({field: val})
     else:
@@ -426,14 +445,16 @@ async def blacklist_scan(
     matches = []
     async for g in db.guests.find(q, {"_id": 0}).limit(10):
         g = _decrypt_guest(g)
-        matches.append({
-            "id": g.get("id"),
-            "name": g.get("name"),
-            "email": g.get("email"),
-            "phone": g.get("phone"),
-            "id_number": g.get("id_number"),
-            "blacklist_reason": g.get("blacklist_reason"),
-        })
+        matches.append(
+            {
+                "id": g.get("id"),
+                "name": g.get("name"),
+                "email": g.get("email"),
+                "phone": g.get("phone"),
+                "id_number": g.get("id_number"),
+                "blacklist_reason": g.get("blacklist_reason"),
+            }
+        )
     return {"matches": matches, "blacklisted": bool(matches)}
 
 
@@ -450,9 +471,8 @@ async def get_guest_highlights(
     last_visit_date / important_notes / has_alerts (en az bir uyari var mi).
     """
     from datetime import UTC, date, datetime
-    guest = await db.guests.find_one(
-        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+
+    guest = await db.guests.find_one({"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not guest:
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
     guest = _decrypt_guest(guest)
@@ -460,18 +480,19 @@ async def get_guest_highlights(
     # Tekrar misafir tespiti — total_stays alanı yoksa bookings'ten say
     total_stays = guest.get("total_stays") or 0
     if not total_stays:
-        total_stays = await db.bookings.count_documents({
-            "tenant_id": current_user.tenant_id,
-            "guest_id": guest_id,
-            "status": {"$in": ["checked_out", "checked_in"]},
-        })
+        total_stays = await db.bookings.count_documents(
+            {
+                "tenant_id": current_user.tenant_id,
+                "guest_id": guest_id,
+                "status": {"$in": ["checked_out", "checked_in"]},
+            }
+        )
 
     # Son ziyaret
     last_visit = guest.get("last_visit_date")
     if not last_visit:
         last = await db.bookings.find_one(
-            {"tenant_id": current_user.tenant_id, "guest_id": guest_id,
-             "status": {"$in": ["checked_out", "checked_in"]}},
+            {"tenant_id": current_user.tenant_id, "guest_id": guest_id, "status": {"$in": ["checked_out", "checked_in"]}},
             sort=[("check_out", -1)],
             projection={"check_out": 1, "_id": 0},
         )
@@ -491,34 +512,30 @@ async def get_guest_highlights(
             ev = date(today.year, int(mm), int(dd))
             delta = (ev - today).days
             if -3 <= delta <= 3:
-                special_today.append({
-                    "type": label,
-                    "date": ev.isoformat(),
-                    "days_until": delta,
-                })
+                special_today.append(
+                    {
+                        "type": label,
+                        "date": ev.isoformat(),
+                        "days_until": delta,
+                    }
+                )
         except (ValueError, TypeError):
             continue
 
     alerts = []
     if guest.get("blacklisted"):
-        alerts.append({"level": "danger", "type": "blacklist",
-                       "message": "Kara liste: " + (guest.get("blacklist_reason") or "Sebep belirtilmedi")})
+        alerts.append({"level": "danger", "type": "blacklist", "message": "Kara liste: " + (guest.get("blacklist_reason") or "Sebep belirtilmedi")})
     if guest.get("vip_status"):
         alerts.append({"level": "gold", "type": "vip", "message": "VIP misafir"})
     if total_stays >= 2:
-        alerts.append({"level": "info", "type": "repeat",
-                       "message": f"Tekrar misafir — {total_stays}. ziyareti"})
+        alerts.append({"level": "info", "type": "repeat", "message": f"Tekrar misafir — {total_stays}. ziyareti"})
     if guest.get("allergies"):
-        alerts.append({"level": "warning", "type": "allergy",
-                       "message": "Alerji: " + guest["allergies"]})
+        alerts.append({"level": "warning", "type": "allergy", "message": "Alerji: " + guest["allergies"]})
     if guest.get("important_notes"):
-        alerts.append({"level": "warning", "type": "note",
-                       "message": guest["important_notes"]})
+        alerts.append({"level": "warning", "type": "note", "message": guest["important_notes"]})
     for sp in special_today:
-        when = "bugün" if sp["days_until"] == 0 else (
-            f"{abs(sp['days_until'])} gün {'sonra' if sp['days_until'] > 0 else 'önce'}")
-        alerts.append({"level": "gold", "type": "special_date",
-                       "message": f"{sp['type']} {when} ({sp['date']})"})
+        when = "bugün" if sp["days_until"] == 0 else (f"{abs(sp['days_until'])} gün {'sonra' if sp['days_until'] > 0 else 'önce'}")
+        alerts.append({"level": "gold", "type": "special_date", "message": f"{sp['type']} {when} ({sp['date']})"})
 
     return {
         "guest_id": guest_id,

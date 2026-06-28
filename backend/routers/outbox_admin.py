@@ -9,6 +9,7 @@ Endpoints:
   - POST /api/outbox/{id}/requeue    → Requeue a single failed event
   - POST /api/outbox/replay          → Replay all failed events for a provider
 """
+
 import asyncio
 import logging
 from datetime import UTC, datetime
@@ -80,17 +81,25 @@ async def outbox_status():
         return out
 
     (
-        pending, processing, retry, failed, processed_24h,
-        oldest_pending, last_processed, provider_failures,
+        pending,
+        processing,
+        retry,
+        failed,
+        processed_24h,
+        oldest_pending,
+        last_processed,
+        provider_failures,
     ) = await asyncio.gather(
         db.outbox_events.count_documents({"status": "pending"}),
         db.outbox_events.count_documents({"status": "processing"}),
         db.outbox_events.count_documents({"status": "retry"}),
         db.outbox_events.count_documents({"status": "failed"}),
-        db.outbox_events.count_documents({
-            "status": "processed",
-            "processed_at": {"$gte": cutoff_24h},
-        }),
+        db.outbox_events.count_documents(
+            {
+                "status": "processed",
+                "processed_at": {"$gte": cutoff_24h},
+            }
+        ),
         db.outbox_events.find_one(
             {"status": {"$in": ["pending", "retry"]}},
             {"_id": 0, "created_at": 1},
@@ -119,6 +128,7 @@ async def outbox_status():
     # Worker metrics
     try:
         from core.outbox_worker import outbox_ota_worker
+
         worker_metrics = outbox_ota_worker.metrics
     except Exception:
         worker_metrics = {"running": False}
@@ -152,9 +162,7 @@ async def list_outbox_events(
 
     # Perf: find + count_documents paralel — Atlas RTT'yi yarıya indirir.
     events, total = await asyncio.gather(
-        db.outbox_events.find(
-            query, {"_id": 0}
-        ).sort("created_at", -1).skip(offset).limit(limit).to_list(limit),
+        db.outbox_events.find(query, {"_id": 0}).sort("created_at", -1).skip(offset).limit(limit).to_list(limit),
         db.outbox_events.count_documents(query),
     )
 
@@ -234,7 +242,9 @@ async def replay_failed_events(
     count = result.modified_count
     logger.info(
         "Outbox replay: %d events requeued (provider=%s, tenant=%s)",
-        count, provider, tenant_id,
+        count,
+        provider,
+        tenant_id,
     )
     return ReplayResponse(
         success=True,

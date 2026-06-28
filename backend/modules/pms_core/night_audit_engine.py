@@ -2,6 +2,7 @@
 Night Audit Engine - Business date roll, room charge posting, pending arrival/departure control,
 unbalanced folio detection, tax consistency, daily snapshot, exceptions queue.
 """
+
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
@@ -180,18 +181,20 @@ class NightAuditEngine:
 
             # Store exceptions in queue
             for exc in audit_record["exceptions"]:
-                await db.audit_exceptions.insert_one({
-                    "id": str(uuid.uuid4()),
-                    "tenant_id": tenant_id,
-                    "audit_id": audit_id,
-                    "audit_date": business_date,
-                    "exception_type": exc.get("type"),
-                    "description": exc.get("description"),
-                    "entity_type": exc.get("entity_type"),
-                    "entity_id": exc.get("entity_id"),
-                    "status": "open",
-                    "created_at": datetime.now(UTC).isoformat(),
-                })
+                await db.audit_exceptions.insert_one(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "tenant_id": tenant_id,
+                        "audit_id": audit_id,
+                        "audit_date": business_date,
+                        "exception_type": exc.get("type"),
+                        "description": exc.get("description"),
+                        "entity_type": exc.get("entity_type"),
+                        "entity_id": exc.get("entity_id"),
+                        "status": "open",
+                        "created_at": datetime.now(UTC).isoformat(),
+                    }
+                )
 
             audit_record.pop("_id", None)
             return audit_record
@@ -200,34 +203,37 @@ class NightAuditEngine:
 
     async def _check_pending_arrivals(self, tenant_id: str, business_date: str) -> dict:
         """Check for expected arrivals that haven't checked in."""
-        arrivals = await db.bookings.find({
-            "tenant_id": tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed"]},
-            "check_in": {"$lte": business_date + "T23:59:59"},
-        }, {"_id": 0, "id": 1, "guest_id": 1, "room_id": 1, "check_in": 1, "status": 1}).to_list(500)
+        arrivals = await db.bookings.find(
+            {
+                "tenant_id": tenant_id,
+                "status": {"$in": ["confirmed", "guaranteed"]},
+                "check_in": {"$lte": business_date + "T23:59:59"},
+            },
+            {"_id": 0, "id": 1, "guest_id": 1, "room_id": 1, "check_in": 1, "status": 1},
+        ).to_list(500)
 
         # Filter to today's arrivals
         today_arrivals = [a for a in arrivals if a["check_in"][:10] <= business_date]
         exceptions = [
-            {"type": "pending_arrival", "description": f"Booking {a['id']} not checked in (arrival: {a['check_in'][:10]})",
-             "entity_type": "booking", "entity_id": a["id"]}
-            for a in today_arrivals
+            {"type": "pending_arrival", "description": f"Booking {a['id']} not checked in (arrival: {a['check_in'][:10]})", "entity_type": "booking", "entity_id": a["id"]} for a in today_arrivals
         ]
 
         return {"count": len(today_arrivals), "bookings": today_arrivals, "exceptions": exceptions}
 
     async def _check_pending_departures(self, tenant_id: str, business_date: str) -> dict:
         """Check for guests who should have checked out but haven't."""
-        overdue = await db.bookings.find({
-            "tenant_id": tenant_id,
-            "status": "checked_in",
-            "check_out": {"$lte": business_date + "T23:59:59"},
-        }, {"_id": 0, "id": 1, "guest_id": 1, "room_id": 1, "check_out": 1}).to_list(500)
+        overdue = await db.bookings.find(
+            {
+                "tenant_id": tenant_id,
+                "status": "checked_in",
+                "check_out": {"$lte": business_date + "T23:59:59"},
+            },
+            {"_id": 0, "id": 1, "guest_id": 1, "room_id": 1, "check_out": 1},
+        ).to_list(500)
 
         today_departures = [d for d in overdue if d["check_out"][:10] <= business_date]
         exceptions = [
-            {"type": "pending_departure", "description": f"Booking {d['id']} not checked out (departure: {d['check_out'][:10]})",
-             "entity_type": "booking", "entity_id": d["id"]}
+            {"type": "pending_departure", "description": f"Booking {d['id']} not checked out (departure: {d['check_out'][:10]})", "entity_type": "booking", "entity_id": d["id"]}
             for d in today_departures
         ]
 
@@ -236,13 +242,17 @@ class NightAuditEngine:
     async def _process_no_shows(self, tenant_id: str, business_date: str, user_id: str) -> dict:
         """Mark confirmed/guaranteed bookings with arrival <= business_date as no-show."""
         from modules.pms_core.reservation_state_machine import ReservationStateMachine
+
         rsm = ReservationStateMachine()
 
-        candidates = await db.bookings.find({
-            "tenant_id": tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed"]},
-            "check_in": {"$lte": business_date + "T18:00:00"},  # 6 PM cutoff
-        }, {"_id": 0}).to_list(500)
+        candidates = await db.bookings.find(
+            {
+                "tenant_id": tenant_id,
+                "status": {"$in": ["confirmed", "guaranteed"]},
+                "check_in": {"$lte": business_date + "T18:00:00"},  # 6 PM cutoff
+            },
+            {"_id": 0},
+        ).to_list(500)
 
         # Only process arrivals from before today
         to_process = [c for c in candidates if c["check_in"][:10] < business_date]
@@ -267,10 +277,13 @@ class NightAuditEngine:
         tek query'lere indirildi, loop in-memory dict lookup + insert_many.
         Beklenen perf: 4 query + 1 insert_many → < 5 saniye 500-oda için.
         """
-        checked_in = await db.bookings.find({
-            "tenant_id": tenant_id,
-            "status": "checked_in",
-        }, {"_id": 0}).to_list(2000)  # 1000 → 2000 (büyük tenant kapasitesi)
+        checked_in = await db.bookings.find(
+            {
+                "tenant_id": tenant_id,
+                "status": "checked_in",
+            },
+            {"_id": 0},
+        ).to_list(2000)  # 1000 → 2000 (büyük tenant kapasitesi)
 
         if not checked_in:
             return {"posted": 0, "failed": 0, "total_revenue": 0.0, "total_tax": 0.0, "exceptions": []}
@@ -279,11 +292,14 @@ class NightAuditEngine:
         room_ids = [b["room_id"] for b in checked_in if b.get("room_id")]
 
         # Bulk pre-fetch #1: tüm açık folio'lar tek query'de
-        folio_cursor = db.folios.find({
-            "tenant_id": tenant_id,
-            "booking_id": {"$in": booking_ids},
-            "status": "open",
-        }, {"_id": 0})
+        folio_cursor = db.folios.find(
+            {
+                "tenant_id": tenant_id,
+                "booking_id": {"$in": booking_ids},
+                "status": "open",
+            },
+            {"_id": 0},
+        )
         folios_by_booking = {}
         async for f in folio_cursor:
             folios_by_booking[f["booking_id"]] = f
@@ -291,10 +307,13 @@ class NightAuditEngine:
         # Bulk pre-fetch #2: tüm room number'lar tek query'de
         rooms_by_id = {}
         if room_ids:
-            room_cursor = db.rooms.find({
-                "tenant_id": tenant_id,
-                "id": {"$in": room_ids},
-            }, {"_id": 0, "id": 1, "room_number": 1})
+            room_cursor = db.rooms.find(
+                {
+                    "tenant_id": tenant_id,
+                    "id": {"$in": room_ids},
+                },
+                {"_id": 0, "id": 1, "room_number": 1},
+            )
             async for r in room_cursor:
                 rooms_by_id[r["id"]] = r.get("room_number", "N/A")
 
@@ -303,13 +322,16 @@ class NightAuditEngine:
         folio_ids = [f["id"] for f in folios_by_booking.values()]
         already_posted_folio_ids: set[str] = set()
         if folio_ids:
-            existing_cursor = db.folio_charges.find({
-                "tenant_id": tenant_id,
-                "folio_id": {"$in": folio_ids},
-                "charge_category": "room",
-                "voided": False,
-                "night_audit_date": business_date,
-            }, {"_id": 0, "folio_id": 1})
+            existing_cursor = db.folio_charges.find(
+                {
+                    "tenant_id": tenant_id,
+                    "folio_id": {"$in": folio_ids},
+                    "charge_category": "room",
+                    "voided": False,
+                    "night_audit_date": business_date,
+                },
+                {"_id": 0, "folio_id": 1},
+            )
             async for c in existing_cursor:
                 already_posted_folio_ids.add(c["folio_id"])
 
@@ -337,11 +359,14 @@ class NightAuditEngine:
             try:
                 folio = folios_by_booking.get(booking["id"])
                 if not folio:
-                    exceptions.append({
-                        "type": "no_open_folio",
-                        "description": f"Booking {booking['id']} has no open folio",
-                        "entity_type": "booking", "entity_id": booking["id"],
-                    })
+                    exceptions.append(
+                        {
+                            "type": "no_open_folio",
+                            "description": f"Booking {booking['id']} has no open folio",
+                            "entity_type": "booking",
+                            "entity_id": booking["id"],
+                        }
+                    )
                     failed += 1
                     continue
 
@@ -360,46 +385,53 @@ class NightAuditEngine:
                 room_number = rooms_by_id.get(booking.get("room_id"), "N/A")
 
                 charge_id = str(uuid.uuid4())
-                charges_to_insert.append({
-                    "id": charge_id,
-                    "tenant_id": tenant_id,
-                    "folio_id": fid,
-                    "booking_id": booking["id"],
-                    "charge_category": "room",
-                    "description": f"Room {room_number} - Night {business_date}",
-                    "unit_price": nightly_rate,
-                    "quantity": 1.0,
-                    "amount": nightly_rate,
-                    "tax_rate": tax_rate,
-                    "tax_amount": tax_amount,
-                    "total": total,
-                    "posted_by": "night_audit",
-                    "date": now_iso,
-                    "night_audit_date": business_date,
-                    # Standardized fields so the hardened unique dedup index
-                    # idx_folio_charges_na_dedup (tenant_id, booking_id,
-                    # business_date, charge_type) covers these room charges and
-                    # blocks double-posting under concurrent runs at the DB level.
-                    "business_date": business_date,
-                    "charge_type": "room_charge",
-                    "voided": False,
-                })
-                charge_meta.append({
-                    "id": charge_id,
-                    "folio_id": fid,
-                    "booking_id": booking["id"],
-                    "amount": nightly_rate,
-                    "tax_amount": tax_amount,
-                })
+                charges_to_insert.append(
+                    {
+                        "id": charge_id,
+                        "tenant_id": tenant_id,
+                        "folio_id": fid,
+                        "booking_id": booking["id"],
+                        "charge_category": "room",
+                        "description": f"Room {room_number} - Night {business_date}",
+                        "unit_price": nightly_rate,
+                        "quantity": 1.0,
+                        "amount": nightly_rate,
+                        "tax_rate": tax_rate,
+                        "tax_amount": tax_amount,
+                        "total": total,
+                        "posted_by": "night_audit",
+                        "date": now_iso,
+                        "night_audit_date": business_date,
+                        # Standardized fields so the hardened unique dedup index
+                        # idx_folio_charges_na_dedup (tenant_id, booking_id,
+                        # business_date, charge_type) covers these room charges and
+                        # blocks double-posting under concurrent runs at the DB level.
+                        "business_date": business_date,
+                        "charge_type": "room_charge",
+                        "voided": False,
+                    }
+                )
+                charge_meta.append(
+                    {
+                        "id": charge_id,
+                        "folio_id": fid,
+                        "booking_id": booking["id"],
+                        "amount": nightly_rate,
+                        "tax_amount": tax_amount,
+                    }
+                )
                 scheduled_folio_ids.add(fid)
 
             except Exception as e:
                 failed += 1
-                exceptions.append({
-                    "type": "room_charge_failure",
-                    "description": f"Failed to prepare charge for booking {booking['id']}: {str(e)}",
-                    "entity_type": "booking", "entity_id": booking["id"],
-                })
+                exceptions.append(
+                    {
+                        "type": "room_charge_failure",
+                        "description": f"Failed to prepare charge for booking {booking['id']}: {str(e)}",
+                        "entity_type": "booking",
+                        "entity_id": booking["id"],
+                    }
+                )
 
         # Architect review fix #2: BulkWriteError reconcile. Counts'u sadece
         # gerçekten persist edilmiş charge'lardan hesapla; partial failure'da
@@ -416,6 +448,7 @@ class NightAuditEngine:
                 # nInserted/writeErrors güvenilir.
                 try:
                     from pymongo.errors import BulkWriteError as _BWE
+
                     is_bulk_err = isinstance(e, _BWE)
                 except Exception:
                     is_bulk_err = False
@@ -426,10 +459,7 @@ class NightAuditEngine:
                     n_inserted = int(details.get("nInserted", 0) or 0)
                     failed_indices = {we.get("index") for we in write_errors if we.get("index") is not None}
                     # Index'e dayalı inferred set
-                    inferred_inserted = [
-                        meta for idx, meta in enumerate(charge_meta)
-                        if idx not in failed_indices
-                    ]
+                    inferred_inserted = [meta for idx, meta in enumerate(charge_meta) if idx not in failed_indices]
                     # nInserted cap — eğer driver daha az insert raporladıysa
                     # konservatif şekilde set'i kıs (atipik write-concern
                     # senaryolarında overstate olmasın).
@@ -442,14 +472,14 @@ class NightAuditEngine:
                     # fail say.
                     inserted_ids = set()
 
-                exceptions.append({
-                    "type": "bulk_insert_partial_failure",
-                    "description": (f"insert_many failure ({'bulk' if is_bulk_err else 'generic'}): "
-                                    f"attempted={len(charges_to_insert)} "
-                                    f"inserted={len(inserted_ids)} "
-                                    f"err={str(e)[:200]}"),
-                    "entity_type": "folio_charge", "entity_id": None,
-                })
+                exceptions.append(
+                    {
+                        "type": "bulk_insert_partial_failure",
+                        "description": (f"insert_many failure ({'bulk' if is_bulk_err else 'generic'}): attempted={len(charges_to_insert)} inserted={len(inserted_ids)} err={str(e)[:200]}"),
+                        "entity_type": "folio_charge",
+                        "entity_id": None,
+                    }
+                )
 
             # Counts'u sadece gerçekten insert edilen charge'lardan hesapla
             for meta in charge_meta:
@@ -472,9 +502,7 @@ class NightAuditEngine:
                 if meta["id"] not in inserted_ids:
                     continue
                 line_total = round(meta["amount"] + meta["tax_amount"], 2)
-                balance_inc_by_folio[meta["folio_id"]] = round(
-                    balance_inc_by_folio.get(meta["folio_id"], 0.0) + line_total, 2
-                )
+                balance_inc_by_folio[meta["folio_id"]] = round(balance_inc_by_folio.get(meta["folio_id"], 0.0) + line_total, 2)
             for fid, inc in balance_inc_by_folio.items():
                 if inc:
                     await db.folios.update_one(
@@ -509,21 +537,27 @@ class NightAuditEngine:
         charges_by_folio: dict[str, float] = {}
         payments_by_folio: dict[str, float] = {}
 
-        charges_cursor = db.folio_charges.find({
-            "tenant_id": tenant_id,
-            "folio_id": {"$in": folio_ids},
-            "voided": False,
-        }, {"_id": 0, "folio_id": 1, "total": 1, "amount": 1})
+        charges_cursor = db.folio_charges.find(
+            {
+                "tenant_id": tenant_id,
+                "folio_id": {"$in": folio_ids},
+                "voided": False,
+            },
+            {"_id": 0, "folio_id": 1, "total": 1, "amount": 1},
+        )
         async for c in charges_cursor:
             fid = c.get("folio_id")
             if fid:
                 charges_by_folio[fid] = charges_by_folio.get(fid, 0) + (c.get("total") or c.get("amount") or 0)
 
-        payments_cursor = db.payments.find({
-            "tenant_id": tenant_id,
-            "folio_id": {"$in": folio_ids},
-            "voided": False,
-        }, {"_id": 0, "folio_id": 1, "amount": 1})
+        payments_cursor = db.payments.find(
+            {
+                "tenant_id": tenant_id,
+                "folio_id": {"$in": folio_ids},
+                "voided": False,
+            },
+            {"_id": 0, "folio_id": 1, "amount": 1},
+        )
         async for p in payments_cursor:
             fid = p.get("folio_id")
             if fid:
@@ -535,31 +569,38 @@ class NightAuditEngine:
             balance = round(total_charges - total_payments, 2)
 
             if total_payments > total_charges + 0.01:
-                warnings.append({
-                    "folio_id": folio["id"],
-                    "folio_number": folio.get("folio_number"),
-                    "type": "overpayment",
-                    "balance": balance,
-                    "message": f"Folio {folio.get('folio_number')} has overpayment of {abs(balance)}",
-                })
+                warnings.append(
+                    {
+                        "folio_id": folio["id"],
+                        "folio_number": folio.get("folio_number"),
+                        "type": "overpayment",
+                        "balance": balance,
+                        "message": f"Folio {folio.get('folio_number')} has overpayment of {abs(balance)}",
+                    }
+                )
             elif balance > 10000:
-                warnings.append({
-                    "folio_id": folio["id"],
-                    "folio_number": folio.get("folio_number"),
-                    "type": "high_balance",
-                    "balance": balance,
-                    "message": f"Folio {folio.get('folio_number')} has high outstanding balance: {balance}",
-                })
+                warnings.append(
+                    {
+                        "folio_id": folio["id"],
+                        "folio_number": folio.get("folio_number"),
+                        "type": "high_balance",
+                        "balance": balance,
+                        "message": f"Folio {folio.get('folio_number')} has high outstanding balance: {balance}",
+                    }
+                )
 
         return {"checked": len(open_folios), "warnings": warnings}
 
     async def _check_tax_consistency(self, tenant_id: str, business_date: str) -> dict:
         """Check tax calculations for consistency."""
-        charges = await db.folio_charges.find({
-            "tenant_id": tenant_id,
-            "voided": False,
-            "date": {"$gte": business_date + "T00:00:00", "$lte": business_date + "T23:59:59"},
-        }, {"_id": 0}).to_list(5000)
+        charges = await db.folio_charges.find(
+            {
+                "tenant_id": tenant_id,
+                "voided": False,
+                "date": {"$gte": business_date + "T00:00:00", "$lte": business_date + "T23:59:59"},
+            },
+            {"_id": 0},
+        ).to_list(5000)
 
         warnings = []
         for charge in charges:
@@ -569,13 +610,15 @@ class NightAuditEngine:
             expected_tax = round(amount * tax_rate / 100, 2) if tax_rate else 0
 
             if abs(tax_amount - expected_tax) > 0.02:
-                warnings.append({
-                    "charge_id": charge["id"],
-                    "type": "tax_mismatch",
-                    "expected_tax": expected_tax,
-                    "actual_tax": tax_amount,
-                    "message": f"Charge {charge['id']}: tax {tax_amount} != expected {expected_tax}",
-                })
+                warnings.append(
+                    {
+                        "charge_id": charge["id"],
+                        "type": "tax_mismatch",
+                        "expected_tax": expected_tax,
+                        "actual_tax": tax_amount,
+                        "message": f"Charge {charge['id']}: tax {tax_amount} != expected {expected_tax}",
+                    }
+                )
 
         return {"checked": len(charges), "warnings": warnings}
 
@@ -629,16 +672,13 @@ class NightAuditEngine:
 
     async def get_audit_exceptions(self, tenant_id: str, status: str = "open") -> list[dict]:
         """Get audit exceptions queue."""
-        return await db.audit_exceptions.find(
-            {"tenant_id": tenant_id, "status": status}, {"_id": 0}
-        ).sort("created_at", -1).to_list(200)
+        return await db.audit_exceptions.find({"tenant_id": tenant_id, "status": status}, {"_id": 0}).sort("created_at", -1).to_list(200)
 
     async def resolve_exception(self, tenant_id: str, exception_id: str, resolved_by: str, resolution: str) -> dict:
         """Resolve an audit exception."""
         now = datetime.now(UTC)
         result = await db.audit_exceptions.update_one(
-            {"id": exception_id, "tenant_id": tenant_id},
-            {"$set": {"status": "resolved", "resolved_by": resolved_by, "resolution": resolution, "resolved_at": now.isoformat()}}
+            {"id": exception_id, "tenant_id": tenant_id}, {"$set": {"status": "resolved", "resolved_by": resolved_by, "resolution": resolution, "resolved_at": now.isoformat()}}
         )
         if result.modified_count == 0:
             return {"success": False, "error": "Exception not found"}
@@ -646,7 +686,5 @@ class NightAuditEngine:
 
     async def get_daily_snapshot(self, tenant_id: str, business_date: str) -> dict | None:
         """Get daily snapshot for a specific date."""
-        snapshot = await db.daily_audit_snapshots.find_one(
-            {"tenant_id": tenant_id, "business_date": business_date}, {"_id": 0}
-        )
+        snapshot = await db.daily_audit_snapshots.find_one({"tenant_id": tenant_id, "business_date": business_date}, {"_id": 0})
         return snapshot

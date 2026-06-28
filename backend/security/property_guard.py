@@ -2,6 +2,7 @@
 Security — Property Guard
 Enforces property-level access within multi-property tenants.
 """
+
 import logging
 from typing import Any
 
@@ -24,9 +25,7 @@ class PropertyGuard:
             return []
         # Admin/super_admin have access to all properties
         if user.get("role") in ("admin", "super_admin"):
-            props = await db.properties.find(
-                {"tenant_id": tenant_id}, {"_id": 0, "id": 1}
-            ).to_list(100)
+            props = await db.properties.find({"tenant_id": tenant_id}, {"_id": 0, "id": 1}).to_list(100)
             return [p["id"] for p in props]
         return user.get("property_ids", [])
 
@@ -43,9 +42,7 @@ class PropertyGuard:
             return {"allowed": True, "reason": "single_property_tenant"}
         if property_id in allowed:
             return {"allowed": True}
-        logger.warning(
-            f"Property guard: user {user_id} denied access to property {property_id}"
-        )
+        logger.warning(f"Property guard: user {user_id} denied access to property {property_id}")
         return {
             "allowed": False,
             "reason": f"User does not have access to property {property_id}",

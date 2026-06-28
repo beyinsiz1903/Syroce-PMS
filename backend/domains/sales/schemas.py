@@ -2,6 +2,7 @@
 Sales Domain — Schemas
 Request/response models extracted from sales routers.
 """
+
 from enum import Enum
 
 from pydantic import BaseModel, EmailStr, Field, conint, field_validator
@@ -73,6 +74,7 @@ class PmsLiteLeadAdminUpdateRequest(BaseModel):
 
 class MarketingContactLeadRequest(BaseModel):
     """Public marketing-site contact form (no auth)."""
+
     full_name: str = Field(min_length=1, max_length=200)
     company: str = Field(min_length=1, max_length=200)
     phone: str = Field(min_length=1, max_length=40)
@@ -97,6 +99,7 @@ class MarketingContactLeadRequest(BaseModel):
 
 class SupplierLeadRequest(BaseModel):
     """Public supplier application form (no auth)."""
+
     company: str = Field(min_length=1, max_length=200)
     tax_no: str | None = Field(default=None, max_length=40)
     phone: str | None = Field(default=None, max_length=40)

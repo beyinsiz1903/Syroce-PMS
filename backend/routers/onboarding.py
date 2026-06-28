@@ -5,6 +5,7 @@ The cross-tenant admin overview lives under
 SAME progress engine but scoped to the caller's own tenant — for the
 in-app wizard a hotelier sees on first login.
 """
+
 from __future__ import annotations
 
 import logging
@@ -42,6 +43,7 @@ router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
 
 def _db():
     from core.database import _raw_db
+
     return _raw_db
 
 
@@ -102,9 +104,7 @@ async def _cached_progress(tenant_id: str) -> dict:
     """rbac-allow: cache-rbac — tenant-scoped, kullanıcı-bağımsız payload."""
     data = await get_onboarding_progress(tenant_id)
     db = _db()
-    doc = await db.onboarding_progress.find_one(
-        {"tenant_id": tenant_id}, {"_id": 0, "dismissed": 1, "dismissed_at": 1}
-    ) or {}
+    doc = await db.onboarding_progress.find_one({"tenant_id": tenant_id}, {"_id": 0, "dismissed": 1, "dismissed_at": 1}) or {}
     data["dismissed"] = bool(doc.get("dismissed"))
     data["dismissed_at"] = doc.get("dismissed_at")
     return data
@@ -182,6 +182,7 @@ class HotelInfoIn(BaseModel):
     accommodation_tax_exempt + yapılandırılmış adres (city, district,
     neighborhood, street, building_no, postal_code).
     """
+
     property_name: str | None = Field(default=None, max_length=200)
     property_type: str | None = Field(default=None, max_length=50)  # P0 #6
     star_rating: int | None = Field(default=None, ge=1, le=5)
@@ -202,12 +203,12 @@ class HotelInfoIn(BaseModel):
     total_rooms: int | None = Field(default=None, ge=1, le=10000)
 
     # Yerel/finansal varsayılanlar
-    currency: str | None = Field(default=None, max_length=10)         # TRY/USD/EUR/RUB
-    timezone: str | None = Field(default=None, max_length=64)         # Europe/Istanbul
+    currency: str | None = Field(default=None, max_length=10)  # TRY/USD/EUR/RUB
+    timezone: str | None = Field(default=None, max_length=64)  # Europe/Istanbul
     default_language: str | None = Field(default=None, max_length=8)  # tr/en/ru/de
 
     # Türkiye'ye özel
-    tax_number: str | None = Field(default=None, max_length=20)       # VKN/TCKN
+    tax_number: str | None = Field(default=None, max_length=20)  # VKN/TCKN
     mersis_no: str | None = Field(default=None, max_length=20)
     tga_code: str | None = Field(default=None, max_length=20)
     vat_rate: float | None = Field(default=None, ge=0, le=100)
@@ -286,26 +287,45 @@ async def update_hotel_info(
     # Step ✓ artık SADECE auto-detect predicate (property_name +
     # contact_phone + total_rooms hepsi dolu) sağlanırsa işaretlenir
     # — yoksa kullanıcı eksik kayıtla "tamam" görünmesin (architect feedback).
-    fresh = await _db().tenants.find_one(
-        {"id": tenant_id},
-        {"_id": 0, "property_name": 1, "contact_phone": 1, "total_rooms": 1},
-    ) or {}
-    if (
-        (fresh.get("property_name") or "").strip()
-        and (fresh.get("contact_phone") or "").strip()
-        and int(fresh.get("total_rooms") or 0) > 0
-    ):
+    fresh = (
+        await _db().tenants.find_one(
+            {"id": tenant_id},
+            {"_id": 0, "property_name": 1, "contact_phone": 1, "total_rooms": 1},
+        )
+        or {}
+    )
+    if (fresh.get("property_name") or "").strip() and (fresh.get("contact_phone") or "").strip() and int(fresh.get("total_rooms") or 0) > 0:
         await mark_step_complete(tenant_id, "hotel_info_completed")
     _invalidate_progress_cache(tenant_id)  # P0 #2
 
     tenant = await _db().tenants.find_one(
         {"id": tenant_id},
-        {"_id": 0, "id": 1, "property_name": 1, "property_type": 1,
-         "contact_phone": 1, "contact_email": 1, "address": 1, "location": 1,
-         "city": 1, "district": 1, "neighborhood": 1, "street": 1, "building_no": 1,
-         "postal_code": 1, "total_rooms": 1, "currency": 1, "timezone": 1,
-         "default_language": 1, "star_rating": 1, "opening_year": 1,
-         "tax_number": 1, "mersis_no": 1, "tga_code": 1, "vat_rate": 1,
-         "accommodation_tax_exempt": 1},
+        {
+            "_id": 0,
+            "id": 1,
+            "property_name": 1,
+            "property_type": 1,
+            "contact_phone": 1,
+            "contact_email": 1,
+            "address": 1,
+            "location": 1,
+            "city": 1,
+            "district": 1,
+            "neighborhood": 1,
+            "street": 1,
+            "building_no": 1,
+            "postal_code": 1,
+            "total_rooms": 1,
+            "currency": 1,
+            "timezone": 1,
+            "default_language": 1,
+            "star_rating": 1,
+            "opening_year": 1,
+            "tax_number": 1,
+            "mersis_no": 1,
+            "tga_code": 1,
+            "vat_rate": 1,
+            "accommodation_tax_exempt": 1,
+        },
     )
     return {"ok": True, "tenant": tenant, "updated_fields": list(update.keys())}

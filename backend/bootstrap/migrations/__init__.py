@@ -7,6 +7,7 @@ sonraki tüm şema/indeks değişiklikleri bu sistemden geçer.
 Genel kullanım:
     from bootstrap.migrations import run_migrations, get_migration_status
 """
+
 from .base import (
     LEDGER_COLLECTION,
     LOCK_COLLECTION,

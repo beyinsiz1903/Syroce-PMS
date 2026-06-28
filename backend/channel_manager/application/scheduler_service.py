@@ -9,6 +9,7 @@ Runs per-property and performs:
 
 Rule: Full refresh is NOT default. Incremental requeue only.
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -33,7 +34,9 @@ class SchedulerService:
         self._repo = repo or ChannelManagerRepository()
 
     async def run_scheduled_check(
-        self, tenant_id: str, connector_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
         actor_id: str | None = None,
     ) -> dict[str, Any]:
         """Run scheduled safety net check for a single connector."""
@@ -64,8 +67,11 @@ class SchedulerService:
 
         # Audit
         await self._audit(
-            tenant_id, property_id, connector_id,
-            AuditAction.SCHEDULED_SYNC_RUN, actor_id,
+            tenant_id,
+            property_id,
+            connector_id,
+            AuditAction.SCHEDULED_SYNC_RUN,
+            actor_id,
             {
                 "actions_taken": len(actions_taken),
                 "action_types": list({a["type"] for a in actions_taken}),
@@ -95,10 +101,12 @@ class SchedulerService:
                 result = await self.run_scheduled_check(tenant_id, c["id"])
                 results.append(result)
             except Exception as e:
-                results.append({
-                    "connector_id": c["id"],
-                    "error": str(e)[:200],
-                })
+                results.append(
+                    {
+                        "connector_id": c["id"],
+                        "error": str(e)[:200],
+                    }
+                )
         return {
             "connectors_checked": len(results),
             "results": results,
@@ -110,7 +118,9 @@ class SchedulerService:
     # ------------------------------------------------------------------ #
 
     async def _check_stale_pending_jobs(
-        self, tenant_id: str, connector_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
     ) -> list[dict[str, Any]]:
         """Find pending/dispatched jobs older than threshold and mark failed."""
         threshold = (datetime.now(UTC) - timedelta(hours=STALE_JOB_HOURS)).isoformat()
@@ -121,17 +131,22 @@ class SchedulerService:
             status = j.get("status", "")
             created = j.get("created_at", "")
             if status in ("pending", "dispatched") and created and created < threshold:
-                await self._repo.update_sync_job(j["id"], {
-                    "status": SyncJobStatus.FAILED.value,
-                    "last_error": f"Stale: {status} for >{STALE_JOB_HOURS}h, marked failed by scheduler",
-                    "completed_at": datetime.now(UTC).isoformat(),
-                })
-                actions.append({
-                    "type": "stale_job_failed",
-                    "job_id": j["id"],
-                    "original_status": status,
-                    "age_hours": STALE_JOB_HOURS,
-                })
+                await self._repo.update_sync_job(
+                    j["id"],
+                    {
+                        "status": SyncJobStatus.FAILED.value,
+                        "last_error": f"Stale: {status} for >{STALE_JOB_HOURS}h, marked failed by scheduler",
+                        "completed_at": datetime.now(UTC).isoformat(),
+                    },
+                )
+                actions.append(
+                    {
+                        "type": "stale_job_failed",
+                        "job_id": j["id"],
+                        "original_status": status,
+                        "age_hours": STALE_JOB_HOURS,
+                    }
+                )
         return actions
 
     # ------------------------------------------------------------------ #
@@ -139,7 +154,9 @@ class SchedulerService:
     # ------------------------------------------------------------------ #
 
     async def _check_retryable_failed_jobs(
-        self, tenant_id: str, connector_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
     ) -> list[dict[str, Any]]:
         """Requeue failed jobs that haven't exhausted retries."""
         actions = []
@@ -162,22 +179,31 @@ class SchedulerService:
             except (ValueError, TypeError):
                 continue
 
-            await self._repo.update_sync_job(j["id"], {
-                "status": SyncJobStatus.PENDING.value,
-                "retry_count": retry_count + 1,
-                "last_error": None,
-                "completed_at": None,
-            })
-            actions.append({
-                "type": "failed_job_requeued",
-                "job_id": j["id"],
-                "retry_count": retry_count + 1,
-            })
+            await self._repo.update_sync_job(
+                j["id"],
+                {
+                    "status": SyncJobStatus.PENDING.value,
+                    "retry_count": retry_count + 1,
+                    "last_error": None,
+                    "completed_at": None,
+                },
+            )
+            actions.append(
+                {
+                    "type": "failed_job_requeued",
+                    "job_id": j["id"],
+                    "retry_count": retry_count + 1,
+                }
+            )
 
             await self._audit(
-                tenant_id, "", connector_id,
-                AuditAction.SCHEDULED_SYNC_REQUEUED, metadata={
-                    "job_id": j["id"], "retry_count": retry_count + 1,
+                tenant_id,
+                "",
+                connector_id,
+                AuditAction.SCHEDULED_SYNC_REQUEUED,
+                metadata={
+                    "job_id": j["id"],
+                    "retry_count": retry_count + 1,
                 },
             )
         return actions
@@ -187,11 +213,15 @@ class SchedulerService:
     # ------------------------------------------------------------------ #
 
     async def _check_missing_snapshots(
-        self, tenant_id: str, connector_id: str, property_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
+        property_id: str,
     ) -> list[dict[str, Any]]:
         """Find room types with no sync snapshot for today."""
         actions = []
         from ..application.mapping_service import MappingService
+
         mapping_svc = MappingService(self._repo)
         room_lookup = await mapping_svc.get_mapping_lookup(tenant_id, connector_id, "room_type")
 
@@ -199,11 +229,13 @@ class SchedulerService:
         for pms_rt in room_lookup:
             snapshot = await self._repo.get_sync_snapshot(tenant_id, connector_id, pms_rt, today)
             if not snapshot:
-                actions.append({
-                    "type": "missing_snapshot",
-                    "room_type_id": pms_rt,
-                    "date": today,
-                })
+                actions.append(
+                    {
+                        "type": "missing_snapshot",
+                        "room_type_id": pms_rt,
+                        "date": today,
+                    }
+                )
         return actions
 
     # ------------------------------------------------------------------ #
@@ -211,11 +243,15 @@ class SchedulerService:
     # ------------------------------------------------------------------ #
 
     async def _check_drift(
-        self, tenant_id: str, connector_id: str, property_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
+        property_id: str,
     ) -> list[dict[str, Any]]:
         """Lightweight drift detection for today."""
         actions = []
         from ..application.mapping_service import MappingService
+
         mapping_svc = MappingService(self._repo)
         room_lookup = await mapping_svc.get_mapping_lookup(tenant_id, connector_id, "room_type")
         if not room_lookup:
@@ -232,12 +268,15 @@ class SchedulerService:
             if rt and rt in room_lookup:
                 rt_counts[rt] = rt_counts.get(rt, 0) + 1
 
-        bookings = await db.bookings.find({
-            "tenant_id": tenant_id,
-            "check_in": {"$lte": today},
-            "check_out": {"$gt": today},
-            "status": {"$nin": ["cancelled", "no_show"]},
-        }, {"_id": 0, "room_type": 1}).to_list(5000)
+        bookings = await db.bookings.find(
+            {
+                "tenant_id": tenant_id,
+                "check_in": {"$lte": today},
+                "check_out": {"$gt": today},
+                "status": {"$nin": ["cancelled", "no_show"]},
+            },
+            {"_id": 0, "room_type": 1},
+        ).to_list(5000)
 
         drift_count = 0
         for rt, total in rt_counts.items():
@@ -249,12 +288,14 @@ class SchedulerService:
                     drift_count += 1
 
         if drift_count > 0:
-            actions.append({
-                "type": "drift_detected",
-                "drift_count": drift_count,
-                "date": today,
-                "recommendation": "incremental_requeue",
-            })
+            actions.append(
+                {
+                    "type": "drift_detected",
+                    "drift_count": drift_count,
+                    "date": today,
+                    "recommendation": "incremental_requeue",
+                }
+            )
         return actions
 
     # ------------------------------------------------------------------ #
@@ -263,7 +304,11 @@ class SchedulerService:
 
     async def _audit(self, tenant_id, property_id, connector_id, action, actor_id=None, metadata=None):
         log = IntegrationAuditLog(
-            tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-            action=action, actor_id=actor_id, metadata=metadata or {},
+            tenant_id=tenant_id,
+            property_id=property_id,
+            connector_id=connector_id,
+            action=action,
+            actor_id=actor_id,
+            metadata=metadata or {},
         )
         await self._repo.create_audit_log(log.to_doc())

@@ -4,6 +4,7 @@ ARI Push Worker.
 Background task that periodically processes pending change sets.
 Integrated with FailureTracker for wire-level failure visibility.
 """
+
 import asyncio
 import logging
 
@@ -60,7 +61,9 @@ async def ari_push_worker_loop():
                     _transient_tracker.reset(tenant_key)
                 except Exception as e:
                     _transient_tracker.log_exception(
-                        logger, e, tenant_key,
+                        logger,
+                        e,
+                        tenant_key,
                         context=f"tenant={tenant_id}",
                         non_transient_msg="%s error: %s",
                     )
@@ -77,7 +80,9 @@ async def ari_push_worker_loop():
 
         except Exception as e:
             _transient_tracker.log_exception(
-                logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                logger,
+                e,
+                TransientFailureTracker.OUTER_LOOP_KEY,
                 context="loop tick",
                 non_transient_msg="%s loop error: %s",
             )

@@ -2,6 +2,7 @@
 Revenue Domain — Pricing Service
 Business logic for rate management and pricing. No FastAPI dependencies.
 """
+
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -30,12 +31,17 @@ class PricingService:
 
     @staticmethod
     async def get_effective_rate(
-        tenant_id: str, room_type: str,
-        check_in: str, check_out: str,
+        tenant_id: str,
+        room_type: str,
+        check_in: str,
+        check_out: str,
     ) -> dict[str, Any]:
         """Calculate the effective rate for a room type and date range."""
         rate_periods = await PricingRepository.get_rate_periods(
-            tenant_id, room_type=room_type, date_from=check_in, date_to=check_out,
+            tenant_id,
+            room_type=room_type,
+            date_from=check_in,
+            date_to=check_out,
         )
 
         if rate_periods:
@@ -48,6 +54,7 @@ class PricingService:
 
         # Fallback to room base price
         from core.database import db
+
         room = await db.rooms.find_one(
             {"tenant_id": tenant_id, "room_type": room_type},
             {"_id": 0, "base_price": 1},
@@ -63,9 +70,12 @@ class PricingService:
 
     @staticmethod
     async def override_rate(
-        tenant_id: str, user_id: str,
-        room_type: str, date_range: dict[str, str],
-        new_rate: float, reason: str,
+        tenant_id: str,
+        user_id: str,
+        room_type: str,
+        date_range: dict[str, str],
+        new_rate: float,
+        reason: str,
     ) -> dict[str, Any]:
         override = {
             "id": str(uuid.uuid4()),

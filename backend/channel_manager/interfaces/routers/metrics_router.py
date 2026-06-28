@@ -1,4 +1,5 @@
 """Historical metrics, trends, retention, daily-aggregation endpoints."""
+
 import logging
 
 from fastapi import APIRouter, Body, Depends, Query

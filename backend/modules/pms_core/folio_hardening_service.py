@@ -1,6 +1,7 @@
 """
 Folio & Billing Hardening Service - Charge posting, payment, refund, split, void/reversal, tax breakdown.
 """
+
 import uuid
 from datetime import UTC, datetime
 
@@ -54,12 +55,12 @@ class FolioHardeningService:
         # Update folio balance
         await self._recalculate_folio_balance(tenant_id, folio_id)
 
-        await self._log_audit(tenant_id, "folio_charge", charge_id, "charge_posted", posted_by,
-                              {"folio_id": folio_id, "amount": total, "category": charge_data.get("category")})
+        await self._log_audit(tenant_id, "folio_charge", charge_id, "charge_posted", posted_by, {"folio_id": folio_id, "amount": total, "category": charge_data.get("category")})
 
         # v95.1 — revenue raporu cache'ini geçersiz kıl (yeni charge)
         try:
             from cache_manager import cache as _cache
+
             if _cache:
                 _cache.invalidate_tenant_cache(tenant_id, "folio_revenue_by_category")
         except ImportError:
@@ -104,8 +105,7 @@ class FolioHardeningService:
         await db.payments.insert_one(payment_doc)
         await self._recalculate_folio_balance(tenant_id, folio_id)
 
-        await self._log_audit(tenant_id, "payment", payment_id, "payment_posted", processed_by,
-                              {"folio_id": folio_id, "amount": amount, "method": payment_data.get("method")})
+        await self._log_audit(tenant_id, "payment", payment_id, "payment_posted", processed_by, {"folio_id": folio_id, "amount": amount, "method": payment_data.get("method")})
 
         payment_doc.pop("_id", None)
         return {"success": True, "payment": payment_doc}
@@ -145,8 +145,7 @@ class FolioHardeningService:
         await db.payments.insert_one(refund_doc)
         await self._recalculate_folio_balance(tenant_id, folio_id)
 
-        await self._log_audit(tenant_id, "refund", refund_id, "refund_posted", processed_by,
-                              {"folio_id": folio_id, "amount": amount, "reason": reason})
+        await self._log_audit(tenant_id, "refund", refund_id, "refund_posted", processed_by, {"folio_id": folio_id, "amount": amount, "reason": reason})
 
         refund_doc.pop("_id", None)
         return {"success": True, "refund": refund_doc}
@@ -169,19 +168,16 @@ class FolioHardeningService:
             return {"success": False, "error": f"Folio is {folio.get('status')}, cannot void charge"}
 
         now = datetime.now(UTC)
-        await db.folio_charges.update_one(
-            {"id": charge_id, "tenant_id": tenant_id},
-            {"$set": {"voided": True, "void_reason": reason, "voided_by": voided_by, "voided_at": now.isoformat()}}
-        )
+        await db.folio_charges.update_one({"id": charge_id, "tenant_id": tenant_id}, {"$set": {"voided": True, "void_reason": reason, "voided_by": voided_by, "voided_at": now.isoformat()}})
 
         await self._recalculate_folio_balance(tenant_id, charge["folio_id"])
 
-        await self._log_audit(tenant_id, "folio_charge", charge_id, "charge_voided", voided_by,
-                              {"folio_id": charge["folio_id"], "amount": charge.get("total"), "reason": reason})
+        await self._log_audit(tenant_id, "folio_charge", charge_id, "charge_voided", voided_by, {"folio_id": charge["folio_id"], "amount": charge.get("total"), "reason": reason})
 
         # v95.1 — revenue raporu cache'ini geçersiz kıl (charge void)
         try:
             from cache_manager import cache as _cache
+
             if _cache:
                 _cache.invalidate_tenant_cache(tenant_id, "folio_revenue_by_category")
         except ImportError:
@@ -206,15 +202,11 @@ class FolioHardeningService:
             return {"success": False, "error": f"Folio is {folio.get('status')}, cannot void payment"}
 
         now = datetime.now(UTC)
-        await db.payments.update_one(
-            {"id": payment_id, "tenant_id": tenant_id},
-            {"$set": {"voided": True, "void_reason": reason, "voided_by": voided_by, "voided_at": now.isoformat()}}
-        )
+        await db.payments.update_one({"id": payment_id, "tenant_id": tenant_id}, {"$set": {"voided": True, "void_reason": reason, "voided_by": voided_by, "voided_at": now.isoformat()}})
 
         await self._recalculate_folio_balance(tenant_id, payment["folio_id"])
 
-        await self._log_audit(tenant_id, "payment", payment_id, "payment_voided", voided_by,
-                              {"folio_id": payment["folio_id"], "amount": payment.get("amount"), "reason": reason})
+        await self._log_audit(tenant_id, "payment", payment_id, "payment_voided", voided_by, {"folio_id": payment["folio_id"], "amount": payment.get("amount"), "reason": reason})
 
         return {"success": True, "payment_id": payment_id, "voided_amount": payment.get("amount")}
 
@@ -281,20 +273,14 @@ class FolioHardeningService:
             return {"success": False, "error": "No charges selected for split"}
 
         # Verify charges belong to source folio
-        charges = await db.folio_charges.find(
-            {"id": {"$in": charge_ids}, "folio_id": source_folio_id, "tenant_id": tenant_id, "voided": False},
-            {"_id": 0}
-        ).to_list(100)
+        charges = await db.folio_charges.find({"id": {"$in": charge_ids}, "folio_id": source_folio_id, "tenant_id": tenant_id, "voided": False}, {"_id": 0}).to_list(100)
 
         # Ekstra masraflar booking kapsamlıdır (folio_id taşımaz); kaynak folionun
         # booking'ine ait olan seçili ekstra masrafları da bölünebilir kalem say.
         extra_charges: list[dict] = []
         source_booking_id = source_folio.get("booking_id")
         if source_booking_id:
-            extra_charges = await db.extra_charges.find(
-                {"id": {"$in": charge_ids}, "booking_id": source_booking_id, "tenant_id": tenant_id, "voided": {"$ne": True}},
-                {"_id": 0}
-            ).to_list(100)
+            extra_charges = await db.extra_charges.find({"id": {"$in": charge_ids}, "booking_id": source_booking_id, "tenant_id": tenant_id, "voided": {"$ne": True}}, {"_id": 0}).to_list(100)
 
         found_ids = {c["id"] for c in charges} | {e["id"] for e in extra_charges}
         if found_ids != set(charge_ids):
@@ -302,6 +288,7 @@ class FolioHardeningService:
 
         # Create new folio
         from core.utils import generate_folio_number
+
         new_folio_id = str(uuid.uuid4())
         now = datetime.now(UTC)
 
@@ -323,10 +310,7 @@ class FolioHardeningService:
         # Move folio charges to new folio
         transferred_total = 0
         for charge in charges:
-            await db.folio_charges.update_one(
-                {"id": charge["id"], "tenant_id": tenant_id},
-                {"$set": {"folio_id": new_folio_id}}
-            )
+            await db.folio_charges.update_one({"id": charge["id"], "tenant_id": tenant_id}, {"$set": {"folio_id": new_folio_id}})
             transferred_total += charge.get("total", 0)
 
         # Move extra charges → normalize into a folio charge on the new folio,
@@ -344,21 +328,22 @@ class FolioHardeningService:
         await self._recalculate_folio_balance(tenant_id, new_folio_id)
 
         # Log operation
-        await db.folio_operations.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "operation_type": "split",
-            "from_folio_id": source_folio_id,
-            "to_folio_id": new_folio_id,
-            "charge_ids": charge_ids,
-            "amount": transferred_total,
-            "reason": reason,
-            "performed_by": performed_by,
-            "performed_at": now.isoformat(),
-        })
+        await db.folio_operations.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "operation_type": "split",
+                "from_folio_id": source_folio_id,
+                "to_folio_id": new_folio_id,
+                "charge_ids": charge_ids,
+                "amount": transferred_total,
+                "reason": reason,
+                "performed_by": performed_by,
+                "performed_at": now.isoformat(),
+            }
+        )
 
-        await self._log_audit(tenant_id, "folio", source_folio_id, "folio_split", performed_by,
-                              {"new_folio_id": new_folio_id, "charge_count": moved_count, "amount": transferred_total})
+        await self._log_audit(tenant_id, "folio", source_folio_id, "folio_split", performed_by, {"new_folio_id": new_folio_id, "charge_count": moved_count, "amount": transferred_total})
 
         new_folio.pop("_id", None)
         return {"success": True, "new_folio": new_folio, "transferred_charges": moved_count, "transferred_amount": round(transferred_total, 2)}
@@ -369,13 +354,9 @@ class FolioHardeningService:
         """Read a booking's voided-olmayan ekstra masraf satırlarını (read-only)."""
         if not booking_id:
             return []
-        return await db.extra_charges.find(
-            {"booking_id": booking_id, "tenant_id": tenant_id, "voided": {"$ne": True}},
-            {"_id": 0}
-        ).to_list(None)
+        return await db.extra_charges.find({"booking_id": booking_id, "tenant_id": tenant_id, "voided": {"$ne": True}}, {"_id": 0}).to_list(None)
 
-    async def _absorb_extra_charges(self, tenant_id: str, source_folio_id: str,
-                                    extras: list[dict], performed_by: str, now: datetime) -> float:
+    async def _absorb_extra_charges(self, tenant_id: str, source_folio_id: str, extras: list[dict], performed_by: str, now: datetime) -> float:
         """Normalize given `extra_charges` onto the source folio.
 
         Tutar tabanlı bölme (eşit/özel) `folio.balance` üzerinden çalışır;
@@ -400,8 +381,7 @@ class FolioHardeningService:
             absorbed_total += normalized["total"]
         return round(absorbed_total, 2)
 
-    async def split_folio_by_amounts(self, tenant_id: str, source_folio_id: str,
-                                     splits: list[dict], reason: str, performed_by: str) -> dict:
+    async def split_folio_by_amounts(self, tenant_id: str, source_folio_id: str, splits: list[dict], reason: str, performed_by: str) -> dict:
         """Split a folio by transferring monetary amounts (not specific charges).
 
         For each item in `splits` ({amount, target_folio_type}) a new folio is
@@ -433,8 +413,7 @@ class FolioHardeningService:
         now = datetime.now(UTC)
         extras = await self._read_booking_extra_charges(tenant_id, source_folio.get("booking_id"))
         extra_total = round(
-            sum(self._extra_charge_to_folio_charge(ec, tenant_id, source_folio_id, performed_by, now)["total"]
-                for ec in extras),
+            sum(self._extra_charge_to_folio_charge(ec, tenant_id, source_folio_id, performed_by, now)["total"] for ec in extras),
             2,
         )
 
@@ -455,24 +434,17 @@ class FolioHardeningService:
         if total_transfer >= source_balance:
             return {
                 "success": False,
-                "error": (
-                    f"Aktarılacak toplam (${total_transfer:.2f}) kaynak folio bakiyesinden "
-                    f"(${source_balance:.2f}) küçük olmalı — orijinalde en az bir miktar kalmalı"
-                ),
+                "error": (f"Aktarılacak toplam (${total_transfer:.2f}) kaynak folio bakiyesinden (${source_balance:.2f}) küçük olmalı — orijinalde en az bir miktar kalmalı"),
             }
 
         # Bölme kabul edildi → ekstra masrafları kaynak folioya absorbe et +
         # bakiyeyi yeniden hesapla, böylece negatif düzeltme ekstrayı da kapsar.
         absorbed_extra_total = 0.0
         if extras:
-            absorbed_extra_total = await self._absorb_extra_charges(
-                tenant_id, source_folio_id, extras, performed_by, now
-            )
+            absorbed_extra_total = await self._absorb_extra_charges(tenant_id, source_folio_id, extras, performed_by, now)
             if absorbed_extra_total > 0:
                 await self._recalculate_folio_balance(tenant_id, source_folio_id)
-                source_folio = await db.folios.find_one(
-                    {"id": source_folio_id, "tenant_id": tenant_id}, {"_id": 0}
-                )
+                source_folio = await db.folios.find_one({"id": source_folio_id, "tenant_id": tenant_id}, {"_id": 0})
 
         new_folios: list[dict] = []
 
@@ -541,21 +513,28 @@ class FolioHardeningService:
         await self._recalculate_folio_balance(tenant_id, source_folio_id)
 
         # 3) Operation log + audit
-        await db.folio_operations.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "operation_type": "split_by_amount",
-            "from_folio_id": source_folio_id,
-            "to_folio_ids": [f["id"] for f in new_folios],
-            "amount": total_transfer,
-            "absorbed_extra_total": absorbed_extra_total,
-            "reason": reason,
-            "performed_by": performed_by,
-            "performed_at": now.isoformat(),
-        })
-        await self._log_audit(tenant_id, "folio", source_folio_id, "folio_split_by_amount", performed_by,
-                              {"target_count": len(new_folios), "total_transferred": total_transfer,
-                               "absorbed_extra_total": absorbed_extra_total})
+        await db.folio_operations.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "operation_type": "split_by_amount",
+                "from_folio_id": source_folio_id,
+                "to_folio_ids": [f["id"] for f in new_folios],
+                "amount": total_transfer,
+                "absorbed_extra_total": absorbed_extra_total,
+                "reason": reason,
+                "performed_by": performed_by,
+                "performed_at": now.isoformat(),
+            }
+        )
+        await self._log_audit(
+            tenant_id,
+            "folio",
+            source_folio_id,
+            "folio_split_by_amount",
+            performed_by,
+            {"target_count": len(new_folios), "total_transferred": total_transfer, "absorbed_extra_total": absorbed_extra_total},
+        )
 
         return {
             "success": True,
@@ -570,9 +549,7 @@ class FolioHardeningService:
     async def get_tax_breakdown(self, tenant_id: str, folio_id: str) -> dict:
         """Get detailed tax breakdown for a folio."""
         # Tax breakdown — limit kaldırıldı (500 → cursor iteration, batch=500)
-        cursor = db.folio_charges.find(
-            {"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}, {"_id": 0}
-        ).batch_size(500)
+        cursor = db.folio_charges.find({"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}, {"_id": 0}).batch_size(500)
         charges = [c async for c in cursor]
 
         by_category = {}
@@ -617,6 +594,7 @@ class FolioHardeningService:
 
         # Calculate balance (server-side aggregation, limit yok)
         from core.utils import calculate_folio_balance
+
         balance = await calculate_folio_balance(folio_id, tenant_id)
 
         if balance <= 0:
@@ -625,27 +603,25 @@ class FolioHardeningService:
         now = datetime.now(UTC)
 
         # Create city ledger transaction
-        await db.city_ledger_transactions.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "account_id": account_id,
-            "booking_id": folio.get("booking_id"),
-            "transaction_type": "charge",
-            "amount": balance,
-            "description": f"Transfer from folio {folio.get('folio_number')}: {reason}",
-            "posted_by": performed_by,
-            "transaction_date": now.isoformat(),
-            "created_at": now.isoformat(),
-        })
-
-        # Close the folio
-        await db.folios.update_one(
-            {"id": folio_id, "tenant_id": tenant_id},
-            {"$set": {"status": "closed", "closed_at": now.isoformat(), "city_ledger_account_id": account_id}}
+        await db.city_ledger_transactions.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "account_id": account_id,
+                "booking_id": folio.get("booking_id"),
+                "transaction_type": "charge",
+                "amount": balance,
+                "description": f"Transfer from folio {folio.get('folio_number')}: {reason}",
+                "posted_by": performed_by,
+                "transaction_date": now.isoformat(),
+                "created_at": now.isoformat(),
+            }
         )
 
-        await self._log_audit(tenant_id, "folio", folio_id, "city_ledger_transfer", performed_by,
-                              {"account_id": account_id, "amount": balance})
+        # Close the folio
+        await db.folios.update_one({"id": folio_id, "tenant_id": tenant_id}, {"$set": {"status": "closed", "closed_at": now.isoformat(), "city_ledger_account_id": account_id}})
+
+        await self._log_audit(tenant_id, "folio", folio_id, "city_ledger_transfer", performed_by, {"account_id": account_id, "amount": balance})
 
         return {"success": True, "transferred_amount": balance, "account_id": account_id}
 
@@ -653,26 +629,26 @@ class FolioHardeningService:
 
     async def get_folio_audit_trail(self, tenant_id: str, folio_id: str) -> list[dict]:
         """Get complete audit trail for a folio."""
-        trail = await db.pms_audit_trail.find(
-            {"tenant_id": tenant_id, "entity_id": folio_id},
-            {"_id": 0}
-        ).sort("timestamp", -1).to_list(200)
+        trail = await db.pms_audit_trail.find({"tenant_id": tenant_id, "entity_id": folio_id}, {"_id": 0}).sort("timestamp", -1).to_list(200)
         return trail
 
     # ── INTERNAL HELPERS ──
 
     async def _recalculate_folio_balance(self, tenant_id: str, folio_id: str):
         from core.utils import calculate_folio_balance
+
         balance = await calculate_folio_balance(folio_id, tenant_id)
         await db.folios.update_one({"id": folio_id, "tenant_id": tenant_id}, {"$set": {"balance": balance}})
 
     async def _log_audit(self, tenant_id: str, entity_type: str, entity_id: str, action: str, user_id: str, metadata: dict = None):
-        await db.pms_audit_trail.insert_one({
-            "tenant_id": tenant_id,
-            "entity_type": entity_type,
-            "entity_id": entity_id,
-            "action": action,
-            "performed_by": user_id,
-            "metadata": metadata or {},
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        await db.pms_audit_trail.insert_one(
+            {
+                "tenant_id": tenant_id,
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "action": action,
+                "performed_by": user_id,
+                "metadata": metadata or {},
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )

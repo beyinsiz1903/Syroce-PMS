@@ -3,6 +3,7 @@ webhooks
 
 Auto-split sub-router (shared imports/classes inlined).
 """
+
 """
 Syroce Open API — Kapsamli Otel PMS Entegrasyon API'si
 ======================================================
@@ -103,8 +104,8 @@ from models.schemas import User
 logger = logging.getLogger(__name__)
 
 
-
 # ── Helpers ──────────────────────────────────────────────────────
+
 
 def _now_iso():
     return datetime.now(UTC).isoformat()
@@ -154,13 +155,16 @@ async def _agency_owns_block(tenant_id: str, agency_id: str, block_id: str) -> d
 
 # ── API Key Auth Dependency ──────────────────────────────────────
 
+
 async def get_b2b_agency(x_api_key: str | None = Header(None, alias="X-API-Key")):
     """API key ile acente kimlik dogrulamasi + per-subrouter scope kontrolu."""
     from ._scope import authenticate_b2b_agency
+
     return await authenticate_b2b_agency(x_api_key, required_scope="webhooks")
 
 
 # ── Request Models ───────────────────────────────────────────────
+
 
 class B2BReservationCreate(BaseModel):
     room_type: str
@@ -206,29 +210,9 @@ async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
 # ═════════════════════════════════════════════════════════════════
 
 
-
-
-
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # B2B ENDPOINTS — Syroce Acente Sistemi (API Key Auth)
 # ═════════════════════════════════════════════════════════════════
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -238,22 +222,9 @@ async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
 VALID_WEBHOOK_EVENTS = {"reservation.created", "reservation.cancelled", "reservation.updated", "rates.updated", "availability.updated"}
 
 
-
-
-
-
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # GUEST & LOYALTY — Misafir ve Sadakat Programi
 # ═════════════════════════════════════════════════════════════════
-
-
-
-
-
 
 
 class LoyaltyPointsUpdate(BaseModel):
@@ -262,14 +233,9 @@ class LoyaltyPointsUpdate(BaseModel):
     operation: str = "add"
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # HOUSEKEEPING — Kat Hizmetleri
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class HousekeepingStatusUpdate(BaseModel):
@@ -277,12 +243,9 @@ class HousekeepingStatusUpdate(BaseModel):
     notes: str = ""
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # KBS / POLICE NOTIFICATION — Emniyet Bildirim Sistemi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class KBSReportCreate(BaseModel):
@@ -291,13 +254,10 @@ class KBSReportCreate(BaseModel):
     notes: str = ""
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # PASSPORT / ID — Kimlik ve Pasaport Okuma
 # ═════════════════════════════════════════════════════════════════
+
 
 class IdentityScanData(BaseModel):
     guest_id: str
@@ -316,14 +276,9 @@ class IdentityScanData(BaseModel):
     raw_ocr_data: dict | None = None
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # LOST & FOUND — Kayip Esya
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class LostFoundCreate(BaseModel):
@@ -336,8 +291,6 @@ class LostFoundCreate(BaseModel):
     room_number: str = ""
 
 
-
-
 class LostFoundUpdate(BaseModel):
     status: str | None = None
     guest_name: str | None = None
@@ -345,12 +298,9 @@ class LostFoundUpdate(BaseModel):
     claimed_by: str | None = None
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # WAKE-UP CALLS — Uyandirma Servisi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class WakeUpCallCreate(BaseModel):
@@ -363,21 +313,16 @@ class WakeUpCallCreate(BaseModel):
     recurring_until: str = ""  # YYYY-MM-DD
 
 
-
-
 class WakeUpCallUpdate(BaseModel):
     wake_time: str | None = None
     status: str | None = None
     notes: str | None = None
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # GUEST JOURNEY — Misafir Yolculugu
 # ═════════════════════════════════════════════════════════════════
+
 
 class B2BOnlineCheckin(BaseModel):
     booking_id: str
@@ -389,10 +334,6 @@ class B2BOnlineCheckin(BaseModel):
     nationality: str | None = None
 
 
-
-
-
-
 class B2BGuestRequest(BaseModel):
     booking_id: str
     request_type: str  # concierge, spa, room_service, maintenance, transport, other
@@ -400,14 +341,9 @@ class B2BGuestRequest(BaseModel):
     priority: str = "normal"
 
 
-
-
-
-
 # ═════════════════════════════════════════════════════════════════
 # CONCIERGE & SPA — Concierge ve Spa Hizmetleri
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class ConciergeRequest(BaseModel):
@@ -419,10 +355,6 @@ class ConciergeRequest(BaseModel):
     guest_count: int = 1
 
 
-
-
-
-
 class SpaBookingCreate(BaseModel):
     booking_id: str
     service_id: str
@@ -432,12 +364,9 @@ class SpaBookingCreate(BaseModel):
     notes: str = ""
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # MICE & GROUPS — Grup ve Toplanti Yonetimi
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class GroupBlockCreate(BaseModel):
@@ -454,10 +383,6 @@ class GroupBlockCreate(BaseModel):
     notes: str = ""
 
 
-
-
-
-
 class RoomingListEntry(BaseModel):
     guest_name: str
     room_type: str = ""
@@ -470,12 +395,9 @@ class RoomingListUpload(BaseModel):
     guests: list[RoomingListEntry]
 
 
-
-
 # ═════════════════════════════════════════════════════════════════
 # FOLIO & BILLING — Folio ve Fatura
 # ═════════════════════════════════════════════════════════════════
-
 
 
 class FolioChargeCreate(BaseModel):
@@ -483,6 +405,7 @@ class FolioChargeCreate(BaseModel):
     description: str = Field(..., min_length=1)
     amount: float = Field(..., gt=0, le=1000000)
     quantity: int = Field(1, ge=1, le=9999)
+
 
 router = APIRouter(prefix="/api/b2b", tags=["B2B API - Syroce"])
 
@@ -505,6 +428,7 @@ async def b2b_register_webhook(
         import ipaddress
         import socket
         from urllib.parse import urlparse
+
         parsed = urlparse(data.url)
         host = (parsed.hostname or "").lower()
         if not host:
@@ -535,11 +459,16 @@ async def b2b_register_webhook(
         )
 
     from core.tenant_db import get_system_db
+
     sysdb = get_system_db()
 
-    existing = await sysdb.agency_webhooks.count_documents({
-        "agency_id": agency_id, "tenant_id": tenant_id, "is_active": True,
-    })
+    existing = await sysdb.agency_webhooks.count_documents(
+        {
+            "agency_id": agency_id,
+            "tenant_id": tenant_id,
+            "is_active": True,
+        }
+    )
     if existing >= 5:
         raise HTTPException(status_code=400, detail="Maximum 5 active webhooks per agency")
 
@@ -547,6 +476,7 @@ async def b2b_register_webhook(
     # secret is returned ONCE here and is required for verifying webhook
     # signatures on the receiver side.
     import secrets as _secrets
+
     auto_generated_secret = False
     secret_value = (data.secret or "").strip()
     if not secret_value:
@@ -578,11 +508,10 @@ async def b2b_register_webhook(
         },
         "secret": secret_value,
         "secret_auto_generated": auto_generated_secret,
-        "message": (
-            "Webhook kaydedildi. Bu secret SADECE bir kez gosterilir — "
-            "imza dogrulamak icin guvenli sekilde saklayin."
-        ) if auto_generated_secret else "Webhook kaydedildi",
+        "message": ("Webhook kaydedildi. Bu secret SADECE bir kez gosterilir — imza dogrulamak icin guvenli sekilde saklayin.") if auto_generated_secret else "Webhook kaydedildi",
     }
+
+
 # ── GET /webhooks ──
 @router.get("/webhooks")
 async def b2b_list_webhooks(agency: dict = Depends(get_b2b_agency)):
@@ -591,6 +520,7 @@ async def b2b_list_webhooks(agency: dict = Depends(get_b2b_agency)):
     agency_id = agency["agency_id"]
 
     from core.tenant_db import get_system_db
+
     sysdb = get_system_db()
 
     docs = await sysdb.agency_webhooks.find(
@@ -599,6 +529,8 @@ async def b2b_list_webhooks(agency: dict = Depends(get_b2b_agency)):
     ).to_list(50)
 
     return {"webhooks": docs, "count": len(docs)}
+
+
 # ── DELETE /webhooks/{webhook_id} ──
 @router.delete("/webhooks/{webhook_id}")
 async def b2b_delete_webhook(
@@ -610,6 +542,7 @@ async def b2b_delete_webhook(
     agency_id = agency["agency_id"]
 
     from core.tenant_db import get_system_db
+
     sysdb = get_system_db()
 
     result = await sysdb.agency_webhooks.update_one(
@@ -620,6 +553,8 @@ async def b2b_delete_webhook(
         raise HTTPException(status_code=404, detail="Webhook bulunamadi")
 
     return {"ok": True, "message": "Webhook silindi"}
+
+
 # ── POST /webhooks/{webhook_id}/test ──
 @router.post("/webhooks/{webhook_id}/test")
 async def b2b_test_webhook(
@@ -631,6 +566,7 @@ async def b2b_test_webhook(
     agency_id = agency["agency_id"]
 
     from core.tenant_db import get_system_db
+
     sysdb = get_system_db()
 
     wh = await sysdb.agency_webhooks.find_one(
@@ -675,6 +611,7 @@ async def b2b_test_webhook(
     # v109 Bug DAL round-7 follow-up #3: webhook URL is tenant-configurable.
     # Use rebinding-safe helper instead of raw httpx client.
     from integrations.xchange.safety import EgressDenied, safe_post_async
+
     try:
         resp = await safe_post_async(wh["url"], timeout=10, content=body, headers=headers)
         status_code = resp.status_code

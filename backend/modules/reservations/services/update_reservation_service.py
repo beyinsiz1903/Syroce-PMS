@@ -115,6 +115,7 @@ class UpdateReservationService:
             # ── If status is transitioning to checked_in → use atomic check-in ──
             if new_status == "checked_in" and old_status != "checked_in":
                 from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
+
                 status_fields = {k: v for k, v in update_data.items() if k != "status"}
                 try:
                     await check_in_booking_atomic(
@@ -135,6 +136,7 @@ class UpdateReservationService:
             # ── If status is transitioning to checked_out → use atomic check-out ──
             elif new_status == "checked_out" and old_status != "checked_out":
                 from core.atomic_checkin_checkout import CheckOutError, check_out_booking_atomic
+
                 try:
                     await check_out_booking_atomic(
                         booking_id=booking_id,
@@ -167,8 +169,10 @@ class UpdateReservationService:
             if new_status in ("cancelled", "no_show") and old_status not in ("cancelled", "no_show"):
                 try:
                     from core.atomic_booking import release_booking_nights
+
                     await release_booking_nights(
-                        tenant_context.tenant_id, booking_id,
+                        tenant_context.tenant_id,
+                        booking_id,
                         reason=f"{new_status}:update_service",
                         correlation_id=correlation_id,
                     )
@@ -179,7 +183,9 @@ class UpdateReservationService:
             if update_data:
                 expected_version = existing_booking.get("_version")
                 version_ok = await self.repository.update_booking(
-                    tenant_context.tenant_id, booking_id, update_data,
+                    tenant_context.tenant_id,
+                    booking_id,
+                    update_data,
                     expected_version=expected_version,
                 )
                 if not version_ok:
@@ -256,10 +262,8 @@ class UpdateReservationService:
                         EV_RESERVATION_UPDATED,
                         emit_event,
                     )
-                    _is_cancel = (
-                        new_status in ("cancelled", "no_show")
-                        and old_status not in ("cancelled", "no_show")
-                    )
+
+                    _is_cancel = new_status in ("cancelled", "no_show") and old_status not in ("cancelled", "no_show")
                     await emit_event(
                         tenant_context.tenant_id,
                         EV_RESERVATION_CANCELLED if _is_cancel else EV_RESERVATION_UPDATED,
@@ -278,25 +282,25 @@ class UpdateReservationService:
                     pass
 
                 # CapX B2B Network: cancel/no_show transition push (best-effort)
-                if (
-                    new_status in ("cancelled", "no_show")
-                    and old_status not in ("cancelled", "no_show")
-                ):
+                if new_status in ("cancelled", "no_show") and old_status not in ("cancelled", "no_show"):
                     try:
                         from integrations.capx import (
                             fire_and_forget,
                             push_booking_lifecycle_event,
                         )
-                        fire_and_forget(push_booking_lifecycle_event(
-                            booking_id=booking_id,
-                            status=new_status,
-                            tenant_id=tenant_context.tenant_id,
-                            guest_name=updated_booking.get("guest_name"),
-                            check_in=updated_booking.get("check_in", ""),
-                            check_out=updated_booking.get("check_out", ""),
-                            amount=updated_booking.get("total_amount"),
-                            currency=updated_booking.get("currency", "TRY"),
-                        ))
+
+                        fire_and_forget(
+                            push_booking_lifecycle_event(
+                                booking_id=booking_id,
+                                status=new_status,
+                                tenant_id=tenant_context.tenant_id,
+                                guest_name=updated_booking.get("guest_name"),
+                                check_in=updated_booking.get("check_in", ""),
+                                check_out=updated_booking.get("check_out", ""),
+                                amount=updated_booking.get("total_amount"),
+                                currency=updated_booking.get("currency", "TRY"),
+                            )
+                        )
                     except Exception:
                         pass
 
@@ -309,12 +313,14 @@ class UpdateReservationService:
                     from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
 
                     # Güncel booking tarihlerini sync et
-                    asyncio.create_task(sync_availability_after_booking(
-                        tenant_id=tenant_context.tenant_id,
-                        room_id=updated_booking.get("room_id", ""),
-                        check_in=updated_booking.get("check_in", ""),
-                        check_out=updated_booking.get("check_out", ""),
-                    ))
+                    asyncio.create_task(
+                        sync_availability_after_booking(
+                            tenant_id=tenant_context.tenant_id,
+                            room_id=updated_booking.get("room_id", ""),
+                            check_in=updated_booking.get("check_in", ""),
+                            check_out=updated_booking.get("check_out", ""),
+                        )
+                    )
                     # Oda veya tarih değiştiyse eski oda/tarih için de sync et
                     old_room = existing_booking.get("room_id", "")
                     old_ci = existing_booking.get("check_in", "")
@@ -323,12 +329,14 @@ class UpdateReservationService:
                     new_ci = updated_booking.get("check_in", "")
                     new_co = updated_booking.get("check_out", "")
                     if old_room != new_room or old_ci != new_ci or old_co != new_co:
-                        asyncio.create_task(sync_availability_after_booking(
-                            tenant_id=tenant_context.tenant_id,
-                            room_id=old_room,
-                            check_in=old_ci,
-                            check_out=old_co,
-                        ))
+                        asyncio.create_task(
+                            sync_availability_after_booking(
+                                tenant_id=tenant_context.tenant_id,
+                                room_id=old_room,
+                                check_in=old_ci,
+                                check_out=old_co,
+                            )
+                        )
                 except Exception:
                     pass
 
@@ -339,6 +347,7 @@ class UpdateReservationService:
             if new_status and new_status != old_status:
                 try:
                     from modules.messaging.automation import fire_booking_event
+
                     event_map = {
                         "confirmed": "booking_confirmed",
                         "checked_in": "checked_in",

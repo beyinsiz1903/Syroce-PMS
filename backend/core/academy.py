@@ -19,6 +19,7 @@ Security invariants:
     pass flag is never trusted.
   - Every query and write is explicitly scoped by tenant_id + user_id.
 """
+
 from __future__ import annotations
 
 import json
@@ -47,9 +48,20 @@ ACADEMY_AUTHOR_ROLES = {"admin", "super_admin", "gm", "manager", "owner"}
 # revenue) that also appear in the system catalog. Guest/agency audiences are
 # intentionally excluded — Academy is staff training.
 ACADEMY_COURSE_ROLES = {
-    "super_admin", "admin", "supervisor", "front_desk", "housekeeping",
-    "sales", "finance", "procurement", "staff", "gm", "manager", "owner",
-    "night_audit", "revenue",
+    "super_admin",
+    "admin",
+    "supervisor",
+    "front_desk",
+    "housekeeping",
+    "sales",
+    "finance",
+    "procurement",
+    "staff",
+    "gm",
+    "manager",
+    "owner",
+    "night_audit",
+    "revenue",
 }
 # Tenant-custom course ids are namespaced so they can NEVER collide with or
 # shadow a system catalog id (which must never start with this prefix).
@@ -135,11 +147,7 @@ def public_course_detail(course: dict[str, Any]) -> dict[str, Any]:
     ``read_lesson_body``); tenant-custom lessons carry an inline body_markdown
     and NEVER touch the filesystem.
     """
-    is_custom = (
-        course.get("_inline_bodies")
-        or course.get("source") == "tenant"
-        or is_custom_course_id(course.get("id"))
-    )
+    is_custom = course.get("_inline_bodies") or course.get("source") == "tenant" or is_custom_course_id(course.get("id"))
     lessons = []
     for lesson in course.get("lessons") or []:
         if is_custom:
@@ -151,12 +159,14 @@ def public_course_detail(course: dict[str, Any]) -> dict[str, Any]:
                 body = read_lesson_body(slug)
             except (ValueError, FileNotFoundError):
                 body = ""
-        lessons.append({
-            "id": lesson.get("id"),
-            "title": lesson.get("title"),
-            "slug": slug,
-            "body_markdown": body,
-        })
+        lessons.append(
+            {
+                "id": lesson.get("id"),
+                "title": lesson.get("title"),
+                "slug": slug,
+                "body_markdown": body,
+            }
+        )
     detail = public_course_summary(course)
     detail["lessons"] = lessons
     return detail
@@ -166,11 +176,13 @@ def public_exam(course: dict[str, Any]) -> dict[str, Any]:
     """Exam payload for the client — options ONLY, answer_index stripped."""
     questions = []
     for q in course.get("questions") or []:
-        questions.append({
-            "id": q.get("id"),
-            "prompt": q.get("prompt"),
-            "options": list(q.get("options") or []),
-        })
+        questions.append(
+            {
+                "id": q.get("id"),
+                "prompt": q.get("prompt"),
+                "options": list(q.get("options") or []),
+            }
+        )
     return {
         "course_id": course.get("id"),
         "title": course.get("title"),
@@ -212,8 +224,10 @@ def score_exam(course: dict[str, Any], answers: dict[str, int]) -> dict[str, Any
 # Per-user state (tenant-scoped). All filters include tenant_id + user_id.    #
 # --------------------------------------------------------------------------- #
 
+
 def _db():
     from core.database import _raw_db
+
     return _raw_db
 
 
@@ -229,6 +243,7 @@ def _db():
 # `academy_course_overrides` ({tenant_id, system_course_id, hidden}).          #
 # --------------------------------------------------------------------------- #
 
+
 def _with_source(course: dict[str, Any], source: str) -> dict[str, Any]:
     c = dict(course)
     c["source"] = source
@@ -237,13 +252,19 @@ def _with_source(course: dict[str, Any], source: str) -> dict[str, Any]:
 
 async def _all_overrides(tenant_id: str) -> list[dict[str, Any]]:
     """All per-tenant built-in overrides (hidden flag and/or content)."""
-    return await _db().academy_course_overrides.find(
-        {"tenant_id": tenant_id}, {"_id": 0},
-    ).to_list(1000)
+    return (
+        await _db()
+        .academy_course_overrides.find(
+            {"tenant_id": tenant_id},
+            {"_id": 0},
+        )
+        .to_list(1000)
+    )
 
 
 async def _override_for(
-    tenant_id: str, system_course_id: str,
+    tenant_id: str,
+    system_course_id: str,
 ) -> dict[str, Any] | None:
     return await _db().academy_course_overrides.find_one(
         {"tenant_id": tenant_id, "system_course_id": system_course_id},
@@ -252,7 +273,8 @@ async def _override_for(
 
 
 def _apply_system_override(
-    base: dict[str, Any], content: dict[str, Any] | None,
+    base: dict[str, Any],
+    content: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """Resolve a built-in course for a tenant, applying any per-tenant CONTENT
     override.
@@ -291,15 +313,23 @@ def _safe_lesson_body(slug: str) -> str:
 
 
 async def _custom_courses(tenant_id: str) -> list[dict[str, Any]]:
-    rows = await _db().academy_courses.find(
-        {"tenant_id": tenant_id}, {"_id": 0},
-    ).to_list(1000)
+    rows = (
+        await _db()
+        .academy_courses.find(
+            {"tenant_id": tenant_id},
+            {"_id": 0},
+        )
+        .to_list(1000)
+    )
     return [_with_source(r, "tenant") for r in rows]
 
 
 async def resolve_course(
-    tenant_id: str, course_id: str, *,
-    include_hidden: bool = False, include_draft: bool = False,
+    tenant_id: str,
+    course_id: str,
+    *,
+    include_hidden: bool = False,
+    include_draft: bool = False,
 ) -> dict[str, Any] | None:
     """Resolve a single course (system or tenant-custom) for ``tenant_id``.
 
@@ -311,7 +341,8 @@ async def resolve_course(
     """
     if is_custom_course_id(course_id):
         row = await _db().academy_courses.find_one(
-            {"tenant_id": tenant_id, "id": course_id}, {"_id": 0},
+            {"tenant_id": tenant_id, "id": course_id},
+            {"_id": 0},
         )
         if not row:
             return None
@@ -328,8 +359,11 @@ async def resolve_course(
 
 
 async def list_courses_for(
-    tenant_id: str, role: str, *,
-    include_hidden: bool = False, include_draft: bool = False,
+    tenant_id: str,
+    role: str,
+    *,
+    include_hidden: bool = False,
+    include_draft: bool = False,
 ) -> list[dict[str, Any]]:
     """Merged, role-filtered course list (system + tenant-custom) as raw dicts.
 
@@ -360,6 +394,7 @@ async def list_courses_for(
 
 # --- Author (manager) CRUD over tenant-custom courses ---------------------- #
 
+
 def _normalize_course_content(data: dict[str, Any]) -> dict[str, Any]:
     """Coerce a validated author payload into the stored content shape.
 
@@ -370,20 +405,24 @@ def _normalize_course_content(data: dict[str, Any]) -> dict[str, Any]:
     lessons = []
     for l in data.get("lessons") or []:
         lid = (str(l.get("id") or "").strip()) or ("l-" + uuid.uuid4().hex[:10])
-        lessons.append({
-            "id": lid,
-            "title": l.get("title") or "",
-            "body_markdown": l.get("body_markdown") or "",
-        })
+        lessons.append(
+            {
+                "id": lid,
+                "title": l.get("title") or "",
+                "body_markdown": l.get("body_markdown") or "",
+            }
+        )
     questions = []
     for q in data.get("questions") or []:
         qid = (str(q.get("id") or "").strip()) or ("q-" + uuid.uuid4().hex[:10])
-        questions.append({
-            "id": qid,
-            "prompt": q.get("prompt") or "",
-            "options": [str(o) for o in (q.get("options") or [])],
-            "answer_index": int(q.get("answer_index", 0)),
-        })
+        questions.append(
+            {
+                "id": qid,
+                "prompt": q.get("prompt") or "",
+                "options": [str(o) for o in (q.get("options") or [])],
+                "answer_index": int(q.get("answer_index", 0)),
+            }
+        )
     return {
         "title": data.get("title") or "",
         "department": data.get("department") or None,
@@ -400,9 +439,15 @@ def _normalize_course_content(data: dict[str, Any]) -> dict[str, Any]:
 
 async def list_author_courses(tenant_id: str) -> list[dict[str, Any]]:
     """All tenant-custom courses (raw, answers included) for the admin view."""
-    rows = await _db().academy_courses.find(
-        {"tenant_id": tenant_id}, {"_id": 0},
-    ).sort("updated_at", -1).to_list(1000)
+    rows = (
+        await _db()
+        .academy_courses.find(
+            {"tenant_id": tenant_id},
+            {"_id": 0},
+        )
+        .sort("updated_at", -1)
+        .to_list(1000)
+    )
     return [_with_source(r, "tenant") for r in rows]
 
 
@@ -411,13 +456,16 @@ async def get_author_course(tenant_id: str, course_id: str) -> dict[str, Any] | 
     if not is_custom_course_id(course_id):
         return None
     row = await _db().academy_courses.find_one(
-        {"tenant_id": tenant_id, "id": course_id}, {"_id": 0},
+        {"tenant_id": tenant_id, "id": course_id},
+        {"_id": 0},
     )
     return _with_source(row, "tenant") if row else None
 
 
 async def create_author_course(
-    tenant_id: str, author_id: str | None, data: dict[str, Any],
+    tenant_id: str,
+    author_id: str | None,
+    data: dict[str, Any],
 ) -> dict[str, Any]:
     now = datetime.now(UTC)
     content = _normalize_course_content(data)
@@ -437,7 +485,10 @@ async def create_author_course(
 
 
 async def update_author_course(
-    tenant_id: str, author_id: str | None, course_id: str, data: dict[str, Any],
+    tenant_id: str,
+    author_id: str | None,
+    course_id: str,
+    data: dict[str, Any],
 ) -> dict[str, Any] | None:
     if not is_custom_course_id(course_id):
         return None
@@ -466,8 +517,11 @@ async def delete_author_course(tenant_id: str, course_id: str) -> bool:
 
 # --- Built-in (system) course per-tenant visibility ------------------------ #
 
+
 async def set_system_course_hidden(
-    tenant_id: str, system_course_id: str, hidden: bool,
+    tenant_id: str,
+    system_course_id: str,
+    hidden: bool,
 ) -> bool:
     """Toggle per-tenant visibility of a BUILT-IN course. Returns ``False`` if
     the id is not a known system course (custom ids are rejected here)."""
@@ -504,7 +558,8 @@ async def list_system_courses_for(tenant_id: str) -> list[dict[str, Any]]:
 
 
 async def get_system_course_for_edit(
-    tenant_id: str, system_course_id: str,
+    tenant_id: str,
+    system_course_id: str,
 ) -> dict[str, Any] | None:
     """Full editable view of a BUILT-IN course for an author (answers included).
 
@@ -540,8 +595,10 @@ async def get_system_course_for_edit(
 
 
 async def set_system_course_content(
-    tenant_id: str, author_id: str | None,
-    system_course_id: str, data: dict[str, Any],
+    tenant_id: str,
+    author_id: str | None,
+    system_course_id: str,
+    data: dict[str, Any],
 ) -> dict[str, Any] | None:
     """Store a per-tenant CONTENT override for a built-in course (lessons + exam).
 
@@ -617,14 +674,22 @@ async def get_progress(tenant_id: str, user_id: str, course_id: str) -> dict[str
 
 
 async def get_all_progress(tenant_id: str, user_id: str) -> dict[str, dict[str, Any]]:
-    rows = await _db().academy_progress.find(
-        {"tenant_id": tenant_id, "user_id": user_id}, {"_id": 0},
-    ).to_list(500)
+    rows = (
+        await _db()
+        .academy_progress.find(
+            {"tenant_id": tenant_id, "user_id": user_id},
+            {"_id": 0},
+        )
+        .to_list(500)
+    )
     return {r["course_id"]: r for r in rows}
 
 
 async def mark_lesson_complete(
-    tenant_id: str, user_id: str, course: dict[str, Any], lesson_id: str,
+    tenant_id: str,
+    user_id: str,
+    course: dict[str, Any],
+    lesson_id: str,
 ) -> dict[str, Any]:
     valid_ids = {l.get("id") for l in (course.get("lessons") or [])}
     if lesson_id not in valid_ids:
@@ -702,14 +767,21 @@ async def record_attempt(
     certificate = None
     if result["passed"]:
         certificate = await _issue_certificate(
-            tenant_id, user_id, user_name, course, result["score"],
+            tenant_id,
+            user_id,
+            user_name,
+            course,
+            result["score"],
         )
     return {"result": result, "certificate": certificate}
 
 
 async def _issue_certificate(
-    tenant_id: str, user_id: str, user_name: str,
-    course: dict[str, Any], score: int,
+    tenant_id: str,
+    user_id: str,
+    user_name: str,
+    course: dict[str, Any],
+    score: int,
 ) -> dict[str, Any]:
     """Idempotent per (tenant, user, course). System-issued only — never on
     direct client demand. Returns the certificate record (no _id)."""
@@ -776,7 +848,8 @@ async def get_certificate_by_code(code: str) -> dict[str, Any] | None:
     if not code or not VERIFICATION_CODE_RE.match(code):
         return None
     return await _db().academy_certificates.find_one(
-        {"verification_code": code}, {"_id": 0},
+        {"verification_code": code},
+        {"_id": 0},
     )
 
 
@@ -803,14 +876,21 @@ def public_certificate_view(cert: dict[str, Any]) -> dict[str, Any]:
 
 
 async def get_certificates(tenant_id: str, user_id: str) -> list[dict[str, Any]]:
-    return await _db().academy_certificates.find(
-        {"tenant_id": tenant_id, "user_id": user_id}, {"_id": 0},
-    ).sort("issued_at", -1).to_list(200)
+    return (
+        await _db()
+        .academy_certificates.find(
+            {"tenant_id": tenant_id, "user_id": user_id},
+            {"_id": 0},
+        )
+        .sort("issued_at", -1)
+        .to_list(200)
+    )
 
 
 async def get_certificate(tenant_id: str, user_id: str, cert_id: str) -> dict[str, Any] | None:
     return await _db().academy_certificates.find_one(
-        {"tenant_id": tenant_id, "user_id": user_id, "id": cert_id}, {"_id": 0},
+        {"tenant_id": tenant_id, "user_id": user_id, "id": cert_id},
+        {"_id": 0},
     )
 
 
@@ -822,20 +902,19 @@ async def get_tenant_report(tenant_id: str) -> dict[str, Any]:
     """
     db = _db()
     overrides = {r["system_course_id"]: r for r in await _all_overrides(tenant_id)}
-    course_by_id: dict[str, dict[str, Any]] = {
-        c["id"]: _apply_system_override(c, overrides.get(c["id"], {}).get("content"))
-        for c in _all_courses()
-    }
+    course_by_id: dict[str, dict[str, Any]] = {c["id"]: _apply_system_override(c, overrides.get(c["id"], {}).get("content")) for c in _all_courses()}
     # Tenant-custom courses provide metadata for their own progress rows; a
     # hard-deleted custom course simply won't resolve (its rows are skipped).
     for c in await _custom_courses(tenant_id):
         course_by_id[c["id"]] = c
 
     progress_rows = await db.academy_progress.find(
-        {"tenant_id": tenant_id}, {"_id": 0},
+        {"tenant_id": tenant_id},
+        {"_id": 0},
     ).to_list(5000)
     cert_rows = await db.academy_certificates.find(
-        {"tenant_id": tenant_id}, {"_id": 0},
+        {"tenant_id": tenant_id},
+        {"_id": 0},
     ).to_list(5000)
     cert_set = {(c["user_id"], c["course_id"]) for c in cert_rows}
 
@@ -857,21 +936,23 @@ async def get_tenant_report(tenant_id: str) -> dict[str, Any]:
         u = users.get(p["user_id"], {})
         lesson_count = len(course.get("lessons") or [])
         completed = len(p.get("completed_lessons") or [])
-        rows.append({
-            "user_id": p["user_id"],
-            "user_name": u.get("name") or "—",
-            "role": _norm_role(u.get("role")) if u.get("role") else None,
-            "department_label": course.get("department_label"),
-            "course_id": p["course_id"],
-            "course_title": course.get("title"),
-            "lessons_completed": completed,
-            "lesson_count": lesson_count,
-            "status": _compute_status(p, lesson_count),
-            "best_score": p.get("best_score", 0),
-            "passed": bool(p.get("passed")),
-            "attempts": p.get("attempts", 0),
-            "has_certificate": (p["user_id"], p["course_id"]) in cert_set,
-        })
+        rows.append(
+            {
+                "user_id": p["user_id"],
+                "user_name": u.get("name") or "—",
+                "role": _norm_role(u.get("role")) if u.get("role") else None,
+                "department_label": course.get("department_label"),
+                "course_id": p["course_id"],
+                "course_title": course.get("title"),
+                "lessons_completed": completed,
+                "lesson_count": lesson_count,
+                "status": _compute_status(p, lesson_count),
+                "best_score": p.get("best_score", 0),
+                "passed": bool(p.get("passed")),
+                "attempts": p.get("attempts", 0),
+                "has_certificate": (p["user_id"], p["course_id"]) in cert_set,
+            }
+        )
 
     total = len(rows)
     passed = sum(1 for r in rows if r["passed"])
@@ -919,17 +1000,13 @@ def render_certificate_pdf(cert: dict[str, Any]) -> bytes:
 
 
 def _esc(value: Any) -> str:
-    return (
-        str(value if value is not None else "")
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    return str(value if value is not None else "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _verification_base_url() -> str:
     """Public frontend base for the certificate verification surface."""
     import os
+
     candidates = [
         os.environ.get("FRONTEND_URL"),
         os.environ.get("PUBLIC_APP_URL"),
@@ -947,6 +1024,7 @@ def _certificate_html(cert: dict[str, Any], issued_str: str) -> str:
         verify_line = f"Dogrula: {_esc(verify_url)}"
         try:
             from core.security import generate_qr_code
+
             qr_data_uri = generate_qr_code(verify_url)
         except Exception:
             qr_data_uri = ""
@@ -961,9 +1039,7 @@ def _certificate_html_impl(
     verify_line: str,
     qr_data_uri: str = "",
 ) -> str:
-    qr_block = (
-        f'<img class="qr" src="{qr_data_uri}" alt="QR" />' if qr_data_uri else ""
-    )
+    qr_block = f'<img class="qr" src="{qr_data_uri}" alt="QR" />' if qr_data_uri else ""
     return f"""<!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -988,11 +1064,11 @@ def _certificate_html_impl(
     <div class="brand">Syroce Academy</div>
     <h1>Basari Sertifikasi</h1>
     <div class="sub">Bu belge asagidaki egitimin basariyla tamamlandigini onaylar.</div>
-    <div class="name">{_esc(cert.get('user_name'))}</div>
-    <div class="course">{_esc(cert.get('course_title'))}</div>
-    <div class="sub">Departman: {_esc(cert.get('department_label'))}</div>
+    <div class="name">{_esc(cert.get("user_name"))}</div>
+    <div class="course">{_esc(cert.get("course_title"))}</div>
+    <div class="sub">Departman: {_esc(cert.get("department_label"))}</div>
     <div class="meta">
-      <span>Puan: <strong>{_esc(cert.get('score'))}</strong></span>
+      <span>Puan: <strong>{_esc(cert.get("score"))}</strong></span>
       <span>Tarih: <strong>{_esc(issued_str)}</strong></span>
     </div>
     {qr_block}

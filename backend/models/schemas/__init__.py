@@ -1,4 +1,5 @@
 """Re-exports from split schemas package (backwards compatible)."""
+
 # ruff: noqa: F401, F403
 from models.schemas.audit import *  # noqa: F401, F403
 from models.schemas.bookings import *  # noqa: F401, F403

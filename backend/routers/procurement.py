@@ -9,6 +9,7 @@ Opera/Protel S&C ve Türk PMS rakipleri seviyesinde satınalma:
 
 Auto-numbering: SUP-YYYY-####, PR-YYYY-####, PO-YYYY-####, GRN-YYYY-####
 """
+
 from __future__ import annotations
 
 import uuid
@@ -45,36 +46,16 @@ async def _ensure_indexes() -> None:
         return
     db = get_system_db()
     try:
-        await db.proc_suppliers.create_index(
-            [("tenant_id", 1), ("active", 1), ("name", 1)],
-            name="proc_sup_name")
-        await db.proc_suppliers.create_index(
-            [("tenant_id", 1), ("code", 1)],
-            unique=True, sparse=True, name="proc_sup_code")
-        await db.proc_purchase_requests.create_index(
-            [("tenant_id", 1), ("status", 1), ("created_at", -1)],
-            name="proc_pr_status")
-        await db.proc_purchase_requests.create_index(
-            [("tenant_id", 1), ("pr_no", 1)],
-            unique=True, name="proc_pr_no")
-        await db.proc_purchase_orders.create_index(
-            [("tenant_id", 1), ("status", 1), ("created_at", -1)],
-            name="proc_po_status")
-        await db.proc_purchase_orders.create_index(
-            [("tenant_id", 1), ("po_no", 1)],
-            unique=True, name="proc_po_no")
-        await db.proc_purchase_orders.create_index(
-            [("tenant_id", 1), ("supplier_id", 1)],
-            name="proc_po_supplier")
-        await db.proc_goods_receipts.create_index(
-            [("tenant_id", 1), ("po_id", 1), ("received_at", -1)],
-            name="proc_grn_po")
-        await db.proc_goods_receipts.create_index(
-            [("tenant_id", 1), ("grn_no", 1)],
-            unique=True, name="proc_grn_no")
-        await db.proc_counters.create_index(
-            [("tenant_id", 1), ("kind", 1)],
-            unique=True, name="proc_counter_uniq")
+        await db.proc_suppliers.create_index([("tenant_id", 1), ("active", 1), ("name", 1)], name="proc_sup_name")
+        await db.proc_suppliers.create_index([("tenant_id", 1), ("code", 1)], unique=True, sparse=True, name="proc_sup_code")
+        await db.proc_purchase_requests.create_index([("tenant_id", 1), ("status", 1), ("created_at", -1)], name="proc_pr_status")
+        await db.proc_purchase_requests.create_index([("tenant_id", 1), ("pr_no", 1)], unique=True, name="proc_pr_no")
+        await db.proc_purchase_orders.create_index([("tenant_id", 1), ("status", 1), ("created_at", -1)], name="proc_po_status")
+        await db.proc_purchase_orders.create_index([("tenant_id", 1), ("po_no", 1)], unique=True, name="proc_po_no")
+        await db.proc_purchase_orders.create_index([("tenant_id", 1), ("supplier_id", 1)], name="proc_po_supplier")
+        await db.proc_goods_receipts.create_index([("tenant_id", 1), ("po_id", 1), ("received_at", -1)], name="proc_grn_po")
+        await db.proc_goods_receipts.create_index([("tenant_id", 1), ("grn_no", 1)], unique=True, name="proc_grn_no")
+        await db.proc_counters.create_index([("tenant_id", 1), ("kind", 1)], unique=True, name="proc_counter_uniq")
     except Exception:
         pass
     _indexes_ready = True
@@ -85,10 +66,8 @@ async def _next_no(tenant_id: str, kind: str, prefix: str) -> str:
     db = get_system_db()
     year = datetime.now(UTC).year
     res = await db.proc_counters.find_one_and_update(
-        {"tenant_id": tenant_id, "kind": kind, "year": year},
-        {"$inc": {"seq": 1},
-         "$setOnInsert": {"tenant_id": tenant_id, "kind": kind, "year": year}},
-        upsert=True, return_document=True)
+        {"tenant_id": tenant_id, "kind": kind, "year": year}, {"$inc": {"seq": 1}, "$setOnInsert": {"tenant_id": tenant_id, "kind": kind, "year": year}}, upsert=True, return_document=True
+    )
     seq = res.get("seq", 1) if res else 1
     return f"{prefix}-{year}-{seq:04d}"
 
@@ -128,12 +107,14 @@ async def create_supplier(
     await _ensure_indexes()
     db = get_system_db()
     doc = body.model_dump()
-    doc.update({
-        "id": str(uuid.uuid4()),
-        "tenant_id": current_user.tenant_id,
-        "created_at": datetime.now(UTC).isoformat(),
-        "created_by": current_user.username,
-    })
+    doc.update(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": current_user.tenant_id,
+            "created_at": datetime.now(UTC).isoformat(),
+            "created_by": current_user.username,
+        }
+    )
     try:
         await db.proc_suppliers.insert_one(doc)
     except Exception as exc:
@@ -141,10 +122,16 @@ async def create_supplier(
             raise HTTPException(409, "Bu kod ile tedarikçi zaten var")
         raise
     await log_audit_event(
-        tenant_id=current_user.tenant_id, user_id=current_user.username,
-        action="create", entity_type="proc_supplier", entity_id=doc["id"],
-        details=f"Tedarikçi: {doc['name']}", before_value=None,
-        after_value=doc, db=db)
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.username,
+        action="create",
+        entity_type="proc_supplier",
+        entity_id=doc["id"],
+        details=f"Tedarikçi: {doc['name']}",
+        before_value=None,
+        after_value=doc,
+        db=db,
+    )
     _invalidate_suppliers_cache(current_user.tenant_id)
     return _strip_id(doc)
 
@@ -169,22 +156,26 @@ async def list_suppliers(
         query["active"] = True
     if q:
         import re as _re
+
         query["name"] = {"$regex": _re.escape(q.replace("\x00", "")), "$options": "i"}
-    items = await db.proc_suppliers.find(query, {"_id": 0}) \
-        .sort("name", 1).to_list(500)
+    items = await db.proc_suppliers.find(query, {"_id": 0}).sort("name", 1).to_list(500)
     if with_commitment and items:
         # Per-supplier open PO commitment (matches credit-limit enforcement
         # window in create PO: status in {sent, partially_received}). Single
         # aggregation round-trip; map onto supplier rows for headroom UI.
         pipeline = [
-            {"$match": {
-                "tenant_id": current_user.tenant_id,
-                "status": {"$in": ["sent", "partially_received"]},
-            }},
-            {"$group": {
-                "_id": "$supplier_id",
-                "total": {"$sum": "$grand_total"},
-            }},
+            {
+                "$match": {
+                    "tenant_id": current_user.tenant_id,
+                    "status": {"$in": ["sent", "partially_received"]},
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$supplier_id",
+                    "total": {"$sum": "$grand_total"},
+                }
+            },
         ]
         totals: dict[str, float] = {}
         async for doc in db.proc_purchase_orders.aggregate(pipeline):
@@ -198,30 +189,32 @@ async def list_suppliers(
 
 @router.put("/suppliers/{supplier_id}")
 async def update_supplier(
-    supplier_id: str, body: SupplierIn,
+    supplier_id: str,
+    body: SupplierIn,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     require_procurement(current_user)
     db = get_system_db()
-    before = await db.proc_suppliers.find_one(
-        {"id": supplier_id, "tenant_id": current_user.tenant_id})
+    before = await db.proc_suppliers.find_one({"id": supplier_id, "tenant_id": current_user.tenant_id})
     if not before:
         raise HTTPException(404, "Tedarikçi bulunamadı")
     patch = body.model_dump()
     patch["updated_at"] = datetime.now(UTC).isoformat()
     patch["updated_by"] = current_user.username
-    await db.proc_suppliers.update_one(
-        {"id": supplier_id, "tenant_id": current_user.tenant_id},
-        {"$set": patch})
-    after = await db.proc_suppliers.find_one(
-        {"id": supplier_id, "tenant_id": current_user.tenant_id},
-        {"_id": 0})
+    await db.proc_suppliers.update_one({"id": supplier_id, "tenant_id": current_user.tenant_id}, {"$set": patch})
+    after = await db.proc_suppliers.find_one({"id": supplier_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     await log_audit_event(
-        tenant_id=current_user.tenant_id, user_id=current_user.username,
-        action="update", entity_type="proc_supplier", entity_id=supplier_id,
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.username,
+        action="update",
+        entity_type="proc_supplier",
+        entity_id=supplier_id,
         details=f"Tedarikçi güncellendi: {after.get('name')}",
-        before_value=_strip_id(before), after_value=after, db=db)
+        before_value=_strip_id(before),
+        after_value=after,
+        db=db,
+    )
     _invalidate_suppliers_cache(current_user.tenant_id)
     return after
 
@@ -234,21 +227,23 @@ async def delete_supplier(
 ):
     require_procurement(current_user)
     db = get_system_db()
-    in_use = await db.proc_purchase_orders.find_one(
-        {"tenant_id": current_user.tenant_id, "supplier_id": supplier_id,
-         "status": {"$nin": ["cancelled", "closed"]}})
+    in_use = await db.proc_purchase_orders.find_one({"tenant_id": current_user.tenant_id, "supplier_id": supplier_id, "status": {"$nin": ["cancelled", "closed"]}})
     if in_use:
-        raise HTTPException(409,
-            "Tedarikçi açık siparişlerde kullanılıyor; önce pasif yapın")
-    res = await db.proc_suppliers.delete_one(
-        {"id": supplier_id, "tenant_id": current_user.tenant_id})
+        raise HTTPException(409, "Tedarikçi açık siparişlerde kullanılıyor; önce pasif yapın")
+    res = await db.proc_suppliers.delete_one({"id": supplier_id, "tenant_id": current_user.tenant_id})
     if not res.deleted_count:
         raise HTTPException(404, "Tedarikçi bulunamadı")
     await log_audit_event(
-        tenant_id=current_user.tenant_id, user_id=current_user.username,
-        action="delete", entity_type="proc_supplier", entity_id=supplier_id,
-        details="Tedarikçi silindi", before_value=None, after_value=None,
-        db=db)
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.username,
+        action="delete",
+        entity_type="proc_supplier",
+        entity_id=supplier_id,
+        details="Tedarikçi silindi",
+        before_value=None,
+        after_value=None,
+        db=db,
+    )
     _invalidate_suppliers_cache(current_user.tenant_id)
     return {"ok": True}
 
@@ -275,8 +270,7 @@ class PRIn(BaseModel):
 
 
 def _pr_total(lines: list[dict]) -> float:
-    return round(sum((line.get("quantity", 0) * line.get("est_unit_cost", 0))
-                     for line in lines), 2)
+    return round(sum((line.get("quantity", 0) * line.get("est_unit_cost", 0)) for line in lines), 2)
 
 
 @router.post("/purchase-requests")
@@ -306,10 +300,16 @@ async def create_purchase_request(
     }
     await db.proc_purchase_requests.insert_one(doc)
     await log_audit_event(
-        tenant_id=current_user.tenant_id, user_id=current_user.username,
-        action="create", entity_type="proc_pr", entity_id=doc["id"],
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.username,
+        action="create",
+        entity_type="proc_pr",
+        entity_id=doc["id"],
         details=f"PR {pr_no} ({payload['department']})",
-        before_value=None, after_value=_strip_id(dict(doc)), db=db)
+        before_value=None,
+        after_value=_strip_id(dict(doc)),
+        db=db,
+    )
     return _strip_id(doc)
 
 
@@ -325,17 +325,14 @@ async def list_prs(
         query["status"] = status
     if department:
         query["department"] = department
-    items = await db.proc_purchase_requests.find(query, {"_id": 0}) \
-        .sort("created_at", -1).limit(500).to_list(500)
+    items = await db.proc_purchase_requests.find(query, {"_id": 0}).sort("created_at", -1).limit(500).to_list(500)
     return {"items": items, "count": len(items)}
 
 
 @router.get("/purchase-requests/{pr_id}")
-async def get_pr(pr_id: str,
-                 current_user: User = Depends(get_current_user)):
+async def get_pr(pr_id: str, current_user: User = Depends(get_current_user)):
     db = get_system_db()
-    doc = await db.proc_purchase_requests.find_one(
-        {"id": pr_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    doc = await db.proc_purchase_requests.find_one({"id": pr_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "PR bulunamadı")
     return doc
@@ -350,21 +347,20 @@ class PRStatusIn(BaseModel):
     def _reason_for_reject(cls, v, info):
         if info.data.get("status") in ("rejected", "cancelled"):
             if not v or len(v.strip()) < 5:
-                raise ValueError(
-                    "Red/iptal nedeni en az 5 karakter olmalı")
+                raise ValueError("Red/iptal nedeni en az 5 karakter olmalı")
         return v
 
 
 @router.post("/purchase-requests/{pr_id}/status")
 async def change_pr_status(
-    pr_id: str, body: PRStatusIn,
+    pr_id: str,
+    body: PRStatusIn,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     require_procurement(current_user)
     db = get_system_db()
-    before = await db.proc_purchase_requests.find_one(
-        {"id": pr_id, "tenant_id": current_user.tenant_id})
+    before = await db.proc_purchase_requests.find_one({"id": pr_id, "tenant_id": current_user.tenant_id})
     if not before:
         raise HTTPException(404, "PR bulunamadı")
     cur = before.get("status", "draft")
@@ -377,8 +373,7 @@ async def change_pr_status(
         "converted": set(),
     }
     if body.status not in allowed.get(cur, set()):
-        raise HTTPException(409,
-            f"Geçersiz durum geçişi: {cur} → {body.status}")
+        raise HTTPException(409, f"Geçersiz durum geçişi: {cur} → {body.status}")
     patch: dict = {
         "status": body.status,
         "status_changed_at": datetime.now(UTC).isoformat(),
@@ -389,17 +384,19 @@ async def change_pr_status(
     if body.status == "approved":
         patch["approved_at"] = patch["status_changed_at"]
         patch["approved_by"] = current_user.username
-    await db.proc_purchase_requests.update_one(
-        {"id": pr_id, "tenant_id": current_user.tenant_id},
-        {"$set": patch})
-    after = await db.proc_purchase_requests.find_one(
-        {"id": pr_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    await db.proc_purchase_requests.update_one({"id": pr_id, "tenant_id": current_user.tenant_id}, {"$set": patch})
+    after = await db.proc_purchase_requests.find_one({"id": pr_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     await log_audit_event(
-        tenant_id=current_user.tenant_id, user_id=current_user.username,
-        action=f"status:{body.status}", entity_type="proc_pr",
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.username,
+        action=f"status:{body.status}",
+        entity_type="proc_pr",
         entity_id=pr_id,
         details=f"PR {after.get('pr_no')} → {body.status}",
-        before_value=_strip_id(before), after_value=after, db=db)
+        before_value=_strip_id(before),
+        after_value=after,
+        db=db,
+    )
     return after
 
 
@@ -431,11 +428,13 @@ async def _supplier_open_po_total(tenant_id: str, supplier_id: str) -> float:
     """Sum grand_total of open POs (draft / sent / partially_received)."""
     db = get_system_db()
     pipeline = [
-        {"$match": {
-            "tenant_id": tenant_id,
-            "supplier_id": supplier_id,
-            "status": {"$in": ["draft", "sent", "partially_received"]},
-        }},
+        {
+            "$match": {
+                "tenant_id": tenant_id,
+                "supplier_id": supplier_id,
+                "status": {"$in": ["draft", "sent", "partially_received"]},
+            }
+        },
         {"$group": {"_id": None, "total": {"$sum": "$grand_total"}}},
     ]
     open_total = 0.0
@@ -445,11 +444,9 @@ async def _supplier_open_po_total(tenant_id: str, supplier_id: str) -> float:
 
 
 def _po_compute(lines: list[dict], tax_rate: float) -> dict:
-    subtotal = round(
-        sum(line["quantity"] * line["unit_cost"] for line in lines), 2)
+    subtotal = round(sum(line["quantity"] * line["unit_cost"] for line in lines), 2)
     tax = round(subtotal * tax_rate / 100.0, 2)
-    return {"subtotal": subtotal, "tax_total": tax,
-            "grand_total": round(subtotal + tax, 2)}
+    return {"subtotal": subtotal, "tax_total": tax, "grand_total": round(subtotal + tax, 2)}
 
 
 @router.post("/purchase-orders")
@@ -461,16 +458,13 @@ async def create_purchase_order(
     require_procurement(current_user)
     await _ensure_indexes()
     db = get_system_db()
-    sup = await db.proc_suppliers.find_one(
-        {"id": body.supplier_id, "tenant_id": current_user.tenant_id})
+    sup = await db.proc_suppliers.find_one({"id": body.supplier_id, "tenant_id": current_user.tenant_id})
     if not sup:
         raise HTTPException(404, "Tedarikçi bulunamadı")
     if not sup.get("active", True):
         raise HTTPException(409, "Tedarikçi pasif")
     if body.source_pr_id:
-        pr = await db.proc_purchase_requests.find_one(
-            {"id": body.source_pr_id,
-             "tenant_id": current_user.tenant_id})
+        pr = await db.proc_purchase_requests.find_one({"id": body.source_pr_id, "tenant_id": current_user.tenant_id})
         if not pr:
             raise HTTPException(404, "Kaynak PR bulunamadı")
         if pr.get("status") != "approved":
@@ -479,8 +473,7 @@ async def create_purchase_order(
     lines = payload["lines"]
     for line in lines:
         line["received_qty"] = 0.0
-        line["line_total"] = round(
-            line["quantity"] * line["unit_cost"], 2)
+        line["line_total"] = round(line["quantity"] * line["unit_cost"], 2)
     totals = _po_compute(lines, payload["tax_rate"])
 
     # Credit-limit enforcement: sum open PO grand_totals for this supplier
@@ -494,24 +487,15 @@ async def create_purchase_order(
         override_allowed = override and RolePermissionService().check_permission(
             current_user.role,
             "manage_credit_limit",
-            granted_permissions=getattr(
-                current_user, "granted_permissions", None),
+            granted_permissions=getattr(current_user, "granted_permissions", None),
         )
         if override and not override_allowed:
-            raise HTTPException(
-                403,
-                "Kredi limiti aşımı override için 'manage_credit_limit' "
-                "yetkisi gerekli")
+            raise HTTPException(403, "Kredi limiti aşımı override için 'manage_credit_limit' yetkisi gerekli")
         if not override_allowed:
-            open_total = await _supplier_open_po_total(
-                current_user.tenant_id, body.supplier_id)
+            open_total = await _supplier_open_po_total(current_user.tenant_id, body.supplier_id)
             projected = round(open_total + totals["grand_total"], 2)
             if projected > float(credit_limit) + 1e-6:
-                raise HTTPException(
-                    409,
-                    f"Tedarikçi kredi limiti aşıldı: açık {open_total:.2f} "
-                    f"+ yeni {totals['grand_total']:.2f} = {projected:.2f} "
-                    f"> limit {float(credit_limit):.2f}")
+                raise HTTPException(409, f"Tedarikçi kredi limiti aşıldı: açık {open_total:.2f} + yeni {totals['grand_total']:.2f} = {projected:.2f} > limit {float(credit_limit):.2f}")
 
     po_no = await _next_no(current_user.tenant_id, "po", "PO")
     doc = {
@@ -535,17 +519,20 @@ async def create_purchase_order(
     await db.proc_purchase_orders.insert_one(doc)
     if body.source_pr_id:
         await db.proc_purchase_requests.update_one(
-            {"id": body.source_pr_id,
-             "tenant_id": current_user.tenant_id},
-            {"$set": {"status": "converted",
-                      "converted_to_po_id": doc["id"],
-                      "converted_to_po_no": po_no,
-                      "converted_at": doc["created_at"]}})
+            {"id": body.source_pr_id, "tenant_id": current_user.tenant_id},
+            {"$set": {"status": "converted", "converted_to_po_id": doc["id"], "converted_to_po_no": po_no, "converted_at": doc["created_at"]}},
+        )
     await log_audit_event(
-        tenant_id=current_user.tenant_id, user_id=current_user.username,
-        action="create", entity_type="proc_po", entity_id=doc["id"],
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.username,
+        action="create",
+        entity_type="proc_po",
+        entity_id=doc["id"],
         details=f"PO {po_no} → {sup.get('name')} ({totals['grand_total']} {body.currency})",
-        before_value=None, after_value=_strip_id(dict(doc)), db=db)
+        before_value=None,
+        after_value=_strip_id(dict(doc)),
+        db=db,
+    )
     return _strip_id(doc)
 
 
@@ -561,22 +548,17 @@ async def list_pos(
         query["status"] = status
     if supplier_id:
         query["supplier_id"] = supplier_id
-    items = await db.proc_purchase_orders.find(query, {"_id": 0}) \
-        .sort("created_at", -1).limit(500).to_list(500)
+    items = await db.proc_purchase_orders.find(query, {"_id": 0}).sort("created_at", -1).limit(500).to_list(500)
     return {"items": items, "count": len(items)}
 
 
 @router.get("/purchase-orders/{po_id}")
-async def get_po(po_id: str,
-                 current_user: User = Depends(get_current_user)):
+async def get_po(po_id: str, current_user: User = Depends(get_current_user)):
     db = get_system_db()
-    doc = await db.proc_purchase_orders.find_one(
-        {"id": po_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    doc = await db.proc_purchase_orders.find_one({"id": po_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "PO bulunamadı")
-    grns = await db.proc_goods_receipts.find(
-        {"tenant_id": current_user.tenant_id, "po_id": po_id},
-        {"_id": 0}).sort("received_at", -1).to_list(100)
+    grns = await db.proc_goods_receipts.find({"tenant_id": current_user.tenant_id, "po_id": po_id}, {"_id": 0}).sort("received_at", -1).to_list(100)
     doc["grns"] = grns
     return doc
 
@@ -614,12 +596,13 @@ async def credit_utilisation_report(
     ).to_list(2000)
 
     pipeline = [
-        {"$match": {
-            "tenant_id": current_user.tenant_id,
-            "status": {"$in": ["draft", "sent", "partially_received"]},
-        }},
-        {"$group": {"_id": "$supplier_id",
-                    "total": {"$sum": "$grand_total"}}},
+        {
+            "$match": {
+                "tenant_id": current_user.tenant_id,
+                "status": {"$in": ["draft", "sent", "partially_received"]},
+            }
+        },
+        {"$group": {"_id": "$supplier_id", "total": {"$sum": "$grand_total"}}},
     ]
     totals: dict[str, float] = {}
     async for row in db.proc_purchase_orders.aggregate(pipeline):
@@ -648,22 +631,26 @@ async def credit_utilisation_report(
             headroom = 0.0
             used_pct = 0.0
             status = "exceeded" if open_total > 0 else "ok"
-        rows.append({
-            "supplier_id": sid,
-            "supplier_name": s.get("name"),
-            "supplier_code": s.get("code"),
-            "limit": float(limit) if limit is not None else None,
-            "open_total": open_total,
-            "headroom": headroom,
-            "used_pct": used_pct,
-            "status": status,
-        })
+        rows.append(
+            {
+                "supplier_id": sid,
+                "supplier_name": s.get("name"),
+                "supplier_code": s.get("code"),
+                "limit": float(limit) if limit is not None else None,
+                "open_total": open_total,
+                "headroom": headroom,
+                "used_pct": used_pct,
+                "status": status,
+            }
+        )
 
-    rows.sort(key=lambda r: (
-        r["used_pct"] is None,
-        -(r["used_pct"] or 0.0),
-        (r["supplier_name"] or "").lower(),
-    ))
+    rows.sort(
+        key=lambda r: (
+            r["used_pct"] is None,
+            -(r["used_pct"] or 0.0),
+            (r["supplier_name"] or "").lower(),
+        )
+    )
     return {"items": rows, "count": len(rows)}
 
 
@@ -689,14 +676,11 @@ async def supplier_credit_utilisation(
       exceeded          — True when projected_total > limit
     """
     db = get_system_db()
-    sup = await db.proc_suppliers.find_one(
-        {"id": supplier_id, "tenant_id": current_user.tenant_id},
-        {"_id": 0, "credit_limit": 1, "name": 1})
+    sup = await db.proc_suppliers.find_one({"id": supplier_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "credit_limit": 1, "name": 1})
     if not sup:
         raise HTTPException(404, "Tedarikçi bulunamadı")
     limit = sup.get("credit_limit")
-    open_total = await _supplier_open_po_total(
-        current_user.tenant_id, supplier_id)
+    open_total = await _supplier_open_po_total(current_user.tenant_id, supplier_id)
     projected_amount = max(0.0, float(projected_amount or 0))
     projected_total = round(open_total + projected_amount, 2)
     used_pct: float | None = None
@@ -736,21 +720,20 @@ class POStatusIn(BaseModel):
     def _reason_for_cancel(cls, v, info):
         if info.data.get("status") == "cancelled":
             if not v or len(v.strip()) < 5:
-                raise ValueError(
-                    "İptal nedeni en az 5 karakter olmalı")
+                raise ValueError("İptal nedeni en az 5 karakter olmalı")
         return v
 
 
 @router.post("/purchase-orders/{po_id}/status")
 async def change_po_status(
-    po_id: str, body: POStatusIn,
+    po_id: str,
+    body: POStatusIn,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     require_procurement(current_user)
     db = get_system_db()
-    before = await db.proc_purchase_orders.find_one(
-        {"id": po_id, "tenant_id": current_user.tenant_id})
+    before = await db.proc_purchase_orders.find_one({"id": po_id, "tenant_id": current_user.tenant_id})
     if not before:
         raise HTTPException(404, "PO bulunamadı")
     cur = before.get("status", "draft")
@@ -761,8 +744,7 @@ async def change_po_status(
         "received": {"closed"},
     }
     if body.status not in allowed.get(cur, set()):
-        raise HTTPException(409,
-            f"Geçersiz durum geçişi: {cur} → {body.status}")
+        raise HTTPException(409, f"Geçersiz durum geçişi: {cur} → {body.status}")
     patch = {
         "status": body.status,
         "status_changed_at": datetime.now(UTC).isoformat(),
@@ -772,16 +754,19 @@ async def change_po_status(
         patch["status_reason"] = body.reason
     if body.status == "sent":
         patch["sent_at"] = patch["status_changed_at"]
-    await db.proc_purchase_orders.update_one(
-        {"id": po_id, "tenant_id": current_user.tenant_id},
-        {"$set": patch})
-    after = await db.proc_purchase_orders.find_one(
-        {"id": po_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
+    await db.proc_purchase_orders.update_one({"id": po_id, "tenant_id": current_user.tenant_id}, {"$set": patch})
+    after = await db.proc_purchase_orders.find_one({"id": po_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     await log_audit_event(
-        tenant_id=current_user.tenant_id, user_id=current_user.username,
-        action=f"status:{body.status}", entity_type="proc_po",
-        entity_id=po_id, details=f"PO {after.get('po_no')} → {body.status}",
-        before_value=_strip_id(before), after_value=after, db=db)
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.username,
+        action=f"status:{body.status}",
+        entity_type="proc_po",
+        entity_id=po_id,
+        details=f"PO {after.get('po_no')} → {body.status}",
+        before_value=_strip_id(before),
+        after_value=after,
+        db=db,
+    )
     return after
 
 
@@ -801,50 +786,44 @@ class GRNIn(BaseModel):
     lines: list[GRNLine] = Field(min_length=1)
 
 
-async def _grn_apply(db, tenant_id: str, po_id: str, body: GRNIn,
-                     username: str, session=None) -> tuple[dict, str, dict]:
+async def _grn_apply(db, tenant_id: str, po_id: str, body: GRNIn, username: str, session=None) -> tuple[dict, str, dict]:
     """Read-validate-write the PO+GRN within a single (optionally
     transactional) session. Returns (grn_doc, new_status, stock_increments).
     """
-    po = await db.proc_purchase_orders.find_one(
-        {"id": po_id, "tenant_id": tenant_id}, session=session)
+    po = await db.proc_purchase_orders.find_one({"id": po_id, "tenant_id": tenant_id}, session=session)
     if not po:
         raise HTTPException(404, "PO bulunamadı")
     if po.get("status") not in ("sent", "partially_received"):
-        raise HTTPException(409,
-            "Mal kabul yalnızca gönderilmiş veya kısmi alınmış POlar için")
+        raise HTTPException(409, "Mal kabul yalnızca gönderilmiş veya kısmi alınmış POlar için")
     po_lines = list(po.get("lines") or [])
     new_received = [float(line.get("received_qty", 0)) for line in po_lines]
     grn_lines_out: list[dict] = []
     stock_increments: dict[str, float] = {}
     for grn_line in body.lines:
         if grn_line.po_line_idx >= len(po_lines):
-            raise HTTPException(422,
-                f"Geçersiz po_line_idx={grn_line.po_line_idx}")
+            raise HTTPException(422, f"Geçersiz po_line_idx={grn_line.po_line_idx}")
         po_line = po_lines[grn_line.po_line_idx]
         ordered = float(po_line.get("quantity", 0))
         already = new_received[grn_line.po_line_idx]
         if grn_line.qc_status != "rejected":
             new_total = already + grn_line.received_qty
             if new_total > ordered + 1e-6:
-                raise HTTPException(422,
-                    f"{po_line.get('item_name')}: kabul ({new_total}) "
-                    f"sipariş miktarını ({ordered}) aşıyor")
+                raise HTTPException(422, f"{po_line.get('item_name')}: kabul ({new_total}) sipariş miktarını ({ordered}) aşıyor")
             new_received[grn_line.po_line_idx] = new_total
             inv_id = po_line.get("inventory_item_id")
             if inv_id:
-                stock_increments[inv_id] = (
-                    stock_increments.get(inv_id, 0.0)
-                    + grn_line.received_qty)
-        grn_lines_out.append({
-            "po_line_idx": grn_line.po_line_idx,
-            "item_name": po_line.get("item_name"),
-            "sku": po_line.get("sku"),
-            "inventory_item_id": po_line.get("inventory_item_id"),
-            "received_qty": grn_line.received_qty,
-            "qc_status": grn_line.qc_status,
-            "notes": grn_line.notes,
-        })
+                stock_increments[inv_id] = stock_increments.get(inv_id, 0.0) + grn_line.received_qty
+        grn_lines_out.append(
+            {
+                "po_line_idx": grn_line.po_line_idx,
+                "item_name": po_line.get("item_name"),
+                "sku": po_line.get("sku"),
+                "inventory_item_id": po_line.get("inventory_item_id"),
+                "received_qty": grn_line.received_qty,
+                "qc_status": grn_line.qc_status,
+                "notes": grn_line.notes,
+            }
+        )
 
     grn_no = await _next_no(tenant_id, "grn", "GRN")
     received_at = (body.received_at or datetime.now(UTC)).isoformat()
@@ -864,23 +843,16 @@ async def _grn_apply(db, tenant_id: str, po_id: str, body: GRNIn,
     }
     for idx, qty in enumerate(new_received):
         po_lines[idx]["received_qty"] = qty
-    fully = all(line["received_qty"] >= line["quantity"] - 1e-6
-                for line in po_lines)
+    fully = all(line["received_qty"] >= line["quantity"] - 1e-6 for line in po_lines)
     any_recv = any(line["received_qty"] > 0 for line in po_lines)
-    new_status = ("received" if fully
-                  else ("partially_received" if any_recv
-                        else po.get("status")))
+    new_status = "received" if fully else ("partially_received" if any_recv else po.get("status"))
     # Inside a Mongo transaction, snapshot isolation + automatic
     # write-conflict detection guarantees mutual exclusion: if two
     # concurrent GRN transactions both read the same PO and try to
     # write, one of them is aborted with WriteConflict (code 112).
     # The outer handler converts that to a 409. So a plain id+tenant
     # filter is sufficient — no CAS needed.
-    res = await db.proc_purchase_orders.update_one(
-        {"id": po_id, "tenant_id": tenant_id},
-        {"$set": {"lines": po_lines, "status": new_status,
-                  "last_received_at": received_at}},
-        session=session)
+    res = await db.proc_purchase_orders.update_one({"id": po_id, "tenant_id": tenant_id}, {"$set": {"lines": po_lines, "status": new_status, "last_received_at": received_at}}, session=session)
     if not res.matched_count:
         raise HTTPException(404, "PO güncellenemedi")
     await db.proc_goods_receipts.insert_one(grn_doc, session=session)
@@ -889,7 +861,8 @@ async def _grn_apply(db, tenant_id: str, po_id: str, body: GRNIn,
 
 @router.post("/purchase-orders/{po_id}/grn")
 async def create_grn(
-    po_id: str, body: GRNIn,
+    po_id: str,
+    body: GRNIn,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
@@ -907,9 +880,7 @@ async def create_grn(
     try:
         async with await db.client.start_session() as session:
             async with session.start_transaction():
-                grn_doc, new_status, stock_increments = await _grn_apply(
-                    db, tenant_id, po_id, body,
-                    current_user.username, session=session)
+                grn_doc, new_status, stock_increments = await _grn_apply(db, tenant_id, po_id, body, current_user.username, session=session)
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -917,34 +888,31 @@ async def create_grn(
         # against same PO → return 409 so client can retry.
         code = getattr(exc, "code", None)
         if code == 112 or "WriteConflict" in str(exc):
-            raise HTTPException(
-                409, "PO eş zamanlı güncellendi; lütfen tekrar deneyin")
+            raise HTTPException(409, "PO eş zamanlı güncellendi; lütfen tekrar deneyin")
         if not is_replica_set_unavailable(exc):
             raise
         if not standalone_fallback_allowed():
-            raise HTTPException(
-                status_code=503,
-                detail=("Mal kabul atomik garanti sağlayamıyor "
-                        "(Mongo replica set gerekli)."))
+            raise HTTPException(status_code=503, detail=("Mal kabul atomik garanti sağlayamıyor (Mongo replica set gerekli)."))
         # Dev opt-in: best-effort non-tx fallback.
-        grn_doc, new_status, stock_increments = await _grn_apply(
-            db, tenant_id, po_id, body, current_user.username)
+        grn_doc, new_status, stock_increments = await _grn_apply(db, tenant_id, po_id, body, current_user.username)
 
     # Stock effect on housekeeping_inventory (if linked) — outside the
     # transaction since housekeeping_inventory is a separate domain
     # collection; per-doc $inc is itself atomic.
     for inv_id, qty in stock_increments.items():
-        await db.housekeeping_inventory.update_one(
-            {"id": inv_id, "tenant_id": tenant_id},
-            {"$inc": {"current_stock": qty},
-             "$set": {"last_restock_date": datetime.now(UTC)}})
+        await db.housekeeping_inventory.update_one({"id": inv_id, "tenant_id": tenant_id}, {"$inc": {"current_stock": qty}, "$set": {"last_restock_date": datetime.now(UTC)}})
 
     await log_audit_event(
-        tenant_id=tenant_id, user_id=current_user.username,
-        action="create", entity_type="proc_grn", entity_id=grn_doc["id"],
-        details=(f"{grn_doc.get('grn_no')} ← PO {grn_doc.get('po_no')} "
-                 f"({len(grn_doc.get('lines') or [])} kalem)"),
-        before_value=None, after_value=_strip_id(dict(grn_doc)), db=db)
+        tenant_id=tenant_id,
+        user_id=current_user.username,
+        action="create",
+        entity_type="proc_grn",
+        entity_id=grn_doc["id"],
+        details=(f"{grn_doc.get('grn_no')} ← PO {grn_doc.get('po_no')} ({len(grn_doc.get('lines') or [])} kalem)"),
+        before_value=None,
+        after_value=_strip_id(dict(grn_doc)),
+        db=db,
+    )
     return {
         "grn": _strip_id(grn_doc),
         "po_status": new_status,
@@ -953,12 +921,9 @@ async def create_grn(
 
 
 @router.get("/purchase-orders/{po_id}/grns")
-async def list_grns(po_id: str,
-                    current_user: User = Depends(get_current_user)):
+async def list_grns(po_id: str, current_user: User = Depends(get_current_user)):
     db = get_system_db()
-    items = await db.proc_goods_receipts.find(
-        {"tenant_id": current_user.tenant_id, "po_id": po_id},
-        {"_id": 0}).sort("received_at", -1).to_list(200)
+    items = await db.proc_goods_receipts.find({"tenant_id": current_user.tenant_id, "po_id": po_id}, {"_id": 0}).sort("received_at", -1).to_list(200)
     return {"items": items, "count": len(items)}
 
 
@@ -980,10 +945,12 @@ async def procurement_summary(
 
     async def _commitment_sum() -> float:
         pipeline = [
-            {"$match": {
-                "tenant_id": tid,
-                "status": {"$in": ["sent", "partially_received"]},
-            }},
+            {
+                "$match": {
+                    "tenant_id": tid,
+                    "status": {"$in": ["sent", "partially_received"]},
+                }
+            },
             {"$group": {"_id": None, "total": {"$sum": "$grand_total"}}},
         ]
         cursor = db.proc_purchase_orders.aggregate(pipeline)
@@ -992,17 +959,11 @@ async def procurement_summary(
         return 0.0
 
     pr_pending, pr_approved, po_open, po_received, suppliers, commitment = await asyncio.gather(
-        db.proc_purchase_requests.count_documents(
-            {"tenant_id": tid, "status": {"$in": ["draft", "submitted"]}}),
-        db.proc_purchase_requests.count_documents(
-            {"tenant_id": tid, "status": "approved"}),
-        db.proc_purchase_orders.count_documents(
-            {"tenant_id": tid,
-             "status": {"$in": ["draft", "sent", "partially_received"]}}),
-        db.proc_purchase_orders.count_documents(
-            {"tenant_id": tid, "status": "received"}),
-        db.proc_suppliers.count_documents(
-            {"tenant_id": tid, "active": True}),
+        db.proc_purchase_requests.count_documents({"tenant_id": tid, "status": {"$in": ["draft", "submitted"]}}),
+        db.proc_purchase_requests.count_documents({"tenant_id": tid, "status": "approved"}),
+        db.proc_purchase_orders.count_documents({"tenant_id": tid, "status": {"$in": ["draft", "sent", "partially_received"]}}),
+        db.proc_purchase_orders.count_documents({"tenant_id": tid, "status": "received"}),
+        db.proc_suppliers.count_documents({"tenant_id": tid, "active": True}),
         _commitment_sum(),
     )
     return {

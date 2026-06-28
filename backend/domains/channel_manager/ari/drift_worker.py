@@ -4,6 +4,7 @@ ARI Drift Worker.
 Periodically compares PMS snapshot vs provider snapshot.
 On mismatch: generates corrective delta → push queue.
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -74,16 +75,18 @@ async def check_drift(
 
         if not pms_item or not provider_item:
             parts = key.split("|")
-            drifts.append({
-                "key": key,
-                "room_type_code": parts[0],
-                "rate_plan_code": parts[1] if len(parts) > 1 else "",
-                "date": parts[2] if len(parts) > 2 else "",
-                "drift_type": "missing_in_provider" if not provider_item else "missing_in_pms",
-                "drift_fields": _diff_fields(pms_item, provider_item),
-                "pms_value": pms_item,
-                "provider_value": provider_item,
-            })
+            drifts.append(
+                {
+                    "key": key,
+                    "room_type_code": parts[0],
+                    "rate_plan_code": parts[1] if len(parts) > 1 else "",
+                    "date": parts[2] if len(parts) > 2 else "",
+                    "drift_type": "missing_in_provider" if not provider_item else "missing_in_pms",
+                    "drift_fields": _diff_fields(pms_item, provider_item),
+                    "pms_value": pms_item,
+                    "provider_value": provider_item,
+                }
+            )
             continue
 
         pms_hash = compute_outbound_delta_hash(
@@ -107,37 +110,41 @@ async def check_drift(
 
         if pms_hash != provider_hash:
             parts = key.split("|")
-            drifts.append({
-                "key": key,
-                "room_type_code": parts[0],
-                "rate_plan_code": parts[1] if len(parts) > 1 else "",
-                "date": parts[2] if len(parts) > 2 else "",
-                "drift_type": "value_mismatch",
-                "drift_fields": _diff_fields(pms_item, provider_item),
-                "pms_hash": pms_hash,
-                "provider_hash": provider_hash,
-                "pms_value": pms_item,
-                "provider_value": provider_item,
-            })
+            drifts.append(
+                {
+                    "key": key,
+                    "room_type_code": parts[0],
+                    "rate_plan_code": parts[1] if len(parts) > 1 else "",
+                    "date": parts[2] if len(parts) > 2 else "",
+                    "drift_type": "value_mismatch",
+                    "drift_fields": _diff_fields(pms_item, provider_item),
+                    "pms_hash": pms_hash,
+                    "provider_hash": provider_hash,
+                    "pms_value": pms_item,
+                    "provider_value": provider_item,
+                }
+            )
         else:
             matched += 1
 
     # Update drift state in DB
     for drift in drifts:
-        await repo.upsert_drift_state({
-            "tenant_id": tenant_id,
-            "property_id": property_id,
-            "provider": provider,
-            "room_type_code": drift["room_type_code"],
-            "rate_plan_code": drift.get("rate_plan_code", ""),
-            "date_from": drift.get("date", ""),
-            "date_to": drift.get("date", ""),
-            "pms_hash": drift.get("pms_hash", ""),
-            "provider_hash": drift.get("provider_hash", ""),
-            "drift_detected": True,
-            "drift_type": drift["drift_type"],
-            "drift_fields": drift.get("drift_fields", []),
-        })
+        await repo.upsert_drift_state(
+            {
+                "tenant_id": tenant_id,
+                "property_id": property_id,
+                "provider": provider,
+                "room_type_code": drift["room_type_code"],
+                "rate_plan_code": drift.get("rate_plan_code", ""),
+                "date_from": drift.get("date", ""),
+                "date_to": drift.get("date", ""),
+                "pms_hash": drift.get("pms_hash", ""),
+                "provider_hash": drift.get("provider_hash", ""),
+                "drift_detected": True,
+                "drift_type": drift["drift_type"],
+                "drift_fields": drift.get("drift_fields", []),
+            }
+        )
 
     # Mark non-drifting items as reconciled
     drift_keys = {d["key"] for d in drifts}
@@ -145,41 +152,47 @@ async def check_drift(
         parts = key.split("|")
         pms_item = pms_index.get(key, {})
         provider_item = provider_index.get(key, {})
-        await repo.upsert_drift_state({
-            "tenant_id": tenant_id,
-            "property_id": property_id,
-            "provider": provider,
-            "room_type_code": parts[0],
-            "rate_plan_code": parts[1] if len(parts) > 1 else "",
-            "date_from": parts[2] if len(parts) > 2 else "",
-            "date_to": parts[2] if len(parts) > 2 else "",
-            "pms_hash": compute_outbound_delta_hash(
-                provider=provider, property_id=property_id,
-                room_type_code=parts[0],
-                rate_plan_code=parts[1] if len(parts) > 1 else "",
-                date_from=parts[2] if len(parts) > 2 else "",
-                date_to=parts[2] if len(parts) > 2 else "",
-                payload=pms_item,
-            ),
-            "provider_hash": compute_outbound_delta_hash(
-                provider=provider, property_id=property_id,
-                room_type_code=parts[0],
-                rate_plan_code=parts[1] if len(parts) > 1 else "",
-                date_from=parts[2] if len(parts) > 2 else "",
-                date_to=parts[2] if len(parts) > 2 else "",
-                payload=provider_item,
-            ),
-            "drift_detected": False,
-            "last_reconciled_at": datetime.now(UTC).isoformat(),
-        })
+        await repo.upsert_drift_state(
+            {
+                "tenant_id": tenant_id,
+                "property_id": property_id,
+                "provider": provider,
+                "room_type_code": parts[0],
+                "rate_plan_code": parts[1] if len(parts) > 1 else "",
+                "date_from": parts[2] if len(parts) > 2 else "",
+                "date_to": parts[2] if len(parts) > 2 else "",
+                "pms_hash": compute_outbound_delta_hash(
+                    provider=provider,
+                    property_id=property_id,
+                    room_type_code=parts[0],
+                    rate_plan_code=parts[1] if len(parts) > 1 else "",
+                    date_from=parts[2] if len(parts) > 2 else "",
+                    date_to=parts[2] if len(parts) > 2 else "",
+                    payload=pms_item,
+                ),
+                "provider_hash": compute_outbound_delta_hash(
+                    provider=provider,
+                    property_id=property_id,
+                    room_type_code=parts[0],
+                    rate_plan_code=parts[1] if len(parts) > 1 else "",
+                    date_from=parts[2] if len(parts) > 2 else "",
+                    date_to=parts[2] if len(parts) > 2 else "",
+                    payload=provider_item,
+                ),
+                "drift_detected": False,
+                "last_reconciled_at": datetime.now(UTC).isoformat(),
+            }
+        )
 
     # Generate alerts
     alerts = []
     if len(drifts) >= WIDE_PARITY_LOSS_THRESHOLD:
-        alerts.append({
-            "level": "critical",
-            "message": f"Wide parity loss: {len(drifts)} items drifted for {provider}/{property_id}",
-        })
+        alerts.append(
+            {
+                "level": "critical",
+                "message": f"Wide parity loss: {len(drifts)} items drifted for {provider}/{property_id}",
+            }
+        )
 
     report = {
         "tenant_id": tenant_id,
@@ -193,10 +206,7 @@ async def check_drift(
         "checked_at": datetime.now(UTC).isoformat(),
     }
 
-    logger.info(
-        f"Drift check: {provider}/{property_id} — "
-        f"{matched} matched, {len(drifts)} drifts"
-    )
+    logger.info(f"Drift check: {provider}/{property_id} — {matched} matched, {len(drifts)} drifts")
     return report
 
 
@@ -209,9 +219,7 @@ async def reconcile_drift(
     Generate corrective change sets for detected drifts.
     These will be picked up by the push worker.
     """
-    drift_states = await repo.get_drift_states(
-        tenant_id, property_id, provider, drift_only=True, limit=100
-    )
+    drift_states = await repo.get_drift_states(tenant_id, property_id, provider, drift_only=True, limit=100)
 
     corrective_count = 0
     for ds in drift_states:

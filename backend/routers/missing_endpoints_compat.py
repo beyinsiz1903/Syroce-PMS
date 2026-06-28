@@ -20,6 +20,7 @@ Each endpoint is annotated with one of the following status labels (see
 Migration target: every endpoint here should either move to a domain router
 or be deleted. New endpoints SHOULD NOT be added to this file.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -43,7 +44,7 @@ router = APIRouter(prefix="/api", tags=["compat"])
 #                   Move to domains/sales/upsell_router.py when CRUD is added.
 @router.get("/upsell/products")
 async def upsell_products(
-    current_user= Depends(get_current_user),
+    current_user=Depends(get_current_user),
     category: str | None = None,
 ):
     """Return active upsell products for the tenant."""
@@ -62,7 +63,7 @@ async def upsell_products(
 # STATUS: partial — real aggregation over guests/consents/erasure;
 #                   "status: active" hard-coded; no DPA upload/audit history.
 @router.get("/gdpr/compliance-status")
-async def gdpr_compliance_status(current_user= Depends(get_current_user)):
+async def gdpr_compliance_status(current_user=Depends(get_current_user)):
     tid = current_user.tenant_id
     guests = await db.guests.count_documents({"tenant_id": tid})
     consents = await db.kvkk_consents.count_documents({"tenant_id": tid}) if tid else 0
@@ -81,7 +82,7 @@ async def gdpr_compliance_status(current_user= Depends(get_current_user)):
 
 # STATUS: partial — real read of dpa_records; no create/sign workflow.
 @router.get("/gdpr/dpa")
-async def gdpr_dpa(current_user= Depends(get_current_user)):
+async def gdpr_dpa(current_user=Depends(get_current_user)):
     items: list[dict] = []
     async for d in db.dpa_records.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).limit(100):
         items.append(d)
@@ -91,7 +92,7 @@ async def gdpr_dpa(current_user= Depends(get_current_user)):
 # STATUS: stub — hard-coded retention list; should be tenant-configurable
 #                and persist edits + trigger anonymisation jobs.
 @router.get("/gdpr/retention-policy")
-async def gdpr_retention(current_user= Depends(get_current_user)):
+async def gdpr_retention(current_user=Depends(get_current_user)):
     return {
         "policies": [
             {"data_type": "guest_pii", "retention_days": 730, "auto_anonymize": True},
@@ -108,7 +109,7 @@ async def gdpr_retention(current_user= Depends(get_current_user)):
 # STATUS: partial — real properties read; KPIs hard-coded to 0.
 #                   Aggregation across hotels not implemented.
 @router.get("/central-office/dashboard")
-async def central_office_dashboard(current_user= Depends(get_current_user)):
+async def central_office_dashboard(current_user=Depends(get_current_user)):
     tid = current_user.tenant_id
     properties: list[dict] = []
     async for h in db.hotels.find(
@@ -130,20 +131,20 @@ async def central_office_dashboard(current_user= Depends(get_current_user)):
 
 # STATUS: stub — empty alerts. Needs alert engine wired to ops/incident bus.
 @router.get("/central-office/alerts")
-async def central_office_alerts(current_user= Depends(get_current_user)):
+async def central_office_alerts(current_user=Depends(get_current_user)):
     return {"alerts": [], "total": 0}
 
 
 # STATUS: stub — empty comparison. Needs cross-property occupancy aggregator.
 @router.get("/central-office/occupancy-comparison")
-async def central_office_occupancy(current_user= Depends(get_current_user)):
+async def central_office_occupancy(current_user=Depends(get_current_user)):
     return {"properties": [], "period": {"start": None, "end": None}}
 
 
 # STATUS: stub — empty revenue. Needs cross-property revenue aggregator
 #                (folio totals × tenant_id × period).
 @router.get("/central-office/revenue-report")
-async def central_office_revenue(current_user= Depends(get_current_user)):
+async def central_office_revenue(current_user=Depends(get_current_user)):
     return {"properties": [], "totals": {"revenue": 0.0, "bookings": 0}}
 
 
@@ -153,19 +154,19 @@ async def central_office_revenue(current_user= Depends(get_current_user)):
 # STATUS: stub — central pricing not implemented. Real implementation
 #                belongs in domains/revenue/pricing/ (cross-property tier).
 @router.get("/central-pricing/rates")
-async def central_pricing_rates(current_user= Depends(get_current_user)):
+async def central_pricing_rates(current_user=Depends(get_current_user)):
     return {"rates": [], "total": 0}
 
 
 # STATUS: stub — see /central-pricing/rates above.
 @router.get("/central-pricing/rate-history")
-async def central_pricing_history(current_user= Depends(get_current_user)):
+async def central_pricing_history(current_user=Depends(get_current_user)):
     return {"history": [], "total": 0}
 
 
 # STATUS: stub — see /central-pricing/rates above.
 @router.get("/central-pricing/rate-templates")
-async def central_pricing_templates(current_user= Depends(get_current_user)):
+async def central_pricing_templates(current_user=Depends(get_current_user)):
     return {"templates": [], "total": 0}
 
 
@@ -176,7 +177,7 @@ async def central_pricing_templates(current_user= Depends(get_current_user)):
 #                            permission gates. Move to a dedicated
 #                            routers/security_ip.py.
 @router.get("/security/ip/rules")
-async def ip_rules_list(current_user= Depends(get_current_user)):
+async def ip_rules_list(current_user=Depends(get_current_user)):
     items: list[dict] = []
     async for r in db.ip_rules.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).limit(500):
         items.append(r)
@@ -192,7 +193,7 @@ class IPRuleCreate(BaseModel):
 @router.post("/security/ip/rules")
 async def ip_rules_create(
     body: IPRuleCreate,
-    current_user= Depends(get_current_user),
+    current_user=Depends(get_current_user),
     _perm=Depends(require_op("manage_secrets")),
 ):
     if body.rule_type not in ("whitelist", "blacklist"):
@@ -216,7 +217,7 @@ async def ip_rules_create(
 @router.delete("/security/ip/rules/{rule_id}")
 async def ip_rules_delete(
     rule_id: str,
-    current_user= Depends(get_current_user),
+    current_user=Depends(get_current_user),
     _perm=Depends(require_op("manage_secrets")),
 ):
     res = await db.ip_rules.delete_one({"id": rule_id, "tenant_id": current_user.tenant_id})
@@ -228,7 +229,7 @@ async def ip_rules_delete(
 # STATUS: stub — always returns allowed=true. Should evaluate request IP
 #                against rules + return matched_rule.
 @router.post("/security/ip/check")
-async def ip_check(current_user= Depends(get_current_user)):
+async def ip_check(current_user=Depends(get_current_user)):
     return {"client_ip": None, "allowed": True, "matched_rule": None}
 
 
@@ -240,7 +241,7 @@ async def ip_check(current_user= Depends(get_current_user)):
 #                            Move to routers/agency_portal.py companion.
 @router.get("/hotel/booking-requests")
 async def hotel_booking_requests(
-    current_user= Depends(get_current_user),
+    current_user=Depends(get_current_user),
     status: str | None = None,
 ):
     q: dict[str, Any] = {"tenant_id": current_user.tenant_id}
@@ -255,23 +256,23 @@ async def hotel_booking_requests(
 @router.post("/hotel/booking-requests/{request_id}/approve")
 async def hotel_booking_request_approve(
     request_id: str,
-    current_user= Depends(get_current_user),
+    current_user=Depends(get_current_user),
     _perm=Depends(require_op("manage_approvals")),
 ):
-    req = await db.agency_booking_requests.find_one(
-        {"request_id": request_id, "tenant_id": current_user.tenant_id}
-    )
+    req = await db.agency_booking_requests.find_one({"request_id": request_id, "tenant_id": current_user.tenant_id})
     if not req:
         raise HTTPException(status_code=404, detail="Talep bulunamadi")
     now = datetime.now(UTC).isoformat()
     await db.agency_booking_requests.update_one(
         {"request_id": request_id, "tenant_id": current_user.tenant_id},
-        {"$set": {
-            "status": "approved",
-            "approved_at": now,
-            "approved_by": current_user.id,
-            "updated_at": now,
-        }}
+        {
+            "$set": {
+                "status": "approved",
+                "approved_at": now,
+                "approved_by": current_user.id,
+                "updated_at": now,
+            }
+        },
     )
     return {"approved": True, "request_id": request_id}
 
@@ -295,24 +296,24 @@ class BookingRequestRejectBody(BaseModel):
 async def hotel_booking_request_reject(
     request_id: str,
     body: BookingRequestRejectBody,
-    current_user= Depends(get_current_user),
+    current_user=Depends(get_current_user),
     _perm=Depends(require_op("manage_approvals")),
 ):
-    req = await db.agency_booking_requests.find_one(
-        {"request_id": request_id, "tenant_id": current_user.tenant_id}
-    )
+    req = await db.agency_booking_requests.find_one({"request_id": request_id, "tenant_id": current_user.tenant_id})
     if not req:
         raise HTTPException(status_code=404, detail="Talep bulunamadi")
     now = datetime.now(UTC).isoformat()
     await db.agency_booking_requests.update_one(
         {"request_id": request_id, "tenant_id": current_user.tenant_id},
-        {"$set": {
-            "status": "rejected",
-            "rejected_at": now,
-            "rejected_by": current_user.id,
-            "resolution_notes": body.reason,
-            "updated_at": now,
-        }}
+        {
+            "$set": {
+                "status": "rejected",
+                "rejected_at": now,
+                "rejected_by": current_user.id,
+                "resolution_notes": body.reason,
+                "updated_at": now,
+            }
+        },
     )
     return {"rejected": True, "request_id": request_id}
 
@@ -325,7 +326,7 @@ async def hotel_booking_request_reject(
 #                   /uploads/* (static mount).
 @router.get("/media/list")
 async def media_list(
-    current_user= Depends(get_current_user),
+    current_user=Depends(get_current_user),
     module: str | None = None,
     entity_id: str | None = None,
 ):
@@ -358,20 +359,15 @@ class GuestInfoPatch(BaseModel):
 async def patch_booking_guest_info(
     booking_id: str,
     body: GuestInfoPatch,
-    current_user= Depends(get_current_user),
+    current_user=Depends(get_current_user),
     _perm=Depends(require_op("manage_guests")),
 ):
-    booking = await db.bookings.find_one(
-        {"id": booking_id, "tenant_id": current_user.tenant_id}
-    )
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id})
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
     update = {k: v for k, v in body.dict().items() if v is not None}
     if not update:
         return {"updated": False, "id": booking_id}
     update["updated_at"] = datetime.now(UTC).isoformat()
-    await db.bookings.update_one(
-        {"id": booking_id, "tenant_id": current_user.tenant_id},
-        {"$set": update}
-    )
+    await db.bookings.update_one({"id": booking_id, "tenant_id": current_user.tenant_id}, {"$set": update})
     return {"updated": True, "id": booking_id, **update}

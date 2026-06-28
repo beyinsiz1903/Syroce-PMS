@@ -15,6 +15,7 @@ Timeline P1 fix); this module is the shared, reusable form applied to the other
 audit/list surfaces (``/security/audit-logs``, ``/hr/staff``) that returned raw
 Mongo documents.
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime

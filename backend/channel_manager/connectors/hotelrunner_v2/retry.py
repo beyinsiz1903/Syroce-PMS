@@ -7,6 +7,7 @@ backoff: exponential (1s, 2s, 4s, 8s, 16s) with jitter
 retryable: only errors with retryable=True
 dead letter: after max retries, event goes to DLQ collection
 """
+
 import asyncio
 import logging
 import random
@@ -34,16 +35,14 @@ class HRv2RetryPolicy:
             except HRv2RateLimitError as e:
                 last_error = e
                 wait = min(e.retry_after, self.max_delay)
-                logger.warning("[HRv2 retry] rate-limited, waiting %ds (attempt %d/%d) %s",
-                               wait, attempt + 1, self.max_retries, context)
+                logger.warning("[HRv2 retry] rate-limited, waiting %ds (attempt %d/%d) %s", wait, attempt + 1, self.max_retries, context)
                 await asyncio.sleep(wait)
             except HRv2Error as e:
                 last_error = e
                 if not e.retryable or attempt >= self.max_retries:
                     raise
-                delay = min(self.base_delay * (2 ** attempt) + random.uniform(0, 1), self.max_delay)
-                logger.warning("[HRv2 retry] %s, retrying in %.1fs (attempt %d/%d) %s",
-                               e.category, delay, attempt + 1, self.max_retries, context)
+                delay = min(self.base_delay * (2**attempt) + random.uniform(0, 1), self.max_delay)
+                logger.warning("[HRv2 retry] %s, retrying in %.1fs (attempt %d/%d) %s", e.category, delay, attempt + 1, self.max_retries, context)
                 await asyncio.sleep(delay)
 
         raise last_error  # type: ignore[misc]

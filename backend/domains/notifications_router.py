@@ -1,6 +1,7 @@
 """
 Notifications Router — Bildirim endpoint'leri
 """
+
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
@@ -46,19 +47,22 @@ async def list_notifications(
     """List notifications for the current user."""
     tenant_id = current_user.tenant_id
     visibility = _visibility_filter(current_user)
-    notifications = await db.notifications.find(
-        {"tenant_id": tenant_id, **visibility},
-        {"_id": 0},
-    ).sort("created_at", -1).limit(limit).to_list(limit)
+    notifications = (
+        await db.notifications.find(
+            {"tenant_id": tenant_id, **visibility},
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .limit(limit)
+        .to_list(limit)
+    )
 
     # Normalize legacy is_read field to read
     for n in notifications:
         if "read" not in n and "is_read" in n:
             n["read"] = n.pop("is_read")
 
-    unread_count = await db.notifications.count_documents(
-        {"tenant_id": tenant_id, "read": {"$ne": True}, **visibility}
-    )
+    unread_count = await db.notifications.count_documents({"tenant_id": tenant_id, "read": {"$ne": True}, **visibility})
 
     return {"notifications": notifications, "unread_count": unread_count}
 
@@ -78,8 +82,7 @@ async def mark_notification_read(
     visibility = _visibility_filter(current_user)
     result = await db.notifications.update_one(
         {"tenant_id": tenant_id, "id": notification_id, **visibility},
-        {"$set": {"read": True, "read_at": datetime.now(UTC).isoformat()},
-         "$unset": {"is_read": ""}},
+        {"$set": {"read": True, "read_at": datetime.now(UTC).isoformat()}, "$unset": {"is_read": ""}},
     )
     return {"ok": True, "modified": getattr(result, "modified_count", 0)}
 
@@ -99,7 +102,6 @@ async def mark_all_notifications_read(
     now = datetime.now(UTC).isoformat()
     result = await db.notifications.update_many(
         {"tenant_id": tenant_id, "read": {"$ne": True}, **visibility},
-        {"$set": {"read": True, "read_at": now},
-         "$unset": {"is_read": ""}},
+        {"$set": {"read": True, "read_at": now}, "$unset": {"is_read": ""}},
     )
     return {"ok": True, "modified": getattr(result, "modified_count", 0)}

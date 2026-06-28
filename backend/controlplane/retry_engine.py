@@ -9,6 +9,7 @@ Handles retry/replay of failed operations with:
 
 Every retry MUST be safe to call multiple times.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -38,6 +39,7 @@ class RetryEngine:
     def _get_db(self):
         if self._db is None:
             from core.database import db
+
             self._db = db
         return self._db
 
@@ -61,9 +63,7 @@ class RetryEngine:
         db = self._get_db()
 
         # 1. Load the failure
-        failure = await db[COLL_FAILURES].find_one(
-            {"id": failure_id}, {"_id": 0}
-        )
+        failure = await db[COLL_FAILURES].find_one({"id": failure_id}, {"_id": 0})
         if not failure:
             return {"success": False, "error": "failure_not_found", "failure_id": failure_id}
 
@@ -100,11 +100,13 @@ class RetryEngine:
         now = datetime.now(UTC).isoformat()
         await db[COLL_FAILURES].update_one(
             {"id": failure_id},
-            {"$set": {
-                "status": FailureStatus.RETRYING.value,
-                "updated_at": now,
+            {
+                "$set": {
+                    "status": FailureStatus.RETRYING.value,
+                    "updated_at": now,
+                },
+                "$inc": {"retry_count": 1},
             },
-            "$inc": {"retry_count": 1}},
         )
 
         # 5. Log the retry attempt
@@ -128,25 +130,31 @@ class RetryEngine:
             # 7. Update failure + log on success
             await db[COLL_FAILURES].update_one(
                 {"id": failure_id},
-                {"$set": {
-                    "status": FailureStatus.RESOLVED.value,
-                    "resolved_at": datetime.now(UTC).isoformat(),
-                    "resolved_by": f"retry:{initiated_by}",
-                    "updated_at": datetime.now(UTC).isoformat(),
-                }},
+                {
+                    "$set": {
+                        "status": FailureStatus.RESOLVED.value,
+                        "resolved_at": datetime.now(UTC).isoformat(),
+                        "resolved_by": f"retry:{initiated_by}",
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
+                },
             )
             await db[COLL_RETRY_LOG].update_one(
                 {"id": retry_log["id"]},
-                {"$set": {
-                    "status": "success",
-                    "completed_at": datetime.now(UTC).isoformat(),
-                    "result": result,
-                }},
+                {
+                    "$set": {
+                        "status": "success",
+                        "completed_at": datetime.now(UTC).isoformat(),
+                        "result": result,
+                    }
+                },
             )
 
             logger.info(
                 "Retry succeeded: failure=%s op=%s tenant=%s",
-                failure_id, failure["operation_type"], failure["tenant_id"],
+                failure_id,
+                failure["operation_type"],
+                failure["tenant_id"],
             )
             return {
                 "success": True,
@@ -161,25 +169,31 @@ class RetryEngine:
             error_msg = str(e)
             await db[COLL_FAILURES].update_one(
                 {"id": failure_id},
-                {"$set": {
-                    "status": FailureStatus.OPEN.value,
-                    "last_seen_at": datetime.now(UTC).isoformat(),
-                    "error_message": error_msg[:1000],
-                    "updated_at": datetime.now(UTC).isoformat(),
-                }},
+                {
+                    "$set": {
+                        "status": FailureStatus.OPEN.value,
+                        "last_seen_at": datetime.now(UTC).isoformat(),
+                        "error_message": error_msg[:1000],
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
+                },
             )
             await db[COLL_RETRY_LOG].update_one(
                 {"id": retry_log["id"]},
-                {"$set": {
-                    "status": "failed",
-                    "completed_at": datetime.now(UTC).isoformat(),
-                    "error": error_msg[:1000],
-                }},
+                {
+                    "$set": {
+                        "status": "failed",
+                        "completed_at": datetime.now(UTC).isoformat(),
+                        "error": error_msg[:1000],
+                    }
+                },
             )
 
             logger.warning(
                 "Retry failed: failure=%s op=%s error=%s",
-                failure_id, failure["operation_type"], error_msg,
+                failure_id,
+                failure["operation_type"],
+                error_msg,
             )
             return {
                 "success": False,
@@ -204,11 +218,13 @@ class RetryEngine:
         elif op == OperationType.SYNC_JOB.value:
             return await self._retry_sync_job(tenant_id, provider, context)
         else:
-            return {"status": "no_handler", "operation_type": op,
-                    "message": f"No automatic retry handler for '{op}'. Manual intervention required."}
+            return {"status": "no_handler", "operation_type": op, "message": f"No automatic retry handler for '{op}'. Manual intervention required."}
 
     async def _retry_reservation_import(
-        self, tenant_id: str, provider: str, context: dict[str, Any],
+        self,
+        tenant_id: str,
+        provider: str,
+        context: dict[str, Any],
     ) -> dict[str, Any]:
         """Retry a failed reservation import. Duplicate-safe via import bridge."""
         import_id = context.get("import_id", "")
@@ -217,22 +233,24 @@ class RetryEngine:
 
         db = self._get_db()
         # Check if already imported (idempotency)
-        doc = await db.imported_reservations.find_one(
-            {"id": import_id}, {"_id": 0, "import_status": 1}
-        )
+        doc = await db.imported_reservations.find_one({"id": import_id}, {"_id": 0, "import_status": 1})
         if doc and doc.get("import_status") == "imported":
             return {"status": "already_imported", "import_id": import_id}
 
         # Re-trigger import via bridge
         try:
             from core.import_bridge_service import auto_import_reservation_to_pms
+
             result = await auto_import_reservation_to_pms(import_id)
             return {"status": "retried", "import_id": import_id, "result": str(result)}
         except Exception as e:
             raise RuntimeError(f"Reservation import retry failed: {e}")
 
     async def _retry_outbox_event(
-        self, tenant_id: str, provider: str, context: dict[str, Any],
+        self,
+        tenant_id: str,
+        provider: str,
+        context: dict[str, Any],
     ) -> dict[str, Any]:
         """Retry a failed outbox event by resetting it to pending."""
         event_id = context.get("event_id", "")
@@ -243,16 +261,17 @@ class RetryEngine:
         now = datetime.now(UTC).isoformat()
         result = await db.outbox_events.update_one(
             {"event_id": event_id, "status": {"$in": ["failed", "parked"]}},
-            {"$set": {"status": "pending", "updated_at": now},
-             "$unset": {"failed_at": "", "parked_at": "", "parked_reason": ""}},
+            {"$set": {"status": "pending", "updated_at": now}, "$unset": {"failed_at": "", "parked_at": "", "parked_reason": ""}},
         )
         if result.modified_count == 1:
             return {"status": "requeued", "event_id": event_id}
-        return {"status": "not_modified", "event_id": event_id,
-                "reason": "Event not in failed/parked state or not found"}
+        return {"status": "not_modified", "event_id": event_id, "reason": "Event not in failed/parked state or not found"}
 
     async def _retry_ari_push(
-        self, tenant_id: str, provider: str, context: dict[str, Any],
+        self,
+        tenant_id: str,
+        provider: str,
+        context: dict[str, Any],
     ) -> dict[str, Any]:
         """Retry an ARI push by re-enqueuing the outbox event."""
         # ARI push failures map to outbox events
@@ -262,7 +281,10 @@ class RetryEngine:
         return {"status": "skipped", "reason": "No event_id for ARI retry"}
 
     async def _retry_sync_job(
-        self, tenant_id: str, provider: str, context: dict[str, Any],
+        self,
+        tenant_id: str,
+        provider: str,
+        context: dict[str, Any],
     ) -> dict[str, Any]:
         """Retry a failed sync job."""
         job_id = context.get("job_id", "")

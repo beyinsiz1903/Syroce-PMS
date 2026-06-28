@@ -10,6 +10,7 @@ Usage:
 The printed key goes into the on-prem connector config as LOCK_BRIDGE_KEY.
 Do not paste the key into chat, tickets, or commits.
 """
+
 import argparse
 import asyncio
 import sys

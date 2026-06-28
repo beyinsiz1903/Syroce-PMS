@@ -2,6 +2,7 @@
 PMS Bookings Router — Extracted from routers/pms.py (Stage 2 decomposition)
 Booking CRUD, approval/rejection, multi-room bookings, room move history.
 """
+
 import logging
 
 from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
@@ -27,10 +28,14 @@ from modules.pms_core.role_permission_service import require_op  # v82 DR
 
 try:
     from security.encrypted_lookup import decrypt_booking_doc
+
     _decrypt_booking = decrypt_booking_doc
 except Exception:
+
     def _decrypt_booking(doc):
         return doc
+
+
 from models.enums import (
     BookingStatus,
     CancellationPolicyType,
@@ -57,10 +62,13 @@ from modules.reservations.services.update_reservation_service import UpdateReser
 try:
     from cache_manager import cached
 except ImportError:
+
     def cached(ttl=300, key_prefix=""):
         def decorator(func):
             return func
+
         return decorator
+
 
 router = APIRouter(prefix="/api", tags=["pms"])
 security = HTTPBearer()
@@ -74,7 +82,11 @@ REJECTED_STATUS = "rejected"
 # ── Local models ──
 
 RejectReasonCode = Literal[
-    "NO_AVAILABILITY", "PRICE_MISMATCH", "OVERBOOK", "POLICY", "OTHER",
+    "NO_AVAILABILITY",
+    "PRICE_MISMATCH",
+    "OVERBOOK",
+    "POLICY",
+    "OTHER",
 ]
 
 
@@ -143,8 +155,8 @@ async def create_quick_booking(
         raise HTTPException(status_code=400, detail="Gecerli bir fiyat giriniz")
 
     try:
-        ci_dt = datetime.fromisoformat(data.check_in.replace('Z', '+00:00'))
-        co_dt = datetime.fromisoformat(data.check_out.replace('Z', '+00:00'))
+        ci_dt = datetime.fromisoformat(data.check_in.replace("Z", "+00:00"))
+        co_dt = datetime.fromisoformat(data.check_out.replace("Z", "+00:00"))
     except (ValueError, AttributeError, TypeError) as _e:
         raise HTTPException(status_code=400, detail=f"Gecersiz tarih formati: {_e}")
     if co_dt <= ci_dt:
@@ -157,9 +169,7 @@ async def create_quick_booking(
 
     # 2) Use existing guest or create new one
     if data.guest_id:
-        existing_guest = await db.guests.find_one(
-            {"id": data.guest_id, "tenant_id": tenant_id}, {"_id": 0}
-        )
+        existing_guest = await db.guests.find_one({"id": data.guest_id, "tenant_id": tenant_id}, {"_id": 0})
         if not existing_guest:
             raise HTTPException(status_code=404, detail="Secilen misafir bulunamadi")
         guest_id = data.guest_id
@@ -189,6 +199,7 @@ async def create_quick_booking(
                 "created_at": now_ts.isoformat(),
             }
             from security.guest_write import encrypt_guest_insert
+
             guest_doc = encrypt_guest_insert(guest_doc)
             await db.guests.insert_one(guest_doc)
 
@@ -295,18 +306,10 @@ async def get_arrivals(
             },
             {"_id": 0, "booking_id": 1, "id_photo_uploaded": 1, "id_photo": 1},
         ):
-            has_photo = bool(
-                ci.get("id_photo_uploaded")
-                and isinstance(ci.get("id_photo"), dict)
-                and ci["id_photo"].get("photo_id")
-            )
-            photo_flags[ci["booking_id"]] = (
-                photo_flags.get(ci["booking_id"], False) or has_photo
-            )
+            has_photo = bool(ci.get("id_photo_uploaded") and isinstance(ci.get("id_photo"), dict) and ci["id_photo"].get("photo_id"))
+            photo_flags[ci["booking_id"]] = photo_flags.get(ci["booking_id"], False) or has_photo
         for b in bookings:
-            b["online_checkin_id_photo_uploaded"] = bool(
-                photo_flags.get(b.get("id"), False)
-            )
+            b["online_checkin_id_photo_uploaded"] = bool(photo_flags.get(b.get("id"), False))
 
     return {"bookings": bookings, "total": len(bookings), "start_date": start, "end_date": end}
 
@@ -340,7 +343,8 @@ async def get_bookings(
         # `room_number`/`id` substring branches are dropped because they have no
         # companion index, and `booking_number` prefix search is added.)
         from security.search_normalize import prefix_conditions
-        conds = prefix_conditions(['guest_name', 'booking_number'], search)
+
+        conds = prefix_conditions(["guest_name", "booking_number"], search)
         query = {"tenant_id": current_user.tenant_id}
         if conds:
             query["$or"] = conds
@@ -351,6 +355,7 @@ async def get_bookings(
         all_guest_ids = {b["guest_id"] for b in bookings if b.get("guest_id")}
         missing_room_ids = {b["room_id"] for b in bookings if b.get("room_id") and not b.get("room_number")}
         from core.guest_name_utils import display_guest_name, is_placeholder_guest_name
+
         guest_name_map: dict[str, str] = {}
         if all_guest_ids:
             async for g in db.guests.find(
@@ -380,6 +385,7 @@ async def get_bookings(
     # Check pre-warmed cache for default query (no filters)
     if not start_date and not end_date and not status and offset == 0:
         from cache_warmer import cache_warmer
+
         if cache_warmer:
             cached_data = cache_warmer.get_cached(f"bookings:{current_user.tenant_id}")
             if cached_data:
@@ -393,13 +399,14 @@ async def get_bookings(
                 # guests koleksiyonu otorite — bookings.guest_name eski sync artigi
                 # ("V4 Refund" gibi) olabilir. TUM guest_id'ler icin lookup yap,
                 # gercek isim varsa booking.guest_name'i override et.
-                all_guest_ids = {b['guest_id'] for b in page if b.get('guest_id')}
-                room_ids = {b['room_id'] for b in page if b.get('room_id')}
+                all_guest_ids = {b["guest_id"] for b in page if b.get("guest_id")}
+                room_ids = {b["room_id"] for b in page if b.get("room_id")}
 
                 warm_guest_map = cache_warmer.get_cached(f"guest_map:{current_user.tenant_id}") or {}
                 warm_room_map = cache_warmer.get_cached(f"room_map:{current_user.tenant_id}") or {}
 
                 from core.guest_name_utils import display_guest_name, is_placeholder_guest_name
+
                 guest_map: dict[str, str] = {gid: warm_guest_map[gid] for gid in all_guest_ids if gid in warm_guest_map}
                 room_map: dict[str, dict] = {rid: warm_room_map[rid] for rid in room_ids if rid in warm_room_map}
 
@@ -411,43 +418,41 @@ async def get_bookings(
                     # multi-tenant isolation AND to hit the
                     # (tenant_id, id) compound index instead of scanning by id.
                     async for g in db.guests.find(
-                        {'id': {'$in': list(still_missing_guests)}, 'tenant_id': current_user.tenant_id},
-                        {'_id': 0, 'id': 1, 'name': 1, 'first_name': 1, 'last_name': 1},
+                        {"id": {"$in": list(still_missing_guests)}, "tenant_id": current_user.tenant_id},
+                        {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1},
                     ):
-                        nm = g.get('name') or f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
+                        nm = g.get("name") or f"{g.get('first_name', '')} {g.get('last_name', '')}".strip()
                         # Walk-in placeholder reddet — display fallback devreye girsin.
                         if nm and not is_placeholder_guest_name(nm):
-                            guest_map[g['id']] = nm
+                            guest_map[g["id"]] = nm
                 still_missing_rooms = room_ids - room_map.keys()
                 if still_missing_rooms:
                     async for r in db.rooms.find(
-                        {'id': {'$in': list(still_missing_rooms)}, 'tenant_id': current_user.tenant_id},
-                        {'_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1},
+                        {"id": {"$in": list(still_missing_rooms)}, "tenant_id": current_user.tenant_id},
+                        {"_id": 0, "id": 1, "room_number": 1, "room_type": 1},
                     ):
-                        room_map[r['id']] = r
-                rate_map = {'advance_purchase': 'promotional', 'member': 'promotional'}
-                segment_map = {'business': 'corporate'}
+                        room_map[r["id"]] = r
+                rate_map = {"advance_purchase": "promotional", "member": "promotional"}
+                segment_map = {"business": "corporate"}
                 bookings = []
                 for booking in page:
-                    if booking.get('guest_id') and booking['guest_id'] in guest_map:
-                        booking['guest_name'] = guest_map[booking['guest_id']]
-                    elif is_placeholder_guest_name(booking.get('guest_name')):
+                    if booking.get("guest_id") and booking["guest_id"] in guest_map:
+                        booking["guest_name"] = guest_map[booking["guest_id"]]
+                    elif is_placeholder_guest_name(booking.get("guest_name")):
                         # Placeholder ("C4", "V4 Refund", "X") veya bos → fallback
-                        booking['guest_name'] = display_guest_name(
-                            booking.get('guest_name'), booking.get('guest_id')
-                        )
-                    if booking.get('room_id'):
-                        room = room_map.get(booking['room_id'])
+                        booking["guest_name"] = display_guest_name(booking.get("guest_name"), booking.get("guest_id"))
+                    if booking.get("room_id"):
+                        room = room_map.get(booking["room_id"])
                         if room:
-                            booking['room_number'] = room.get('room_number', 'Unknown Room')
-                            if not booking.get('room_type'):
-                                booking['room_type'] = room.get('room_type')
-                        elif not booking.get('room_number'):
-                            booking['room_number'] = 'Unknown Room'
-                    if booking.get('rate_type') in rate_map:
-                        booking['rate_type'] = rate_map[booking['rate_type']]
-                    if booking.get('market_segment') in segment_map:
-                        booking['market_segment'] = segment_map[booking['market_segment']]
+                            booking["room_number"] = room.get("room_number", "Unknown Room")
+                            if not booking.get("room_type"):
+                                booking["room_type"] = room.get("room_type")
+                        elif not booking.get("room_number"):
+                            booking["room_number"] = "Unknown Room"
+                    if booking.get("rate_type") in rate_map:
+                        booking["rate_type"] = rate_map[booking["rate_type"]]
+                    if booking.get("market_segment") in segment_map:
+                        booking["market_segment"] = segment_map[booking["market_segment"]]
                     bookings.append(booking)
                 return bookings
 
@@ -469,15 +474,11 @@ async def get_booking_override_logs(
     _perm=Depends(require_op("view_finance_reports")),  # v82 DR: rate override audit = finance/manager
 ):
     """Get all rate override logs for a specific booking."""
-    logs = await db.rate_override_logs.find({
-        'booking_id': booking_id,
-        'tenant_id': current_user.tenant_id
-    }, {'_id': 0}).sort('timestamp', -1).to_list(100)
+    logs = await db.rate_override_logs.find({"booking_id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0}).sort("timestamp", -1).to_list(100)
     return logs
 
 
 @router.post("/bookings/{booking_id}/override")
-
 @router.post("/bookings/{booking_id}/approve")
 async def approve_booking(
     booking_id: str,
@@ -515,12 +516,14 @@ async def approve_booking(
     # Atomic-ish: update only if still pending
     res = await db.bookings.update_one(
         {"id": booking_id, "tenant_id": tenant_id, "status": BookingStatus.PENDING.value},
-        {"$set": {
-            "status": BookingStatus.CONFIRMED.value,
-            "approved_at": now,
-            "approved_by_user_id": current_user.id,
-            "updated_at": now,
-        }},
+        {
+            "$set": {
+                "status": BookingStatus.CONFIRMED.value,
+                "approved_at": now,
+                "approved_by_user_id": current_user.id,
+                "updated_at": now,
+            }
+        },
     )
 
     if res.modified_count != 1:
@@ -549,13 +552,13 @@ async def approve_booking(
     # ── Messaging Automation: booking confirmed ──
     try:
         from modules.messaging.automation import fire_booking_event
+
         if final:
             await fire_booking_event(tenant_id, "booking_confirmed", final)
     except Exception:
         pass
 
     return {"status": "ok", "booking": final, "booking_id": booking_id}
-
 
 
 @router.post("/bookings/{booking_id}/reject")
@@ -638,7 +641,6 @@ async def reject_booking(
     return {"status": "ok", "booking": final, "booking_id": booking_id}
 
 
-
 @router.put("/pms/bookings/{booking_id}")
 async def update_booking(
     booking_id: str,
@@ -675,6 +677,7 @@ async def get_booking(
         raise HTTPException(status_code=404, detail="Booking not found")
 
     from core.guest_name_utils import display_guest_name, is_placeholder_guest_name
+
     if booking.get("guest_id"):
         guest = await db.guests.find_one(
             {"id": booking["guest_id"], "tenant_id": current_user.tenant_id},
@@ -682,17 +685,13 @@ async def get_booking(
         )
         nm = ""
         if guest:
-            nm = guest.get("name") or (
-                f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip()
-            )
+            nm = guest.get("name") or (f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip())
         if nm and not is_placeholder_guest_name(nm):
             booking["guest_name"] = nm
         elif is_placeholder_guest_name(booking.get("guest_name")):
-            booking["guest_name"] = display_guest_name(
-                booking.get("guest_name"), booking.get("guest_id"))
+            booking["guest_name"] = display_guest_name(booking.get("guest_name"), booking.get("guest_id"))
     elif is_placeholder_guest_name(booking.get("guest_name")):
-        booking["guest_name"] = display_guest_name(
-            booking.get("guest_name"), booking.get("guest_id"))
+        booking["guest_name"] = display_guest_name(booking.get("guest_name"), booking.get("guest_id"))
 
     if booking.get("room_id") and not booking.get("room_number"):
         room = await db.rooms.find_one(
@@ -756,8 +755,7 @@ async def create_multi_room_booking(
     her istek random group oluşturur (geri uyumlu).
     """
     # ── Bug Z: Idempotency enforcement ──────────────────────────────────
-    idem_key = (request.headers.get("Idempotency-Key") or
-                request.headers.get("idempotency-key") or "").strip()
+    idem_key = (request.headers.get("Idempotency-Key") or request.headers.get("idempotency-key") or "").strip()
     payload_hash = None
     if idem_key:
         try:
@@ -765,10 +763,7 @@ async def create_multi_room_booking(
             payload_hash = hashlib.sha256(raw.encode()).hexdigest()
         except Exception:
             payload_hash = None
-        deterministic_group = str(uuid.uuid5(
-            uuid.NAMESPACE_OID,
-            f"{current_user.tenant_id}:multiroom:{idem_key}"
-        ))
+        deterministic_group = str(uuid.uuid5(uuid.NAMESPACE_OID, f"{current_user.tenant_id}:multiroom:{idem_key}"))
         existing = await db.bookings.find(
             {"group_booking_id": deterministic_group, "tenant_id": current_user.tenant_id},
             {"_id": 0},
@@ -776,8 +771,7 @@ async def create_multi_room_booking(
         if existing:
             existing_hash = existing[0].get("idempotency_payload_hash")
             if payload_hash and existing_hash and existing_hash != payload_hash:
-                raise HTTPException(status_code=409,
-                                    detail="Idempotency-Key reused with different payload")
+                raise HTTPException(status_code=409, detail="Idempotency-Key reused with different payload")
             return existing
     else:
         deterministic_group = None
@@ -786,13 +780,11 @@ async def create_multi_room_booking(
     # Resolve guest
     guest_id = payload.guest_id
     if not guest_id and payload.guest:
-        guest = Guest(
-            tenant_id=current_user.tenant_id,
-            **payload.guest.model_dump()
-        )
+        guest = Guest(tenant_id=current_user.tenant_id, **payload.guest.model_dump())
         guest_dict = guest.model_dump()
         guest_dict["created_at"] = guest_dict["created_at"].isoformat()
         from security.guest_write import encrypt_guest_insert
+
         guest_dict = encrypt_guest_insert(guest_dict)
         await db.guests.insert_one(guest_dict)
         guest_id = guest.id
@@ -842,6 +834,7 @@ async def create_multi_room_booking(
         boş oda yanlışlıkla 'dolu' görünmez ve sonraki rezervasyon 409 ile reddedilmez.
         Bug Y fix: rollback failures artık sessiz yutulmuyor, logger ile rapor ediliyor."""
         from core.atomic_booking import release_booking_nights
+
         compensation_errors = []
         for b in created_bookings:
             bid = b.get("id")
@@ -861,121 +854,125 @@ async def create_multi_room_booking(
             except Exception as ce:
                 compensation_errors.append(f"booking={bid} delete_failed: {ce}")
         if compensation_errors:
-            logger.error("SAGA COMPENSATION PARTIAL FAILURE group=%s reason=%s errors=%s",
-                         group_id, reason, compensation_errors)
+            logger.error("SAGA COMPENSATION PARTIAL FAILURE group=%s reason=%s errors=%s", group_id, reason, compensation_errors)
 
     for room_data in payload.rooms:
-      try:
-          room_id = room_data.get("room_id")
-          if not room_id:
-              raise HTTPException(status_code=400, detail="room_id is required for each room")
+        try:
+            room_id = room_data.get("room_id")
+            if not room_id:
+                raise HTTPException(status_code=400, detail="room_id is required for each room")
 
-          adults = int(room_data.get("adults", 1))
-          children = int(room_data.get("children", 0))
-          children_ages = room_data.get("children_ages", [])
-          total_amount = float(room_data.get("total_amount", 0.0))
-          base_rate = room_data.get("base_rate")
-          rate_plan = room_data.get("rate_plan")
-          package_code = room_data.get("package_code")
+            adults = int(room_data.get("adults", 1))
+            children = int(room_data.get("children", 0))
+            children_ages = room_data.get("children_ages", [])
+            total_amount = float(room_data.get("total_amount", 0.0))
+            base_rate = room_data.get("base_rate")
+            rate_plan = room_data.get("rate_plan")
+            package_code = room_data.get("package_code")
 
-          # Booking modeli yalin (extra=ignore) oldugundan dict'i elle insa ediyoruz
-          special_req = payload.special_requests
-          if package_code:
-              note = f"Package: {package_code}"
-              special_req = f"{special_req} | {note}" if special_req else note
+            # Booking modeli yalin (extra=ignore) oldugundan dict'i elle insa ediyoruz
+            special_req = payload.special_requests
+            if package_code:
+                note = f"Package: {package_code}"
+                special_req = f"{special_req} | {note}" if special_req else note
 
-          booking_id = str(uuid.uuid4())
-          qr_token = generate_time_based_qr_token(booking_id, expiry_hours=72)
-          qr_data = f"booking:{booking_id}:token:{qr_token}"
-          qr_code = generate_qr_code(qr_data)
+            booking_id = str(uuid.uuid4())
+            qr_token = generate_time_based_qr_token(booking_id, expiry_hours=72)
+            qr_data = f"booking:{booking_id}:token:{qr_token}"
+            qr_code = generate_qr_code(qr_data)
 
-          booking_dict = {
-              "id": booking_id,
-              "tenant_id": current_user.tenant_id,
-              "guest_id": guest_id,
-              "room_id": room_id,
-              "check_in": check_in_dt.isoformat(),
-              "check_out": check_out_dt.isoformat(),
-              "adults": adults,
-              "children": children,
-              "children_ages": children_ages,
-              "guests_count": adults + children,
-              "total_amount": total_amount,
-              "base_rate": base_rate,
-              "channel": getattr(payload.channel, "value", payload.channel) if payload.channel else "direct",
-              "rate_plan": rate_plan or "Standard",
-              "special_requests": special_req,
-              "company_id": payload.company_id,
-              "contracted_rate": getattr(payload.contracted_rate, "value", payload.contracted_rate) if payload.contracted_rate else None,
-              "rate_type": getattr(payload.rate_type, "value", payload.rate_type) if payload.rate_type else None,
-              "market_segment": getattr(payload.market_segment, "value", payload.market_segment) if payload.market_segment else None,
-              "cancellation_policy": getattr(payload.cancellation_policy, "value", payload.cancellation_policy) if payload.cancellation_policy else None,
-              "group_booking_id": group_id,
-              "status": "pending",
-              "qr_code": qr_code,
-              "qr_code_data": qr_token,
-              "created_at": datetime.utcnow().isoformat(),
-              "paid_amount": 0.0,
-          }
-          if payload_hash:
-              booking_dict["idempotency_payload_hash"] = payload_hash
-          from core.atomic_booking import BookingConflictError, create_booking_atomic
-          try:
-              await create_booking_atomic(booking_dict)
-          except BookingConflictError as e:
-              await _rollback_group(reason="group_conflict_rollback")
-              # F8N — structured detail (mirrors create_reservation_service).
-              raise HTTPException(status_code=409, detail={
-                  "message": str(e),
-                  "conflicting_booking_id": getattr(e, "conflicting_booking_id", None),
-                  "conflict_type": getattr(e, "conflict_type", "booking"),
-                  "conflict_window": {
-                      "room_id": room_id,
-                      "check_in": check_in_dt.isoformat(),
-                      "check_out": check_out_dt.isoformat(),
-                  },
-              })
-          except Exception as e:
-              await _rollback_group(reason="group_unknown_rollback")
-              logger.exception("Multi-room booking atomic insert failed group=%s booking=%s: %s", group_id, booking_id, e)
-              raise HTTPException(status_code=500, detail="Booking creation failed; group rolled back")
+            booking_dict = {
+                "id": booking_id,
+                "tenant_id": current_user.tenant_id,
+                "guest_id": guest_id,
+                "room_id": room_id,
+                "check_in": check_in_dt.isoformat(),
+                "check_out": check_out_dt.isoformat(),
+                "adults": adults,
+                "children": children,
+                "children_ages": children_ages,
+                "guests_count": adults + children,
+                "total_amount": total_amount,
+                "base_rate": base_rate,
+                "channel": getattr(payload.channel, "value", payload.channel) if payload.channel else "direct",
+                "rate_plan": rate_plan or "Standard",
+                "special_requests": special_req,
+                "company_id": payload.company_id,
+                "contracted_rate": getattr(payload.contracted_rate, "value", payload.contracted_rate) if payload.contracted_rate else None,
+                "rate_type": getattr(payload.rate_type, "value", payload.rate_type) if payload.rate_type else None,
+                "market_segment": getattr(payload.market_segment, "value", payload.market_segment) if payload.market_segment else None,
+                "cancellation_policy": getattr(payload.cancellation_policy, "value", payload.cancellation_policy) if payload.cancellation_policy else None,
+                "group_booking_id": group_id,
+                "status": "pending",
+                "qr_code": qr_code,
+                "qr_code_data": qr_token,
+                "created_at": datetime.utcnow().isoformat(),
+                "paid_amount": 0.0,
+            }
+            if payload_hash:
+                booking_dict["idempotency_payload_hash"] = payload_hash
+            from core.atomic_booking import BookingConflictError, create_booking_atomic
 
-          # Folio insert — Saga: fail olursa az önceki booking + tüm grup geri al
-          try:
-              folio_number = await generate_folio_number(current_user.tenant_id)
-              folio = Folio(
-                  tenant_id=current_user.tenant_id,
-                  booking_id=booking_id,
-                  folio_number=folio_number,
-                  folio_type=FolioType.GUEST,
-                  guest_id=guest_id,
-              )
-              folio_dict = folio.model_dump()
-              folio_dict["created_at"] = folio_dict["created_at"].isoformat()
-              await db.folios.insert_one(folio_dict)
-          except Exception as e:
-              # Az önceki booking henüz created_bookings'e eklenmedi — onu da temizle.
-              # Task #437: kilitleri ÖNCE bırak, sonra booking'i sil; release patlarsa
-              # booking SİLİNMEZ ki kilit sahipsiz (orphan) kalmasın.
-              from core.atomic_booking import release_booking_nights
-              try:
-                  await release_booking_nights(current_user.tenant_id, booking_id, reason="folio_insert_failed")
-                  await db.bookings.delete_one({"id": booking_id, "tenant_id": current_user.tenant_id})
-              except Exception as ce:
-                  logger.error("Folio-fail cleanup partial failure booking=%s: %s (booking kilit sahipliği korunarak bırakıldı)", booking_id, ce)
-              await _rollback_group(reason="folio_insert_failed")
-              logger.exception("Multi-room folio insert failed group=%s booking=%s: %s", group_id, booking_id, e)
-              raise HTTPException(status_code=500, detail="Folio creation failed; group rolled back")
+            try:
+                await create_booking_atomic(booking_dict)
+            except BookingConflictError as e:
+                await _rollback_group(reason="group_conflict_rollback")
+                # F8N — structured detail (mirrors create_reservation_service).
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": str(e),
+                        "conflicting_booking_id": getattr(e, "conflicting_booking_id", None),
+                        "conflict_type": getattr(e, "conflict_type", "booking"),
+                        "conflict_window": {
+                            "room_id": room_id,
+                            "check_in": check_in_dt.isoformat(),
+                            "check_out": check_out_dt.isoformat(),
+                        },
+                    },
+                )
+            except Exception as e:
+                await _rollback_group(reason="group_unknown_rollback")
+                logger.exception("Multi-room booking atomic insert failed group=%s booking=%s: %s", group_id, booking_id, e)
+                raise HTTPException(status_code=500, detail="Booking creation failed; group rolled back")
 
-          created_bookings.append(booking_dict)
+            # Folio insert — Saga: fail olursa az önceki booking + tüm grup geri al
+            try:
+                folio_number = await generate_folio_number(current_user.tenant_id)
+                folio = Folio(
+                    tenant_id=current_user.tenant_id,
+                    booking_id=booking_id,
+                    folio_number=folio_number,
+                    folio_type=FolioType.GUEST,
+                    guest_id=guest_id,
+                )
+                folio_dict = folio.model_dump()
+                folio_dict["created_at"] = folio_dict["created_at"].isoformat()
+                await db.folios.insert_one(folio_dict)
+            except Exception as e:
+                # Az önceki booking henüz created_bookings'e eklenmedi — onu da temizle.
+                # Task #437: kilitleri ÖNCE bırak, sonra booking'i sil; release patlarsa
+                # booking SİLİNMEZ ki kilit sahipsiz (orphan) kalmasın.
+                from core.atomic_booking import release_booking_nights
 
-      except HTTPException:
-          # rollback grup, sonra orijinal HTTPException'i yeniden firlat
-          await _rollback_group(reason="iter_http_error")
-          raise
-      except Exception as e:
-          await _rollback_group(reason="iter_unexpected_error")
-          logger.exception("Multi-room loop unexpected error: %s", e)
-          raise HTTPException(status_code=500, detail="Multi-room booking failed; group rolled back")
+                try:
+                    await release_booking_nights(current_user.tenant_id, booking_id, reason="folio_insert_failed")
+                    await db.bookings.delete_one({"id": booking_id, "tenant_id": current_user.tenant_id})
+                except Exception as ce:
+                    logger.error("Folio-fail cleanup partial failure booking=%s: %s (booking kilit sahipliği korunarak bırakıldı)", booking_id, ce)
+                await _rollback_group(reason="folio_insert_failed")
+                logger.exception("Multi-room folio insert failed group=%s booking=%s: %s", group_id, booking_id, e)
+                raise HTTPException(status_code=500, detail="Folio creation failed; group rolled back")
+
+            created_bookings.append(booking_dict)
+
+        except HTTPException:
+            # rollback grup, sonra orijinal HTTPException'i yeniden firlat
+            await _rollback_group(reason="iter_http_error")
+            raise
+        except Exception as e:
+            await _rollback_group(reason="iter_unexpected_error")
+            logger.exception("Multi-room loop unexpected error: %s", e)
+            raise HTTPException(status_code=500, detail="Multi-room booking failed; group rolled back")
 
     return created_bookings

@@ -11,6 +11,7 @@ Unified API for:
 - Post-launch monitoring
 - Final platform maturity score
 """
+
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -34,22 +35,28 @@ router = APIRouter(prefix="/api/production", tags=["Phase 7 — Production Rollo
 
 # ── Schemas ──────────────────────────────────────────────────────────
 
+
 class AdvanceStageRequest(BaseModel):
     target_stage_id: str
 
+
 class RollbackRequest(BaseModel):
     reason: str
+
 
 class OnboardingRequest(BaseModel):
     hotel_name: str
     config: dict[str, Any] | None = None
 
+
 class CompleteStepRequest(BaseModel):
     step_id: str
     notes: str = ""
 
+
 class RunScenarioRequest(BaseModel):
     scenario_id: str
+
 
 class RecordDrillRequest(BaseModel):
     schedule_id: str
@@ -61,6 +68,7 @@ class RecordDrillRequest(BaseModel):
 # 1. PRODUCTION ENVIRONMENT PREPARATION
 # ═══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/env/validate")
 async def validate_production_env(user=Depends(get_current_user)):
     ctx = OperationContext.from_user(user)
@@ -71,6 +79,7 @@ async def validate_production_env(user=Depends(get_current_user)):
 # ═══════════════════════════════════════════════════════════════════════
 # 2. CANARY DEPLOYMENT
 # ═══════════════════════════════════════════════════════════════════════
+
 
 @router.get("/canary/plan")
 async def get_canary_plan(user=Depends(get_current_user)):
@@ -86,7 +95,9 @@ async def get_canary_status(user=Depends(get_current_user)):
 
 
 @router.post("/canary/advance")
-async def advance_canary_stage(req: AdvanceStageRequest, user=Depends(get_current_user),
+async def advance_canary_stage(
+    req: AdvanceStageRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     ctx = OperationContext.from_user(user)
@@ -97,7 +108,9 @@ async def advance_canary_stage(req: AdvanceStageRequest, user=Depends(get_curren
 
 
 @router.post("/canary/rollback")
-async def rollback_canary(req: RollbackRequest, user=Depends(get_current_user),
+async def rollback_canary(
+    req: RollbackRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     ctx = OperationContext.from_user(user)
@@ -118,8 +131,11 @@ async def check_rollback_triggers(user=Depends(get_current_user)):
 # 3. PILOT HOTEL ONBOARDING
 # ═══════════════════════════════════════════════════════════════════════
 
+
 @router.post("/pilot/onboarding")
-async def create_pilot_onboarding(req: OnboardingRequest, user=Depends(get_current_user),
+async def create_pilot_onboarding(
+    req: OnboardingRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     ctx = OperationContext.from_user(user)
@@ -135,7 +151,9 @@ async def get_pilot_onboarding(user=Depends(get_current_user)):
 
 
 @router.post("/pilot/onboarding/complete-step")
-async def complete_onboarding_step(req: CompleteStepRequest, user=Depends(get_current_user),
+async def complete_onboarding_step(
+    req: CompleteStepRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     ctx = OperationContext.from_user(user)
@@ -146,7 +164,8 @@ async def complete_onboarding_step(req: CompleteStepRequest, user=Depends(get_cu
 
 
 @router.post("/pilot/onboarding/run-auto")
-async def run_auto_validations(user=Depends(get_current_user),
+async def run_auto_validations(
+    user=Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     ctx = OperationContext.from_user(user)
@@ -165,6 +184,7 @@ async def get_pilot_success_criteria(user=Depends(get_current_user)):
 # 4. PILOT MONITORING PACK
 # ═══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/monitoring/dashboard")
 async def get_monitoring_dashboard(user=Depends(get_current_user)):
     ctx = OperationContext.from_user(user)
@@ -179,7 +199,8 @@ async def get_monitoring_alerts_config(user=Depends(get_current_user)):
 
 
 @router.post("/monitoring/daily-report")
-async def generate_daily_report(user=Depends(get_current_user),
+async def generate_daily_report(
+    user=Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     ctx = OperationContext.from_user(user)
@@ -201,11 +222,13 @@ async def get_report_history(
 # 5. INCIDENT RESPONSE READINESS (uses existing incident service)
 # ═══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/incident-readiness")
 async def get_incident_readiness(user=Depends(get_current_user)):
     """Verify incident response readiness: lifecycle, recovery tools, runbooks."""
     ctx = OperationContext.from_user(user)
     from modules.incident.incident_service import incident_response_service
+
     health = await incident_response_service.get_service_health_matrix(ctx)
     return from_service_result(health)
 
@@ -214,6 +237,7 @@ async def get_incident_readiness(user=Depends(get_current_user)):
 # 6. PRODUCTION LOAD VALIDATION
 # ═══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/load/scenarios")
 async def get_load_scenarios(user=Depends(get_current_user)):
     result = await production_load_validation_service.get_scenarios()
@@ -221,7 +245,9 @@ async def get_load_scenarios(user=Depends(get_current_user)):
 
 
 @router.post("/load/run")
-async def run_load_scenario(req: RunScenarioRequest, user=Depends(get_current_user),
+async def run_load_scenario(
+    req: RunScenarioRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     ctx = OperationContext.from_user(user)
@@ -245,6 +271,7 @@ async def get_load_report(
 # 7. TENANT ISOLATION CONFIRMATION
 # ═══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/isolation/validate")
 async def validate_tenant_isolation(user=Depends(get_current_user)):
     ctx = OperationContext.from_user(user)
@@ -256,6 +283,7 @@ async def validate_tenant_isolation(user=Depends(get_current_user)):
 # 8. POST-LAUNCH MONITORING
 # ═══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/post-launch/status")
 async def get_post_launch_status(user=Depends(get_current_user)):
     ctx = OperationContext.from_user(user)
@@ -264,7 +292,9 @@ async def get_post_launch_status(user=Depends(get_current_user)):
 
 
 @router.post("/post-launch/record-drill")
-async def record_drill(req: RecordDrillRequest, user=Depends(get_current_user),
+async def record_drill(
+    req: RecordDrillRequest,
+    user=Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     ctx = OperationContext.from_user(user)
@@ -283,6 +313,7 @@ async def get_maturity_report(user=Depends(get_current_user)):
 # 9. FINAL PLATFORM MATURITY SCORE
 # ═══════════════════════════════════════════════════════════════════════
 
+
 @router.get("/maturity/score")
 async def get_final_maturity_score(user=Depends(get_current_user)):
     ctx = OperationContext.from_user(user)
@@ -300,8 +331,8 @@ async def get_maturity_history(
     return from_service_result(result)
 
 
-
 # ── Soak Test Results ────────────────────────────────────────────────
+
 
 @router.get("/soak-test/status")
 async def get_soak_test_status(user=Depends(get_current_user)):
@@ -318,6 +349,7 @@ async def get_soak_test_status(user=Depends(get_current_user)):
 
     # Check if locust is running
     import subprocess
+
     try:
         ps = subprocess.run(["pgrep", "-f", "locust"], capture_output=True, text=True)
         results["soak_running"] = bool(ps.stdout.strip())
@@ -346,6 +378,7 @@ async def get_soak_test_status(user=Depends(get_current_user)):
     if csv_files:
         try:
             import csv
+
             with open(csv_files[0]) as f:
                 reader = csv.DictReader(f)
                 results["locust_stats"] = list(reader)
@@ -392,11 +425,13 @@ async def start_soak_test(
 
 
 @router.post("/soak-test/stop")
-async def stop_soak_test(user=Depends(get_current_user),
+async def stop_soak_test(
+    user=Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     """Stop running soak test."""
     import subprocess
+
     try:
         subprocess.run(["pkill", "-f", "locust"], capture_output=True)
         subprocess.run(["pkill", "-f", "soak_monitor"], capture_output=True)

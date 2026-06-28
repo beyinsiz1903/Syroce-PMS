@@ -2,6 +2,7 @@
 PMS Advanced Analytics Router
 Channel Loss Analysis, Overbooking Heatmap, Rule Engine (Light), No-Show Prediction (Basic)
 """
+
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/api", tags=["pms-analytics"])
 # ────────────────────────────────────────────────────────
 # 1) CHANNEL LOSS ANALYTICS (FULL)
 # ────────────────────────────────────────────────────────
+
 
 @router.get("/pms/channel-loss-analytics")
 async def get_channel_loss_analytics(
@@ -81,14 +83,16 @@ async def get_channel_loss_analytics(
         total_ch_bookings = channel_booking_counts.get(ch, 0)
         rate = round((info["count"] / total_ch_bookings * 100), 1) if total_ch_bookings > 0 else 0
         avg_loss = round(info["total_loss"] / info["count"], 2) if info["count"] > 0 else 0
-        channels.append({
-            "channel": ch,
-            "no_show_count": info["count"],
-            "total_loss": round(info["total_loss"], 2),
-            "avg_loss": avg_loss,
-            "no_show_rate": rate,
-            "total_bookings": total_ch_bookings,
-        })
+        channels.append(
+            {
+                "channel": ch,
+                "no_show_count": info["count"],
+                "total_loss": round(info["total_loss"], 2),
+                "avg_loss": avg_loss,
+                "no_show_rate": rate,
+                "total_bookings": total_ch_bookings,
+            }
+        )
 
     channels.sort(key=lambda x: -x["total_loss"])
 
@@ -146,6 +150,7 @@ async def get_channel_loss_analytics(
 # ────────────────────────────────────────────────────────
 # 2) OVERBOOKING HEATMAP (FULL)
 # ────────────────────────────────────────────────────────
+
 
 @router.get("/pms/overbooking-heatmap")
 async def get_overbooking_heatmap(
@@ -210,13 +215,15 @@ async def get_overbooking_heatmap(
 
     heatmap = []
     for d, info in sorted(date_map.items()):
-        heatmap.append({
-            "date": d,
-            "overbooking_count": info["overbooking"],
-            "total_noshow": info["total_noshow"],
-            "loss": round(info["loss"], 2),
-            "channel_breakdown": dict(info["channels"]),
-        })
+        heatmap.append(
+            {
+                "date": d,
+                "overbooking_count": info["overbooking"],
+                "total_noshow": info["total_noshow"],
+                "loss": round(info["loss"], 2),
+                "channel_breakdown": dict(info["channels"]),
+            }
+        )
 
     # --- Peak days (top 5 riskiest) ---
     peak_days = sorted(heatmap, key=lambda x: -x["overbooking_count"])[:5]
@@ -238,15 +245,17 @@ async def get_overbooking_heatmap(
     weekly_pattern = []
     for wd in range(7):
         info = weekday_data[wd]
-        weekly_pattern.append({
-            "day_index": wd,
-            "day_name": weekday_names[wd],
-            "overbooking_total": info["overbooking"],
-            "noshow_total": info["total_noshow"],
-            "avg_overbooking": round(info["overbooking"] / max(info["count"], 1), 2),
-            "avg_noshow": round(info["total_noshow"] / max(info["count"], 1), 2),
-            "is_weekend": wd >= 5,
-        })
+        weekly_pattern.append(
+            {
+                "day_index": wd,
+                "day_name": weekday_names[wd],
+                "overbooking_total": info["overbooking"],
+                "noshow_total": info["total_noshow"],
+                "avg_overbooking": round(info["overbooking"] / max(info["count"], 1), 2),
+                "avg_noshow": round(info["total_noshow"] / max(info["count"], 1), 2),
+                "is_weekend": wd >= 5,
+            }
+        )
 
     # --- Channel contribution for overbookings ---
     ch_contrib = defaultdict(int)
@@ -254,10 +263,7 @@ async def get_overbooking_heatmap(
         ch = b.get("source_channel") or b.get("channel") or "direct"
         ch_contrib[ch] += 1
 
-    channel_overlay = [
-        {"channel": ch, "count": cnt}
-        for ch, cnt in sorted(ch_contrib.items(), key=lambda x: -x[1])
-    ]
+    channel_overlay = [{"channel": ch, "count": cnt} for ch, cnt in sorted(ch_contrib.items(), key=lambda x: -x[1])]
 
     # --- Data quality ---
     total_ob = len(overbookings)
@@ -293,6 +299,7 @@ async def get_overbooking_heatmap(
 # ────────────────────────────────────────────────────────
 # 3) ALERT RULE ENGINE (LIGHT)
 # ────────────────────────────────────────────────────────
+
 
 class AlertRuleCreate(BaseModel):
     rule_name: str
@@ -349,11 +356,10 @@ async def delete_alert_rule(
     _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     """Delete an alert rule."""
-    result = await db.alert_rules.delete_one(
-        {"id": rule_id, "tenant_id": current_user.tenant_id}
-    )
+    result = await db.alert_rules.delete_one({"id": rule_id, "tenant_id": current_user.tenant_id})
     if result.deleted_count == 0:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=404, detail="Kural bulunamadi")
     return {"message": "Kural silindi"}
 
@@ -371,6 +377,7 @@ async def toggle_alert_rule(
     )
     if not rule:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=404, detail="Kural bulunamadi")
 
     new_state = not rule.get("is_active", True)
@@ -405,9 +412,7 @@ async def evaluate_alert_rules(
         {"_id": 0, "no_show_reason": 1, "source_channel": 1, "channel": 1, "total_amount": 1},
     ).to_list(5000)
 
-    total_bookings = await db.bookings.count_documents(
-        {"tenant_id": tenant_id, "created_at": {"$gte": cutoff}, "status": {"$ne": "cancelled"}}
-    )
+    total_bookings = await db.bookings.count_documents({"tenant_id": tenant_id, "created_at": {"$gte": cutoff}, "status": {"$ne": "cancelled"}})
 
     overbooking_count = sum(1 for b in no_shows if b.get("no_show_reason") == "overbooking")
     noshow_count = len(no_shows)
@@ -496,16 +501,21 @@ async def get_alert_history(
     current_user: User = Depends(get_current_user),
 ):
     """Get alert trigger history."""
-    history = await db.alert_history.find(
-        {"tenant_id": current_user.tenant_id, "rule_name": {"$exists": True}},
-        {"_id": 0},
-    ).sort("triggered_at", -1).to_list(limit)
+    history = (
+        await db.alert_history.find(
+            {"tenant_id": current_user.tenant_id, "rule_name": {"$exists": True}},
+            {"_id": 0},
+        )
+        .sort("triggered_at", -1)
+        .to_list(limit)
+    )
     return {"history": history}
 
 
 # ────────────────────────────────────────────────────────
 # 4) NO-SHOW PREDICTION (BASIC / RULE-BASED)
 # ────────────────────────────────────────────────────────
+
 
 @router.get("/pms/noshow-prediction")
 async def get_noshow_prediction(
@@ -616,22 +626,24 @@ async def get_noshow_prediction(
         else:
             risk_level = "low"
 
-        predictions.append({
-            "booking_id": b["id"],
-            "guest_name": b.get("guest_name") or "Bilinmiyor",
-            "channel": ch,
-            "check_in": ci,
-            "room_type": b.get("room_type") or "-",
-            "total_amount": amt,
-            "risk_score": risk_score,
-            "risk_level": risk_level,
-            "factors": {
-                "channel_rate": ch_rate,
-                "channel_score": round(ch_score, 1),
-                "dow_score": round(dow_score, 1),
-                "amount_score": amt_score,
-            },
-        })
+        predictions.append(
+            {
+                "booking_id": b["id"],
+                "guest_name": b.get("guest_name") or "Bilinmiyor",
+                "channel": ch,
+                "check_in": ci,
+                "room_type": b.get("room_type") or "-",
+                "total_amount": amt,
+                "risk_score": risk_score,
+                "risk_level": risk_level,
+                "factors": {
+                    "channel_rate": ch_rate,
+                    "channel_score": round(ch_score, 1),
+                    "dow_score": round(dow_score, 1),
+                    "amount_score": amt_score,
+                },
+            }
+        )
 
     predictions.sort(key=lambda x: -x["risk_score"])
 
@@ -664,9 +676,7 @@ async def get_noshow_prediction(
         },
         "historical_rates": {
             "by_channel": ch_rates,
-            "by_day_of_week": {
-                str(k): v for k, v in dow_rates.items()
-            },
+            "by_day_of_week": {str(k): v for k, v in dow_rates.items()},
         },
         "days_ahead": days_ahead,
         "data_quality": {

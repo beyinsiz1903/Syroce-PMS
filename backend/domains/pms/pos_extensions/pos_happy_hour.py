@@ -5,6 +5,7 @@ saate uygun aktif kuralları bulur, indirimli fiyatları döner. Frontend
 sipariş oluşturmadan önce bu endpoint'i çağırıp `unit_price`'ı override
 edebilir. Menü item dokümanlarına YAZILMAZ.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -29,7 +30,7 @@ class HappyHourRule(BaseModel):
     category: str | None = None  # menu item category filter; None = all
     item_ids: list[str] | None = None  # specific items; None = all in category
     start_time: str  # "HH:MM"
-    end_time: str    # "HH:MM"
+    end_time: str  # "HH:MM"
     days_of_week: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4, 5, 6])
     discount_type: str = Field(default="percent", pattern="^(percent|amount)$")
     discount_value: float = Field(gt=0)
@@ -94,16 +95,19 @@ def _apply_discount(unit_price: float, rule: dict) -> float:
 
 @router.post("/rules")
 async def create_rule(body: HappyHourRule, current_user: User = Depends(get_current_user)):
-    _parse_hhmm(body.start_time); _parse_hhmm(body.end_time)
+    _parse_hhmm(body.start_time)
+    _parse_hhmm(body.end_time)
     if not set(body.days_of_week).issubset(_VALID_DOW):
         raise HTTPException(status_code=400, detail="days_of_week must be 0..6")
     doc = body.model_dump()
-    doc.update({
-        "id": str(uuid.uuid4()),
-        "tenant_id": current_user.tenant_id,
-        "created_at": datetime.now(UTC),
-        "created_by": current_user.id,
-    })
+    doc.update(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": current_user.tenant_id,
+            "created_at": datetime.now(UTC),
+            "created_by": current_user.id,
+        }
+    )
     await db.pos_happy_hour_rules.insert_one(doc)
     doc.pop("_id", None)
     return {"success": True, "rule": doc}
@@ -123,9 +127,7 @@ async def list_rules(
 
 @router.delete("/rules/{rule_id}")
 async def delete_rule(rule_id: str, current_user: User = Depends(get_current_user)):
-    res = await db.pos_happy_hour_rules.delete_one(
-        {"id": rule_id, "tenant_id": current_user.tenant_id}
-    )
+    res = await db.pos_happy_hour_rules.delete_one({"id": rule_id, "tenant_id": current_user.tenant_id})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Rule not found")
     return {"success": True, "deleted": rule_id}
@@ -142,9 +144,7 @@ async def apply_rules(body: ApplyRequest, current_user: User = Depends(get_curre
         except Exception:
             raise HTTPException(status_code=400, detail="invalid 'at' timestamp")
 
-    active = await db.pos_happy_hour_rules.find(
-        {"tenant_id": current_user.tenant_id, "active": True}, {"_id": 0}
-    ).to_list(200)
+    active = await db.pos_happy_hour_rules.find({"tenant_id": current_user.tenant_id, "active": True}, {"_id": 0}).to_list(200)
 
     out = []
     total_orig = 0.0
@@ -163,14 +163,16 @@ async def apply_rules(body: ApplyRequest, current_user: User = Depends(get_curre
                 break  # first-match wins (deterministic)
         final = round(new_unit * qty, 2)
         total_disc += final
-        out.append({
-            **{k: v for k, v in item.items() if k != "price"},
-            "original_unit_price": unit_price,
-            "unit_price": new_unit,
-            "quantity": qty,
-            "line_total": final,
-            "applied_rule_id": applied_rule_id,
-        })
+        out.append(
+            {
+                **{k: v for k, v in item.items() if k != "price"},
+                "original_unit_price": unit_price,
+                "unit_price": new_unit,
+                "quantity": qty,
+                "line_total": final,
+                "applied_rule_id": applied_rule_id,
+            }
+        )
     return {
         "evaluated_at": now.isoformat(),
         "items": out,

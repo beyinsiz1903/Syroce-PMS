@@ -7,6 +7,7 @@ scanned and PII fields are masked based on the caller's role.
 Configuration is DB-backed (collection: pii_strict_mode_config).
 Violations (unmasked PII access attempts) are logged to pii_strict_violations.
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -28,15 +29,14 @@ class PIIStrictModeService:
     def _get_db(self):
         if self._db is None:
             from core.database import db
+
             self._db = db
         return self._db
 
     async def get_config(self) -> dict:
         """Return current strict mode configuration."""
         db = self._get_db()
-        doc = await db[COLL_CONFIG].find_one(
-            {"_id": CONFIG_DOC_ID}, {"_id": 0}
-        )
+        doc = await db[COLL_CONFIG].find_one({"_id": CONFIG_DOC_ID}, {"_id": 0})
         if not doc:
             return {
                 "enabled": False,
@@ -59,6 +59,7 @@ class PIIStrictModeService:
     async def is_enabled(self) -> bool:
         """Check if strict mode is currently enabled (with simple cache)."""
         import time
+
         now = time.time()
         if self._cache is not None and self._cache_ts and (now - self._cache_ts) < 30:
             return self._cache
@@ -83,17 +84,20 @@ class PIIStrictModeService:
         )
 
         # Log the toggle event
-        await db[COLL_VIOLATIONS].insert_one({
-            "event_type": "strict_mode_toggled",
-            "enabled": enabled,
-            "actor": actor,
-            "actor_role": actor_role,
-            "timestamp": now,
-        })
+        await db[COLL_VIOLATIONS].insert_one(
+            {
+                "event_type": "strict_mode_toggled",
+                "enabled": enabled,
+                "actor": actor,
+                "actor_role": actor_role,
+                "timestamp": now,
+            }
+        )
 
         # Invalidate cache
         self._cache = enabled
         import time
+
         self._cache_ts = time.time()
 
         logger.info("PII Strict Mode %s by %s", "ENABLED" if enabled else "DISABLED", actor)
@@ -123,52 +127,48 @@ class PIIStrictModeService:
     ) -> None:
         """Record a PII violation event."""
         db = self._get_db()
-        await db[COLL_VIOLATIONS].insert_one({
-            "event_type": "pii_violation",
-            "path": path,
-            "method": method,
-            "user_id": user_id,
-            "user_role": user_role,
-            "pii_fields_found": pii_fields_found,
-            "action_taken": action_taken,
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        await db[COLL_VIOLATIONS].insert_one(
+            {
+                "event_type": "pii_violation",
+                "path": path,
+                "method": method,
+                "user_id": user_id,
+                "user_role": user_role,
+                "pii_fields_found": pii_fields_found,
+                "action_taken": action_taken,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
 
-    async def get_violations(
-        self, *, limit: int = 50, skip: int = 0, event_type: str | None = None
-    ) -> dict:
+    async def get_violations(self, *, limit: int = 50, skip: int = 0, event_type: str | None = None) -> dict:
         """Query violation/event log."""
         db = self._get_db()
         query = {}
         if event_type:
             query["event_type"] = event_type
         total = await db[COLL_VIOLATIONS].count_documents(query)
-        items = (
-            await db[COLL_VIOLATIONS]
-            .find(query, {"_id": 0})
-            .sort("timestamp", -1)
-            .skip(skip)
-            .limit(limit)
-            .to_list(limit)
-        )
+        items = await db[COLL_VIOLATIONS].find(query, {"_id": 0}).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
         return {"items": items, "total": total, "limit": limit, "skip": skip}
 
     async def get_summary(self, *, hours: int = 24) -> dict:
         """Aggregate violation stats for the dashboard."""
         from datetime import timedelta
+
         db = self._get_db()
         cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
         config = await self.get_config()
 
         pipeline = [
             {"$match": {"event_type": "pii_violation", "timestamp": {"$gte": cutoff}}},
-            {"$group": {
-                "_id": None,
-                "total_violations": {"$sum": 1},
-                "unique_paths": {"$addToSet": "$path"},
-                "unique_users": {"$addToSet": "$user_id"},
-                "fields_seen": {"$push": "$pii_fields_found"},
-            }},
+            {
+                "$group": {
+                    "_id": None,
+                    "total_violations": {"$sum": 1},
+                    "unique_paths": {"$addToSet": "$path"},
+                    "unique_users": {"$addToSet": "$user_id"},
+                    "fields_seen": {"$push": "$pii_fields_found"},
+                }
+            },
         ]
         result = await db[COLL_VIOLATIONS].aggregate(pipeline).to_list(1)
 

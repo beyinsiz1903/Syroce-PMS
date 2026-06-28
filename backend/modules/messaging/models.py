@@ -2,6 +2,7 @@
 Data models for the messaging module.
 Channels: Email (SMTP) and WhatsApp (Meta Business API).
 """
+
 import uuid
 from datetime import UTC, datetime
 from enum import Enum
@@ -47,6 +48,7 @@ class TemplateCategory(str, Enum):
 
 
 # ── Document shapes for MongoDB ──
+
 
 def new_provider_config(
     tenant_id: str,

@@ -11,6 +11,7 @@ Usage:
     python scripts/check_import_boundaries.py
     (exit 0 = clean, exit 1 = boundary violation detected)
 """
+
 import pathlib
 import re
 import sys
@@ -40,23 +41,25 @@ BOUNDARY_RULES = [
 # Entry format: (relative_path_from_backend_root, line_number).
 # When you suppress an entry here, please also create a follow-up to migrate the
 # shared module to `common/` or `shared_kernel/` so the exception can be removed.
-KNOWN_EXCEPTIONS = frozenset({
-    # Worker'lar router içindeki helper fonksiyonları paylaşıyor; refactor için
-    # follow-up var (helper'lar `services/` veya `shared_kernel/` altına taşınmalı).
-    ("workers/konaklama_vergisi_scheduler.py", 34),
-    ("workers/konaklama_vergisi_scheduler.py", 55),
-    ("workers/report_scheduler_worker.py", 33),
-    # revenue domain'i, de-fake (uydurma kanal push'unu kaldirma) calismasinda
-    # gercek pinned-provider durumunu okumak icin channel_manager'in YETKILI
-    # saglayici-tespit yardimcisi `_detect_active_provider`'i cagiriyor (yalnizca
-    # okuma; pilot_drift=0; istemci girdisi ezemez). Lazy + fail-closed import.
-    # Follow-up: `_detect_active_provider` (+ `_tenant_configured_provider`)
-    # `shared_kernel/` altina tasinip her iki domain oradan import etmeli; o zaman
-    # bu istisnalar kaldirilabilir.
-    ("domains/revenue/pricing/pricing_service.py", 50),
-    ("domains/revenue/analytics_router/channel_mgr.py", 224),
-    ("domains/revenue/analytics_router/channel_mgr.py", 295),
-})
+KNOWN_EXCEPTIONS = frozenset(
+    {
+        # Worker'lar router içindeki helper fonksiyonları paylaşıyor; refactor için
+        # follow-up var (helper'lar `services/` veya `shared_kernel/` altına taşınmalı).
+        ("workers/konaklama_vergisi_scheduler.py", 34),
+        ("workers/konaklama_vergisi_scheduler.py", 55),
+        ("workers/report_scheduler_worker.py", 33),
+        # revenue domain'i, de-fake (uydurma kanal push'unu kaldirma) calismasinda
+        # gercek pinned-provider durumunu okumak icin channel_manager'in YETKILI
+        # saglayici-tespit yardimcisi `_detect_active_provider`'i cagiriyor (yalnizca
+        # okuma; pilot_drift=0; istemci girdisi ezemez). Lazy + fail-closed import.
+        # Follow-up: `_detect_active_provider` (+ `_tenant_configured_provider`)
+        # `shared_kernel/` altina tasinip her iki domain oradan import etmeli; o zaman
+        # bu istisnalar kaldirilabilir.
+        ("domains/revenue/pricing/pricing_service.py", 50),
+        ("domains/revenue/analytics_router/channel_mgr.py", 224),
+        ("domains/revenue/analytics_router/channel_mgr.py", 295),
+    }
+)
 
 DOMAIN_SELF_IMPORT = re.compile(r"from domains\.(\w+)")
 

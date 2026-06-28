@@ -17,6 +17,7 @@ def _get_db():
     if _db_ref is None:
         try:
             from core.database import db
+
             _db_ref = db
         except Exception:
             pass
@@ -55,6 +56,7 @@ class ShadowMetricsStore:
             doc = {**event, "_persisted_at": datetime.now(UTC).isoformat()}
             doc.pop("_id", None)
             import asyncio
+
             loop = None
             try:
                 loop = asyncio.get_running_loop()
@@ -75,9 +77,7 @@ class ShadowMetricsStore:
             query: dict[str, Any] = {}
             if tenant_id:
                 query["tenant_id"] = tenant_id
-            cursor = db.shadow_compare_events.find(
-                query, {"_id": 0}
-            ).sort("timestamp", -1).limit(limit)
+            cursor = db.shadow_compare_events.find(query, {"_id": 0}).sort("timestamp", -1).limit(limit)
             docs = await cursor.to_list(limit)
             with self._lock:
                 for doc in reversed(docs):

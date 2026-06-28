@@ -22,6 +22,7 @@ opportunistically on the next healthy flush via ``drain_stream_outbox`` — at-l
 -once delivery. Consumers MUST treat ARI as idempotent / last-write-wins (a replay
 can re-deliver), which it already is (keyed by room_type + date).
 """
+
 from __future__ import annotations
 
 import json
@@ -68,6 +69,7 @@ def _resolve_client(explicit=None):
         return explicit
     try:
         from infra.redis_cluster import redis_cluster
+
         if redis_cluster.connected:
             return redis_cluster.get_client()
     except Exception:  # noqa: BLE001 — resolution must never break the caller
@@ -81,9 +83,7 @@ async def _ensure_indexes() -> None:
         return
     try:
         sysdb = get_system_db()
-        await sysdb[OUTBOX_COLLECTION].create_index(
-            [("tenant_id", 1), ("event_id", 1)], unique=True, name="uq_tenant_event"
-        )
+        await sysdb[OUTBOX_COLLECTION].create_index([("tenant_id", 1), ("event_id", 1)], unique=True, name="uq_tenant_event")
         await sysdb[OUTBOX_COLLECTION].create_index([("created_at", 1)], name="ix_created")
         _indexes_ready = True
     except Exception:  # noqa: BLE001 — retry on the next call rather than crash
@@ -98,9 +98,7 @@ async def _agency_ids_for_tenant(tenant_id: str) -> list[str]:
         return cached[1]
     try:
         sysdb = get_system_db()
-        ids = await sysdb.agency_api_keys.distinct(
-            "agency_id", {"tenant_id": tenant_id, "is_active": True}
-        )
+        ids = await sysdb.agency_api_keys.distinct("agency_id", {"tenant_id": tenant_id, "is_active": True})
         ids = [i for i in ids if i]
         if ids:
             # Fail-closed parity with REST auth (_scope.py requires the agency
@@ -127,6 +125,7 @@ async def _agency_ids_for_tenant(tenant_id: str) -> list[str]:
 def _event_fields(event) -> dict:
     """Flatten an ARIChangeEvent into Redis-stream string fields (no agency_id;
     that is stamped per-agency at XADD time)."""
+
     def _iso(v):
         return v.isoformat() if hasattr(v, "isoformat") else str(v)
 
@@ -163,13 +162,15 @@ async def _outbox_record(tenant_id: str, event_id: str, fields: dict) -> None:
         sysdb = get_system_db()
         await sysdb[OUTBOX_COLLECTION].update_one(
             {"tenant_id": tenant_id, "event_id": event_id},
-            {"$setOnInsert": {
-                "tenant_id": tenant_id,
-                "event_id": event_id,
-                "fields": fields,
-                "created_at": _now_iso(),
-                "attempts": 0,
-            }},
+            {
+                "$setOnInsert": {
+                    "tenant_id": tenant_id,
+                    "event_id": event_id,
+                    "fields": fields,
+                    "created_at": _now_iso(),
+                    "attempts": 0,
+                }
+            },
             upsert=True,
         )
     except Exception:  # noqa: BLE001 — last resort; an undeliverable event is dropped, never raised
@@ -203,9 +204,7 @@ async def drain_stream_outbox(limit: int = 100, client=None) -> dict:
                 ok_all = False
         try:
             if ok_all:
-                await sysdb[OUTBOX_COLLECTION].delete_one(
-                    {"tenant_id": tenant_id, "event_id": row["event_id"]}
-                )
+                await sysdb[OUTBOX_COLLECTION].delete_one({"tenant_id": tenant_id, "event_id": row["event_id"]})
                 drained += 1
             else:
                 await sysdb[OUTBOX_COLLECTION].update_one(

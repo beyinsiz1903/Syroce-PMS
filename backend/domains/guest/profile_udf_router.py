@@ -9,6 +9,7 @@ PUT davranışı: MERGE (partial update). Payload'taki anahtarlar yazılır;
 gönderilmeyen mevcut anahtarlar korunur. Bir anahtarı silmek için açıkça
 null gönderin.
 """
+
 from __future__ import annotations
 
 import logging
@@ -68,13 +69,12 @@ class UdfValuesPayload(BaseModel):
 
 # ---------- Definitions ----------
 
+
 @router.get("/definitions", response_model=list[UdfDefinition])
 async def list_definitions(user: User = Depends(get_current_user)):
     """Tüm authenticated kullanıcılar tanımları okuyabilir (form render için)."""
     db = get_system_db()
-    cur = db.profile_udf_defs.find(
-        {"tenant_id": user.tenant_id, "active": True}
-    ).sort([("section", 1), ("order", 1), ("label", 1)])
+    cur = db.profile_udf_defs.find({"tenant_id": user.tenant_id, "active": True}).sort([("section", 1), ("order", 1), ("label", 1)])
     out: list[dict[str, Any]] = []
     async for d in cur:
         d.pop("_id", None)
@@ -96,9 +96,13 @@ async def create_definition(
     db = get_system_db()
     await _ensure_indexes(db)
 
-    existing = await db.profile_udf_defs.find_one({
-        "tenant_id": user.tenant_id, "key": payload.key, "active": True,
-    })
+    existing = await db.profile_udf_defs.find_one(
+        {
+            "tenant_id": user.tenant_id,
+            "key": payload.key,
+            "active": True,
+        }
+    )
     if existing:
         raise HTTPException(409, f"Bu anahtar zaten kullanımda: {payload.key}")
 
@@ -135,21 +139,22 @@ async def delete_definition(
 
 # ---------- Values on guest profiles ----------
 
+
 @router.get("/guests/{guest_id}")
 async def get_guest_udf_values(guest_id: str, user: User = Depends(get_current_user)):
     db = get_system_db()
-    guest = await db.guests.find_one({
-        "$or": [{"id": guest_id}, {"_id": guest_id}],
-        "tenant_id": user.tenant_id,
-    })
+    guest = await db.guests.find_one(
+        {
+            "$or": [{"id": guest_id}, {"_id": guest_id}],
+            "tenant_id": user.tenant_id,
+        }
+    )
     if not guest:
         raise HTTPException(404, "Misafir bulunamadı")
     values = guest.get("custom_fields", {}) or {}
 
     defs = []
-    async for d in db.profile_udf_defs.find(
-        {"tenant_id": user.tenant_id, "active": True}
-    ).sort([("section", 1), ("order", 1)]):
+    async for d in db.profile_udf_defs.find({"tenant_id": user.tenant_id, "active": True}).sort([("section", 1), ("order", 1)]):
         d.pop("_id", None)
         defs.append(d)
 
@@ -206,10 +211,12 @@ async def set_guest_udf_values(
     """MERGE davranışı: payload'taki anahtarlar mevcut custom_fields üzerine yazılır,
     gönderilmeyenler korunur. Bir anahtarı silmek için açıkça null gönderin."""
     db = get_system_db()
-    guest = await db.guests.find_one({
-        "$or": [{"id": guest_id}, {"_id": guest_id}],
-        "tenant_id": user.tenant_id,
-    })
+    guest = await db.guests.find_one(
+        {
+            "$or": [{"id": guest_id}, {"_id": guest_id}],
+            "tenant_id": user.tenant_id,
+        }
+    )
     if not guest:
         raise HTTPException(404, "Misafir bulunamadı")
 
@@ -240,10 +247,12 @@ async def set_guest_udf_values(
 
     await db.guests.update_one(
         {"$or": [{"id": guest_id}, {"_id": guest_id}], "tenant_id": user.tenant_id},
-        {"$set": {
-            "custom_fields": merged,
-            "custom_fields_updated_at": datetime.now(UTC).isoformat(),
-            "custom_fields_updated_by": user.email,
-        }},
+        {
+            "$set": {
+                "custom_fields": merged,
+                "custom_fields_updated_at": datetime.now(UTC).isoformat(),
+                "custom_fields_updated_by": user.email,
+            }
+        },
     )
     return {"ok": True, "values": merged}

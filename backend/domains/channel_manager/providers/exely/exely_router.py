@@ -2,6 +2,7 @@
 Exely Integration Router
 API endpoints for Exely connection management, room discovery, mapping, ARI push, and sync.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -28,6 +29,7 @@ PROVIDER = "exely"
 
 
 # ── Request Models ───────────────────────────────────────────────────
+
 
 class ExelyConnectionSetup(BaseModel):
     username: str
@@ -64,9 +66,11 @@ class ExelyARIUpdate(BaseModel):
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
+
 async def _get_client(tenant_id: str) -> tuple:
     conn = await db.exely_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0},
+        {"tenant_id": tenant_id, "is_active": True},
+        {"_id": 0},
     )
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found. Please set up a connection first.")
@@ -104,6 +108,7 @@ async def _get_client(tenant_id: str) -> tuple:
 
 
 # ── Connection Management ────────────────────────────────────────────
+
 
 @router.post("/connect")
 async def setup_connection(
@@ -168,8 +173,7 @@ async def setup_connection(
         upsert=True,
     )
 
-    await log_sync(PROVIDER, current_user.tenant_id, "connection", "success",
-                    duration_ms=test_result.get("duration_ms", 0), user_name=current_user.name)
+    await log_sync(PROVIDER, current_user.tenant_id, "connection", "success", duration_ms=test_result.get("duration_ms", 0), user_name=current_user.name)
 
     return {
         "message": "Exely connection established successfully",
@@ -192,11 +196,13 @@ async def get_connection_status(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/test")
-async def test_connection(current_user: User = Depends(get_current_user),
+async def test_connection(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     conn = await db.exely_connections.find_one(
-        {"tenant_id": current_user.tenant_id, "is_active": True}, {"_id": 0},
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {"_id": 0},
     )
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found")
@@ -219,7 +225,8 @@ async def test_connection(current_user: User = Depends(get_current_user),
 
 
 @router.delete("/disconnect")
-async def disconnect(current_user: User = Depends(get_current_user),
+async def disconnect(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     result = await db.exely_connections.update_one(
@@ -229,7 +236,6 @@ async def disconnect(current_user: User = Depends(get_current_user),
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Active connection not found")
     return {"message": "Exely connection disconnected"}
-
 
 
 class CurrencyUpdateRequest(BaseModel):
@@ -257,6 +263,7 @@ async def update_currency(
 
 # ── Room Discovery ───────────────────────────────────────────────────
 
+
 @router.get("/rooms/discover")
 async def discover_rooms(
     checkin: str | None = None,
@@ -275,11 +282,13 @@ async def discover_rooms(
     # Cache discovered rooms/rates on connection
     await db.exely_connections.update_one(
         {"tenant_id": current_user.tenant_id},
-        {"$set": {
-            "room_types": result["room_types"],
-            "rate_plans": result["rate_plans"],
-            "rooms_fetched_at": datetime.now(UTC).isoformat(),
-        }},
+        {
+            "$set": {
+                "room_types": result["room_types"],
+                "rate_plans": result["rate_plans"],
+                "rooms_fetched_at": datetime.now(UTC).isoformat(),
+            }
+        },
     )
 
     return {
@@ -289,6 +298,7 @@ async def discover_rooms(
 
 
 # ── Room Mapping ─────────────────────────────────────────────────────
+
 
 @router.post("/room-mappings")
 async def create_room_mapping(
@@ -317,7 +327,8 @@ async def create_room_mapping(
 @router.get("/room-mappings")
 async def get_room_mappings(current_user: User = Depends(get_current_user)):
     mappings = await db.exely_room_mappings.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0},
+        {"tenant_id": current_user.tenant_id},
+        {"_id": 0},
     ).to_list(100)
     return {"mappings": mappings, "count": len(mappings)}
 
@@ -328,15 +339,19 @@ async def delete_room_mapping(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
-    result = await db.exely_room_mappings.delete_one({
-        "id": mapping_id, "tenant_id": current_user.tenant_id,
-    })
+    result = await db.exely_room_mappings.delete_one(
+        {
+            "id": mapping_id,
+            "tenant_id": current_user.tenant_id,
+        }
+    )
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Esleme bulunamadi")
     return {"message": "Esleme silindi"}
 
 
 # ── ARI Push ─────────────────────────────────────────────────────────
+
 
 @router.post("/ari/push")
 async def push_ari(
@@ -359,9 +374,7 @@ async def push_ari(
     )
 
     status = "success" if result["success"] else "failed"
-    await log_sync(PROVIDER, current_user.tenant_id, "ari_push", status,
-                    duration_ms=result.get("duration_ms", 0), records=1,
-                    error=result.get("error"), user_name=current_user.name)
+    await log_sync(PROVIDER, current_user.tenant_id, "ari_push", status, duration_ms=result.get("duration_ms", 0), records=1, error=result.get("error"), user_name=current_user.name)
 
     if not result["success"]:
         raise HTTPException(status_code=502, detail=f"ARI push hatasi: {result['error']}")
@@ -393,22 +406,23 @@ async def bulk_push_ari(
         results.append(r)
 
     success_count = sum(1 for r in results if r.get("success"))
-    await log_sync(PROVIDER, current_user.tenant_id, "ari_bulk_push",
-                    "success" if success_count == len(results) else "partial",
-                    records=success_count, user_name=current_user.name)
+    await log_sync(PROVIDER, current_user.tenant_id, "ari_bulk_push", "success" if success_count == len(results) else "partial", records=success_count, user_name=current_user.name)
 
     return {"total": len(results), "success": success_count, "failed": len(results) - success_count, "results": results}
 
 
 # ── Reservation Sync ─────────────────────────────────────────────────
 
+
 @router.post("/sync/reservations/pull")
-async def manual_pull(current_user: User = Depends(get_current_user),
+async def manual_pull(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     """Manually trigger a reservation pull from Exely."""
     conn = await db.exely_connections.find_one(
-        {"tenant_id": current_user.tenant_id, "is_active": True}, {"_id": 0},
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {"_id": 0},
     )
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found")
@@ -441,18 +455,27 @@ async def manual_pull(current_user: User = Depends(get_current_user),
     # Also check individual imported reservations for cancellation status changes.
     # The batch "Undelivered" pull may not return cancellations immediately.
     cancel_detected = await _check_individual_cancellations(
-        current_user.tenant_id, username, password, hotel_code, endpoint_url,
+        current_user.tenant_id,
+        username,
+        password,
+        hotel_code,
+        endpoint_url,
     )
 
     # Also check for modifications (name, date, room type changes)
     mod_detected = await _check_individual_modifications(
-        current_user.tenant_id, username, password, hotel_code, endpoint_url,
+        current_user.tenant_id,
+        username,
+        password,
+        hotel_code,
+        endpoint_url,
     )
 
     # Auto-import is already triggered inside pull_for_tenant
     # Also import any previously pending ones (including modifications)
     from domains.channel_manager.providers.exely.auto_import import auto_import_pending
     from domains.channel_manager.providers.exely.provider import ExelyProvider
+
     provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
     if endpoint_url:
         provider_kwargs["endpoint_url"] = endpoint_url
@@ -478,7 +501,11 @@ async def manual_pull(current_user: User = Depends(get_current_user),
 
 
 async def _check_individual_cancellations(
-    tenant_id: str, username: str, password: str, hotel_code: str, endpoint_url: str,
+    tenant_id: str,
+    username: str,
+    password: str,
+    hotel_code: str,
+    endpoint_url: str,
 ) -> int:
     """
     Check each imported (non-cancelled) exely_reservation individually via Exely SOAP
@@ -530,7 +557,11 @@ async def _check_individual_cancellations(
 
 
 async def _check_individual_modifications(
-    tenant_id: str, username: str, password: str, hotel_code: str, endpoint_url: str,
+    tenant_id: str,
+    username: str,
+    password: str,
+    hotel_code: str,
+    endpoint_url: str,
 ) -> int:
     """
     Check each imported exely_reservation individually via Exely SOAP
@@ -540,9 +571,7 @@ async def _check_individual_modifications(
 
     imported_reservations = await db.exely_reservations.find(
         {"tenant_id": tenant_id, "state": {"$in": ["confirmed", "modified"]}, "pms_status": "imported"},
-        {"_id": 0, "external_id": 1, "provider_reservation_id": 1,
-         "guest_name": 1, "checkin_date": 1, "checkout_date": 1, "rooms": 1,
-         "provider_last_modified_at": 1},
+        {"_id": 0, "external_id": 1, "provider_reservation_id": 1, "guest_name": 1, "checkin_date": 1, "checkout_date": 1, "rooms": 1, "provider_last_modified_at": 1},
     ).to_list(50)
 
     if not imported_reservations:
@@ -612,9 +641,11 @@ async def _check_individual_modifications(
                 )
                 if ingest_result.get("action") in ("updated", "created"):
                     mod_count += 1
-                    logger.info(f"[EXELY-MOD-CHECK] Detected modification for {ext_id}: "
-                                f"name={new_name != stored_name}, dates={new_checkin[:10] != (stored_checkin or '')[:10]}, "
-                                f"room={new_room_code != stored_room_code}")
+                    logger.info(
+                        f"[EXELY-MOD-CHECK] Detected modification for {ext_id}: "
+                        f"name={new_name != stored_name}, dates={new_checkin[:10] != (stored_checkin or '')[:10]}, "
+                        f"room={new_room_code != stored_room_code}"
+                    )
         except Exception as e:
             logger.warning(f"[EXELY-MOD-CHECK] Error checking {ext_id}: {e}")
 
@@ -629,9 +660,14 @@ async def get_local_reservations(
     query = {"tenant_id": current_user.tenant_id}
     if pms_status:
         query["pms_status"] = pms_status
-    reservations = await db.exely_reservations.find(
-        query, {"_id": 0},
-    ).sort("synced_at", -1).to_list(100)
+    reservations = (
+        await db.exely_reservations.find(
+            query,
+            {"_id": 0},
+        )
+        .sort("synced_at", -1)
+        .to_list(100)
+    )
     return {"reservations": reservations, "count": len(reservations)}
 
 
@@ -644,10 +680,12 @@ async def confirm_reservation(
     """Confirm reservation delivery to Exely via OTA_NotifReportRQ."""
     client, conn = await _get_client(current_user.tenant_id)
 
-    res = await db.exely_reservations.find_one({
-        "tenant_id": current_user.tenant_id,
-        "external_id": reservation_id,
-    })
+    res = await db.exely_reservations.find_one(
+        {
+            "tenant_id": current_user.tenant_id,
+            "external_id": reservation_id,
+        }
+    )
     if not res:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadi")
 
@@ -691,7 +729,8 @@ async def confirm_all_imported_deliveries(
         try:
             create_dt = res.get("provider_last_modified_at") or res.get("created_at")
             result = await client.legacy_confirm_delivery(
-                res["external_id"], res["pms_booking_id"],
+                res["external_id"],
+                res["pms_booking_id"],
                 create_datetime=create_dt,
                 res_status="Book",
             )
@@ -713,7 +752,6 @@ async def confirm_all_imported_deliveries(
         "total": len(unconfirmed),
         "errors": errors,
     }
-
 
 
 @router.post("/reservations/{reservation_id}/import")
@@ -742,6 +780,7 @@ async def import_reservation_to_pms(
         return {"message": "Rezervasyon zaten PMS'e aktarilmis", "pms_booking_id": res["pms_booking_id"]}
 
     from domains.channel_manager.providers.exely.auto_import import auto_import_reservation
+
     result = await auto_import_reservation(tenant_id, res)
 
     if not result.get("success"):
@@ -766,6 +805,7 @@ async def import_reservation_to_pms(
 
 # ── Test Booking Verification ────────────────────────────────────────
 
+
 class TestBookingVerifyRequest(BaseModel):
     reservation_id: str | None = None
     guest_name: str | None = None
@@ -788,7 +828,8 @@ async def verify_test_booking(
     """
     tenant_id = current_user.tenant_id
     conn = await db.exely_connections.find_one(
-        {"tenant_id": tenant_id, "is_active": True}, {"_id": 0},
+        {"tenant_id": tenant_id, "is_active": True},
+        {"_id": 0},
     )
     if not conn:
         raise HTTPException(status_code=404, detail="Exely bağlantısı bulunamadı")
@@ -797,7 +838,8 @@ async def verify_test_booking(
     before_count = await db.exely_reservations.count_documents({"tenant_id": tenant_id})
     before_ids = set()
     existing = await db.exely_reservations.find(
-        {"tenant_id": tenant_id}, {"_id": 0, "external_id": 1},
+        {"tenant_id": tenant_id},
+        {"_id": 0, "external_id": 1},
     ).to_list(500)
     before_ids = {r["external_id"] for r in existing if r.get("external_id")}
 
@@ -842,12 +884,14 @@ async def verify_test_booking(
                         event_type="new_booking",
                         source="test_booking_verify",
                     )
-                    verification["new_reservations"].append({
-                        "external_id": raw_res.get("reservation_id", ""),
-                        "guest_name": raw_res.get("guest_name", ""),
-                        "ingest_action": ingest_result.get("action", "unknown"),
-                        "status": raw_res.get("status", ""),
-                    })
+                    verification["new_reservations"].append(
+                        {
+                            "external_id": raw_res.get("reservation_id", ""),
+                            "guest_name": raw_res.get("guest_name", ""),
+                            "ingest_action": ingest_result.get("action", "unknown"),
+                            "status": raw_res.get("status", ""),
+                        }
+                    )
             else:
                 verification["errors"].append(f"OTA_ReadRQ: {pull.get('error', 'unknown')}")
         else:
@@ -871,7 +915,8 @@ async def verify_test_booking(
     # After state
     after_count = await db.exely_reservations.count_documents({"tenant_id": tenant_id})
     after_existing = await db.exely_reservations.find(
-        {"tenant_id": tenant_id}, {"_id": 0, "external_id": 1, "guest_name": 1, "state": 1, "synced_at": 1},
+        {"tenant_id": tenant_id},
+        {"_id": 0, "external_id": 1, "guest_name": 1, "state": 1, "synced_at": 1},
     ).to_list(500)
     after_ids = {r["external_id"] for r in after_existing if r.get("external_id")}
     new_ids = after_ids - before_ids
@@ -882,18 +927,12 @@ async def verify_test_booking(
             {"tenant_id": tenant_id, "external_id": {"$in": list(new_ids)}},
             {"_id": 0, "external_id": 1, "guest_name": 1, "state": 1, "checkin_date": 1, "checkout_date": 1},
         ).to_list(50)
-        verification["new_reservations"] = [
-            {"external_id": r.get("external_id"), "guest_name": r.get("guest_name"), "state": r.get("state")}
-            for r in new_res
-        ]
+        verification["new_reservations"] = [{"external_id": r.get("external_id"), "guest_name": r.get("guest_name"), "state": r.get("state")} for r in new_res]
 
     # Filter by guest name if provided
     if payload.guest_name and verification["new_reservations"]:
         search = payload.guest_name.lower()
-        verification["new_reservations"] = [
-            r for r in verification["new_reservations"]
-            if search in (r.get("guest_name", "") or "").lower()
-        ]
+        verification["new_reservations"] = [r for r in verification["new_reservations"] if search in (r.get("guest_name", "") or "").lower()]
 
     verification["after_count"] = after_count
     verification["new_count"] = len(new_ids)
@@ -910,10 +949,12 @@ async def verify_test_booking(
 
 # ── Sync Status & Scheduler ─────────────────────────────────────────
 
+
 @router.get("/sync/status")
 async def get_sync_status(current_user: User = Depends(get_current_user)):
     cursor = await db.exely_pull_cursors.find_one(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0},
+        {"tenant_id": current_user.tenant_id},
+        {"_id": 0},
     )
     pending_events = await db.exely_raw_events.count_documents(
         {"tenant_id": current_user.tenant_id, "status": "pending"},
@@ -934,11 +975,13 @@ async def get_sync_status(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/sync/scheduler/start")
-async def start_scheduler(current_user: User = Depends(get_current_user),
+async def start_scheduler(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     conn = await db.exely_connections.find_one(
-        {"tenant_id": current_user.tenant_id, "is_active": True}, {"_id": 0},
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {"_id": 0},
     )
     if not conn:
         raise HTTPException(status_code=404, detail="Exely connection not found")
@@ -948,7 +991,8 @@ async def start_scheduler(current_user: User = Depends(get_current_user),
 
 
 @router.post("/sync/scheduler/stop")
-async def stop_scheduler(current_user: User = Depends(get_current_user),
+async def stop_scheduler(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     await exely_pull_scheduler.stop()
@@ -957,18 +1001,25 @@ async def stop_scheduler(current_user: User = Depends(get_current_user),
 
 # ── Sync Logs ────────────────────────────────────────────────────────
 
+
 @router.get("/sync-logs")
 async def get_sync_logs(
     limit: int = 50,
     current_user: User = Depends(get_current_user),
 ):
-    logs = await db.exely_sync_logs.find(
-        {"tenant_id": current_user.tenant_id}, {"_id": 0},
-    ).sort("timestamp", -1).to_list(limit)
+    logs = (
+        await db.exely_sync_logs.find(
+            {"tenant_id": current_user.tenant_id},
+            {"_id": 0},
+        )
+        .sort("timestamp", -1)
+        .to_list(limit)
+    )
     return {"logs": logs, "count": len(logs)}
 
 
 # ── Raw Events / Debug ──────────────────────────────────────────────
+
 
 @router.get("/logs/events")
 async def get_raw_events(
@@ -979,7 +1030,12 @@ async def get_raw_events(
     query = {"tenant_id": current_user.tenant_id}
     if status:
         query["status"] = status
-    events = await db.exely_raw_events.find(
-        query, {"_id": 0, "payload": 0},
-    ).sort("received_at", -1).to_list(limit)
+    events = (
+        await db.exely_raw_events.find(
+            query,
+            {"_id": 0, "payload": 0},
+        )
+        .sort("received_at", -1)
+        .to_list(limit)
+    )
     return {"events": events, "count": len(events)}

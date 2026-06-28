@@ -1,4 +1,5 @@
 """Auto-split from hotel_services.py — backward-compatible sub-router."""
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -18,6 +19,7 @@ from ._common import (
 
 logger = logging.getLogger(__name__)
 sub_router = APIRouter()
+
 
 @sub_router.get("/housekeeping/rooms")
 async def get_housekeeping_rooms(
@@ -86,10 +88,7 @@ async def update_room_housekeeping_status(
     if data.notes:
         update_data["housekeeping_notes"] = data.notes
 
-    await db.rooms.update_one(
-        {"id": room_id, "tenant_id": tid},
-        {"$set": update_data}
-    )
+    await db.rooms.update_one({"id": room_id, "tenant_id": tid}, {"$set": update_data})
 
     # Log the change
     log_entry = {
@@ -108,6 +107,7 @@ async def update_room_housekeeping_status(
 
     try:
         from websocket_server import broadcast_room_status_update
+
         await broadcast_room_status_update(room_id, data.status, tenant_id=tid)
     except Exception as exc:
         logger.warning("[HK-WS] room status yayini basarisiz room=%s: %s", room_id, exc)
@@ -129,11 +129,13 @@ async def bulk_update_room_status(
     now = datetime.now(UTC).isoformat()
     result = await db.rooms.update_many(
         {"id": {"$in": room_ids}, "tenant_id": tid},
-        {"$set": {
-            "housekeeping_status": status,
-            "housekeeping_updated_at": now,
-            "housekeeping_updated_by": current_user.name,
-        }}
+        {
+            "$set": {
+                "housekeeping_status": status,
+                "housekeeping_updated_at": now,
+                "housekeeping_updated_by": current_user.name,
+            }
+        },
     )
 
     if result.modified_count:
@@ -189,7 +191,6 @@ async def get_hotel_settings(
     return settings
 
 
-
 @sub_router.put("/hotel-settings")
 async def update_hotel_settings(
     data: HotelSettingsUpdate,
@@ -215,6 +216,7 @@ async def update_hotel_settings(
     # Invalidate cached tenant currency so the next dashboard request reflects the new selection.
     try:
         from core.tenant_currency import invalidate_tenant_currency
+
         invalidate_tenant_currency(tid)
     except Exception:
         pass
@@ -226,4 +228,3 @@ async def update_hotel_settings(
 # ═══════════════════════════════════════════════════
 # 5. PDF INVOICE GENERATION FROM FOLIO
 # ═══════════════════════════════════════════════════
-

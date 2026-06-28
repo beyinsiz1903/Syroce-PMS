@@ -8,6 +8,7 @@ Prefix: /api/channel-manager/model/
 Replaces the over-abstracted v2 connector/mapping/reconciliation endpoints
 with a simpler, 2-provider-optimized API surface.
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -40,6 +41,7 @@ router = APIRouter(
 
 
 # ── Request Models ────────────────────────────────────────────────────
+
 
 class CreateConnectionRequest(BaseModel):
     provider: str  # hotelrunner | exely
@@ -92,13 +94,15 @@ class DismissCaseRequest(BaseModel):
 
 # ── Provider Connections ──────────────────────────────────────────────
 
+
 @router.get("/connections")
 async def list_connections(
     status: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     connections = await repo.get_connections_by_tenant(
-        current_user.tenant_id, status,
+        current_user.tenant_id,
+        status,
     )
     return {"connections": connections, "count": len(connections)}
 
@@ -120,7 +124,9 @@ async def create_connection(
 
     # Check for existing connection
     existing = await repo.get_connection_by_provider(
-        current_user.tenant_id, req.property_id, req.provider,
+        current_user.tenant_id,
+        req.property_id,
+        req.provider,
     )
     if existing:
         raise HTTPException(
@@ -219,6 +225,7 @@ async def pause_connection(
 
 # ── Room Mappings ─────────────────────────────────────────────────────
 
+
 @router.get("/room-mappings")
 async def list_room_mappings(
     property_id: str | None = None,
@@ -227,7 +234,9 @@ async def list_room_mappings(
 ):
     property_id = property_id or str(getattr(current_user, "hotel_id", "") or "")
     mappings = await repo.get_room_mappings(
-        current_user.tenant_id, property_id, provider,
+        current_user.tenant_id,
+        property_id,
+        provider,
     )
     return {"mappings": mappings, "count": len(mappings)}
 
@@ -270,6 +279,7 @@ async def delete_room_mapping(
 
 # ── Rate Plan Mappings ────────────────────────────────────────────────
 
+
 @router.get("/rate-plan-mappings")
 async def list_rate_plan_mappings(
     property_id: str | None = None,
@@ -278,7 +288,9 @@ async def list_rate_plan_mappings(
 ):
     property_id = property_id or str(getattr(current_user, "hotel_id", "") or "")
     mappings = await repo.get_rate_plan_mappings(
-        current_user.tenant_id, property_id, provider,
+        current_user.tenant_id,
+        property_id,
+        provider,
     )
     return {"mappings": mappings, "count": len(mappings)}
 
@@ -321,6 +333,7 @@ async def delete_rate_plan_mapping(
 
 # ── Raw Channel Events ────────────────────────────────────────────────
 
+
 @router.get("/raw-events")
 async def list_raw_events(
     property_id: str | None = None,
@@ -331,12 +344,17 @@ async def list_raw_events(
 ):
     property_id = property_id or str(getattr(current_user, "hotel_id", "") or "")
     events = await repo.get_raw_events(
-        current_user.tenant_id, property_id, provider, processed, limit,
+        current_user.tenant_id,
+        property_id,
+        provider,
+        processed,
+        limit,
     )
     return {"events": events, "count": len(events)}
 
 
 # ── Reservation Lineage ──────────────────────────────────────────────
+
 
 @router.get("/lineage")
 async def list_reservation_lineages(
@@ -348,7 +366,11 @@ async def list_reservation_lineages(
 ):
     property_id = property_id or str(getattr(current_user, "hotel_id", "") or "")
     lineages = await repo.get_reservation_lineages(
-        current_user.tenant_id, property_id, provider, status, limit,
+        current_user.tenant_id,
+        property_id,
+        provider,
+        status,
+        limit,
     )
     return {"lineages": lineages, "count": len(lineages)}
 
@@ -365,7 +387,9 @@ async def get_lineage_stats(
     current_user: User = Depends(get_current_user),
 ):
     stats = await repo.get_lineage_stats(
-        current_user.tenant_id, property_id, provider,
+        current_user.tenant_id,
+        property_id,
+        provider,
     )
     return stats
 
@@ -383,6 +407,7 @@ async def get_reservation_lineage_detail(
 
 # ── Reconciliation Cases ─────────────────────────────────────────────
 
+
 @router.get("/reconciliation/cases")
 async def list_reconciliation_cases(
     property_id: str | None = None,
@@ -392,7 +417,11 @@ async def list_reconciliation_cases(
     current_user: User = Depends(get_current_user),
 ):
     cases = await repo.get_reconciliation_cases(
-        current_user.tenant_id, property_id, provider, status, limit,
+        current_user.tenant_id,
+        property_id,
+        provider,
+        status,
+        limit,
     )
     return {"cases": cases, "count": len(cases)}
 
@@ -445,12 +474,15 @@ async def resolve_case(
     case = await repo.get_reconciliation_case(current_user.tenant_id, case_id)
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
-    await repo.update_reconciliation_case(case_id, {
-        "status": CaseStatus.RESOLVED.value,
-        "resolution": req.resolution,
-        "resolved_by": current_user.id,
-        "resolved_at": datetime.now(UTC).isoformat(),
-    })
+    await repo.update_reconciliation_case(
+        case_id,
+        {
+            "status": CaseStatus.RESOLVED.value,
+            "resolution": req.resolution,
+            "resolved_by": current_user.id,
+            "resolved_at": datetime.now(UTC).isoformat(),
+        },
+    )
     return {"message": "Case resolved"}
 
 
@@ -464,12 +496,15 @@ async def dismiss_case(
     case = await repo.get_reconciliation_case(current_user.tenant_id, case_id)
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
-    await repo.update_reconciliation_case(case_id, {
-        "status": CaseStatus.DISMISSED.value,
-        "dismiss_reason": req.reason,
-        "resolved_by": current_user.id,
-        "resolved_at": datetime.now(UTC).isoformat(),
-    })
+    await repo.update_reconciliation_case(
+        case_id,
+        {
+            "status": CaseStatus.DISMISSED.value,
+            "dismiss_reason": req.reason,
+            "resolved_by": current_user.id,
+            "resolved_at": datetime.now(UTC).isoformat(),
+        },
+    )
     return {"message": "Case dismissed"}
 
 
@@ -479,12 +514,14 @@ async def get_summary(
     current_user: User = Depends(get_current_user),
 ):
     summary = await repo.get_reconciliation_summary(
-        current_user.tenant_id, provider,
+        current_user.tenant_id,
+        provider,
     )
     return summary
 
 
 # ── Data Model Overview ───────────────────────────────────────────────
+
 
 @router.get("/schema")
 async def get_data_model_schema():

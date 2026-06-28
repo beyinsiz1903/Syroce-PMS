@@ -1,4 +1,5 @@
 """Auto-split from misc_router.py — backward-compatible sub-router."""
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -26,7 +27,6 @@ sub_router = APIRouter()
 # ============= PMS - BOOKINGS MANAGEMENT =============
 
 
-
 @sub_router.get("/inventory/alerts")
 async def get_inventory_alerts(current_user: User = Depends(get_current_user)):
     """Get low stock and critical stock alerts"""
@@ -35,68 +35,48 @@ async def get_inventory_alerts(current_user: User = Depends(get_current_user)):
     suggestions = await get_suggested_orders(db, current_user.tenant_id)
 
     return {
-        'alerts': suggestions,
-        'total_alerts': len(suggestions),
-        'urgent_count': len([s for s in suggestions if s['priority'] == 'URGENT']),
-        'high_count': len([s for s in suggestions if s['priority'] == 'HIGH'])
+        "alerts": suggestions,
+        "total_alerts": len(suggestions),
+        "urgent_count": len([s for s in suggestions if s["priority"] == "URGENT"]),
+        "high_count": len([s for s in suggestions if s["priority"] == "HIGH"]),
     }
-
 
 
 @sub_router.get("/inventory/consumption-report")
-async def get_consumption_report(
-    start_date: str | None = None,
-    end_date: str | None = None,
-    current_user: User = Depends(get_current_user)
-):
+async def get_consumption_report(start_date: str | None = None, end_date: str | None = None, current_user: User = Depends(get_current_user)):
     """Get inventory consumption report"""
-    query = {
-        'tenant_id': current_user.tenant_id,
-        'movement_type': 'out'
-    }
+    query = {"tenant_id": current_user.tenant_id, "movement_type": "out"}
 
     # Add date filter if provided
     if start_date:
-        query['created_at'] = {'$gte': start_date}
+        query["created_at"] = {"$gte": start_date}
     if end_date:
-        if 'created_at' not in query:
-            query['created_at'] = {}
-        query['created_at']['$lte'] = end_date
+        if "created_at" not in query:
+            query["created_at"] = {}
+        query["created_at"]["$lte"] = end_date
 
-    movements = await db.stock_movements.find(query, {'_id': 0}).to_list(10000)
+    movements = await db.stock_movements.find(query, {"_id": 0}).to_list(10000)
 
     # Group by item
     consumption_by_item = {}
     for movement in movements:
-        item_id = movement['item_id']
+        item_id = movement["item_id"]
         if item_id not in consumption_by_item:
-            item = await db.inventory_items.find_one({'id': item_id}, {'_id': 0})
+            item = await db.inventory_items.find_one({"id": item_id}, {"_id": 0})
             if item:
-                consumption_by_item[item_id] = {
-                    'item_name': item['name'],
-                    'total_quantity': 0,
-                    'total_cost': 0,
-                    'movement_count': 0
-                }
+                consumption_by_item[item_id] = {"item_name": item["name"], "total_quantity": 0, "total_cost": 0, "movement_count": 0}
 
         if item_id in consumption_by_item:
-            consumption_by_item[item_id]['total_quantity'] += movement['quantity']
-            consumption_by_item[item_id]['total_cost'] += movement['quantity'] * movement.get('unit_cost', 0)
-            consumption_by_item[item_id]['movement_count'] += 1
+            consumption_by_item[item_id]["total_quantity"] += movement["quantity"]
+            consumption_by_item[item_id]["total_cost"] += movement["quantity"] * movement.get("unit_cost", 0)
+            consumption_by_item[item_id]["movement_count"] += 1
 
-    return {
-        'period': {
-            'start': start_date,
-            'end': end_date
-        },
-        'consumption': list(consumption_by_item.values()),
-        'total_movements': len(movements)
-    }
-
+    return {"period": {"start": start_date, "end": end_date}, "consumption": list(consumption_by_item.values()), "total_movements": len(movements)}
 
 
 @sub_router.post("/inventory/seed-hotel-amenities")
-async def seed_hotel_amenities(current_user: User = Depends(get_current_user),
+async def seed_hotel_amenities(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     """Seed database with common hotel amenities"""
@@ -128,27 +108,20 @@ async def seed_hotel_amenities(current_user: User = Depends(get_current_user),
     created_count = 0
     for amenity in amenities:
         # Check if already exists
-        existing = await db.inventory_items.find_one({
-            'tenant_id': current_user.tenant_id,
-            'name': amenity['name']
-        })
+        existing = await db.inventory_items.find_one({"tenant_id": current_user.tenant_id, "name": amenity["name"]})
 
         if not existing:
             item = {
-                'id': str(uuid.uuid4()),
-                'tenant_id': current_user.tenant_id,
+                "id": str(uuid.uuid4()),
+                "tenant_id": current_user.tenant_id,
                 **amenity,
-                'sku': f"HTL-{amenity['name'][:3].upper()}-{str(uuid.uuid4())[:8]}",
-                'created_at': datetime.now(UTC).isoformat()
+                "sku": f"HTL-{amenity['name'][:3].upper()}-{str(uuid.uuid4())[:8]}",
+                "created_at": datetime.now(UTC).isoformat(),
             }
             await db.inventory_items.insert_one(item)
             created_count += 1
 
-    return {
-        'message': f'Successfully seeded {created_count} hotel amenities',
-        'total_items': len(amenities),
-        'created': created_count
-    }
+    return {"message": f"Successfully seeded {created_count} hotel amenities", "total_items": len(amenities), "created": created_count}
 
 
 @sub_router.get("/export/folio/{folio_id}")
@@ -160,6 +133,7 @@ async def export_folio_csv(
 ):
     """Export folio transactions as CSV"""
     from core.security import _is_super_admin
+
     if not _is_super_admin(current_user) and not has_permission(current_user.role, Permission.EXPORT_DATA):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
@@ -168,12 +142,13 @@ async def export_folio_csv(
 
     # Get folio details
     folio_details = await get_folio_details(folio_id, current_user)
-    folio = folio_details['folio']
-    charges = folio_details['charges']
-    payments = folio_details['payments']
+    folio = folio_details["folio"]
+    charges = folio_details["charges"]
+    payments = folio_details["payments"]
 
     # Create CSV — Bug AN: charge descriptions / payment refs are user-controlled.
     from core.csv_safe import safe_writerow
+
     output = StringIO()
     writer = csv.writer(output)
 
@@ -183,45 +158,35 @@ async def export_folio_csv(
     writer.writerow([])
 
     # Charges
-    safe_writerow(writer, ['CHARGES'])
-    safe_writerow(writer, ['Date', 'Category', 'Description', 'Quantity', 'Unit Price', 'Tax', 'Total', 'Voided'])
+    safe_writerow(writer, ["CHARGES"])
+    safe_writerow(writer, ["Date", "Category", "Description", "Quantity", "Unit Price", "Tax", "Total", "Voided"])
     for charge in charges:
-        safe_writerow(writer, [
-            charge['date'],
-            charge['charge_category'],
-            charge['description'],
-            charge['quantity'],
-            charge['unit_price'],
-            charge['tax_amount'],
-            charge['total'],
-            'Yes' if charge.get('voided') else 'No'
-        ])
+        safe_writerow(
+            writer,
+            [
+                charge["date"],
+                charge["charge_category"],
+                charge["description"],
+                charge["quantity"],
+                charge["unit_price"],
+                charge["tax_amount"],
+                charge["total"],
+                "Yes" if charge.get("voided") else "No",
+            ],
+        )
 
     writer.writerow([])
 
     # Payments
-    safe_writerow(writer, ['PAYMENTS'])
-    safe_writerow(writer, ['Date', 'Method', 'Type', 'Amount', 'Reference'])
+    safe_writerow(writer, ["PAYMENTS"])
+    safe_writerow(writer, ["Date", "Method", "Type", "Amount", "Reference"])
     for payment in payments:
-        safe_writerow(writer, [
-            payment['processed_at'],
-            payment['method'],
-            payment['payment_type'],
-            payment['amount'],
-            payment.get('reference', '')
-        ])
+        safe_writerow(writer, [payment["processed_at"], payment["method"], payment["payment_type"], payment["amount"], payment.get("reference", "")])
 
     writer.writerow([])
-    safe_writerow(writer, ['', '', '', 'Balance:', folio['balance']])
+    safe_writerow(writer, ["", "", "", "Balance:", folio["balance"]])
 
     csv_content = output.getvalue()
     output.close()
 
-    return {
-        'filename': f"folio_{folio['folio_number']}.csv",
-        'content': csv_content,
-        'content_type': 'text/csv'
-    }
-
-
-
+    return {"filename": f"folio_{folio['folio_number']}.csv", "content": csv_content, "content_type": "text/csv"}

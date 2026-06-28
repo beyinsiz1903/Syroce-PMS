@@ -5,6 +5,7 @@ Real provider contract validation, ARI update verification,
 reservation ingest validation, drift/recon effectiveness measurement,
 provider circuit breaker live behaviour monitoring.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -60,11 +61,10 @@ class ProviderValidationService:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
-    async def run_provider_validation(
-        self, ctx: OperationContext, provider_id: str
-    ) -> ServiceResult:
+    async def run_provider_validation(self, ctx: OperationContext, provider_id: str) -> ServiceResult:
         """Run comprehensive validation for a provider."""
         contract = PROVIDER_CONTRACTS.get(provider_id)
         if not contract:
@@ -75,15 +75,15 @@ class ProviderValidationService:
         results = []
 
         # 1. Connection validation
-        conn = await self._db.channel_connections.find_one(
-            {"provider_id": provider_id, "tenant_id": ctx.tenant_id}, {"_id": 0}
-        )
+        conn = await self._db.channel_connections.find_one({"provider_id": provider_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         conn_valid = conn is not None and conn.get("status") == "active"
-        results.append({
-            "check": "connection",
-            "passed": conn_valid,
-            "detail": f"Connection status: {conn.get('status') if conn else 'not_found'}",
-        })
+        results.append(
+            {
+                "check": "connection",
+                "passed": conn_valid,
+                "detail": f"Connection status: {conn.get('status') if conn else 'not_found'}",
+            }
+        )
 
         # 2. ARI update validation
         if contract["supports_ari"]:
@@ -99,12 +99,14 @@ class ProviderValidationService:
             ari_success = sum(1 for s in recent_ari if s.get("status") == "success")
             ari_total = len(recent_ari)
             ari_rate = round(ari_success / ari_total * 100, 1) if ari_total > 0 else 0
-            results.append({
-                "check": "ari_updates",
-                "passed": ari_rate > 95,
-                "detail": f"Success rate: {ari_rate}% ({ari_success}/{ari_total} in 24h)",
-                "success_rate": ari_rate,
-            })
+            results.append(
+                {
+                    "check": "ari_updates",
+                    "passed": ari_rate > 95,
+                    "detail": f"Success rate: {ari_rate}% ({ari_success}/{ari_total} in 24h)",
+                    "success_rate": ari_rate,
+                }
+            )
 
         # 3. Reservation ingest validation
         if contract["supports_reservation_import"]:
@@ -120,12 +122,14 @@ class ProviderValidationService:
             import_success = sum(1 for s in recent_imports if s.get("status") == "success")
             import_total = len(recent_imports)
             import_rate = round(import_success / import_total * 100, 1) if import_total > 0 else 0
-            results.append({
-                "check": "reservation_import",
-                "passed": import_rate > 95,
-                "detail": f"Success rate: {import_rate}% ({import_success}/{import_total} in 24h)",
-                "success_rate": import_rate,
-            })
+            results.append(
+                {
+                    "check": "reservation_import",
+                    "passed": import_rate > 95,
+                    "detail": f"Success rate: {import_rate}% ({import_success}/{import_total} in 24h)",
+                    "success_rate": import_rate,
+                }
+            )
 
         # 4. Cancellation propagation
         if contract["supports_cancellation_propagation"]:
@@ -140,11 +144,13 @@ class ProviderValidationService:
             ).to_list(50)
             cancel_ok = sum(1 for c in cancel_logs if c.get("status") == "success")
             cancel_total = len(cancel_logs)
-            results.append({
-                "check": "cancellation_propagation",
-                "passed": cancel_ok == cancel_total if cancel_total > 0 else True,
-                "detail": f"{cancel_ok}/{cancel_total} cancellations propagated (72h)",
-            })
+            results.append(
+                {
+                    "check": "cancellation_propagation",
+                    "passed": cancel_ok == cancel_total if cancel_total > 0 else True,
+                    "detail": f"{cancel_ok}/{cancel_total} cancellations propagated (72h)",
+                }
+            )
 
         # 5. Drift detection
         drifts = await self._db.drift_scan_results.find(
@@ -157,13 +163,15 @@ class ProviderValidationService:
         ).to_list(10)
         total_drifts = sum(d.get("drifts_found", 0) for d in drifts)
         critical_drifts = sum(d.get("critical_drifts", 0) for d in drifts)
-        results.append({
-            "check": "drift_detection",
-            "passed": critical_drifts == 0,
-            "detail": f"Total drifts: {total_drifts}, Critical: {critical_drifts} (24h)",
-            "total_drifts": total_drifts,
-            "critical_drifts": critical_drifts,
-        })
+        results.append(
+            {
+                "check": "drift_detection",
+                "passed": critical_drifts == 0,
+                "detail": f"Total drifts: {total_drifts}, Critical: {critical_drifts} (24h)",
+                "total_drifts": total_drifts,
+                "critical_drifts": critical_drifts,
+            }
+        )
 
         # 6. Reconciliation
         recons = await self._db.reconciliation_results.find(
@@ -177,18 +185,22 @@ class ProviderValidationService:
         recon_success = sum(1 for r in recons if r.get("status") == "success")
         recon_total = len(recons)
         recon_rate = round(recon_success / recon_total * 100, 1) if recon_total > 0 else 100
-        results.append({
-            "check": "reconciliation",
-            "passed": recon_rate > 90,
-            "detail": f"Reconciliation rate: {recon_rate}% ({recon_success}/{recon_total} in 24h)",
-        })
+        results.append(
+            {
+                "check": "reconciliation",
+                "passed": recon_rate > 90,
+                "detail": f"Reconciliation rate: {recon_rate}% ({recon_success}/{recon_total} in 24h)",
+            }
+        )
 
         # 7. Rate limit compliance
-        results.append({
-            "check": "rate_limit_config",
-            "passed": True,
-            "detail": f"Max {contract['rate_limit_rpm']} RPM configured",
-        })
+        results.append(
+            {
+                "check": "rate_limit_config",
+                "passed": True,
+                "detail": f"Max {contract['rate_limit_rpm']} RPM configured",
+            }
+        )
 
         # Aggregate
         passed_count = sum(1 for r in results if r["passed"])
@@ -211,9 +223,7 @@ class ProviderValidationService:
 
         return ServiceResult.success(validation_doc)
 
-    async def get_sync_lag_report(
-        self, ctx: OperationContext, provider_id: str, hours: int = 24
-    ) -> ServiceResult:
+    async def get_sync_lag_report(self, ctx: OperationContext, provider_id: str, hours: int = 24) -> ServiceResult:
         """Measure sync lag for a provider."""
         since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
         logs = await self._db.channel_sync_logs.find(
@@ -246,27 +256,31 @@ class ProviderValidationService:
                 "max_ms": sorted_d[-1] if n else 0,
             }
 
-        return ServiceResult.success({
-            "provider_id": provider_id,
-            "period_hours": hours,
-            "sync_lag": report,
-        })
+        return ServiceResult.success(
+            {
+                "provider_id": provider_id,
+                "period_hours": hours,
+                "sync_lag": report,
+            }
+        )
 
     async def get_provider_contracts(self) -> ServiceResult:
         """Return all known provider contracts."""
-        return ServiceResult.success({
-            "providers": [
-                {
-                    "id": pid,
-                    "name": p["name"],
-                    "supports_ari": p["supports_ari"],
-                    "supports_reservation_import": p["supports_reservation_import"],
-                    "rate_limit_rpm": p["rate_limit_rpm"],
-                    "idempotent_updates": p["idempotent_updates"],
-                }
-                for pid, p in PROVIDER_CONTRACTS.items()
-            ]
-        })
+        return ServiceResult.success(
+            {
+                "providers": [
+                    {
+                        "id": pid,
+                        "name": p["name"],
+                        "supports_ari": p["supports_ari"],
+                        "supports_reservation_import": p["supports_reservation_import"],
+                        "rate_limit_rpm": p["rate_limit_rpm"],
+                        "idempotent_updates": p["idempotent_updates"],
+                    }
+                    for pid, p in PROVIDER_CONTRACTS.items()
+                ]
+            }
+        )
 
 
 provider_validation_service = ProviderValidationService()

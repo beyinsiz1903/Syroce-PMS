@@ -10,6 +10,7 @@ Gerekli env değişkenleri:
 - IYZICO_BASE_URL  (default: https://sandbox-api.iyzipay.com)
 - PUBLIC_BASE_URL  (callback için tam URL — örn https://syroce.com)
 """
+
 from __future__ import annotations
 
 import logging
@@ -39,9 +40,7 @@ def public_callback_url(path: str) -> str:
     base = _env("PUBLIC_BASE_URL", "").rstrip("/")
     if not base:
         # geliştirme ortamı fallback — production'da ayarlanmalı
-        base = (
-            (_env("REPLIT_DEV_DOMAIN") and f"https://{_env('REPLIT_DEV_DOMAIN')}") or ""
-        ).rstrip("/")
+        base = ((_env("REPLIT_DEV_DOMAIN") and f"https://{_env('REPLIT_DEV_DOMAIN')}") or "").rstrip("/")
     return f"{base}{path}" if base else path
 
 
@@ -52,9 +51,11 @@ def init_checkout_form(payload: dict) -> dict:
         return {"status": "failure", "errorMessage": "iyzico yapılandırılmadı"}
     try:
         import iyzipay  # type: ignore
+
         cf = iyzipay.CheckoutFormInitialize().create(payload, get_options())
         body = cf.read().decode("utf-8")
         import json as _json
+
         return _json.loads(body)
     except Exception as e:
         logger.exception("iyzico init_checkout_form error")
@@ -66,11 +67,11 @@ def retrieve_checkout_form(token: str) -> dict:
         return {"status": "failure", "errorMessage": "iyzico yapılandırılmadı"}
     try:
         import iyzipay  # type: ignore
-        cf = iyzipay.CheckoutForm().retrieve(
-            {"locale": "tr", "token": token}, get_options()
-        )
+
+        cf = iyzipay.CheckoutForm().retrieve({"locale": "tr", "token": token}, get_options())
         body = cf.read().decode("utf-8")
         import json as _json
+
         return _json.loads(body)
     except Exception as e:
         logger.exception("iyzico retrieve_checkout_form error")

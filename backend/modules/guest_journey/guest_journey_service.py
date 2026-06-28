@@ -2,6 +2,7 @@
 Guest Journey Layer - Pre-Arrival, Stay Management, Messaging, Review Capture, Guest Dashboard.
 Enterprise guest experience management integrated with PMS.
 """
+
 import uuid
 from datetime import UTC, date, datetime
 from typing import Any
@@ -16,9 +17,7 @@ class GuestJourneyService:
 
     async def submit_online_checkin(self, tenant_id: str, booking_id: str, data: dict[str, Any]) -> dict[str, Any]:
         """Submit online check-in with preferences and arrival details."""
-        booking = await db.bookings.find_one(
-            {"id": booking_id, "tenant_id": tenant_id}, {"_id": 0}
-        )
+        booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
         if not booking:
             return {"success": False, "error": "Booking not found"}
 
@@ -44,19 +43,19 @@ class GuestJourneyService:
 
         await db.bookings.update_one(
             {"id": booking_id},
-            {"$set": {
-                "online_checkin_status": "submitted",
-                "estimated_arrival_time": data.get("arrival_time"),
-            }},
+            {
+                "$set": {
+                    "online_checkin_status": "submitted",
+                    "estimated_arrival_time": data.get("arrival_time"),
+                }
+            },
         )
 
         return {"success": True, "checkin_id": record["id"], "status": "submitted"}
 
     async def get_pre_arrival_status(self, tenant_id: str, booking_id: str) -> dict[str, Any]:
         """Get pre-arrival status for a booking."""
-        record = await db.guest_journey_checkins.find_one(
-            {"tenant_id": tenant_id, "booking_id": booking_id}, {"_id": 0}
-        )
+        record = await db.guest_journey_checkins.find_one({"tenant_id": tenant_id, "booking_id": booking_id}, {"_id": 0})
         booking = await db.bookings.find_one(
             {"id": booking_id, "tenant_id": tenant_id},
             {"_id": 0, "id": 1, "guest_name": 1, "check_in": 1, "room_id": 1, "status": 1},
@@ -69,17 +68,13 @@ class GuestJourneyService:
 
     # ── STAY MANAGEMENT ──
 
-    async def create_guest_request(self, tenant_id: str, booking_id: str,
-                                    request_type: str, description: str,
-                                    priority: str = "normal", room_id: str | None = None) -> dict[str, Any]:
+    async def create_guest_request(self, tenant_id: str, booking_id: str, request_type: str, description: str, priority: str = "normal", room_id: str | None = None) -> dict[str, Any]:
         """Create a guest request (housekeeping, maintenance, concierge, room service)."""
         valid_types = ["housekeeping", "maintenance", "concierge", "room_service", "amenity", "complaint"]
         if request_type not in valid_types:
             return {"success": False, "error": f"Invalid request type. Valid: {valid_types}"}
 
-        booking = await db.bookings.find_one(
-            {"id": booking_id, "tenant_id": tenant_id}, {"_id": 0}
-        )
+        booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
         if not booking:
             return {"success": False, "error": "Booking not found"}
 
@@ -102,9 +97,7 @@ class GuestJourneyService:
 
         return {"success": True, "request_id": request["id"], "status": "open"}
 
-    async def update_request_status(self, tenant_id: str, request_id: str,
-                                     new_status: str, user_id: str,
-                                     notes: str | None = None) -> dict[str, Any]:
+    async def update_request_status(self, tenant_id: str, request_id: str, new_status: str, user_id: str, notes: str | None = None) -> dict[str, Any]:
         """Update guest request status."""
         valid_statuses = ["open", "assigned", "in_progress", "resolved", "closed", "escalated"]
         if new_status not in valid_statuses:
@@ -128,20 +121,20 @@ class GuestJourneyService:
         """Assign a guest request to a staff member."""
         result = await db.guest_requests.update_one(
             {"id": request_id, "tenant_id": tenant_id},
-            {"$set": {
-                "assigned_to": assignee_id,
-                "status": "assigned",
-                "assigned_at": datetime.now(UTC).isoformat(),
-                "assigned_by": user_id,
-            }},
+            {
+                "$set": {
+                    "assigned_to": assignee_id,
+                    "status": "assigned",
+                    "assigned_at": datetime.now(UTC).isoformat(),
+                    "assigned_by": user_id,
+                }
+            },
         )
         if result.matched_count == 0:
             return {"success": False, "error": "Request not found"}
         return {"success": True, "request_id": request_id, "assigned_to": assignee_id}
 
-    async def get_guest_requests(self, tenant_id: str, booking_id: str | None = None,
-                                  status: str | None = None, request_type: str | None = None,
-                                  limit: int = 50) -> dict[str, Any]:
+    async def get_guest_requests(self, tenant_id: str, booking_id: str | None = None, status: str | None = None, request_type: str | None = None, limit: int = 50) -> dict[str, Any]:
         """Get guest requests with optional filters."""
         query: dict[str, Any] = {"tenant_id": tenant_id}
         if booking_id:
@@ -151,16 +144,13 @@ class GuestJourneyService:
         if request_type:
             query["request_type"] = request_type
 
-        requests = await db.guest_requests.find(
-            query, {"_id": 0}
-        ).sort("created_at", -1).limit(limit).to_list(limit)
+        requests = await db.guest_requests.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
 
         return {"count": len(requests), "requests": requests}
 
     # ── MESSAGING ──
 
-    async def send_message(self, tenant_id: str, booking_id: str, channel: str,
-                            message_type: str, content: str, user_id: str | None = None) -> dict[str, Any]:
+    async def send_message(self, tenant_id: str, booking_id: str, channel: str, message_type: str, content: str, user_id: str | None = None) -> dict[str, Any]:
         """Send a message to a guest via email/SMS/WhatsApp."""
         valid_channels = ["email", "sms", "whatsapp", "in_app"]
         if channel not in valid_channels:
@@ -192,37 +182,64 @@ class GuestJourneyService:
 
     async def get_messages(self, tenant_id: str, booking_id: str) -> dict[str, Any]:
         """Get all messages for a booking."""
-        messages = await db.guest_messages.find(
-            {"tenant_id": tenant_id, "booking_id": booking_id},
-            {"_id": 0},
-        ).sort("sent_at", -1).to_list(200)
+        messages = (
+            await db.guest_messages.find(
+                {"tenant_id": tenant_id, "booking_id": booking_id},
+                {"_id": 0},
+            )
+            .sort("sent_at", -1)
+            .to_list(200)
+        )
 
         return {"booking_id": booking_id, "count": len(messages), "messages": messages}
 
     async def get_auto_message_templates(self, tenant_id: str) -> dict[str, Any]:
         """Get automated message templates for guest journey touchpoints."""
-        templates = await db.guest_message_templates.find(
-            {"tenant_id": tenant_id}, {"_id": 0}
-        ).to_list(100)
+        templates = await db.guest_message_templates.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(100)
 
         if not templates:
             # Return default templates
             templates = [
-                {"id": "tpl_pre_arrival", "name": "Pre-Arrival Welcome", "trigger": "pre_arrival_3d",
-                 "channel": "email", "subject": "Hosgeldiniz! Konaklamaniz yaklasti",
-                 "body": "Sayin {guest_name}, {check_in} tarihindeki konaklamaniz icin heyecanla bekliyoruz."},
-                {"id": "tpl_checkin_confirm", "name": "Check-in Confirmation", "trigger": "check_in",
-                 "channel": "email", "subject": "Check-in Onaylandi",
-                 "body": "Sayin {guest_name}, {room_number} numarali odaniza basariyla giris yaptiniz."},
-                {"id": "tpl_mid_stay", "name": "Mid-Stay Satisfaction", "trigger": "mid_stay",
-                 "channel": "in_app", "subject": "Konaklamaniz nasil gidiyor?",
-                 "body": "Sayin {guest_name}, herhangi bir ihtiyaciniz var mi?"},
-                {"id": "tpl_checkout", "name": "Checkout Thank You", "trigger": "checkout",
-                 "channel": "email", "subject": "Tesekkurler!",
-                 "body": "Sayin {guest_name}, konaklamaniz icin tesekkur ederiz. Gorusleriniz bizim icin onemli."},
-                {"id": "tpl_review_request", "name": "Review Request", "trigger": "post_checkout_1d",
-                 "channel": "email", "subject": "Deneyiminizi paylasir misiniz?",
-                 "body": "Sayin {guest_name}, konaklamanizi degerlendirmenizi rica ederiz."},
+                {
+                    "id": "tpl_pre_arrival",
+                    "name": "Pre-Arrival Welcome",
+                    "trigger": "pre_arrival_3d",
+                    "channel": "email",
+                    "subject": "Hosgeldiniz! Konaklamaniz yaklasti",
+                    "body": "Sayin {guest_name}, {check_in} tarihindeki konaklamaniz icin heyecanla bekliyoruz.",
+                },
+                {
+                    "id": "tpl_checkin_confirm",
+                    "name": "Check-in Confirmation",
+                    "trigger": "check_in",
+                    "channel": "email",
+                    "subject": "Check-in Onaylandi",
+                    "body": "Sayin {guest_name}, {room_number} numarali odaniza basariyla giris yaptiniz.",
+                },
+                {
+                    "id": "tpl_mid_stay",
+                    "name": "Mid-Stay Satisfaction",
+                    "trigger": "mid_stay",
+                    "channel": "in_app",
+                    "subject": "Konaklamaniz nasil gidiyor?",
+                    "body": "Sayin {guest_name}, herhangi bir ihtiyaciniz var mi?",
+                },
+                {
+                    "id": "tpl_checkout",
+                    "name": "Checkout Thank You",
+                    "trigger": "checkout",
+                    "channel": "email",
+                    "subject": "Tesekkurler!",
+                    "body": "Sayin {guest_name}, konaklamaniz icin tesekkur ederiz. Gorusleriniz bizim icin onemli.",
+                },
+                {
+                    "id": "tpl_review_request",
+                    "name": "Review Request",
+                    "trigger": "post_checkout_1d",
+                    "channel": "email",
+                    "subject": "Deneyiminizi paylasir misiniz?",
+                    "body": "Sayin {guest_name}, konaklamanizi degerlendirmenizi rica ederiz.",
+                },
             ]
         return {"count": len(templates), "templates": templates}
 
@@ -250,8 +267,7 @@ class GuestJourneyService:
 
         return {"success": True, "review_request_id": review_request["id"]}
 
-    async def submit_review(self, tenant_id: str, booking_id: str, rating: int,
-                             comment: str | None = None, categories: dict | None = None) -> dict[str, Any]:
+    async def submit_review(self, tenant_id: str, booking_id: str, rating: int, comment: str | None = None, categories: dict | None = None) -> dict[str, Any]:
         """Submit a guest review."""
         if not (1 <= rating <= 5):
             return {"success": False, "error": "Rating must be 1-5"}
@@ -286,9 +302,7 @@ class GuestJourneyService:
 
     async def get_reputation_summary(self, tenant_id: str) -> dict[str, Any]:
         """Get reputation tracking summary."""
-        reviews = await db.guest_reviews.find(
-            {"tenant_id": tenant_id}, {"_id": 0, "overall_rating": 1, "category_ratings": 1, "submitted_at": 1}
-        ).to_list(5000)
+        reviews = await db.guest_reviews.find({"tenant_id": tenant_id}, {"_id": 0, "overall_rating": 1, "category_ratings": 1, "submitted_at": 1}).to_list(5000)
 
         if not reviews:
             return {"total_reviews": 0, "average_rating": 0, "distribution": {}, "recent_trend": []}
@@ -312,8 +326,7 @@ class GuestJourneyService:
                 monthly[month]["count"] += 1
                 monthly[month]["total_rating"] += r.get("overall_rating", 0)
 
-        trend = [{"month": m, "avg_rating": round(d["total_rating"] / d["count"], 2), "count": d["count"]}
-                 for m, d in sorted(monthly.items())[-12:]]
+        trend = [{"month": m, "avg_rating": round(d["total_rating"] / d["count"], 2), "count": d["count"]} for m, d in sorted(monthly.items())[-12:]]
 
         return {
             "total_reviews": total,
@@ -327,9 +340,7 @@ class GuestJourneyService:
     async def get_guest_satisfaction_dashboard(self, tenant_id: str) -> dict[str, Any]:
         """Comprehensive guest satisfaction dashboard."""
         # Open requests
-        open_requests = await db.guest_requests.count_documents(
-            {"tenant_id": tenant_id, "status": {"$in": ["open", "assigned", "in_progress"]}}
-        )
+        open_requests = await db.guest_requests.count_documents({"tenant_id": tenant_id, "status": {"$in": ["open", "assigned", "in_progress"]}})
         # Average resolution time
         resolved = await db.guest_requests.find(
             {"tenant_id": tenant_id, "status": {"$in": ["resolved", "closed"]}, "resolved_at": {"$exists": True}},
@@ -358,10 +369,15 @@ class GuestJourneyService:
         avg_by_type = {t: round(sum(mins) / len(mins), 1) for t, mins in by_type.items()}
 
         # Request queue
-        queue = await db.guest_requests.find(
-            {"tenant_id": tenant_id, "status": {"$in": ["open", "assigned", "in_progress"]}},
-            {"_id": 0},
-        ).sort("created_at", 1).limit(30).to_list(30)
+        queue = (
+            await db.guest_requests.find(
+                {"tenant_id": tenant_id, "status": {"$in": ["open", "assigned", "in_progress"]}},
+                {"_id": 0},
+            )
+            .sort("created_at", 1)
+            .limit(30)
+            .to_list(30)
+        )
 
         # Reputation
         reputation = await self.get_reputation_summary(tenant_id)

@@ -2,6 +2,7 @@
 
 Writes ctx['guests'].
 """
+
 import random
 from datetime import timedelta
 
@@ -10,12 +11,51 @@ from seed._helpers import _encrypt_doc, _now, _uuid
 
 async def seed_guests(db, ctx):
     tenant_id = ctx["tenant_id"]
-    first_names_m = ["Ahmet", "Mehmet", "Ali", "Murat", "Emre", "Can", "Burak", "Serkan", "Oğuz", "Kerem",
-                     "John", "Michael", "David", "James", "Robert", "William", "Thomas", "Daniel", "Hans", "Pierre"]
-    first_names_f = ["Ayşe", "Fatma", "Elif", "Zeynep", "Selin", "Merve", "Deniz", "Ece", "İrem", "Başak",
-                     "Emma", "Sophia", "Olivia", "Anna", "Maria", "Sophie", "Lisa", "Julia", "Elena", "Laura"]
-    last_names = ["Yılmaz", "Kaya", "Demir", "Çelik", "Şahin", "Öztürk", "Aydın", "Arslan", "Doğan", "Kılıç",
-                  "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Müller", "Dubois", "Rossi"]
+    first_names_m = [
+        "Ahmet",
+        "Mehmet",
+        "Ali",
+        "Murat",
+        "Emre",
+        "Can",
+        "Burak",
+        "Serkan",
+        "Oğuz",
+        "Kerem",
+        "John",
+        "Michael",
+        "David",
+        "James",
+        "Robert",
+        "William",
+        "Thomas",
+        "Daniel",
+        "Hans",
+        "Pierre",
+    ]
+    first_names_f = ["Ayşe", "Fatma", "Elif", "Zeynep", "Selin", "Merve", "Deniz", "Ece", "İrem", "Başak", "Emma", "Sophia", "Olivia", "Anna", "Maria", "Sophie", "Lisa", "Julia", "Elena", "Laura"]
+    last_names = [
+        "Yılmaz",
+        "Kaya",
+        "Demir",
+        "Çelik",
+        "Şahin",
+        "Öztürk",
+        "Aydın",
+        "Arslan",
+        "Doğan",
+        "Kılıç",
+        "Smith",
+        "Johnson",
+        "Williams",
+        "Brown",
+        "Jones",
+        "Garcia",
+        "Miller",
+        "Müller",
+        "Dubois",
+        "Rossi",
+    ]
     nationalities = ["TR", "TR", "TR", "TR", "DE", "GB", "US", "FR", "RU", "IT", "NL", "JP"]
 
     guests = []
@@ -32,8 +72,8 @@ async def seed_guests(db, ctx):
             "tenant_id": tenant_id,
             "name": f"{first} {last}",
             "email": f"{first.lower()}.{last.lower()}{i}@email.com",
-            "phone": f"+{random.choice(['90','49','44','1','33','7','39'])}{random.randint(1000000000,9999999999)}",
-            "id_number": f"{random.randint(10000000000,99999999999)}",
+            "phone": f"+{random.choice(['90', '49', '44', '1', '33', '7', '39'])}{random.randint(1000000000, 9999999999)}",
+            "id_number": f"{random.randint(10000000000, 99999999999)}",
             "nationality": nat,
             "address": None,
             "vip_status": random.random() < 0.1,

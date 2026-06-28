@@ -8,6 +8,7 @@ Environment:
     BACKUP_RETENTION_DAYS — Days to keep (default: 30)
     BACKUP_PATH        — Local backup path (default: /tmp/backups)
 """
+
 import asyncio
 import logging
 import os
@@ -21,16 +22,33 @@ logger = logging.getLogger("infra.backup")
 
 # Critical collections that MUST be backed up
 CRITICAL_COLLECTIONS = [
-    "users", "tenants", "bookings", "rooms", "guests", "folios",
-    "invoices", "payments", "companies", "rates", "channel_connections",
-    "audit_logs", "loyalty_programs", "loyalty_transactions",
+    "users",
+    "tenants",
+    "bookings",
+    "rooms",
+    "guests",
+    "folios",
+    "invoices",
+    "payments",
+    "companies",
+    "rates",
+    "channel_connections",
+    "audit_logs",
+    "loyalty_programs",
+    "loyalty_transactions",
 ]
 
 # Secondary collections
 SECONDARY_COLLECTIONS = [
-    "event_bus_log", "messaging_delivery_logs", "observability_traces",
-    "alert_history", "pipeline_runs", "analytics_export_history",
-    "notification_queue", "housekeeping_tasks", "maintenance_work_orders",
+    "event_bus_log",
+    "messaging_delivery_logs",
+    "observability_traces",
+    "alert_history",
+    "pipeline_runs",
+    "analytics_export_history",
+    "notification_queue",
+    "housekeeping_tasks",
+    "maintenance_work_orders",
 ]
 
 
@@ -89,6 +107,7 @@ class BackupManager:
     async def create_backup(self, backup_type: str = "scheduled") -> dict[str, Any]:
         """Create a MongoDB backup using mongodump."""
         import uuid
+
         backup_id = f"bk_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
         metadata = BackupMetadata(backup_id, backup_type, "running")
         self._metrics["total_backups"] += 1
@@ -113,19 +132,13 @@ class BackupManager:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=3600
-            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=3600)
 
             if process.returncode != 0:
                 raise RuntimeError(f"mongodump failed: {stderr.decode()[:500]}")
 
             # Calculate size
-            total_size = sum(
-                f.stat().st_size
-                for f in Path(backup_dir).rglob("*")
-                if f.is_file()
-            )
+            total_size = sum(f.stat().st_size for f in Path(backup_dir).rglob("*") if f.is_file())
 
             duration = (datetime.now(UTC) - start).total_seconds()
             metadata.status = "completed"
@@ -160,7 +173,7 @@ class BackupManager:
         result = metadata.to_dict()
         self._history.append(result)
         if len(self._history) > self._max_history:
-            self._history = self._history[-self._max_history:]
+            self._history = self._history[-self._max_history :]
 
         return result
 

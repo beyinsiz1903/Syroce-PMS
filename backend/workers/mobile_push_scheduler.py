@@ -19,6 +19,7 @@ Started from `bootstrap.phases.c_domain` with a 15-min interval (env
 `MOBILE_PUSH_SCAN_SECONDS`). Each tick is best-effort: an exception in
 one tenant scan never aborts the loop.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -54,6 +55,7 @@ _started = False
 
 def _db():
     from server import db
+
     return db
 
 
@@ -78,17 +80,20 @@ async def _claim_dedupe(tenant_id: str, kind: str, target_id: str, day: str) -> 
     """Atomically claim a (type, target, day) slot. Returns True if THIS
     call is allowed to send the push, False if a previous tick already did."""
     from pymongo.errors import DuplicateKeyError
+
     db = _db()
     expires_at = datetime.now(UTC) + timedelta(days=_DEDUPE_TTL_DAYS)
     try:
-        await db.mobile_push_dedupe.insert_one({
-            "tenant_id": tenant_id,
-            "type": kind,
-            "target_id": target_id,
-            "day": day,
-            "claimed_at": datetime.now(UTC),
-            "expires_at": expires_at,
-        })
+        await db.mobile_push_dedupe.insert_one(
+            {
+                "tenant_id": tenant_id,
+                "type": kind,
+                "target_id": target_id,
+                "day": day,
+                "claimed_at": datetime.now(UTC),
+                "expires_at": expires_at,
+            }
+        )
         return True
     except DuplicateKeyError:
         return False
@@ -168,11 +173,14 @@ async def _scan_tenant_vip_arrivals(tenant_id: str, fire) -> int:
     if not guest_ids:
         return 0
     guest_map: dict[str, dict[str, Any]] = {}
-    async for g in db.guests.find({
-        "id": {"$in": guest_ids},
-        "tenant_id": tenant_id,
-        "vip_status": {"$ne": False},
-    }, {"_id": 0, "id": 1, "vip_status": 1, "first_name": 1, "last_name": 1}):
+    async for g in db.guests.find(
+        {
+            "id": {"$in": guest_ids},
+            "tenant_id": tenant_id,
+            "vip_status": {"$ne": False},
+        },
+        {"_id": 0, "id": 1, "vip_status": 1, "first_name": 1, "last_name": 1},
+    ):
         if g.get("vip_status"):
             guest_map[g["id"]] = g
 
@@ -194,14 +202,11 @@ async def _scan_tenant_vip_arrivals(tenant_id: str, fire) -> int:
         arrival_day = check_in.date().isoformat()
         if not await _claim_dedupe(tenant_id, "vip_arrival", b.get("id"), arrival_day):
             continue
-        guest_name = b.get("guest_name") or f"{guest.get('first_name','')} {guest.get('last_name','')}".strip()
+        guest_name = b.get("guest_name") or f"{guest.get('first_name', '')} {guest.get('last_name', '')}".strip()
         fire(
             tenant_id,
             title=f"VIP gelis · {guest_name}",
-            body=(
-                f"Oda {b.get('room_number') or '?'} · "
-                f"{check_in.strftime('%H:%M')}"
-            ).strip(' ·'),
+            body=(f"Oda {b.get('room_number') or '?'} · {check_in.strftime('%H:%M')}").strip(" ·"),
             data={
                 "type": "vip_arrival",
                 "booking_id": b.get("id"),
@@ -226,20 +231,26 @@ async def _scan_tenant_no_show_risk(tenant_id: str, fire) -> int:
     # Same ISO-string tolerance as the VIP scan. We need BOTH `check_in`
     # past the no-show grace AND `check_out` still in the future, so we
     # combine two `$or` ranges via `$and`.
-    bookings = await db.bookings.find({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["confirmed", "guaranteed"]},
-        "$and": [
-            {"$or": [
-                {"check_in": {"$lte": cutoff}},
-                {"check_in": {"$lte": cutoff.isoformat()}},
-            ]},
-            {"$or": [
-                {"check_out": {"$gte": now}},
-                {"check_out": {"$gte": now.isoformat()}},
-            ]},
-        ],
-    }).to_list(500)
+    bookings = await db.bookings.find(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["confirmed", "guaranteed"]},
+            "$and": [
+                {
+                    "$or": [
+                        {"check_in": {"$lte": cutoff}},
+                        {"check_in": {"$lte": cutoff.isoformat()}},
+                    ]
+                },
+                {
+                    "$or": [
+                        {"check_out": {"$gte": now}},
+                        {"check_out": {"$gte": now.isoformat()}},
+                    ]
+                },
+            ],
+        }
+    ).to_list(500)
     if not bookings:
         return 0
 
@@ -251,10 +262,7 @@ async def _scan_tenant_no_show_risk(tenant_id: str, fire) -> int:
         fire(
             tenant_id,
             title=f"No-show riski · {guest_name}",
-            body=(
-                f"Oda {b.get('room_number') or '?'} · "
-                f"giris saati {NO_SHOW_GRACE_MINUTES} dk once gecti, hala check-in olmadi"
-            ),
+            body=(f"Oda {b.get('room_number') or '?'} · giris saati {NO_SHOW_GRACE_MINUTES} dk once gecti, hala check-in olmadi"),
             data={
                 "type": "no_show_risk",
                 "booking_id": b.get("id"),
@@ -301,7 +309,9 @@ async def _tick() -> None:
     if total_vip or total_no_show:
         logger.info(
             "[mobile-push-scheduler] dispatched vip=%d no_show=%d across %d tenant(s)",
-            total_vip, total_no_show, len(tenant_ids),
+            total_vip,
+            total_no_show,
+            len(tenant_ids),
         )
 
 
@@ -316,7 +326,9 @@ async def _run_loop(interval_seconds: int) -> None:
             _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
         except Exception as e:
             _transient_tracker.log_exception(
-                logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                logger,
+                e,
+                TransientFailureTracker.OUTER_LOOP_KEY,
                 context="tick",
                 non_transient_msg="%s tick crashed: %s",
             )

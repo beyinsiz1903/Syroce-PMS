@@ -3,6 +3,7 @@ Operational AI - Predictive models for hotel operations.
 Models: check-in load, housekeeping workload, room readiness ETA, maintenance failure risk.
 Integrates with existing housekeeping, front desk, maintenance, and event systems.
 """
+
 import logging
 import math
 import uuid
@@ -23,10 +24,8 @@ class CheckInLoadPredictor:
 
         # Arrivals for target date
         arrivals = await db.bookings.find(
-            {"tenant_id": tenant_id, "check_in": target_s,
-             "status": {"$in": ["confirmed", "guaranteed"]}},
-            {"_id": 0, "id": 1, "guest_name": 1, "room_type": 1,
-             "estimated_arrival_time": 1, "source": 1, "check_in": 1},
+            {"tenant_id": tenant_id, "check_in": target_s, "status": {"$in": ["confirmed", "guaranteed"]}},
+            {"_id": 0, "id": 1, "guest_name": 1, "room_type": 1, "estimated_arrival_time": 1, "source": 1, "check_in": 1},
         ).to_list(500)
 
         total_arrivals = len(arrivals)
@@ -35,8 +34,7 @@ class CheckInLoadPredictor:
         dow = target.weekday()
         hist_start = (target - timedelta(days=90)).isoformat()
         hist_bookings = await db.bookings.find(
-            {"tenant_id": tenant_id, "check_in": {"$gte": hist_start, "$lt": target_s},
-             "status": {"$in": ["checked_in", "checked_out"]}},
+            {"tenant_id": tenant_id, "check_in": {"$gte": hist_start, "$lt": target_s}, "status": {"$in": ["checked_in", "checked_out"]}},
             {"_id": 0, "check_in": 1, "checked_in_at": 1},
         ).to_list(5000)
 
@@ -74,16 +72,14 @@ class CheckInLoadPredictor:
             predicted = round(total_arrivals * pct, 1)
             hourly_forecast[f"{h:02d}:00"] = {
                 "predicted_arrivals": predicted,
-                "pressure": "high" if predicted > total_arrivals * 0.2 else (
-                    "medium" if predicted > total_arrivals * 0.1 else "low"),
+                "pressure": "high" if predicted > total_arrivals * 0.2 else ("medium" if predicted > total_arrivals * 0.1 else "low"),
             }
 
         # Peak hour
         peak_hour = max(hourly_forecast.items(), key=lambda x: x[1]["predicted_arrivals"])[0] if hourly_forecast else "15:00"
 
         # Arrival pressure score (0-100)
-        pressure_score = min(100, round(total_arrivals / max(
-            await db.rooms.count_documents({"tenant_id": tenant_id}), 1) * 100))
+        pressure_score = min(100, round(total_arrivals / max(await db.rooms.count_documents({"tenant_id": tenant_id}), 1) * 100))
 
         return {
             "tenant_id": tenant_id,
@@ -120,34 +116,41 @@ class HousekeepingWorkloadPredictor:
         (target + timedelta(days=1)).isoformat()
 
         # Departures (rooms needing deep clean)
-        departures = await db.bookings.count_documents({
-            "tenant_id": tenant_id, "check_out": target_s,
-            "status": {"$in": ["checked_in", "confirmed", "guaranteed"]},
-        })
+        departures = await db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "check_out": target_s,
+                "status": {"$in": ["checked_in", "confirmed", "guaranteed"]},
+            }
+        )
 
         # Stayovers (rooms needing refresh)
-        stayovers = await db.bookings.count_documents({
-            "tenant_id": tenant_id,
-            "check_in": {"$lt": target_s}, "check_out": {"$gt": target_s},
-            "status": {"$in": ["checked_in"]},
-        })
+        stayovers = await db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "check_in": {"$lt": target_s},
+                "check_out": {"$gt": target_s},
+                "status": {"$in": ["checked_in"]},
+            }
+        )
 
         # Arrivals (rooms needing preparation)
-        arrivals = await db.bookings.count_documents({
-            "tenant_id": tenant_id, "check_in": target_s,
-            "status": {"$in": ["confirmed", "guaranteed"]},
-        })
+        arrivals = await db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "check_in": target_s,
+                "status": {"$in": ["confirmed", "guaranteed"]},
+            }
+        )
 
         await db.rooms.count_documents({"tenant_id": tenant_id})
 
         # Workload calculation (minutes)
         departure_time = 45  # minutes per departure clean
-        stayover_time = 20   # minutes per stayover
+        stayover_time = 20  # minutes per stayover
         arrival_prep_time = 30  # minutes per arrival prep
 
-        total_minutes = (departures * departure_time +
-                        stayovers * stayover_time +
-                        arrivals * arrival_prep_time)
+        total_minutes = departures * departure_time + stayovers * stayover_time + arrivals * arrival_prep_time
         total_hours = round(total_minutes / 60, 1)
 
         # Staff needed (8-hour shifts)
@@ -157,21 +160,20 @@ class HousekeepingWorkloadPredictor:
         priority_rooms = []
         # VIP arrivals get priority
         vip_bookings = await db.bookings.find(
-            {"tenant_id": tenant_id, "check_in": target_s,
-             "status": {"$in": ["confirmed", "guaranteed"]},
-             "$or": [{"vip": True}, {"tags": "vip"}]},
+            {"tenant_id": tenant_id, "check_in": target_s, "status": {"$in": ["confirmed", "guaranteed"]}, "$or": [{"vip": True}, {"tags": "vip"}]},
             {"_id": 0, "room_id": 1, "guest_name": 1},
         ).to_list(50)
         for vb in vip_bookings:
-            priority_rooms.append({
-                "room_id": vb.get("room_id"), "reason": "VIP arrival",
-                "priority": "critical",
-            })
+            priority_rooms.append(
+                {
+                    "room_id": vb.get("room_id"),
+                    "reason": "VIP arrival",
+                    "priority": "critical",
+                }
+            )
 
         # Workload heatmap by floor/zone
-        rooms_data = await db.rooms.find(
-            {"tenant_id": tenant_id}, {"_id": 0, "id": 1, "floor": 1, "room_type": 1}
-        ).to_list(1000)
+        rooms_data = await db.rooms.find({"tenant_id": tenant_id}, {"_id": 0, "id": 1, "floor": 1, "room_type": 1}).to_list(1000)
 
         floor_workload = {}
         for r in rooms_data:
@@ -237,8 +239,7 @@ class RoomReadinessPredictor:
 
         # Today's arrivals needing rooms
         arriving_bookings = await db.bookings.find(
-            {"tenant_id": tenant_id, "check_in": today_s,
-             "status": {"$in": ["confirmed", "guaranteed"]}},
+            {"tenant_id": tenant_id, "check_in": today_s, "status": {"$in": ["confirmed", "guaranteed"]}},
             {"_id": 0, "room_id": 1, "guest_name": 1, "estimated_arrival_time": 1},
         ).to_list(500)
         arrival_room_ids = {b.get("room_id") for b in arriving_bookings}
@@ -265,19 +266,21 @@ class RoomReadinessPredictor:
             eta_time = now + timedelta(minutes=remaining)
             is_arrival_room = rid in arrival_room_ids
 
-            predictions.append({
-                "room_id": rid,
-                "room_number": room.get("room_number", rid),
-                "room_type": room.get("room_type", "Standard"),
-                "floor": room.get("floor", 1),
-                "current_status": room.get("status", "unknown"),
-                "has_hk_task": bool(task),
-                "task_status": task.get("status") if task else "unassigned",
-                "estimated_ready_minutes": round(remaining),
-                "estimated_ready_time": eta_time.strftime("%H:%M"),
-                "is_arrival_room": is_arrival_room,
-                "priority": "critical" if is_arrival_room else "normal",
-            })
+            predictions.append(
+                {
+                    "room_id": rid,
+                    "room_number": room.get("room_number", rid),
+                    "room_type": room.get("room_type", "Standard"),
+                    "floor": room.get("floor", 1),
+                    "current_status": room.get("status", "unknown"),
+                    "has_hk_task": bool(task),
+                    "task_status": task.get("status") if task else "unassigned",
+                    "estimated_ready_minutes": round(remaining),
+                    "estimated_ready_time": eta_time.strftime("%H:%M"),
+                    "is_arrival_room": is_arrival_room,
+                    "priority": "critical" if is_arrival_room else "normal",
+                }
+            )
 
         predictions.sort(key=lambda x: (not x["is_arrival_room"], x["estimated_ready_minutes"]))
 
@@ -286,8 +289,7 @@ class RoomReadinessPredictor:
             "timestamp": now.isoformat(),
             "total_rooms_pending": len(predictions),
             "arrival_rooms_pending": sum(1 for p in predictions if p["is_arrival_room"]),
-            "avg_eta_minutes": round(
-                sum(p["estimated_ready_minutes"] for p in predictions) / max(len(predictions), 1)),
+            "avg_eta_minutes": round(sum(p["estimated_ready_minutes"] for p in predictions) / max(len(predictions), 1)),
             "predictions": predictions,
         }
 
@@ -300,8 +302,7 @@ class MaintenanceFailureRiskPredictor:
         cutoff = (date.today() - timedelta(days=180)).isoformat()
         work_orders = await db.maintenance_work_orders.find(
             {"tenant_id": tenant_id, "created_at": {"$gte": cutoff}},
-            {"_id": 0, "room_id": 1, "category": 1, "priority": 1,
-             "status": 1, "created_at": 1},
+            {"_id": 0, "room_id": 1, "category": 1, "priority": 1, "status": 1, "created_at": 1},
         ).to_list(2000)
 
         # Count issues per room
@@ -322,12 +323,10 @@ class MaintenanceFailureRiskPredictor:
             count = len(issues)
             if count >= 5:
                 risk_score += 0.35
-                factors.append({"factor": "high_frequency", "impact": 0.35,
-                               "detail": f"{count} bakim talebi (6 ay)"})
+                factors.append({"factor": "high_frequency", "impact": 0.35, "detail": f"{count} bakim talebi (6 ay)"})
             elif count >= 3:
                 risk_score += 0.20
-                factors.append({"factor": "medium_frequency", "impact": 0.20,
-                               "detail": f"{count} bakim talebi (6 ay)"})
+                factors.append({"factor": "medium_frequency", "impact": 0.20, "detail": f"{count} bakim talebi (6 ay)"})
 
             # Recency factor
             recent = sorted(issues, key=lambda x: x.get("created_at", ""), reverse=True)
@@ -337,8 +336,7 @@ class MaintenanceFailureRiskPredictor:
                     days_since = (date.today() - date.fromisoformat(last_date[:10])).days
                     if days_since < 14:
                         risk_score += 0.25
-                        factors.append({"factor": "recent_issue", "impact": 0.25,
-                                       "detail": f"Son ariza {days_since} gun once"})
+                        factors.append({"factor": "recent_issue", "impact": 0.25, "detail": f"Son ariza {days_since} gun once"})
                 except (ValueError, TypeError):
                     pass
 
@@ -346,20 +344,20 @@ class MaintenanceFailureRiskPredictor:
             high_priority = sum(1 for i in issues if i.get("priority") in ("high", "critical", "urgent"))
             if high_priority >= 2:
                 risk_score += 0.20
-                factors.append({"factor": "priority_escalation", "impact": 0.20,
-                               "detail": f"{high_priority} yuksek oncelikli ariza"})
+                factors.append({"factor": "priority_escalation", "impact": 0.20, "detail": f"{high_priority} yuksek oncelikli ariza"})
 
             risk_score = min(round(risk_score, 3), 1.0)
             if risk_score >= 0.3:
-                risk_items.append({
-                    "room_id": rid,
-                    "risk_score": risk_score,
-                    "risk_level": "high" if risk_score > 0.6 else (
-                        "medium" if risk_score > 0.3 else "low"),
-                    "issue_count": count,
-                    "risk_factors": factors,
-                    "recommendation": self._maint_rec(risk_score),
-                })
+                risk_items.append(
+                    {
+                        "room_id": rid,
+                        "risk_score": risk_score,
+                        "risk_level": "high" if risk_score > 0.6 else ("medium" if risk_score > 0.3 else "low"),
+                        "issue_count": count,
+                        "risk_factors": factors,
+                        "recommendation": self._maint_rec(risk_score),
+                    }
+                )
 
         risk_items.sort(key=lambda x: x["risk_score"], reverse=True)
 
@@ -389,8 +387,7 @@ class OperationalAIDashboard:
         self.readiness = RoomReadinessPredictor()
         self.maintenance = MaintenanceFailureRiskPredictor()
 
-    async def get_dashboard(self, tenant_id: str,
-                            target_date: str | None = None) -> dict[str, Any]:
+    async def get_dashboard(self, tenant_id: str, target_date: str | None = None) -> dict[str, Any]:
         started_at = datetime.now(UTC)
 
         checkin_data = await self.checkin.predict(tenant_id, target_date)
@@ -417,17 +414,19 @@ class OperationalAIDashboard:
         await db.operational_ai_snapshots.insert_one(snapshot)
 
         # Log execution
-        await db.model_execution_logs.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "run_id": snapshot["id"],
-            "model_type": "operational_ai",
-            "status": "success",
-            "output_count": 4,
-            "started_at": started_at.isoformat(),
-            "completed_at": datetime.now(UTC).isoformat(),
-            "duration_ms": int((datetime.now(UTC) - started_at).total_seconds() * 1000),
-        })
+        await db.model_execution_logs.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "run_id": snapshot["id"],
+                "model_type": "operational_ai",
+                "status": "success",
+                "output_count": 4,
+                "started_at": started_at.isoformat(),
+                "completed_at": datetime.now(UTC).isoformat(),
+                "duration_ms": int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+            }
+        )
 
         return {
             "tenant_id": tenant_id,
@@ -438,8 +437,7 @@ class OperationalAIDashboard:
             "generated_at": started_at.isoformat(),
         }
 
-    async def get_staffing_recommendations(self, tenant_id: str,
-                                            target_date: str | None = None) -> dict[str, Any]:
+    async def get_staffing_recommendations(self, tenant_id: str, target_date: str | None = None) -> dict[str, Any]:
         checkin = await self.checkin.predict(tenant_id, target_date)
         hk = await self.housekeeping.predict(tenant_id, target_date)
 
@@ -447,13 +445,10 @@ class OperationalAIDashboard:
             "tenant_id": tenant_id,
             "front_desk": checkin.get("staffing_recommendation", {}),
             "housekeeping": hk.get("staffing_recommendation", {}),
-            "combined_pressure": round(
-                (checkin.get("arrival_pressure_score", 0) +
-                 hk.get("staffing_recommendation", {}).get("shift_pressure_score", 0)) / 2),
+            "combined_pressure": round((checkin.get("arrival_pressure_score", 0) + hk.get("staffing_recommendation", {}).get("shift_pressure_score", 0)) / 2),
         }
 
-    async def get_workload_heatmap(self, tenant_id: str,
-                                    target_date: str | None = None) -> dict[str, Any]:
+    async def get_workload_heatmap(self, tenant_id: str, target_date: str | None = None) -> dict[str, Any]:
         hk = await self.housekeeping.predict(tenant_id, target_date)
         checkin = await self.checkin.predict(tenant_id, target_date)
 

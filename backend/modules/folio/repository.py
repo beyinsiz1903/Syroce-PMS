@@ -66,6 +66,7 @@ class FolioRepository:
             IDEMPOTENCY_PROCESSING_GRACE_SECONDS,
             unseal_response_body,
         )
+
         lock_id = hashlib.sha256(f"{tenant_id}:{scope}:{idempotency_key}".encode()).hexdigest()
         now = datetime.now(UTC)
         lock_doc = {
@@ -104,6 +105,7 @@ class FolioRepository:
             IDEMPOTENCY_RETENTION_SECONDS,
             seal_response_body,
         )
+
         now = datetime.now(UTC)
         await db.idempotency_keys.update_one(
             {"_id": lock_id},
@@ -124,6 +126,7 @@ class FolioRepository:
         from datetime import timedelta as _td
 
         from shared_kernel.idempotency import IDEMPOTENCY_RETENTION_SECONDS
+
         now = datetime.now(UTC)
         await db.idempotency_keys.update_one(
             {"_id": lock_id},

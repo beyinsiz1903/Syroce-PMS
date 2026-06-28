@@ -20,6 +20,7 @@ collapse the tenant boundary (the whole point of these scoped rooms), so
 the helpers refuse to build a room name without one instead of silently
 producing ``pms:None``.
 """
+
 from __future__ import annotations
 
 
@@ -40,9 +41,7 @@ _LEGACY_PMS_ROOM = "pms"
 
 def _require(value: str | None, name: str) -> str:
     if not value or not isinstance(value, str):
-        raise WebSocketRoomError(
-            f"{name} is required to build a tenant-scoped WebSocket room name"
-        )
+        raise WebSocketRoomError(f"{name} is required to build a tenant-scoped WebSocket room name")
     return value
 
 
@@ -59,18 +58,12 @@ def tenant_broadcast_room(tenant_id: str) -> str:
 
 def internal_chat_user_room(tenant_id: str, user_id: str) -> str:
     """Per-user DM room within a tenant."""
-    return (
-        f"{_INTERNAL_CHAT_PREFIX}{_require(tenant_id, 'tenant_id')}"
-        f":user:{_require(user_id, 'user_id')}"
-    )
+    return f"{_INTERNAL_CHAT_PREFIX}{_require(tenant_id, 'tenant_id')}:user:{_require(user_id, 'user_id')}"
 
 
 def internal_chat_department_room(tenant_id: str, department: str) -> str:
     """Per-department room within a tenant."""
-    return (
-        f"{_INTERNAL_CHAT_PREFIX}{_require(tenant_id, 'tenant_id')}"
-        f":dept:{_require(department, 'department')}"
-    )
+    return f"{_INTERNAL_CHAT_PREFIX}{_require(tenant_id, 'tenant_id')}:dept:{_require(department, 'department')}"
 
 
 def internal_chat_broadcast_room(tenant_id: str) -> str:
@@ -78,9 +71,7 @@ def internal_chat_broadcast_room(tenant_id: str) -> str:
     return f"{_INTERNAL_CHAT_PREFIX}{_require(tenant_id, 'tenant_id')}:broadcast"
 
 
-def internal_chat_rooms(
-    tenant_id: str, user_id: str, department: str | None = None
-) -> list[str]:
+def internal_chat_rooms(tenant_id: str, user_id: str, department: str | None = None) -> list[str]:
     """The full set of internal-chat rooms a user belongs to (DM,
     tenant broadcast, and — when known — their department room).
 
@@ -133,8 +124,4 @@ def is_protected_room(room: str) -> bool:
     """
     if not isinstance(room, str):
         return False
-    return (
-        room.startswith(_INTERNAL_CHAT_PREFIX)
-        or room.startswith(_PMS_PREFIX)
-        or room == _LEGACY_PMS_ROOM
-    )
+    return room.startswith(_INTERNAL_CHAT_PREFIX) or room.startswith(_PMS_PREFIX) or room == _LEGACY_PMS_ROOM

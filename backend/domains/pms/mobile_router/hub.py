@@ -13,6 +13,7 @@ All endpoints are tenant-scoped via the authenticated user and reuse the
 existing collections + read-state semantics. Approval visibility is gated
 with the SAME RolePermissionService used elsewhere, so nothing weakens RBAC.
 """
+
 import asyncio
 from datetime import UTC, datetime
 from typing import Any
@@ -126,9 +127,7 @@ async def get_unified_feed(
 
     items: list[dict[str, Any]] = []
 
-    async for n in (
-        db.notifications.find(notif_query).sort("created_at", -1).limit(fetch_cap)
-    ):
+    async for n in db.notifications.find(notif_query).sort("created_at", -1).limit(fetch_cap):
         items.append(
             {
                 "source": "notification",
@@ -230,13 +229,17 @@ async def _collect_my_tasks(current_user: User) -> list[dict[str, Any]]:
     tasks: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
 
-    async for t in db.housekeeping_tasks.find(
-        {
-            "tenant_id": current_user.tenant_id,
-            "assigned_to": {"$in": names},
-            "status": {"$nin": list(_DONE_TASK_STATUSES)},
-        }
-    ).sort("created_at", -1).limit(200):
+    async for t in (
+        db.housekeeping_tasks.find(
+            {
+                "tenant_id": current_user.tenant_id,
+                "assigned_to": {"$in": names},
+                "status": {"$nin": list(_DONE_TASK_STATUSES)},
+            }
+        )
+        .sort("created_at", -1)
+        .limit(200)
+    ):
         tid = t.get("id")
         if tid in seen_ids:
             continue
@@ -255,13 +258,17 @@ async def _collect_my_tasks(current_user: User) -> list[dict[str, Any]]:
         )
 
     for collection in (db.tasks, db.maintenance_tasks):
-        async for t in collection.find(
-            {
-                "tenant_id": current_user.tenant_id,
-                "assigned_to": {"$in": names},
-                "status": {"$nin": list(_DONE_TASK_STATUSES)},
-            }
-        ).sort("created_at", -1).limit(200):
+        async for t in (
+            collection.find(
+                {
+                    "tenant_id": current_user.tenant_id,
+                    "assigned_to": {"$in": names},
+                    "status": {"$nin": list(_DONE_TASK_STATUSES)},
+                }
+            )
+            .sort("created_at", -1)
+            .limit(200)
+        ):
             tid = t.get("id")
             if not tid or tid in seen_ids:
                 continue
@@ -343,23 +350,13 @@ async def get_today_digest(
 
     pending_approvals = 0
     if _can(current_user, "manage_approvals"):
-        pending_approvals += await db.approvals.count_documents(
-            {"tenant_id": current_user.tenant_id, "status": "pending"}
-        )
-        pending_approvals += await db.approval_requests.count_documents(
-            {"tenant_id": current_user.tenant_id, "status": "pending"}
-        )
+        pending_approvals += await db.approvals.count_documents({"tenant_id": current_user.tenant_id, "status": "pending"})
+        pending_approvals += await db.approval_requests.count_documents({"tenant_id": current_user.tenant_id, "status": "pending"})
     if _can(current_user, "view_hr"):
-        pending_approvals += await db.leave_requests.count_documents(
-            {"tenant_id": current_user.tenant_id, "status": "pending"}
-        )
-        pending_approvals += await db.shift_swap_requests.count_documents(
-            {"tenant_id": current_user.tenant_id, "status": "pending"}
-        )
+        pending_approvals += await db.leave_requests.count_documents({"tenant_id": current_user.tenant_id, "status": "pending"})
+        pending_approvals += await db.shift_swap_requests.count_documents({"tenant_id": current_user.tenant_id, "status": "pending"})
     if _can_procurement(current_user):
-        pending_approvals += await db.proc_purchase_requests.count_documents(
-            {"tenant_id": current_user.tenant_id, "status": "submitted"}
-        )
+        pending_approvals += await db.proc_purchase_requests.count_documents({"tenant_id": current_user.tenant_id, "status": "submitted"})
 
     urgent_tasks = [t for t in tasks if t.get("priority") in ("urgent", "high")]
 
@@ -383,37 +380,45 @@ async def get_today_digest(
         tenant_doc,
     ) = await asyncio.gather(
         db.rooms.count_documents({"tenant_id": tid}),
-        db.bookings.count_documents({
-            "tenant_id": tid,
-            "check_in": {"$lte": today_iso},
-            "check_out": {"$gt": today_iso},
-            "status": {"$nin": ["cancelled", "no_show"]},
-        }),
-        db.bookings.count_documents({
-            "tenant_id": tid,
-            "check_in": today_iso,
-            "status": {"$nin": ["cancelled", "no_show"]},
-        }),
-        db.bookings.count_documents({
-            "tenant_id": tid,
-            "check_out": today_iso,
-            "status": {"$nin": ["cancelled", "no_show"]},
-        }),
-        db.maintenance_tasks.count_documents({
-            "tenant_id": tid,
-            "status": {"$nin": NON_TERMINAL_FAULT},
-        }),
-        db.tasks.count_documents({
-            "tenant_id": tid,
-            "department": "maintenance",
-            "status": {"$nin": NON_TERMINAL_FAULT},
-        }),
+        db.bookings.count_documents(
+            {
+                "tenant_id": tid,
+                "check_in": {"$lte": today_iso},
+                "check_out": {"$gt": today_iso},
+                "status": {"$nin": ["cancelled", "no_show"]},
+            }
+        ),
+        db.bookings.count_documents(
+            {
+                "tenant_id": tid,
+                "check_in": today_iso,
+                "status": {"$nin": ["cancelled", "no_show"]},
+            }
+        ),
+        db.bookings.count_documents(
+            {
+                "tenant_id": tid,
+                "check_out": today_iso,
+                "status": {"$nin": ["cancelled", "no_show"]},
+            }
+        ),
+        db.maintenance_tasks.count_documents(
+            {
+                "tenant_id": tid,
+                "status": {"$nin": NON_TERMINAL_FAULT},
+            }
+        ),
+        db.tasks.count_documents(
+            {
+                "tenant_id": tid,
+                "department": "maintenance",
+                "status": {"$nin": NON_TERMINAL_FAULT},
+            }
+        ),
         db.tenants.find_one({"id": tid}, {"_id": 0, "property_name": 1}),
     )
     open_faults = open_faults_mt + open_faults_tasks
-    occupancy_pct = round(
-        (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0, 1
-    )
+    occupancy_pct = round((occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0, 1)
     hotel_name = (tenant_doc or {}).get("property_name") or None
 
     return {
@@ -458,9 +463,7 @@ async def get_unified_approvals(
         # category, but they expose DIFFERENT approve/reject endpoints. The item
         # `kind` carries which one so the action can route to the correct
         # endpoint without weakening any RBAC.
-        async for a in db.approvals.find(
-            {"tenant_id": current_user.tenant_id, "status": "pending"}
-        ).sort("request_date", -1).limit(200):
+        async for a in db.approvals.find({"tenant_id": current_user.tenant_id, "status": "pending"}).sort("request_date", -1).limit(200):
             finance_items.append(
                 {
                     "id": a.get("id"),
@@ -473,9 +476,7 @@ async def get_unified_approvals(
                     "created_at": _sort_key(a.get("request_date") or a.get("created_at")),
                 }
             )
-        async for a in db.approval_requests.find(
-            {"tenant_id": current_user.tenant_id, "status": "pending"}
-        ).sort("created_at", -1).limit(200):
+        async for a in db.approval_requests.find({"tenant_id": current_user.tenant_id, "status": "pending"}).sort("created_at", -1).limit(200):
             finance_items.append(
                 {
                     "id": a.get("id"),
@@ -490,9 +491,7 @@ async def get_unified_approvals(
             )
         finance_items.sort(key=lambda x: x["created_at"], reverse=True)
         total += len(finance_items)
-        categories.append(
-            {"key": "finance", "label": "Finans", "items": finance_items, "count": len(finance_items)}
-        )
+        categories.append({"key": "finance", "label": "Finans", "items": finance_items, "count": len(finance_items)})
 
     if _can(current_user, "view_hr"):
         hr_items: list[dict[str, Any]] = []
@@ -500,12 +499,16 @@ async def get_unified_approvals(
         # Both not-yet-final stages are surfaced so a manager can advance the
         # request the rest of the way from mobile; the item `status` tells the
         # client which decision to send next.
-        async for lr in db.leave_requests.find(
-            {
-                "tenant_id": current_user.tenant_id,
-                "status": {"$in": ["pending", "dept_approved"]},
-            }
-        ).sort("created_at", -1).limit(200):
+        async for lr in (
+            db.leave_requests.find(
+                {
+                    "tenant_id": current_user.tenant_id,
+                    "status": {"$in": ["pending", "dept_approved"]},
+                }
+            )
+            .sort("created_at", -1)
+            .limit(200)
+        ):
             hr_items.append(
                 {
                     "id": lr.get("id"),
@@ -517,9 +520,7 @@ async def get_unified_approvals(
                     "created_at": _sort_key(lr.get("created_at")),
                 }
             )
-        async for sw in db.shift_swap_requests.find(
-            {"tenant_id": current_user.tenant_id, "status": "pending"}
-        ).sort("requested_at", -1).limit(200):
+        async for sw in db.shift_swap_requests.find({"tenant_id": current_user.tenant_id, "status": "pending"}).sort("requested_at", -1).limit(200):
             hr_items.append(
                 {
                     "id": sw.get("id"),
@@ -534,9 +535,7 @@ async def get_unified_approvals(
             )
         hr_items.sort(key=lambda x: x["created_at"], reverse=True)
         total += len(hr_items)
-        categories.append(
-            {"key": "hr", "label": "İnsan Kaynakları", "items": hr_items, "count": len(hr_items)}
-        )
+        categories.append({"key": "hr", "label": "İnsan Kaynakları", "items": hr_items, "count": len(hr_items)})
 
     if _can_procurement(current_user):
         proc_items: list[dict[str, Any]] = []
@@ -545,9 +544,7 @@ async def get_unified_approvals(
         # submitted -> approved|rejected transition, so only "submitted" PRs are
         # actionable from here. Visibility is gated by PROCUREMENT_ROLES; the
         # endpoint still enforces its own RBAC on the decision.
-        async for pr in db.proc_purchase_requests.find(
-            {"tenant_id": current_user.tenant_id, "status": "submitted"}
-        ).sort("created_at", -1).limit(200):
+        async for pr in db.proc_purchase_requests.find({"tenant_id": current_user.tenant_id, "status": "submitted"}).sort("created_at", -1).limit(200):
             proc_items.append(
                 {
                     "id": pr.get("id"),

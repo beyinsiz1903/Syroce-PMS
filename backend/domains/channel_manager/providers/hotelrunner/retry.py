@@ -8,6 +8,7 @@ Separates retryable from non-retryable errors.
 Retry: timeout, network error, 429, 500/502/503/504
 No retry: 400, 401, 403, mapping error, malformed response
 """
+
 import asyncio
 import logging
 import random
@@ -69,7 +70,7 @@ class HotelRunnerRetryPolicy:
         """Calculate delay before next retry."""
         if isinstance(error, HotelRunnerRateLimitError):
             return float(error.retry_after_seconds)
-        delay = min(self.base_delay * (2 ** attempt), self.max_delay)
+        delay = min(self.base_delay * (2**attempt), self.max_delay)
         jitter_range = delay * self.jitter
         delay += random.uniform(-jitter_range, jitter_range)
         return max(0.5, delay)
@@ -87,7 +88,10 @@ class HotelRunnerRetryPolicy:
                 delay = self.get_backoff_seconds(attempt, e)
                 logger.warning(
                     "HotelRunner retry %d/%d after %.1fs: %s",
-                    attempt + 1, self.max_retries, delay, e,
+                    attempt + 1,
+                    self.max_retries,
+                    delay,
+                    e,
                 )
                 await asyncio.sleep(delay)
         raise last_error  # type: ignore[misc]

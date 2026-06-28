@@ -16,6 +16,7 @@ Supported operations:
   - confirm_delivery (reservation delivery acknowledgement)
   - chain (create -> modify -> cancel sequence)
 """
+
 import logging
 import time
 import uuid as _uuid
@@ -81,6 +82,7 @@ def _simulate_failure(failure_type: str) -> dict[str, Any]:
 
 # ── Dry-Run ARI Push ─────────────────────────────────────────────────
 
+
 async def dry_run_ari_push(
     tenant_id: str,
     property_id: str,
@@ -116,10 +118,17 @@ async def dry_run_ari_push(
 
     # 1. Build payload — gercek mapper kullaniyoruz
     form_data = ari_to_update_payload(
-        inv_code, start_date, end_date,
-        availability=availability, price=price, stop_sale=stop_sale,
-        min_stay=min_stay, cta=cta, ctd=ctd,
-        days=days, channel_codes=channel_codes,
+        inv_code,
+        start_date,
+        end_date,
+        availability=availability,
+        price=price,
+        stop_sale=stop_sale,
+        min_stay=min_stay,
+        cta=cta,
+        ctd=ctd,
+        days=days,
+        channel_codes=channel_codes,
     )
 
     # 2. Failure simulation
@@ -147,7 +156,8 @@ async def dry_run_ari_push(
     verification = None
     if verify and noop_response.get("success"):
         verification = await _dry_run_verify_transaction(
-            tenant_id, property_id,
+            tenant_id,
+            property_id,
             noop_response["data"].get("transaction_id", ""),
             correlation_id=corr_id,
         )
@@ -179,8 +189,10 @@ async def dry_run_ari_push(
 
     # 7. Record metric for dry-run tracking
     await record_metric(
-        tenant_id, "dry_run_ari_push",
-        success=result["success"], duration_ms=duration_ms,
+        tenant_id,
+        "dry_run_ari_push",
+        success=result["success"],
+        duration_ms=duration_ms,
         correlation_id=corr_id,
         metadata={
             "inv_code": inv_code,
@@ -190,19 +202,21 @@ async def dry_run_ari_push(
     )
 
     # 8. Store in outbox (dry-run flag)
-    await db["connector_outbox"].insert_one({
-        "id": str(_uuid.uuid4()),
-        "tenant_id": tenant_id,
-        "property_id": property_id,
-        "provider": "hotelrunner_v2",
-        "operation": "ari_push",
-        "dry_run": True,
-        "request_payload": form_data,
-        "response_payload": noop_response,
-        "correlation_id": corr_id,
-        "status": "dry_run_completed" if result["success"] else "dry_run_failed",
-        "created_at": datetime.now(UTC).isoformat(),
-    })
+    await db["connector_outbox"].insert_one(
+        {
+            "id": str(_uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "property_id": property_id,
+            "provider": "hotelrunner_v2",
+            "operation": "ari_push",
+            "dry_run": True,
+            "request_payload": form_data,
+            "response_payload": noop_response,
+            "correlation_id": corr_id,
+            "status": "dry_run_completed" if result["success"] else "dry_run_failed",
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+    )
 
     # Remove _id before returning
     result.pop("_id", None)
@@ -210,6 +224,7 @@ async def dry_run_ari_push(
 
 
 # ── Dry-Run Confirm Delivery ──────────────────────────────────────────
+
 
 async def dry_run_confirm_delivery(
     tenant_id: str,
@@ -261,8 +276,10 @@ async def dry_run_confirm_delivery(
 
     await db[COLL_DRY_RUN].insert_one({**result})
     await record_metric(
-        tenant_id, "dry_run_confirm_delivery",
-        success=result["success"], duration_ms=duration_ms,
+        tenant_id,
+        "dry_run_confirm_delivery",
+        success=result["success"],
+        duration_ms=duration_ms,
         correlation_id=corr_id,
     )
 
@@ -271,6 +288,7 @@ async def dry_run_confirm_delivery(
 
 
 # ── Dry-Run Chain (Create → Modify → Cancel) ─────────────────────────
+
 
 async def dry_run_chain(
     tenant_id: str,
@@ -293,7 +311,8 @@ async def dry_run_chain(
 
     # Step 1: CREATE — ARI push (yeni oda/fiyat)
     step1 = await dry_run_ari_push(
-        tenant_id, property_id,
+        tenant_id,
+        property_id,
         inv_code="HR:CHAIN-TEST",
         start_date="2026-04-01",
         end_date="2026-04-05",
@@ -307,7 +326,8 @@ async def dry_run_chain(
 
     # Step 2: MODIFY — ARI push (fiyat degisikligi)
     step2 = await dry_run_ari_push(
-        tenant_id, property_id,
+        tenant_id,
+        property_id,
         inv_code="HR:CHAIN-TEST",
         start_date="2026-04-01",
         end_date="2026-04-05",
@@ -322,7 +342,8 @@ async def dry_run_chain(
 
     # Step 3: CANCEL — ARI push (stop_sale)
     step3 = await dry_run_ari_push(
-        tenant_id, property_id,
+        tenant_id,
+        property_id,
         inv_code="HR:CHAIN-TEST",
         start_date="2026-04-01",
         end_date="2026-04-05",
@@ -356,8 +377,10 @@ async def dry_run_chain(
 
     await db[COLL_DRY_RUN].insert_one({**chain_summary})
     await record_metric(
-        tenant_id, "dry_run_chain",
-        success=all_success, duration_ms=duration_ms,
+        tenant_id,
+        "dry_run_chain",
+        success=all_success,
+        duration_ms=duration_ms,
         correlation_id=corr_id,
         metadata={"step_count": 3, "success_count": chain_summary["success_count"]},
     )
@@ -367,6 +390,7 @@ async def dry_run_chain(
 
 
 # ── Transaction Verification (Read-Only) ──────────────────────────────
+
 
 async def _dry_run_verify_transaction(
     tenant_id: str,
@@ -381,6 +405,7 @@ async def _dry_run_verify_transaction(
     """
     try:
         from .service import HotelRunnerV2Service
+
         svc = await HotelRunnerV2Service.create(tenant_id, property_id)
         return await svc.verify_transaction(transaction_id, correlation_id=correlation_id)
     except Exception as e:
@@ -397,6 +422,7 @@ async def _dry_run_verify_transaction(
 
 
 # ── Payload Consistency Check ─────────────────────────────────────────
+
 
 def _check_payload_consistency(form_data: dict[str, Any]) -> dict[str, Any]:
     """
@@ -420,6 +446,7 @@ def _check_payload_consistency(form_data: dict[str, Any]) -> dict[str, Any]:
 
     # Date format check
     import re
+
     date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
     for df in ["start_date", "end_date"]:
         val = form_data.get(df, "")
@@ -435,6 +462,7 @@ def _check_payload_consistency(form_data: dict[str, Any]) -> dict[str, Any]:
 
 # ── Dry-Run Stats & History ──────────────────────────────────────────
 
+
 async def get_dry_run_results(
     tenant_id: str,
     limit: int = 50,
@@ -445,9 +473,15 @@ async def get_dry_run_results(
     if operation:
         query["operation"] = operation
 
-    return await db[COLL_DRY_RUN].find(
-        query, _NO_ID,
-    ).sort("created_at", -1).to_list(limit)
+    return (
+        await db[COLL_DRY_RUN]
+        .find(
+            query,
+            _NO_ID,
+        )
+        .sort("created_at", -1)
+        .to_list(limit)
+    )
 
 
 async def get_dry_run_stats(tenant_id: str) -> dict[str, Any]:
@@ -456,13 +490,15 @@ async def get_dry_run_stats(tenant_id: str) -> dict[str, Any]:
     """
     pipeline = [
         {"$match": {"tenant_id": tenant_id, "mode": "dry_run"}},
-        {"$group": {
-            "_id": "$operation",
-            "total": {"$sum": 1},
-            "success_count": {"$sum": {"$cond": ["$success", 1, 0]}},
-            "fail_count": {"$sum": {"$cond": ["$success", 0, 1]}},
-            "avg_duration_ms": {"$avg": "$duration_ms"},
-        }},
+        {
+            "$group": {
+                "_id": "$operation",
+                "total": {"$sum": 1},
+                "success_count": {"$sum": {"$cond": ["$success", 1, 0]}},
+                "fail_count": {"$sum": {"$cond": ["$success", 0, 1]}},
+                "avg_duration_ms": {"$avg": "$duration_ms"},
+            }
+        },
     ]
     results = await db[COLL_DRY_RUN].aggregate(pipeline).to_list(10)
 
@@ -490,23 +526,21 @@ async def get_dry_run_stats(tenant_id: str) -> dict[str, Any]:
         stats["total_failed"] += r["fail_count"]
 
     if stats["total_runs"] > 0:
-        stats["overall_success_rate"] = round(
-            stats["total_success"] / stats["total_runs"] * 100, 1
-        )
+        stats["overall_success_rate"] = round(stats["total_success"] / stats["total_runs"] * 100, 1)
 
     # Failure breakdown (by category)
     fail_pipeline = [
         {"$match": {"tenant_id": tenant_id, "mode": "dry_run", "success": False}},
-        {"$group": {
-            "_id": "$noop_response.error_category",
-            "count": {"$sum": 1},
-        }},
+        {
+            "$group": {
+                "_id": "$noop_response.error_category",
+                "count": {"$sum": 1},
+            }
+        },
         {"$sort": {"count": -1}},
     ]
     fail_results = await db[COLL_DRY_RUN].aggregate(fail_pipeline).to_list(10)
-    stats["failure_breakdown"] = {
-        r["_id"]: r["count"] for r in fail_results if r["_id"]
-    }
+    stats["failure_breakdown"] = {r["_id"]: r["count"] for r in fail_results if r["_id"]}
 
     # Chain stats
     chain_pipeline = [
@@ -550,6 +584,7 @@ async def get_dry_run_stats(tenant_id: str) -> dict[str, Any]:
 
 # ── Write Enable Criteria Check ───────────────────────────────────────
 
+
 async def check_write_enable_criteria(tenant_id: str) -> dict[str, Any]:
     """
     Write acma kriterleri (kullanici tarafindan belirlenmis):
@@ -570,66 +605,78 @@ async def check_write_enable_criteria(tenant_id: str) -> dict[str, Any]:
 
     # 1. Readiness Score >= 90
     score = readiness.get("overall_score", 0)
-    criteria.append({
-        "name": "readiness_score",
-        "label": "Readiness Score >= 90",
-        "met": score >= 90,
-        "current_value": score,
-        "required_value": 90,
-    })
+    criteria.append(
+        {
+            "name": "readiness_score",
+            "label": "Readiness Score >= 90",
+            "met": score >= 90,
+            "current_value": score,
+            "required_value": 90,
+        }
+    )
 
     # 2. Drift dusuk ve stabil
     drift_raw = readiness.get("components", {}).get("drift", {}).get("raw_value", 0)
-    criteria.append({
-        "name": "drift_low",
-        "label": "Drift < 5 (son 24s)",
-        "met": drift_raw < 5,
-        "current_value": drift_raw,
-        "required_value": "< 5",
-    })
+    criteria.append(
+        {
+            "name": "drift_low",
+            "label": "Drift < 5 (son 24s)",
+            "met": drift_raw < 5,
+            "current_value": drift_raw,
+            "required_value": "< 5",
+        }
+    )
 
     # 3. Dry-run success rate >= 95%
     dr_success_rate = dry_stats.get("overall_success_rate", 0)
     dr_total = dry_stats.get("total_runs", 0)
-    criteria.append({
-        "name": "dry_run_success_rate",
-        "label": "Dry-run success rate >= 95%",
-        "met": dr_success_rate >= 95 and dr_total >= 3,
-        "current_value": dr_success_rate,
-        "required_value": 95,
-        "note": f"{dr_total} toplam dry-run" if dr_total < 3 else None,
-    })
+    criteria.append(
+        {
+            "name": "dry_run_success_rate",
+            "label": "Dry-run success rate >= 95%",
+            "met": dr_success_rate >= 95 and dr_total >= 3,
+            "current_value": dr_success_rate,
+            "required_value": 95,
+            "note": f"{dr_total} toplam dry-run" if dr_total < 3 else None,
+        }
+    )
 
     # 4. DLQ = 0
     dlq_count = readiness.get("components", {}).get("dlq", {}).get("raw_value", 0)
-    criteria.append({
-        "name": "dlq_empty",
-        "label": "DLQ = 0",
-        "met": dlq_count == 0,
-        "current_value": dlq_count,
-        "required_value": 0,
-    })
+    criteria.append(
+        {
+            "name": "dlq_empty",
+            "label": "DLQ = 0",
+            "met": dlq_count == 0,
+            "current_value": dlq_count,
+            "required_value": 0,
+        }
+    )
 
     # 5. Retry stabil (< 5)
     retry_raw = readiness.get("components", {}).get("retry", {}).get("raw_value", 0)
-    criteria.append({
-        "name": "retry_stable",
-        "label": "Retry < 5 (stabil)",
-        "met": retry_raw < 5,
-        "current_value": retry_raw,
-        "required_value": "< 5",
-    })
+    criteria.append(
+        {
+            "name": "retry_stable",
+            "label": "Retry < 5 (stabil)",
+            "met": retry_raw < 5,
+            "current_value": retry_raw,
+            "required_value": "< 5",
+        }
+    )
 
     # 6. En az 1 basarili chain
     last_chain = dry_stats.get("last_chain")
     chain_success = last_chain is not None and last_chain.get("success", False)
-    criteria.append({
-        "name": "chain_success",
-        "label": "En az 1 basarili create/modify/cancel zinciri",
-        "met": chain_success,
-        "current_value": "Basarili" if chain_success else "Yok",
-        "required_value": "En az 1",
-    })
+    criteria.append(
+        {
+            "name": "chain_success",
+            "label": "En az 1 basarili create/modify/cancel zinciri",
+            "met": chain_success,
+            "current_value": "Basarili" if chain_success else "Yok",
+            "required_value": "En az 1",
+        }
+    )
 
     all_met = all(c["met"] for c in criteria)
     met_count = sum(1 for c in criteria if c["met"])

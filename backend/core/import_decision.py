@@ -10,6 +10,7 @@ determines the correct import_status:
   - review_required     : mapping missing, anomaly, or business rule violation
   - duplicate           : booking already exists for this external reservation
 """
+
 import logging
 from typing import Any
 

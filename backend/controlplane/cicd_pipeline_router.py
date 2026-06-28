@@ -11,6 +11,7 @@ Endpoints:
   GET  /api/ops/cicd/trends             — Trend analysis across runs
   GET  /api/ops/cicd/tiers              — Available tier configurations
 """
+
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query

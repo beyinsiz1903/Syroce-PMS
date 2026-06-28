@@ -2,6 +2,7 @@
 GraphQL Schema for Hotel PMS
 Optimized field-level queries for frontend performance
 """
+
 from datetime import datetime
 from enum import Enum
 from typing import Any
@@ -79,12 +80,14 @@ class BookingStatus(Enum):
     CANCELLED = "cancelled"
     NO_SHOW = "no_show"
 
+
 @strawberry.enum
 class RoomStatus(Enum):
     CLEAN = "clean"
     DIRTY = "dirty"
     INSPECTED = "inspected"
     OUT_OF_ORDER = "out_of_order"
+
 
 # Types
 @strawberry.type
@@ -98,6 +101,7 @@ class Room:
     status: RoomStatus
     amenities: list[str]
 
+
 @strawberry.type
 class Guest:
     id: str
@@ -106,6 +110,7 @@ class Guest:
     phone: str | None = None
     id_number: str | None = None
     tags: list[str] | None = None
+
 
 @strawberry.type
 class Booking:
@@ -134,9 +139,8 @@ class Booking:
         if not tenant_id:
             return None
         from security.encrypted_lookup import decrypt_guest_doc
-        guest_doc = decrypt_guest_doc(
-            await db.guests.find_one({"_id": self.guest_id, "tenant_id": tenant_id})
-        )
+
+        guest_doc = decrypt_guest_doc(await db.guests.find_one({"_id": self.guest_id, "tenant_id": tenant_id}))
         if not guest_doc or not isinstance(guest_doc, dict):
             return None
         return Guest(
@@ -172,6 +176,7 @@ class Booking:
             amenities=_safe_get(room_doc, "amenities", []) or [],
         )
 
+
 @strawberry.type
 class DashboardMetrics:
     occupancy_rate: float
@@ -184,21 +189,25 @@ class DashboardMetrics:
     adr: float
     revpar: float
 
+
 @strawberry.type
 class OccupancyTrend:
     date: str
     occupancy: float
     occupied_rooms: int
 
+
 @strawberry.type
 class RevenueTrend:
     date: str
     revenue: float
 
+
 @strawberry.type
 class DashboardTrends:
     weekly_occupancy: list[OccupancyTrend]
     monthly_revenue: list[RevenueTrend]
+
 
 # Input types for mutations
 @strawberry.input
@@ -211,6 +220,7 @@ class BookingFilter:
     limit: int = 100
     skip: int = 0
 
+
 @strawberry.input
 class RoomFilter:
     status: RoomStatus | None = None
@@ -219,6 +229,7 @@ class RoomFilter:
     min_capacity: int | None = None
     limit: int = 100
     skip: int = 0
+
 
 # Queries
 @strawberry.type
@@ -234,9 +245,15 @@ class Query:
         ``'NoneType' object has no attribute 'get_view'``.
         """
         empty = DashboardMetrics(
-            occupancy_rate=0, occupied_rooms=0, total_rooms=0,
-            available_rooms=0, today_arrivals=0, today_departures=0,
-            today_revenue=0, adr=0, revpar=0,
+            occupancy_rate=0,
+            occupied_rooms=0,
+            total_rooms=0,
+            available_rooms=0,
+            today_arrivals=0,
+            today_departures=0,
+            today_revenue=0,
+            adr=0,
+            revpar=0,
         )
         materialized_views = info.context.get("materialized_views")
         if materialized_views is None:
@@ -307,11 +324,7 @@ class Query:
         )
 
     @strawberry.field
-    async def bookings(
-        self,
-        info: strawberry.Info,
-        filter: BookingFilter | None = None
-    ) -> list[Booking]:
+    async def bookings(self, info: strawberry.Info, filter: BookingFilter | None = None) -> list[Booking]:
         """Get bookings with optional filtering.
 
         Defensive: each booking doc may have ``check_in``/``check_out``
@@ -364,26 +377,24 @@ class Query:
             # the Task #216 crashes while keeping the public API stable.
             if ci is None or co is None:
                 continue
-            result.append(Booking(
-                id=str(_safe_get(b, "_id", "")),
-                guest_id=str(_safe_get(b, "guest_id", "") or ""),
-                room_id=str(_safe_get(b, "room_id", "") or ""),
-                check_in=ci,
-                check_out=co,
-                status=_safe_booking_status(_safe_get(b, "status", "pending")),
-                adults=_safe_get(b, "adults", 1) or 1,
-                children=_safe_get(b, "children", 0) or 0,
-                total_amount=_safe_get(b, "total_amount", 0) or 0,
-                channel=_safe_get(b, "channel", "direct") or "direct",
-            ))
+            result.append(
+                Booking(
+                    id=str(_safe_get(b, "_id", "")),
+                    guest_id=str(_safe_get(b, "guest_id", "") or ""),
+                    room_id=str(_safe_get(b, "room_id", "") or ""),
+                    check_in=ci,
+                    check_out=co,
+                    status=_safe_booking_status(_safe_get(b, "status", "pending")),
+                    adults=_safe_get(b, "adults", 1) or 1,
+                    children=_safe_get(b, "children", 0) or 0,
+                    total_amount=_safe_get(b, "total_amount", 0) or 0,
+                    channel=_safe_get(b, "channel", "direct") or "direct",
+                )
+            )
         return result
 
     @strawberry.field
-    async def rooms(
-        self,
-        info: strawberry.Info,
-        filter: RoomFilter | None = None
-    ) -> list[Room]:
+    async def rooms(self, info: strawberry.Info, filter: RoomFilter | None = None) -> list[Room]:
         """Get rooms with optional filtering.
 
         Defensive:
@@ -419,16 +430,18 @@ class Query:
             for r in cached:
                 if not isinstance(r, dict):
                     continue
-                out.append(Room(
-                    id=_safe_get(r, "id", "") or "",
-                    room_number=_safe_get(r, "room_number", "") or "",
-                    room_type=_safe_get(r, "room_type", "") or "",
-                    floor=_safe_get(r, "floor", 0) or 0,
-                    capacity=_safe_get(r, "capacity", 0) or 0,
-                    base_price=_safe_get(r, "base_price", 0) or 0,
-                    status=_safe_room_status(_safe_get(r, "status", "clean")),
-                    amenities=_safe_get(r, "amenities", []) or [],
-                ))
+                out.append(
+                    Room(
+                        id=_safe_get(r, "id", "") or "",
+                        room_number=_safe_get(r, "room_number", "") or "",
+                        room_type=_safe_get(r, "room_type", "") or "",
+                        floor=_safe_get(r, "floor", 0) or 0,
+                        capacity=_safe_get(r, "capacity", 0) or 0,
+                        base_price=_safe_get(r, "base_price", 0) or 0,
+                        status=_safe_room_status(_safe_get(r, "status", "clean")),
+                        amenities=_safe_get(r, "amenities", []) or [],
+                    )
+                )
             return out
 
         # Task #254 (F8M § 40 P1): explicit tenant_id filter.
@@ -455,16 +468,18 @@ class Query:
         for r in rooms:
             if not isinstance(r, dict):
                 continue
-            result.append(Room(
-                id=str(_safe_get(r, "_id", "")),
-                room_number=_safe_get(r, "room_number", "") or "",
-                room_type=_safe_get(r, "room_type", "") or "",
-                floor=_safe_get(r, "floor", 0) or 0,
-                capacity=_safe_get(r, "capacity", 0) or 0,
-                base_price=_safe_get(r, "base_price", 0) or 0,
-                status=_safe_room_status(_safe_get(r, "status", "clean")),
-                amenities=_safe_get(r, "amenities", []) or [],
-            ))
+            result.append(
+                Room(
+                    id=str(_safe_get(r, "_id", "")),
+                    room_number=_safe_get(r, "room_number", "") or "",
+                    room_type=_safe_get(r, "room_type", "") or "",
+                    floor=_safe_get(r, "floor", 0) or 0,
+                    capacity=_safe_get(r, "capacity", 0) or 0,
+                    base_price=_safe_get(r, "base_price", 0) or 0,
+                    status=_safe_room_status(_safe_get(r, "status", "clean")),
+                    amenities=_safe_get(r, "amenities", []) or [],
+                )
+            )
 
         if cache is not None:
             try:
@@ -487,6 +502,7 @@ class Query:
                 pass
 
         return result
+
 
 # Schema
 import os
@@ -513,12 +529,7 @@ def _introspection_enabled() -> bool:
     explicit = os.getenv("GRAPHQL_INTROSPECTION")
     if explicit is not None:
         return explicit.strip().lower() in ("1", "true", "yes", "on")
-    env = (
-        os.getenv("SENTRY_ENVIRONMENT")
-        or os.getenv("APP_ENV")
-        or os.getenv("ENVIRONMENT")
-        or ""
-    ).strip().lower()
+    env = (os.getenv("SENTRY_ENVIRONMENT") or os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or "").strip().lower()
     if env in ("production", "prod", "stress", "staging"):
         return False
     return True

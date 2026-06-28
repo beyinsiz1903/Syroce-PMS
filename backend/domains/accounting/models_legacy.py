@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 # ============= ACCOUNTING ENUMS =============
 
+
 class AccountType(str, Enum):
     ASSET = "asset"
     LIABILITY = "liability"
@@ -13,10 +14,12 @@ class AccountType(str, Enum):
     REVENUE = "revenue"
     EXPENSE = "expense"
 
+
 class TransactionType(str, Enum):
     INCOME = "income"
     EXPENSE = "expense"
     TRANSFER = "transfer"
+
 
 class ExpenseCategory(str, Enum):
     SALARIES = "salaries"
@@ -29,6 +32,7 @@ class ExpenseCategory(str, Enum):
     TAXES = "taxes"
     OTHER = "other"
 
+
 class IncomeCategory(str, Enum):
     ROOM_REVENUE = "room_revenue"
     FOOD_BEVERAGE = "food_beverage"
@@ -37,6 +41,7 @@ class IncomeCategory(str, Enum):
     LAUNDRY = "laundry"
     OTHER_SERVICES = "other_services"
 
+
 class PaymentStatus(str, Enum):
     PENDING = "pending"
     PAID = "paid"
@@ -44,12 +49,14 @@ class PaymentStatus(str, Enum):
     OVERDUE = "overdue"
     CANCELLED = "cancelled"
 
+
 class InvoiceType(str, Enum):
     SALES = "sales"  # Satış faturası
     PURCHASE = "purchase"  # Alış faturası
     PROFORMA = "proforma"  # Proforma
     E_INVOICE = "e_invoice"  # E-Fatura
     E_ARCHIVE = "e_archive"  # E-Arşiv
+
 
 class VATRate(str, Enum):
     RATE_1 = "1"
@@ -59,11 +66,13 @@ class VATRate(str, Enum):
     RATE_20 = "20"
     EXEMPT = "0"
 
+
 class AdditionalTaxType(str, Enum):
     OTV = "otv"  # Özel Tüketim Vergisi (Special Consumption Tax)
     WITHHOLDING = "withholding"  # Tevkifat (Withholding Tax)
     ACCOMMODATION = "accommodation"  # Konaklama Vergisi (Accommodation Tax)
     SPECIAL_COMMUNICATION = "special_communication"  # ÖİV (Special Communication Tax)
+
 
 class WithholdingRate(str, Enum):
     ALL = "10/10"  # Tümüne Tevkifat Uygula
@@ -74,7 +83,9 @@ class WithholdingRate(str, Enum):
     RATE_30 = "3/10"
     RATE_20 = "2/10"
 
+
 # ============= ACCOUNTING MODELS =============
+
 
 class Supplier(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -91,6 +102,7 @@ class Supplier(BaseModel):
     notes: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class BankAccount(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -103,6 +115,7 @@ class BankAccount(BaseModel):
     balance: float = 0.0
     is_active: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
 
 class Expense(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -124,6 +137,7 @@ class Expense(BaseModel):
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class InventoryItem(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -141,6 +155,7 @@ class InventoryItem(BaseModel):
     is_consumable: bool = True  # False = çok kullanımlık (havlu, nevresim vb.) — stoktan düşmez
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class StockMovement(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -154,6 +169,7 @@ class StockMovement(BaseModel):
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+
 class AdditionalTax(BaseModel):
     tax_type: AdditionalTaxType
     tax_name: str  # Display name
@@ -163,6 +179,7 @@ class AdditionalTax(BaseModel):
     withholding_rate: str | None = None  # For withholding taxes (e.g., "7/10")
     calculated_amount: float = 0.0
 
+
 class AccountingInvoiceItem(BaseModel):
     description: str
     quantity: float
@@ -171,6 +188,7 @@ class AccountingInvoiceItem(BaseModel):
     vat_amount: float
     total: float
     additional_taxes: list[AdditionalTax] | None = []
+
 
 class AccountingInvoice(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -197,6 +215,7 @@ class AccountingInvoice(BaseModel):
     booking_id: str | None = None
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
 
 class CashFlow(BaseModel):
     model_config = ConfigDict(extra="ignore")

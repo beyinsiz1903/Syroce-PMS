@@ -2,6 +2,7 @@
 Observability — Runtime Metrics Collector
 Aggregates hardening metrics for monitoring and alerting.
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -32,9 +33,12 @@ class RuntimeMetricsCollector:
         }
 
         # Store snapshot
-        await db.runtime_metrics_snapshots.insert_one({
-            **metrics, "timestamp": now.isoformat(),
-        })
+        await db.runtime_metrics_snapshots.insert_one(
+            {
+                **metrics,
+                "timestamp": now.isoformat(),
+            }
+        )
 
         return metrics
 
@@ -53,86 +57,112 @@ class RuntimeMetricsCollector:
             sort=[("timestamp", -1)],
         )
         if recent_drift and recent_drift.get("critical_drifts", 0) > 0:
-            alerts.append({
-                "type": "critical_drift",
-                "severity": "critical",
-                "message": f"{recent_drift['critical_drifts']} critical inventory drifts detected",
-                "source": "channel_manager",
-                "timestamp": now.isoformat(),
-            })
+            alerts.append(
+                {
+                    "type": "critical_drift",
+                    "severity": "critical",
+                    "message": f"{recent_drift['critical_drifts']} critical inventory drifts detected",
+                    "source": "channel_manager",
+                    "timestamp": now.isoformat(),
+                }
+            )
 
         # Queue alerts
         pending = await db.task_queue.count_documents({"status": "pending"})
         if pending > 200:
-            alerts.append({
-                "type": "queue_saturation",
-                "severity": "critical",
-                "message": f"Queue backlog critical: {pending} pending tasks",
-                "source": "workers",
-                "timestamp": now.isoformat(),
-            })
+            alerts.append(
+                {
+                    "type": "queue_saturation",
+                    "severity": "critical",
+                    "message": f"Queue backlog critical: {pending} pending tasks",
+                    "source": "workers",
+                    "timestamp": now.isoformat(),
+                }
+            )
         elif pending > 50:
-            alerts.append({
-                "type": "queue_backlog",
-                "severity": "warning",
-                "message": f"Queue backlog elevated: {pending} pending tasks",
-                "source": "workers",
-                "timestamp": now.isoformat(),
-            })
+            alerts.append(
+                {
+                    "type": "queue_backlog",
+                    "severity": "warning",
+                    "message": f"Queue backlog elevated: {pending} pending tasks",
+                    "source": "workers",
+                    "timestamp": now.isoformat(),
+                }
+            )
 
         # Stuck tasks
         stuck_threshold = (now - timedelta(hours=1)).isoformat()
-        stuck = await db.task_queue.count_documents({
-            "status": "processing", "started_at": {"$lt": stuck_threshold},
-        })
+        stuck = await db.task_queue.count_documents(
+            {
+                "status": "processing",
+                "started_at": {"$lt": stuck_threshold},
+            }
+        )
         if stuck > 0:
-            alerts.append({
-                "type": "stuck_tasks",
-                "severity": "warning",
-                "message": f"{stuck} tasks stuck in processing",
-                "source": "workers",
-                "timestamp": now.isoformat(),
-            })
+            alerts.append(
+                {
+                    "type": "stuck_tasks",
+                    "severity": "warning",
+                    "message": f"{stuck} tasks stuck in processing",
+                    "source": "workers",
+                    "timestamp": now.isoformat(),
+                }
+            )
 
         # Tenant guard violations
-        violations = await db.tenant_guard_violations.count_documents({
-            "expected_tenant_id": tenant_id,
-            "timestamp": {"$gte": last_24h},
-        })
+        violations = await db.tenant_guard_violations.count_documents(
+            {
+                "expected_tenant_id": tenant_id,
+                "timestamp": {"$gte": last_24h},
+            }
+        )
         if violations > 0:
-            alerts.append({
-                "type": "tenant_guard_violation",
-                "severity": "critical",
-                "message": f"{violations} tenant isolation violations in 24h",
-                "source": "security",
-                "timestamp": now.isoformat(),
-            })
+            alerts.append(
+                {
+                    "type": "tenant_guard_violation",
+                    "severity": "critical",
+                    "message": f"{violations} tenant isolation violations in 24h",
+                    "source": "security",
+                    "timestamp": now.isoformat(),
+                }
+            )
 
         # Sync failures
-        failed_syncs = await db.channel_sync_logs.count_documents({
-            "tenant_id": tenant_id,
-            "timestamp": {"$gte": last_hour},
-            "status": "error",
-        })
+        failed_syncs = await db.channel_sync_logs.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "timestamp": {"$gte": last_hour},
+                "status": "error",
+            }
+        )
         if failed_syncs > 5:
-            alerts.append({
-                "type": "sync_failures",
-                "severity": "warning",
-                "message": f"{failed_syncs} sync failures in last hour",
-                "source": "channel_manager",
-                "timestamp": now.isoformat(),
-            })
+            alerts.append(
+                {
+                    "type": "sync_failures",
+                    "severity": "warning",
+                    "message": f"{failed_syncs} sync failures in last hour",
+                    "source": "channel_manager",
+                    "timestamp": now.isoformat(),
+                }
+            )
 
         return alerts
 
 
 async def _sync_metrics(tenant_id: str, since: str) -> dict[str, Any]:
-    total = await db.channel_sync_logs.count_documents({
-        "tenant_id": tenant_id, "timestamp": {"$gte": since},
-    })
-    failed = await db.channel_sync_logs.count_documents({
-        "tenant_id": tenant_id, "timestamp": {"$gte": since}, "status": "error",
-    })
+    total = await db.channel_sync_logs.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "timestamp": {"$gte": since},
+        }
+    )
+    failed = await db.channel_sync_logs.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "timestamp": {"$gte": since},
+            "status": "error",
+        }
+    )
     return {
         "total_syncs": total,
         "failed_syncs": failed,
@@ -163,9 +193,7 @@ async def _recon_metrics(tenant_id: str, since: str) -> dict[str, Any]:
         "runs": len(results),
         "auto_fixed": sum(r.get("auto_fixed", 0) for r in results),
         "manual_review": sum(r.get("manual_review", 0) for r in results),
-        "success_rate": round(
-            sum(1 for r in results if r.get("status") in ("clean", "reconciled")) / max(len(results), 1) * 100, 1
-        ),
+        "success_rate": round(sum(1 for r in results if r.get("status") in ("clean", "reconciled")) / max(len(results), 1) * 100, 1),
         "period": "24h",
     }
 
@@ -173,9 +201,12 @@ async def _recon_metrics(tenant_id: str, since: str) -> dict[str, Any]:
 async def _queue_metrics(since: str) -> dict[str, Any]:
     pending = await db.task_queue.count_documents({"status": "pending"})
     processing = await db.task_queue.count_documents({"status": "processing"})
-    failed_24h = await db.task_queue.count_documents({
-        "status": "failed", "started_at": {"$gte": since},
-    })
+    failed_24h = await db.task_queue.count_documents(
+        {
+            "status": "failed",
+            "started_at": {"$gte": since},
+        }
+    )
     dead_letter = await db.dead_letter_tasks.count_documents({})
     return {
         "pending": pending,
@@ -186,12 +217,18 @@ async def _queue_metrics(since: str) -> dict[str, Any]:
 
 
 async def _security_metrics(tenant_id: str, since: str) -> dict[str, Any]:
-    audit_entries = await db.audit_logs.count_documents({
-        "tenant_id": tenant_id, "timestamp": {"$gte": since},
-    })
-    guard_violations = await db.tenant_guard_violations.count_documents({
-        "expected_tenant_id": tenant_id, "timestamp": {"$gte": since},
-    })
+    audit_entries = await db.audit_logs.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "timestamp": {"$gte": since},
+        }
+    )
+    guard_violations = await db.tenant_guard_violations.count_documents(
+        {
+            "expected_tenant_id": tenant_id,
+            "timestamp": {"$gte": since},
+        }
+    )
     return {
         "audit_entries_24h": audit_entries,
         "tenant_guard_violations_24h": guard_violations,

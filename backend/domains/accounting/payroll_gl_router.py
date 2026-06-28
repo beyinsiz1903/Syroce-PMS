@@ -19,6 +19,7 @@ Değişmezler:
     yaratmaz, mevcut fişi döner.
   * GL posting çekirdeği shared_kernel.gl_posting'ten — cross-domain import yok.
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -93,27 +94,25 @@ async def set_mapping(payload: MappingIn, current_user: User = Depends(get_curre
         payload.withholding_payable_code.strip(),
         payload.net_payable_code.strip(),
     ]
-    found = await db.gl_accounts.find(
-        {"tenant_id": tenant_id, "code": {"$in": codes}}, {"_id": 0, "code": 1}
-    ).to_list(100)
+    found = await db.gl_accounts.find({"tenant_id": tenant_id, "code": {"$in": codes}}, {"_id": 0, "code": 1}).to_list(100)
     found_codes = {a["code"] for a in found}
     missing = [c for c in codes if c not in found_codes]
     if missing:
-        raise HTTPException(
-            status_code=400, detail=f"Hesap planında olmayan kod(lar): {missing}"
-        )
+        raise HTTPException(status_code=400, detail=f"Hesap planında olmayan kod(lar): {missing}")
 
     now = _now_iso()
     await db.payroll_gl_mapping.update_one(
         {"tenant_id": tenant_id},
-        {"$set": {
-            "tenant_id": tenant_id,
-            "wage_expense_code": codes[0],
-            "withholding_payable_code": codes[1],
-            "net_payable_code": codes[2],
-            "updated_at": now,
-            "updated_by": _actor_id(current_user),
-        }},
+        {
+            "$set": {
+                "tenant_id": tenant_id,
+                "wage_expense_code": codes[0],
+                "withholding_payable_code": codes[1],
+                "net_payable_code": codes[2],
+                "updated_at": now,
+                "updated_by": _actor_id(current_user),
+            }
+        },
         upsert=True,
     )
     doc = await db.payroll_gl_mapping.find_one({"tenant_id": tenant_id}, {"_id": 0})
@@ -121,9 +120,7 @@ async def set_mapping(payload: MappingIn, current_user: User = Depends(get_curre
 
 
 async def _find_posted_entry(tenant_id: str, run_id: str) -> dict | None:
-    return await db.gl_journal_entries.find_one(
-        {"tenant_id": tenant_id, "idempotency_key": _idem_key(run_id)}, {"_id": 0}
-    )
+    return await db.gl_journal_entries.find_one({"tenant_id": tenant_id, "idempotency_key": _idem_key(run_id)}, {"_id": 0})
 
 
 @router.get("/{run_id}")
@@ -139,9 +136,7 @@ async def post_payroll(run_id: str, current_user: User = Depends(get_current_use
     _require_role(current_user, _GL_ROLES)
     tenant_id = _tenant_of(current_user)
 
-    run = await db.payroll_runs.find_one(
-        {"tenant_id": tenant_id, "id": run_id}, {"_id": 0}
-    )
+    run = await db.payroll_runs.find_one({"tenant_id": tenant_id, "id": run_id}, {"_id": 0})
     if not run:
         raise HTTPException(status_code=404, detail="Bordro çalışması bulunamadı")
     if run.get("status") != "locked":
@@ -167,16 +162,17 @@ async def post_payroll(run_id: str, current_user: User = Depends(get_current_use
     withholding = round(gross - net, 2)
 
     lines = [
-        {"account_code": mapping["wage_expense_code"], "debit": gross,
-         "memo": "Ücret gideri"},
-        {"account_code": mapping["net_payable_code"], "credit": net,
-         "memo": "Personele net ödenecek"},
+        {"account_code": mapping["wage_expense_code"], "debit": gross, "memo": "Ücret gideri"},
+        {"account_code": mapping["net_payable_code"], "credit": net, "memo": "Personele net ödenecek"},
     ]
     if withholding > _EPS:
-        lines.append({
-            "account_code": mapping["withholding_payable_code"],
-            "credit": withholding, "memo": "Stopaj/SGK yükümlülüğü",
-        })
+        lines.append(
+            {
+                "account_code": mapping["withholding_payable_code"],
+                "credit": withholding,
+                "memo": "Stopaj/SGK yükümlülüğü",
+            }
+        )
 
     period = run.get("period_month")
     try:

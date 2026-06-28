@@ -7,6 +7,7 @@ Enhanced quarantine analytics for the Runtime Cockpit:
   - Age buckets (< 5 min, 5-30 min, 30-120 min, > 2h)
   - Safe release guard (validates mapping is fixed before allowing release)
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -31,10 +32,14 @@ async def get_quarantine_overview(tenant_id: str) -> dict[str, Any]:
     """
     Full quarantine visibility: count, classification, age buckets.
     """
-    quarantined = await db[COLL_ARI_CHANGE_SETS].find(
-        {"tenant_id": tenant_id, "status": "hard_fail"},
-        _NO_ID,
-    ).to_list(500)
+    quarantined = (
+        await db[COLL_ARI_CHANGE_SETS]
+        .find(
+            {"tenant_id": tenant_id, "status": "hard_fail"},
+            _NO_ID,
+        )
+        .to_list(500)
+    )
 
     total = len(quarantined)
     if total == 0:
@@ -81,17 +86,19 @@ async def get_quarantine_overview(tenant_id: str) -> dict[str, Any]:
         else:
             by_age["gt_2h"] += 1
 
-        items.append({
-            "id": cs.get("id"),
-            "room_type_code": cs.get("room_type_code"),
-            "rate_plan_code": cs.get("rate_plan_code"),
-            "provider": prov,
-            "hard_fail_reason": cs.get("hard_fail_reason", ""),
-            "classification": failures[0].get("failure_type", "unknown") if failures else "unknown",
-            "age_minutes": age_minutes,
-            "hard_fail_at": hf_at,
-            "operator_action": failures[0].get("operator_action", "") if failures else "",
-        })
+        items.append(
+            {
+                "id": cs.get("id"),
+                "room_type_code": cs.get("room_type_code"),
+                "rate_plan_code": cs.get("rate_plan_code"),
+                "provider": prov,
+                "hard_fail_reason": cs.get("hard_fail_reason", ""),
+                "classification": failures[0].get("failure_type", "unknown") if failures else "unknown",
+                "age_minutes": age_minutes,
+                "hard_fail_at": hf_at,
+                "operator_action": failures[0].get("operator_action", "") if failures else "",
+            }
+        )
 
     # Sort by age (oldest first)
     items.sort(key=lambda x: -x["age_minutes"])
@@ -176,12 +183,14 @@ async def check_safe_release(
 
     # Check staleness (quarantined items > 24h)
     cutoff = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
-    stale_count = await db[COLL_ARI_CHANGE_SETS].count_documents({
-        "tenant_id": tenant_id,
-        "status": "hard_fail",
-        "room_type_code": room_type_code,
-        "hard_fail_at": {"$lt": cutoff},
-    })
+    stale_count = await db[COLL_ARI_CHANGE_SETS].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "hard_fail",
+            "room_type_code": room_type_code,
+            "hard_fail_at": {"$lt": cutoff},
+        }
+    )
     if stale_count > 0:
         checks["not_stale"] = False
         issues.append(f"{stale_count} quarantined change set(s) older than 24h — may be stale")
@@ -193,9 +202,5 @@ async def check_safe_release(
         "checks": checks,
         "issues": issues,
         "stale_count": stale_count,
-        "recommendation": (
-            "Release is safe — mappings verified"
-            if safe_to_release
-            else "DO NOT release — fix issues first: " + "; ".join(issues)
-        ),
+        "recommendation": ("Release is safe — mappings verified" if safe_to_release else "DO NOT release — fix issues first: " + "; ".join(issues)),
     }

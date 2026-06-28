@@ -3,6 +3,7 @@ HotelRunner ARI Adapter.
 
 Translates ARIDelta into HotelRunner REST API calls.
 """
+
 import logging
 import time
 

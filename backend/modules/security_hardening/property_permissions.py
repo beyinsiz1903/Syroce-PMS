@@ -1,6 +1,7 @@
 """
 Property-Scoped Permissions - RBAC enforcement at the property level.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -25,8 +26,7 @@ PROPERTY_PERMISSIONS = {
 class PropertyPermissionService:
     """Enforces property-level RBAC for multi-property tenants."""
 
-    async def check_permission(self, tenant_id: str, user_id: str, role: str,
-                               property_id: str, action: str) -> dict[str, Any]:
+    async def check_permission(self, tenant_id: str, user_id: str, role: str, property_id: str, action: str) -> dict[str, Any]:
         """Check if a user has permission for an action on a property."""
         allowed_actions = PROPERTY_PERMISSIONS.get(role, [])
         has_permission = "*" in allowed_actions or action in allowed_actions
@@ -56,15 +56,11 @@ class PropertyPermissionService:
         }
 
         if not has_permission:
-            logger.warning(
-                f"Permission denied: user={user_id} role={role} "
-                f"property={property_id} action={action}"
-            )
+            logger.warning(f"Permission denied: user={user_id} role={role} property={property_id} action={action}")
 
         return result
 
-    async def get_property_permissions(self, tenant_id: str,
-                                       property_id: str | None = None) -> dict[str, Any]:
+    async def get_property_permissions(self, tenant_id: str, property_id: str | None = None) -> dict[str, Any]:
         """Get permission summary for properties."""
         q: dict[str, Any] = {"tenant_id": tenant_id}
         users = await db.users.find(q, {"_id": 0}).to_list(500)
@@ -80,12 +76,14 @@ class PropertyPermissionService:
             for pid in props:
                 if property_id and pid != property_id and pid != "all":
                     continue
-                property_users.setdefault(pid, []).append({
-                    "user_id": u.get("id") or u.get("user_id"),
-                    "name": u.get("name", ""),
-                    "role": role,
-                    "permissions": PROPERTY_PERMISSIONS.get(role, []),
-                })
+                property_users.setdefault(pid, []).append(
+                    {
+                        "user_id": u.get("id") or u.get("user_id"),
+                        "name": u.get("name", ""),
+                        "role": role,
+                        "permissions": PROPERTY_PERMISSIONS.get(role, []),
+                    }
+                )
 
         return {
             "tenant_id": tenant_id,

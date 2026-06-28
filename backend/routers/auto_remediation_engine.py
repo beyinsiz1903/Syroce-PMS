@@ -16,6 +16,7 @@ This is NOT full automation — it's guardrail-based:
   - Actions are logged and reversible
   - Operators can override
 """
+
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
@@ -56,6 +57,7 @@ DLQ_AUTO_RESOLVE_ENABLED = True
 # ══════════════════════════════════════════════════════════════════════
 # Rule Engine
 # ══════════════════════════════════════════════════════════════════════
+
 
 class AutoRemediationEngine:
     """Guardrail-based auto-remediation engine."""
@@ -118,38 +120,36 @@ class AutoRemediationEngine:
         since = (datetime.now(UTC) - timedelta(minutes=CONNECTOR_DEGRADE_WINDOW_MINUTES)).isoformat()
 
         # Count terminal failures per connector
-        connectors = await db.cm_connectors.find(
-            {"tenant_id": tenant_id, "status": {"$ne": "degraded"}},
-            {"_id": 0, "id": 1, "provider": 1, "status": 1}
-        ).to_list(50)
+        connectors = await db.cm_connectors.find({"tenant_id": tenant_id, "status": {"$ne": "degraded"}}, {"_id": 0, "id": 1, "provider": 1, "status": 1}).to_list(50)
 
         for conn in connectors:
             connector_id = conn.get("id", "")
             provider = conn.get("provider", "")
 
             # Count 5xx failures
-            failure_count = await db.ops_events.count_documents({
-                "tenant_id": tenant_id,
-                "event_type": {"$in": [
-                    "webhook.delivery.terminal_failure",
-                    "push.failed_terminal"
-                ]},
-                "created_at": {"$gte": since},
-                "$or": [
-                    {"connector_id": connector_id},
-                    {"channel": {"$regex": provider, "$options": "i"}},
-                ],
-            })
+            failure_count = await db.ops_events.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "event_type": {"$in": ["webhook.delivery.terminal_failure", "push.failed_terminal"]},
+                    "created_at": {"$gte": since},
+                    "$or": [
+                        {"connector_id": connector_id},
+                        {"channel": {"$regex": provider, "$options": "i"}},
+                    ],
+                }
+            )
 
             if failure_count >= CONNECTOR_DEGRADE_THRESHOLD:
                 # Degrade connector
                 await db.cm_connectors.update_one(
                     {"id": connector_id, "tenant_id": tenant_id},
-                    {"$set": {
-                        "status": "degraded",
-                        "degraded_at": datetime.now(UTC).isoformat(),
-                        "degraded_reason": f"Auto-remediation: {failure_count} failures in {CONNECTOR_DEGRADE_WINDOW_MINUTES}min",
-                    }}
+                    {
+                        "$set": {
+                            "status": "degraded",
+                            "degraded_at": datetime.now(UTC).isoformat(),
+                            "degraded_reason": f"Auto-remediation: {failure_count} failures in {CONNECTOR_DEGRADE_WINDOW_MINUTES}min",
+                        }
+                    },
                 )
 
                 # Emit event
@@ -173,10 +173,7 @@ class AutoRemediationEngine:
                     affected_entity_id=connector_id,
                 )
 
-                logger.warning(
-                    "[AUTO-REMEDIATION] Connector %s degraded: %d failures in %d min",
-                    connector_id, failure_count, CONNECTOR_DEGRADE_WINDOW_MINUTES
-                )
+                logger.warning("[AUTO-REMEDIATION] Connector %s degraded: %d failures in %d min", connector_id, failure_count, CONNECTOR_DEGRADE_WINDOW_MINUTES)
 
                 self._set_cooldown(cooldown_key)
 
@@ -191,15 +188,19 @@ class AutoRemediationEngine:
         since = (datetime.now(UTC) - timedelta(minutes=ALERT_ESCALATE_WINDOW_MINUTES)).isoformat()
 
         # Count terminal failures
-        terminal_count = await db.ops_events.count_documents({
-            "tenant_id": tenant_id,
-            "event_type": {"$in": [
-                "webhook.delivery.terminal_failure",
-                "webhook.delivery.dlq",
-                "push.failed_terminal",
-            ]},
-            "created_at": {"$gte": since},
-        })
+        terminal_count = await db.ops_events.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "event_type": {
+                    "$in": [
+                        "webhook.delivery.terminal_failure",
+                        "webhook.delivery.dlq",
+                        "push.failed_terminal",
+                    ]
+                },
+                "created_at": {"$gte": since},
+            }
+        )
 
         if terminal_count >= ALERT_ESCALATE_THRESHOLD:
             # Emit escalation event
@@ -219,10 +220,7 @@ class AutoRemediationEngine:
                 affected_entity_id="alert_system",
             )
 
-            logger.warning(
-                "[AUTO-REMEDIATION] Alert escalated for tenant %s: %d terminal failures",
-                tenant_id, terminal_count
-            )
+            logger.warning("[AUTO-REMEDIATION] Alert escalated for tenant %s: %d terminal failures", tenant_id, terminal_count)
 
             self._set_cooldown(cooldown_key)
 
@@ -235,10 +233,7 @@ class AutoRemediationEngine:
             return
 
         # Find degraded connectors
-        degraded = await db.cm_connectors.find(
-            {"tenant_id": tenant_id, "status": "degraded"},
-            {"_id": 0, "id": 1, "provider": 1, "degraded_at": 1}
-        ).to_list(50)
+        degraded = await db.cm_connectors.find({"tenant_id": tenant_id, "status": "degraded"}, {"_id": 0, "id": 1, "provider": 1, "degraded_at": 1}).to_list(50)
 
         since_30m = (datetime.now(UTC) - timedelta(minutes=30)).isoformat()
 
@@ -247,43 +242,53 @@ class AutoRemediationEngine:
             provider = conn.get("provider", "")
 
             # Check for recent successes
-            success_count = await db.ops_events.count_documents({
-                "tenant_id": tenant_id,
-                "event_type": {"$in": [
-                    "webhook.delivery.succeeded",
-                    "push.succeeded",
-                ]},
-                "created_at": {"$gte": since_30m},
-                "$or": [
-                    {"connector_id": connector_id},
-                    {"channel": {"$regex": provider, "$options": "i"}},
-                ],
-            })
+            success_count = await db.ops_events.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "event_type": {
+                        "$in": [
+                            "webhook.delivery.succeeded",
+                            "push.succeeded",
+                        ]
+                    },
+                    "created_at": {"$gte": since_30m},
+                    "$or": [
+                        {"connector_id": connector_id},
+                        {"channel": {"$regex": provider, "$options": "i"}},
+                    ],
+                }
+            )
 
             # Check for recent failures
-            failure_count = await db.ops_events.count_documents({
-                "tenant_id": tenant_id,
-                "event_type": {"$in": [
-                    "webhook.delivery.terminal_failure",
-                    "push.failed_terminal",
-                ]},
-                "created_at": {"$gte": since_30m},
-                "$or": [
-                    {"connector_id": connector_id},
-                    {"channel": {"$regex": provider, "$options": "i"}},
-                ],
-            })
+            failure_count = await db.ops_events.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "event_type": {
+                        "$in": [
+                            "webhook.delivery.terminal_failure",
+                            "push.failed_terminal",
+                        ]
+                    },
+                    "created_at": {"$gte": since_30m},
+                    "$or": [
+                        {"connector_id": connector_id},
+                        {"channel": {"$regex": provider, "$options": "i"}},
+                    ],
+                }
+            )
 
             # Recovery condition: successes > 3 and no recent failures
             if success_count >= 3 and failure_count == 0:
                 # Recover connector
                 await db.cm_connectors.update_one(
                     {"id": connector_id, "tenant_id": tenant_id},
-                    {"$set": {
-                        "status": "active",
-                        "recovered_at": datetime.now(UTC).isoformat(),
+                    {
+                        "$set": {
+                            "status": "active",
+                            "recovered_at": datetime.now(UTC).isoformat(),
+                        },
+                        "$unset": {"degraded_at": "", "degraded_reason": ""},
                     },
-                    "$unset": {"degraded_at": "", "degraded_reason": ""}}
                 )
 
                 # Emit recovery event
@@ -305,10 +310,7 @@ class AutoRemediationEngine:
                     affected_entity_id=connector_id,
                 )
 
-                logger.info(
-                    "[AUTO-REMEDIATION] Connector %s recovered: %d successes, 0 failures",
-                    connector_id, success_count
-                )
+                logger.info("[AUTO-REMEDIATION] Connector %s recovered: %d successes, 0 failures", connector_id, success_count)
 
                 self._set_cooldown(cooldown_key)
 
@@ -344,6 +346,7 @@ def get_remediation_engine() -> AutoRemediationEngine:
 # ══════════════════════════════════════════════════════════════════════
 # Event Handlers (called from webhook_retry_service, etc.)
 # ══════════════════════════════════════════════════════════════════════
+
 
 async def on_dlq_retry_success(tenant_id: str, dlq_id: str, correlation_id: str):
     """Called when a DLQ item is successfully retried.
@@ -382,19 +385,18 @@ async def on_rate_limit_active(tenant_id: str, provider: str, cooldown_until: st
     # Store rate limit state
     await db.rate_limit_state.update_one(
         {"tenant_id": tenant_id, "provider": provider},
-        {"$set": {
-            "is_throttled": True,
-            "cooldown_until": cooldown_until,
-            "queue_enabled": True,
-            "updated_at": datetime.now(UTC).isoformat(),
-        }},
-        upsert=True
+        {
+            "$set": {
+                "is_throttled": True,
+                "cooldown_until": cooldown_until,
+                "queue_enabled": True,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+        },
+        upsert=True,
     )
 
-    logger.info(
-        "[AUTO-REMEDIATION] Rate limit active for %s/%s — queueing enabled until %s",
-        tenant_id, provider, cooldown_until
-    )
+    logger.info("[AUTO-REMEDIATION] Rate limit active for %s/%s — queueing enabled until %s", tenant_id, provider, cooldown_until)
 
 
 async def on_rate_limit_cleared(tenant_id: str, provider: str):
@@ -408,11 +410,13 @@ async def on_rate_limit_cleared(tenant_id: str, provider: str):
     # Update rate limit state
     await db.rate_limit_state.update_one(
         {"tenant_id": tenant_id, "provider": provider},
-        {"$set": {
-            "is_throttled": False,
-            "queue_enabled": False,
-            "cleared_at": datetime.now(UTC).isoformat(),
-        }}
+        {
+            "$set": {
+                "is_throttled": False,
+                "queue_enabled": False,
+                "cleared_at": datetime.now(UTC).isoformat(),
+            }
+        },
     )
 
     # Emit backlog drain event
@@ -430,35 +434,32 @@ async def on_rate_limit_cleared(tenant_id: str, provider: str):
         affected_entity_id=provider,
     )
 
-    logger.info(
-        "[AUTO-REMEDIATION] Rate limit cleared for %s/%s — backlog drain started",
-        tenant_id, provider
-    )
+    logger.info("[AUTO-REMEDIATION] Rate limit cleared for %s/%s — backlog drain started", tenant_id, provider)
 
 
 # ══════════════════════════════════════════════════════════════════════
 # Manual Trigger API
 # ══════════════════════════════════════════════════════════════════════
 
+
 async def manually_recover_connector(tenant_id: str, connector_id: str) -> dict[str, Any]:
     """Manually recover a degraded connector."""
     result = await db.cm_connectors.update_one(
         {"id": connector_id, "tenant_id": tenant_id, "status": "degraded"},
-        {"$set": {
-            "status": "active",
-            "recovered_at": datetime.now(UTC).isoformat(),
-            "recovered_by": "manual",
+        {
+            "$set": {
+                "status": "active",
+                "recovered_at": datetime.now(UTC).isoformat(),
+                "recovered_by": "manual",
+            },
+            "$unset": {"degraded_at": "", "degraded_reason": ""},
         },
-        "$unset": {"degraded_at": "", "degraded_reason": ""}}
     )
 
     if result.modified_count == 0:
         return {"ok": False, "error": "Connector bulunamadı veya zaten aktif"}
 
-    conn = await db.cm_connectors.find_one(
-        {"id": connector_id, "tenant_id": tenant_id},
-        {"_id": 0, "provider": 1}
-    )
+    conn = await db.cm_connectors.find_one({"id": connector_id, "tenant_id": tenant_id}, {"_id": 0, "provider": 1})
     provider = conn.get("provider", "") if conn else ""
 
     await emit_ops_event(
@@ -484,20 +485,19 @@ async def manually_degrade_connector(tenant_id: str, connector_id: str, reason: 
     """Manually degrade a connector."""
     result = await db.cm_connectors.update_one(
         {"id": connector_id, "tenant_id": tenant_id, "status": {"$ne": "degraded"}},
-        {"$set": {
-            "status": "degraded",
-            "degraded_at": datetime.now(UTC).isoformat(),
-            "degraded_reason": reason or "Manuel degrade",
-        }}
+        {
+            "$set": {
+                "status": "degraded",
+                "degraded_at": datetime.now(UTC).isoformat(),
+                "degraded_reason": reason or "Manuel degrade",
+            }
+        },
     )
 
     if result.modified_count == 0:
         return {"ok": False, "error": "Connector bulunamadı veya zaten degraded"}
 
-    conn = await db.cm_connectors.find_one(
-        {"id": connector_id, "tenant_id": tenant_id},
-        {"_id": 0, "provider": 1}
-    )
+    conn = await db.cm_connectors.find_one({"id": connector_id, "tenant_id": tenant_id}, {"_id": 0, "provider": 1})
     provider = conn.get("provider", "") if conn else ""
 
     await emit_ops_event(

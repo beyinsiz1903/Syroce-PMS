@@ -1,4 +1,5 @@
 """Auto-split from schemas.py — domain: requests."""
+
 import math
 from typing import Any
 
@@ -24,7 +25,9 @@ def _iso_currency(v: str, field: str = "currency") -> str:
         raise ValueError(f"{field} 3 harfli ISO 4217 kodu olmalı (örn: USD, EUR, TRY)")
     return v.upper()
 
+
 # ============= NEW FEATURES PYDANTIC MODELS =============
+
 
 # Messaging Models
 class SendWhatsAppRequest(BaseModel):
@@ -32,16 +35,19 @@ class SendWhatsAppRequest(BaseModel):
     message: str
     booking_id: str | None = None
 
+
 class SendEmailRequest(BaseModel):
     to: str
     subject: str
     message: str
     booking_id: str | None = None
 
+
 class SendSMSRequest(BaseModel):
     to: str
     message: str
     booking_id: str | None = None
+
 
 class CreateMessageTemplateRequest(BaseModel):
     name: str
@@ -50,6 +56,7 @@ class CreateMessageTemplateRequest(BaseModel):
     content: str = ""
     variables: list[str] = []
 
+
 # RMS Models
 class AddCompetitorRequest(BaseModel):
     name: str
@@ -57,35 +64,42 @@ class AddCompetitorRequest(BaseModel):
     star_rating: float
     url: str | None = None
 
+
 class ScrapePricesRequest(BaseModel):
     date: str
+
 
 class AutoPricingRequest(BaseModel):
     start_date: str
     end_date: str
     room_type: str | None = None
 
+
 class DemandForecastRequest(BaseModel):
     start_date: str
     end_date: str
+
 
 # Housekeeping Models
 class ReportIssueRequest(BaseModel):
     room_id: str
     issue_type: str
     description: str
-    priority: str = 'normal'
+    priority: str = "normal"
     photos: list[str] = []
+
 
 class UploadPhotoRequest(BaseModel):
     task_id: str
     photo_base64: str
+
 
 # POS Models
 class CreatePOSTransactionRequest(BaseModel):
     amount: float
     payment_method: str
     folio_id: str | None = None
+
 
 # Group Reservations Models
 class CreateGroupReservationRequest(BaseModel):
@@ -100,8 +114,10 @@ class CreateGroupReservationRequest(BaseModel):
     adults_per_room: int = 2
     special_requests: str | None = None
 
+
 class AssignGroupRoomsRequest(BaseModel):
     room_assignments: list[dict[str, Any]]
+
 
 class CreateBlockReservationRequest(BaseModel):
     block_name: str
@@ -109,12 +125,14 @@ class CreateBlockReservationRequest(BaseModel):
     start_date: str
     end_date: str
     total_rooms: int
-    block_type: str = 'tentative'
+    block_type: str = "tentative"
     release_date: str | None = None
+
 
 class UseBlockRoomRequest(BaseModel):
     guest_name: str
     guest_email: str
+
 
 # Multi-Property Models
 class CreatePropertyRequest(BaseModel):
@@ -122,12 +140,14 @@ class CreatePropertyRequest(BaseModel):
     property_code: str
     location: str
     total_rooms: int
-    property_type: str = 'hotel'
-    status: str = 'active'
+    property_type: str = "hotel"
+    status: str = "active"
+
 
 class TransferReservationRequest(BaseModel):
     target_property_id: str
     reason: str | None = None
+
 
 # Marketplace Models
 class CreateMarketplaceProductRequest(BaseModel):
@@ -138,11 +158,13 @@ class CreateMarketplaceProductRequest(BaseModel):
     supplier: str
     min_order_qty: int = 1
 
+
 class AdjustInventoryRequest(BaseModel):
     product_id: str
     location: str
     quantity_change: int
     reason: str
+
 
 class CreatePurchaseOrderRequest(BaseModel):
     supplier: str
@@ -150,14 +172,17 @@ class CreatePurchaseOrderRequest(BaseModel):
     delivery_location: str
     expected_delivery_date: str | None = None
 
+
 class ReceivePurchaseOrderRequest(BaseModel):
     received_items: list[dict[str, Any]]
+
 
 class CreateDeliveryRequest(BaseModel):
     po_id: str
     tracking_number: str | None = None
     carrier: str | None = None
     estimated_delivery: str | None = None
+
 
 # Marketplace Extended Models
 class CreateSupplierRequest(BaseModel):
@@ -169,29 +194,36 @@ class CreateSupplierRequest(BaseModel):
     payment_terms: str = "Net 30"  # Net 15, Net 30, Net 60, COD
     status: str = "active"
 
+
 class UpdateSupplierCreditRequest(BaseModel):
     credit_limit: float
     payment_terms: str
 
+
 class ApprovePurchaseOrderRequest(BaseModel):
     approval_notes: str | None = None
+
 
 class RejectPurchaseOrderRequest(BaseModel):
     rejection_reason: str
 
+
 class CancelPurchaseOrderRequest(BaseModel):
     reason: str | None = None
+
 
 class UpdateDeliveryStatusRequest(BaseModel):
     status: str  # in_transit, delivered, failed
     location: str | None = None
     notes: str | None = None
 
+
 class CreateWarehouseRequest(BaseModel):
     warehouse_name: str
     location: str
     capacity: int
     warehouse_type: str = "central"  # central, regional, local
+
 
 # Accounting & Multi-Currency Models
 class CreateCurrencyRateRequest(BaseModel):
@@ -210,6 +242,7 @@ class CreateCurrencyRateRequest(BaseModel):
     def _v_rate(cls, v):
         return _finite_positive(v, "rate")
 
+
 class CreateMultiCurrencyInvoiceRequest(BaseModel):
     customer_name: str
     customer_email: str
@@ -220,10 +253,12 @@ class CreateMultiCurrencyInvoiceRequest(BaseModel):
     payment_terms: str = "Net 30"
     notes: str | None = None
 
+
 class GenerateInvoiceFromFolioRequest(BaseModel):
     folio_id: str
     invoice_currency: str = "TRY"
     include_efatura: bool = True
+
 
 class ConvertCurrencyRequest(BaseModel):
     amount: float
@@ -241,6 +276,7 @@ class ConvertCurrencyRequest(BaseModel):
     def _v_amt(cls, v):
         return _finite(v, "amount")
 
+
 # Rate Code & Calendar Models
 class CreateRateCodeRequest(BaseModel):
     code: str  # BB, HB, FB, AI, RO
@@ -253,9 +289,11 @@ class CreateRateCodeRequest(BaseModel):
     cancellation_policy: str = "Free cancellation"
     price_modifier: float = 1.0  # Multiplier on base rate
 
+
 class GetCalendarTooltipRequest(BaseModel):
     date: str
     room_type: str | None = None
+
 
 # POS & F&B Models
 class CreateOutletRequest(BaseModel):
@@ -265,6 +303,7 @@ class CreateOutletRequest(BaseModel):
     capacity: int | None = None
     opening_hours: str | None = None
 
+
 class UpdateOutletRequest(BaseModel):
     outlet_name: str | None = None
     outlet_type: str | None = None
@@ -272,6 +311,7 @@ class UpdateOutletRequest(BaseModel):
     capacity: int | None = None
     opening_hours: str | None = None
     status: str | None = None  # active, inactive
+
 
 class CreateMenuItemRequest(BaseModel):
     outlet_id: str
@@ -281,6 +321,7 @@ class CreateMenuItemRequest(BaseModel):
     cost: float | None = None
     description: str | None = None
 
+
 class CreatePOSTransactionWithMenuRequest(BaseModel):
     outlet_id: str
     items: list[dict[str, Any]]  # [{menu_item_id, quantity, price}]
@@ -289,9 +330,11 @@ class CreatePOSTransactionWithMenuRequest(BaseModel):
     table_number: str | None = None
     server_name: str | None = None
 
+
 class GenerateZReportRequest(BaseModel):
     outlet_id: str | None = None
     date: str | None = None  # Default to today
+
 
 # Feedback & Reviews Models
 class CreateSurveyRequest(BaseModel):
@@ -301,12 +344,14 @@ class CreateSurveyRequest(BaseModel):
     questions: list[dict[str, Any]]  # [{question, type, options}]
     trigger: str = "checkout"  # checkout, checkin, stay, manual
 
+
 class SubmitSurveyResponseRequest(BaseModel):
     survey_id: str
     booking_id: str | None = None
     guest_name: str | None = None
     guest_email: str | None = None
     responses: list[dict[str, Any]]  # [{question_id, answer, rating}]
+
 
 class ExternalReviewWebhookRequest(BaseModel):
     platform: str  # booking, google, tripadvisor
@@ -317,6 +362,7 @@ class ExternalReviewWebhookRequest(BaseModel):
     review_date: str
     booking_reference: str | None = None
 
+
 class CreateDepartmentFeedbackRequest(BaseModel):
     department: str  # housekeeping, front_desk, fnb, spa
     booking_id: str | None = None
@@ -324,6 +370,7 @@ class CreateDepartmentFeedbackRequest(BaseModel):
     rating: int  # 1-5
     comment: str | None = None
     staff_member: str | None = None
+
 
 # Task Management Models
 class CreateTaskRequest(BaseModel):
@@ -339,14 +386,17 @@ class CreateTaskRequest(BaseModel):
     recurring: bool | None = False
     recurrence_pattern: str | None = None  # daily, weekly, monthly
 
+
 class UpdateTaskStatusRequest(BaseModel):
     status: str  # assigned, in_progress, completed, verified, cancelled
     notes: str | None = None
     completion_photos: list[str] | None = []
 
+
 class AssignTaskRequest(BaseModel):
     assigned_to: str
     notes: str | None = None
+
 
 # Enterprise Features Models
 class CreateRoleRequest(BaseModel):
@@ -354,6 +404,7 @@ class CreateRoleRequest(BaseModel):
     description: str
     permissions: list[str]  # ['view_bookings', 'edit_rates', 'delete_bookings', etc.]
     department: str | None = None
+
 
 class AssignRoleRequest(BaseModel):
     user_id: str
@@ -363,8 +414,7 @@ class AssignRoleRequest(BaseModel):
 class UpdateUserRoleRequest(BaseModel):
     role: str
 
+
 class CreateBackupRequest(BaseModel):
     backup_type: str = "full"  # full, incremental
     include_collections: list[str] | None = None
-
-

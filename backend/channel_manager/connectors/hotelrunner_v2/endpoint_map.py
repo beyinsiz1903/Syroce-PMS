@@ -29,7 +29,6 @@ ENDPOINTS = {
         "api_version": "v2",
         "description": "Update room ARI (availability, price, stop_sale, CTA/CTD, min_stay)",
     },
-
     # Reservations
     "reservations_list": {
         "path": "/api/v2/apps/reservations",
@@ -43,7 +42,6 @@ ENDPOINTS = {
         "api_version": "v2",
         "description": "Confirm/acknowledge reservation delivery",
     },
-
     # Info / Transaction
     "channels_list": {
         "path": "/api/v1/apps/infos/channels",

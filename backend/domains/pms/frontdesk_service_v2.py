@@ -4,6 +4,7 @@ PMS / Front Desk — Production-Grade Service Layer v2
 Adds: room_move, late_checkout, no_show, walk_in, concurrent operation guard,
 folio mutation safety, idempotency, supervisor override, housekeeping interaction.
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -24,6 +25,7 @@ class FrontdeskServiceV2:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     # ==================================================================
@@ -57,9 +59,7 @@ class FrontdeskServiceV2:
 
     async def _release_lock(self, lock_key: str, holder: str):
         try:
-            await self._db.operation_locks.delete_one(
-                {"lock_key": lock_key, "holder": holder}
-            )
+            await self._db.operation_locks.delete_one({"lock_key": lock_key, "holder": holder})
         except Exception:
             pass
 
@@ -87,12 +87,8 @@ class FrontdeskServiceV2:
         finally:
             await self._release_lock(lock_key, holder)
 
-    async def _do_checkin(
-        self, ctx: OperationContext, booking_id: str, create_folio: bool, holder: str
-    ) -> ServiceResult:
-        booking = await self._db.bookings.find_one(
-            {"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0}
-        )
+    async def _do_checkin(self, ctx: OperationContext, booking_id: str, create_folio: bool, holder: str) -> ServiceResult:
+        booking = await self._db.bookings.find_one({"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not booking:
             return ServiceResult.fail("Booking not found", "NOT_FOUND")
 
@@ -113,9 +109,7 @@ class FrontdeskServiceV2:
             )
 
         # Room readiness validation
-        room = await self._db.rooms.find_one(
-            {"id": booking.get("room_id"), "tenant_id": ctx.tenant_id}, {"_id": 0}
-        )
+        room = await self._db.rooms.find_one({"id": booking.get("room_id"), "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not room:
             return ServiceResult.fail("No room assigned to booking", "NO_ROOM")
 
@@ -152,9 +146,7 @@ class FrontdeskServiceV2:
         # Create guest folio
         folio_id = None
         if create_folio:
-            existing_folio = await self._db.folios.find_one(
-                {"booking_id": booking_id, "folio_type": "guest", "tenant_id": ctx.tenant_id}
-            )
+            existing_folio = await self._db.folios.find_one({"booking_id": booking_id, "folio_type": "guest", "tenant_id": ctx.tenant_id})
             if not existing_folio:
                 folio_id = str(uuid.uuid4())
                 folio_number = f"F-{datetime.now().year}-{uuid.uuid4().hex[:5].upper()}"
@@ -190,9 +182,7 @@ class FrontdeskServiceV2:
             {"id": booking["room_id"]},
             {"$set": {"status": "occupied", "current_booking_id": booking_id}},
         )
-        await self._db.guests.update_one(
-            {"id": booking["guest_id"]}, {"$inc": {"total_stays": 1}}
-        )
+        await self._db.guests.update_one({"id": booking["guest_id"]}, {"$inc": {"total_stays": 1}})
 
         return ServiceResult.success(
             {
@@ -220,13 +210,9 @@ class FrontdeskServiceV2:
         holder = str(uuid.uuid4())
 
         if not await self._acquire_lock(lock_key, holder):
-            return ServiceResult.fail(
-                "Concurrent checkout in progress", "CONCURRENT_OPERATION"
-            )
+            return ServiceResult.fail("Concurrent checkout in progress", "CONCURRENT_OPERATION")
         try:
-            return await self._do_checkout(
-                ctx, booking_id, force, auto_close_folios, reason
-            )
+            return await self._do_checkout(ctx, booking_id, force, auto_close_folios, reason)
         finally:
             await self._release_lock(lock_key, holder)
 
@@ -238,9 +224,7 @@ class FrontdeskServiceV2:
         auto_close_folios: bool,
         reason: str | None,
     ) -> ServiceResult:
-        booking = await self._db.bookings.find_one(
-            {"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0}
-        )
+        booking = await self._db.bookings.find_one({"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not booking:
             return ServiceResult.fail("Booking not found", "NOT_FOUND")
 
@@ -270,6 +254,7 @@ class FrontdeskServiceV2:
                 load_tax_config,
                 post_konaklama_vergisi_to_folio,
             )
+
             kvb_cfg = await load_tax_config(ctx.tenant_id)
             if kvb_cfg.get("active", True) and kvb_cfg.get("auto_post"):
                 open_folios = await self._db.folios.find(
@@ -284,7 +269,9 @@ class FrontdeskServiceV2:
                     # Sadece misafir folyosuna (varsa) — incidental/extra
                     # folyolarına konaklama vergisi düşmez.
                     if f.get("folio_type") and f["folio_type"] not in (
-                        "guest", "primary", "main",
+                        "guest",
+                        "primary",
+                        "main",
                     ):
                         continue
                     posting = await post_konaklama_vergisi_to_folio(
@@ -296,6 +283,7 @@ class FrontdeskServiceV2:
                     if posting.get("posted"):
                         try:
                             from core.helpers import create_audit_log
+
                             await create_audit_log(
                                 tenant_id=ctx.tenant_id,
                                 user=None,
@@ -316,7 +304,8 @@ class FrontdeskServiceV2:
         except Exception as exc:
             logger.warning(
                 "konaklama_vergisi auto_post failed for booking=%s: %s",
-                booking_id, exc,
+                booking_id,
+                exc,
             )
 
         # ── POS charge drain (Task #389) ───────────────────────────────
@@ -328,6 +317,7 @@ class FrontdeskServiceV2:
         # worker uygulaması DuplicateKey-safe no-op'tur. Hata checkout'u bloklamaz.
         try:
             from core.pos_folio_consumer import drain_pending_pos_charges
+
             open_folios_predrain = await self._db.folios.find(
                 {"booking_id": booking_id, "tenant_id": ctx.tenant_id, "status": "open"},
                 {"_id": 0, "id": 1},
@@ -335,9 +325,7 @@ class FrontdeskServiceV2:
             for f in open_folios_predrain:
                 await drain_pending_pos_charges(ctx.tenant_id, f["id"])
         except Exception as exc:
-            logger.warning(
-                "POS charge drain failed for booking=%s: %s", booking_id, exc
-            )
+            logger.warning("POS charge drain failed for booking=%s: %s", booking_id, exc)
 
         # Folio balance check — auto_post yukarıda (L260-319) + POS drain zaten
         # tamamlandı, burada güncel balance ile folio'ları yeniden okuyoruz.
@@ -396,9 +384,7 @@ class FrontdeskServiceV2:
                 )
 
         # Deactivate active keycards
-        active_keycards = await self._db.keycards.find(
-            {"booking_id": booking_id, "status": "active", "tenant_id": ctx.tenant_id}
-        ).to_list(20)
+        active_keycards = await self._db.keycards.find({"booking_id": booking_id, "status": "active", "tenant_id": ctx.tenant_id}).to_list(20)
         for kc in active_keycards:
             await self._db.keycards.update_one(
                 {"id": kc["id"]},
@@ -485,23 +471,17 @@ class FrontdeskServiceV2:
             return ServiceResult.fail("Concurrent room move", "CONCURRENT_OPERATION")
 
         try:
-            booking = await self._db.bookings.find_one(
-                {"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0}
-            )
+            booking = await self._db.bookings.find_one({"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
             if not booking:
                 return ServiceResult.fail("Booking not found", "NOT_FOUND")
             if booking["status"] != "checked_in":
-                return ServiceResult.fail(
-                    "Room move only for checked-in guests", "INVALID_STATUS"
-                )
+                return ServiceResult.fail("Room move only for checked-in guests", "INVALID_STATUS")
 
             old_room_id = booking.get("room_id")
             if old_room_id == new_room_id:
                 return ServiceResult.fail("Same room selected", "SAME_ROOM")
 
-            new_room = await self._db.rooms.find_one(
-                {"id": new_room_id, "tenant_id": ctx.tenant_id}, {"_id": 0}
-            )
+            new_room = await self._db.rooms.find_one({"id": new_room_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
             if not new_room:
                 return ServiceResult.fail("Target room not found", "NOT_FOUND")
             if new_room["status"] not in ("available", "inspected", "clean"):
@@ -559,10 +539,7 @@ class FrontdeskServiceV2:
                 {
                     "$set": {
                         "room_id": new_room_id,
-                        "previous_room_ids": booking.get("previous_room_ids", [])
-                        + [old_room_id]
-                        if old_room_id
-                        else [],
+                        "previous_room_ids": booking.get("previous_room_ids", []) + [old_room_id] if old_room_id else [],
                         "room_moved_at": datetime.now(UTC).isoformat(),
                         "room_move_reason": reason,
                     }
@@ -600,9 +577,7 @@ class FrontdeskServiceV2:
                             card_number=card.get("card_number"),
                         )
 
-            old_room = await self._db.rooms.find_one(
-                {"id": old_room_id}, {"_id": 0, "room_number": 1}
-            ) if old_room_id else None
+            old_room = await self._db.rooms.find_one({"id": old_room_id}, {"_id": 0, "room_number": 1}) if old_room_id else None
 
             return ServiceResult.success(
                 {
@@ -629,9 +604,7 @@ class FrontdeskServiceV2:
         charge_amount: float = 0.0,
         reason: str = "",
     ) -> ServiceResult:
-        booking = await self._db.bookings.find_one(
-            {"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0}
-        )
+        booking = await self._db.bookings.find_one({"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not booking:
             return ServiceResult.fail("Booking not found", "NOT_FOUND")
         if booking["status"] != "checked_in":
@@ -675,9 +648,7 @@ class FrontdeskServiceV2:
                 }
             )
             # Update folio balance
-            folio = await self._db.folios.find_one(
-                {"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": ctx.tenant_id}
-            )
+            folio = await self._db.folios.find_one({"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": ctx.tenant_id})
             if folio:
                 await self._db.folios.update_one(
                     {"id": folio["id"]},
@@ -711,16 +682,12 @@ class FrontdeskServiceV2:
             return ServiceResult.fail("Concurrent no-show processing", "CONCURRENT_OPERATION")
 
         try:
-            booking = await self._db.bookings.find_one(
-                {"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0}
-            )
+            booking = await self._db.bookings.find_one({"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
             if not booking:
                 return ServiceResult.fail("Booking not found", "NOT_FOUND")
 
             if booking["status"] == "no_show":
-                return ServiceResult.success(
-                    {"message": "Already marked as no-show (idempotent)", "idempotent": True}
-                )
+                return ServiceResult.success({"message": "Already marked as no-show (idempotent)", "idempotent": True})
 
             if booking["status"] not in ("confirmed", "guaranteed"):
                 return ServiceResult.fail(
@@ -801,15 +768,11 @@ class FrontdeskServiceV2:
         guest_phone: str | None = None,
         id_number: str | None = None,
     ) -> ServiceResult:
-        room = await self._db.rooms.find_one(
-            {"id": room_id, "tenant_id": ctx.tenant_id}, {"_id": 0}
-        )
+        room = await self._db.rooms.find_one({"id": room_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not room:
             return ServiceResult.fail("Room not found", "NOT_FOUND")
         if room["status"] not in ("available", "inspected", "clean"):
-            return ServiceResult.fail(
-                f"Room not available. Status: {room['status']}", "ROOM_NOT_AVAILABLE"
-            )
+            return ServiceResult.fail(f"Room not available. Status: {room['status']}", "ROOM_NOT_AVAILABLE")
 
         now = datetime.now(UTC)
         guest_id = str(uuid.uuid4())
@@ -829,6 +792,7 @@ class FrontdeskServiceV2:
             "created_at": now.isoformat(),
         }
         from security.guest_write import encrypt_guest_insert
+
         guest_doc = encrypt_guest_insert(guest_doc)
         await self._db.guests.insert_one(guest_doc)
 
@@ -852,6 +816,7 @@ class FrontdeskServiceV2:
             "created_at": now.isoformat(),
         }
         from core.atomic_booking import BookingConflictError, create_booking_atomic
+
         try:
             await create_booking_atomic(booking_doc)
         except BookingConflictError as e:
@@ -900,9 +865,7 @@ class FrontdeskServiceV2:
         booking_id: str,
         waive_remaining_nights: bool = False,
     ) -> ServiceResult:
-        booking = await self._db.bookings.find_one(
-            {"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0}
-        )
+        booking = await self._db.bookings.find_one({"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not booking:
             return ServiceResult.fail("Booking not found", "NOT_FOUND")
         if booking["status"] != "checked_in":
@@ -945,25 +908,17 @@ class FrontdeskServiceV2:
 
         # Idempotency check
         if idempotency_key:
-            existing = await self._db.folio_charges.find_one(
-                {"idempotency_key": idempotency_key, "tenant_id": ctx.tenant_id}
-            )
+            existing = await self._db.folio_charges.find_one({"idempotency_key": idempotency_key, "tenant_id": ctx.tenant_id})
             if existing:
-                return ServiceResult.success(
-                    {"message": "Charge already posted (idempotent)", "charge_id": existing.get("id"), "idempotent": True}
-                )
+                return ServiceResult.success({"message": "Charge already posted (idempotent)", "charge_id": existing.get("id"), "idempotent": True})
 
-        booking = await self._db.bookings.find_one(
-            {"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0}
-        )
+        booking = await self._db.bookings.find_one({"id": booking_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not booking:
             return ServiceResult.fail("Booking not found", "NOT_FOUND")
         if booking["status"] not in ("checked_in", "confirmed", "guaranteed"):
             return ServiceResult.fail("Cannot post to inactive booking", "INVALID_STATUS")
 
-        folio = await self._db.folios.find_one(
-            {"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": ctx.tenant_id}
-        )
+        folio = await self._db.folios.find_one({"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": ctx.tenant_id})
         if not folio:
             return ServiceResult.fail("No open folio for booking", "NO_OPEN_FOLIO")
 
@@ -993,9 +948,7 @@ class FrontdeskServiceV2:
         await self._db.folio_charges.insert_one(charge_doc)
 
         # Update folio balance
-        await self._db.folios.update_one(
-            {"id": folio["id"]}, {"$inc": {"balance": total}}
-        )
+        await self._db.folios.update_one({"id": folio["id"]}, {"$inc": {"balance": total}})
 
         return ServiceResult.success(
             {
@@ -1020,9 +973,7 @@ class FrontdeskServiceV2:
         if not ctx.actor_is_super_admin and ctx.actor_role not in ("admin", "supervisor", "super_admin", "gm"):
             return ServiceResult.fail("Insufficient permission to void charge", "FORBIDDEN")
 
-        charge = await self._db.folio_charges.find_one(
-            {"id": charge_id, "tenant_id": ctx.tenant_id}, {"_id": 0}
-        )
+        charge = await self._db.folio_charges.find_one({"id": charge_id, "tenant_id": ctx.tenant_id}, {"_id": 0})
         if not charge:
             return ServiceResult.fail("Charge not found", "NOT_FOUND")
         if charge.get("voided"):
@@ -1050,6 +1001,7 @@ class FrontdeskServiceV2:
         # v95.1 — revenue raporu cache'ini geçersiz kıl (charge void)
         try:
             from cache_manager import cache as _cache
+
             if _cache:
                 _cache.invalidate_tenant_cache(ctx.tenant_id, "folio_revenue_by_category")
         except ImportError:

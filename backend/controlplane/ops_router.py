@@ -17,6 +17,7 @@ Endpoints:
   GET  /api/ops/runbooks               — Operational runbooks
   GET  /api/ops/runbooks/{runbook_id}  — Single runbook
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -34,11 +35,11 @@ from .secret_audit import get_secret_access_control
 
 logger = logging.getLogger("controlplane.ops_router")
 
-router = APIRouter(prefix="/api/ops", tags=["Control Plane"],
-                   dependencies=[Depends(require_ops_access)])
+router = APIRouter(prefix="/api/ops", tags=["Control Plane"], dependencies=[Depends(require_ops_access)])
 
 
 # ── Response Models ────────────────────────────────────────────────
+
 
 class OverviewResponse(BaseModel):
     open_failures: int = 0
@@ -63,6 +64,7 @@ class RetryRequest(BaseModel):
 
 # ── 1. System Health Overview ──────────────────────────────────────
 
+
 @router.get("/overview", response_model=OverviewResponse)
 async def ops_overview(
     tenant_id: str | None = Query(None, description="Filter by tenant"),
@@ -75,6 +77,7 @@ async def ops_overview(
 
     # All independent counts/aggregates run concurrently (1 RTT vs 13).
     import asyncio as _asyncio
+
     cutoff_1h = (now - timedelta(hours=1)).isoformat()
     outbox_query = {"status": {"$in": ["pending", "retry"]}, "created_at": {"$lte": cutoff_30m}}
     import_fail_query = {"import_status": "failed", "updated_at": {"$gte": cutoff_24h}}
@@ -86,10 +89,19 @@ async def ops_overview(
             return 0
 
     (
-        open_count, by_severity, by_type, by_operation,
-        stuck_outbox, failed_imports, pending_imports,
-        sync_total, sync_success, secret_anomalies,
-        exely_connectors, hr_connectors, recent_failures,
+        open_count,
+        by_severity,
+        by_type,
+        by_operation,
+        stuck_outbox,
+        failed_imports,
+        pending_imports,
+        sync_total,
+        sync_success,
+        secret_anomalies,
+        exely_connectors,
+        hr_connectors,
+        recent_failures,
     ) = await _asyncio.gather(
         tracker.count_open(tenant_id=tenant_id),
         tracker.count_by_severity(tenant_id=tenant_id),
@@ -97,17 +109,10 @@ async def ops_overview(
         tracker.count_by_operation(tenant_id=tenant_id),
         db.outbox_events.count_documents(outbox_query),
         db.imported_reservations.count_documents(import_fail_query),
-        db.imported_reservations.count_documents(
-            {"import_status": {"$in": ["pending_auto_import", "retry"]}}
-        ),
+        db.imported_reservations.count_documents({"import_status": {"$in": ["pending_auto_import", "retry"]}}),
         db.cp_sync_jobs.count_documents({"started_at": {"$gte": cutoff_24h}}),
-        db.cp_sync_jobs.count_documents(
-            {"started_at": {"$gte": cutoff_24h}, "status": "completed"}
-        ),
-        db.secret_access_audit.count_documents(
-            {"result": {"$in": ["failure", "denied", "not_found"]},
-             "timestamp": {"$gte": cutoff_24h}}
-        ),
+        db.cp_sync_jobs.count_documents({"started_at": {"$gte": cutoff_24h}, "status": "completed"}),
+        db.secret_access_audit.count_documents({"result": {"$in": ["failure", "denied", "not_found"]}, "timestamp": {"$gte": cutoff_24h}}),
         db.exely_connections.count_documents({"is_active": True}),
         _hr_count(),
         db.cp_failures.count_documents({"created_at": {"$gte": cutoff_1h}}),
@@ -134,6 +139,7 @@ async def ops_overview(
 
 # ── 2. Failures API ───────────────────────────────────────────────
 
+
 @router.get("/failures")
 async def list_failures(
     tenant_id: str | None = Query(None),
@@ -148,10 +154,14 @@ async def list_failures(
     """List failures with filters and pagination."""
     tracker = get_failure_tracker()
     return await tracker.list_failures(
-        tenant_id=tenant_id, provider=provider,
-        failure_type=failure_type, severity=severity,
-        status=status, operation_type=operation_type,
-        limit=limit, skip=skip,
+        tenant_id=tenant_id,
+        provider=provider,
+        failure_type=failure_type,
+        severity=severity,
+        status=status,
+        operation_type=operation_type,
+        limit=limit,
+        skip=skip,
     )
 
 
@@ -166,6 +176,7 @@ async def get_failure(failure_id: str):
 
 
 # ── 3. Retry / Resolve / Ignore ───────────────────────────────────
+
 
 @router.post("/failures/{failure_id}/retry")
 async def retry_failure(failure_id: str, body: RetryRequest | None = None):
@@ -201,6 +212,7 @@ async def ignore_failure(failure_id: str):
 
 # ── 4. Outbox Monitor ─────────────────────────────────────────────
 
+
 @router.get("/outbox")
 async def outbox_monitor(
     tenant_id: str | None = Query(None),
@@ -223,11 +235,15 @@ async def outbox_monitor(
     stuck = await db.outbox_events.count_documents(stuck_query)
 
     # Recent failed events
-    failed_events = await db.outbox_events.find(
-        {**base_query, "status": {"$in": ["failed", "parked"]}},
-        {"_id": 0, "event_id": 1, "event_type": 1, "tenant_id": 1,
-         "status": 1, "retry_count": 1, "last_error": 1, "created_at": 1, "updated_at": 1},
-    ).sort("updated_at", -1).limit(limit).to_list(limit)
+    failed_events = (
+        await db.outbox_events.find(
+            {**base_query, "status": {"$in": ["failed", "parked"]}},
+            {"_id": 0, "event_id": 1, "event_type": 1, "tenant_id": 1, "status": 1, "retry_count": 1, "last_error": 1, "created_at": 1, "updated_at": 1},
+        )
+        .sort("updated_at", -1)
+        .limit(limit)
+        .to_list(limit)
+    )
 
     return {
         "pending": pending,
@@ -241,6 +257,7 @@ async def outbox_monitor(
 
 
 # ── 5. Import Pipeline Monitor ────────────────────────────────────
+
 
 @router.get("/imports")
 async def imports_monitor(
@@ -264,11 +281,15 @@ async def imports_monitor(
     failed = await coll.count_documents({**base_query, "import_status": "failed"})
 
     # Recent failed imports
-    failed_items = await coll.find(
-        {**base_query, "import_status": "failed"},
-        {"_id": 0, "id": 1, "tenant_id": 1, "provider": 1, "import_status": 1,
-         "error_message": 1, "retry_count": 1, "created_at": 1, "updated_at": 1},
-    ).sort("updated_at", -1).limit(limit).to_list(limit)
+    failed_items = (
+        await coll.find(
+            {**base_query, "import_status": "failed"},
+            {"_id": 0, "id": 1, "tenant_id": 1, "provider": 1, "import_status": 1, "error_message": 1, "retry_count": 1, "created_at": 1, "updated_at": 1},
+        )
+        .sort("updated_at", -1)
+        .limit(limit)
+        .to_list(limit)
+    )
 
     return {
         "pending": pending,
@@ -283,6 +304,7 @@ async def imports_monitor(
 
 
 # ── 6. Sync Jobs Monitor ──────────────────────────────────────────
+
 
 @router.get("/sync")
 async def sync_monitor(
@@ -307,11 +329,15 @@ async def sync_monitor(
     success_rate = (completed / total * 100) if total > 0 else 100.0
 
     # Recent jobs
-    recent = await coll.find(
-        base_query,
-        {"_id": 0, "id": 1, "tenant_id": 1, "provider": 1, "job_type": 1,
-         "status": 1, "started_at": 1, "completed_at": 1, "duration_ms": 1, "error": 1},
-    ).sort("started_at", -1).limit(limit).to_list(limit)
+    recent = (
+        await coll.find(
+            base_query,
+            {"_id": 0, "id": 1, "tenant_id": 1, "provider": 1, "job_type": 1, "status": 1, "started_at": 1, "completed_at": 1, "duration_ms": 1, "error": 1},
+        )
+        .sort("started_at", -1)
+        .limit(limit)
+        .to_list(limit)
+    )
 
     return {
         "total_24h": total,
@@ -326,6 +352,7 @@ async def sync_monitor(
 
 
 # ── 7. Secret Access Audit ────────────────────────────────────────
+
 
 @router.get("/secrets/audit")
 async def secret_audit(
@@ -346,15 +373,11 @@ async def secret_audit(
 
     coll = db.secret_access_audit
     total = await coll.count_documents(query)
-    items = await coll.find(
-        query, {"_id": 0}
-    ).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+    items = await coll.find(query, {"_id": 0}).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
 
     # Anomaly count (failures in last 24h)
     cutoff = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
-    anomaly_count = await coll.count_documents(
-        {"result": {"$in": ["failure", "denied", "not_found"]}, "timestamp": {"$gte": cutoff}}
-    )
+    anomaly_count = await coll.count_documents({"result": {"$in": ["failure", "denied", "not_found"]}, "timestamp": {"$gte": cutoff}})
 
     return {
         "items": items,
@@ -366,6 +389,7 @@ async def secret_audit(
 
 
 # ── 8. Runbooks ───────────────────────────────────────────────────
+
 
 @router.get("/runbooks")
 async def get_runbooks(
@@ -385,6 +409,7 @@ async def get_single_runbook(runbook_id: str):
 
 
 # ── 9. Alerts ─────────────────────────────────────────────────────
+
 
 @router.get("/alerts")
 async def list_alerts(
@@ -407,6 +432,7 @@ async def run_alert_checks():
 
 # ── 10. Secret Access Anomalies ───────────────────────────────────
 
+
 @router.get("/secrets/anomalies")
 async def secret_anomalies(
     tenant_id: str | None = Query(None),
@@ -418,6 +444,7 @@ async def secret_anomalies(
 
 
 # ── 11. Alert → Business KPI Correlation ──────────────────────────
+
 
 @router.get("/alerts/kpi-correlation")
 async def alert_kpi_correlation(
@@ -439,9 +466,15 @@ async def alert_kpi_correlation(
     if tenant_id:
         query["tenant_id"] = tenant_id
 
-    alerts = await db[COLL_ALERTS].find(
-        query, {"_id": 0},
-    ).sort("fired_at", -1).to_list(500)
+    alerts = (
+        await db[COLL_ALERTS]
+        .find(
+            query,
+            {"_id": 0},
+        )
+        .sort("fired_at", -1)
+        .to_list(500)
+    )
 
     # Compute KPI impact
     kpi_impact = {
@@ -466,15 +499,17 @@ async def alert_kpi_correlation(
         kpi = TRIGGER_KPI_MAP.get(trigger)
         if kpi and kpi in kpi_impact:
             kpi_impact[kpi]["alert_count"] += 1
-            kpi_impact[kpi]["drivers"].append({
-                "trigger": trigger,
-                "severity": alert.get("severity", ""),
-                "title": alert.get("title", ""),
-                "fired_at": alert.get("fired_at", ""),
-                "tenant_id": alert.get("tenant_id"),
-                "provider": alert.get("provider"),
-                "runbook_link": alert.get("runbook_link"),
-            })
+            kpi_impact[kpi]["drivers"].append(
+                {
+                    "trigger": trigger,
+                    "severity": alert.get("severity", ""),
+                    "title": alert.get("title", ""),
+                    "fired_at": alert.get("fired_at", ""),
+                    "tenant_id": alert.get("tenant_id"),
+                    "provider": alert.get("provider"),
+                    "runbook_link": alert.get("runbook_link"),
+                }
+            )
 
     # Compute risk levels
     for kpi_key, kpi_data in kpi_impact.items():

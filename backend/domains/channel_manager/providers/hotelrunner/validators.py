@@ -5,6 +5,7 @@ HotelRunner Provider — Validators
 Pre-flight validation for credentials, payloads, and mappings.
 Fail fast before making API calls.
 """
+
 from typing import Any
 
 from .errors import HotelRunnerMappingError, HotelRunnerValidationError
@@ -17,9 +18,7 @@ def validate_connection_credentials(token: str, hr_id: str) -> None:
     if not hr_id or not hr_id.strip():
         raise HotelRunnerValidationError("HR ID (hotel ID) is required", field="hr_id")
     if len(token) < 8:
-        raise HotelRunnerValidationError(
-            "API token seems too short (min 8 chars)", field="token"
-        )
+        raise HotelRunnerValidationError("API token seems too short (min 8 chars)", field="token")
 
 
 def validate_inventory_payload(payload: dict[str, Any]) -> None:

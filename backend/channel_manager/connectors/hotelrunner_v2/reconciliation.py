@@ -6,6 +6,7 @@ Daily reconciliation: PMS state vs HotelRunner state.
 Detects drift, logs mismatches, creates ops cases.
 Optional auto-fix for simple drifts.
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -64,6 +65,7 @@ async def run_reconciliation(
 
     # 1. Pull from HotelRunner
     from datetime import timedelta
+
     since_date = (datetime.now(UTC) - timedelta(hours=since_hours)).strftime("%Y-%m-%d")
 
     pull_result = await svc.pull_reservations(undelivered=False, from_date=since_date)
@@ -74,18 +76,24 @@ async def run_reconciliation(
 
     # 2. Load PMS lineage
     from domains.channel_manager.data_model import COLL_RESERVATION_LINEAGE
-    pms_records = await db[COLL_RESERVATION_LINEAGE].find(
-        {
-            "tenant_id": tenant_id,
-            "property_id": property_id,
-            "provider": "hotelrunner",
-            "last_seen_at": {"$gte": since_date},
-        },
-        _NO_ID,
-    ).to_list(1000)
+
+    pms_records = (
+        await db[COLL_RESERVATION_LINEAGE]
+        .find(
+            {
+                "tenant_id": tenant_id,
+                "property_id": property_id,
+                "provider": "hotelrunner",
+                "last_seen_at": {"$gte": since_date},
+            },
+            _NO_ID,
+        )
+        .to_list(1000)
+    )
 
     # 3. Compare
     from domains.channel_manager.reconciliation_engine.comparison_engine import compare_reservations
+
     mismatches = compare_reservations(pms_records, hr_reservations, "hotelrunner")
 
     # 4. Store drift entries
@@ -150,14 +158,14 @@ async def run_reconciliation(
     await db[COLL_RECON_RUNS].insert_one(run_doc)
 
     await record_metric(
-        tenant_id, "reconciliation",
-        success=True, duration_ms=duration_ms,
+        tenant_id,
+        "reconciliation",
+        success=True,
+        duration_ms=duration_ms,
         metadata={"mismatches": len(mismatches), "auto_fixed": auto_fixed_count},
     )
 
-    logger.info("[HRv2 recon] run=%s HR=%d PMS=%d mismatches=%d auto_fixed=%d (%dms)",
-                run_id, len(hr_reservations), len(pms_records), len(mismatches),
-                auto_fixed_count, duration_ms)
+    logger.info("[HRv2 recon] run=%s HR=%d PMS=%d mismatches=%d auto_fixed=%d (%dms)", run_id, len(hr_reservations), len(pms_records), len(mismatches), auto_fixed_count, duration_ms)
 
     return {
         "success": True,
@@ -181,15 +189,25 @@ async def run_reconciliation(
 
 async def get_recent_drifts(tenant_id: str, limit: int = 50) -> list[dict[str, Any]]:
     """Get recent drift entries for ops dashboard."""
-    return await db[COLL_RECON_DRIFTS].find(
-        {"tenant_id": tenant_id, "provider": "hotelrunner_v2"},
-        _NO_ID,
-    ).sort("created_at", -1).to_list(limit)
+    return (
+        await db[COLL_RECON_DRIFTS]
+        .find(
+            {"tenant_id": tenant_id, "provider": "hotelrunner_v2"},
+            _NO_ID,
+        )
+        .sort("created_at", -1)
+        .to_list(limit)
+    )
 
 
 async def get_reconciliation_history(tenant_id: str, limit: int = 20) -> list[dict[str, Any]]:
     """Get recent reconciliation runs."""
-    return await db[COLL_RECON_RUNS].find(
-        {"tenant_id": tenant_id, "provider": "hotelrunner_v2"},
-        _NO_ID,
-    ).sort("created_at", -1).to_list(limit)
+    return (
+        await db[COLL_RECON_RUNS]
+        .find(
+            {"tenant_id": tenant_id, "provider": "hotelrunner_v2"},
+            _NO_ID,
+        )
+        .sort("created_at", -1)
+        .to_list(limit)
+    )

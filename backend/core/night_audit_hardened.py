@@ -13,6 +13,7 @@ Status: pending → running → (blocked | failed | completed | partial_recovery
 
 "Date roll is a result, not a starting point."
 """
+
 import asyncio
 import logging
 import uuid
@@ -73,6 +74,7 @@ def _next_date(d: str) -> str:
 # ═══════════════════════════════════════════════════════════════
 #  INDEX SETUP
 # ═══════════════════════════════════════════════════════════════
+
 
 async def ensure_night_audit_indexes():
     """Create all required indexes for the hardened night audit."""
@@ -143,6 +145,7 @@ async def ensure_night_audit_indexes():
 #  INTERNAL HELPERS
 # ═══════════════════════════════════════════════════════════════
 
+
 async def _set_stage(run_id: str, stage: str, extra: dict = None):
     update = {"stage": stage, "last_heartbeat_at": _now_iso(), "updated_at": _now_iso()}
     if extra:
@@ -154,21 +157,31 @@ async def _fail_run(run_id: str, stage: str, msg: str, status: str = S_FAILED):
     existing = await db.night_audit_runs.find_one({"id": run_id}, {"_id": 0, "errors": 1})
     errors = (existing or {}).get("errors", [])
     errors.append(msg)
-    await db.night_audit_runs.update_one({"id": run_id}, {"$set": {
-        "status": status, "stage": stage, "errors": errors,
-        "updated_at": _now_iso(), "completed_at": _now_iso(),
-    }})
+    await db.night_audit_runs.update_one(
+        {"id": run_id},
+        {
+            "$set": {
+                "status": status,
+                "stage": stage,
+                "errors": errors,
+                "updated_at": _now_iso(),
+                "completed_at": _now_iso(),
+            }
+        },
+    )
 
 
 async def _heartbeat(run_id: str):
     await db.night_audit_runs.update_one(
-        {"id": run_id}, {"$set": {"last_heartbeat_at": _now_iso()}},
+        {"id": run_id},
+        {"$set": {"last_heartbeat_at": _now_iso()}},
     )
 
 
 # ═══════════════════════════════════════════════════════════════
 #  1. START NIGHT AUDIT
 # ═══════════════════════════════════════════════════════════════
+
 
 async def start_night_audit(
     tenant_id: str,
@@ -196,7 +209,8 @@ async def start_night_audit(
     # denetimi gercek is gununden farkli bir tarihi kapatir ve tarih ileri sicrar.
     if not business_date:
         ts = await db.tenant_settings.find_one(
-            {"tenant_id": tenant_id}, {"_id": 0, "business_date": 1},
+            {"tenant_id": tenant_id},
+            {"_id": 0, "business_date": 1},
         )
         bd = (ts or {}).get("business_date") or _now().date().isoformat()
     else:
@@ -206,16 +220,30 @@ async def start_night_audit(
     now = _now_iso()
 
     run_doc = {
-        "id": run_id, "tenant_id": tenant_id, "property_id": prop_id,
-        "business_date": bd, "status": S_RUNNING, "stage": ST_VALIDATING,
-        "trigger_source": trigger_source, "started_by": actor,
+        "id": run_id,
+        "tenant_id": tenant_id,
+        "property_id": prop_id,
+        "business_date": bd,
+        "status": S_RUNNING,
+        "stage": ST_VALIDATING,
+        "trigger_source": trigger_source,
+        "started_by": actor,
         "lock_token": str(uuid.uuid4()),
-        "candidate_count": 0, "processed_count": 0, "failed_count": 0, "skipped_count": 0,
-        "warnings": [], "errors": [],
-        "skip_validations": skip_validations, "dry_run": dry_run,
-        "force_rerun": force_rerun, "reason": reason,
-        "started_at": now, "completed_at": None,
-        "last_heartbeat_at": now, "created_at": now, "updated_at": now,
+        "candidate_count": 0,
+        "processed_count": 0,
+        "failed_count": 0,
+        "skipped_count": 0,
+        "warnings": [],
+        "errors": [],
+        "skip_validations": skip_validations,
+        "dry_run": dry_run,
+        "force_rerun": force_rerun,
+        "reason": reason,
+        "started_at": now,
+        "completed_at": None,
+        "last_heartbeat_at": now,
+        "created_at": now,
+        "updated_at": now,
     }
 
     # ── Create run (unique index prevents duplicate) ──
@@ -238,8 +266,10 @@ async def start_night_audit(
                     {"id": existing["id"]},
                     {
                         "$set": {
-                            "status": "rerun_superseded", "updated_at": _now_iso(),
-                            "superseded_by": run_id, "superseded_at": _now_iso(),
+                            "status": "rerun_superseded",
+                            "updated_at": _now_iso(),
+                            "superseded_by": run_id,
+                            "superseded_at": _now_iso(),
                             "superseded_property_id": prop_id,
                         },
                         "$unset": {"property_id": ""},
@@ -266,14 +296,22 @@ async def start_night_audit(
 
     # ── Execute pipeline stages ──
     return await _execute_pipeline(
-        run_id, tenant_id, prop_id, bd,
-        skip_validations=skip_validations, dry_run=dry_run,
+        run_id,
+        tenant_id,
+        prop_id,
+        bd,
+        skip_validations=skip_validations,
+        dry_run=dry_run,
     )
 
 
 async def _execute_pipeline(
-    run_id: str, tenant_id: str, prop_id: str, bd: str,
-    skip_validations: bool = False, dry_run: bool = False,
+    run_id: str,
+    tenant_id: str,
+    prop_id: str,
+    bd: str,
+    skip_validations: bool = False,
+    dry_run: bool = False,
 ) -> dict:
     """Execute the full night audit pipeline for a run."""
 
@@ -282,24 +320,32 @@ async def _execute_pipeline(
         try:
             validation = await _validate_preconditions(tenant_id, prop_id, bd)
             if validation["blocking_errors"]:
-                await db.night_audit_runs.update_one({"id": run_id}, {"$set": {
-                    "status": S_BLOCKED, "stage": ST_VALIDATING,
-                    "errors": validation["blocking_errors"],
-                    "warnings": validation["warnings"],
-                    "updated_at": _now_iso(), "completed_at": _now_iso(),
-                }})
-                return {"success": False, "error": "Pre-audit validation failed", "code": "VALIDATION_BLOCKED",
-                        "run_id": run_id, "blockers": validation["blocking_errors"]}
+                await db.night_audit_runs.update_one(
+                    {"id": run_id},
+                    {
+                        "$set": {
+                            "status": S_BLOCKED,
+                            "stage": ST_VALIDATING,
+                            "errors": validation["blocking_errors"],
+                            "warnings": validation["warnings"],
+                            "updated_at": _now_iso(),
+                            "completed_at": _now_iso(),
+                        }
+                    },
+                )
+                return {"success": False, "error": "Pre-audit validation failed", "code": "VALIDATION_BLOCKED", "run_id": run_id, "blockers": validation["blocking_errors"]}
             if validation["warnings"]:
                 await db.night_audit_runs.update_one(
-                    {"id": run_id}, {"$set": {"warnings": validation["warnings"]}},
+                    {"id": run_id},
+                    {"$set": {"warnings": validation["warnings"]}},
                 )
         except Exception as e:
             await _fail_run(run_id, ST_VALIDATING, f"Validation error: {e}")
             return {"success": False, "error": str(e), "code": "VALIDATION_ERROR", "run_id": run_id}
     else:
         await db.night_audit_runs.update_one(
-            {"id": run_id}, {"$set": {"warnings": ["Validations skipped by operator"]}},
+            {"id": run_id},
+            {"$set": {"warnings": ["Validations skipped by operator"]}},
         )
 
     # ── Stage: Build candidates ──
@@ -307,7 +353,8 @@ async def _execute_pipeline(
         await _set_stage(run_id, ST_CANDIDATE)
         candidate_count = await _build_candidate_set(tenant_id, prop_id, bd, run_id)
         await db.night_audit_runs.update_one(
-            {"id": run_id}, {"$set": {"candidate_count": candidate_count}},
+            {"id": run_id},
+            {"$set": {"candidate_count": candidate_count}},
         )
     except Exception as e:
         await _fail_run(run_id, ST_CANDIDATE, f"Candidate build error: {e}")
@@ -322,14 +369,22 @@ async def _execute_pipeline(
         skipped = await db.night_audit_run_items.count_documents(
             {"run_id": run_id, "status": IS_SKIPPED},
         )
-        await db.night_audit_runs.update_one({"id": run_id}, {"$set": {
-            "status": "dry_run_completed", "stage": ST_COMPLETED,
-            "processed_count": 0, "failed_count": 0, "skipped_count": skipped,
-            "completed_at": _now_iso(), "updated_at": _now_iso(),
-        }})
+        await db.night_audit_runs.update_one(
+            {"id": run_id},
+            {
+                "$set": {
+                    "status": "dry_run_completed",
+                    "stage": ST_COMPLETED,
+                    "processed_count": 0,
+                    "failed_count": 0,
+                    "skipped_count": skipped,
+                    "completed_at": _now_iso(),
+                    "updated_at": _now_iso(),
+                }
+            },
+        )
         run = await db.night_audit_runs.find_one({"id": run_id}, {"_id": 0})
-        return {"success": True, "dry_run": True, "would_post": pending,
-                "would_skip": skipped, "run": run}
+        return {"success": True, "dry_run": True, "would_post": pending, "would_skip": skipped, "run": run}
 
     # ── Stage: Post charges ──
     return await _posting_and_close(run_id, tenant_id, bd)
@@ -337,7 +392,8 @@ async def _execute_pipeline(
 
 async def _handle_duplicate_run(tenant_id: str, prop_id: str, bd: str) -> dict:
     existing = await db.night_audit_runs.find_one(
-        {"tenant_id": tenant_id, "property_id": prop_id, "business_date": bd}, {"_id": 0},
+        {"tenant_id": tenant_id, "property_id": prop_id, "business_date": bd},
+        {"_id": 0},
     )
     if not existing:
         return {"success": False, "error": "Concurrent insert conflict", "code": "CONFLICT"}
@@ -351,7 +407,8 @@ async def _handle_duplicate_run(tenant_id: str, prop_id: str, bd: str) -> dict:
             {"id": existing["id"]},
             {
                 "$set": {
-                    "status": "rerun_superseded", "updated_at": _now_iso(),
+                    "status": "rerun_superseded",
+                    "updated_at": _now_iso(),
                     "superseded_at": _now_iso(),
                     "superseded_property_id": prop_id,
                     "supersede_reason": "auto_after_dry_run",
@@ -372,8 +429,7 @@ async def _handle_duplicate_run(tenant_id: str, prop_id: str, bd: str) -> dict:
                 hb_dt = hb_dt.replace(tzinfo=UTC)
             age = (_now() - hb_dt).total_seconds()
             if age > STALE_THRESHOLD_SECONDS:
-                await _fail_run(existing["id"], existing.get("stage", ST_POSTING),
-                                f"Stale run detected ({int(age)}s). Marked for recovery.", S_PARTIAL)
+                await _fail_run(existing["id"], existing.get("stage", ST_POSTING), f"Stale run detected ({int(age)}s). Marked for recovery.", S_PARTIAL)
                 return {"success": False, "error": "Stale run detected, marked for recovery", "code": "STALE_RECOVERED", "run_id": existing["id"]}
         return {"success": False, "error": "Night audit already running", "code": "ALREADY_RUNNING", "run_id": existing["id"]}
     if st in (S_FAILED, S_PARTIAL):
@@ -387,9 +443,16 @@ async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> dict:
     try:
         await _set_stage(run_id, ST_POSTING)
         posted, failed, skipped = await _post_charges(tenant_id, run_id)
-        await db.night_audit_runs.update_one({"id": run_id}, {"$set": {
-            "processed_count": posted, "failed_count": failed, "skipped_count": skipped,
-        }})
+        await db.night_audit_runs.update_one(
+            {"id": run_id},
+            {
+                "$set": {
+                    "processed_count": posted,
+                    "failed_count": failed,
+                    "skipped_count": skipped,
+                }
+            },
+        )
     except Exception as e:
         await _fail_run(run_id, ST_POSTING, f"Posting error: {e}")
         return {"success": False, "error": str(e), "code": "POSTING_ERROR", "run_id": run_id}
@@ -401,8 +464,7 @@ async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> dict:
         if not recon["passed"]:
             st = S_PARTIAL if recon.get("has_failed_items") else S_FAILED
             await _fail_run(run_id, ST_RECONCILING, recon.get("reason", "Reconciliation failed"), st)
-            return {"success": False, "error": "Reconciliation failed", "code": "RECONCILIATION_FAILED",
-                    "run_id": run_id, "details": recon}
+            return {"success": False, "error": "Reconciliation failed", "code": "RECONCILIATION_FAILED", "run_id": run_id, "details": recon}
     except Exception as e:
         await _fail_run(run_id, ST_RECONCILING, f"Reconciliation error: {e}")
         return {"success": False, "error": str(e), "code": "RECONCILIATION_ERROR", "run_id": run_id}
@@ -416,10 +478,17 @@ async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> dict:
         return {"success": False, "error": str(e), "code": "DATE_ROLL_ERROR", "run_id": run_id}
 
     # ── Complete ──
-    await db.night_audit_runs.update_one({"id": run_id}, {"$set": {
-        "status": S_COMPLETED, "stage": ST_COMPLETED,
-        "completed_at": _now_iso(), "updated_at": _now_iso(),
-    }})
+    await db.night_audit_runs.update_one(
+        {"id": run_id},
+        {
+            "$set": {
+                "status": S_COMPLETED,
+                "stage": ST_COMPLETED,
+                "completed_at": _now_iso(),
+                "updated_at": _now_iso(),
+            }
+        },
+    )
 
     # Record the daily high/urgent pending-task backlog snapshot so the GM
     # dashboard can show a real day-over-day delta for pending tasks. The
@@ -430,6 +499,7 @@ async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> dict:
         from domains.pms.dashboard_router.snapshots import (
             record_pending_task_snapshot,
         )
+
         await record_pending_task_snapshot(tenant_id, db)
     except Exception as exc:
         logger.warning("pending-task snapshot skipped for tenant=%s: %s", tenant_id, exc)
@@ -442,29 +512,36 @@ async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> dict:
 #  2. VALIDATION
 # ═══════════════════════════════════════════════════════════════
 
+
 async def _validate_preconditions(
-    tenant_id: str, property_id: str, bd: str,
+    tenant_id: str,
+    property_id: str,
+    bd: str,
 ) -> dict[str, Any]:
     """Validate preconditions before posting. Returns blocking errors and warnings."""
     blocking: list[str] = []
     warnings: list[str] = []
 
     # 1. No running/blocked/partial audit for this tenant
-    active = await db.night_audit_runs.find_one({
-        "tenant_id": tenant_id,
-        "status": {"$in": [S_RUNNING, S_BLOCKED, S_PARTIAL]},
-        "business_date": {"$ne": bd},
-    }, {"_id": 0, "id": 1, "business_date": 1, "status": 1})
+    active = await db.night_audit_runs.find_one(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": [S_RUNNING, S_BLOCKED, S_PARTIAL]},
+            "business_date": {"$ne": bd},
+        },
+        {"_id": 0, "id": 1, "business_date": 1, "status": 1},
+    )
     if active:
-        blocking.append(
-            f"Active audit run exists for different date {active['business_date']} (status: {active['status']}, id: {active['id']})"
-        )
+        blocking.append(f"Active audit run exists for different date {active['business_date']} (status: {active['status']}, id: {active['id']})")
 
     # 2. Checked-in bookings without room assignment
-    orphans = await db.bookings.count_documents({
-        "tenant_id": tenant_id, "status": "checked_in",
-        "room_id": {"$in": [None, ""]},
-    })
+    orphans = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "checked_in",
+            "room_id": {"$in": [None, ""]},
+        }
+    )
     if orphans > 0:
         blocking.append(f"{orphans} checked-in booking(s) without room assignment")
 
@@ -511,24 +588,26 @@ async def _validate_preconditions(
     # 4. BLOCKING: overdue check-outs (still checked_in past their check_out date)
     # Bu misafirler ya cikis yapmali ya da konaklama uzatilmali; sessizce ek bir gece
     # yazilmasi musafire fazla fatura ve veri tutarsizligi yaratir.
-    overdue_checkouts = await db.bookings.count_documents({
-        "tenant_id": tenant_id, "status": "checked_in",
-        "check_out": {"$lte": bd},
-    })
+    overdue_checkouts = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "checked_in",
+            "check_out": {"$lte": bd},
+        }
+    )
     if overdue_checkouts > 0:
-        blocking.append(
-            f"{overdue_checkouts} rezervasyonun cikis tarihi gectigi halde hala 'checked-in'. "
-            f"Gece denetiminden once cikis yapin veya konaklamayi uzatin."
-        )
+        blocking.append(f"{overdue_checkouts} rezervasyonun cikis tarihi gectigi halde hala 'checked-in'. Gece denetiminden once cikis yapin veya konaklamayi uzatin.")
 
     # 5. BLOCKING: pending arrivals (confirmed/guaranteed but never checked in by audit time)
     # Otomatik no-show yerine personel karari bekleyelim. 'Dogrulamalari Atla'
     # bayragi ile bilerek bypass edilirse mevcut akis no-show yazar.
-    pending_arrivals = await db.bookings.count_documents({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["confirmed", "guaranteed"]},
-        "check_in": {"$lte": bd},
-    })
+    pending_arrivals = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["confirmed", "guaranteed"]},
+            "check_in": {"$lte": bd},
+        }
+    )
     if pending_arrivals > 0:
         blocking.append(
             f"{pending_arrivals} rezervasyonun giris tarihi gectigi halde check-in yapilmadi. "
@@ -559,8 +638,12 @@ async def _validate_preconditions(
 #  3. CANDIDATE SET GENERATION
 # ═══════════════════════════════════════════════════════════════
 
+
 async def _build_candidate_set(
-    tenant_id: str, property_id: str, bd: str, run_id: str,
+    tenant_id: str,
+    property_id: str,
+    bd: str,
+    run_id: str,
 ) -> int:
     """Build the posting candidate set and persist to night_audit_run_items."""
     now = _now_iso()
@@ -570,9 +653,7 @@ async def _build_candidate_set(
     # N+1 fix: tum bookings'i once topla, sonra folio + folio_charges idempotency icin tek sorgu
     bookings_list = await db.bookings.find(
         {"tenant_id": tenant_id, "status": "checked_in"},
-        {"_id": 0, "id": 1, "room_id": 1, "folio_id": 1,
-         "room_rate": 1, "rate": 1, "total_amount": 1,
-         "check_in": 1, "check_out": 1, "guest_name": 1, "currency": 1},
+        {"_id": 0, "id": 1, "room_id": 1, "folio_id": 1, "room_rate": 1, "rate": 1, "total_amount": 1, "check_in": 1, "check_out": 1, "guest_name": 1, "currency": 1},
     ).to_list(5000)
 
     booking_ids_no_folio = [b["id"] for b in bookings_list if not b.get("folio_id")]
@@ -588,8 +669,7 @@ async def _build_candidate_set(
     already_posted_set: set = set()
     if all_booking_ids:
         async for c in db.folio_charges.find(
-            {"tenant_id": tenant_id, "booking_id": {"$in": all_booking_ids},
-             "business_date": bd, "charge_type": "room_charge"},
+            {"tenant_id": tenant_id, "booking_id": {"$in": all_booking_ids}, "business_date": bd, "charge_type": "room_charge"},
             {"_id": 0, "booking_id": 1},
         ):
             already_posted_set.add(c["booking_id"])
@@ -630,40 +710,63 @@ async def _build_candidate_set(
         acc_tax = round(rate * ACCOMMODATION_TAX_RATE, 2)
         total = round(rate + vat + acc_tax, 2)
 
-        items.append({
-            "id": str(uuid.uuid4()), "run_id": run_id, "tenant_id": tenant_id,
-            "booking_id": booking_id, "folio_id": folio_id,
-            "room_id": booking.get("room_id"),
-            "posting_type": "room_charge", "posting_date": bd,
-            "amount": rate, "tax_amount": round(vat + acc_tax, 2), "total": total,
-            "tax_breakdown": {"vat": vat, "accommodation_tax": acc_tax},
-            "currency": booking.get("currency") or DEFAULT_CURRENCY,
-            "status": item_status, "reason": reason,
-            "journal_entry_id": None,
-            "created_at": now, "updated_at": now,
-        })
+        items.append(
+            {
+                "id": str(uuid.uuid4()),
+                "run_id": run_id,
+                "tenant_id": tenant_id,
+                "booking_id": booking_id,
+                "folio_id": folio_id,
+                "room_id": booking.get("room_id"),
+                "posting_type": "room_charge",
+                "posting_date": bd,
+                "amount": rate,
+                "tax_amount": round(vat + acc_tax, 2),
+                "total": total,
+                "tax_breakdown": {"vat": vat, "accommodation_tax": acc_tax},
+                "currency": booking.get("currency") or DEFAULT_CURRENCY,
+                "status": item_status,
+                "reason": reason,
+                "journal_entry_id": None,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
 
     # ── No-show candidates ──
-    no_show_cursor = db.bookings.find({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["confirmed", "guaranteed"]},
-        "check_in": {"$lte": bd},
-    }, {"_id": 0, "id": 1, "room_id": 1, "folio_id": 1,
-        "guest_name": 1, "cancellation_policy": 1, "currency": 1})
+    no_show_cursor = db.bookings.find(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["confirmed", "guaranteed"]},
+            "check_in": {"$lte": bd},
+        },
+        {"_id": 0, "id": 1, "room_id": 1, "folio_id": 1, "guest_name": 1, "cancellation_policy": 1, "currency": 1},
+    )
     async for booking in no_show_cursor:
         # Only if check_in date has passed (today or before)
         no_show_fee = (booking.get("cancellation_policy") or {}).get("no_show_fee", 0)
-        items.append({
-            "id": str(uuid.uuid4()), "run_id": run_id, "tenant_id": tenant_id,
-            "booking_id": booking["id"], "folio_id": booking.get("folio_id"),
-            "room_id": booking.get("room_id"),
-            "posting_type": "no_show", "posting_date": bd,
-            "amount": no_show_fee, "tax_amount": 0, "total": no_show_fee,
-            "tax_breakdown": {}, "currency": booking.get("currency") or DEFAULT_CURRENCY,
-            "status": IS_PENDING, "reason": None,
-            "journal_entry_id": None,
-            "created_at": now, "updated_at": now,
-        })
+        items.append(
+            {
+                "id": str(uuid.uuid4()),
+                "run_id": run_id,
+                "tenant_id": tenant_id,
+                "booking_id": booking["id"],
+                "folio_id": booking.get("folio_id"),
+                "room_id": booking.get("room_id"),
+                "posting_type": "no_show",
+                "posting_date": bd,
+                "amount": no_show_fee,
+                "tax_amount": 0,
+                "total": no_show_fee,
+                "tax_breakdown": {},
+                "currency": booking.get("currency") or DEFAULT_CURRENCY,
+                "status": IS_PENDING,
+                "reason": None,
+                "journal_entry_id": None,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
 
     if items:
         await db.night_audit_run_items.insert_many([{**it} for it in items])
@@ -673,6 +776,7 @@ async def _build_candidate_set(
 # ═══════════════════════════════════════════════════════════════
 #  4. TRANSACTIONAL POSTING
 # ═══════════════════════════════════════════════════════════════
+
 
 async def _post_charges(tenant_id: str, run_id: str) -> tuple[int, int, int]:
     """Post all pending items transactionally. Returns (posted, failed, skipped).
@@ -686,7 +790,8 @@ async def _post_charges(tenant_id: str, run_id: str) -> tuple[int, int, int]:
     failed = 0
 
     items: list[dict] = await db.night_audit_run_items.find(
-        {"run_id": run_id, "status": IS_PENDING}, {"_id": 0},
+        {"run_id": run_id, "status": IS_PENDING},
+        {"_id": 0},
     ).to_list(20000)
 
     if not items:
@@ -756,11 +861,15 @@ async def _post_room_charge_item(tenant_id: str, item: dict, run_id: str) -> boo
 
                 # 2. Insert folio charge (unique index prevents duplicate)
                 charge_doc = {
-                    "id": charge_id, "tenant_id": tenant_id,
-                    "folio_id": item["folio_id"], "booking_id": item["booking_id"],
-                    "charge_category": "room", "charge_type": "room_charge",
+                    "id": charge_id,
+                    "tenant_id": tenant_id,
+                    "folio_id": item["folio_id"],
+                    "booking_id": item["booking_id"],
+                    "charge_category": "room",
+                    "charge_type": "room_charge",
                     "description": f"Room charge - {item['posting_date']}",
-                    "unit_price": item["amount"], "quantity": 1,
+                    "unit_price": item["amount"],
+                    "quantity": 1,
                     "amount": item["amount"],
                     "tax_rate": round((VAT_RATE + ACCOMMODATION_TAX_RATE) * 100, 1),
                     "tax_amount": item["tax_amount"],
@@ -771,8 +880,10 @@ async def _post_room_charge_item(tenant_id: str, item: dict, run_id: str) -> boo
                     "date": now,
                     "night_audit_date": item["posting_date"],
                     "posted_by": "night_audit",
-                    "run_id": run_id, "run_item_id": item_id,
-                    "voided": False, "created_at": now,
+                    "run_id": run_id,
+                    "run_item_id": item_id,
+                    "voided": False,
+                    "created_at": now,
                 }
                 await db.folio_charges.insert_one({**charge_doc}, session=session)
 
@@ -785,26 +896,36 @@ async def _post_room_charge_item(tenant_id: str, item: dict, run_id: str) -> boo
                     )
 
                 # 4. Journal / audit entry
-                await db.pms_audit_trail.insert_one({
-                    "id": journal_id, "tenant_id": tenant_id,
-                    "entity_type": "folio_charge", "entity_id": charge_id,
-                    "action": "night_audit_room_charge",
-                    "performed_by": "night_audit",
-                    "metadata": {
-                        "run_id": run_id, "booking_id": item["booking_id"],
-                        "folio_id": item["folio_id"], "amount": item["total"],
-                        "business_date": item["posting_date"],
+                await db.pms_audit_trail.insert_one(
+                    {
+                        "id": journal_id,
+                        "tenant_id": tenant_id,
+                        "entity_type": "folio_charge",
+                        "entity_id": charge_id,
+                        "action": "night_audit_room_charge",
+                        "performed_by": "night_audit",
+                        "metadata": {
+                            "run_id": run_id,
+                            "booking_id": item["booking_id"],
+                            "folio_id": item["folio_id"],
+                            "amount": item["total"],
+                            "business_date": item["posting_date"],
+                        },
+                        "timestamp": now,
                     },
-                    "timestamp": now,
-                }, session=session)
+                    session=session,
+                )
 
                 # 5. Mark item posted
                 await db.night_audit_run_items.update_one(
                     {"id": item_id},
-                    {"$set": {
-                        "status": IS_POSTED, "journal_entry_id": journal_id,
-                        "updated_at": now,
-                    }},
+                    {
+                        "$set": {
+                            "status": IS_POSTED,
+                            "journal_entry_id": journal_id,
+                            "updated_at": now,
+                        }
+                    },
                     session=session,
                 )
 
@@ -851,11 +972,13 @@ async def _post_no_show_item(tenant_id: str, item: dict, run_id: str) -> bool:
                 # Mark booking as no-show
                 await db.bookings.update_one(
                     {"id": item["booking_id"], "tenant_id": tenant_id},
-                    {"$set": {
-                        "status": "no_show",
-                        "no_show_date": now,
-                        "no_show_processed_by": "night_audit",
-                    }},
+                    {
+                        "$set": {
+                            "status": "no_show",
+                            "no_show_date": now,
+                            "no_show_processed_by": "night_audit",
+                        }
+                    },
                     session=session,
                 )
 
@@ -870,17 +993,28 @@ async def _post_no_show_item(tenant_id: str, item: dict, run_id: str) -> bool:
                 # Post no-show fee if applicable
                 if item["amount"] > 0 and item.get("folio_id"):
                     fee_id = str(uuid.uuid4())
-                    await db.folio_charges.insert_one({
-                        "id": fee_id, "tenant_id": tenant_id,
-                        "folio_id": item["folio_id"], "booking_id": item["booking_id"],
-                        "charge_category": "no_show_fee", "charge_type": "no_show_fee",
-                        "description": f"No-show fee - {item['posting_date']}",
-                        "amount": item["amount"], "total": item["amount"],
-                        "tax_amount": 0, "business_date": item["posting_date"],
-                        "date": now, "posted_by": "night_audit",
-                        "run_id": run_id, "run_item_id": item_id,
-                        "voided": False, "created_at": now,
-                    }, session=session)
+                    await db.folio_charges.insert_one(
+                        {
+                            "id": fee_id,
+                            "tenant_id": tenant_id,
+                            "folio_id": item["folio_id"],
+                            "booking_id": item["booking_id"],
+                            "charge_category": "no_show_fee",
+                            "charge_type": "no_show_fee",
+                            "description": f"No-show fee - {item['posting_date']}",
+                            "amount": item["amount"],
+                            "total": item["amount"],
+                            "tax_amount": 0,
+                            "business_date": item["posting_date"],
+                            "date": now,
+                            "posted_by": "night_audit",
+                            "run_id": run_id,
+                            "run_item_id": item_id,
+                            "voided": False,
+                            "created_at": now,
+                        },
+                        session=session,
+                    )
 
                 # Mark item posted
                 await db.night_audit_run_items.update_one(
@@ -904,6 +1038,7 @@ async def _post_no_show_item(tenant_id: str, item: dict, run_id: str) -> bool:
 #  5. RECONCILIATION
 # ═══════════════════════════════════════════════════════════════
 
+
 async def _reconcile(run_id: str) -> dict[str, Any]:
     """Verify posting integrity before rolling the date."""
     total = await db.night_audit_run_items.count_documents({"run_id": run_id})
@@ -915,21 +1050,32 @@ async def _reconcile(run_id: str) -> dict[str, Any]:
 
     if failed_count > 0:
         return {
-            "passed": False, "has_failed_items": True,
+            "passed": False,
+            "has_failed_items": True,
             "reason": f"{failed_count} item(s) failed posting",
-            "total": total, "posted": posted, "skipped": skipped,
-            "failed": failed_count, "pending": pending,
+            "total": total,
+            "posted": posted,
+            "skipped": skipped,
+            "failed": failed_count,
+            "pending": pending,
         }
     if pending > 0 or processing > 0:
         return {
-            "passed": False, "has_failed_items": False,
+            "passed": False,
+            "has_failed_items": False,
             "reason": f"{pending} pending, {processing} processing items remain",
-            "total": total, "posted": posted, "skipped": skipped, "pending": pending,
+            "total": total,
+            "posted": posted,
+            "skipped": skipped,
+            "pending": pending,
         }
 
     return {
-        "passed": True, "total": total,
-        "posted": posted, "skipped": skipped, "failed": 0,
+        "passed": True,
+        "total": total,
+        "posted": posted,
+        "skipped": skipped,
+        "failed": 0,
     }
 
 
@@ -937,16 +1083,19 @@ async def _reconcile(run_id: str) -> dict[str, Any]:
 #  6. BUSINESS DATE ROLL
 # ═══════════════════════════════════════════════════════════════
 
+
 async def _roll_business_date(tenant_id: str, current_bd: str):
     """Advance the business date. Only called after successful reconciliation."""
     next_bd = _next_date(current_bd)
     await db.tenant_settings.update_one(
         {"tenant_id": tenant_id},
-        {"$set": {
-            "business_date": next_bd,
-            "previous_business_date": current_bd,
-            "business_date_updated_at": _now_iso(),
-        }},
+        {
+            "$set": {
+                "business_date": next_bd,
+                "previous_business_date": current_bd,
+                "business_date_updated_at": _now_iso(),
+            }
+        },
         upsert=True,
     )
     logger.info("Business date rolled: %s → %s (tenant: %s)", current_bd, next_bd, tenant_id)
@@ -956,15 +1105,19 @@ async def _roll_business_date(tenant_id: str, current_bd: str):
 #  7. RESUME
 # ═══════════════════════════════════════════════════════════════
 
+
 async def resume_night_audit(
-    tenant_id: str, run_id: str, actor: dict = None,
+    tenant_id: str,
+    run_id: str,
+    actor: dict = None,
 ) -> dict[str, Any]:
     """
     Resume a failed/partial_recovery run.
     Resets failed items to pending and re-enters the posting pipeline.
     """
     run = await db.night_audit_runs.find_one(
-        {"id": run_id, "tenant_id": tenant_id}, {"_id": 0},
+        {"id": run_id, "tenant_id": tenant_id},
+        {"_id": 0},
     )
     if not run:
         return {"success": False, "error": "Run not found", "code": "NOT_FOUND"}
@@ -981,26 +1134,47 @@ async def resume_night_audit(
     if run["status"] == S_BLOCKED:
         bd = run["business_date"]
         prop_id = run.get("property_id", DEFAULT_PROPERTY)
-        await db.night_audit_runs.update_one({"id": run_id}, {"$set": {
-            "status": S_RUNNING, "stage": ST_VALIDATING,
-            "errors": [], "updated_at": _now_iso(), "completed_at": None,
-            "last_heartbeat_at": _now_iso(),
-        }})
+        await db.night_audit_runs.update_one(
+            {"id": run_id},
+            {
+                "$set": {
+                    "status": S_RUNNING,
+                    "stage": ST_VALIDATING,
+                    "errors": [],
+                    "updated_at": _now_iso(),
+                    "completed_at": None,
+                    "last_heartbeat_at": _now_iso(),
+                }
+            },
+        )
         validation = await _validate_preconditions(tenant_id, prop_id, bd)
         if validation["blocking_errors"]:
-            await db.night_audit_runs.update_one({"id": run_id}, {"$set": {
-                "status": S_BLOCKED, "errors": validation["blocking_errors"],
-                "updated_at": _now_iso(), "completed_at": _now_iso(),
-            }})
-            return {"success": False, "error": "Still blocked", "code": "STILL_BLOCKED",
-                    "blockers": validation["blocking_errors"]}
+            await db.night_audit_runs.update_one(
+                {"id": run_id},
+                {
+                    "$set": {
+                        "status": S_BLOCKED,
+                        "errors": validation["blocking_errors"],
+                        "updated_at": _now_iso(),
+                        "completed_at": _now_iso(),
+                    }
+                },
+            )
+            return {"success": False, "error": "Still blocked", "code": "STILL_BLOCKED", "blockers": validation["blocking_errors"]}
 
     # Re-enter pipeline at posting stage
-    await db.night_audit_runs.update_one({"id": run_id}, {"$set": {
-        "status": S_RUNNING, "errors": [],
-        "updated_at": _now_iso(), "completed_at": None,
-        "last_heartbeat_at": _now_iso(),
-    }})
+    await db.night_audit_runs.update_one(
+        {"id": run_id},
+        {
+            "$set": {
+                "status": S_RUNNING,
+                "errors": [],
+                "updated_at": _now_iso(),
+                "completed_at": None,
+                "last_heartbeat_at": _now_iso(),
+            }
+        },
+    )
 
     return await _posting_and_close(run_id, tenant_id, run["business_date"])
 
@@ -1009,22 +1183,33 @@ async def resume_night_audit(
 #  8. ABORT
 # ═══════════════════════════════════════════════════════════════
 
+
 async def abort_night_audit(
-    tenant_id: str, run_id: str, actor: dict = None,
+    tenant_id: str,
+    run_id: str,
+    actor: dict = None,
 ) -> dict[str, Any]:
     """Abort a running/blocked/partial run. Does NOT roll back posted charges."""
     run = await db.night_audit_runs.find_one(
-        {"id": run_id, "tenant_id": tenant_id}, {"_id": 0},
+        {"id": run_id, "tenant_id": tenant_id},
+        {"_id": 0},
     )
     if not run:
         return {"success": False, "error": "Run not found", "code": "NOT_FOUND"}
     if run["status"] == S_COMPLETED:
         return {"success": False, "error": "Cannot abort a completed run", "code": "ALREADY_COMPLETED"}
 
-    await db.night_audit_runs.update_one({"id": run_id}, {"$set": {
-        "status": S_FAILED, "updated_at": _now_iso(), "completed_at": _now_iso(),
-        "errors": run.get("errors", []) + [f"Aborted by {(actor or {}).get('id', 'unknown')}"],
-    }})
+    await db.night_audit_runs.update_one(
+        {"id": run_id},
+        {
+            "$set": {
+                "status": S_FAILED,
+                "updated_at": _now_iso(),
+                "completed_at": _now_iso(),
+                "errors": run.get("errors", []) + [f"Aborted by {(actor or {}).get('id', 'unknown')}"],
+            }
+        },
+    )
 
     # Cancel pending items
     await db.night_audit_run_items.update_many(
@@ -1039,6 +1224,7 @@ async def abort_night_audit(
 #  8b. PRE-AUDIT PREVIEW (Hazirlik / Genel Bakis)
 # ═══════════════════════════════════════════════════════════════
 
+
 async def _sample_bookings(query: dict, limit: int = 25) -> list[dict]:
     """Engelleyici/uyari listeleri icin orneklem rezervasyonlar (Duzelt linki).
 
@@ -1049,9 +1235,16 @@ async def _sample_bookings(query: dict, limit: int = 25) -> list[dict]:
     cursor = db.bookings.find(
         query,
         {
-            "_id": 0, "id": 1, "guest_id": 1, "guest_name": 1,
-            "room_id": 1, "room_no": 1,
-            "check_in": 1, "check_out": 1, "status": 1, "confirmation_code": 1,
+            "_id": 0,
+            "id": 1,
+            "guest_id": 1,
+            "guest_name": 1,
+            "room_id": 1,
+            "room_no": 1,
+            "check_in": 1,
+            "check_out": 1,
+            "status": 1,
+            "confirmation_code": 1,
         },
     ).limit(limit)
     items = [b async for b in cursor]
@@ -1070,14 +1263,14 @@ async def _sample_bookings(query: dict, limit: int = 25) -> list[dict]:
     missing_room_ids = {b["room_id"] for b in items if b.get("room_id")}
 
     from core.guest_name_utils import is_placeholder_guest_name
+
     guest_map: dict = {}
     if missing_guest_ids:
         async for g in db.guests.find(
             {"tenant_id": tenant_id, "id": {"$in": list(missing_guest_ids)}},
             {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1},
         ):
-            full = (g.get("name") or
-                    " ".join(filter(None, [g.get("first_name"), g.get("last_name")])).strip())
+            full = g.get("name") or " ".join(filter(None, [g.get("first_name"), g.get("last_name")])).strip()
             # Placeholder ("C4", "V4 Refund") guest_map'e KOYMA — booking field'i
             # _sample_bookings sonrasinda display_guest_name fallback'i alir.
             if full and not is_placeholder_guest_name(full):
@@ -1092,6 +1285,7 @@ async def _sample_bookings(query: dict, limit: int = 25) -> list[dict]:
             room_map[r["id"]] = r.get("room_number") or r.get("room_no")
 
     from core.guest_name_utils import display_guest_name
+
     for b in items:
         # guests/rooms her zaman OTORITE — bookings.guest_name eski sync
         # artigi olabilir ("V4 Refund" gibi). Lookup basarisizsa orijinal kalir.
@@ -1146,30 +1340,31 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
         {"_id": 0, "id": 1, "business_date": 1, "status": 1},
     )
     if active:
-        blockers.append({
-            "category": "active_run_other_date",
-            "label": "Baska tarih icin aktif denetim var",
-            "message": (
-                f"Farkli is gunu ({active['business_date']}, durum: {active['status']}) icin "
-                f"acik bir denetim mevcut. Once o denetimi tamamlayin/iptal edin."
-            ),
-            "count": 1,
-            "items": [{"run_id": active["id"], "business_date": active["business_date"], "status": active["status"]}],
-            "action": "open_run",
-        })
+        blockers.append(
+            {
+                "category": "active_run_other_date",
+                "label": "Baska tarih icin aktif denetim var",
+                "message": (f"Farkli is gunu ({active['business_date']}, durum: {active['status']}) icin acik bir denetim mevcut. Once o denetimi tamamlayin/iptal edin."),
+                "count": 1,
+                "items": [{"run_id": active["id"], "business_date": active["business_date"], "status": active["status"]}],
+                "action": "open_run",
+            }
+        )
 
     # 2) Oda atamasi olmayan checked-in rezervasyonlar
     orphans_q = {"tenant_id": tenant_id, "status": "checked_in", "room_id": {"$in": [None, ""]}}
     orphans_count = await db.bookings.count_documents(orphans_q)
     if orphans_count > 0:
-        blockers.append({
-            "category": "checked_in_no_room",
-            "label": "Oda atanmamis check-in",
-            "message": f"{orphans_count} check-in misafire oda atanmamis.",
-            "count": orphans_count,
-            "items": await _sample_bookings(orphans_q),
-            "action": "edit_booking",
-        })
+        blockers.append(
+            {
+                "category": "checked_in_no_room",
+                "label": "Oda atanmamis check-in",
+                "message": f"{orphans_count} check-in misafire oda atanmamis.",
+                "count": orphans_count,
+                "items": await _sample_bookings(orphans_q),
+                "action": "edit_booking",
+            }
+        )
 
     # 3) Acik folio'su olmayan checked-in rezervasyonlar
     checked_in = await db.bookings.find(
@@ -1196,42 +1391,42 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
             ):
                 booking_with_open_folio_set.add(f["booking_id"])
 
-        missing = [
-            bk for bk in checked_in
-            if (bk.get("folio_id") and bk["folio_id"] not in valid_folio_id_set)
-            or (not bk.get("folio_id") and bk["id"] not in booking_with_open_folio_set)
-        ]
+        missing = [bk for bk in checked_in if (bk.get("folio_id") and bk["folio_id"] not in valid_folio_id_set) or (not bk.get("folio_id") and bk["id"] not in booking_with_open_folio_set)]
         if missing:
-            blockers.append({
-                "category": "checked_in_no_open_folio",
-                "label": "Acik folyosuz check-in",
-                "message": f"{len(missing)} check-in misafirin acik bir folyosu yok.",
-                "count": len(missing),
-                "items": [
-                    {
-                        "id": bk["id"], "guest_name": bk.get("guest_name"),
-                        "room_no": bk.get("room_no"), "check_in": bk.get("check_in"),
-                        "check_out": bk.get("check_out"),
-                    } for bk in missing[:25]
-                ],
-                "action": "edit_booking",
-            })
+            blockers.append(
+                {
+                    "category": "checked_in_no_open_folio",
+                    "label": "Acik folyosuz check-in",
+                    "message": f"{len(missing)} check-in misafirin acik bir folyosu yok.",
+                    "count": len(missing),
+                    "items": [
+                        {
+                            "id": bk["id"],
+                            "guest_name": bk.get("guest_name"),
+                            "room_no": bk.get("room_no"),
+                            "check_in": bk.get("check_in"),
+                            "check_out": bk.get("check_out"),
+                        }
+                        for bk in missing[:25]
+                    ],
+                    "action": "edit_booking",
+                }
+            )
 
     # 4) Cikis tarihi gecmis ama hala checked_in
     overdue_q = {"tenant_id": tenant_id, "status": "checked_in", "check_out": {"$lte": bd}}
     overdue_count = await db.bookings.count_documents(overdue_q)
     if overdue_count > 0:
-        blockers.append({
-            "category": "overdue_checkouts",
-            "label": "Gec cikis (overdue)",
-            "message": (
-                f"{overdue_count} rezervasyonun cikis tarihi gectigi halde hala 'checked-in'. "
-                f"Cikis yapin veya konaklamayi uzatin."
-            ),
-            "count": overdue_count,
-            "items": await _sample_bookings(overdue_q),
-            "action": "checkout_or_extend",
-        })
+        blockers.append(
+            {
+                "category": "overdue_checkouts",
+                "label": "Gec cikis (overdue)",
+                "message": (f"{overdue_count} rezervasyonun cikis tarihi gectigi halde hala 'checked-in'. Cikis yapin veya konaklamayi uzatin."),
+                "count": overdue_count,
+                "items": await _sample_bookings(overdue_q),
+                "action": "checkout_or_extend",
+            }
+        )
 
     # 5) Geliş tarihi gecmis confirmed/guaranteed (no-check-in)
     pending_arr_q = {
@@ -1241,42 +1436,51 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
     }
     pending_count = await db.bookings.count_documents(pending_arr_q)
     if pending_count > 0:
-        blockers.append({
-            "category": "pending_arrivals",
-            "label": "Bekleyen geliş (no-check-in)",
-            "message": (
-                f"{pending_count} rezervasyonun giris tarihi gectigi halde check-in yapilmadi. "
-                f"Check-in yapin, no-show isaretleyin veya iptal edin."
-            ),
-            "count": pending_count,
-            "items": await _sample_bookings(pending_arr_q),
-            "action": "checkin_or_no_show",
-        })
+        blockers.append(
+            {
+                "category": "pending_arrivals",
+                "label": "Bekleyen geliş (no-check-in)",
+                "message": (f"{pending_count} rezervasyonun giris tarihi gectigi halde check-in yapilmadi. Check-in yapin, no-show isaretleyin veya iptal edin."),
+                "count": pending_count,
+                "items": await _sample_bookings(pending_arr_q),
+                "action": "checkin_or_no_show",
+            }
+        )
 
     # 6) Devam eden housekeeping (uyari, engellemez)
-    inprog_hk = await db.housekeeping_tasks.count_documents({
-        "tenant_id": tenant_id, "status": {"$in": ["in_progress", "started"]},
-    })
+    inprog_hk = await db.housekeeping_tasks.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["in_progress", "started"]},
+        }
+    )
     if inprog_hk > 0:
-        warnings.append({
-            "category": "housekeeping_in_progress",
-            "label": "Devam eden kat hizmetleri",
-            "message": f"{inprog_hk} oda kat hizmetleri devam ediyor.",
-            "count": inprog_hk,
-        })
+        warnings.append(
+            {
+                "category": "housekeeping_in_progress",
+                "label": "Devam eden kat hizmetleri",
+                "message": f"{inprog_hk} oda kat hizmetleri devam ediyor.",
+                "count": inprog_hk,
+            }
+        )
 
     # 7) Acik POS / SPA siparişleri (varsa)
     try:
-        open_pos = await db.pos_orders.count_documents({
-            "tenant_id": tenant_id, "status": {"$in": ["open", "pending"]},
-        })
+        open_pos = await db.pos_orders.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "status": {"$in": ["open", "pending"]},
+            }
+        )
         if open_pos > 0:
-            warnings.append({
-                "category": "pos_open_orders",
-                "label": "Acik POS siparişleri",
-                "message": f"{open_pos} POS siparişi hala acik (folyoya henüz yansimamis olabilir).",
-                "count": open_pos,
-            })
+            warnings.append(
+                {
+                    "category": "pos_open_orders",
+                    "label": "Acik POS siparişleri",
+                    "message": f"{open_pos} POS siparişi hala acik (folyoya henüz yansimamis olabilir).",
+                    "count": open_pos,
+                }
+            )
     except Exception:
         pass
 
@@ -1303,18 +1507,27 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
 
     # 9) Misafir hareketleri ozeti
     in_house = await db.bookings.count_documents({"tenant_id": tenant_id, "status": "checked_in"})
-    arriving_today = await db.bookings.count_documents({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["confirmed", "guaranteed"]},
-        "check_in": bd,
-    })
-    departing_today = await db.bookings.count_documents({
-        "tenant_id": tenant_id, "status": "checked_in", "check_out": bd,
-    })
-    cancellations_today = await db.bookings.count_documents({
-        "tenant_id": tenant_id, "status": "cancelled",
-        "$or": [{"cancelled_at": {"$regex": f"^{bd}"}}, {"updated_at": {"$regex": f"^{bd}"}}],
-    })
+    arriving_today = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["confirmed", "guaranteed"]},
+            "check_in": bd,
+        }
+    )
+    departing_today = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "checked_in",
+            "check_out": bd,
+        }
+    )
+    cancellations_today = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "cancelled",
+            "$or": [{"cancelled_at": {"$regex": f"^{bd}"}}, {"updated_at": {"$regex": f"^{bd}"}}],
+        }
+    )
     guests_summary = {
         "in_house": in_house,
         "arriving_today": arriving_today,
@@ -1325,7 +1538,8 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
     # 10) Bu is gunu icin son run (UI Son Denetim Ozeti'ni doldurmak icin)
     last_run = await db.night_audit_runs.find_one(
         {"tenant_id": tenant_id, "property_id": prop_id, "business_date": bd},
-        {"_id": 0}, sort=[("started_at", -1)],
+        {"_id": 0},
+        sort=[("started_at", -1)],
     )
 
     return {
@@ -1345,6 +1559,7 @@ async def build_audit_preview(tenant_id: str, property_id: str | None = None) ->
 #  9. QUERIES
 # ═══════════════════════════════════════════════════════════════
 
+
 async def get_run_status(tenant_id: str, property_id: str = None) -> dict:
     """Get current night audit status for a tenant."""
     prop_id = property_id or DEFAULT_PROPERTY
@@ -1353,7 +1568,8 @@ async def get_run_status(tenant_id: str, property_id: str = None) -> dict:
 
     latest_run = await db.night_audit_runs.find_one(
         {"tenant_id": tenant_id, "property_id": prop_id},
-        {"_id": 0}, sort=[("started_at", -1)],
+        {"_id": 0},
+        sort=[("started_at", -1)],
     )
 
     running_count = await db.night_audit_runs.count_documents(
@@ -1376,16 +1592,25 @@ async def get_run_status(tenant_id: str, property_id: str = None) -> dict:
 
 
 async def get_runs(
-    tenant_id: str, limit: int = 20, skip: int = 0,
+    tenant_id: str,
+    limit: int = 20,
+    skip: int = 0,
     status_filter: str = None,
 ) -> dict:
     """List night audit runs for a tenant."""
     query: dict[str, Any] = {"tenant_id": tenant_id}
     if status_filter:
         query["status"] = status_filter
-    runs = await db.night_audit_runs.find(
-        query, {"_id": 0},
-    ).sort("started_at", -1).skip(skip).limit(limit).to_list(limit)
+    runs = (
+        await db.night_audit_runs.find(
+            query,
+            {"_id": 0},
+        )
+        .sort("started_at", -1)
+        .skip(skip)
+        .limit(limit)
+        .to_list(limit)
+    )
     total = await db.night_audit_runs.count_documents(query)
     return {"runs": runs, "total": total, "limit": limit, "skip": skip}
 
@@ -1393,21 +1618,32 @@ async def get_runs(
 async def get_run_detail(tenant_id: str, run_id: str) -> dict | None:
     """Get a specific run by ID."""
     return await db.night_audit_runs.find_one(
-        {"id": run_id, "tenant_id": tenant_id}, {"_id": 0},
+        {"id": run_id, "tenant_id": tenant_id},
+        {"_id": 0},
     )
 
 
 async def get_run_items(
-    tenant_id: str, run_id: str, status_filter: str = None,
-    limit: int = 100, skip: int = 0,
+    tenant_id: str,
+    run_id: str,
+    status_filter: str = None,
+    limit: int = 100,
+    skip: int = 0,
 ) -> dict:
     """List items for a specific run."""
     query: dict[str, Any] = {"run_id": run_id, "tenant_id": tenant_id}
     if status_filter:
         query["status"] = status_filter
-    items = await db.night_audit_run_items.find(
-        query, {"_id": 0},
-    ).sort("created_at", 1).skip(skip).limit(limit).to_list(limit)
+    items = (
+        await db.night_audit_run_items.find(
+            query,
+            {"_id": 0},
+        )
+        .sort("created_at", 1)
+        .skip(skip)
+        .limit(limit)
+        .to_list(limit)
+    )
     total = await db.night_audit_run_items.count_documents(query)
     return {"items": items, "total": total, "limit": limit, "skip": skip}
 
@@ -1427,7 +1663,8 @@ async def get_health_metrics() -> dict[str, Any]:
     try:
         # Get any tenant's last successful close
         last_completed = await db.night_audit_runs.find_one(
-            {"status": S_COMPLETED}, {"_id": 0, "completed_at": 1, "business_date": 1, "tenant_id": 1},
+            {"status": S_COMPLETED},
+            {"_id": 0, "completed_at": 1, "business_date": 1, "tenant_id": 1},
             sort=[("completed_at", -1)],
         )
         running = await db.night_audit_runs.count_documents({"status": S_RUNNING})

@@ -8,6 +8,7 @@ Bu modül `shared_kernel` altında tutulur ki birden fazla domain (pms, spa,
 golf) cross-domain import yapmadan aynı yardımcıyı kullanabilsin. `domains/pms/
 pos_extensions/_idem.py` geriye dönük uyumluluk için buradan re-export eder.
 """
+
 from __future__ import annotations
 
 import logging
@@ -47,10 +48,7 @@ async def ensure_idem_index(collection, index_name: str | None = None) -> None:
             return
         # Otherwise: do NOT cache — next call retries. Surface a warning so
         # ops can see degraded atomicity.
-        logger.warning(
-            f"idem index ensure FAILED on {collection.name}: {exc!r} — "
-            f"atomic idempotency guarantee weakened; will retry on next request."
-        )
+        logger.warning(f"idem index ensure FAILED on {collection.name}: {exc!r} — atomic idempotency guarantee weakened; will retry on next request.")
         raise
 
 
@@ -121,8 +119,5 @@ async def ensure_compound_unique(
         if "already exists" in msg or "indexoptionsconflict" in msg or "exists with different options" in msg:
             _INDEXES_READY.add(cache_key)
             return
-        logger.warning(
-            f"compound unique index ensure FAILED on {collection.name} (keys={keys}): {exc!r} — "
-            f"atomicity guarantee weakened; will retry on next request."
-        )
+        logger.warning(f"compound unique index ensure FAILED on {collection.name} (keys={keys}): {exc!r} — atomicity guarantee weakened; will retry on next request.")
         raise

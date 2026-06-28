@@ -1,4 +1,5 @@
 """Sabre SynXis (HTNG 2024B over HTTPS) adapter."""
+
 from __future__ import annotations
 
 import logging
@@ -20,17 +21,14 @@ class SabreSynXisAdapter(BaseAdapter):
     def is_dry_run(self) -> bool:
         # Require ALL essential credentials before attempting live calls.
         c = self.config
-        return not (c.get("endpoint") and c.get("username")
-                    and c.get("password") and c.get("hotel_code"))
+        return not (c.get("endpoint") and c.get("username") and c.get("password") and c.get("hotel_code"))
 
     async def deliver(self, envelope: XchangeEnvelope) -> DeliveryResult:
         xml = serialize(envelope)
         excerpt = xml[:1024]
 
         if self.is_dry_run:
-            logger.info("[sabre_synxis] DRY-RUN %s tenant=%s msg=%s",
-                        envelope.message_type.value, envelope.tenant_id,
-                        envelope.message_id)
+            logger.info("[sabre_synxis] DRY-RUN %s tenant=%s msg=%s", envelope.message_type.value, envelope.tenant_id, envelope.message_id)
             return DeliveryResult(
                 ok=True,
                 dry_run=True,
@@ -56,8 +54,7 @@ class SabreSynXisAdapter(BaseAdapter):
                 auth=(self.config["username"], self.config.get("password", "")),
             )
         except EgressDenied as e:
-            return DeliveryResult(ok=False, error=f"egress_denied: {e}",
-                                  request_payload_excerpt=excerpt)
+            return DeliveryResult(ok=False, error=f"egress_denied: {e}", request_payload_excerpt=excerpt)
         except httpx.RequestError as e:
             return DeliveryResult(
                 ok=False,

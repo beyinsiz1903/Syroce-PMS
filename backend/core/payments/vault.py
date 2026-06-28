@@ -7,6 +7,7 @@ aninda cozulur; bellekte omru minimumdur ve ASLA loglanmaz.
 Mevcut AES-256-GCM alan sifrelemesi (vcc_cards) korunur; bu modul yalnizca
 cozumleme/maskeleme yardimcilarini ekler (additive, Zero Bloat).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -47,7 +48,7 @@ def parse_vault_card_ref(ref: str) -> str:
     if not ref or not isinstance(ref, str):
         raise VaultCardNotFound("gecersiz vault_card_ref")
     if ref.startswith(_REF_PREFIX):
-        return ref[len(_REF_PREFIX):]
+        return ref[len(_REF_PREFIX) :]
     return ref
 
 
@@ -77,17 +78,12 @@ class CardMaterial:
         self.holder = None
 
     def __repr__(self) -> str:
-        return (
-            f"CardMaterial(masked={self.masked!r}, card_type={self.card_type!r}, "
-            f"has_cvv={bool(self.cvv)})"
-        )
+        return f"CardMaterial(masked={self.masked!r}, card_type={self.card_type!r}, has_cvv={bool(self.cvv)})"
 
     __str__ = __repr__
 
 
-async def resolve_card_material(
-    db, *, tenant_id: str, vault_card_ref: str
-) -> CardMaterial:
+async def resolve_card_material(db, *, tenant_id: str, vault_card_ref: str) -> CardMaterial:
     """Kasa referansini cozup kart bilgisini dondurur (tenant-kapsamli).
 
     AES-256-GCM cozumleme yalnizca burada yapilir. Cagiran (adapter) sonucu
@@ -98,23 +94,15 @@ async def resolve_card_material(
         raise VaultCardNotFound("tenant_id zorunlu")
     card_id = parse_vault_card_ref(vault_card_ref)
 
-    doc = await db.vcc_cards.find_one(
-        {"id": card_id, "tenant_id": tenant_id}, {"_id": 0}
-    )
+    doc = await db.vcc_cards.find_one({"id": card_id, "tenant_id": tenant_id}, {"_id": 0})
     if not doc:
         raise VaultCardNotFound("kasa kart referansi bulunamadi")
 
     enc = get_field_encryption_service()
     pan = enc.decrypt_value(doc.get("card_number_enc", ""))
     expiry = enc.decrypt_value(doc.get("expiry_enc", ""))
-    holder = (
-        enc.decrypt_value(doc.get("card_holder_enc", ""))
-        if doc.get("card_holder_enc")
-        else None
-    )
-    cvv = (
-        enc.decrypt_value(doc.get("cvv_enc", "")) if doc.get("cvv_enc") else None
-    )
+    holder = enc.decrypt_value(doc.get("card_holder_enc", "")) if doc.get("card_holder_enc") else None
+    cvv = enc.decrypt_value(doc.get("cvv_enc", "")) if doc.get("cvv_enc") else None
 
     return CardMaterial(
         pan=pan,

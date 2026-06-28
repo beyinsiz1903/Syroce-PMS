@@ -14,6 +14,7 @@ numarasını üretir. Gönderim **fail-closed**'dur:
 Dış HTTP çağrısı SSRF'e karşı sabit (DNS-rebind güvenli + private-IP reddi)
 ``integrations.xchange.safety.safe_post_async`` üzerinden yapılır.
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,10 +41,7 @@ def kbs_test_mode() -> bool:
 
 def kbs_credentials_configured() -> bool:
     """Gerçek gönderim için gerekli ortam değişkenleri ayarlı mı?"""
-    return bool(
-        os.environ.get("KBS_API_URL", "").strip()
-        and os.environ.get("KBS_API_TOKEN", "").strip()
-    )
+    return bool(os.environ.get("KBS_API_URL", "").strip() and os.environ.get("KBS_API_TOKEN", "").strip())
 
 
 def kbs_dispatch_active() -> bool:
@@ -113,9 +111,7 @@ async def send_kbs_notification(payload: dict, action: str = "checkin") -> str:
         return ref
 
     if not kbs_credentials_configured():
-        raise KBSCredentialsMissing(
-            "KBS_API_URL / KBS_API_TOKEN ayarlı değil — gönderim yapılamaz"
-        )
+        raise KBSCredentialsMissing("KBS_API_URL / KBS_API_TOKEN ayarlı değil — gönderim yapılamaz")
 
     from integrations.xchange.safety import EgressDenied, safe_post_async
 
@@ -151,7 +147,5 @@ async def send_kbs_notification(payload: dict, action: str = "checkin") -> str:
 
     reference = _extract_reference(data)
     if not reference:
-        raise KBSSendError(
-            f"KBS yanıtında referans yok (HTTP {resp.status_code})"
-        )
+        raise KBSSendError(f"KBS yanıtında referans yok (HTTP {resp.status_code})")
     return reference

@@ -14,6 +14,7 @@ Design:
 Credentials are organized in CREDENTIAL_DEFINITIONS which serves as the
 single source of truth both for the UI and for the startup loader.
 """
+
 from __future__ import annotations
 
 import logging
@@ -46,110 +47,120 @@ COLLECTION = "integration_credentials"
 # key must match the exact os.environ variable used in the codebase.
 CREDENTIAL_DEFINITIONS: list[dict[str, Any]] = [
     # --- AI & LLM ---
-    {"key": "OPENAI_API_KEY", "name": "OpenAI API Key", "category": "ai",
-     "description": "ChatGPT / GPT-4 entegrasyonu için (sk-... ile başlar).",
-     "doc_url": "https://platform.openai.com/api-keys"},
-    {"key": "GEMINI_API_KEY", "name": "Google Gemini API Key", "category": "ai",
-     "description": "Google Gemini modelleri için.",
-     "doc_url": "https://aistudio.google.com/apikey"},
-    {"key": "ANTHROPIC_API_KEY", "name": "Anthropic Claude API Key", "category": "ai",
-     "description": "Claude modelleri için (opsiyonel fallback).",
-     "doc_url": "https://console.anthropic.com/settings/keys"},
-
+    {"key": "OPENAI_API_KEY", "name": "OpenAI API Key", "category": "ai", "description": "ChatGPT / GPT-4 entegrasyonu için (sk-... ile başlar).", "doc_url": "https://platform.openai.com/api-keys"},
+    {"key": "GEMINI_API_KEY", "name": "Google Gemini API Key", "category": "ai", "description": "Google Gemini modelleri için.", "doc_url": "https://aistudio.google.com/apikey"},
+    {
+        "key": "ANTHROPIC_API_KEY",
+        "name": "Anthropic Claude API Key",
+        "category": "ai",
+        "description": "Claude modelleri için (opsiyonel fallback).",
+        "doc_url": "https://console.anthropic.com/settings/keys",
+    },
     # --- Email ---
-    {"key": "RESEND_API_KEY", "name": "Resend API Key", "category": "email",
-     "description": "Email gönderimi (şifre sıfırlama, bildirimler).",
-     "doc_url": "https://resend.com/api-keys"},
-    {"key": "RESEND_WEBHOOK_SECRET", "name": "Resend Webhook Secret", "category": "email",
-     "description": "Resend → bizim sistem teslimat/bounce/click webhook'u için HMAC imza anahtarı (Mailing kampanyaları için zorunlu).",
-     "doc_url": "https://resend.com/webhooks"},
-    {"key": "MAIL_PROVIDER", "name": "Mail Provider", "category": "email",
-     "description": "Aktif mail sağlayıcı: 'resend' veya 'smtp'.",
-     "doc_url": ""},
-
+    {"key": "RESEND_API_KEY", "name": "Resend API Key", "category": "email", "description": "Email gönderimi (şifre sıfırlama, bildirimler).", "doc_url": "https://resend.com/api-keys"},
+    {
+        "key": "RESEND_WEBHOOK_SECRET",
+        "name": "Resend Webhook Secret",
+        "category": "email",
+        "description": "Resend → bizim sistem teslimat/bounce/click webhook'u için HMAC imza anahtarı (Mailing kampanyaları için zorunlu).",
+        "doc_url": "https://resend.com/webhooks",
+    },
+    {"key": "MAIL_PROVIDER", "name": "Mail Provider", "category": "email", "description": "Aktif mail sağlayıcı: 'resend' veya 'smtp'.", "doc_url": ""},
     # --- Monitoring & Observability ---
-    {"key": "SENTRY_DSN", "name": "Sentry DSN", "category": "monitoring",
-     "description": "Hata izleme için Sentry DSN URL'i.",
-     "doc_url": "https://sentry.io/settings/projects/"},
-    {"key": "ALERT_WEBHOOK_URL", "name": "Alert Webhook URL", "category": "monitoring",
-     "description": "Uyarı webhook endpoint'i (Slack/Discord/Generic).",
-     "doc_url": ""},
-    {"key": "OPS_WEBHOOK_URL", "name": "Ops Webhook URL", "category": "monitoring",
-     "description": "Operasyonel olayların webhook endpoint'i.",
-     "doc_url": ""},
-
+    {"key": "SENTRY_DSN", "name": "Sentry DSN", "category": "monitoring", "description": "Hata izleme için Sentry DSN URL'i.", "doc_url": "https://sentry.io/settings/projects/"},
+    {"key": "ALERT_WEBHOOK_URL", "name": "Alert Webhook URL", "category": "monitoring", "description": "Uyarı webhook endpoint'i (Slack/Discord/Generic).", "doc_url": ""},
+    {"key": "OPS_WEBHOOK_URL", "name": "Ops Webhook URL", "category": "monitoring", "description": "Operasyonel olayların webhook endpoint'i.", "doc_url": ""},
     # --- Infrastructure ---
-    {"key": "MONGO_ATLAS_URI", "name": "MongoDB Atlas URI", "category": "infrastructure",
-     "description": "Prod MongoDB bağlantı string'i (mongodb+srv://...).",
-     "doc_url": "https://www.mongodb.com/cloud/atlas"},
-    {"key": "PUBLIC_APP_URL", "name": "Public App URL", "category": "infrastructure",
-     "description": "Misafire/üçüncü taraflara dönen mutlak URL'ler için tabanı (örn. https://syroce-pms.com). Resend webhook callback, QR link, e-posta CTA'ları bunu kullanır.",
-     "doc_url": ""},
-
+    {
+        "key": "MONGO_ATLAS_URI",
+        "name": "MongoDB Atlas URI",
+        "category": "infrastructure",
+        "description": "Prod MongoDB bağlantı string'i (mongodb+srv://...).",
+        "doc_url": "https://www.mongodb.com/cloud/atlas",
+    },
+    {
+        "key": "PUBLIC_APP_URL",
+        "name": "Public App URL",
+        "category": "infrastructure",
+        "description": "Misafire/üçüncü taraflara dönen mutlak URL'ler için tabanı (örn. https://syroce-pms.com). Resend webhook callback, QR link, e-posta CTA'ları bunu kullanır.",
+        "doc_url": "",
+    },
     # --- Integrations ---
-    {"key": "QUICKID_SERVICE_KEY", "name": "Quick-ID Service Key", "category": "integrations",
-     "description": "Quick-ID servisine servis-arası kimlik doğrulama anahtarı.",
-     "doc_url": ""},
-    {"key": "MARKETPLACE_ADMIN_TOKEN", "name": "Marketplace Admin Token", "category": "integrations",
-     "description": "B2B marketplace yönetim token'ı.",
-     "doc_url": ""},
-    {"key": "AFSADAKAT_BASE_URL", "name": "AF Sadakat Base URL", "category": "integrations",
-     "description": "AF Sadakat API tabanı (örn. https://api.afsadakat.com). Boş ise outbound çağrılar devre dışı kalır.",
-     "doc_url": ""},
-    {"key": "AFSADAKAT_ADMIN_TOKEN", "name": "AF Sadakat Admin Token", "category": "integrations",
-     "description": "AF Sadakat programı yönetim token'ı.",
-     "doc_url": ""},
-    {"key": "AFSADAKAT_SSO_SECRET", "name": "AF Sadakat SSO Secret", "category": "integrations",
-     "description": "AF Sadakat tek oturum açma secret'ı.",
-     "doc_url": ""},
-
+    {"key": "QUICKID_SERVICE_KEY", "name": "Quick-ID Service Key", "category": "integrations", "description": "Quick-ID servisine servis-arası kimlik doğrulama anahtarı.", "doc_url": ""},
+    {"key": "MARKETPLACE_ADMIN_TOKEN", "name": "Marketplace Admin Token", "category": "integrations", "description": "B2B marketplace yönetim token'ı.", "doc_url": ""},
+    {
+        "key": "AFSADAKAT_BASE_URL",
+        "name": "AF Sadakat Base URL",
+        "category": "integrations",
+        "description": "AF Sadakat API tabanı (örn. https://api.afsadakat.com). Boş ise outbound çağrılar devre dışı kalır.",
+        "doc_url": "",
+    },
+    {"key": "AFSADAKAT_ADMIN_TOKEN", "name": "AF Sadakat Admin Token", "category": "integrations", "description": "AF Sadakat programı yönetim token'ı.", "doc_url": ""},
+    {"key": "AFSADAKAT_SSO_SECRET", "name": "AF Sadakat SSO Secret", "category": "integrations", "description": "AF Sadakat tek oturum açma secret'ı.", "doc_url": ""},
     # --- Payment ---
-    {"key": "IYZICO_BASE_URL", "name": "Iyzico Base URL", "category": "payment",
-     "description": "Iyzico API tabanı — sandbox: https://sandbox-api.iyzipay.com, prod: https://api.iyzipay.com",
-     "doc_url": "https://dev.iyzipay.com/tr"},
-    {"key": "IYZICO_API_KEY", "name": "Iyzico API Key", "category": "payment",
-     "description": "Iyzico merchant API key (panel → Ayarlar → API anahtarları).",
-     "doc_url": "https://merchant.iyzipay.com/login"},
-    {"key": "IYZICO_SECRET_KEY", "name": "Iyzico Secret Key", "category": "payment",
-     "description": "Iyzico merchant secret key (API key ile aynı sayfada).",
-     "doc_url": "https://merchant.iyzipay.com/login"},
-    {"key": "STRIPE_API_KEY", "name": "Stripe API Key", "category": "payment",
-     "description": "Stripe gizli API anahtarı (sk_live_... veya sk_test_...). Yurt dışı kart kabulü için.",
-     "doc_url": "https://dashboard.stripe.com/apikeys"},
-    {"key": "STRIPE_WEBHOOK_SECRET", "name": "Stripe Webhook Secret", "category": "payment",
-     "description": "Stripe → bizim endpoint webhook imza secret'ı (whsec_...).",
-     "doc_url": "https://dashboard.stripe.com/webhooks"},
-
+    {
+        "key": "IYZICO_BASE_URL",
+        "name": "Iyzico Base URL",
+        "category": "payment",
+        "description": "Iyzico API tabanı — sandbox: https://sandbox-api.iyzipay.com, prod: https://api.iyzipay.com",
+        "doc_url": "https://dev.iyzipay.com/tr",
+    },
+    {
+        "key": "IYZICO_API_KEY",
+        "name": "Iyzico API Key",
+        "category": "payment",
+        "description": "Iyzico merchant API key (panel → Ayarlar → API anahtarları).",
+        "doc_url": "https://merchant.iyzipay.com/login",
+    },
+    {
+        "key": "IYZICO_SECRET_KEY",
+        "name": "Iyzico Secret Key",
+        "category": "payment",
+        "description": "Iyzico merchant secret key (API key ile aynı sayfada).",
+        "doc_url": "https://merchant.iyzipay.com/login",
+    },
+    {
+        "key": "STRIPE_API_KEY",
+        "name": "Stripe API Key",
+        "category": "payment",
+        "description": "Stripe gizli API anahtarı (sk_live_... veya sk_test_...). Yurt dışı kart kabulü için.",
+        "doc_url": "https://dashboard.stripe.com/apikeys",
+    },
+    {
+        "key": "STRIPE_WEBHOOK_SECRET",
+        "name": "Stripe Webhook Secret",
+        "category": "payment",
+        "description": "Stripe → bizim endpoint webhook imza secret'ı (whsec_...).",
+        "doc_url": "https://dashboard.stripe.com/webhooks",
+    },
     # --- AWS / KMS ---
-    {"key": "AWS_ACCESS_KEY_ID", "name": "AWS Access Key ID", "category": "aws",
-     "description": "AWS IAM access key (S3, KMS için).",
-     "doc_url": "https://console.aws.amazon.com/iam/home#/security_credentials"},
-    {"key": "AWS_SECRET_ACCESS_KEY", "name": "AWS Secret Access Key", "category": "aws",
-     "description": "AWS IAM secret access key.",
-     "doc_url": "https://console.aws.amazon.com/iam/home#/security_credentials"},
-    {"key": "AWS_KMS_KEY_ARN", "name": "AWS KMS Key ARN", "category": "aws",
-     "description": "Şifreleme için kullanılan KMS key ARN.",
-     "doc_url": ""},
-    {"key": "AWS_REGION", "name": "AWS Region", "category": "aws",
-     "description": "AWS bölgesi (örn. eu-central-1).",
-     "doc_url": ""},
-
+    {
+        "key": "AWS_ACCESS_KEY_ID",
+        "name": "AWS Access Key ID",
+        "category": "aws",
+        "description": "AWS IAM access key (S3, KMS için).",
+        "doc_url": "https://console.aws.amazon.com/iam/home#/security_credentials",
+    },
+    {
+        "key": "AWS_SECRET_ACCESS_KEY",
+        "name": "AWS Secret Access Key",
+        "category": "aws",
+        "description": "AWS IAM secret access key.",
+        "doc_url": "https://console.aws.amazon.com/iam/home#/security_credentials",
+    },
+    {"key": "AWS_KMS_KEY_ARN", "name": "AWS KMS Key ARN", "category": "aws", "description": "Şifreleme için kullanılan KMS key ARN.", "doc_url": ""},
+    {"key": "AWS_REGION", "name": "AWS Region", "category": "aws", "description": "AWS bölgesi (örn. eu-central-1).", "doc_url": ""},
     # --- CapX B2B Network ---
-    {"key": "CAPX_BASE_URL", "name": "CapX Base URL", "category": "capx",
-     "description": "CapX API tabanı (örn. https://api.capx.com). Sandbox için Replit dev URL'i.",
-     "doc_url": ""},
-    {"key": "CAPX_API_KEY", "name": "CapX API Key", "category": "capx",
-     "description": "CapX panel → 'PMS Bağlan' ile alınan ham API anahtarı (Bearer).",
-     "doc_url": ""},
-    {"key": "CAPX_WEBHOOK_SECRET", "name": "CapX Webhook Secret", "category": "capx",
-     "description": "Reservation event push için HMAC SHA-256 imza anahtarı.",
-     "doc_url": ""},
+    {"key": "CAPX_BASE_URL", "name": "CapX Base URL", "category": "capx", "description": "CapX API tabanı (örn. https://api.capx.com). Sandbox için Replit dev URL'i.", "doc_url": ""},
+    {"key": "CAPX_API_KEY", "name": "CapX API Key", "category": "capx", "description": "CapX panel → 'PMS Bağlan' ile alınan ham API anahtarı (Bearer).", "doc_url": ""},
+    {"key": "CAPX_WEBHOOK_SECRET", "name": "CapX Webhook Secret", "category": "capx", "description": "Reservation event push için HMAC SHA-256 imza anahtarı.", "doc_url": ""},
 ]
 
 _KEYS_BY_NAME: dict[str, dict[str, Any]] = {c["key"]: c for c in CREDENTIAL_DEFINITIONS}
 
 
 # ── Pydantic models ──────────────────────────────────────────────────
+
 
 class CredentialUpsert(BaseModel):
     key: str = Field(..., min_length=1, max_length=128)
@@ -186,6 +197,7 @@ async def _load_db_records() -> dict[str, dict[str, Any]]:
 
 # ── Endpoints ────────────────────────────────────────────────────────
 
+
 @router.get("/catalog")
 async def list_catalog():
     """List every known credential slot with current is_set status."""
@@ -206,27 +218,47 @@ async def list_catalog():
         # Startup hydration rule = "pre-existing env wins over DB". So if env_val exists
         # and differs from db_plain, the active source is env.
         if env_val and (not db_plain or env_val != db_plain):
-            items.append(CredentialStatus(
-                key=key, name=defn["name"], category=defn["category"],
-                description=defn["description"], doc_url=defn.get("doc_url", ""),
-                is_set=True, masked_value=_mask(env_val), source="env",
-                updated_at=rec.get("updated_at") if rec else None,
-                updated_by=rec.get("updated_by") if rec else None,
-            ))
+            items.append(
+                CredentialStatus(
+                    key=key,
+                    name=defn["name"],
+                    category=defn["category"],
+                    description=defn["description"],
+                    doc_url=defn.get("doc_url", ""),
+                    is_set=True,
+                    masked_value=_mask(env_val),
+                    source="env",
+                    updated_at=rec.get("updated_at") if rec else None,
+                    updated_by=rec.get("updated_by") if rec else None,
+                )
+            )
         elif db_plain:
-            items.append(CredentialStatus(
-                key=key, name=defn["name"], category=defn["category"],
-                description=defn["description"], doc_url=defn.get("doc_url", ""),
-                is_set=True, masked_value=_mask(db_plain), source="db",
-                updated_at=rec.get("updated_at"),
-                updated_by=rec.get("updated_by"),
-            ))
+            items.append(
+                CredentialStatus(
+                    key=key,
+                    name=defn["name"],
+                    category=defn["category"],
+                    description=defn["description"],
+                    doc_url=defn.get("doc_url", ""),
+                    is_set=True,
+                    masked_value=_mask(db_plain),
+                    source="db",
+                    updated_at=rec.get("updated_at"),
+                    updated_by=rec.get("updated_by"),
+                )
+            )
         else:
-            items.append(CredentialStatus(
-                key=key, name=defn["name"], category=defn["category"],
-                description=defn["description"], doc_url=defn.get("doc_url", ""),
-                is_set=False, source="none",
-            ))
+            items.append(
+                CredentialStatus(
+                    key=key,
+                    name=defn["name"],
+                    category=defn["category"],
+                    description=defn["description"],
+                    doc_url=defn.get("doc_url", ""),
+                    is_set=False,
+                    source="none",
+                )
+            )
     return {"items": [i.model_dump() for i in items], "count": len(items)}
 
 
@@ -248,12 +280,14 @@ async def upsert_credential(payload: CredentialUpsert, current_user=Depends(get_
     updated_by = getattr(current_user, "email", None) or getattr(current_user, "username", None) or "super_admin"
     await db[COLLECTION].update_one(
         {"key": payload.key},
-        {"$set": {
-            "key": payload.key,
-            "value_encrypted": encrypted,
-            "updated_at": now,
-            "updated_by": updated_by,
-        }},
+        {
+            "$set": {
+                "key": payload.key,
+                "value_encrypted": encrypted,
+                "updated_at": now,
+                "updated_by": updated_by,
+            }
+        },
         upsert=True,
     )
     # Runtime inject — existing os.getenv(...) call-sites pick it up immediately
@@ -275,6 +309,7 @@ async def delete_credential(key: str):
 
 
 # ── Startup hook (called from server.py) ─────────────────────────────
+
 
 async def load_credentials_to_env() -> int:
     """Hydrate os.environ from encrypted DB records at startup.

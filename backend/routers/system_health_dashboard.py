@@ -2,6 +2,7 @@
 System Health — Role-Based Data Shaping API (Enriched)
 Returns real system health data scoped by user role (GM, Admin, Superadmin).
 """
+
 import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -16,10 +17,13 @@ from models.schemas import User
 try:
     from cache_manager import cached
 except ImportError:  # pragma: no cover
+
     def cached(ttl=300, key_prefix=""):
         def decorator(func):
             return func
+
         return decorator
+
 
 router = APIRouter(prefix="/api/system-health", tags=["System Health"])
 
@@ -52,10 +56,12 @@ async def _get_security_summary(tenant_id: str) -> dict[str, Any]:
         # Perf: 2 sıralı count → tek gather
         violations, recent = await asyncio.gather(
             db.tenant_guard_violations.count_documents({"expected_tenant_id": tenant_id}),
-            db.tenant_guard_violations.count_documents({
-                "expected_tenant_id": tenant_id,
-                "timestamp": {"$gte": (datetime.now(UTC) - timedelta(hours=24)).isoformat()},
-            }),
+            db.tenant_guard_violations.count_documents(
+                {
+                    "expected_tenant_id": tenant_id,
+                    "timestamp": {"$gte": (datetime.now(UTC) - timedelta(hours=24)).isoformat()},
+                }
+            ),
         )
     return {
         "violations_count": violations,
@@ -65,17 +71,13 @@ async def _get_security_summary(tenant_id: str) -> dict[str, Any]:
 
 
 async def _get_drift_summary(tenant_id: str) -> dict[str, Any]:
-    latest = await db.drift_scan_results.find_one(
-        {"tenant_id": tenant_id}, {"_id": 0}, sort=[("timestamp", -1)]
-    )
+    latest = await db.drift_scan_results.find_one({"tenant_id": tenant_id}, {"_id": 0}, sort=[("timestamp", -1)])
     if latest:
         return {
             "drift_count": latest.get("drifts_found", 0),
             "critical_drifts": latest.get("critical_drifts", 0),
             "last_scan_at": latest.get("scanned_at"),
-            "status": "critical" if latest.get("critical_drifts", 0) > 0 else (
-                "warning" if latest.get("drifts_found", 0) > 0 else "healthy"
-            ),
+            "status": "critical" if latest.get("critical_drifts", 0) > 0 else ("warning" if latest.get("drifts_found", 0) > 0 else "healthy"),
         }
     return {"drift_count": 0, "critical_drifts": 0, "last_scan_at": None, "status": "healthy"}
 
@@ -83,10 +85,12 @@ async def _get_drift_summary(tenant_id: str) -> dict[str, Any]:
 async def _get_worker_health(tenant_id: str) -> dict[str, Any]:
     # Perf: 2 sıralı count → tek gather
     recent_activity, dl_total = await asyncio.gather(
-        db.task_queue.count_documents({
-            "status": "completed",
-            "started_at": {"$gte": (datetime.now(UTC) - timedelta(minutes=10)).isoformat()},
-        }),
+        db.task_queue.count_documents(
+            {
+                "status": "completed",
+                "started_at": {"$gte": (datetime.now(UTC) - timedelta(minutes=10)).isoformat()},
+            }
+        ),
         db.dead_letter_tasks.count_documents({}),
     )
     return {
@@ -98,9 +102,7 @@ async def _get_worker_health(tenant_id: str) -> dict[str, Any]:
 
 
 async def _get_night_audit_status(tenant_id: str) -> dict[str, Any]:
-    last_audit = await db.night_audit_logs.find_one(
-        {"tenant_id": tenant_id}, sort=[("timestamp", -1)]
-    )
+    last_audit = await db.night_audit_logs.find_one({"tenant_id": tenant_id}, sort=[("timestamp", -1)])
     if last_audit:
         return {
             "last_audit_status": last_audit.get("status", "unknown"),

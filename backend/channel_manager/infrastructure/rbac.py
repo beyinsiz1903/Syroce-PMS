@@ -13,6 +13,7 @@ Restricted roles (read-only or no access):
 
 Unauthorized attempts are logged via audit trail.
 """
+
 import logging
 from datetime import UTC, datetime
 
@@ -49,7 +50,10 @@ async def enforce_credential_access(
     if user_role not in allowed_roles:
         logger.warning(
             "RBAC denied: user=%s role=%s action=%s connector=%s",
-            user_id, user_role, action, connector_id,
+            user_id,
+            user_role,
+            action,
+            connector_id,
         )
         # Audit unauthorized attempt
         if repo:
@@ -74,5 +78,7 @@ async def enforce_credential_access(
 
     logger.debug(
         "RBAC allowed: user=%s role=%s action=%s",
-        user_id, user_role, action,
+        user_id,
+        user_role,
+        action,
     )

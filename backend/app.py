@@ -5,6 +5,7 @@ Creates the FastAPI instance and mounts static files.
 This is the single source of truth for the application object.
 server.py imports from here and orchestrates bootstrap.
 """
+
 import asyncio
 import os
 from contextlib import asynccontextmanager
@@ -49,6 +50,7 @@ def register_shutdown(fn):
 @asynccontextmanager
 async def _lifespan(application: FastAPI):
     import logging as _logging
+
     _log = _logging.getLogger(__name__)
 
     # Replit autoscale (and similar PaaS) wait ~60s for the listening port
@@ -123,12 +125,31 @@ def _unique_operation_id(route: "APIRoute") -> str:
 # hero imagery instead of a white screen with broken images. API/WS/GraphQL
 # paths are excluded explicitly (see _warmup_gate), so this only widens the
 # public static surface.
-_WARMUP_STATIC_EXT = frozenset({
-    ".js", ".mjs", ".css", ".map",
-    ".svg", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".ico", ".avif",
-    ".woff", ".woff2", ".ttf", ".eot", ".otf",
-    ".json", ".webmanifest", ".txt", ".xml",
-})
+_WARMUP_STATIC_EXT = frozenset(
+    {
+        ".js",
+        ".mjs",
+        ".css",
+        ".map",
+        ".svg",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".gif",
+        ".ico",
+        ".avif",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".eot",
+        ".otf",
+        ".json",
+        ".webmanifest",
+        ".txt",
+        ".xml",
+    }
+)
 
 
 class _CachedStaticFiles(StaticFiles):
@@ -236,26 +257,12 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
             #     with broken images. API/WS/GraphQL stay gated below (503,
             #     fail-closed) until bootstrap completes, so no data is
             #     served early.
-            _is_dynamic = (
-                path.startswith("/api")
-                or path.startswith("/graphql")
-                or path.startswith("/ws")
-            )
+            _is_dynamic = path.startswith("/api") or path.startswith("/graphql") or path.startswith("/ws")
             _, _ext = os.path.splitext(path)
-            _spa_static = not _is_dynamic and (
-                path.startswith("/js/")
-                or path.startswith("/assets/")
-                or path.startswith("/logos/")
-                or path.startswith("/landing/")
-                or _ext in _WARMUP_STATIC_EXT
-            )
-            if not (
-                path.startswith("/health")
-                or path == "/favicon.ico"
-                or path == "/"
-                or _spa_static
-            ):
+            _spa_static = not _is_dynamic and (path.startswith("/js/") or path.startswith("/assets/") or path.startswith("/logos/") or path.startswith("/landing/") or _ext in _WARMUP_STATIC_EXT)
+            if not (path.startswith("/health") or path == "/favicon.ico" or path == "/" or _spa_static):
                 from fastapi.responses import JSONResponse
+
                 return JSONResponse(
                     {"status": "starting", "detail": "Server is warming up"},
                     status_code=503,
@@ -311,6 +318,7 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
     @application.get("/health/ready", include_in_schema=False)
     async def readiness_check():
         from fastapi.responses import JSONResponse
+
         try:
             from bootstrap.phases.d_perf import BOOT_READY
         except Exception:
@@ -320,6 +328,7 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
         try:
             # Hızlı DB ping (~1-2 ms) — Atlas erişilemiyorsa 503
             from core.database import _raw_db
+
             await asyncio.wait_for(_raw_db.command("ping"), timeout=2.0)
         except Exception as e:
             return JSONResponse({"status": "db_unavailable", "error": str(e)[:120]}, status_code=503)
@@ -341,6 +350,7 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
         zip_path = _backend_dir / "Syroce_PMS_AppStore_Screenshots.zip"
         if not zip_path.exists():
             from fastapi import HTTPException
+
             raise HTTPException(status_code=404, detail="Screenshots ZIP not found")
         return FileResponse(
             path=str(zip_path),
@@ -355,6 +365,7 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
         application.mount("/api/uploads", StaticFiles(directory=str(upload_dir)), name="uploads")
     except (PermissionError, OSError) as e:
         import logging
+
         logging.getLogger(__name__).warning("Upload static mount failed (%s): %s", upload_dir, e)
 
     # ── Frontend SPA static serving (combined deployment) ───────────
@@ -447,11 +458,7 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
                 servers=application.servers,
             )
             if os.environ.get("ENABLE_SETUP_ENDPOINTS", "").strip() != "1":
-                schema["paths"] = {
-                    path: ops
-                    for path, ops in schema.get("paths", {}).items()
-                    if path not in _SETUP_HIDDEN_PATHS
-                }
+                schema["paths"] = {path: ops for path, ops in schema.get("paths", {}).items() if path not in _SETUP_HIDDEN_PATHS}
             application.openapi_schema = schema
         return application.openapi_schema
 

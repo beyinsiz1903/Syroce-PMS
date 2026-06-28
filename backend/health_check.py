@@ -2,6 +2,7 @@
 Comprehensive Health Check System
 Kubernetes/Docker ready health endpoints
 """
+
 import logging
 import os
 from datetime import UTC, datetime
@@ -47,16 +48,17 @@ def _get_redis(request: Request):
     raw = getattr(app.state, "redis_client", None)
     return raw, ("redis" if raw is not None else None)
 
+
 async def check_mongodb(db) -> dict[str, Any]:
     """Check MongoDB connectivity and performance"""
     try:
         start_time = datetime.utcnow()
 
         # Ping database
-        await db.command('ping')
+        await db.command("ping")
 
         # Get server status
-        server_status = await db.command('serverStatus')
+        server_status = await db.command("serverStatus")
 
         response_time = (datetime.utcnow() - start_time).total_seconds() * 1000
 
@@ -64,14 +66,12 @@ async def check_mongodb(db) -> dict[str, Any]:
             "status": "healthy",
             "response_time_ms": round(response_time, 2),
             "connections": server_status.get("connections", {}).get("current", 0),
-            "uptime_seconds": server_status.get("uptime", 0)
+            "uptime_seconds": server_status.get("uptime", 0),
         }
     except Exception as e:
         logger.error(f"MongoDB health check failed: {e}")
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        return {"status": "unhealthy", "error": str(e)}
+
 
 async def check_redis(redis_client: redis.Redis) -> dict[str, Any]:
     """Check Redis connectivity and performance"""
@@ -91,47 +91,40 @@ async def check_redis(redis_client: redis.Redis) -> dict[str, Any]:
             "response_time_ms": round(response_time, 2),
             "connected_clients": info.get("connected_clients", 0),
             "used_memory": info.get("used_memory_human", "N/A"),
-            "uptime_seconds": info.get("uptime_in_seconds", 0)
+            "uptime_seconds": info.get("uptime_in_seconds", 0),
         }
     except Exception as e:
         logger.error(f"Redis health check failed: {e}")
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        return {"status": "unhealthy", "error": str(e)}
+
 
 def check_system_resources() -> dict[str, Any]:
     """Check system resources"""
     try:
         cpu_percent = psutil.cpu_percent(interval=0)  # Instant reading, no wait
         memory = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
+        disk = psutil.disk_usage("/")
 
         return {
             "status": "healthy",
-            "cpu": {
-                "usage_percent": cpu_percent,
-                "status": "ok" if cpu_percent < 80 else "warning" if cpu_percent < 95 else "critical"
-            },
+            "cpu": {"usage_percent": cpu_percent, "status": "ok" if cpu_percent < 80 else "warning" if cpu_percent < 95 else "critical"},
             "memory": {
                 "total_gb": round(memory.total / (1024**3), 2),
                 "used_gb": round(memory.used / (1024**3), 2),
                 "usage_percent": memory.percent,
-                "status": "ok" if memory.percent < 80 else "warning" if memory.percent < 95 else "critical"
+                "status": "ok" if memory.percent < 80 else "warning" if memory.percent < 95 else "critical",
             },
             "disk": {
                 "total_gb": round(disk.total / (1024**3), 2),
                 "used_gb": round(disk.used / (1024**3), 2),
                 "usage_percent": disk.percent,
-                "status": "ok" if disk.percent < 80 else "warning" if disk.percent < 95 else "critical"
-            }
+                "status": "ok" if disk.percent < 80 else "warning" if disk.percent < 95 else "critical",
+            },
         }
     except Exception as e:
         logger.error(f"System resource check failed: {e}")
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        return {"status": "unhealthy", "error": str(e)}
+
 
 @health_router.get("/")
 async def health_check_simple():
@@ -139,11 +132,8 @@ async def health_check_simple():
     Simple health check endpoint
     Returns 200 if service is up
     """
-    return {
-        "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
-        "service": "hotel_pms"
-    }
+    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat(), "service": "hotel_pms"}
+
 
 @health_router.get("/liveness")
 async def liveness_probe():
@@ -151,11 +141,8 @@ async def liveness_probe():
     Kubernetes liveness probe
     Checks if application is running
     """
-    return Response(
-        content="OK",
-        status_code=status.HTTP_200_OK,
-        media_type="text/plain"
-    )
+    return Response(content="OK", status_code=status.HTTP_200_OK, media_type="text/plain")
+
 
 @health_router.get("/readiness")
 async def readiness_probe(request: Request):
@@ -192,11 +179,8 @@ async def readiness_probe(request: Request):
 
     status_code = status.HTTP_200_OK if all_healthy else status.HTTP_503_SERVICE_UNAVAILABLE
 
-    return Response(
-        content="OK" if all_healthy else "NOT_READY",
-        status_code=status_code,
-        media_type="text/plain"
-    )
+    return Response(content="OK" if all_healthy else "NOT_READY", status_code=status_code, media_type="text/plain")
+
 
 @health_router.get("/detailed")
 async def detailed_health_check(request: Request):
@@ -236,13 +220,7 @@ async def detailed_health_check(request: Request):
     # Legacy optimization_endpoints module was removed; capability now reported as N/A.
     checks["optimization"] = {"status": "not_available"}
 
-    response = {
-        "status": overall_status,
-        "timestamp": datetime.utcnow().isoformat(),
-        "service": "hotel_pms",
-        "version": "1.0.0",
-        "checks": checks
-    }
+    response = {"status": overall_status, "timestamp": datetime.utcnow().isoformat(), "service": "hotel_pms", "version": "1.0.0", "checks": checks}
 
     status_code = status.HTTP_200_OK if overall_status == "healthy" else status.HTTP_503_SERVICE_UNAVAILABLE
 
@@ -251,6 +229,7 @@ async def detailed_health_check(request: Request):
     # of ``true`` — which broke strict JSON clients and any downstream
     # parser).
     from fastapi.responses import ORJSONResponse
+
     return ORJSONResponse(content=response, status_code=status_code)
 
 
@@ -295,11 +274,7 @@ async def startup_probe():
     Checks if application has started successfully
     """
     # Simple check - if this endpoint responds, app has started
-    return Response(
-        content="STARTED",
-        status_code=status.HTTP_200_OK,
-        media_type="text/plain"
-    )
+    return Response(content="STARTED", status_code=status.HTTP_200_OK, media_type="text/plain")
 
 
 @health_router.get("/deep")
@@ -385,10 +360,12 @@ async def deep_health_check(request: Request):
         failed = await db_inst.outbox_events.count_documents({"status": "failed"})
 
         cutoff_24h = (datetime.utcnow() - __import__("datetime").timedelta(hours=24)).isoformat()
-        processed_24h = await db_inst.outbox_events.count_documents({
-            "status": "processed",
-            "processed_at": {"$gte": cutoff_24h},
-        })
+        processed_24h = await db_inst.outbox_events.count_documents(
+            {
+                "status": "processed",
+                "processed_at": {"$gte": cutoff_24h},
+            }
+        )
 
         oldest_pending = await db_inst.outbox_events.find_one(
             {"status": {"$in": ["pending", "retry"]}},
@@ -444,6 +421,7 @@ async def deep_health_check(request: Request):
     # ── NA-001/NA-002: Night audit (hardened) ──
     try:
         from core.night_audit_hardened import get_health_metrics
+
         na_metrics = await get_health_metrics()
         na_status = "ok"
         if na_metrics.get("blocked_count", 0) > 0 or na_metrics.get("partial_recovery_count", 0) > 0:
@@ -523,6 +501,7 @@ async def deep_health_check(request: Request):
     # signal. This does NOT gate the readiness probe (live traffic stays up).
     try:
         from security.field_encryption import get_hash_index_health
+
         hi = get_hash_index_health()
         if not hi.get("verified"):
             result["encrypted_hash_indexes"] = {"status": "unknown", **hi}

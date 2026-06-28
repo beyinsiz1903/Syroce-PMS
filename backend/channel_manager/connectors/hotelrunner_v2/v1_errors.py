@@ -1,4 +1,5 @@
 """Compatibility alias — use connector_errors instead."""
+
 from .connector_errors import (  # noqa: F401
     AcknowledgementError,
     AuthenticationError,

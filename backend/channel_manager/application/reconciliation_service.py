@@ -14,6 +14,7 @@ Issue Types:
 Severity: critical > high > medium > low
 Lifecycle: open -> investigating -> retrying -> resolved | dismissed
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -51,7 +52,10 @@ class ReconciliationService:
     # ------------------------------------------------------------------ #
 
     async def run_reconciliation(
-        self, tenant_id: str, connector_id: str, actor_id: str | None = None,
+        self,
+        tenant_id: str,
+        connector_id: str,
+        actor_id: str | None = None,
     ) -> dict[str, Any]:
         """Run a full reconciliation check for a connector."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
@@ -76,8 +80,11 @@ class ReconciliationService:
 
         # Audit
         await self._audit(
-            tenant_id, property_id, connector_id,
-            AuditAction.RECONCILIATION_RUN, actor_id,
+            tenant_id,
+            property_id,
+            connector_id,
+            AuditAction.RECONCILIATION_RUN,
+            actor_id,
             {"issues_found": len(issues_found)},
         )
 
@@ -102,8 +109,11 @@ class ReconciliationService:
     # ------------------------------------------------------------------ #
 
     async def get_issues(
-        self, tenant_id: str, connector_id: str | None = None,
-        status: str = "open", limit: int = 100,
+        self,
+        tenant_id: str,
+        connector_id: str | None = None,
+        status: str = "open",
+        limit: int = 100,
     ) -> list[dict[str, Any]]:
         return await self._repo.get_reconciliation_issues(tenant_id, connector_id, status, limit)
 
@@ -111,8 +121,11 @@ class ReconciliationService:
         return await self._repo.get_reconciliation_issue(tenant_id, issue_id)
 
     async def update_issue_status(
-        self, tenant_id: str, issue_id: str,
-        new_status: str, actor_id: str | None = None,
+        self,
+        tenant_id: str,
+        issue_id: str,
+        new_status: str,
+        actor_id: str | None = None,
     ) -> dict[str, Any]:
         """Transition issue status (investigating, retrying)."""
         issue = await self._repo.get_reconciliation_issue(tenant_id, issue_id)
@@ -136,38 +149,53 @@ class ReconciliationService:
         return {"issue_id": issue_id, "status": new_status}
 
     async def resolve_issue(
-        self, tenant_id: str, issue_id: str,
-        resolution: str, actor_id: str | None = None,
+        self,
+        tenant_id: str,
+        issue_id: str,
+        resolution: str,
+        actor_id: str | None = None,
     ) -> dict[str, Any]:
         now = datetime.now(UTC).isoformat()
-        await self._repo.update_reconciliation_issue(issue_id, {
-            "status": IssueStatus.RESOLVED.value,
-            "resolution": resolution,
-            "resolved_by": actor_id,
-            "resolved_at": now,
-            "updated_at": now,
-        })
+        await self._repo.update_reconciliation_issue(
+            issue_id,
+            {
+                "status": IssueStatus.RESOLVED.value,
+                "resolution": resolution,
+                "resolved_by": actor_id,
+                "resolved_at": now,
+                "updated_at": now,
+            },
+        )
         issue = await self._repo.get_reconciliation_issue(tenant_id, issue_id)
         if issue:
             await self._audit(
-                tenant_id, issue.get("property_id", ""), issue.get("connector_id", ""),
-                AuditAction.RECONCILIATION_RESOLVED, actor_id,
+                tenant_id,
+                issue.get("property_id", ""),
+                issue.get("connector_id", ""),
+                AuditAction.RECONCILIATION_RESOLVED,
+                actor_id,
                 {"issue_id": issue_id, "resolution": resolution},
             )
         return {"issue_id": issue_id, "status": "resolved"}
 
     async def dismiss_issue(
-        self, tenant_id: str, issue_id: str,
-        reason: str = "", actor_id: str | None = None,
+        self,
+        tenant_id: str,
+        issue_id: str,
+        reason: str = "",
+        actor_id: str | None = None,
     ) -> dict[str, Any]:
         now = datetime.now(UTC).isoformat()
-        await self._repo.update_reconciliation_issue(issue_id, {
-            "status": IssueStatus.DISMISSED.value,
-            "dismiss_reason": reason,
-            "resolved_by": actor_id,
-            "resolved_at": now,
-            "updated_at": now,
-        })
+        await self._repo.update_reconciliation_issue(
+            issue_id,
+            {
+                "status": IssueStatus.DISMISSED.value,
+                "dismiss_reason": reason,
+                "resolved_by": actor_id,
+                "resolved_at": now,
+                "updated_at": now,
+            },
+        )
         return {"issue_id": issue_id, "status": "dismissed"}
 
     # ------------------------------------------------------------------ #
@@ -175,13 +203,17 @@ class ReconciliationService:
     # ------------------------------------------------------------------ #
 
     async def get_issue_summary(
-        self, tenant_id: str, connector_id: str | None = None,
+        self,
+        tenant_id: str,
+        connector_id: str | None = None,
     ) -> dict[str, Any]:
         """Aggregate issue counts by type and severity for dashboard."""
         return await self._repo.get_reconciliation_summary(tenant_id, connector_id)
 
     async def get_health_score(
-        self, tenant_id: str, connector_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
     ) -> dict[str, Any]:
         """
         Compute an operational health score (0-100) for a connector.
@@ -265,43 +297,58 @@ class ReconciliationService:
     # ------------------------------------------------------------------ #
 
     async def _check_stale_sync(
-        self, tenant_id: str, connector_id: str, property_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
+        property_id: str,
     ) -> list[ReconciliationIssue]:
         issues = []
         connector = await self._repo.get_connector(tenant_id, connector_id)
         last_sync = connector.get("last_successful_sync") if connector else None
 
         if not last_sync:
-            issues.append(ReconciliationIssue(
-                tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-                issue_type=IssueType.STALE_SYNC,
-                severity=ReconciliationSeverity.HIGH,
-                description="Bu connector icin basarili senkronizasyon kaydi yok",
-                suggested_actions=[SuggestedAction.RETRY_SYNC.value],
-                evidence_payload={"last_sync": None},
-            ))
+            issues.append(
+                ReconciliationIssue(
+                    tenant_id=tenant_id,
+                    property_id=property_id,
+                    connector_id=connector_id,
+                    issue_type=IssueType.STALE_SYNC,
+                    severity=ReconciliationSeverity.HIGH,
+                    description="Bu connector icin basarili senkronizasyon kaydi yok",
+                    suggested_actions=[SuggestedAction.RETRY_SYNC.value],
+                    evidence_payload={"last_sync": None},
+                )
+            )
         else:
             try:
                 last_dt = datetime.fromisoformat(last_sync.replace("Z", "+00:00"))
                 age_hours = (datetime.now(UTC) - last_dt).total_seconds() / 3600
                 if age_hours > STALE_SYNC_HOURS_HIGH:
-                    issues.append(ReconciliationIssue(
-                        tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-                        issue_type=IssueType.STALE_SYNC,
-                        severity=ReconciliationSeverity.HIGH,
-                        description=f"Son basarili senkronizasyon {age_hours:.0f} saat once",
-                        suggested_actions=[SuggestedAction.RETRY_SYNC.value],
-                        evidence_payload={"last_sync": last_sync, "age_hours": round(age_hours, 1)},
-                    ))
+                    issues.append(
+                        ReconciliationIssue(
+                            tenant_id=tenant_id,
+                            property_id=property_id,
+                            connector_id=connector_id,
+                            issue_type=IssueType.STALE_SYNC,
+                            severity=ReconciliationSeverity.HIGH,
+                            description=f"Son basarili senkronizasyon {age_hours:.0f} saat once",
+                            suggested_actions=[SuggestedAction.RETRY_SYNC.value],
+                            evidence_payload={"last_sync": last_sync, "age_hours": round(age_hours, 1)},
+                        )
+                    )
                 elif age_hours > STALE_SYNC_HOURS_MEDIUM:
-                    issues.append(ReconciliationIssue(
-                        tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-                        issue_type=IssueType.STALE_SYNC,
-                        severity=ReconciliationSeverity.MEDIUM,
-                        description=f"Son basarili senkronizasyon {age_hours:.0f} saat once",
-                        suggested_actions=[SuggestedAction.RETRY_SYNC.value],
-                        evidence_payload={"last_sync": last_sync, "age_hours": round(age_hours, 1)},
-                    ))
+                    issues.append(
+                        ReconciliationIssue(
+                            tenant_id=tenant_id,
+                            property_id=property_id,
+                            connector_id=connector_id,
+                            issue_type=IssueType.STALE_SYNC,
+                            severity=ReconciliationSeverity.MEDIUM,
+                            description=f"Son basarili senkronizasyon {age_hours:.0f} saat once",
+                            suggested_actions=[SuggestedAction.RETRY_SYNC.value],
+                            evidence_payload={"last_sync": last_sync, "age_hours": round(age_hours, 1)},
+                        )
+                    )
             except (ValueError, TypeError):
                 pass
 
@@ -312,7 +359,10 @@ class ReconciliationService:
     # ------------------------------------------------------------------ #
 
     async def _check_mapping_validity(
-        self, tenant_id: str, connector_id: str, property_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
+        property_id: str,
     ) -> list[ReconciliationIssue]:
         issues = []
         mappings = await self._repo.get_mappings(tenant_id, connector_id)
@@ -320,23 +370,27 @@ class ReconciliationService:
         # Invalid mappings
         invalid_mappings = [m for m in mappings if m.get("validation_status") == "invalid"]
         for m in invalid_mappings:
-            issues.append(ReconciliationIssue(
-                tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-                issue_type=IssueType.INVALID_MAPPING,
-                severity=ReconciliationSeverity.HIGH,
-                entity_type=m.get("entity_type", ""),
-                entity_id=m.get("id", ""),
-                description=m.get("invalid_reason", f"Gecersiz mapping: {m.get('entity_type')} ({m.get('id', '')[:8]}...)"),
-                related_mapping_ids=[m.get("id", "")],
-                suggested_actions=[SuggestedAction.REVALIDATE_MAPPING.value],
-                evidence_payload={
-                    "mapping_id": m.get("id"),
-                    "entity_type": m.get("entity_type"),
-                    "pms_entity_id": m.get("pms_entity_id"),
-                    "external_entity_id": m.get("external_entity_id"),
-                    "invalid_reason": m.get("invalid_reason"),
-                },
-            ))
+            issues.append(
+                ReconciliationIssue(
+                    tenant_id=tenant_id,
+                    property_id=property_id,
+                    connector_id=connector_id,
+                    issue_type=IssueType.INVALID_MAPPING,
+                    severity=ReconciliationSeverity.HIGH,
+                    entity_type=m.get("entity_type", ""),
+                    entity_id=m.get("id", ""),
+                    description=m.get("invalid_reason", f"Gecersiz mapping: {m.get('entity_type')} ({m.get('id', '')[:8]}...)"),
+                    related_mapping_ids=[m.get("id", "")],
+                    suggested_actions=[SuggestedAction.REVALIDATE_MAPPING.value],
+                    evidence_payload={
+                        "mapping_id": m.get("id"),
+                        "entity_type": m.get("entity_type"),
+                        "pms_entity_id": m.get("pms_entity_id"),
+                        "external_entity_id": m.get("external_entity_id"),
+                        "invalid_reason": m.get("invalid_reason"),
+                    },
+                )
+            )
 
         # Unmapped room types
         room_mappings = [m for m in mappings if m.get("entity_type") == "room_type" and m.get("status") == "active"]
@@ -348,14 +402,18 @@ class ReconciliationService:
         all_types = {r.get("room_type") for r in pms_rooms if r.get("room_type")}
         unmapped = all_types - mapped_pms_ids
         if unmapped:
-            issues.append(ReconciliationIssue(
-                tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-                issue_type=IssueType.INVALID_MAPPING,
-                severity=ReconciliationSeverity.MEDIUM,
-                description=f"Eslestirilmemis oda tipleri: {', '.join(unmapped)}",
-                suggested_actions=[SuggestedAction.REVALIDATE_MAPPING.value],
-                evidence_payload={"unmapped_room_types": list(unmapped)},
-            ))
+            issues.append(
+                ReconciliationIssue(
+                    tenant_id=tenant_id,
+                    property_id=property_id,
+                    connector_id=connector_id,
+                    issue_type=IssueType.INVALID_MAPPING,
+                    severity=ReconciliationSeverity.MEDIUM,
+                    description=f"Eslestirilmemis oda tipleri: {', '.join(unmapped)}",
+                    suggested_actions=[SuggestedAction.REVALIDATE_MAPPING.value],
+                    evidence_payload={"unmapped_room_types": list(unmapped)},
+                )
+            )
 
         return issues
 
@@ -364,7 +422,10 @@ class ReconciliationService:
     # ------------------------------------------------------------------ #
 
     async def _check_unprocessed_imports(
-        self, tenant_id: str, connector_id: str, property_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
+        property_id: str,
     ) -> list[ReconciliationIssue]:
         issues = []
         review_count = await self._repo.count_imported_reservations(tenant_id, connector_id, "review")
@@ -372,25 +433,33 @@ class ReconciliationService:
 
         if review_count > 0:
             severity = ReconciliationSeverity.HIGH if review_count > REVIEW_QUEUE_HIGH else ReconciliationSeverity.MEDIUM
-            issues.append(ReconciliationIssue(
-                tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-                issue_type=IssueType.UNPROCESSED_IMPORT,
-                severity=severity,
-                description=f"{review_count} rezervasyon manuel inceleme bekliyor",
-                suggested_actions=[SuggestedAction.SEND_TO_REVIEW.value],
-                evidence_payload={"review_count": review_count},
-            ))
+            issues.append(
+                ReconciliationIssue(
+                    tenant_id=tenant_id,
+                    property_id=property_id,
+                    connector_id=connector_id,
+                    issue_type=IssueType.UNPROCESSED_IMPORT,
+                    severity=severity,
+                    description=f"{review_count} rezervasyon manuel inceleme bekliyor",
+                    suggested_actions=[SuggestedAction.SEND_TO_REVIEW.value],
+                    evidence_payload={"review_count": review_count},
+                )
+            )
 
         if failed_count > 0:
             severity = ReconciliationSeverity.CRITICAL if failed_count > FAILED_IMPORT_CRITICAL else ReconciliationSeverity.HIGH
-            issues.append(ReconciliationIssue(
-                tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-                issue_type=IssueType.UNPROCESSED_IMPORT,
-                severity=severity,
-                description=f"{failed_count} rezervasyon import'u basarisiz",
-                suggested_actions=[SuggestedAction.RETRY_SYNC.value, SuggestedAction.SEND_TO_REVIEW.value],
-                evidence_payload={"failed_count": failed_count},
-            ))
+            issues.append(
+                ReconciliationIssue(
+                    tenant_id=tenant_id,
+                    property_id=property_id,
+                    connector_id=connector_id,
+                    issue_type=IssueType.UNPROCESSED_IMPORT,
+                    severity=severity,
+                    description=f"{failed_count} rezervasyon import'u basarisiz",
+                    suggested_actions=[SuggestedAction.RETRY_SYNC.value, SuggestedAction.SEND_TO_REVIEW.value],
+                    evidence_payload={"failed_count": failed_count},
+                )
+            )
 
         return issues
 
@@ -399,23 +468,32 @@ class ReconciliationService:
     # ------------------------------------------------------------------ #
 
     async def _check_ack_failures(
-        self, tenant_id: str, connector_id: str, property_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
+        property_id: str,
     ) -> list[ReconciliationIssue]:
         issues = []
-        ack_failed = await db.cm_imported_reservations.count_documents({
-            "tenant_id": tenant_id,
-            "connector_id": connector_id,
-            "ack_status": "ack_failed",
-        })
+        ack_failed = await db.cm_imported_reservations.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "connector_id": connector_id,
+                "ack_status": "ack_failed",
+            }
+        )
         if ack_failed > 0:
-            issues.append(ReconciliationIssue(
-                tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-                issue_type=IssueType.ACK_FAILED,
-                severity=ReconciliationSeverity.HIGH,
-                description=f"{ack_failed} rezervasyon onay gonderilemedi (ACK failed)",
-                suggested_actions=[SuggestedAction.RETRY_ACK.value],
-                evidence_payload={"ack_failed_count": ack_failed},
-            ))
+            issues.append(
+                ReconciliationIssue(
+                    tenant_id=tenant_id,
+                    property_id=property_id,
+                    connector_id=connector_id,
+                    issue_type=IssueType.ACK_FAILED,
+                    severity=ReconciliationSeverity.HIGH,
+                    description=f"{ack_failed} rezervasyon onay gonderilemedi (ACK failed)",
+                    suggested_actions=[SuggestedAction.RETRY_ACK.value],
+                    evidence_payload={"ack_failed_count": ack_failed},
+                )
+            )
         return issues
 
     # ------------------------------------------------------------------ #
@@ -423,25 +501,34 @@ class ReconciliationService:
     # ------------------------------------------------------------------ #
 
     async def _check_ack_pending(
-        self, tenant_id: str, connector_id: str, property_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
+        property_id: str,
     ) -> list[ReconciliationIssue]:
         issues = []
         threshold = (datetime.now(UTC) - timedelta(hours=ACK_PENDING_HOURS)).isoformat()
-        ack_pending_old = await db.cm_imported_reservations.count_documents({
-            "tenant_id": tenant_id,
-            "connector_id": connector_id,
-            "ack_status": "ack_pending",
-            "created_at": {"$lt": threshold},
-        })
+        ack_pending_old = await db.cm_imported_reservations.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "connector_id": connector_id,
+                "ack_status": "ack_pending",
+                "created_at": {"$lt": threshold},
+            }
+        )
         if ack_pending_old > 0:
-            issues.append(ReconciliationIssue(
-                tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-                issue_type=IssueType.ACK_PENDING_TOO_LONG,
-                severity=ReconciliationSeverity.MEDIUM,
-                description=f"{ack_pending_old} rezervasyon {ACK_PENDING_HOURS} saatten fazla onay bekliyor",
-                suggested_actions=[SuggestedAction.RETRY_ACK.value],
-                evidence_payload={"ack_pending_count": ack_pending_old, "threshold_hours": ACK_PENDING_HOURS},
-            ))
+            issues.append(
+                ReconciliationIssue(
+                    tenant_id=tenant_id,
+                    property_id=property_id,
+                    connector_id=connector_id,
+                    issue_type=IssueType.ACK_PENDING_TOO_LONG,
+                    severity=ReconciliationSeverity.MEDIUM,
+                    description=f"{ack_pending_old} rezervasyon {ACK_PENDING_HOURS} saatten fazla onay bekliyor",
+                    suggested_actions=[SuggestedAction.RETRY_ACK.value],
+                    evidence_payload={"ack_pending_count": ack_pending_old, "threshold_hours": ACK_PENDING_HOURS},
+                )
+            )
         return issues
 
     # ------------------------------------------------------------------ #
@@ -449,11 +536,15 @@ class ReconciliationService:
     # ------------------------------------------------------------------ #
 
     async def _check_inventory_mismatch(
-        self, tenant_id: str, connector_id: str, property_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
+        property_id: str,
     ) -> list[ReconciliationIssue]:
         """Compare PMS availability with last synced snapshot for today + 7 days."""
         issues = []
         from ..application.mapping_service import MappingService
+
         mapping_svc = MappingService(self._repo)
         room_lookup = await mapping_svc.get_mapping_lookup(tenant_id, connector_id, "room_type")
         if not room_lookup:
@@ -473,12 +564,15 @@ class ReconciliationService:
         mismatches = 0
         for day_offset in range(7):
             check_date = (today + timedelta(days=day_offset)).isoformat()
-            bookings = await db.bookings.find({
-                "tenant_id": tenant_id,
-                "check_in": {"$lte": check_date},
-                "check_out": {"$gt": check_date},
-                "status": {"$nin": ["cancelled", "no_show"]},
-            }, {"_id": 0, "room_type": 1}).to_list(5000)
+            bookings = await db.bookings.find(
+                {
+                    "tenant_id": tenant_id,
+                    "check_in": {"$lte": check_date},
+                    "check_out": {"$gt": check_date},
+                    "status": {"$nin": ["cancelled", "no_show"]},
+                },
+                {"_id": 0, "room_type": 1},
+            ).to_list(5000)
 
             for rt, total in room_type_counts.items():
                 occupied = sum(1 for b in bookings if b.get("room_type") == rt)
@@ -492,14 +586,18 @@ class ReconciliationService:
 
         if mismatches > 0:
             severity = ReconciliationSeverity.CRITICAL if mismatches > 10 else ReconciliationSeverity.HIGH
-            issues.append(ReconciliationIssue(
-                tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-                issue_type=IssueType.INVENTORY_MISMATCH,
-                severity=severity,
-                description=f"Sonraki 7 gun icinde {mismatches} envanter uyumsuzlugu tespit edildi",
-                suggested_actions=[SuggestedAction.RETRY_SYNC.value],
-                evidence_payload={"mismatch_count": mismatches, "check_range_days": 7},
-            ))
+            issues.append(
+                ReconciliationIssue(
+                    tenant_id=tenant_id,
+                    property_id=property_id,
+                    connector_id=connector_id,
+                    issue_type=IssueType.INVENTORY_MISMATCH,
+                    severity=severity,
+                    description=f"Sonraki 7 gun icinde {mismatches} envanter uyumsuzlugu tespit edildi",
+                    suggested_actions=[SuggestedAction.RETRY_SYNC.value],
+                    evidence_payload={"mismatch_count": mismatches, "check_range_days": 7},
+                )
+            )
         return issues
 
     # ------------------------------------------------------------------ #
@@ -507,11 +605,15 @@ class ReconciliationService:
     # ------------------------------------------------------------------ #
 
     async def _check_rate_mismatch(
-        self, tenant_id: str, connector_id: str, property_id: str,
+        self,
+        tenant_id: str,
+        connector_id: str,
+        property_id: str,
     ) -> list[ReconciliationIssue]:
         """Compare PMS rates with last synced snapshot for today + 7 days."""
         issues = []
         from ..application.mapping_service import MappingService
+
         mapping_svc = MappingService(self._repo)
         room_lookup = await mapping_svc.get_mapping_lookup(tenant_id, connector_id, "room_type")
         rate_lookup = await mapping_svc.get_mapping_lookup(tenant_id, connector_id, "rate_plan")
@@ -521,10 +623,13 @@ class ReconciliationService:
         today = datetime.now(UTC).date()
         end_date = (today + timedelta(days=7)).isoformat()
 
-        rates = await db.rate_overrides.find({
-            "tenant_id": tenant_id,
-            "date": {"$gte": today.isoformat(), "$lte": end_date},
-        }, {"_id": 0}).to_list(5000)
+        rates = await db.rate_overrides.find(
+            {
+                "tenant_id": tenant_id,
+                "date": {"$gte": today.isoformat(), "$lte": end_date},
+            },
+            {"_id": 0},
+        ).to_list(5000)
 
         mismatches = 0
         for r in rates:
@@ -541,14 +646,18 @@ class ReconciliationService:
 
         if mismatches > 0:
             severity = ReconciliationSeverity.HIGH if mismatches > 5 else ReconciliationSeverity.MEDIUM
-            issues.append(ReconciliationIssue(
-                tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-                issue_type=IssueType.RATE_MISMATCH,
-                severity=severity,
-                description=f"Sonraki 7 gun icinde {mismatches} fiyat uyumsuzlugu tespit edildi",
-                suggested_actions=[SuggestedAction.RETRY_SYNC.value],
-                evidence_payload={"mismatch_count": mismatches, "check_range_days": 7},
-            ))
+            issues.append(
+                ReconciliationIssue(
+                    tenant_id=tenant_id,
+                    property_id=property_id,
+                    connector_id=connector_id,
+                    issue_type=IssueType.RATE_MISMATCH,
+                    severity=severity,
+                    description=f"Sonraki 7 gun icinde {mismatches} fiyat uyumsuzlugu tespit edildi",
+                    suggested_actions=[SuggestedAction.RETRY_SYNC.value],
+                    evidence_payload={"mismatch_count": mismatches, "check_range_days": 7},
+                )
+            )
         return issues
 
     # ------------------------------------------------------------------ #
@@ -592,7 +701,11 @@ class ReconciliationService:
 
     async def _audit(self, tenant_id, property_id, connector_id, action, actor_id=None, metadata=None):
         log = IntegrationAuditLog(
-            tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-            action=action, actor_id=actor_id, metadata=metadata or {},
+            tenant_id=tenant_id,
+            property_id=property_id,
+            connector_id=connector_id,
+            action=action,
+            actor_id=actor_id,
+            metadata=metadata or {},
         )
         await self._repo.create_audit_log(log.to_doc())

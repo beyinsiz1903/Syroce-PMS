@@ -16,6 +16,7 @@ Usage:
     await sm.store_provider_credentials(tenant_id, "exely", property_id, creds)
     creds = await sm.get_provider_credentials(tenant_id, "exely", property_id)
 """
+
 import logging
 from typing import Any
 
@@ -31,17 +32,20 @@ def _build_provider(config: SecretsConfig) -> SecretsProviderBase:
     """Instantiate the correct backend based on config."""
     if config.provider == "aws_secrets_manager":
         from .aws_provider import AWSSecretsProvider
+
         return AWSSecretsProvider(region=config.aws_region)
     elif config.provider == "vault":
         import os
 
         from .vault_provider import VaultSecretsProvider
+
         return VaultSecretsProvider(
             vault_addr=os.environ.get("VAULT_ADDR", ""),
             vault_token=os.environ.get("VAULT_TOKEN", ""),
         )
     elif config.provider in ("local_dev", "env"):
         from .local_provider import LocalDevSecretsProvider
+
         return LocalDevSecretsProvider(encryption_key=config.encryption_key)
     else:
         raise RuntimeError(f"Unknown secrets provider: {config.provider}")
@@ -61,7 +65,10 @@ class SecretsManager:
         self._audit = SecretAuditLogger(enabled=config.audit_enabled)
 
     def _identity(
-        self, tenant_id: str, provider: str, property_id: str,
+        self,
+        tenant_id: str,
+        provider: str,
+        property_id: str,
     ) -> SecretIdentity:
         return SecretIdentity(
             prefix=self._config.aws_secret_prefix,
@@ -95,7 +102,9 @@ class SecretsManager:
                 action = "update"
             else:
                 await self._provider.create_secret(
-                    path, credentials, tags=identity.to_metadata(),
+                    path,
+                    credentials,
+                    tags=identity.to_metadata(),
                 )
                 action = "create"
 
@@ -155,7 +164,9 @@ class SecretsManager:
         # Legacy fallback during migration
         if self._config.enable_legacy_fallback:
             legacy_creds = await self._read_legacy_credentials(
-                tenant_id, provider, property_id,
+                tenant_id,
+                provider,
+                property_id,
             )
             if legacy_creds:
                 await self._audit.log(
@@ -311,7 +322,10 @@ class SecretsManager:
     # ── Legacy Fallback ──────────────────────────────────────────────
 
     async def _read_legacy_credentials(
-        self, tenant_id: str, provider: str, property_id: str,
+        self,
+        tenant_id: str,
+        provider: str,
+        property_id: str,
     ) -> dict[str, str] | None:
         """
         Read from legacy provider_secrets collection (XOR/AES encrypted).
@@ -319,22 +333,29 @@ class SecretsManager:
         """
         try:
             from domains.channel_manager.credential_vault import get_decrypted_credentials
+
             creds = await get_decrypted_credentials(tenant_id, provider, property_id)
             if creds:
                 logger.info(
                     "Legacy fallback used for %s/%s/%s — consider migrating",
-                    tenant_id, provider, property_id,
+                    tenant_id,
+                    provider,
+                    property_id,
                 )
             return creds
         except Exception:
             logger.debug(
                 "Legacy fallback failed for %s/%s/%s",
-                tenant_id, provider, property_id,
+                tenant_id,
+                provider,
+                property_id,
             )
             return None
 
     async def _read_legacy_connection_credentials(
-        self, tenant_id: str, provider: str,
+        self,
+        tenant_id: str,
+        provider: str,
     ) -> dict[str, str] | None:
         """
         Read raw credentials from connection documents (HotelRunner pattern).
@@ -342,6 +363,7 @@ class SecretsManager:
         """
         try:
             from core.database import db
+
             if provider == "hotelrunner":
                 conn = await db.hotelrunner_connections.find_one(
                     {"tenant_id": tenant_id, "is_active": True},

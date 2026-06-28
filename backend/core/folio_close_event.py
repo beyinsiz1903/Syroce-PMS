@@ -11,6 +11,7 @@ endpoint instead.
 Every function here is deterministic and free of database / event-loop
 dependencies so it unit-tests without Mongo.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -34,9 +35,7 @@ def _fetch_secret() -> bytes:
     """Resolve the HMAC signing secret. Fail-closed if none is configured."""
     secret = os.environ.get("FOLIO_FETCH_SECRET") or os.environ.get("JWT_SECRET")
     if not secret:
-        raise FetchSecretMissing(
-            "FOLIO_FETCH_SECRET/JWT_SECRET unset; refusing to sign folio fetch token"
-        )
+        raise FetchSecretMissing("FOLIO_FETCH_SECRET/JWT_SECRET unset; refusing to sign folio fetch token")
     return secret.encode("utf-8")
 
 
@@ -142,9 +141,7 @@ def build_event_payload(
     folio_id = folio.get("id")
     tenant_id = folio.get("tenant_id")
     closed_at_norm = normalize_closed_at(folio.get("closed_at"))
-    token, exp_epoch = make_fetch_token(
-        tenant_id, folio_id, closed_at_norm, ttl_seconds=ttl_seconds, now=now
-    )
+    token, exp_epoch = make_fetch_token(tenant_id, folio_id, closed_at_norm, ttl_seconds=ttl_seconds, now=now)
     fetch_url = build_fetch_url(base_url, folio_id, tenant_id, exp_epoch, token)
     return {
         "event": EVENT_NAME,

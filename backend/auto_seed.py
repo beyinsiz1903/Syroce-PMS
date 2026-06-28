@@ -19,6 +19,7 @@ If the users collection is non-empty, only idempotent ensure-helpers run
 (`ensure_hr_legacy_connection`, `ensure_tenant_admin_seeded`,
 `ensure_complaints_seeded`, `ensure_agencies_seeded`).
 """
+
 import logging
 
 from seed._helpers import DEMO_EMAIL, DEMO_HOTEL_NAME
@@ -69,7 +70,8 @@ async def auto_seed_if_empty(db):
     # admin email + password env var name is enough for operators to debug.
     logger.info(
         "   Users: %s (admin: %s / password from $DEMO_PASSWORD)",
-        1 + ctx["staff_users_count"], DEMO_EMAIL,
+        1 + ctx["staff_users_count"],
+        DEMO_EMAIL,
     )
     logger.info(f"   Tenant: {DEMO_HOTEL_NAME} (tier: enterprise)")
     logger.info(f"   Rooms: {len(ctx['rooms'])}")

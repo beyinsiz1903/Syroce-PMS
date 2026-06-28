@@ -8,6 +8,7 @@ Erken Giriş / Geç Çıkış Otomatik Fiyat Kuralları.
 - PUT için require_op("manage_pricing") yetki kapısı; çakışma & boşluk validation;
   audit log; response tenant_id + updated_at + updated_by içerir.
 """
+
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -76,16 +77,13 @@ def _validate_rules(rules: list[dict], section: str) -> list[str]:
     # 1) from < to
     for r in rules:
         if r["from_hour"] >= r["to_hour"]:
-            errors.append(f"[{section}] '{r.get('label','?')}' kuralında başlangıç bitişten küçük olmalı")
+            errors.append(f"[{section}] '{r.get('label', '?')}' kuralında başlangıç bitişten küçük olmalı")
     # 2) Çakışma kontrolü
     sorted_rules = sorted(rules, key=lambda x: (x["from_hour"], x["to_hour"]))
     for i in range(len(sorted_rules) - 1):
         a, b = sorted_rules[i], sorted_rules[i + 1]
         if a["to_hour"] > b["from_hour"]:
-            errors.append(
-                f"[{section}] Çakışma: '{a.get('label','?')}' ({a['from_hour']}-{a['to_hour']}) "
-                f"ile '{b.get('label','?')}' ({b['from_hour']}-{b['to_hour']})"
-            )
+            errors.append(f"[{section}] Çakışma: '{a.get('label', '?')}' ({a['from_hour']}-{a['to_hour']}) ile '{b.get('label', '?')}' ({b['from_hour']}-{b['to_hour']})")
     return errors
 
 
@@ -156,29 +154,33 @@ async def update_pricing(
     }
     await db.tenant_settings.update_one(
         {"tenant_id": current_user.tenant_id},
-        {"$set": {
-            "early_late_pricing": cfg,
-            "early_late_pricing_meta": meta,
-            "updated_at": now_iso,
-        }},
+        {
+            "$set": {
+                "early_late_pricing": cfg,
+                "early_late_pricing_meta": meta,
+                "updated_at": now_iso,
+            }
+        },
         upsert=True,
     )
 
     # Audit log (best-effort; çağrının bloklanmaması için try/except)
     try:
-        await db.audit_logs.insert_one({
-            "tenant_id": current_user.tenant_id,
-            "user_id": current_user.id,
-            "action": "settings.early_late_pricing.update",
-            "resource_type": "tenant_settings",
-            "timestamp": datetime.now(UTC),
-            "metadata": {
-                "early_count": len(cfg["early_checkin"]),
-                "late_count": len(cfg["late_checkout"]),
-                "standard_checkin_hour": cfg["standard_checkin_hour"],
-                "standard_checkout_hour": cfg["standard_checkout_hour"],
-            },
-        })
+        await db.audit_logs.insert_one(
+            {
+                "tenant_id": current_user.tenant_id,
+                "user_id": current_user.id,
+                "action": "settings.early_late_pricing.update",
+                "resource_type": "tenant_settings",
+                "timestamp": datetime.now(UTC),
+                "metadata": {
+                    "early_count": len(cfg["early_checkin"]),
+                    "late_count": len(cfg["late_checkout"]),
+                    "standard_checkin_hour": cfg["standard_checkin_hour"],
+                    "standard_checkout_hour": cfg["standard_checkout_hour"],
+                },
+            }
+        )
     except Exception:
         pass
 
@@ -196,9 +198,7 @@ async def calculate(payload: CalcRequest, current_user: User = Depends(get_curre
     if payload.direction not in ("early_checkin", "late_checkout"):
         raise HTTPException(400, "direction early_checkin|late_checkout olmalı")
 
-    booking = await db.bookings.find_one(
-        {"id": payload.booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
-    )
+    booking = await db.bookings.find_one({"id": payload.booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not booking:
         raise HTTPException(404, "Rezervasyon bulunamadı")
 

@@ -2,6 +2,7 @@
 POS & F&B Domain — Pydantic Schemas
 Extracted from pos_fnb_router.py inline models.
 """
+
 import uuid
 from datetime import UTC, datetime
 from enum import Enum

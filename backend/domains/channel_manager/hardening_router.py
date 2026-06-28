@@ -4,6 +4,7 @@ Production runtime APIs for drift detection, reconciliation,
 sync scheduling, provider health, and credential management.
 Thin router: delegates all business logic to CMRuntimeService.
 """
+
 from fastapi import APIRouter, Depends, Query
 
 from common.context import OperationContext
@@ -26,7 +27,8 @@ async def get_runtime_status(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/drift/scan", summary="Trigger drift scan")
-async def trigger_drift_scan(current_user: User = Depends(get_current_user),
+async def trigger_drift_scan(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     result = await cm_runtime_service.trigger_drift_scan(_ctx(current_user))
@@ -101,7 +103,5 @@ async def encrypt_provider_credential(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
-    result = await cm_runtime_service.encrypt_credential(
-        _ctx(current_user), connection_id, credential_key, credential_value
-    )
+    result = await cm_runtime_service.encrypt_credential(_ctx(current_user), connection_id, credential_key, credential_value)
     return result.data

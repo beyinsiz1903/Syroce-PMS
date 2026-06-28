@@ -13,6 +13,7 @@ Design rules:
   - Every action is logged to rotation_audit
   - Failure triggers an alert via controlplane.alerting
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -41,6 +42,7 @@ class RotationEngine:
     def _get_db(self):
         if self._db is None:
             from core.tenant_db import get_system_db
+
             self._db = get_system_db()
         return self._db
 
@@ -101,7 +103,10 @@ class RotationEngine:
 
         logger.info(
             "Rotation initiated: %s v%d by %s (%s)",
-            secret_path, next_version, actor, reason,
+            secret_path,
+            next_version,
+            actor,
+            reason,
         )
 
         return {
@@ -153,16 +158,18 @@ class RotationEngine:
 
         await db[COLL_VERSIONS].update_one(
             {"secret_path": secret_path, "version": version},
-            {"$set": {
-                "status": new_status,
-                "test_result": {
-                    "tested_at": now,
-                    "tested_by": actor,
-                    "success": test_result["success"],
-                    "details": test_result.get("details", ""),
-                    "latency_ms": test_result.get("latency_ms"),
-                },
-            }},
+            {
+                "$set": {
+                    "status": new_status,
+                    "test_result": {
+                        "tested_at": now,
+                        "tested_by": actor,
+                        "success": test_result["success"],
+                        "details": test_result.get("details", ""),
+                        "latency_ms": test_result.get("latency_ms"),
+                    },
+                }
+            },
         )
 
         await self._log_audit(
@@ -357,10 +364,15 @@ class RotationEngine:
         """Full rotation status for a single secret."""
         db = self._get_db()
 
-        versions = await db[COLL_VERSIONS].find(
-            {"secret_path": secret_path},
-            {"_id": 0, "encrypted_payload": 0},
-        ).sort("version", -1).to_list(50)
+        versions = (
+            await db[COLL_VERSIONS]
+            .find(
+                {"secret_path": secret_path},
+                {"_id": 0, "encrypted_payload": 0},
+            )
+            .sort("version", -1)
+            .to_list(50)
+        )
 
         active = next((v for v in versions if v["status"] == RotationStatus.ACTIVE), None)
 
@@ -377,15 +389,17 @@ class RotationEngine:
         now = datetime.now(UTC)
 
         # Get all active versions
-        active_versions = await db[COLL_VERSIONS].find(
-            {"status": RotationStatus.ACTIVE},
-            {"_id": 0, "encrypted_payload": 0},
-        ).to_list(500)
+        active_versions = (
+            await db[COLL_VERSIONS]
+            .find(
+                {"status": RotationStatus.ACTIVE},
+                {"_id": 0, "encrypted_payload": 0},
+            )
+            .to_list(500)
+        )
 
         # Also scan _dev_secrets for secrets without version history
-        all_secrets = await db["_dev_secrets"].find(
-            {}, {"_id": 0, "path": 1, "updated_at": 1, "created_at": 1, "rotation_count": 1}
-        ).to_list(500)
+        all_secrets = await db["_dev_secrets"].find({}, {"_id": 0, "path": 1, "updated_at": 1, "created_at": 1, "rotation_count": 1}).to_list(500)
 
         # Build lookup of versioned secrets
         versioned_paths = {v["secret_path"] for v in active_versions}
@@ -427,26 +441,26 @@ class RotationEngine:
                     pass
 
             # Find active version info if exists
-            active_v = next(
-                (v for v in active_versions if v["secret_path"] == path), None
-            )
+            active_v = next((v for v in active_versions if v["secret_path"] == path), None)
 
-            dashboard_items.append({
-                "secret_path": self._mask_path(path),
-                "tenant_id": parts[3] if len(parts) > 3 else "",
-                "provider": parts[4] if len(parts) > 4 else "",
-                "secret_type": secret_type.value,
-                "last_rotated": updated,
-                "age_days": age_days,
-                "rotation_count": sec.get("rotation_count", 0),
-                "max_rotation_days": max_days,
-                "next_rotation_due": next_rotation,
-                "is_overdue": is_overdue,
-                "is_warning": is_warning,
-                "has_version_history": path in versioned_paths,
-                "active_version": active_v["version"] if active_v else None,
-                "status": "overdue" if is_overdue else ("warning" if is_warning else "healthy"),
-            })
+            dashboard_items.append(
+                {
+                    "secret_path": self._mask_path(path),
+                    "tenant_id": parts[3] if len(parts) > 3 else "",
+                    "provider": parts[4] if len(parts) > 4 else "",
+                    "secret_type": secret_type.value,
+                    "last_rotated": updated,
+                    "age_days": age_days,
+                    "rotation_count": sec.get("rotation_count", 0),
+                    "max_rotation_days": max_days,
+                    "next_rotation_due": next_rotation,
+                    "is_overdue": is_overdue,
+                    "is_warning": is_warning,
+                    "has_version_history": path in versioned_paths,
+                    "active_version": active_v["version"] if active_v else None,
+                    "status": "overdue" if is_overdue else ("warning" if is_warning else "healthy"),
+                }
+            )
 
         # Sort: overdue first, then warning, then healthy
         priority = {"overdue": 0, "warning": 1, "healthy": 2}
@@ -493,9 +507,17 @@ class RotationEngine:
             query["tenant_id"] = tenant_id
 
         total = await db[COLL_ROTATION_AUDIT].count_documents(query)
-        items = await db[COLL_ROTATION_AUDIT].find(
-            query, {"_id": 0},
-        ).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+        items = (
+            await db[COLL_ROTATION_AUDIT]
+            .find(
+                query,
+                {"_id": 0},
+            )
+            .sort("timestamp", -1)
+            .skip(skip)
+            .limit(limit)
+            .to_list(limit)
+        )
 
         return {"items": items, "total": total, "limit": limit, "skip": skip}
 
@@ -507,7 +529,8 @@ class RotationEngine:
 
         versions = db[COLL_VERSIONS]
         await versions.create_index(
-            [("secret_path", 1), ("version", -1)], unique=True,
+            [("secret_path", 1), ("version", -1)],
+            unique=True,
         )
         await versions.create_index([("secret_path", 1), ("status", 1)])
         await versions.create_index("status")
@@ -520,7 +543,9 @@ class RotationEngine:
     # ── Internal Helpers ───────────────────────────────────────────
 
     async def _encrypt_credentials(
-        self, credentials: dict[str, str], secret_path: str,
+        self,
+        credentials: dict[str, str],
+        secret_path: str,
     ) -> str:
         """Encrypt credentials using the existing crypto service."""
         import json
@@ -539,7 +564,9 @@ class RotationEngine:
         return svc.encrypt(json.dumps(credentials), aad=aad)
 
     async def _decrypt_credentials(
-        self, encrypted: str, secret_path: str,
+        self,
+        encrypted: str,
+        secret_path: str,
     ) -> dict[str, str]:
         """Decrypt credentials from encrypted payload."""
         import json
@@ -559,11 +586,14 @@ class RotationEngine:
         return json.loads(plaintext)
 
     async def _update_live_secret(
-        self, secret_path: str, credentials: dict[str, str],
+        self,
+        secret_path: str,
+        credentials: dict[str, str],
     ) -> None:
         """Update the live secret in _dev_secrets (the source of truth for runtime)."""
         try:
             from core.secrets import get_secrets_manager
+
             sm = get_secrets_manager()
             parts = secret_path.split("/")
             if len(parts) >= 6:
@@ -625,7 +655,9 @@ class RotationEngine:
         return result
 
     async def _test_exely_credentials(
-        self, credentials: dict[str, str], tenant_id: str,
+        self,
+        credentials: dict[str, str],
+        tenant_id: str,
     ) -> dict[str, Any]:
         """Test Exely credentials with a real API connectivity check."""
         # Structural validation first
@@ -651,7 +683,9 @@ class RotationEngine:
             return {"success": False, "details": f"Exely connectivity test failed: {e}"}
 
     async def _test_hotelrunner_credentials(
-        self, credentials: dict[str, str], tenant_id: str,
+        self,
+        credentials: dict[str, str],
+        tenant_id: str,
     ) -> dict[str, Any]:
         """Test HotelRunner credentials with real API connectivity check."""
         token = credentials.get("token", "")
@@ -722,15 +756,17 @@ class RotationEngine:
         """Write rotation audit log."""
         try:
             db = self._get_db()
-            await db[COLL_ROTATION_AUDIT].insert_one({
-                "secret_path": secret_path,
-                "action": action,
-                "actor": actor,
-                "version": version,
-                "tenant_id": tenant_id,
-                "details": details or {},
-                "timestamp": datetime.now(UTC).isoformat(),
-            })
+            await db[COLL_ROTATION_AUDIT].insert_one(
+                {
+                    "secret_path": secret_path,
+                    "action": action,
+                    "actor": actor,
+                    "version": version,
+                    "tenant_id": tenant_id,
+                    "details": details or {},
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
         except Exception:
             logger.exception("Failed to write rotation audit log")
 

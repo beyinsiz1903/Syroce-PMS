@@ -12,6 +12,7 @@ Health Domains:
   4. Reconciliation Health
   5. Queue & Worker Health
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -43,9 +44,14 @@ _NO_ID = {"_id": 0}
 async def collect_provider_health() -> dict[str, Any]:
     """Track provider connectivity and response success."""
     providers = {}
-    connections = await db[COLL_PROVIDER_CONNECTIONS].find(
-        {}, _NO_ID,
-    ).to_list(100)
+    connections = (
+        await db[COLL_PROVIDER_CONNECTIONS]
+        .find(
+            {},
+            _NO_ID,
+        )
+        .to_list(100)
+    )
 
     for conn in connections:
         provider = conn.get("provider", "unknown")
@@ -72,9 +78,7 @@ async def collect_provider_health() -> dict[str, Any]:
 
         p["total_syncs"] += conn.get("total_syncs", 0)
         p["total_errors"] += conn.get("total_errors", 0)
-        p["consecutive_failures"] = max(
-            p["consecutive_failures"], conn.get("consecutive_failures", 0)
-        )
+        p["consecutive_failures"] = max(p["consecutive_failures"], conn.get("consecutive_failures", 0))
 
         last_sync = conn.get("last_successful_sync")
         if last_sync and (not p["last_successful_sync"] or last_sync > p["last_successful_sync"]):
@@ -145,13 +149,16 @@ async def collect_ingest_health() -> dict[str, Any]:
     # (shared across instances + restart-safe) with per-process
     # in-memory fallback when Redis is unavailable.
     from .dedup_counter import get_counts as _dedup_get_counts
+
     try:
         dedup = await _dedup_get_counts()
     except Exception as e:
         logger.warning(f"dedup counter read failed: {e}")
         dedup = {
-            "last_1h_total": 0, "last_24h_total": 0,
-            "last_1h_by_tenant_provider": {}, "last_24h_by_tenant_provider": {},
+            "last_1h_total": 0,
+            "last_24h_total": 0,
+            "last_1h_by_tenant_provider": {},
+            "last_24h_by_tenant_provider": {},
         }
 
     return {
@@ -169,9 +176,7 @@ async def collect_ingest_health() -> dict[str, Any]:
         "catchup_dedup_skips_24h": dedup["last_24h_total"],
         "catchup_dedup_by_tenant_1h": dedup["last_1h_by_tenant_provider"],
         "catchup_dedup_by_tenant_24h": dedup["last_24h_by_tenant_provider"],
-        "status": "healthy" if failed_recent < 5 and pending < 100 else (
-            "critical" if failed_recent > 20 or pending > 500 else "degraded"
-        ),
+        "status": "healthy" if failed_recent < 5 and pending < 100 else ("critical" if failed_recent > 20 or pending > 500 else "degraded"),
     }
 
 
@@ -181,9 +186,14 @@ async def collect_ari_health() -> dict[str, Any]:
     one_day_ago = (now - timedelta(days=1)).isoformat()
 
     # Outbound logs (last 24h)
-    recent_logs = await db[COLL_ARI_OUTBOUND_LOGS].find(
-        {"created_at": {"$gte": one_day_ago}}, _NO_ID,
-    ).to_list(1000)
+    recent_logs = (
+        await db[COLL_ARI_OUTBOUND_LOGS]
+        .find(
+            {"created_at": {"$gte": one_day_ago}},
+            _NO_ID,
+        )
+        .to_list(1000)
+    )
 
     total_pushes = len(recent_logs)
     success_count = sum(1 for entry in recent_logs if entry.get("status") == "success" or entry.get("success"))
@@ -276,9 +286,7 @@ async def collect_reconciliation_health() -> dict[str, Any]:
         "cases_by_severity": by_severity,
         "case_growth_rate_24h": recent_cases,
         "critical_count": critical_count,
-        "status": "healthy" if critical_count == 0 and total_open < 10 else (
-            "critical" if critical_count > 0 or total_open > 50 else "degraded"
-        ),
+        "status": "healthy" if critical_count == 0 and total_open < 10 else ("critical" if critical_count > 0 or total_open > 50 else "degraded"),
     }
 
 
@@ -357,9 +365,7 @@ async def collect_queue_worker_health() -> dict[str, Any]:
         "queue_depth": pending_events,
         "retry_backlog": failed_events,
         "dead_letter_events": 0,
-        "status": "healthy" if not stalled_workers and pending_events < 100 else (
-            "critical" if len(stalled_workers) > 0 or pending_events > 500 else "degraded"
-        ),
+        "status": "healthy" if not stalled_workers and pending_events < 100 else ("critical" if len(stalled_workers) > 0 or pending_events > 500 else "degraded"),
     }
 
 
@@ -371,16 +377,15 @@ async def collect_all_metrics() -> dict[str, Any]:
     recon = await collect_reconciliation_health()
     queue = await collect_queue_worker_health()
 
-    statuses = [
-        provider.get("providers", {}).get(p, {}).get("status", "unknown")
-        for p in provider.get("providers", {})
-    ]
-    statuses.extend([
-        ingest.get("status", "unknown"),
-        ari.get("status", "unknown"),
-        recon.get("status", "unknown"),
-        queue.get("status", "unknown"),
-    ])
+    statuses = [provider.get("providers", {}).get(p, {}).get("status", "unknown") for p in provider.get("providers", {})]
+    statuses.extend(
+        [
+            ingest.get("status", "unknown"),
+            ari.get("status", "unknown"),
+            recon.get("status", "unknown"),
+            queue.get("status", "unknown"),
+        ]
+    )
 
     if "critical" in statuses:
         system_health = "critical"

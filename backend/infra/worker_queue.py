@@ -2,6 +2,7 @@
 Worker Queue Manager — Celery task routing, queue monitoring, and worker health.
 Provides named queues, retry policies, dead letter handling, and status APIs.
 """
+
 import logging
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -89,25 +90,31 @@ class WorkerQueueManager:
         self._failure_archive: list[dict[str, Any]] = []
         self._max_history = 1000
         self._max_failures = 500
-        self._metrics = defaultdict(lambda: {
-            "submitted": 0, "completed": 0, "failed": 0,
-            "retried": 0, "timed_out": 0,
-        })
+        self._metrics = defaultdict(
+            lambda: {
+                "submitted": 0,
+                "completed": 0,
+                "failed": 0,
+                "retried": 0,
+                "timed_out": 0,
+            }
+        )
 
     def record_task_start(self, task_name: str, task_id: str, queue: str):
-        self._task_history.append({
-            "task_id": task_id,
-            "task_name": task_name,
-            "queue": queue,
-            "status": "started",
-            "started_at": datetime.now(UTC).isoformat(),
-        })
+        self._task_history.append(
+            {
+                "task_id": task_id,
+                "task_name": task_name,
+                "queue": queue,
+                "status": "started",
+                "started_at": datetime.now(UTC).isoformat(),
+            }
+        )
         self._metrics[queue]["submitted"] += 1
         if len(self._task_history) > self._max_history:
-            self._task_history = self._task_history[-self._max_history:]
+            self._task_history = self._task_history[-self._max_history :]
 
-    def record_task_complete(self, task_name: str, task_id: str,
-                              queue: str, duration_sec: float):
+    def record_task_complete(self, task_name: str, task_id: str, queue: str, duration_sec: float):
         self._metrics[queue]["completed"] += 1
         for entry in reversed(self._task_history):
             if entry["task_id"] == task_id:
@@ -116,8 +123,7 @@ class WorkerQueueManager:
                 entry["completed_at"] = datetime.now(UTC).isoformat()
                 break
 
-    def record_task_failure(self, task_name: str, task_id: str,
-                             queue: str, error: str, retries: int = 0):
+    def record_task_failure(self, task_name: str, task_id: str, queue: str, error: str, retries: int = 0):
         self._metrics[queue]["failed"] += 1
         failure = {
             "task_id": task_id,
@@ -129,7 +135,7 @@ class WorkerQueueManager:
         }
         self._failure_archive.append(failure)
         if len(self._failure_archive) > self._max_failures:
-            self._failure_archive = self._failure_archive[-self._max_failures:]
+            self._failure_archive = self._failure_archive[-self._max_failures :]
 
     def record_task_retry(self, task_name: str, task_id: str, queue: str):
         self._metrics[queue]["retried"] += 1
@@ -138,10 +144,16 @@ class WorkerQueueManager:
         """Get status of all queues with metrics."""
         result = {}
         for queue_name, definition in QUEUE_DEFINITIONS.items():
-            metrics = self._metrics.get(queue_name, {
-                "submitted": 0, "completed": 0, "failed": 0,
-                "retried": 0, "timed_out": 0,
-            })
+            metrics = self._metrics.get(
+                queue_name,
+                {
+                    "submitted": 0,
+                    "completed": 0,
+                    "failed": 0,
+                    "retried": 0,
+                    "timed_out": 0,
+                },
+            )
             result[queue_name] = {
                 **definition,
                 "metrics": dict(metrics),

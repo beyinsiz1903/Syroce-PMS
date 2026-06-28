@@ -8,6 +8,7 @@ Actual implementation split into:
 
 API endpoints remain in this file for router registration compatibility.
 """
+
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -56,6 +57,7 @@ async def manual_pull(
 
     hr_id = conn.get("hr_id", conn.get("property_id", "default"))
     from core.secrets import get_secrets_manager
+
     sm = get_secrets_manager()
     creds = await sm.get_provider_credentials(current_user.tenant_id, "hotelrunner", hr_id)
 
@@ -122,7 +124,8 @@ async def get_sync_status(current_user: User = Depends(get_current_user)):
 
 
 @sync_router.post("/sync/scheduler/start")
-async def start_scheduler(current_user: User = Depends(get_current_user),
+async def start_scheduler(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     conn = await db.hotelrunner_connections.find_one(
@@ -138,7 +141,8 @@ async def start_scheduler(current_user: User = Depends(get_current_user),
 
 
 @sync_router.post("/sync/scheduler/stop")
-async def stop_scheduler(current_user: User = Depends(get_current_user),
+async def stop_scheduler(
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     await pull_scheduler.stop()
@@ -160,6 +164,7 @@ async def full_resync(
 
     hr_id = conn.get("hr_id", conn.get("property_id", "default"))
     from core.secrets import get_secrets_manager
+
     sm = get_secrets_manager()
     creds = await sm.get_provider_credentials(current_user.tenant_id, "hotelrunner", hr_id)
 
@@ -174,8 +179,10 @@ async def full_resync(
             raise HTTPException(status_code=502, detail="HotelRunner kimlik bilgileri bulunamadi")
 
     from core.tenant_db import set_tenant_context
+
     set_tenant_context(current_user.tenant_id)
     from domains.channel_manager.providers.hotelrunner import HotelRunnerProvider
+
     provider = HotelRunnerProvider(token=creds["token"], hr_id=creds.get("hr_id", hr_id))
 
     all_reservations = []
@@ -183,7 +190,9 @@ async def full_resync(
     total_pages = 1
     while page <= total_pages:
         result = await provider.get_reservations(
-            undelivered=False, per_page=50, page=page,
+            undelivered=False,
+            per_page=50,
+            page=page,
         )
         if not result["success"]:
             raise HTTPException(status_code=502, detail=f"Rezervasyon cekme hatasi: {result.get('error')}")
@@ -200,8 +209,10 @@ async def full_resync(
         for sub_res in sub_reservations:
             try:
                 await _persist_and_process(
-                    current_user.tenant_id, _resolve_property_id(sub_res),
-                    sub_res, "reservation_pull",
+                    current_user.tenant_id,
+                    _resolve_property_id(sub_res),
+                    sub_res,
+                    "reservation_pull",
                 )
                 processed += 1
             except Exception as e:

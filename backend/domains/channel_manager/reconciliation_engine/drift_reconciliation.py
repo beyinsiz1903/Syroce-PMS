@@ -5,6 +5,7 @@ Auto-reconciles inventory discrepancies between PMS and OTA channels.
 Moved from the standalone reconciliation_engine.py to resolve the
 file/package naming conflict (Python package shadows the .py file).
 """
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -75,26 +76,32 @@ class ReconciliationEngine:
             "reconciled_at": datetime.now(UTC).isoformat(),
         }
 
-        await db.reconciliation_results.insert_one({
-            **result,
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
-
-        logger.info(
-            f"Reconciliation for tenant {tenant_id}: "
-            f"{result['auto_fixed']} auto-fixed, {result['manual_review']} need manual review"
+        await db.reconciliation_results.insert_one(
+            {
+                **result,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
         )
+
+        logger.info(f"Reconciliation for tenant {tenant_id}: {result['auto_fixed']} auto-fixed, {result['manual_review']} need manual review")
 
         return result
 
     @staticmethod
     async def get_reconciliation_history(
-        tenant_id: str, *, limit: int = 20,
+        tenant_id: str,
+        *,
+        limit: int = 20,
     ) -> list[dict[str, Any]]:
-        return await db.reconciliation_results.find(
-            {"tenant_id": tenant_id},
-            {"_id": 0},
-        ).sort("timestamp", -1).limit(limit).to_list(limit)
+        return (
+            await db.reconciliation_results.find(
+                {"tenant_id": tenant_id},
+                {"_id": 0},
+            )
+            .sort("timestamp", -1)
+            .limit(limit)
+            .to_list(limit)
+        )
 
 
 # Singleton

@@ -1,4 +1,5 @@
 """Forecast / Pace / Pickup raporları — RM odaklı 10/30/90 gün."""
+
 from __future__ import annotations
 
 import logging
@@ -17,9 +18,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/analytics", tags=["Revenue / Forecast"])
 
 
-async def _iter_bookings_in_range(
-    db, tenant_id: str, start: datetime, end: datetime, segment: str | None = None
-):
+async def _iter_bookings_in_range(db, tenant_id: str, start: datetime, end: datetime, segment: str | None = None):
     q: dict[str, Any] = {
         "tenant_id": tenant_id,
         "check_in": {"$gte": start.isoformat(), "$lte": end.isoformat()},
@@ -65,14 +64,8 @@ async def forecast(
                 co_raw = b.get("check_out")
                 if not ci_raw or not co_raw:
                     continue
-                ci = (
-                    ci_raw if isinstance(ci_raw, datetime)
-                    else datetime.fromisoformat(str(ci_raw).replace("Z", "+00:00"))
-                )
-                co = (
-                    co_raw if isinstance(co_raw, datetime)
-                    else datetime.fromisoformat(str(co_raw).replace("Z", "+00:00"))
-                )
+                ci = ci_raw if isinstance(ci_raw, datetime) else datetime.fromisoformat(str(ci_raw).replace("Z", "+00:00"))
+                co = co_raw if isinstance(co_raw, datetime) else datetime.fromisoformat(str(co_raw).replace("Z", "+00:00"))
                 if ci.tzinfo is None:
                     ci = ci.replace(tzinfo=UTC)
                 if co.tzinfo is None:
@@ -104,16 +97,18 @@ async def forecast(
             occupancy = round((rooms_fcst / total_rooms) * 100, 1)
             adr = round((rev_fcst / rooms_fcst) if rooms_fcst else 0, 2)
             revpar = round(rev_fcst / total_rooms, 2)
-            out.append({
-                "date": d,
-                "rooms_otb": int(rooms_otb),
-                "rooms_forecast": rooms_fcst,
-                "revenue_otb": round(rev_otb, 2),
-                "revenue_forecast": rev_fcst,
-                "occupancy_pct": occupancy,
-                "adr": adr,
-                "revpar": revpar,
-            })
+            out.append(
+                {
+                    "date": d,
+                    "rooms_otb": int(rooms_otb),
+                    "rooms_forecast": rooms_fcst,
+                    "revenue_otb": round(rev_otb, 2),
+                    "revenue_forecast": rev_fcst,
+                    "occupancy_pct": occupancy,
+                    "adr": adr,
+                    "revpar": revpar,
+                }
+            )
         return {
             "horizon_days": days,
             "segment": segment,
@@ -144,20 +139,20 @@ async def pace(
         return {"error": "target_date YYYY-MM-DD olmalı"}
 
     async def _pace_for(date_dt: datetime) -> list[dict[str, Any]]:
-        cur = db.bookings.find({
-            "tenant_id": user.tenant_id,
-            "check_in": {
-                "$gte": date_dt.replace(hour=0, minute=0, second=0).isoformat(),
-                "$lt": (date_dt + timedelta(days=1)).isoformat(),
-            },
-            "status": {"$nin": ["cancelled", "no_show"]},
-        })
+        cur = db.bookings.find(
+            {
+                "tenant_id": user.tenant_id,
+                "check_in": {
+                    "$gte": date_dt.replace(hour=0, minute=0, second=0).isoformat(),
+                    "$lt": (date_dt + timedelta(days=1)).isoformat(),
+                },
+                "status": {"$nin": ["cancelled", "no_show"]},
+            }
+        )
         by_lead: dict[int, int] = {}
         async for b in cur:
             try:
-                created = datetime.fromisoformat(
-                    str(b.get("created_at", "")).replace("Z", "+00:00")
-                )
+                created = datetime.fromisoformat(str(b.get("created_at", "")).replace("Z", "+00:00"))
                 lead_days = (date_dt - created).days
                 if lead_days < 0:
                     continue
@@ -196,11 +191,13 @@ async def pickup_report(
     db = get_system_db()
     now = datetime.now(UTC)
     since = (now - timedelta(days=period_days)).isoformat()
-    cur = db.bookings.find({
-        "tenant_id": user.tenant_id,
-        "created_at": {"$gte": since},
-        "status": {"$nin": ["cancelled", "no_show"]},
-    })
+    cur = db.bookings.find(
+        {
+            "tenant_id": user.tenant_id,
+            "created_at": {"$gte": since},
+            "status": {"$nin": ["cancelled", "no_show"]},
+        }
+    )
     by_ci_date: dict[str, dict[str, float]] = {}
     total_rooms = 0
     total_revenue = 0.0
@@ -213,10 +210,7 @@ async def pickup_report(
         rec["revenue"] += float(b.get("total_amount", 0))
         total_rooms += 1
         total_revenue += float(b.get("total_amount", 0))
-    daily = [
-        {"check_in": d, "rooms": int(by_ci_date[d]["rooms"]), "revenue": round(by_ci_date[d]["revenue"], 2)}
-        for d in sorted(by_ci_date.keys())
-    ]
+    daily = [{"check_in": d, "rooms": int(by_ci_date[d]["rooms"]), "revenue": round(by_ci_date[d]["revenue"], 2)} for d in sorted(by_ci_date.keys())]
     return {
         "period_days": period_days,
         "total_rooms_picked": total_rooms,

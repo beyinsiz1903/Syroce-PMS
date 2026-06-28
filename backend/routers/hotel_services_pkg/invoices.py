@@ -1,4 +1,5 @@
 """Auto-split from hotel_services.py — backward-compatible sub-router."""
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -87,7 +88,7 @@ async def generate_invoice_pdf(
     if accommodation_total > 0:
         folio_rows += f"""<tr>
             <td style="padding:8px;border-bottom:1px solid #eee;">Konaklama</td>
-            <td style="padding:8px;border-bottom:1px solid #eee;">{_e(booking.get("check_in",""))[:10]} - {_e(booking.get("check_out",""))[:10]}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;">{_e(booking.get("check_in", ""))[:10]} - {_e(booking.get("check_out", ""))[:10]}</td>
             <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">{_e(currency)}{accommodation_total:,.2f}</td>
         </tr>"""
 
@@ -96,8 +97,8 @@ async def generate_invoice_pdf(
             continue
         folio_rows += f"""<tr>
             <td style="padding:8px;border-bottom:1px solid #eee;">{_e(f.get("description", f.get("category", "Masraf")))}</td>
-            <td style="padding:8px;border-bottom:1px solid #eee;">{_e((f.get("created_at",""))[:10])}</td>
-            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">{_e(currency)}{f.get("amount",0):,.2f}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;">{_e((f.get("created_at", ""))[:10])}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">{_e(currency)}{f.get("amount", 0):,.2f}</td>
         </tr>"""
 
     payment_rows = ""
@@ -105,8 +106,8 @@ async def generate_invoice_pdf(
         method_label = {"cash": "Nakit", "card": "Kredi Karti", "bank_transfer": "Havale/EFT", "online": "Online"}.get(p.get("method", ""), p.get("method", ""))
         payment_rows += f"""<tr>
             <td style="padding:8px;border-bottom:1px solid #eee;">{_e(method_label)}</td>
-            <td style="padding:8px;border-bottom:1px solid #eee;">{_e((p.get("created_at",""))[:10])}</td>
-            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">{_e(currency)}{p.get("amount",0):,.2f}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;">{_e((p.get("created_at", ""))[:10])}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">{_e(currency)}{p.get("amount", 0):,.2f}</td>
         </tr>"""
 
     grand_total = accommodation_total + sum(f.get("amount", 0) for f in folios if f.get("type") != "payment")
@@ -137,12 +138,12 @@ th {{ background:#f1f5f9; padding:10px 8px; text-align:left; font-weight:600; fo
 <div class="header">
     <div>{logo_html}</div>
     <div class="hotel-info">
-        <div class="hotel-name">{_e(settings.get("hotel_name",""))}</div>
-        <div>{_e(settings.get("hotel_address",""))}</div>
-        <div>{_e(settings.get("hotel_phone",""))}</div>
-        <div>{_e(settings.get("hotel_email",""))}</div>
-        {f'<div>Vergi No: {_e(settings.get("tax_id",""))}</div>' if settings.get("tax_id") else ''}
-        {f'<div>Vergi Dairesi: {_e(settings.get("tax_office",""))}</div>' if settings.get("tax_office") else ''}
+        <div class="hotel-name">{_e(settings.get("hotel_name", ""))}</div>
+        <div>{_e(settings.get("hotel_address", ""))}</div>
+        <div>{_e(settings.get("hotel_phone", ""))}</div>
+        <div>{_e(settings.get("hotel_email", ""))}</div>
+        {f"<div>Vergi No: {_e(settings.get("tax_id", ""))}</div>" if settings.get("tax_id") else ""}
+        {f"<div>Vergi Dairesi: {_e(settings.get("tax_office", ""))}</div>" if settings.get("tax_office") else ""}
     </div>
 </div>
 
@@ -156,14 +157,14 @@ th {{ background:#f1f5f9; padding:10px 8px; text-align:left; font-weight:600; fo
     <div class="info-box">
         <h3>Misafir Bilgileri</h3>
         <div><strong>{_e(guest_name)}</strong></div>
-        {f'<div>{_e(guest_email)}</div>' if guest_email else ''}
-        {f'<div>{_e(guest_phone)}</div>' if guest_phone else ''}
+        {f"<div>{_e(guest_email)}</div>" if guest_email else ""}
+        {f"<div>{_e(guest_phone)}</div>" if guest_phone else ""}
     </div>
     <div class="info-box">
         <h3>Rezervasyon Bilgileri</h3>
-        <div>Oda: <strong>{_e(booking.get("room_number","-"))}</strong></div>
-        <div>Giris: <strong>{_e((booking.get("check_in",""))[:10])}</strong></div>
-        <div>Cikis: <strong>{_e((booking.get("check_out",""))[:10])}</strong></div>
+        <div>Oda: <strong>{_e(booking.get("room_number", "-"))}</strong></div>
+        <div>Giris: <strong>{_e((booking.get("check_in", ""))[:10])}</strong></div>
+        <div>Cikis: <strong>{_e((booking.get("check_out", ""))[:10])}</strong></div>
     </div>
 </div>
 
@@ -209,7 +210,7 @@ th {{ background:#f1f5f9; padding:10px 8px; text-align:left; font-weight:600; fo
 <div class="footer">
     {_e(settings.get("invoice_footer", "") or "Bizi tercih ettiginiz icin tesekkur ederiz.")}
     <br><br>
-    {_e(settings.get("hotel_name",""))} | {_e(settings.get("hotel_address",""))} | {_e(settings.get("hotel_phone",""))}
+    {_e(settings.get("hotel_name", ""))} | {_e(settings.get("hotel_address", ""))} | {_e(settings.get("hotel_phone", ""))}
 </div>
 
 </body></html>"""
@@ -229,7 +230,6 @@ th {{ background:#f1f5f9; padding:10px 8px; text-align:left; font-weight:600; fo
 # ═══════════════════════════════════════════════════
 # 6. GROUP FOLIO MERGING
 # ═══════════════════════════════════════════════════
-
 
 
 @sub_router.get("/reservations/{booking_id}/voucher")
@@ -292,17 +292,17 @@ body {{ font-family: 'Segoe UI', Arial, sans-serif; margin:0; padding:40px; colo
     <div class="info-grid">
         <div class="info-item"><div class="info-label">Misafir</div><div class="info-value">{_e(guest_name)}</div></div>
         <div class="info-item"><div class="info-label">Rezervasyon No</div><div class="info-value">{_e(booking.get("ota_confirmation", booking_id[:12]))}</div></div>
-        <div class="info-item"><div class="info-label">Giris Tarihi</div><div class="info-value">{_e(str(booking.get("check_in",""))[:10])}</div></div>
-        <div class="info-item"><div class="info-label">Cikis Tarihi</div><div class="info-value">{_e(str(booking.get("check_out",""))[:10])}</div></div>
-        <div class="info-item"><div class="info-label">Oda / Tip</div><div class="info-value">{_e(booking.get("room_number", room.get("room_number","-") if room else "-"))} / {_e(room.get("room_type","") if room else booking.get("room_type",""))}</div></div>
+        <div class="info-item"><div class="info-label">Giris Tarihi</div><div class="info-value">{_e(str(booking.get("check_in", ""))[:10])}</div></div>
+        <div class="info-item"><div class="info-label">Cikis Tarihi</div><div class="info-value">{_e(str(booking.get("check_out", ""))[:10])}</div></div>
+        <div class="info-item"><div class="info-label">Oda / Tip</div><div class="info-value">{_e(booking.get("room_number", room.get("room_number", "-") if room else "-"))} / {_e(room.get("room_type", "") if room else booking.get("room_type", ""))}</div></div>
         <div class="info-item"><div class="info-label">Gece Sayisi</div><div class="info-value">{nights}</div></div>
-        <div class="info-item"><div class="info-label">Yetiskin / Cocuk</div><div class="info-value">{int(booking.get("adults",1) or 0)} / {int(booking.get("children",0) or 0)}</div></div>
-        <div class="info-item"><div class="info-label">Pansiyon</div><div class="info-value">{_e(booking.get("rate_plan","Standart"))}</div></div>
+        <div class="info-item"><div class="info-label">Yetiskin / Cocuk</div><div class="info-value">{int(booking.get("adults", 1) or 0)} / {int(booking.get("children", 0) or 0)}</div></div>
+        <div class="info-item"><div class="info-label">Pansiyon</div><div class="info-value">{_e(booking.get("rate_plan", "Standart"))}</div></div>
     </div>
-    {f'<div style="padding:12px;background:#fffbeb;border-radius:8px;margin-bottom:16px;"><strong>Ozel Istekler:</strong> {_e(booking.get("special_requests",""))}</div>' if booking.get("special_requests") else ''}
+    {f'<div style="padding:12px;background:#fffbeb;border-radius:8px;margin-bottom:16px;"><strong>Ozel Istekler:</strong> {_e(booking.get("special_requests", ""))}</div>' if booking.get("special_requests") else ""}
     <div class="footer">
-        <div>Bu voucher {_e(settings.get("hotel_name",""))} tarafindan duzenlenmistir.</div>
-        <div>{_e(settings.get("hotel_phone",""))} | {_e(settings.get("hotel_email",""))}</div>
+        <div>Bu voucher {_e(settings.get("hotel_name", ""))} tarafindan duzenlenmistir.</div>
+        <div>{_e(settings.get("hotel_phone", ""))} | {_e(settings.get("hotel_email", ""))}</div>
         <div style="margin-top:8px;">Tarih: {datetime.now(UTC).strftime("%d.%m.%Y %H:%M")}</div>
     </div>
 </div>
@@ -342,36 +342,45 @@ async def generate_custom_invoice(
             "hotel_address": tenant.get("address", "") if tenant else "",
             "hotel_phone": tenant.get("phone", "") if tenant else "",
             "hotel_email": tenant.get("email", "") if tenant else "",
-            "tax_id": "", "tax_office": "", "currency_symbol": "₺", "invoice_footer": "",
+            "tax_id": "",
+            "tax_office": "",
+            "currency_symbol": "₺",
+            "invoice_footer": "",
         }
 
     all_charges = []
     if booking.get("total_amount", 0) > 0:
-        all_charges.append({
-            "id": "accommodation",
-            "description": "Konaklama",
-            "date": str(booking.get("check_in", ""))[:10],
-            "amount": booking["total_amount"],
-            "category": "room",
-        })
+        all_charges.append(
+            {
+                "id": "accommodation",
+                "description": "Konaklama",
+                "date": str(booking.get("check_in", ""))[:10],
+                "amount": booking["total_amount"],
+                "category": "room",
+            }
+        )
 
     async for f in db.folios.find({"booking_id": booking_id, "tenant_id": tid, "type": {"$ne": "payment"}}, {"_id": 0}).sort("created_at", 1):
-        all_charges.append({
-            "id": f.get("id", ""),
-            "description": f.get("description", f.get("category", "Masraf")),
-            "date": str(f.get("created_at", ""))[:10],
-            "amount": f.get("amount", 0),
-            "category": f.get("category", "other"),
-        })
+        all_charges.append(
+            {
+                "id": f.get("id", ""),
+                "description": f.get("description", f.get("category", "Masraf")),
+                "date": str(f.get("created_at", ""))[:10],
+                "amount": f.get("amount", 0),
+                "category": f.get("category", "other"),
+            }
+        )
 
     async for ec in db.extra_charges.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", 1):
-        all_charges.append({
-            "id": ec.get("id", ""),
-            "description": ec.get("description", "Ekstra"),
-            "date": str(ec.get("created_at", ""))[:10],
-            "amount": ec.get("total", ec.get("amount", 0)),
-            "category": ec.get("category", "other"),
-        })
+        all_charges.append(
+            {
+                "id": ec.get("id", ""),
+                "description": ec.get("description", "Ekstra"),
+                "date": str(ec.get("created_at", ""))[:10],
+                "amount": ec.get("total", ec.get("amount", 0)),
+                "category": ec.get("category", "other"),
+            }
+        )
 
     if body.selected_charge_ids:
         selected = [c for c in all_charges if c["id"] in body.selected_charge_ids]
@@ -425,13 +434,13 @@ thead th {{ background:#f1f5f9; padding:10px 12px; text-align:left; font-weight:
             <div class="invoice-meta">Fatura No: <strong>{_e(invoice_number)}</strong><br>Tarih: <strong>{datetime.now(UTC).strftime("%d.%m.%Y")}</strong></div>
         </div>
         <div class="hotel-info">
-            <div class="hotel-name">{_e(settings.get("hotel_name",""))}</div>
+            <div class="hotel-name">{_e(settings.get("hotel_name", ""))}</div>
             <div class="hotel-detail">
-                {_e(settings.get("hotel_address",""))}<br>
-                Tel: {_e(settings.get("hotel_phone",""))}<br>
-                {_e(settings.get("hotel_email",""))}
-                {f"<br>Vergi No: {_e(settings.get('tax_id',''))}" if settings.get("tax_id") else ""}
-                {f"<br>V.D.: {_e(settings.get('tax_office',''))}" if settings.get("tax_office") else ""}
+                {_e(settings.get("hotel_address", ""))}<br>
+                Tel: {_e(settings.get("hotel_phone", ""))}<br>
+                {_e(settings.get("hotel_email", ""))}
+                {f"<br>Vergi No: {_e(settings.get('tax_id', ''))}" if settings.get("tax_id") else ""}
+                {f"<br>V.D.: {_e(settings.get('tax_office', ''))}" if settings.get("tax_office") else ""}
             </div>
         </div>
     </div>
@@ -447,9 +456,9 @@ thead th {{ background:#f1f5f9; padding:10px 12px; text-align:left; font-weight:
         </div>
         <div class="bill-box">
             <h4>Konaklama Bilgileri</h4>
-            <p>Oda: <strong>{_e(booking.get("room_number","-"))}</strong></p>
-            <p>Giris: <strong>{_e(str(booking.get("check_in",""))[:10])}</strong></p>
-            <p>Cikis: <strong>{_e(str(booking.get("check_out",""))[:10])}</strong></p>
+            <p>Oda: <strong>{_e(booking.get("room_number", "-"))}</strong></p>
+            <p>Giris: <strong>{_e(str(booking.get("check_in", ""))[:10])}</strong></p>
+            <p>Cikis: <strong>{_e(str(booking.get("check_out", ""))[:10])}</strong></p>
             <p>Rez. No: <strong>{_e(booking.get("ota_confirmation", booking_id[:12]))}</strong></p>
         </div>
     </div>
@@ -463,27 +472,29 @@ thead th {{ background:#f1f5f9; padding:10px 12px; text-align:left; font-weight:
         <div class="grand">TOPLAM: {_e(currency)}{grand_total:,.2f}</div>
     </div>
 
-    {f'<div style="margin-top:16px;padding:12px;background:#fffbeb;border-radius:8px;font-size:12px;">{_e(body.invoice_note)}</div>' if body.invoice_note else ''}
+    {f'<div style="margin-top:16px;padding:12px;background:#fffbeb;border-radius:8px;font-size:12px;">{_e(body.invoice_note)}</div>' if body.invoice_note else ""}
 
     <div class="footer">
         {_e(settings.get("invoice_footer", "") or "Bizi tercih ettiginiz icin tesekkur ederiz.")}<br>
-        {_e(settings.get("hotel_name",""))} | {_e(settings.get("hotel_address",""))} | {_e(settings.get("hotel_phone",""))}
+        {_e(settings.get("hotel_name", ""))} | {_e(settings.get("hotel_address", ""))} | {_e(settings.get("hotel_phone", ""))}
     </div>
 </div>
 </body></html>"""
 
-    await db.invoices.insert_one({
-        "id": str(uuid.uuid4()),
-        "tenant_id": tid,
-        "booking_id": booking_id,
-        "invoice_number": invoice_number,
-        "billing_name": guest_name,
-        "billing_tax_id": body.billing_tax_id,
-        "total": grand_total,
-        "item_count": len(selected),
-        "created_at": datetime.now(UTC).isoformat(),
-        "created_by": current_user.name,
-    })
+    await db.invoices.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tid,
+            "booking_id": booking_id,
+            "invoice_number": invoice_number,
+            "billing_name": guest_name,
+            "billing_tax_id": body.billing_tax_id,
+            "total": grand_total,
+            "item_count": len(selected),
+            "created_at": datetime.now(UTC).isoformat(),
+            "created_by": current_user.name,
+        }
+    )
 
     return {
         "success": True,
@@ -497,6 +508,7 @@ thead th {{ background:#f1f5f9; padding:10px 12px; text-align:left; font-weight:
 # ═══════════════════════════════════════════════════
 # 13. GET INVOICE CHARGES (for frontend item selection)
 # ═══════════════════════════════════════════════════
+
 
 @sub_router.get("/reservations/{booking_id}/invoice-charges")
 async def get_invoice_charges(
@@ -512,31 +524,37 @@ async def get_invoice_charges(
 
     charges = []
     if booking.get("total_amount", 0) > 0:
-        charges.append({
-            "id": "accommodation",
-            "description": "Konaklama",
-            "category": "room",
-            "amount": booking["total_amount"],
-            "date": str(booking.get("check_in", ""))[:10],
-        })
+        charges.append(
+            {
+                "id": "accommodation",
+                "description": "Konaklama",
+                "category": "room",
+                "amount": booking["total_amount"],
+                "date": str(booking.get("check_in", ""))[:10],
+            }
+        )
 
     async for f in db.folios.find({"booking_id": booking_id, "tenant_id": tid, "type": {"$ne": "payment"}}, {"_id": 0}).sort("created_at", 1):
-        charges.append({
-            "id": f.get("id", ""),
-            "description": f.get("description", f.get("category", "Masraf")),
-            "category": f.get("category", "other"),
-            "amount": f.get("amount", 0),
-            "date": str(f.get("created_at", ""))[:10],
-        })
+        charges.append(
+            {
+                "id": f.get("id", ""),
+                "description": f.get("description", f.get("category", "Masraf")),
+                "category": f.get("category", "other"),
+                "amount": f.get("amount", 0),
+                "date": str(f.get("created_at", ""))[:10],
+            }
+        )
 
     async for ec in db.extra_charges.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", 1):
-        charges.append({
-            "id": ec.get("id", ""),
-            "description": ec.get("description", "Ekstra"),
-            "category": ec.get("category", "other"),
-            "amount": ec.get("total", ec.get("amount", 0)),
-            "date": str(ec.get("created_at", ""))[:10],
-        })
+        charges.append(
+            {
+                "id": ec.get("id", ""),
+                "description": ec.get("description", "Ekstra"),
+                "category": ec.get("category", "other"),
+                "amount": ec.get("total", ec.get("amount", 0)),
+                "date": str(ec.get("created_at", ""))[:10],
+            }
+        )
 
     return {"charges": charges}
 
@@ -544,5 +562,3 @@ async def get_invoice_charges(
 # ═══════════════════════════════════════════════════
 # 14. ROOM CHANGE WITH ROOM TYPE FILTER AND PRICING
 # ═══════════════════════════════════════════════════
-
-

@@ -13,6 +13,7 @@ Usable in two modes:
 SECRETS_PROVIDER=local_dev remains forbidden in production by
 SecretsConfig.validate().
 """
+
 import json
 import logging
 import os
@@ -54,9 +55,7 @@ class LocalDevSecretsProvider(SecretsProviderBase):
             # (CM_MASTER_KEY_CURRENT) is required and validated at startup by
             # core.crypto.load_keyring, so reaching this point means it is set.
             logger.info(
-                "Secrets backend active: MongoDB-encrypted store "
-                "(SECRETS_PROVIDER=env, APP_ENV=%s). Credentials encrypted "
-                "at rest via core.crypto.",
+                "Secrets backend active: MongoDB-encrypted store (SECRETS_PROVIDER=env, APP_ENV=%s). Credentials encrypted at rest via core.crypto.",
                 app_env,
             )
         elif is_production:
@@ -64,14 +63,12 @@ class LocalDevSecretsProvider(SecretsProviderBase):
             # have been blocked by SecretsConfig.validate(); warn loudly in
             # case that guard is ever bypassed.
             logger.warning(
-                "LocalDevSecretsProvider initialized in production with "
-                "SECRETS_PROVIDER=%s — THIS IS NOT A PRODUCTION-APPROVED MODE",
+                "LocalDevSecretsProvider initialized in production with SECRETS_PROVIDER=%s — THIS IS NOT A PRODUCTION-APPROVED MODE",
                 provider,
             )
         else:
             logger.info(
-                "Secrets backend active: MongoDB-encrypted store "
-                "(development mode, APP_ENV=%s).",
+                "Secrets backend active: MongoDB-encrypted store (development mode, APP_ENV=%s).",
                 app_env,
             )
 
@@ -79,6 +76,7 @@ class LocalDevSecretsProvider(SecretsProviderBase):
         # Use raw db (not TenantAwareDBProxy) — `_dev_secrets` is a system
         # collection and must not be auto-scoped by tenant context.
         from core.database import _raw_db
+
         return _raw_db
 
     def _build_aad(self, path: str) -> AADContext:
@@ -170,12 +168,14 @@ class LocalDevSecretsProvider(SecretsProviderBase):
         now = datetime.now(UTC).isoformat()
         await db[COLL_DEV_SECRETS].update_one(
             {"path": path},
-            {"$set": {
-                "encrypted_payload": self._encrypt_payload(payload, path),
-                "field_names": list(payload.keys()),
-                "key_version": self._svc._keyring.current_kid,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "encrypted_payload": self._encrypt_payload(payload, path),
+                    "field_names": list(payload.keys()),
+                    "key_version": self._svc._keyring.current_kid,
+                    "updated_at": now,
+                }
+            },
         )
         logger.info("[DEV] Secret updated: %s", path)
 
@@ -214,14 +214,16 @@ class LocalDevSecretsProvider(SecretsProviderBase):
 
         await db[COLL_DEV_SECRETS].update_one(
             {"path": path},
-            {"$set": {
-                "encrypted_payload": self._encrypt_payload(new_payload, path),
-                "field_names": list(new_payload.keys()),
-                "version": new_version,
-                "key_version": self._svc._keyring.current_kid,
-                "rotation_count": new_count,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "encrypted_payload": self._encrypt_payload(new_payload, path),
+                    "field_names": list(new_payload.keys()),
+                    "version": new_version,
+                    "key_version": self._svc._keyring.current_kid,
+                    "rotation_count": new_count,
+                    "updated_at": now,
+                }
+            },
         )
         logger.info("[DEV] Secret rotated: %s (v%s, #%d)", path, new_version, new_count)
 

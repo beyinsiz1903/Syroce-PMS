@@ -11,6 +11,7 @@ Tasarım (laundry/transfer desenleriyle hizalı):
   3. Atama ve terminal geçişler atomik CAS ile yapılır (yarış → tek kazanan).
   4. Folio etkisi yoktur (saf hizmet takibi).
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -28,7 +29,12 @@ router = APIRouter(prefix="/api/concierge", tags=["PMS / Concierge"])
 
 # Görev girebilen/atayabilen/durum güncelleyebilen roller.
 _TASK_ROLES = {
-    "super_admin", "admin", "supervisor", "front_desk", "concierge", "staff",
+    "super_admin",
+    "admin",
+    "supervisor",
+    "front_desk",
+    "concierge",
+    "staff",
 }
 
 # Geçerli görev tipleri (sunucu otoritedir).
@@ -146,11 +152,7 @@ async def list_tasks(
         q["assigned_to"] = assigned_to
     if room_number:
         q["room_number"] = str(room_number).strip()
-    rows = (
-        await db.concierge_tasks.find(q, {"_id": 0})
-        .sort("created_at", -1)
-        .to_list(limit)
-    )
+    rows = await db.concierge_tasks.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
     return {"tasks": rows}
 
 
@@ -163,11 +165,7 @@ async def task_stats(current_user: User = Depends(get_current_user)):
     ]
     rows = await db.concierge_tasks.aggregate(pipeline).to_list(50)
     by_status = {r["_id"]: r["count"] for r in rows if r.get("_id")}
-    open_like = (
-        by_status.get("open", 0)
-        + by_status.get("assigned", 0)
-        + by_status.get("in_progress", 0)
-    )
+    open_like = by_status.get("open", 0) + by_status.get("assigned", 0) + by_status.get("in_progress", 0)
     return {
         "by_status": by_status,
         "open_total": open_like,
@@ -179,9 +177,7 @@ async def task_stats(current_user: User = Depends(get_current_user)):
 @router.get("/tasks/{task_id}")
 async def get_task(task_id: str, current_user: User = Depends(get_current_user)):
     tenant_id = _tenant_of(current_user)
-    doc = await db.concierge_tasks.find_one(
-        {"id": task_id, "tenant_id": tenant_id}, {"_id": 0}
-    )
+    doc = await db.concierge_tasks.find_one({"id": task_id, "tenant_id": tenant_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Görev bulunamadı")
     return {"task": doc}
@@ -245,9 +241,7 @@ async def update_task(
     if not task:
         raise HTTPException(status_code=404, detail="Görev bulunamadı")
     if task.get("status") in ("completed", "cancelled"):
-        raise HTTPException(
-            status_code=409, detail="Tamamlanmış/iptal görev düzenlenemez"
-        )
+        raise HTTPException(status_code=409, detail="Tamamlanmış/iptal görev düzenlenemez")
 
     updates = dict(payload.model_dump(exclude_unset=True))
     if "title" in updates and updates["title"]:
@@ -257,12 +251,8 @@ async def update_task(
     if not updates:
         raise HTTPException(status_code=400, detail="Güncellenecek alan yok")
     updates["updated_at"] = _now_iso()
-    await db.concierge_tasks.update_one(
-        {"id": task_id, "tenant_id": tenant_id}, {"$set": updates}
-    )
-    doc = await db.concierge_tasks.find_one(
-        {"id": task_id, "tenant_id": tenant_id}, {"_id": 0}
-    )
+    await db.concierge_tasks.update_one({"id": task_id, "tenant_id": tenant_id}, {"$set": updates})
+    doc = await db.concierge_tasks.find_one({"id": task_id, "tenant_id": tenant_id}, {"_id": 0})
     return {"task": doc}
 
 
@@ -279,25 +269,23 @@ async def assign_task(
     if not task:
         raise HTTPException(status_code=404, detail="Görev bulunamadı")
     if task.get("status") in ("completed", "cancelled"):
-        raise HTTPException(
-            status_code=409, detail="Tamamlanmış/iptal görev atanamaz"
-        )
+        raise HTTPException(status_code=409, detail="Tamamlanmış/iptal görev atanamaz")
 
     now = _now_iso()
     new_status = "assigned" if task.get("status") == "open" else task.get("status")
     await db.concierge_tasks.update_one(
         {"id": task_id, "tenant_id": tenant_id},
-        {"$set": {
-            "assigned_to": payload.assigned_to.strip(),
-            "assigned_to_name": (payload.assigned_to_name or "").strip() or None,
-            "assigned_at": now,
-            "status": new_status,
-            "updated_at": now,
-        }},
+        {
+            "$set": {
+                "assigned_to": payload.assigned_to.strip(),
+                "assigned_to_name": (payload.assigned_to_name or "").strip() or None,
+                "assigned_at": now,
+                "status": new_status,
+                "updated_at": now,
+            }
+        },
     )
-    doc = await db.concierge_tasks.find_one(
-        {"id": task_id, "tenant_id": tenant_id}, {"_id": 0}
-    )
+    doc = await db.concierge_tasks.find_one({"id": task_id, "tenant_id": tenant_id}, {"_id": 0})
     return {"task": doc}
 
 
@@ -322,9 +310,7 @@ async def update_task_status(
     if new_status == cur_status:
         return {"ok": True, "status": cur_status}
     if new_status not in _TRANSITIONS.get(cur_status, set()):
-        raise HTTPException(
-            status_code=409, detail=f"Geçersiz geçiş: {cur_status} → {new_status}"
-        )
+        raise HTTPException(status_code=409, detail=f"Geçersiz geçiş: {cur_status} → {new_status}")
 
     now = _now_iso()
     update_set: dict = {"status": new_status, "updated_at": now}
@@ -339,9 +325,7 @@ async def update_task_status(
         {"$set": update_set},
     )
     if res.modified_count == 0:
-        latest = await db.concierge_tasks.find_one(
-            {"id": task_id, "tenant_id": tenant_id}, {"_id": 0}
-        )
+        latest = await db.concierge_tasks.find_one({"id": task_id, "tenant_id": tenant_id}, {"_id": 0})
         return {"ok": True, "status": (latest or {}).get("status")}
     return {"ok": True, "status": new_status}
 

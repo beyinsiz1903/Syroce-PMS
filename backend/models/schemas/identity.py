@@ -1,4 +1,5 @@
 """Auto-split from schemas.py — domain: identity."""
+
 import uuid
 from datetime import UTC, datetime
 from typing import Literal
@@ -40,6 +41,7 @@ class Tenant(BaseModel):
     )
     features: dict[str, bool] | None = None
 
+
 class User(BaseModel):
     model_config = ConfigDict(extra="allow")  # Changed from "ignore" to "allow" to fix tenant_id loading
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -60,11 +62,13 @@ class User(BaseModel):
     # default — geriye dönük uyumlu, yalnız adminler doldurur.
     granted_permissions: list[str] = Field(default_factory=list)
 
+
 # Helper function (defined after User class)
 def _ensure_hotel_context(user: User):
     """Ensure user has hotel/tenant context"""
     if not getattr(user, "tenant_id", None):
         raise HTTPException(status_code=403, detail="Hotel context required")
+
 
 class TenantRegister(BaseModel):
     property_name: str
@@ -90,22 +94,27 @@ class TenantRegister(BaseModel):
     # otomatik tespit; explicit deger fail-closed olarak yalnizca o saglayiciya baglar.
     channel_manager_provider: Literal["exely", "hotelrunner"] | None = None
 
+
 class GuestRegister(BaseModel):
     email: EmailStr
     password: str
     name: str
     phone: str
 
+
 class UserLogin(BaseModel):
     """Hotel staff login. Either (hotel_id + username) or legacy email is accepted."""
+
     hotel_id: str | None = None
     username: str | None = None
     email: EmailStr | None = None  # Legacy fallback (guest login still uses email)
     password: str
 
+
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
+
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -127,6 +136,7 @@ class TokenResponse(BaseModel):
     # its proactive refresh exactly instead of hard-coding 15 min.
     expires_in: int | None = None
 
+
 class NotificationPreferences(BaseModel):
     model_config = ConfigDict(extra="ignore")
     user_id: str
@@ -136,5 +146,3 @@ class NotificationPreferences(BaseModel):
     booking_updates: bool = True
     promotional: bool = True
     room_service_updates: bool = True
-
-

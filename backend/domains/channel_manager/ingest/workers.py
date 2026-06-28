@@ -7,6 +7,7 @@ Worker 2: Exely Pull          (5-10 min interval)
 Worker 3: Ingest Processor    (processes pending raw events)
 Worker 4: Replay Worker       (retries failed events)
 """
+
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -73,6 +74,7 @@ def get_worker_states() -> dict[str, Any]:
 # Worker 1: HotelRunner Pull
 # ══════════════════════════════════════════════════════════════════════
 
+
 async def hotelrunner_pull_once() -> dict[str, Any]:
     """
     Pull reservations from HotelRunner REST API for all active connections.
@@ -97,15 +99,24 @@ async def hotelrunner_pull_once() -> dict[str, Any]:
 
         since_str = updated_since.strftime("%Y-%m-%d")
 
-        connections = await db[COLL_PROVIDER_CONNECTIONS].find(
-            {"provider": "hotelrunner", "status": "active", "sync_reservations": True},
-            {"_id": 0},
-        ).to_list(50)
+        connections = (
+            await db[COLL_PROVIDER_CONNECTIONS]
+            .find(
+                {"provider": "hotelrunner", "status": "active", "sync_reservations": True},
+                {"_id": 0},
+            )
+            .to_list(50)
+        )
 
         if not connections:
-            connections = await db[COLL_PROVIDER_CONNECTIONS].find(
-                {"provider": "hotelrunner"}, {"_id": 0},
-            ).to_list(50)
+            connections = (
+                await db[COLL_PROVIDER_CONNECTIONS]
+                .find(
+                    {"provider": "hotelrunner"},
+                    {"_id": 0},
+                )
+                .to_list(50)
+            )
 
         for conn in connections:
             credentials = conn.get("credentials", {})
@@ -146,16 +157,16 @@ async def hotelrunner_pull_once() -> dict[str, Any]:
 
                 if fetched_events:
                     count = await _persist_pull_events(
-                        "hotelrunner", fetched_events,
-                        tenant_id, property_id, connection_id,
+                        "hotelrunner",
+                        fetched_events,
+                        tenant_id,
+                        property_id,
+                        connection_id,
                     )
                     result["fetched"] += count
                     state["events_fetched"] += count
 
-                logger.info(
-                    f"HotelRunner pull [{property_id}]: "
-                    f"fetched {len(fetched_events)} reservations"
-                )
+                logger.info(f"HotelRunner pull [{property_id}]: fetched {len(fetched_events)} reservations")
             except Exception as e:
                 result["errors"] += 1
                 logger.error(f"HotelRunner pull error for {property_id}: {e}")
@@ -218,6 +229,7 @@ async def _persist_pull_events(
 # Worker 2: Exely Pull
 # ══════════════════════════════════════════════════════════════════════
 
+
 async def exely_pull_once() -> dict[str, Any]:
     """
     Pull reservations from Exely via OTA_ReadRQ SOAP for all active connections.
@@ -243,15 +255,24 @@ async def exely_pull_once() -> dict[str, Any]:
         from_date = updated_since.strftime("%Y-%m-%d")
         to_date = now.strftime("%Y-%m-%d")
 
-        connections = await db[COLL_PROVIDER_CONNECTIONS].find(
-            {"provider": "exely", "status": "active", "sync_reservations": True},
-            {"_id": 0},
-        ).to_list(50)
+        connections = (
+            await db[COLL_PROVIDER_CONNECTIONS]
+            .find(
+                {"provider": "exely", "status": "active", "sync_reservations": True},
+                {"_id": 0},
+            )
+            .to_list(50)
+        )
 
         if not connections:
-            connections = await db[COLL_PROVIDER_CONNECTIONS].find(
-                {"provider": "exely"}, {"_id": 0},
-            ).to_list(50)
+            connections = (
+                await db[COLL_PROVIDER_CONNECTIONS]
+                .find(
+                    {"provider": "exely"},
+                    {"_id": 0},
+                )
+                .to_list(50)
+            )
 
         for conn in connections:
             credentials = conn.get("credentials", {})
@@ -274,7 +295,8 @@ async def exely_pull_once() -> dict[str, Any]:
                 provider = ExelyProvider(**provider_kwargs)
 
                 api_result = await provider.legacy_pull_reservations(
-                    from_date=from_date, to_date=to_date,
+                    from_date=from_date,
+                    to_date=to_date,
                 )
 
                 if not api_result.get("success"):
@@ -287,16 +309,16 @@ async def exely_pull_once() -> dict[str, Any]:
                 if raw_reservations:
                     exely_events = _convert_exely_parsed_to_raw(raw_reservations)
                     count = await _persist_pull_events(
-                        "exely", exely_events,
-                        tenant_id, property_id, connection_id,
+                        "exely",
+                        exely_events,
+                        tenant_id,
+                        property_id,
+                        connection_id,
                     )
                     result["fetched"] += count
                     state["events_fetched"] += count
 
-                logger.info(
-                    f"Exely pull [{property_id}]: "
-                    f"fetched {len(raw_reservations)} reservations"
-                )
+                logger.info(f"Exely pull [{property_id}]: fetched {len(raw_reservations)} reservations")
             except Exception as e:
                 result["errors"] += 1
                 logger.error(f"Exely pull error for {property_id}: {e}")
@@ -324,42 +346,45 @@ def _convert_exely_parsed_to_raw(parsed_reservations: list[dict[str, Any]]) -> l
     for parsed in parsed_reservations:
         rooms = parsed.get("rooms", [])
         first_room = rooms[0] if rooms else {}
-        status_raw = (parsed.get("status") or "Commit")
+        status_raw = parsed.get("status") or "Commit"
         status_map = {"confirmed": "Commit", "modified": "Modify", "cancelled": "Cancel"}
         ota_status = status_map.get(status_raw.lower(), status_raw)
 
-        events.append({
-            "UniqueID": parsed.get("reservation_id", ""),
-            "ResStatus": ota_status,
-            "LastModifyDateTime": parsed.get("last_modify", ""),
-            "RoomStay": {
-                "RoomTypeCode": first_room.get("room_type_code", ""),
-                "RatePlanCode": first_room.get("rate_plan_code", ""),
-                "StartDate": parsed.get("checkin_date", ""),
-                "EndDate": parsed.get("checkout_date", ""),
-            },
-            "GuestCount": {
-                "adults": first_room.get("adults", 1),
-                "children": first_room.get("children", 0),
-            },
-            "ResGuest": {
-                "GivenName": parsed.get("guest_firstname", ""),
-                "Surname": parsed.get("guest_lastname", ""),
-                "Email": parsed.get("guest_email", ""),
-                "Phone": parsed.get("guest_phone", ""),
-            },
-            "Total": {
-                "Amount": float(parsed.get("total", 0)),
-                "CurrencyCode": parsed.get("currency", "TRY"),
-            },
-            "Source": parsed.get("channel", "exely"),
-        })
+        events.append(
+            {
+                "UniqueID": parsed.get("reservation_id", ""),
+                "ResStatus": ota_status,
+                "LastModifyDateTime": parsed.get("last_modify", ""),
+                "RoomStay": {
+                    "RoomTypeCode": first_room.get("room_type_code", ""),
+                    "RatePlanCode": first_room.get("rate_plan_code", ""),
+                    "StartDate": parsed.get("checkin_date", ""),
+                    "EndDate": parsed.get("checkout_date", ""),
+                },
+                "GuestCount": {
+                    "adults": first_room.get("adults", 1),
+                    "children": first_room.get("children", 0),
+                },
+                "ResGuest": {
+                    "GivenName": parsed.get("guest_firstname", ""),
+                    "Surname": parsed.get("guest_lastname", ""),
+                    "Email": parsed.get("guest_email", ""),
+                    "Phone": parsed.get("guest_phone", ""),
+                },
+                "Total": {
+                    "Amount": float(parsed.get("total", 0)),
+                    "CurrencyCode": parsed.get("currency", "TRY"),
+                },
+                "Source": parsed.get("channel", "exely"),
+            }
+        )
     return events
 
 
 # ══════════════════════════════════════════════════════════════════════
 # Worker 3: Ingest Processor
 # ══════════════════════════════════════════════════════════════════════
+
 
 async def ingest_processor_once(batch_size: int = 50) -> dict[str, Any]:
     """
@@ -418,6 +443,7 @@ async def ingest_processor_once(batch_size: int = 50) -> dict[str, Any]:
 # Worker 4: Replay Worker
 # ══════════════════════════════════════════════════════════════════════
 
+
 async def replay_worker_once(batch_size: int = 20) -> dict[str, Any]:
     """
     Retry failed events by resetting their status to pending.
@@ -451,6 +477,7 @@ async def replay_worker_once(batch_size: int = 20) -> dict[str, Any]:
 # ══════════════════════════════════════════════════════════════════════
 # Manual Trigger API helpers
 # ══════════════════════════════════════════════════════════════════════
+
 
 async def trigger_ingest_now() -> dict[str, Any]:
     """Manually trigger the ingest processor."""

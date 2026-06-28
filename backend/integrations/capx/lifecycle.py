@@ -5,6 +5,7 @@ asyncio.create_task ile çağrılır. Hata yutulur (af-sadakat pattern'i ile ayn
 Idempotency: event_id = booking_id + status hash → tekrarlı çağrılarda CapX
 tarafında aynı event tek sefer işlenir.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 _STATUS_TO_EVENT = {
     "confirmed": "created",
     "guaranteed": "created",
-    "checked_in": None,    # CapX bunu beklemiyor
+    "checked_in": None,  # CapX bunu beklemiyor
     "checked_out": None,
     "cancelled": "cancelled",
     "no_show": "no_show",
@@ -37,9 +38,15 @@ def _idempotent_event_id(booking_id: str, event_type: str) -> str:
 
 
 async def push_booking_lifecycle_event(
-    *, booking_id: str, status: str, tenant_id: str,
-    guest_name: str | None = None, check_in: str = "", check_out: str = "",
-    amount: float | None = None, currency: str = "TRY",
+    *,
+    booking_id: str,
+    status: str,
+    tenant_id: str,
+    guest_name: str | None = None,
+    check_in: str = "",
+    check_out: str = "",
+    amount: float | None = None,
+    currency: str = "TRY",
     pms_external_ref: str | None = None,
 ) -> None:
     """Best-effort: CapX'e booking event push. Hata yutulur.

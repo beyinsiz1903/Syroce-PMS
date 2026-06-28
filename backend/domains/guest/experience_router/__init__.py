@@ -2,6 +2,7 @@
 Aggregator package — auto-split from experience_router.py.
 Public API: from domains.guest.experience_router import router
 """
+
 from fastapi import APIRouter
 
 from .crm_guest import router as _crm_guest_r

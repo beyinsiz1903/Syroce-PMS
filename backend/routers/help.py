@@ -3,6 +3,7 @@
 Articles live in `backend/help_content/`, indexed by `_index.json`.
 Public read-only endpoints (require auth, but tenant-agnostic).
 """
+
 from __future__ import annotations
 
 import json
@@ -33,8 +34,7 @@ def _all_articles() -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for cat in _load_index().get("categories", []):
         for art in cat.get("articles", []):
-            out.append({**art, "category_key": cat["key"],
-                        "category_title": cat["title"]})
+            out.append({**art, "category_key": cat["key"], "category_title": cat["title"]})
     return out
 
 
@@ -104,12 +104,14 @@ async def search_articles(
                 start = max(0, idx - 60)
                 end = min(len(body), idx + len(needle) + 80)
                 snippet = "…" + body[start:end].replace("\n", " ") + "…"
-            hits.append({
-                "slug": slug,
-                "title": art.get("title"),
-                "category_title": art.get("category_title"),
-                "snippet": snippet,
-                "score": (3 if needle in title else 1),
-            })
+            hits.append(
+                {
+                    "slug": slug,
+                    "title": art.get("title"),
+                    "category_title": art.get("category_title"),
+                    "snippet": snippet,
+                    "score": (3 if needle in title else 1),
+                }
+            )
     hits.sort(key=lambda h: -h["score"])
     return {"query": q, "count": len(hits), "items": hits[:25]}

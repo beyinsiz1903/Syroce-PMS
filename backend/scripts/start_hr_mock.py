@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Start HotelRunner Mock Server on port 9999."""
+
 import sys  # noqa: I001
 
 sys.path.insert(0, "/app/backend")

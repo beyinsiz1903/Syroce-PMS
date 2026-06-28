@@ -3,6 +3,7 @@ Bootstrap: Router Registry
 Centralised router mounting. Each router is imported and mounted
 with proper error isolation so one broken module cannot crash the app.
 """
+
 import logging
 
 logger = logging.getLogger(__name__)

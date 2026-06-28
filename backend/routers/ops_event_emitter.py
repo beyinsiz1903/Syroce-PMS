@@ -28,6 +28,7 @@ Event types:
   - import.completed
   - import.failed
 """
+
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -122,14 +123,11 @@ async def emit_ops_event(
         except Exception as exc:
             logger.error("Failed to create notification for ops event %s: %s", event_type, exc)
 
-    logger.info("[OPS-EVENT] %s tenant=%s channel=%s severity=%s",
-                event_type, tenant_id, channel, severity)
+    logger.info("[OPS-EVENT] %s tenant=%s channel=%s severity=%s", event_type, tenant_id, channel, severity)
     return event_id
 
 
-def _build_notification_message(
-    event_type: str, details: dict[str, Any], channel: str
-) -> str:
+def _build_notification_message(event_type: str, details: dict[str, Any], channel: str) -> str:
     """Build a human-readable notification message."""
     ch = channel or "bilinmeyen kanal"
 
