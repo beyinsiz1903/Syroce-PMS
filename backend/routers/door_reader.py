@@ -67,37 +67,68 @@ async def verify_door_reader(
     """Verify a scanned digital-key token and return an open/deny decision."""
     _require_door_reader_auth(x_door_reader_key)
 
-    # 1) Signature + expiry. ExpiredSignatureError is a subclass of
-    #    InvalidTokenError, so it must be caught first.
+    import uuid
+    db = get_system_db()
+
+    async def _log_access(tenant_id: str | None, room_number: str | None, booking_id: str | None, keycard_id: str | None, guest_id: str | None, decision: str, reason: str | None = None):
+        log_entry = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id or "unknown",
+            "room_number": room_number or payload.room_number,
+            "booking_id": booking_id,
+            "keycard_id": keycard_id,
+            "guest_id": guest_id,
+            "device_id": payload.device_id,
+            "access_decision": decision,
+            "reason": reason,
+            "timestamp": datetime.now(UTC).isoformat()
+        }
+        try:
+            await db.physical_access_logs.insert_one(log_entry)
+        except Exception:
+            pass
+
+    # 1) Signature + expiry.
     try:
         claims = jwt.decode(payload.token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:
+        await _log_access(None, None, None, None, None, "denied", "expired")
         return _deny("expired")
     except jwt.InvalidTokenError:
+        await _log_access(None, None, None, None, None, "denied", "invalid_token")
         return _deny("invalid_token")
 
     booking_id = claims.get("booking_id")
     if not booking_id:
+        await _log_access(None, None, None, None, None, "denied", "invalid_token")
         return _deny("invalid_token")
 
-    # 2) Bind the presented token to the currently-active stored key. A token
-    #    that was rotated/refreshed maps to a non-active row -> revoked, even
-    #    though its JWT signature may still be valid.
+    # 2) Bind the presented token to the currently-active stored key.
     key = await db.digital_keys.find_one(
         {"booking_id": booking_id, "token": payload.token, "status": "active"},
         {"_id": 0},
     )
     if not key:
+        await _log_access(None, None, booking_id, None, None, "denied", "revoked")
         return _deny("revoked")
 
     tenant_id = key.get("tenant_id")
+    guest_id = key.get("guest_id")
+    room_number = key.get("room_number")
+    keycard_id = key.get("id")
 
-    # 3) Re-validate the booking server-side. Tenant is taken from the stored
-    #    key, never from client input.
+    # 2.5) Check if global lockdown is active for this tenant
+    lockdown = await db.lockdown_state.find_one({"tenant_id": tenant_id, "status": "active"})
+    if lockdown:
+        await _log_access(tenant_id, room_number, booking_id, keycard_id, guest_id, "denied", "lockdown")
+        return _deny("lockdown")
+
+    # 3) Re-validate the booking server-side.
     booking = await db.bookings.find_one(
         {"id": booking_id, "tenant_id": tenant_id}, {"_id": 0}
     )
     if not booking:
+        await _log_access(tenant_id, room_number, booking_id, keycard_id, guest_id, "denied", "booking_not_found")
         return _deny("booking_not_found")
 
     if not _key_is_usable(booking):
@@ -106,17 +137,15 @@ async def verify_door_reader(
             {"booking_id": booking_id, "tenant_id": tenant_id, "status": "active"},
             {"$set": {"status": "expired"}},
         )
+        await _log_access(tenant_id, room_number, booking_id, keycard_id, guest_id, "denied", "not_in_house")
         return _deny("not_in_house")
 
-    # 4) Optional physical-door binding: a key for room 101 must not open 102.
-    if payload.room_number and str(payload.room_number) != str(key.get("room_number") or ""):
+    # 4) Optional physical-door binding.
+    if payload.room_number and str(payload.room_number) != str(room_number or ""):
+        await _log_access(tenant_id, room_number, booking_id, keycard_id, guest_id, "denied", "wrong_room")
         return _deny("wrong_room")
 
-    # 5) Grant is an ATOMIC re-authorization (compare-and-set): the same update
-    #    that records the audit trail also re-asserts the key is still active. If
-    #    a concurrent refresh/rotation expired it between the read above and now,
-    #    matched_count is 0 -> deny (closes the revocation race; a just-rotated
-    #    token can never open the door even in the timing window).
+    # 5) Grant is an ATOMIC re-authorization (compare-and-set).
     res = await db.digital_keys.update_one(
         {
             "booking_id": booking_id,
@@ -127,12 +156,14 @@ async def verify_door_reader(
         {"$set": {"last_used": datetime.now(UTC).isoformat(), "last_device_id": payload.device_id}},
     )
     if getattr(res, "matched_count", 0) != 1:
+        await _log_access(tenant_id, room_number, booking_id, keycard_id, guest_id, "denied", "revoked")
         return _deny("revoked")
 
+    await _log_access(tenant_id, room_number, booking_id, keycard_id, guest_id, "granted")
     return {
         "access": "granted",
         "booking_id": booking_id,
-        "guest_id": key.get("guest_id"),
-        "room_number": key.get("room_number"),
+        "guest_id": guest_id,
+        "room_number": room_number,
         "valid_until": key.get("expires_at"),
     }

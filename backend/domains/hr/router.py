@@ -4292,6 +4292,51 @@ async def list_applicants(
     return {'items': items, 'total': len(items), 'counts': counts}
 
 
+async def _trigger_staff_onboarding(applicant: dict, tenant_id: str, actor_id: str, current_user: User):
+    staff_id = str(uuid.uuid4())
+    
+    staff = {
+        'id': staff_id,
+        'tenant_id': tenant_id,
+        'name': applicant['name'],
+        'email': applicant.get('email'),
+        'phone': applicant.get('phone'),
+        'department': None,
+        'position': None,
+        'hire_date': _today_local().isoformat(),
+        'employment_type': 'full_time',
+        'performance_score': 0.0,
+        'active': False,
+        'created_at': datetime.now(UTC).isoformat(),
+        'onboarding_status': 'pending',
+    }
+    await db.staff_members.insert_one(staff)
+    
+    checklist = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': tenant_id,
+        'staff_id': staff_id,
+        'applicant_id': applicant['id'],
+        'status': 'pending',
+        'steps': [
+            {"key": "document_id", "title": "Kimlik belgesi / nüfus cüzdanı sureti", "completed": False, "completed_at": None, "document_id": None},
+            {"key": "document_criminal_record", "title": "Adli sicil belgesi (sabıka kaydı)", "completed": False, "completed_at": None, "document_id": None},
+            {"key": "document_health_certificate", "title": "Sağlık raporu", "completed": False, "completed_at": None, "document_id": None},
+            {"key": "orientation", "title": "Oryantasyon eğitimi planla", "completed": False, "completed_at": None, "training_id": None},
+            {"key": "equipment", "title": "Zimmet tanımla (üniforma, kart, telsiz vb.)", "completed": False, "completed_at": None, "equipment_id": None}
+        ],
+        'created_at': datetime.now(UTC).isoformat(),
+        'updated_at': datetime.now(UTC).isoformat(),
+    }
+    await db.staff_onboarding.insert_one(checklist)
+    
+    await _audit(
+        current_user, "hr.staff.onboarding_start", "staff_member", staff_id,
+        f"Personel onboarding süreci başlatıldı (Staff ID: {staff_id})",
+        severity="info",
+    )
+
+
 @router.post("/hr/applicants/{applicant_id}/status")
 async def update_applicant_status(
     applicant_id: str,
@@ -4299,6 +4344,14 @@ async def update_applicant_status(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
+    applicant = await db.job_applicants.find_one(
+        {'tenant_id': current_user.tenant_id, 'id': applicant_id}
+    )
+    if not applicant:
+        raise HTTPException(status_code=404, detail="Aday bulunamadı")
+        
+    old_status = applicant.get("status")
+    
     res = await db.job_applicants.update_one(
         {'tenant_id': current_user.tenant_id, 'id': applicant_id},
         {'$set': {
@@ -4310,7 +4363,140 @@ async def update_applicant_status(
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Aday bulunamadı")
+        
+    if payload.status == "hired" and old_status != "hired":
+        await _trigger_staff_onboarding(applicant, current_user.tenant_id, getattr(current_user, 'id', None), current_user)
+        
     return {'success': True, 'status': payload.status}
+
+
+# ============= Staff Onboarding Workflow =============
+
+class OnboardingStepCompletePayload(BaseModel):
+    reference_id: str | None = Field(None, max_length=100)
+    note: str | None = Field(None, max_length=500)
+
+
+@router.get("/hr/staff/{staff_id}/onboarding")
+async def get_staff_onboarding_status(
+    staff_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    """Fetches the onboarding checklist and progress for a staff member."""
+    checklist = await db.staff_onboarding.find_one(
+        {"tenant_id": current_user.tenant_id, "staff_id": staff_id}, {"_id": 0}
+    )
+    if not checklist:
+        raise HTTPException(status_code=404, detail="Onboarding kaydı bulunamadı")
+        
+    staff = await db.staff_members.find_one(
+        {"tenant_id": current_user.tenant_id, "id": staff_id}, {"_id": 0}
+    )
+    return {"checklist": checklist, "staff": staff}
+
+
+@router.post("/hr/staff/{staff_id}/onboarding/steps/{step_key}/complete")
+async def complete_onboarding_step(
+    staff_id: str,
+    step_key: str,
+    payload: OnboardingStepCompletePayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
+):
+    """Marks a specific onboarding step as completed."""
+    checklist = await db.staff_onboarding.find_one(
+        {"tenant_id": current_user.tenant_id, "staff_id": staff_id}
+    )
+    if not checklist:
+        raise HTTPException(status_code=404, detail="Onboarding kaydı bulunamadı")
+
+    steps = checklist.get("steps") or []
+    step_found = False
+    completed_steps = 0
+    
+    for step in steps:
+        if step["key"] == step_key:
+            step_found = True
+            step["completed"] = True
+            step["completed_at"] = datetime.now(UTC).isoformat()
+            if step_key.startswith("document_"):
+                step["document_id"] = payload.reference_id
+            elif step_key == "orientation":
+                step["training_id"] = payload.reference_id
+            elif step_key == "equipment":
+                step["equipment_id"] = payload.reference_id
+            if payload.note:
+                step["note"] = payload.note
+        if step.get("completed"):
+            completed_steps += 1
+
+    if not step_found:
+        raise HTTPException(status_code=400, detail="Geçersiz adım anahtarı")
+
+    new_status = "completed" if completed_steps == len(steps) else "in_progress"
+
+    await db.staff_onboarding.update_one(
+        {"tenant_id": current_user.tenant_id, "staff_id": staff_id},
+        {"$set": {
+            "steps": steps,
+            "status": new_status,
+            "updated_at": datetime.now(UTC).isoformat()
+        }}
+    )
+    
+    await db.staff_members.update_one(
+        {"tenant_id": current_user.tenant_id, "id": staff_id},
+        {"$set": {"onboarding_status": new_status, "updated_at": datetime.now(UTC).isoformat()}}
+    )
+
+    return {"success": True, "status": new_status}
+
+
+@router.post("/hr/staff/{staff_id}/onboarding/complete")
+async def finalize_onboarding(
+    staff_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
+):
+    """Finalizes onboarding, validating that all steps are complete, and activates the staff member."""
+    checklist = await db.staff_onboarding.find_one(
+        {"tenant_id": current_user.tenant_id, "staff_id": staff_id}
+    )
+    if not checklist:
+        raise HTTPException(status_code=404, detail="Onboarding kaydı bulunamadı")
+
+    steps = checklist.get("steps") or []
+    incomplete = [s["title"] for s in steps if not s.get("completed")]
+    if incomplete:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Onboarding tamamlanamaz. Eksik adımlar var: {incomplete}"
+        )
+
+    now = datetime.now(UTC).isoformat()
+    await db.staff_onboarding.update_one(
+        {"tenant_id": current_user.tenant_id, "staff_id": staff_id},
+        {"$set": {"status": "completed", "completed_at": now, "updated_at": now}}
+    )
+
+    await db.staff_members.update_one(
+        {"tenant_id": current_user.tenant_id, "id": staff_id},
+        {"$set": {
+            "active": True,
+            "onboarding_status": "completed",
+            "updated_at": now
+        }}
+    )
+
+    await _audit(
+        current_user, "hr.staff.onboarding_complete", "staff_member", staff_id,
+        f"Personel onboarding süreci başarıyla tamamlandı ve aktif edildi. (Staff ID: {staff_id})",
+        severity="info"
+    )
+
+    return {"success": True}
+
 
 
 # ============= Performance Templates =============

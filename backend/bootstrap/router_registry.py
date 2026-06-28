@@ -326,6 +326,10 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     # Door Reader — internal, service-key authenticated digital-key verification
     ("routers.door_reader", "router", ["Door Reader"], None, None),
     ("domains.pms.lock_bridge.connector_router", "router", ["Lock Bridge"], None, None),
+    ("routers.physical_security", "router", ["PMS / Physical Security"], None, None),
+    ("routers.spa_dining_packages", "router", ["SPA & Dining Scheduler"], None, None),
+    ("routers.procurement_b2b", "router", ["B2B Procurement Automation"], None, None),
+    ("routers.guest_relations", "router", ["Guest Relations Smart Engine"], None, None),
     # CM Conflict Queue — front-desk resolution UI for pending_assignment bookings (Turu #1b)
     ("routers.cm_conflict_queue", "router", ["channel-manager"], None, None),
 ]

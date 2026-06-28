@@ -2390,3 +2390,227 @@ async def ops_sheet(
             })
     rows.sort(key=lambda r: (r["starts_at"], r["space_name"]))
     return {"date": date, "rows": rows, "count": len(rows)}
+
+
+# ── BEO Client Signature Portal ──────────────────────────────────────
+
+class SignatureRequestIn(BaseModel):
+    client_email: str
+    expires_in_days: int = Field(7, ge=1, le=90)
+
+
+class SignatureSubmitIn(BaseModel):
+    token: str = Field(..., min_length=1)
+    signature_name: str = Field(..., min_length=1, max_length=200)
+    signature_data: str = Field(..., min_length=1, max_length=100000)
+    ip_address: str | None = Field(None, max_length=60)
+    user_agent: str | None = Field(None, max_length=500)
+
+
+@router.post("/events/{event_id}/signature/request")
+async def create_beo_signature_request(
+    event_id: str,
+    payload: SignatureRequestIn,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    import jwt
+    from core.security import JWT_SECRET, JWT_ALGORITHM
+
+    db = get_system_db()
+    event = await db.mice_events.find_one(
+        {"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
+    )
+    if not event:
+        raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
+
+    # Generate JWT token containing the details
+    exp = datetime.now(UTC) + timedelta(days=payload.expires_in_days)
+    claims = {
+        "event_id": event_id,
+        "tenant_id": current_user.tenant_id,
+        "client_email": payload.client_email.strip().lower(),
+        "exp": exp
+    }
+    token = jwt.encode(claims, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    
+    # Store token in event for verification/revocation
+    await db.mice_events.update_one(
+        {"id": event_id, "tenant_id": current_user.tenant_id},
+        {"$set": {
+            "signature_request": {
+                "client_email": payload.client_email.strip().lower(),
+                "expires_at": exp.isoformat(),
+                "token": token,
+                "created_at": datetime.now(UTC).isoformat()
+            }
+        }}
+    )
+
+    return {
+        "token": token,
+        "signature_url": f"/api/mice/public/beo/verify?token={token}"
+    }
+
+
+@router.get("/public/beo/verify")
+async def verify_public_beo(token: str):
+    import jwt
+    from core.security import JWT_SECRET, JWT_ALGORITHM
+
+    try:
+        claims = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=400, detail="İmza süresi dolmuş")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=400, detail="Geçersiz imza anahtarı")
+
+    event_id = claims.get("event_id")
+    tenant_id = claims.get("tenant_id")
+
+    db = get_system_db()
+    event = await db.mice_events.find_one({"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
+
+    req = event.get("signature_request") or {}
+    if req.get("token") != token:
+        raise HTTPException(status_code=400, detail="Geçersiz veya iptal edilmiş imza talebi")
+
+    spaces_by_id = {s["id"]: s async for s in db.mice_spaces.find({"tenant_id": tenant_id})}
+    space_lines = []
+    for sb in event.get("space_bookings", []):
+        sp = spaces_by_id.get(sb["space_id"], {})
+        space_lines.append({
+            "space_name": sp.get("name", "—"),
+            "starts_at": sb["starts_at"], "ends_at": sb["ends_at"],
+            "setup_style": sb.get("setup_style"),
+            "expected_pax": sb.get("expected_pax"),
+        })
+
+    return {
+        "event": {k: event[k] for k in (
+            "id", "name", "client_name", "client_email", "client_phone",
+            "client_account_id", "client_contact_id",
+            "organizer_user", "event_type", "status", "expected_pax",
+            "start_date", "end_date", "notes", "totals") if k in event},
+        "spaces": space_lines,
+        "resources": event.get("resources", []),
+        "agenda": event.get("agenda", []),
+        "payment_schedule": event.get("payment_schedule", []),
+        "technical_requirements": event.get("technical_requirements") or None,
+        "staff_assignments": event.get("staff_assignments") or [],
+        "signed": event.get("status") == "confirmed" and "signature" in event,
+        "signature": event.get("signature")
+    }
+
+
+@router.post("/public/beo/sign")
+async def sign_public_beo(payload: SignatureSubmitIn):
+    import jwt
+    from core.security import JWT_SECRET, JWT_ALGORITHM
+
+    try:
+        claims = jwt.decode(payload.token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=400, detail="İmza süresi dolmuş")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=400, detail="Geçersiz imza anahtarı")
+
+    event_id = claims.get("event_id")
+    tenant_id = claims.get("tenant_id")
+
+    db = get_system_db()
+    event = await db.mice_events.find_one({"id": event_id, "tenant_id": tenant_id})
+    if not event:
+        raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
+
+    req = event.get("signature_request") or {}
+    if req.get("token") != payload.token:
+        raise HTTPException(status_code=400, detail="Geçersiz veya iptal edilmiş imza talebi")
+
+    if event.get("status") == "confirmed" and "signature" in event:
+        return {"success": True, "already_signed": True}
+
+    cur_status = event.get("status", "lead")
+    if cur_status not in ("tentative", "definite", "confirmed"):
+        raise HTTPException(
+            status_code=409, detail=f"BEO imzalanamaz. Mevcut durum: {cur_status}"
+        )
+
+    bookings = event.get("space_bookings", [])
+    resources = event.get("resources", [])
+    space_ids = [b["space_id"] for b in bookings if b.get("space_id")]
+    inv_ids = [r["inventory_id"] for r in resources if r.get("inventory_id")]
+
+    update = {
+        "status": "confirmed",
+        "updated_at": datetime.now(UTC).isoformat(),
+        "confirmed_at": datetime.now(UTC).isoformat(),
+        "signature": {
+            "name": payload.signature_name.strip(),
+            "signed_at": datetime.now(UTC).isoformat(),
+            "ip_address": payload.ip_address,
+            "user_agent": payload.user_agent,
+            "signature_data": payload.signature_data.strip()
+        }
+    }
+
+    async def _do_status(session) -> None:
+        conflict = await _check_space_conflict(
+            tenant_id, bookings, exclude_event_id=event_id, session=session)
+        if conflict:
+            raise HTTPException(409, conflict)
+        inv_err = await _check_resource_inventory_conflict(
+            tenant_id, resources, bookings,
+            exclude_event_id=event_id, session=session)
+        if inv_err:
+            raise HTTPException(409, inv_err)
+        await db.mice_events.update_one(
+            {"id": event_id, "tenant_id": tenant_id}, {"$set": update},
+            session=session)
+
+    try:
+        await with_resource_locks(
+            client=db.client, db=db,
+            tenant_id=tenant_id,
+            locks_collection="mice_locks",
+            resources=_event_lock_resources(space_ids, inv_ids),
+            callback=_do_status,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        if not is_replica_set_unavailable(exc):
+            raise
+        if not standalone_fallback_allowed():
+            raise HTTPException(
+                status_code=503,
+                detail="Etkinlik servisi şu anda atomik garanti sağlayamıyor.",
+            )
+        # fallback
+        conflict = await _check_space_conflict(
+            tenant_id, bookings, exclude_event_id=event_id)
+        if conflict:
+            raise HTTPException(409, conflict)
+        inv_err = await _check_resource_inventory_conflict(
+            tenant_id, resources, bookings, exclude_event_id=event_id)
+        if inv_err:
+            raise HTTPException(409, inv_err)
+        await db.mice_events.update_one(
+            {"id": event_id, "tenant_id": tenant_id}, {"$set": update}
+        )
+
+    # Log audit event
+    await log_audit_event(
+        tenant_id=tenant_id,
+        user_id="client_portal",
+        action="beo.sign",
+        entity_type="mice_event",
+        entity_id=event_id,
+        details=f"BEO signed by client: {payload.signature_name}",
+        severity="info"
+    )
+
+    return {"success": True}
+

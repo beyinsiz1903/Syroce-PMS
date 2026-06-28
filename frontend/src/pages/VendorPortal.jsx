@@ -47,7 +47,9 @@ const fmt = (n) =>
 
 // Scoped axios instance — never inherits hotel staff Authorization from
 // axios.defaults. Always sends only the vendor token (or no auth header).
-const vendorApi = axios.create();
+const vendorApi = axios.create({
+  baseURL: "/api"
+});
 vendorApi.interceptors.request.use((config) => {
   const token = localStorage.getItem(VENDOR_TOKEN_KEY);
   if (token) {
