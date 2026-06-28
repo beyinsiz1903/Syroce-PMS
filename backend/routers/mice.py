@@ -17,8 +17,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import jwt
-from cache_manager import cache as _cache
-from cache_manager import cached as _cached
+from cache_manager import cache as _cache, cached as _cached
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
