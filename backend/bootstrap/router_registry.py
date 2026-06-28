@@ -136,6 +136,16 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.pms.misc_router", "router", ["PMS / Operations"], None, None),
     # Accounting (migrated from _legacy)
     ("domains.accounting.router", "router", ["Accounting"], None, None),
+    # Genel Muhasebe (GL) — hesap planı + çift-taraflı yevmiye + mizan
+    ("domains.accounting.gl_router", "router", ["Accounting / GL"], None, None),
+    # Accounts Payable — tedarikçi fatura defteri + aging + ödeme eşleştirme
+    ("domains.accounting.ap_router", "router", ["Accounting / AP"], None, None),
+    # Bütçe & sapma analizi — dönem/kategori bütçe + bütçe-gerçekleşen motoru
+    ("domains.accounting.budget_router", "router", ["Accounting / Budget"], None, None),
+    # Sabit kıymet / demirbaş + amortisman (düz/azalan bakiye, dönemsel çalıştırma)
+    ("domains.accounting.fixed_asset_router", "router", ["Accounting / Fixed Assets"], None, None),
+    # Bordro → GL köprüsü (kilitli bordrodan idempotent yevmiye fişi)
+    ("domains.accounting.payroll_gl_router", "router", ["Accounting / Payroll GL"], None, None),
     # Phase C/D/E — Hardening routers
     ("domains.channel_manager.hardening_router", "router", ["Channel Manager / Hardening"], None, None),
     ("workers.hardening_router", "router", ["Workers / Hardening"], None, None),
@@ -282,6 +292,12 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.pms.laundry_router", "router", ["PMS / Laundry"], None, None),
     # PMS Transfer & Otopark — slot-lock (çift-rezervasyon) + idempotent folio charge
     ("domains.pms.transfer_parking_router", "router", ["PMS / Transfer & Parking"], None, None),
+    # PMS İnsan-Concierge — görev atama/takip (bagaj, transfer, çiçek, hatırlatma)
+    ("domains.pms.concierge_router", "router", ["PMS / Concierge"], None, None),
+    # PMS F&B Cost Controller — reçete-bazlı maliyet + teorik/fiili yield varyansı
+    ("domains.pms.fnb_cost_router", "router", ["PMS / F&B Cost"], None, None),
+    # PMS Turndown — dolu/VIP odalara gün-başına tek akşam servisi görevi (idempotent)
+    ("domains.pms.turndown_router", "router", ["PMS / Turndown"], None, None),
     # Opera-parity: Folio Routing, Block Mgmt, Activity Scheduler, Loyalty, Forecast
     ("domains.pms.folio_routing_router", "router", ["PMS / Folio Routing"], None, None),
     ("domains.pms.folio_window_router", "router", ["PMS / Folio Windows"], None, None),
