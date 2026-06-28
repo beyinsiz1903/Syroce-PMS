@@ -1,5 +1,6 @@
 from core.database import db
 
+
 async def _tenant_configured_provider(tenant_id: str) -> str | None:
     """Otelin super_admin tarafindan secilmis kanal yoneticisi altyapisi.
 

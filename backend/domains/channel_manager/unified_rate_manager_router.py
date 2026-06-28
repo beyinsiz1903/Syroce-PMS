@@ -38,6 +38,7 @@ from core.security import get_current_user
 from core.tenant_currency import get_tenant_currency
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v96 DW
+from services.cm_provider import _detect_active_provider, _tenant_configured_provider
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,7 @@ class PricingSettingsRequest(BaseModel):
 
 # ── Provider Detection ───────────────────────────────────────────
 
-from services.cm_provider import _tenant_configured_provider, _detect_active_provider
+
 
 
 # ── Detect Provider Endpoint ─────────────────────────────────────
