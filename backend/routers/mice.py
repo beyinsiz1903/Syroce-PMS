@@ -12,17 +12,17 @@ Mirrors the Opera/Protel banquet management spine:
 """
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
-import uuid
 
+from cache_manager import cache as _cache
+from cache_manager import cached as _cached
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 import jwt
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
-from cache_manager import cache as _cache
-from cache_manager import cached as _cached
 from core.audit import log_audit_event
 from core.booking_atomicity import (
     is_replica_set_unavailable,
