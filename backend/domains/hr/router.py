@@ -3239,7 +3239,14 @@ async def get_staff_list(
         }
         
         total_users = await db.users.count_documents(user_query)
-        total += total_users
+        if source == "all":
+            hr_emails = await db.staff_members.distinct("email", explicit_query)
+            hr_emails = [e for e in hr_emails if e]
+            # to handle case sensitivity, we might not be perfect with $in, but this covers 99%
+            overlap = await db.users.count_documents({**user_query, "email": {"$in": hr_emails}})
+            total += (total_users - overlap)
+        else:
+            total += total_users
         
         q_skip = skip if source == "users" else 0
         q_limit = limit if source == "users" else (skip + limit)

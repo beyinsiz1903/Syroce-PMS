@@ -217,20 +217,35 @@ async def test_cross_tenant_transfer_defense(fake_db, monkeypatch):
 async def test_invalid_quantity_transfer(fake_db, monkeypatch):
     monkeypatch.setattr(pos_core, "db", fake_db)
     # Try to transfer more than exists (Burger has 2 qty, trying to transfer 3)
-    res = await pos_core.transfer_table(
-        from_table="T1",
-        to_table="T2",
-        outlet_id="out1",
-        transfer_all=False,
-        items_to_transfer=[
-            {"index": 0, "quantity": 3},  # Should just transfer the full quantity (fallback to else in logic)
-        ],
-        current_user=await _fake_user(),
-        _perm=None
-    )
-    # In current implementation, if requested_qty < current_qty is False (3 < 2 -> False)
-    # it transfers the full quantity natively (transferred_items.append(item))
-    # This acts as a clamp. Let's verify it clamped.
-    assert res["items_transferred"] == 1
-    target_tx = await fake_db.pos_transactions.find_one({"table_number": "T2", "status": "open"})
-    assert target_tx["items"][0]["quantity"] == 2 # Clamp to max available 2
+    with pytest.raises(HTTPException) as exc:
+        await pos_core.transfer_table(
+            from_table="T1",
+            to_table="T2",
+            outlet_id="out1",
+            transfer_all=False,
+            items_to_transfer=[
+                {"index": 0, "quantity": 3},
+            ],
+            current_user=await _fake_user(),
+            _perm=None
+        )
+    assert exc.value.status_code == 400
+    assert "exceeds source item quantity" in exc.value.detail
+
+@pytest.mark.asyncio
+async def test_negative_quantity_transfer(fake_db, monkeypatch):
+    monkeypatch.setattr(pos_core, "db", fake_db)
+    with pytest.raises(HTTPException) as exc:
+        await pos_core.transfer_table(
+            from_table="T1",
+            to_table="T2",
+            outlet_id="out1",
+            transfer_all=False,
+            items_to_transfer=[
+                {"index": 0, "quantity": -1},
+            ],
+            current_user=await _fake_user(),
+            _perm=None
+        )
+    assert exc.value.status_code == 400
+    assert "quantity must be > 0" in exc.value.detail

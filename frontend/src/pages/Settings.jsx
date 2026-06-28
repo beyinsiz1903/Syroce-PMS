@@ -379,19 +379,19 @@ const Settings = ({ user, tenant, onLogout }) => {
       if (!subscription) loadSubscription();
     }
     if (activeTab === 'team') {
-      if (teamList.length === 0) loadTeam();
+      if (team.length === 0) loadTeam();
     }
     if (activeTab === 'billing') {
       if (billingHistory.length === 0) loadBillingHistory();
     }
     if (activeTab === 'invoice') {
-      if (!invoiceSettings) loadInvoiceSettings();
+      if (Object.keys(invoiceSettings).length === 0) loadInvoiceSettings();
     }
     if (activeTab === 'rooms') {
-      if (roomTypes.length === 0) loadRooms();
+      if (roomsList.length === 0) loadRooms();
     }
     if (activeTab === 'guest-requests') {
-      if (!grSettings) loadGuestRequestSettings();
+      if (grSettings.visible_roles.length === 0) loadGuestRequestSettings();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);

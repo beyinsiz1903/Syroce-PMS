@@ -1012,9 +1012,11 @@ async def transfer_table(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
-    """Transfer items from one table to another with hardened consistency"""
-    # Defensive programming: we do this within a session if possible, but for 
-    # compatibility we harden the individual updates with strict filters.
+    """Transfer items from one table to another with hardened consistency.
+    Note: Real atomic Mongo transactions are not used here due to replica set constraints.
+    Instead, this relies on a "best-effort defensive update" approach with tenant-scoped
+    update filters and status checks to prevent concurrent modification.
+    """
     tenant_id = current_user.tenant_id
 
     # 1. Fetch Source Transaction
@@ -1071,15 +1073,24 @@ async def transfer_table(
                 requested_qty = transfer_requests[idx]
                 current_qty = item.get("quantity", 1)
                 
-                if requested_qty and requested_qty < current_qty:
-                    # Partial quantity transfer
-                    transfer_item = item.copy()
-                    transfer_item["quantity"] = requested_qty
-                    transferred_items.append(transfer_item)
+                if requested_qty is not None:
+                    if requested_qty <= 0:
+                        raise HTTPException(status_code=400, detail="quantity must be > 0")
+                    if requested_qty > current_qty:
+                        raise HTTPException(status_code=400, detail="quantity exceeds source item quantity")
                     
-                    remain_item = item.copy()
-                    remain_item["quantity"] = current_qty - requested_qty
-                    remaining_items.append(remain_item)
+                    if requested_qty < current_qty:
+                        # Partial quantity transfer
+                        transfer_item = item.copy()
+                        transfer_item["quantity"] = requested_qty
+                        transferred_items.append(transfer_item)
+                        
+                        remain_item = item.copy()
+                        remain_item["quantity"] = current_qty - requested_qty
+                        remaining_items.append(remain_item)
+                    else:
+                        # Full quantity transfer
+                        transferred_items.append(item)
                 else:
                     # Full quantity transfer
                     transferred_items.append(item)
