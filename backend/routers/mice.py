@@ -28,7 +28,8 @@ from core.booking_atomicity import (
     standalone_fallback_allowed,
     with_resource_locks,
 )
-from core.security import get_current_user
+import jwt
+from core.security import get_current_user, JWT_SECRET, JWT_ALGORITHM
 from core.spa_mice_authz import require_catalog, require_finance, require_mice_ops
 from core.tenant_db import get_system_db
 from models.schemas import User
@@ -2414,9 +2415,6 @@ async def create_beo_signature_request(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),
 ):
-    import jwt
-    from core.security import JWT_SECRET, JWT_ALGORITHM
-
     db = get_system_db()
     event = await db.mice_events.find_one(
         {"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
@@ -2433,7 +2431,7 @@ async def create_beo_signature_request(
         "exp": exp
     }
     token = jwt.encode(claims, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    
+
     # Store token in event for verification/revocation
     await db.mice_events.update_one(
         {"id": event_id, "tenant_id": current_user.tenant_id},
@@ -2455,9 +2453,6 @@ async def create_beo_signature_request(
 
 @router.get("/public/beo/verify")
 async def verify_public_beo(token: str):
-    import jwt
-    from core.security import JWT_SECRET, JWT_ALGORITHM
-
     try:
         claims = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:
@@ -2507,9 +2502,6 @@ async def verify_public_beo(token: str):
 
 @router.post("/public/beo/sign")
 async def sign_public_beo(payload: SignatureSubmitIn):
-    import jwt
-    from core.security import JWT_SECRET, JWT_ALGORITHM
-
     try:
         claims = jwt.decode(payload.token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:

@@ -23,7 +23,6 @@ import jwt
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from core.database import db
 from core.security import JWT_ALGORITHM, JWT_SECRET
 from domains.guest.operations_router import _key_is_usable
 

@@ -1,21 +1,23 @@
 """SPA & Restaurant Dining Cross-Departmental Package Scheduler.
 
-Manages spa + dining joint packages, schedules linked resource bookings, 
+Manages spa + dining joint packages, schedules linked resource bookings,
 performs cross-departmental conflict checking, and handles room folio posting.
 """
 from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from pymongo.errors import DuplicateKeyError
 
 from core.security import get_current_user
 from core.tenant_db import get_system_db
+from domains.spa.router import _check_conflict as _check_spa_conflict
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
-from domains.spa.router import _check_conflict as _check_spa_conflict
+from shared_kernel.pos_idem import ensure_compound_unique
 
 router = APIRouter(prefix="/api/spa-dining", tags=["SPA & Dining Scheduler"])
 
@@ -82,9 +84,6 @@ async def _check_dining_conflict(tenant_id: str, outlet_id: str, table_number: s
 
 
 async def _post_package_to_folio(tenant_id: str, booking: dict) -> None:
-    from pymongo.errors import DuplicateKeyError
-    from shared_kernel.pos_idem import ensure_compound_unique
-
     db = get_system_db()
     await ensure_compound_unique(
         db.folio_postings,

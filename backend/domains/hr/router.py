@@ -4294,7 +4294,7 @@ async def list_applicants(
 
 async def _trigger_staff_onboarding(applicant: dict, tenant_id: str, actor_id: str, current_user: User):
     staff_id = str(uuid.uuid4())
-    
+
     staff = {
         'id': staff_id,
         'tenant_id': tenant_id,
@@ -4311,7 +4311,7 @@ async def _trigger_staff_onboarding(applicant: dict, tenant_id: str, actor_id: s
         'onboarding_status': 'pending',
     }
     await db.staff_members.insert_one(staff)
-    
+
     checklist = {
         'id': str(uuid.uuid4()),
         'tenant_id': tenant_id,
@@ -4329,7 +4329,7 @@ async def _trigger_staff_onboarding(applicant: dict, tenant_id: str, actor_id: s
         'updated_at': datetime.now(UTC).isoformat(),
     }
     await db.staff_onboarding.insert_one(checklist)
-    
+
     await _audit(
         current_user, "hr.staff.onboarding_start", "staff_member", staff_id,
         f"Personel onboarding süreci başlatıldı (Staff ID: {staff_id})",
@@ -4349,9 +4349,9 @@ async def update_applicant_status(
     )
     if not applicant:
         raise HTTPException(status_code=404, detail="Aday bulunamadı")
-        
+
     old_status = applicant.get("status")
-    
+
     res = await db.job_applicants.update_one(
         {'tenant_id': current_user.tenant_id, 'id': applicant_id},
         {'$set': {
@@ -4363,10 +4363,10 @@ async def update_applicant_status(
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Aday bulunamadı")
-        
+
     if payload.status == "hired" and old_status != "hired":
         await _trigger_staff_onboarding(applicant, current_user.tenant_id, getattr(current_user, 'id', None), current_user)
-        
+
     return {'success': True, 'status': payload.status}
 
 
@@ -4389,7 +4389,7 @@ async def get_staff_onboarding_status(
     )
     if not checklist:
         raise HTTPException(status_code=404, detail="Onboarding kaydı bulunamadı")
-        
+
     staff = await db.staff_members.find_one(
         {"tenant_id": current_user.tenant_id, "id": staff_id}, {"_id": 0}
     )
@@ -4414,7 +4414,7 @@ async def complete_onboarding_step(
     steps = checklist.get("steps") or []
     step_found = False
     completed_steps = 0
-    
+
     for step in steps:
         if step["key"] == step_key:
             step_found = True
@@ -4444,7 +4444,7 @@ async def complete_onboarding_step(
             "updated_at": datetime.now(UTC).isoformat()
         }}
     )
-    
+
     await db.staff_members.update_one(
         {"tenant_id": current_user.tenant_id, "id": staff_id},
         {"$set": {"onboarding_status": new_status, "updated_at": datetime.now(UTC).isoformat()}}

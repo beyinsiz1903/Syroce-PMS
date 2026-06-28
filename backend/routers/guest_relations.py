@@ -1,7 +1,7 @@
 """Guest Relations Smart Profile Entegrasyonu.
 
 Provides predictive analysis of guest preferences (pillow type, SPA choices, minibar habits)
-and automates the generation of Room Preparation Directives (housekeeping task + frontdesk alerts) 
+and automates the generation of Room Preparation Directives (housekeeping task + frontdesk alerts)
 24 hours prior to guest arrival.
 """
 from __future__ import annotations
@@ -9,8 +9,9 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from core.security import get_current_user
 from core.tenant_db import get_system_db
@@ -62,7 +63,7 @@ async def _analyze_guest_preferences(db: Any, tenant_id: str, guest_id: str, gue
             for oil in ["lavanta", "gül", "nane", "kekik", "okaliptüs", "aroma"]:
                 if oil in notes:
                     oils.append(oil)
-        
+
         most_frequent_service = max(services, key=services.get)
         fav_oil = max(set(oils), key=oils.count) if oils else "aroma"
         spa_pref = f"{most_frequent_service} ({fav_oil} yağı tercihi)"
@@ -81,7 +82,7 @@ async def _analyze_guest_preferences(db: Any, tenant_id: str, guest_id: str, gue
             for k in counts:
                 if k.lower() in desc.lower():
                     counts[k] += 1
-        
+
         dominant = max(counts, key=counts.get)
         if counts[dominant] > 0:
             minibar_pref = f"{dominant} ağırlıklı minibar kurulumu."

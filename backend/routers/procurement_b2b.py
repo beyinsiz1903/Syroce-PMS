@@ -8,15 +8,16 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal
-from fastapi import APIRouter, Depends, HTTPException, Query
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from core.security import get_current_user
 from core.tenant_db import get_system_db
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
-from modules.supplies_market.service import place_order
 from modules.supplies_market.models import OrderCreate, OrderLineIn
+from modules.supplies_market.service import place_order
 
 router = APIRouter(prefix="/api/procurement/b2b", tags=["B2B Procurement Automation"])
 

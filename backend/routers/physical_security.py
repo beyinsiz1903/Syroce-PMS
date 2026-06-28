@@ -7,6 +7,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
