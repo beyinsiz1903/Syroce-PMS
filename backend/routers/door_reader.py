@@ -24,6 +24,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from core.security import JWT_ALGORITHM, JWT_SECRET
+from core.tenant_db import get_system_db
 from domains.guest.operations_router import _key_is_usable
 
 logger = logging.getLogger(__name__)
