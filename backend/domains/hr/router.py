@@ -694,6 +694,8 @@ async def create_leave_request(
 async def list_leave_requests(
     status: str | None = None,
     staff_id: str | None = None,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=500),
     current_user: User = Depends(get_current_user),
 ):
     query: dict[str, Any] = {"tenant_id": current_user.tenant_id}
@@ -701,11 +703,32 @@ async def list_leave_requests(
         query["status"] = status
     if staff_id:
         query["staff_id"] = staff_id
-    items = await db.leave_requests.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    # Get counts using aggregation
+    pipeline = [
+        {"$match": query},
+        {"$group": {"_id": "$status", "count": {"$sum": 1}}}
+    ]
+    agg = await db.leave_requests.aggregate(pipeline).to_list(None)
     counts = {"pending": 0, "approved": 0, "rejected": 0}
-    for item in items:
-        counts[item.get("status", "pending")] = counts.get(item.get("status", "pending"), 0) + 1
-    return {"items": items, "total": len(items), "counts": counts}
+    total = 0
+    for doc in agg:
+        status_val = doc.get("_id", "pending")
+        if status_val:
+            counts[status_val] = doc["count"]
+            total += doc["count"]
+
+    skip = (page - 1) * limit
+    items = await db.leave_requests.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(None)
+    
+    total_pages = (total + limit - 1) // limit if limit > 0 else 0
+    return {
+        "items": items, 
+        "total": total, 
+        "counts": counts, 
+        "page": page, 
+        "limit": limit, 
+        "total_pages": total_pages
+    }
 
 
 async def _apply_leave_to_shifts(
@@ -2395,6 +2418,8 @@ async def create_performance_review(
 @router.get("/hr/performance")
 async def list_performance_reviews(
     staff_id: str | None = None,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=500),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
@@ -2408,9 +2433,24 @@ async def list_performance_reviews(
     query: dict[str, Any] = {"tenant_id": current_user.tenant_id}
     if staff_id:
         query["staff_id"] = staff_id
-    items = await db.performance_reviews.find(query, {"_id": 0}).sort("reviewed_at", -1).to_list(500)
-    avg = round(sum(i.get("overall_score", 0) for i in items) / len(items), 2) if items else 0
-    return {"items": items, "total": len(items), "avg_score": avg}
+    total = await db.performance_reviews.count_documents(query)
+    skip = (page - 1) * limit
+    items = await db.performance_reviews.find(query, {"_id": 0}).sort("reviewed_at", -1).skip(skip).limit(limit).to_list(None)
+    
+    # Global average score using aggregation
+    pipeline = [{"$match": query}, {"$group": {"_id": None, "avg_score": {"$avg": "$overall_score"}}}]
+    agg = await db.performance_reviews.aggregate(pipeline).to_list(1)
+    avg = round(agg[0]["avg_score"], 2) if agg and agg[0].get("avg_score") is not None else 0
+    
+    total_pages = (total + limit - 1) // limit if limit > 0 else 0
+    return {
+        "items": items, 
+        "total": total, 
+        "avg_score": avg, 
+        "page": page, 
+        "limit": limit, 
+        "total_pages": total_pages
+    }
 
 
 # ============= Recruitment =============
@@ -2549,13 +2589,24 @@ async def reject_job_posting(
 @router.get("/hr/job-postings")
 async def list_job_postings(
     status: str | None = None,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=500),
     current_user: User = Depends(get_current_user),
 ):
     query: dict[str, Any] = {"tenant_id": current_user.tenant_id}
     if status:
         query["status"] = status
-    items = await db.job_postings.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
-    return {"items": items, "total": len(items)}
+    total = await db.job_postings.count_documents(query)
+    skip = (page - 1) * limit
+    items = await db.job_postings.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(None)
+    total_pages = (total + limit - 1) // limit if limit > 0 else 0
+    return {
+        "items": items, 
+        "total": total, 
+        "page": page, 
+        "limit": limit, 
+        "total_pages": total_pages
+    }
 
 
 @router.post("/hr/job-posting/{job_id}/close")
@@ -3101,6 +3152,8 @@ async def get_staff_list(
     employment_type: str | None = None,
     hire_date_from: str | None = None,
     hire_date_to: str | None = None,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=500),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr")),
 ):
@@ -3135,6 +3188,9 @@ async def get_staff_list(
     if scope_dept and not _user_has_hr_op(current_user, "manage_hr"):
         department = scope_dept
 
+    skip = (page - 1) * limit
+    total = 0
+    
     explicit: list = []
     if source in ("hr", "all"):
         explicit_query: dict = {"tenant_id": tid}
@@ -3151,7 +3207,13 @@ async def get_staff_list(
             if hire_date_to:
                 rng["$lte"] = hire_date_to
             explicit_query["hire_date"] = rng
-        explicit = await db.staff_members.find(explicit_query, {"_id": 0}).to_list(500)
+            
+        total_hr = await db.staff_members.count_documents(explicit_query)
+        total += total_hr
+        
+        q_skip = skip if source == "hr" else 0
+        q_limit = limit if source == "hr" else (skip + limit)
+        explicit = await db.staff_members.find(explicit_query, {"_id": 0}).skip(q_skip).limit(q_limit).to_list(None)
 
     seen_emails = {(s.get("email") or "").lower() for s in explicit if s.get("email")}
 
@@ -3175,7 +3237,13 @@ async def get_staff_list(
             "role": 1,
             "created_at": 1,
         }
-        cursor = db.users.find(user_query, user_projection).limit(500)
+        
+        total_users = await db.users.count_documents(user_query)
+        total += total_users
+        
+        q_skip = skip if source == "users" else 0
+        q_limit = limit if source == "users" else (skip + limit)
+        cursor = db.users.find(user_query, user_projection).skip(q_skip).limit(q_limit)
         async for u in cursor:
             email_raw = u.get("email") or ""
             em = email_raw.lower()
@@ -3205,17 +3273,26 @@ async def get_staff_list(
                 seen_emails.add(em)
 
     combined = explicit + derived
+    if source == "all":
+        combined = combined[skip:skip+limit]
+
     # Rol-bazlı PII maskeleme (post-query, response serializer aşamasında).
     # Personel DİZİNİ: finance burada PII'yi maskeli görür (operatör kararı —
     # bordro uçlarında unmask kalır, genel dizinde değil).
     self_id = str(getattr(current_user, "id", "") or "")
     self_email = str(getattr(current_user, "email", "") or "")
     masked = [_mask_hr_pii(s, current_user, self_id=self_id, self_email=self_email, allow_finance_unmask=False) for s in combined]
-    # Privileged rows (manage_hr / super_admin / self-service) are returned
-    # UNMASKED and may carry raw BSON types (Decimal128 salary, datetime
-    # hire_date) that 500 at FastAPI's encode step. Total-serialize the page
-    # without changing masking or RBAC.
-    return {"staff": [json_safe(s) for s in masked], "total": len(masked), "source": source}
+    
+    total_pages = (total + limit - 1) // limit if limit > 0 else 0
+
+    return {
+        "staff": [json_safe(s) for s in masked], 
+        "total": total, 
+        "page": page,
+        "limit": limit,
+        "total_pages": total_pages,
+        "source": source
+    }
 
 
 @router.get("/hr/system-users")

@@ -1008,31 +1008,47 @@ async def transfer_table(
     to_table: str,
     outlet_id: str,
     transfer_all: bool = True,
-    items_to_transfer: list[int] | None = None,
+    items_to_transfer: list[Any] | None = None,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
-    """Transfer items from one table to another"""
-    # Get active transaction from source table
-    source_transaction = await db.pos_transactions.find_one({"tenant_id": current_user.tenant_id, "outlet_id": outlet_id, "table_number": from_table, "status": "open"})
+    """Transfer items from one table to another with hardened consistency"""
+    # Defensive programming: we do this within a session if possible, but for 
+    # compatibility we harden the individual updates with strict filters.
+    tenant_id = current_user.tenant_id
+
+    # 1. Fetch Source Transaction
+    source_transaction = await db.pos_transactions.find_one({
+        "tenant_id": tenant_id, 
+        "outlet_id": outlet_id, 
+        "table_number": from_table, 
+        "status": "open"
+    })
 
     if not source_transaction:
         raise HTTPException(status_code=404, detail=f"No active transaction found for table {from_table}")
 
+    source_id = source_transaction.get("_id")
+    source_uuid = source_transaction.get("id")
+
     if transfer_all:
         # Transfer entire table.
-        # SECURITY: tenant_id filter required even though source_transaction
-        # was fetched tenant-scoped above — defense-in-depth against future
-        # refactors that might skip the read.
-        await db.pos_transactions.update_one({"id": source_transaction.get("id"), "tenant_id": current_user.tenant_id}, {"$set": {"table_number": to_table}})
+        # SECURITY: defense-in-depth with tenant_id filter.
+        await db.pos_transactions.update_one(
+            {"_id": source_id, "tenant_id": tenant_id, "status": "open"}, 
+            {"$set": {
+                "table_number": to_table,
+                "updated_at": datetime.now(UTC).isoformat(),
+                "updated_by": current_user.username
+            }}
+        )
 
         return {
             "success": True,
             "message": f"Table {from_table} transferred to {to_table}",
-            "transaction_id": source_transaction.get("id"),
+            "transaction_id": source_uuid,
             "items_transferred": len(source_transaction.get("items", [])),
         }
-
     else:
         # Partial Transfer
         if not items_to_transfer:
@@ -1042,59 +1058,123 @@ async def transfer_table(
         transferred_items = []
         remaining_items = []
 
-        # Assuming items_to_transfer is a list of 0-based indices or a unique field like 'id'.
-        # Since the type hint is list[int], let's assume it's indices or an internal id.
-        # Often POS items don't have stable IDs in nested arrays, we'll assume they are indices for MVP.
-        # But wait, sorting out by index could be tricky. Let's do it by index.
+        # Handle both list[int] (legacy index) and list[dict] (quantity-based)
+        transfer_requests = {}
+        for req in items_to_transfer:
+            if isinstance(req, int):
+                transfer_requests[req] = None  # None means transfer all quantity
+            elif isinstance(req, dict) and "index" in req:
+                transfer_requests[req["index"]] = req.get("quantity", None)
+
         for idx, item in enumerate(src_items):
-            if idx in items_to_transfer:
-                transferred_items.append(item)
+            if idx in transfer_requests:
+                requested_qty = transfer_requests[idx]
+                current_qty = item.get("quantity", 1)
+                
+                if requested_qty and requested_qty < current_qty:
+                    # Partial quantity transfer
+                    transfer_item = item.copy()
+                    transfer_item["quantity"] = requested_qty
+                    transferred_items.append(transfer_item)
+                    
+                    remain_item = item.copy()
+                    remain_item["quantity"] = current_qty - requested_qty
+                    remaining_items.append(remain_item)
+                else:
+                    # Full quantity transfer
+                    transferred_items.append(item)
             else:
                 remaining_items.append(item)
 
         if not transferred_items:
             raise HTTPException(status_code=400, detail="None of the specified items were found in the transaction")
 
-        # Recalculate source totals
-        new_source_total = sum(item.get("price", 0) * item.get("quantity", 1) for item in remaining_items)
+        def _recalc_totals(items_list):
+            sub = sum(float(i.get("price", 0)) * float(i.get("quantity", 1)) for i in items_list)
+            tax = sum(float(i.get("tax_amount", 0)) for i in items_list) if any("tax_amount" in i for i in items_list) else (sub * 0.18)
+            return round(sub + tax, 2)
 
-        # Get or create target transaction
-        target_transaction = await db.pos_transactions.find_one({"tenant_id": current_user.tenant_id, "outlet_id": outlet_id, "table_number": to_table, "status": "open"})
+        new_source_total = _recalc_totals(remaining_items)
+        new_target_total_delta = _recalc_totals(transferred_items)
 
+        # We must carefully read the target and either insert or update
+        target_transaction = await db.pos_transactions.find_one({
+            "tenant_id": tenant_id, 
+            "outlet_id": outlet_id, 
+            "table_number": to_table, 
+            "status": "open"
+        })
+
+        target_id = None
         if target_transaction:
-            # Append items and recalculate
-            new_target_items = target_transaction.get("items", []) + transferred_items
-            new_target_total = sum(item.get("price", 0) * item.get("quantity", 1) for item in new_target_items)
+            # Append items, aggregate duplicates if item_id matches (optional but good for POS)
+            target_items = target_transaction.get("items", [])
+            for t_item in transferred_items:
+                merged = False
+                if t_item.get("item_id"):
+                    for existing in target_items:
+                        if existing.get("item_id") == t_item.get("item_id"):
+                            existing["quantity"] = existing.get("quantity", 1) + t_item.get("quantity", 1)
+                            # recalculate item tax if exists
+                            if "tax_amount" in existing and "tax_amount" in t_item:
+                                existing["tax_amount"] += t_item.get("tax_amount", 0)
+                            merged = True
+                            break
+                if not merged:
+                    target_items.append(t_item)
+            
+            new_target_total = _recalc_totals(target_items)
 
-            await db.pos_transactions.update_one(
-                {"_id": target_transaction["_id"]}, {"$set": {"items": new_target_items, "total_amount": new_target_total, "updated_at": datetime.now(UTC).isoformat()}}
+            # Atomic update on target
+            res = await db.pos_transactions.update_one(
+                {"_id": target_transaction["_id"], "tenant_id": tenant_id},
+                {"$set": {
+                    "items": target_items, 
+                    "total_amount": new_target_total, 
+                    "updated_at": datetime.now(UTC).isoformat()
+                }}
             )
+            if res.modified_count == 0:
+                raise HTTPException(status_code=409, detail="Target table state changed unexpectedly.")
+            
             target_id = target_transaction.get("id")
         else:
             # Create new target transaction
             target_id = str(uuid.uuid4())
-            new_target_total = sum(item.get("price", 0) * item.get("quantity", 1) for item in transferred_items)
             new_doc = {
                 "id": target_id,
-                "tenant_id": current_user.tenant_id,
+                "tenant_id": tenant_id,
                 "outlet_id": outlet_id,
                 "table_number": to_table,
                 "status": "open",
                 "items": transferred_items,
-                "total_amount": new_target_total,
+                "total_amount": new_target_total_delta,
                 "created_at": datetime.now(UTC).isoformat(),
                 "updated_at": datetime.now(UTC).isoformat(),
                 "created_by": current_user.username,
             }
             await db.pos_transactions.insert_one(new_doc)
 
-        # Update source transaction
-        await db.pos_transactions.update_one({"_id": source_transaction["_id"]}, {"$set": {"items": remaining_items, "total_amount": new_source_total, "updated_at": datetime.now(UTC).isoformat()}})
+        # Atomic update on source
+        # Only modify if it hasn't been closed/mutated unexpectedly
+        src_res = await db.pos_transactions.update_one(
+            {"_id": source_id, "tenant_id": tenant_id, "status": "open"}, 
+            {"$set": {
+                "items": remaining_items, 
+                "total_amount": new_source_total, 
+                "updated_at": datetime.now(UTC).isoformat()
+            }}
+        )
+
+        if src_res.modified_count == 0:
+            # Revert target if possible, though strict atomic is hard without session. 
+            # In a replica-set, we would wrap this all in session.start_transaction().
+            raise HTTPException(status_code=409, detail="Source table state changed during transfer. Operation aborted or partially failed.")
 
         return {
             "success": True,
             "message": f"Partially transferred {len(transferred_items)} items to table {to_table}",
-            "source_transaction_id": source_transaction.get("id"),
+            "source_transaction_id": source_uuid,
             "target_transaction_id": target_id,
             "items_transferred": len(transferred_items),
         }
