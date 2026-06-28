@@ -195,9 +195,7 @@ async def push_channel_availability(
 
     # Pinned-provider tespiti OTORITERDIR; istemci girdisi ezemez (yalnizca okuma).
     try:
-        from domains.channel_manager.unified_rate_manager_router import (
-            _detect_active_provider,
-        )
+        from services.cm_provider import _detect_active_provider
 
         detection = await _detect_active_provider(current_user.tenant_id, prefer=None)
     except Exception:
@@ -270,9 +268,7 @@ async def update_channel_rates(
 
     # Pinned-provider tespiti OTORITERDIR; istemci girdisi ezemez (yalnizca okuma).
     try:
-        from domains.channel_manager.unified_rate_manager_router import (
-            _detect_active_provider,
-        )
+        from services.cm_provider import _detect_active_provider
 
         detection = await _detect_active_provider(current_user.tenant_id, prefer=None)
     except Exception:

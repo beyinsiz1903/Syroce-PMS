@@ -198,10 +198,10 @@ const SpaDiningPackages = ({ user, tenant, onLogout, embedded = false }) => {
                         </div>
                         <div className="mt-4 grid grid-cols-2 gap-4 text-sm text-gray-600">
                           <div className="flex items-center gap-2">
-                            <Clock className="w-4 h-4 text-purple-500" /> SPA: {new Date(booking.spa_start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            <Clock className="w-4 h-4 text-indigo-500" /> SPA: {new Date(booking.spa_start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                           </div>
                           <div className="flex items-center gap-2">
-                            <Utensils className="w-4 h-4 text-orange-500" /> Restoran: {new Date(booking.dining_start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            <Utensils className="w-4 h-4 text-amber-500" /> Restoran: {new Date(booking.dining_start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                           </div>
                         </div>
                       </div>

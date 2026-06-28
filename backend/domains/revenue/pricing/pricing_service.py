@@ -51,9 +51,7 @@ class PricingService:
 
         # Pinned-provider tespiti OTORITERDIR; istemci girdisi ezemez (yalnizca okuma).
         try:
-            from domains.channel_manager.unified_rate_manager_router import (
-                _detect_active_provider,
-            )
+            from services.cm_provider import _detect_active_provider
 
             detection = await _detect_active_provider(ctx.tenant_id, prefer=None)
         except Exception:

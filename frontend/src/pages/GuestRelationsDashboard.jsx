@@ -73,12 +73,12 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <Sparkles className="w-6 h-6 text-purple-600" />
+              <Sparkles className="w-6 h-6 text-indigo-600" />
               Misafir İlişkileri (Akıllı Profil)
             </h1>
             <p className="text-sm text-gray-500 mt-1">Misafir tercihlerini öngörün ve oda hazırlık direktiflerini yönetin.</p>
           </div>
-          <Button onClick={handleTriggerPreparations} disabled={triggering} className="gap-2 bg-purple-600 hover:bg-purple-700 text-white">
+          <Button onClick={handleTriggerPreparations} disabled={triggering} className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white">
             {triggering ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
             Yaklaşan Check-in'ler İçin Direktif Tetikle
           </Button>
@@ -106,14 +106,14 @@ const GuestRelationsDashboard = ({ user, tenant, onLogout, embedded = false }) =
                 </div>
 
                 {analysis && (
-                  <div className="mt-6 p-4 bg-purple-50 rounded-xl border border-purple-100 space-y-4">
-                    <div className="flex items-center gap-3 border-b border-purple-200 pb-3">
-                      <div className="p-2 bg-purple-100 rounded-full">
-                        <User className="w-5 h-5 text-purple-700" />
+                  <div className="mt-6 p-4 bg-indigo-50 rounded-xl border border-indigo-100 space-y-4">
+                    <div className="flex items-center gap-3 border-b border-indigo-200 pb-3">
+                      <div className="p-2 bg-indigo-100 rounded-full">
+                        <User className="w-5 h-5 text-indigo-700" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-purple-900">{analysis.guest_name}</p>
-                        <p className="text-xs text-purple-600">ID: {analysis.guest_id}</p>
+                        <p className="text-sm font-medium text-indigo-900">{analysis.guest_name}</p>
+                        <p className="text-xs text-indigo-600">ID: {analysis.guest_id}</p>
                       </div>
                     </div>
                     
