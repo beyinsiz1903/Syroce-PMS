@@ -12,12 +12,12 @@ Mirrors the Opera/Protel banquet management spine:
 """
 from __future__ import annotations
 
-import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+import uuid
 
-import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+import jwt
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
