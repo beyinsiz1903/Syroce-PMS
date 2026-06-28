@@ -126,7 +126,7 @@ def _mask_hr_pii(
     *,
     self_id: str | None = None,
     self_email: str | None = None,
-    allow_finance_unmask: bool = True,
+    allow_finance_unmask: bool = False,
 ) -> dict | None:
     """Rol-bazlı PII maskeleme — staff/profile/salary serializer'larda kullanılır.
 
@@ -719,14 +719,14 @@ async def list_leave_requests(
 
     skip = (page - 1) * limit
     items = await db.leave_requests.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(None)
-    
+
     total_pages = (total + limit - 1) // limit if limit > 0 else 0
     return {
-        "items": items, 
-        "total": total, 
-        "counts": counts, 
-        "page": page, 
-        "limit": limit, 
+        "items": items,
+        "total": total,
+        "counts": counts,
+        "page": page,
+        "limit": limit,
         "total_pages": total_pages
     }
 
@@ -2436,19 +2436,19 @@ async def list_performance_reviews(
     total = await db.performance_reviews.count_documents(query)
     skip = (page - 1) * limit
     items = await db.performance_reviews.find(query, {"_id": 0}).sort("reviewed_at", -1).skip(skip).limit(limit).to_list(None)
-    
+
     # Global average score using aggregation
     pipeline = [{"$match": query}, {"$group": {"_id": None, "avg_score": {"$avg": "$overall_score"}}}]
     agg = await db.performance_reviews.aggregate(pipeline).to_list(1)
     avg = round(agg[0]["avg_score"], 2) if agg and agg[0].get("avg_score") is not None else 0
-    
+
     total_pages = (total + limit - 1) // limit if limit > 0 else 0
     return {
-        "items": items, 
-        "total": total, 
-        "avg_score": avg, 
-        "page": page, 
-        "limit": limit, 
+        "items": items,
+        "total": total,
+        "avg_score": avg,
+        "page": page,
+        "limit": limit,
         "total_pages": total_pages
     }
 
@@ -2601,10 +2601,10 @@ async def list_job_postings(
     items = await db.job_postings.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(None)
     total_pages = (total + limit - 1) // limit if limit > 0 else 0
     return {
-        "items": items, 
-        "total": total, 
-        "page": page, 
-        "limit": limit, 
+        "items": items,
+        "total": total,
+        "page": page,
+        "limit": limit,
         "total_pages": total_pages
     }
 
@@ -3190,7 +3190,7 @@ async def get_staff_list(
 
     skip = (page - 1) * limit
     total = 0
-    
+
     explicit: list = []
     if source in ("hr", "all"):
         explicit_query: dict = {"tenant_id": tid}
@@ -3207,10 +3207,10 @@ async def get_staff_list(
             if hire_date_to:
                 rng["$lte"] = hire_date_to
             explicit_query["hire_date"] = rng
-            
+
         total_hr = await db.staff_members.count_documents(explicit_query)
         total += total_hr
-        
+
         q_skip = skip if source == "hr" else 0
         q_limit = limit if source == "hr" else (skip + limit)
         explicit = await db.staff_members.find(explicit_query, {"_id": 0}).skip(q_skip).limit(q_limit).to_list(None)
@@ -3237,7 +3237,7 @@ async def get_staff_list(
             "role": 1,
             "created_at": 1,
         }
-        
+
         total_users = await db.users.count_documents(user_query)
         if source == "all":
             hr_emails = await db.staff_members.distinct("email", explicit_query)
@@ -3247,7 +3247,7 @@ async def get_staff_list(
             total += (total_users - overlap)
         else:
             total += total_users
-        
+
         q_skip = skip if source == "users" else 0
         q_limit = limit if source == "users" else (skip + limit)
         cursor = db.users.find(user_query, user_projection).skip(q_skip).limit(q_limit)
@@ -3289,12 +3289,12 @@ async def get_staff_list(
     self_id = str(getattr(current_user, "id", "") or "")
     self_email = str(getattr(current_user, "email", "") or "")
     masked = [_mask_hr_pii(s, current_user, self_id=self_id, self_email=self_email, allow_finance_unmask=False) for s in combined]
-    
+
     total_pages = (total + limit - 1) // limit if limit > 0 else 0
 
     return {
-        "staff": [json_safe(s) for s in masked], 
-        "total": total, 
+        "staff": [json_safe(s) for s in masked],
+        "total": total,
         "page": page,
         "limit": limit,
         "total_pages": total_pages,
