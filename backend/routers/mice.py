@@ -16,6 +16,7 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
@@ -28,7 +29,6 @@ from core.booking_atomicity import (
     standalone_fallback_allowed,
     with_resource_locks,
 )
-import jwt
 from core.security import get_current_user, JWT_SECRET, JWT_ALGORITHM
 from core.spa_mice_authz import require_catalog, require_finance, require_mice_ops
 from core.tenant_db import get_system_db
