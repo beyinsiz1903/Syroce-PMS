@@ -87,6 +87,10 @@ class Permission(str, Enum):
     VIEW_CONTACT_CENTER = "view_contact_center"
     MANAGE_CONTACT_CENTER = "manage_contact_center"
 
+    # Procurement permissions
+    VIEW_PROCUREMENT = "view_procurement"
+    MANAGE_PROCUREMENT = "manage_procurement"
+
 
 class RoomStatus(str, Enum):
     AVAILABLE = "available"
@@ -550,6 +554,8 @@ ROLE_PERMISSIONS = {
         Permission.EDIT_COMPANY,
         Permission.VIEW_REPORTS,
         Permission.EXPORT_DATA,
+        Permission.VIEW_PROCUREMENT,
+        Permission.MANAGE_PROCUREMENT,
     ],
     UserRole.STAFF: [Permission.VIEW_BOOKINGS, Permission.VIEW_HK_BOARD],
     UserRole.CALL_CENTER_AGENT: [

@@ -67,9 +67,23 @@ class InMemoryCollection:
                 return SimpleNamespace(modified_count=1, matched_count=1)
         return SimpleNamespace(modified_count=0, matched_count=0)
 
+    async def delete_one(self, flt, session=None):
+        for idx, d in enumerate(self.docs):
+            if self._match(d, flt):
+                self.docs.pop(idx)
+                return SimpleNamespace(deleted_count=1)
+        return SimpleNamespace(deleted_count=0)
+
+from pymongo.errors import OperationFailure
+
+class _FakeClient:
+    async def start_session(self):
+        raise OperationFailure("Transaction numbers are only allowed on a replica set member or mongos")
+
 class _FakeDB:
     def __init__(self, docs):
         self.pos_transactions = InMemoryCollection(docs)
+        self.client = _FakeClient()
 
 @pytest.fixture
 def fake_db():
@@ -249,3 +263,40 @@ async def test_negative_quantity_transfer(fake_db, monkeypatch):
         )
     assert exc.value.status_code == 400
     assert "quantity must be > 0" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_partial_transfer_compensation(fake_db, monkeypatch):
+    monkeypatch.setattr(pos_core, "db", fake_db)
+    
+    # Target (T2) will be created as a new document, then source (T1) update will fail.
+    original_update_one = fake_db.pos_transactions.update_one
+    original_insert_one = fake_db.pos_transactions.insert_one
+    
+    # We want source update to fail. Source update is the update_one call.
+    # Target creation is insert_one.
+    # We can mock update_one to return modified_count=0 when updating T1.
+    async def mock_update_one(flt, update, session=None, upsert=False):
+        if flt.get("table_number") == "T1" or flt.get("_id") == "src_1":
+            return SimpleNamespace(modified_count=0, matched_count=0)
+        return await original_update_one(flt, update, session, upsert)
+        
+    monkeypatch.setattr(fake_db.pos_transactions, "update_one", mock_update_one)
+    
+    with pytest.raises(HTTPException) as exc:
+        await pos_core.transfer_table(
+            from_table="T1",
+            to_table="T2",
+            outlet_id="out1",
+            transfer_all=False,
+            items_to_transfer=[1],
+            current_user=await _fake_user(),
+            _perm=None
+        )
+    assert exc.value.status_code == 409
+    assert "Operation aborted and compensated" in exc.value.detail
+    
+    # Check that T2 is not in db (it got deleted during compensation)
+    t2_tx = await fake_db.pos_transactions.find_one({"table_number": "T2", "tenant_id": "tenant1"})
+    assert t2_tx is None
+

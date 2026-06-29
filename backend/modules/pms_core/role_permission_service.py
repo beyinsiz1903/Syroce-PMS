@@ -105,6 +105,10 @@ OPERATION_PERMISSIONS = {
     # Contact Center (omnichannel)
     "view_contact_center": [Permission.VIEW_CONTACT_CENTER],
     "manage_contact_center": [Permission.MANAGE_CONTACT_CENTER],
+    # Procurement operations
+    "view_procurement": [Permission.VIEW_PROCUREMENT],
+    "manage_procurement": [Permission.MANAGE_PROCUREMENT],
+    "approve_procurement_b2b": [Permission.MANAGE_PROCUREMENT],
 }
 
 # v89: module → roles mapping for require_module() helper

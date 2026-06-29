@@ -1099,63 +1099,135 @@ async def transfer_table(
         new_target_total_delta = _recalc_totals(transferred_items)
 
         # We must carefully read the target and either insert or update
-        target_transaction = await db.pos_transactions.find_one({"tenant_id": tenant_id, "outlet_id": outlet_id, "table_number": to_table, "status": "open"})
+        try:
+            async with await db.client.start_session() as session:
+                async with session.start_transaction():
+                    target_transaction = await db.pos_transactions.find_one({"tenant_id": tenant_id, "outlet_id": outlet_id, "table_number": to_table, "status": "open"}, session=session)
 
-        target_id = None
-        if target_transaction:
-            # Append items, aggregate duplicates if item_id matches (optional but good for POS)
-            target_items = target_transaction.get("items", [])
-            for t_item in transferred_items:
-                merged = False
-                if t_item.get("item_id"):
-                    for existing in target_items:
-                        if existing.get("item_id") == t_item.get("item_id"):
-                            existing["quantity"] = existing.get("quantity", 1) + t_item.get("quantity", 1)
-                            # recalculate item tax if exists
-                            if "tax_amount" in existing and "tax_amount" in t_item:
-                                existing["tax_amount"] += t_item.get("tax_amount", 0)
-                            merged = True
-                            break
-                if not merged:
-                    target_items.append(t_item)
+                    target_id = None
+                    if target_transaction:
+                        target_items = target_transaction.get("items", [])
+                        for t_item in transferred_items:
+                            merged = False
+                            if t_item.get("item_id"):
+                                for existing in target_items:
+                                    if existing.get("item_id") == t_item.get("item_id"):
+                                        existing["quantity"] = existing.get("quantity", 1) + t_item.get("quantity", 1)
+                                        if "tax_amount" in existing and "tax_amount" in t_item:
+                                            existing["tax_amount"] += t_item.get("tax_amount", 0)
+                                        merged = True
+                                        break
+                            if not merged:
+                                target_items.append(t_item)
 
-            new_target_total = _recalc_totals(target_items)
+                        new_target_total = _recalc_totals(target_items)
 
-            # Atomic update on target
-            res = await db.pos_transactions.update_one(
-                {"_id": target_transaction["_id"], "tenant_id": tenant_id}, {"$set": {"items": target_items, "total_amount": new_target_total, "updated_at": datetime.now(UTC).isoformat()}}
+                        res = await db.pos_transactions.update_one(
+                            {"_id": target_transaction["_id"], "tenant_id": tenant_id},
+                            {"$set": {"items": target_items, "total_amount": new_target_total, "updated_at": datetime.now(UTC).isoformat()}},
+                            session=session,
+                        )
+                        if res.modified_count == 0:
+                            raise HTTPException(status_code=409, detail="Target table state changed unexpectedly.")
+
+                        target_id = target_transaction.get("id")
+                    else:
+                        target_id = str(uuid.uuid4())
+                        new_doc = {
+                            "id": target_id,
+                            "tenant_id": tenant_id,
+                            "outlet_id": outlet_id,
+                            "table_number": to_table,
+                            "status": "open",
+                            "items": transferred_items,
+                            "total_amount": new_target_total_delta,
+                            "created_at": datetime.now(UTC).isoformat(),
+                            "updated_at": datetime.now(UTC).isoformat(),
+                            "created_by": current_user.username,
+                        }
+                        await db.pos_transactions.insert_one(new_doc, session=session)
+
+                    src_res = await db.pos_transactions.update_one(
+                        {"_id": source_id, "tenant_id": tenant_id, "status": "open"},
+                        {"$set": {"items": remaining_items, "total_amount": new_source_total, "updated_at": datetime.now(UTC).isoformat()}},
+                        session=session,
+                    )
+
+                    if src_res.modified_count == 0:
+                        raise HTTPException(status_code=409, detail="Source table state changed during transfer. Operation aborted or partially failed.")
+        except Exception as exc:
+            if not is_replica_set_unavailable(exc):
+                raise
+
+            # Fallback compensation mode for Standalone MongoDB
+            target_updated = False
+            target_inserted = False
+            inserted_target_id = None
+            old_target_items = []
+            old_target_total = 0.0
+
+            target_transaction = await db.pos_transactions.find_one({"tenant_id": tenant_id, "outlet_id": outlet_id, "table_number": to_table, "status": "open"})
+
+            target_id = None
+            if target_transaction:
+                target_updated = True
+                old_target_items = target_transaction.get("items", [])
+                old_target_total = target_transaction.get("total_amount", 0.0)
+
+                target_items = target_transaction.get("items", [])
+                for t_item in transferred_items:
+                    merged = False
+                    if t_item.get("item_id"):
+                        for existing in target_items:
+                            if existing.get("item_id") == t_item.get("item_id"):
+                                existing["quantity"] = existing.get("quantity", 1) + t_item.get("quantity", 1)
+                                if "tax_amount" in existing and "tax_amount" in t_item:
+                                    existing["tax_amount"] += t_item.get("tax_amount", 0)
+                                merged = True
+                                break
+                    if not merged:
+                        target_items.append(t_item)
+
+                new_target_total = _recalc_totals(target_items)
+
+                res = await db.pos_transactions.update_one(
+                    {"_id": target_transaction["_id"], "tenant_id": tenant_id}, {"$set": {"items": target_items, "total_amount": new_target_total, "updated_at": datetime.now(UTC).isoformat()}}
+                )
+                if res.modified_count == 0:
+                    raise HTTPException(status_code=409, detail="Target table state changed unexpectedly.")
+
+                target_id = target_transaction.get("id")
+            else:
+                target_inserted = True
+                target_id = str(uuid.uuid4())
+                new_doc = {
+                    "id": target_id,
+                    "tenant_id": tenant_id,
+                    "outlet_id": outlet_id,
+                    "table_number": to_table,
+                    "status": "open",
+                    "items": transferred_items,
+                    "total_amount": new_target_total_delta,
+                    "created_at": datetime.now(UTC).isoformat(),
+                    "updated_at": datetime.now(UTC).isoformat(),
+                    "created_by": current_user.username,
+                }
+                inserted_res = await db.pos_transactions.insert_one(new_doc)
+                inserted_target_id = inserted_res.inserted_id
+
+            src_res = await db.pos_transactions.update_one(
+                {"_id": source_id, "tenant_id": tenant_id, "status": "open"}, {"$set": {"items": remaining_items, "total_amount": new_source_total, "updated_at": datetime.now(UTC).isoformat()}}
             )
-            if res.modified_count == 0:
-                raise HTTPException(status_code=409, detail="Target table state changed unexpectedly.")
 
-            target_id = target_transaction.get("id")
-        else:
-            # Create new target transaction
-            target_id = str(uuid.uuid4())
-            new_doc = {
-                "id": target_id,
-                "tenant_id": tenant_id,
-                "outlet_id": outlet_id,
-                "table_number": to_table,
-                "status": "open",
-                "items": transferred_items,
-                "total_amount": new_target_total_delta,
-                "created_at": datetime.now(UTC).isoformat(),
-                "updated_at": datetime.now(UTC).isoformat(),
-                "created_by": current_user.username,
-            }
-            await db.pos_transactions.insert_one(new_doc)
-
-        # Atomic update on source
-        # Only modify if it hasn't been closed/mutated unexpectedly
-        src_res = await db.pos_transactions.update_one(
-            {"_id": source_id, "tenant_id": tenant_id, "status": "open"}, {"$set": {"items": remaining_items, "total_amount": new_source_total, "updated_at": datetime.now(UTC).isoformat()}}
-        )
-
-        if src_res.modified_count == 0:
-            # Revert target if possible, though strict atomic is hard without session.
-            # In a replica-set, we would wrap this all in session.start_transaction().
-            raise HTTPException(status_code=409, detail="Source table state changed during transfer. Operation aborted or partially failed.")
+            if src_res.modified_count == 0:
+                # COMPENSATE: Revert changes because source update failed
+                if target_updated:
+                    await db.pos_transactions.update_one(
+                        {"_id": target_transaction["_id"], "tenant_id": tenant_id}, {"$set": {"items": old_target_items, "total_amount": old_target_total, "updated_at": datetime.now(UTC).isoformat()}}
+                    )
+                elif target_inserted and inserted_target_id:
+                    await db.pos_transactions.delete_one({"_id": inserted_target_id, "tenant_id": tenant_id})
+                raise HTTPException(status_code=409, detail="Source table state changed during transfer. Operation aborted and compensated.")
 
         return {
             "success": True,

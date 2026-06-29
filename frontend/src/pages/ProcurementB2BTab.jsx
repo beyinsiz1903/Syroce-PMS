@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 
 const ProcurementB2BTab = () => {
   const [loading, setLoading] = useState(false);
-  const [proposals, setProposals] = useState({});
+  const [proposals, setProposals] = useState([]);
   const [approving, setApproving] = useState(false);
   const [shippingAddress, setShippingAddress] = useState('Otel Merkez Depo, Kat -1');
   const [contactName, setContactName] = useState('Satın Alma Sorumlusu');
@@ -23,7 +23,7 @@ const ProcurementB2BTab = () => {
     try {
       setLoading(true);
       const res = await axios.get('/procurement/b2b/proposals');
-      setProposals(res.data.proposals || {});
+      setProposals(res.data.proposals || []);
     } catch (err) {
       console.error(err);
       toast.error('B2B teklifleri yüklenemedi. İzinlerinizi kontrol edin.');
@@ -35,12 +35,12 @@ const ProcurementB2BTab = () => {
   const handleApprove = async () => {
     // Collect all lines across all vendors
     const lines = [];
-    Object.values(proposals).forEach(vendorData => {
-      vendorData.items.forEach(item => {
+    proposals.forEach(vendor => {
+      vendor.lines.forEach(item => {
         lines.push({
+          inventory_item_id: item.inventory_item_id,
           mp_product_id: item.mp_product_id,
-          quantity: item.suggested_qty,
-          unit_price: item.unit_price
+          quantity: item.proposed_qty
         });
       });
     });
@@ -75,8 +75,6 @@ const ProcurementB2BTab = () => {
     return <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-gray-400" /></div>;
   }
 
-  const vendors = Object.keys(proposals);
-
   return (
     <div className="space-y-6">
       <Card>
@@ -90,7 +88,7 @@ const ProcurementB2BTab = () => {
           <Button variant="outline" onClick={fetchProposals}>Yenile</Button>
         </CardHeader>
         <CardContent>
-          {vendors.length === 0 ? (
+          {proposals.length === 0 ? (
             <div className="text-center py-8 border border-dashed rounded-lg bg-gray-50">
               <CheckCircle className="w-10 h-10 text-green-400 mx-auto mb-2" />
               <p className="text-gray-600 font-medium">Tüm stok seviyeleri normal.</p>
@@ -98,11 +96,11 @@ const ProcurementB2BTab = () => {
             </div>
           ) : (
             <div className="space-y-6">
-              {vendors.map(vendorId => (
-                <div key={vendorId} className="border rounded-lg p-4 bg-white shadow-sm">
+              {proposals.map(vendor => (
+                <div key={vendor.vendor_id} className="border rounded-lg p-4 bg-white shadow-sm">
                   <h4 className="font-bold flex items-center gap-2 text-slate-800 mb-3 border-b pb-2">
                     <Store className="w-4 h-4 text-slate-500" />
-                    Tedarikçi ID: {vendorId}
+                    Tedarikçi: {vendor.vendor_name} ({vendor.vendor_id})
                   </h4>
                   <table className="w-full text-sm">
                     <thead>
@@ -116,20 +114,20 @@ const ProcurementB2BTab = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {proposals[vendorId].items.map((item, idx) => (
+                      {vendor.lines.map((item, idx) => (
                         <tr key={idx} className="border-b last:border-0">
                           <td className="py-2 font-mono text-xs">{item.sku}</td>
-                          <td className="py-2 font-medium">{item.local_item_name}</td>
-                          <td className="py-2 text-red-600">{item.shortage} adet</td>
-                          <td className="py-2 text-indigo-600 font-semibold">{item.suggested_qty} adet</td>
+                          <td className="py-2 font-medium">{item.name}</td>
+                          <td className="py-2 text-red-600">{item.reorder_level - item.current_stock > 0 ? (item.reorder_level - item.current_stock).toFixed(0) : 0} {item.unit}</td>
+                          <td className="py-2 text-indigo-600 font-semibold">{item.proposed_qty} {item.unit}</td>
                           <td className="py-2 text-right">{item.unit_price} ₺</td>
-                          <td className="py-2 text-right font-medium">{(item.suggested_qty * item.unit_price).toFixed(2)} ₺</td>
+                          <td className="py-2 text-right font-medium">{item.total_price.toFixed(2)} ₺</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                   <div className="mt-3 text-right text-sm font-bold text-gray-800 bg-gray-50 p-2 rounded">
-                    Tedarikçi Ara Toplam: {proposals[vendorId].total_value.toFixed(2)} ₺
+                    Tedarikçi Ara Toplam: {vendor.lines.reduce((sum, item) => sum + item.total_price, 0).toFixed(2)} ₺
                   </div>
                 </div>
               ))}

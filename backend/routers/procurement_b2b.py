@@ -41,7 +41,7 @@ class B2BApproveRequest(BaseModel):
 @router.get("/proposals")
 async def get_replenishment_proposals(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_finance_reports")),  # Fixed permission
+    _perm=Depends(require_op("view_procurement")),
 ):
     """Scan local critical stock and match with approved marketplace vendors."""
     db = get_system_db()
@@ -104,7 +104,7 @@ async def get_replenishment_proposals(
 async def approve_replenishment_orders(
     payload: B2BApproveRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_city_ledger")),
+    _perm=Depends(require_op("approve_procurement_b2b")),
 ):
     """Group approved items by vendor and submit orders directly to marketplace."""
     db = get_system_db()
