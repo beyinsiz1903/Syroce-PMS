@@ -171,7 +171,7 @@ JWT_EXPIRATION_HOURS = max(1, round(JWT_EXPIRATION_MINUTES / 60))
 # 15-minute access-token lifetime from the user's session lifetime.
 REFRESH_TOKEN_EXPIRATION_DAYS = max(1, int(os.environ.get("REFRESH_TOKEN_EXPIRATION_DAYS", "30")))
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 # v44 — Token revocation (logout + refresh rotation).
 # Tokens issued post-v44 carry a `jti` claim; on logout/rotation we insert that
@@ -304,8 +304,8 @@ def create_refresh_token(user_id: str, tenant_id: str | None = None) -> tuple[st
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    request: Request = None,
 ):
     """Decode JWT token and return the authenticated User."""
     # Import here to avoid circular imports with schemas
@@ -313,7 +313,13 @@ async def get_current_user(
     from security.encrypted_lookup import decrypt_user_doc
 
     try:
-        token = credentials.credentials
+        token = request.cookies.get("access_token")
+        if not token and credentials:
+            token = credentials.credentials
+            
+        if not token:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = payload.get("user_id")
 

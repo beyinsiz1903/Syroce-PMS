@@ -12,6 +12,7 @@ const BACKEND_URL = RAW_BACKEND_URL.endsWith("/api")
 
 axios.defaults.baseURL = BACKEND_URL;
 axios.defaults.timeout = 30000;
+axios.defaults.withCredentials = true;
 
 // Global GET dedupe + 1.5sn micro-cache. Aynı endpoint'in art arda
 // (sayfa geçişi, paralel bileşenler, KPI/Layout overlap) çağrılmasında
@@ -33,6 +34,8 @@ axios.interceptors.request.use(
     }
 
     if (!isPublicAuthEndpoint) {
+      // Legacy token fallback - in cookie-auth era this is mostly unused
+      // but kept briefly for migration. We no longer write it on login.
       const token = localStorage.getItem("token");
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
@@ -96,11 +99,10 @@ async function _attemptRefresh() {
         const newAccess = r?.data?.access_token;
         const newRefresh = r?.data?.refresh_token;
         if (!newAccess) return { invalid: true };
-        localStorage.setItem("token", newAccess);
+        // Backend sets HttpOnly cookies for access/refresh tokens now.
+        // We no longer store tokens in localStorage to prevent XSS theft.
         localStorage.setItem("token_ts", String(Date.now()));
-        if (newRefresh) localStorage.setItem("refresh_token", newRefresh);
-        axios.defaults.headers.common["Authorization"] = `Bearer ${newAccess}`;
-        return { token: newAccess };
+        return { token: "cookie_managed" };
       })
       .catch((err) => {
         const status = err?.response?.status;
@@ -131,7 +133,9 @@ axios.interceptors.response.use(
       const result = await _attemptRefresh();
       if (result?.token) {
         original.headers = original.headers || {};
-        original.headers.Authorization = `Bearer ${result.token}`;
+        if (result.token !== "cookie_managed") {
+           original.headers.Authorization = `Bearer ${result.token}`;
+        }
         return axios(original);
       }
       if (result?.transient) {

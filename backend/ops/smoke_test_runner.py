@@ -7,6 +7,7 @@ Used as the final gate in the deploy pipeline and after canary promotion.
 
 import logging
 import time
+import os
 from datetime import UTC, datetime
 from typing import Any
 
@@ -49,7 +50,10 @@ SMOKE_TESTS = [
         "name": "Auth: Login Flow",
         "method": "POST",
         "path": "/api/auth/login",
-        "body": {"email": "demo@hotel.com", "password": "demo123"},
+        "body": {
+            "email": os.environ.get("DEMO_EMAIL", "demo@hotel.com"), 
+            "password": os.environ.get("DEMO_PASSWORD", "demo123")
+        },
         "expected_status": 200,
         "critical": True,
         "auth_required": False,

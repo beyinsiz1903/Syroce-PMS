@@ -98,13 +98,12 @@ function App() {
   usePushNotifications(isAuthenticated ? user : null);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const hasAuthCookieSession = localStorage.getItem("token_ts") !== null;
     const storedUser = localStorage.getItem("user");
     const storedTenant = localStorage.getItem("tenant");
     const storedModules = localStorage.getItem("modules");
 
-    if (token && storedUser && !isTokenExpiredLocally()) {
-      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+    if (hasAuthCookieSession && storedUser && !isTokenExpiredLocally()) {
       axios.get("/auth/me")
         .then((meResponse) => {
           const freshUser = meResponse.data;
@@ -128,23 +127,17 @@ function App() {
         })
         .finally(() => setLoading(false));
     } else {
-      if (token) clearAuthStorage();
+      if (hasAuthCookieSession || localStorage.getItem("token")) clearAuthStorage();
       setLoading(false);
     }
   }, []);
 
   const handleLogin = async (token, userData, tenantData, refreshToken) => {
     // clearAuthStorage() içinden notifyServiceWorkerAuthChanged() çağrılıyor
-    // → eski kullanıcının cache'i SW tarafında temizlenir, yeni token ile
-    // taze veri çekilir.
+    // Backend tokens are managed via HttpOnly cookies now. We just record the session start.
     clearAuthStorage();
-    localStorage.setItem("token", token);
     localStorage.setItem("token_ts", String(Date.now()));
-    if (refreshToken) {
-      localStorage.setItem("refresh_token", refreshToken);
-    }
     localStorage.setItem("tenant", tenantData ? JSON.stringify(tenantData) : "null");
-    axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
 
     // Canonical user from /auth/me — role/permission kaynağı login response değil, /me
     let canonicalUser = userData;
