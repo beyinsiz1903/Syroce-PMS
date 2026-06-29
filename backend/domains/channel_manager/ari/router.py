@@ -20,6 +20,7 @@ from domains.channel_manager.providers.hotelrunner.snapshot_adapter import Hotel
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
 
+from routers.integration_rollout import get_tenant_rollout_config
 from . import drift_worker, outbound_service
 from . import repositories as repo
 from .events import ARIChangeEvent
@@ -242,6 +243,11 @@ async def check_drift(
     """
     if not _is_super_admin(current_user):
         req.tenant_id = current_user.tenant_id
+
+    # 0. Check Rollout Guard
+    rollout = await get_tenant_rollout_config(req.tenant_id)
+    if not rollout.get("channel_ari_enabled"):
+        raise HTTPException(status_code=403, detail="Channel ARI integration is currently disabled for this tenant.")
 
     try:
         adapter = _get_snapshot_adapter(req.provider)

@@ -11,6 +11,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
 
 export default function CredentialVaultDashboard() {
   const { t } = useTranslation();
@@ -18,6 +20,7 @@ export default function CredentialVaultDashboard() {
   // States for providers
   const [cmProviders, setCmProviders] = useState([]);
   const [financeProviders, setFinanceProviders] = useState({ logo: null, netsis: null });
+  const [readiness, setReadiness] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Modal states
@@ -35,13 +38,15 @@ export default function CredentialVaultDashboard() {
   const fetchProviders = useCallback(async () => {
     setLoading(true);
     try {
-      const [cmRes, finRes] = await Promise.all([
+      const [cmRes, finRes, readRes] = await Promise.all([
         axios.get('/channel-manager/config/providers'),
-        axios.get('/finance/integration/credentials')
+        axios.get('/finance/integration/credentials'),
+        axios.get('/integration-rollout/readiness')
       ]);
       
       setCmProviders(cmRes.data.providers || []);
       setFinanceProviders(finRes.data.providers || { logo: null, netsis: null });
+      setReadiness(readRes.data);
     } catch (err) {
       toast.error('Failed to load credential vault status');
       console.error(err);
@@ -102,6 +107,17 @@ export default function CredentialVaultDashboard() {
     }
   };
 
+  const handleToggleRollout = async (key, val) => {
+    try {
+      const newConfig = { ...readiness.config, [key]: val };
+      await axios.post('/integration-rollout/config', newConfig);
+      setReadiness(prev => ({ ...prev, config: newConfig }));
+      toast.success('Rollout config updated');
+    } catch (err) {
+      toast.error('Failed to update rollout config');
+    }
+  };
+
   return (
     <div className="p-6 max-w-[1200px] mx-auto space-y-6">
       <div className="flex justify-between items-center">
@@ -121,7 +137,13 @@ export default function CredentialVaultDashboard() {
       {loading ? (
         <div className="flex justify-center p-12"><RefreshCw className="w-6 h-6 animate-spin text-zinc-500" /></div>
       ) : (
-        <div className="space-y-8">
+        <Tabs defaultValue="credentials" className="space-y-6">
+          <TabsList className="bg-zinc-900 border border-zinc-800">
+            <TabsTrigger value="credentials">Credentials</TabsTrigger>
+            <TabsTrigger value="rollout">Rollout & Readiness</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="credentials" className="space-y-8">
           {/* Finance ERP Integrations */}
           <section>
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
@@ -215,7 +237,94 @@ export default function CredentialVaultDashboard() {
               ))}
             </div>
           </section>
-        </div>
+          </TabsContent>
+
+          <TabsContent value="rollout" className="space-y-6">
+            <Card className="bg-zinc-900/40 border-zinc-800">
+              <CardHeader>
+                <CardTitle>Tenant Integration Rollout</CardTitle>
+                <CardDescription>Safely enable or disable integrations for this property. Integrations will fail-closed if disabled.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {readiness && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Finance Readiness */}
+                    <div className="space-y-4 p-4 border border-zinc-800 rounded-lg">
+                      <div className="flex justify-between items-center">
+                        <h3 className="font-semibold text-lg flex items-center gap-2">
+                          <Database className="w-4 h-4 text-blue-500" />
+                          Finance ERP Sync
+                        </h3>
+                        {readiness.finance.status === 'Ready' ? (
+                          <Badge className="bg-emerald-500/10 text-emerald-500">Ready</Badge>
+                        ) : (
+                          <Badge className="bg-red-500/10 text-red-500">Blocked</Badge>
+                        )}
+                      </div>
+                      <div className="text-sm text-zinc-400 space-y-2">
+                        <p>Credentials configured: {readiness.finance.configured ? 'Yes' : 'No'}</p>
+                      </div>
+                      <div className="flex items-center justify-between pt-4 border-t border-zinc-800">
+                        <Label htmlFor="finance-toggle" className="font-medium">Enable ERP Sync</Label>
+                        <Switch 
+                          id="finance-toggle" 
+                          checked={readiness.config.finance_erp_enabled}
+                          onCheckedChange={(val) => handleToggleRollout('finance_erp_enabled', val)}
+                          disabled={readiness.finance.status === 'Blocked'}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Channel Manager Readiness */}
+                    <div className="space-y-4 p-4 border border-zinc-800 rounded-lg">
+                      <div className="flex justify-between items-center">
+                        <h3 className="font-semibold text-lg flex items-center gap-2">
+                          <LinkIcon className="w-4 h-4 text-purple-500" />
+                          Channel Manager ARI
+                        </h3>
+                        {readiness.channel.status === 'Ready' ? (
+                          <Badge className="bg-emerald-500/10 text-emerald-500">Ready</Badge>
+                        ) : readiness.channel.status === 'Warning' ? (
+                          <Badge className="bg-amber-500/10 text-amber-500">Warning</Badge>
+                        ) : (
+                          <Badge className="bg-red-500/10 text-red-500">Blocked</Badge>
+                        )}
+                      </div>
+                      <div className="text-sm text-zinc-400 space-y-2">
+                        <p>Credentials configured: {readiness.channel.configured ? 'Yes' : 'No'}</p>
+                        {readiness.channel.system_errors?.length > 0 && (
+                          <div className="text-amber-500">
+                            Recent SYSTEM errors detected: {readiness.channel.system_errors.map(e => e.drift_type).join(', ')}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-4 pt-4 border-t border-zinc-800">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="channel-toggle" className="font-medium">Enable ARI Sync / Push</Label>
+                          <Switch 
+                            id="channel-toggle" 
+                            checked={readiness.config.channel_ari_enabled}
+                            onCheckedChange={(val) => handleToggleRollout('channel_ari_enabled', val)}
+                            disabled={readiness.channel.status === 'Blocked'}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="drift-toggle" className="font-medium">Enable Background Drift Monitoring</Label>
+                          <Switch 
+                            id="drift-toggle" 
+                            checked={readiness.config.drift_monitoring_enabled}
+                            onCheckedChange={(val) => handleToggleRollout('drift_monitoring_enabled', val)}
+                            disabled={readiness.channel.status === 'Blocked'}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       )}
 
       {/* Credential Input Modal */}

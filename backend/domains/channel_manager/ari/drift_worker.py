@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 
 from . import repositories as repo
 from .repositories import compute_outbound_delta_hash
+from routers.integration_rollout import get_tenant_rollout_config
 
 logger = logging.getLogger(__name__)
 
@@ -219,6 +220,12 @@ async def reconcile_drift(
     Generate corrective change sets for detected drifts.
     These will be picked up by the push worker.
     """
+    # 0. Check Rollout Guard
+    rollout = await get_tenant_rollout_config(tenant_id)
+    if not rollout.get("drift_monitoring_enabled"):
+        logger.info(f"Drift monitoring is disabled for {tenant_id}. Skipping reconcile_drift.")
+        return {"corrective_change_sets": 0, "status": "disabled", "provider": provider, "property_id": property_id}
+
     drift_states = await repo.get_drift_states(tenant_id, property_id, provider, drift_only=True, limit=100)
 
     corrective_count = 0

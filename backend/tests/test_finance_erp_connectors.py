@@ -31,11 +31,13 @@ def client(mock_user):
     app.dependency_overrides.clear()
 
 
+@patch("routers.finance.integrations.get_tenant_rollout_config", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_payments", new_callable=AsyncMock)
 @patch("routers.finance.integrations._log_accounting_sync", new_callable=AsyncMock)
 @pytest.mark.asyncio
-async def test_logo_sync_no_data(mock_log, mock_payments, mock_invoices, client):
+async def test_logo_sync_no_data(mock_log, mock_payments, mock_invoices, mock_rollout, client):
+    mock_rollout.return_value = {"finance_erp_enabled": True}
     # Setup no data
     mock_invoices.return_value = []
     mock_payments.return_value = []
@@ -54,12 +56,14 @@ async def test_logo_sync_no_data(mock_log, mock_payments, mock_invoices, client)
     assert log_arg["synced_invoices"] == 0
 
 
+@patch("routers.finance.integrations.get_tenant_rollout_config", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_payments", new_callable=AsyncMock)
 @patch("routers.finance.integrations._log_accounting_sync", new_callable=AsyncMock)
 @pytest.mark.asyncio
-async def test_logo_sync_missing_credentials(mock_log, mock_payments, mock_invoices, mock_creds, client):
+async def test_logo_sync_missing_credentials(mock_log, mock_payments, mock_invoices, mock_creds, mock_rollout, client):
+    mock_rollout.return_value = {"finance_erp_enabled": True}
     # Setup some data
     mock_invoices.return_value = [{"invoice_number": "INV-1"}]
     mock_payments.return_value = []
@@ -75,12 +79,14 @@ async def test_logo_sync_missing_credentials(mock_log, mock_payments, mock_invoi
 
 
 @patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+@patch("routers.finance.integrations.get_tenant_rollout_config", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_payments", new_callable=AsyncMock)
 @patch("routers.finance.integrations._log_accounting_sync", new_callable=AsyncMock)
 @pytest.mark.asyncio
-async def test_logo_sync_connection_error(mock_log, mock_payments, mock_invoices, mock_creds, mock_post, client):
+async def test_logo_sync_connection_error(mock_log, mock_payments, mock_invoices, mock_creds, mock_rollout, mock_post, client):
+    mock_rollout.return_value = {"finance_erp_enabled": True}
     mock_invoices.return_value = [{"invoice_number": "INV-1"}]
     mock_payments.return_value = []
     mock_creds.return_value = {"api_url": "https://logo.example", "api_key": "secret"}
@@ -100,12 +106,14 @@ async def test_logo_sync_connection_error(mock_log, mock_payments, mock_invoices
 
 
 @patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+@patch("routers.finance.integrations.get_tenant_rollout_config", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_payments", new_callable=AsyncMock)
 @patch("routers.finance.integrations._log_accounting_sync", new_callable=AsyncMock)
 @pytest.mark.asyncio
-async def test_netsis_sync_timeout(mock_log, mock_payments, mock_invoices, mock_creds, mock_post, client):
+async def test_netsis_sync_timeout(mock_log, mock_payments, mock_invoices, mock_creds, mock_rollout, mock_post, client):
+    mock_rollout.return_value = {"finance_erp_enabled": True}
     mock_invoices.return_value = [{"invoice_number": "INV-1"}]
     mock_payments.return_value = []
     mock_creds.return_value = {"api_url": "https://netsis.example", "api_key": "secret"}
@@ -125,12 +133,14 @@ async def test_netsis_sync_timeout(mock_log, mock_payments, mock_invoices, mock_
 
 
 @patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+@patch("routers.finance.integrations.get_tenant_rollout_config", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_payments", new_callable=AsyncMock)
 @patch("routers.finance.integrations._log_accounting_sync", new_callable=AsyncMock)
 @pytest.mark.asyncio
-async def test_logo_sync_success(mock_log, mock_payments, mock_invoices, mock_creds, mock_post, client):
+async def test_logo_sync_success(mock_log, mock_payments, mock_invoices, mock_creds, mock_rollout, mock_post, client):
+    mock_rollout.return_value = {"finance_erp_enabled": True}
     mock_invoices.return_value = [{"invoice_number": "INV-1"}]
     mock_payments.return_value = []
     mock_creds.return_value = {"api_url": "https://logo.example", "api_key": "secret"}
@@ -161,12 +171,14 @@ async def test_logo_sync_success(mock_log, mock_payments, mock_invoices, mock_cr
 
 
 @patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+@patch("routers.finance.integrations.get_tenant_rollout_config", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_payments", new_callable=AsyncMock)
 @patch("routers.finance.integrations._log_accounting_sync", new_callable=AsyncMock)
 @pytest.mark.asyncio
-async def test_logo_sync_success_both(mock_log, mock_payments, mock_invoices, mock_creds, mock_post, client):
+async def test_logo_sync_success_both(mock_log, mock_payments, mock_invoices, mock_creds, mock_rollout, mock_post, client):
+    mock_rollout.return_value = {"finance_erp_enabled": True}
     mock_invoices.return_value = [{"invoice_number": "INV-1"}]
     mock_payments.return_value = [{"receipt_number": "PAY-1"}]
     mock_creds.return_value = {"api_url": "https://logo.example", "api_key": "secret"}
@@ -191,12 +203,14 @@ async def test_logo_sync_success_both(mock_log, mock_payments, mock_invoices, mo
 
 
 @patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+@patch("routers.finance.integrations.get_tenant_rollout_config", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_payments", new_callable=AsyncMock)
 @patch("routers.finance.integrations._log_accounting_sync", new_callable=AsyncMock)
 @pytest.mark.asyncio
-async def test_logo_sync_only_payments(mock_log, mock_payments, mock_invoices, mock_creds, mock_post, client):
+async def test_logo_sync_only_payments(mock_log, mock_payments, mock_invoices, mock_creds, mock_rollout, mock_post, client):
+    mock_rollout.return_value = {"finance_erp_enabled": True}
     mock_invoices.return_value = []
     mock_payments.return_value = [{"receipt_number": "PAY-1"}]
     mock_creds.return_value = {"api_url": "https://logo.example", "api_key": "secret"}
@@ -218,12 +232,14 @@ async def test_logo_sync_only_payments(mock_log, mock_payments, mock_invoices, m
 
 
 @patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+@patch("routers.finance.integrations.get_tenant_rollout_config", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_payments", new_callable=AsyncMock)
 @patch("routers.finance.integrations._log_accounting_sync", new_callable=AsyncMock)
 @pytest.mark.asyncio
-async def test_netsis_sync_success_both(mock_log, mock_payments, mock_invoices, mock_creds, mock_post, client):
+async def test_netsis_sync_success_both(mock_log, mock_payments, mock_invoices, mock_creds, mock_rollout, mock_post, client):
+    mock_rollout.return_value = {"finance_erp_enabled": True}
     mock_invoices.return_value = [{"invoice_number": "INV-1"}]
     mock_payments.return_value = [{"receipt_number": "PAY-1"}]
     mock_creds.return_value = {"api_url": "https://netsis.example", "api_key": "secret"}
@@ -243,12 +259,14 @@ async def test_netsis_sync_success_both(mock_log, mock_payments, mock_invoices, 
 
 
 @patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+@patch("routers.finance.integrations.get_tenant_rollout_config", new_callable=AsyncMock)
 @patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
 @patch("routers.finance.integrations._gather_payments", new_callable=AsyncMock)
 @patch("routers.finance.integrations._log_accounting_sync", new_callable=AsyncMock)
 @pytest.mark.asyncio
-async def test_logo_sync_payment_error_fails_sync(mock_log, mock_payments, mock_invoices, mock_creds, mock_post, client):
+async def test_logo_sync_payment_error_fails_sync(mock_log, mock_payments, mock_invoices, mock_creds, mock_rollout, mock_post, client):
+    mock_rollout.return_value = {"finance_erp_enabled": True}
     mock_invoices.return_value = [{"invoice_number": "INV-1"}]
     mock_payments.return_value = [{"receipt_number": "PAY-1"}]
     mock_creds.return_value = {"api_url": "https://logo.example", "api_key": "secret"}

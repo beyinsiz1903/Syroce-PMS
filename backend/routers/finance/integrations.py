@@ -45,6 +45,7 @@ from domains.channel_manager.credential_vault import get_decrypted_credentials, 
 from routers.finance.erp_connectors.base import ERPConnectionError, ERPSyncRejected, ERPSyncTimeout
 from routers.finance.erp_connectors.logo import LogoHttpConnector
 from routers.finance.erp_connectors.netsis import NetsisHttpConnector
+from routers.integration_rollout import get_tenant_rollout_config
 
 ERP_CREDENTIAL_PROPERTY_ID = "finance"
 
@@ -85,6 +86,11 @@ async def sync_with_logo(
 ):
     """Sync finance data with Logo ERP."""
     tenant_id = current_user.tenant_id
+
+    # 0. Check Rollout Guard
+    rollout = await get_tenant_rollout_config(tenant_id)
+    if not rollout.get("finance_erp_enabled"):
+        raise HTTPException(status_code=403, detail="Finance ERP integration is currently disabled for this tenant.")
 
     # 1. Fetch data
     invoices = await _gather_invoices(tenant_id)
@@ -221,6 +227,11 @@ async def sync_with_netsis(
 ):
     """Sync finance data with Netsis ERP."""
     tenant_id = current_user.tenant_id
+
+    # 0. Check Rollout Guard
+    rollout = await get_tenant_rollout_config(tenant_id)
+    if not rollout.get("finance_erp_enabled"):
+        raise HTTPException(status_code=403, detail="Finance ERP integration is currently disabled for this tenant.")
 
     invoices = await _gather_invoices(tenant_id)
     payments = await _gather_payments(tenant_id)
