@@ -201,6 +201,7 @@ export const DataPipelineDashboard = lazy(() => import("@/pages/DataPipelineDash
 export const EventBusDashboard = lazy(() => import("@/pages/EventBusDashboard"));
 export const ObservabilityDashboard = lazy(() => import("@/pages/ObservabilityDashboard"));
 export const IntegrationObservabilityDashboard = lazy(() => import("@/pages/IntegrationObservabilityDashboard"));
+export const CredentialVaultDashboard = lazy(() => import("@/pages/CredentialVaultDashboard"));
 export const SecurityHardeningDashboard = lazy(() => import("@/pages/SecurityHardeningDashboard"));
 export const SystemHealthDashboard = lazy(() => import("@/pages/SystemHealthDashboard"));
 export const RuntimeInfrastructureDashboard = lazy(() => import("@/pages/RuntimeInfrastructureDashboard"));

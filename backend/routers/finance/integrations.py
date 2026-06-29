@@ -39,7 +39,8 @@ security = HTTPBearer()
 folio_balance_read_service = FolioBalanceReadService()
 open_folio_service = OpenFolioService()
 
-from domains.channel_manager.credential_vault import get_decrypted_credentials
+from domains.channel_manager.credential_vault import get_decrypted_credentials, store_secret, get_masked_credentials
+from pydantic import BaseModel
 from routers.finance.erp_connectors.base import ERPConnectionError, ERPSyncRejected, ERPSyncTimeout
 from routers.finance.erp_connectors.logo import LogoHttpConnector
 from routers.finance.erp_connectors.netsis import NetsisHttpConnector
@@ -402,3 +403,48 @@ async def budget_vs_actual(
         "data_available": False,
         "message": "Kategori bazli butce verisi tanimlanmamis.",
     }
+
+
+# ── Credential Management ──────────────────────────────────────────────
+
+class SaveFinanceCredentialsRequest(BaseModel):
+    credentials: dict[str, str]
+
+@router.get("/finance/integration/credentials")
+async def get_finance_credentials(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics"))
+):
+    tenant_id = current_user.tenant_id
+    logo_creds = await get_masked_credentials(tenant_id, "logo", ERP_CREDENTIAL_PROPERTY_ID)
+    netsis_creds = await get_masked_credentials(tenant_id, "netsis", ERP_CREDENTIAL_PROPERTY_ID)
+    return {
+        "providers": {
+            "logo": {
+                "has_credentials": logo_creds is not None,
+                "credentials": logo_creds
+            },
+            "netsis": {
+                "has_credentials": netsis_creds is not None,
+                "credentials": netsis_creds
+            }
+        }
+    }
+
+@router.post("/finance/integration/credentials/{provider}")
+async def save_finance_credentials(
+    provider: str,
+    req: SaveFinanceCredentialsRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_system_settings"))
+):
+    if provider not in ["logo", "netsis"]:
+        raise HTTPException(status_code=400, detail=f"Unsupported finance provider: {provider}")
+        
+    await store_secret(
+        credentials=req.credentials,
+        tenant_id=current_user.tenant_id,
+        provider=provider,
+        property_id=ERP_CREDENTIAL_PROPERTY_ID,
+    )
+    return {"success": True, "provider": provider}
