@@ -28,7 +28,7 @@ export default function CredentialVaultDashboard() {
   // Channel Manager form
   const [cmForm, setCmForm] = useState({});
   // Finance form
-  const [financeForm, setFinanceForm] = useState({ api_key: '', endpoint_url: '', username: '', password: '' });
+  const [financeForm, setFinanceForm] = useState({ api_url: '', api_key: '', username: '', password: '' });
   
   const [saving, setSaving] = useState(false);
 
@@ -68,7 +68,7 @@ export default function CredentialVaultDashboard() {
   const handleOpenFinanceModal = (providerKey) => {
     setActiveType('finance');
     setActiveProvider({ provider: providerKey, display_name: providerKey === 'logo' ? 'Logo ERP' : 'Netsis ERP' });
-    setFinanceForm({ api_key: '', endpoint_url: '', username: '', password: '' });
+    setFinanceForm({ api_url: '', api_key: '', username: '', password: '' });
     setShowModal(true);
   };
 
@@ -247,11 +247,11 @@ export default function CredentialVaultDashboard() {
             {activeType === 'finance' && (
               <>
                 <div className="space-y-2">
-                  <Label htmlFor="endpoint_url">API Endpoint URL</Label>
+                  <Label htmlFor="api_url">API Endpoint URL</Label>
                   <Input
-                    id="endpoint_url"
-                    value={financeForm.endpoint_url}
-                    onChange={(e) => setFinanceForm({ ...financeForm, endpoint_url: e.target.value })}
+                    id="api_url"
+                    value={financeForm.api_url}
+                    onChange={(e) => setFinanceForm({ ...financeForm, api_url: e.target.value })}
                     className="bg-zinc-900 border-zinc-800"
                     placeholder="https://..."
                     autoComplete="off"

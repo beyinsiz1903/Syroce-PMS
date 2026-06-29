@@ -110,6 +110,8 @@ async def get_providers_overview(
     for provider_key, provider_def in PROVIDER_FIELDS.items():
         # Check if credentials exist
         masked = await vault.get_masked_credentials(tenant_id, provider_key, "")
+        if not masked:
+            masked = await vault.get_masked_credentials(tenant_id, provider_key, "default")
         has_credentials = masked is not None
 
         # Get connection

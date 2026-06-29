@@ -441,8 +441,17 @@ async def save_finance_credentials(
     if provider not in ["logo", "netsis"]:
         raise HTTPException(status_code=400, detail=f"Unsupported finance provider: {provider}")
         
+    creds = dict(req.credentials)
+    
+    # Normalize endpoint_url from UI to api_url required by connector
+    if creds.get("endpoint_url") and not creds.get("api_url"):
+        creds["api_url"] = creds["endpoint_url"]
+        
+    if not creds.get("api_url"):
+        raise HTTPException(status_code=400, detail="api_url is required")
+        
     await store_secret(
-        credentials=req.credentials,
+        credentials=creds,
         tenant_id=current_user.tenant_id,
         provider=provider,
         property_id=ERP_CREDENTIAL_PROPERTY_ID,
