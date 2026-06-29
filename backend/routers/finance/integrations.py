@@ -50,9 +50,6 @@ from routers.integration_rollout import get_tenant_rollout_config
 ERP_CREDENTIAL_PROPERTY_ID = "finance"
 
 
-
-
-
 async def _gather_invoices(tenant_id: str, since=None):
     query = {"tenant_id": tenant_id}
     if since:
@@ -193,29 +190,38 @@ async def sync_with_logo(
             "message": "Logo ERP senkronizasyonu tamamlandi.",
         }
     except ERPConnectionError as e:
-        await _log_accounting_sync(tenant_id, {
-            "provider": "logo",
-            "status": "failed",
-            "error_type": "connection_error",
-            "synced_at": datetime.now(UTC).isoformat(),
-        })
+        await _log_accounting_sync(
+            tenant_id,
+            {
+                "provider": "logo",
+                "status": "failed",
+                "error_type": "connection_error",
+                "synced_at": datetime.now(UTC).isoformat(),
+            },
+        )
         raise HTTPException(status_code=502, detail=str(e))
     except ERPSyncTimeout as e:
-        await _log_accounting_sync(tenant_id, {
-            "provider": "logo",
-            "status": "failed",
-            "error_type": "timeout",
-            "synced_at": datetime.now(UTC).isoformat(),
-        })
+        await _log_accounting_sync(
+            tenant_id,
+            {
+                "provider": "logo",
+                "status": "failed",
+                "error_type": "timeout",
+                "synced_at": datetime.now(UTC).isoformat(),
+            },
+        )
         raise HTTPException(status_code=504, detail=str(e))
     except ERPSyncRejected as e:
-        await _log_accounting_sync(tenant_id, {
-            "provider": "logo",
-            "status": "failed",
-            "error_type": "provider_rejected",
-            "provider_response_status": e.status_code,
-            "synced_at": datetime.now(UTC).isoformat(),
-        })
+        await _log_accounting_sync(
+            tenant_id,
+            {
+                "provider": "logo",
+                "status": "failed",
+                "error_type": "provider_rejected",
+                "provider_response_status": e.status_code,
+                "synced_at": datetime.now(UTC).isoformat(),
+            },
+        )
         raise HTTPException(status_code=502, detail=str(e))
 
 
@@ -333,40 +339,43 @@ async def sync_with_netsis(
             "message": "Netsis ERP senkronizasyonu tamamlandi.",
         }
     except ERPConnectionError as e:
-        await _log_accounting_sync(tenant_id, {
-            "provider": "netsis",
-            "status": "failed",
-            "error_type": "connection_error",
-            "synced_at": datetime.now(UTC).isoformat(),
-        })
+        await _log_accounting_sync(
+            tenant_id,
+            {
+                "provider": "netsis",
+                "status": "failed",
+                "error_type": "connection_error",
+                "synced_at": datetime.now(UTC).isoformat(),
+            },
+        )
         raise HTTPException(status_code=502, detail=str(e))
     except ERPSyncTimeout as e:
-        await _log_accounting_sync(tenant_id, {
-            "provider": "netsis",
-            "status": "failed",
-            "error_type": "timeout",
-            "synced_at": datetime.now(UTC).isoformat(),
-        })
+        await _log_accounting_sync(
+            tenant_id,
+            {
+                "provider": "netsis",
+                "status": "failed",
+                "error_type": "timeout",
+                "synced_at": datetime.now(UTC).isoformat(),
+            },
+        )
         raise HTTPException(status_code=504, detail=str(e))
     except ERPSyncRejected as e:
-        await _log_accounting_sync(tenant_id, {
-            "provider": "netsis",
-            "status": "failed",
-            "error_type": "provider_rejected",
-            "provider_response_status": e.status_code,
-            "synced_at": datetime.now(UTC).isoformat(),
-        })
+        await _log_accounting_sync(
+            tenant_id,
+            {
+                "provider": "netsis",
+                "status": "failed",
+                "error_type": "provider_rejected",
+                "provider_response_status": e.status_code,
+                "synced_at": datetime.now(UTC).isoformat(),
+            },
+        )
         raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.get("/finance/integration/logs")
-async def get_integration_logs(
-    page: int = 1,
-    limit: int = 20,
-    provider: str | None = None,
-    status: str | None = None,
-    current_user: User = Depends(get_current_user)
-):
+async def get_integration_logs(page: int = 1, limit: int = 20, provider: str | None = None, status: str | None = None, current_user: User = Depends(get_current_user)):
     if limit > 100:
         limit = 100
     skip = (page - 1) * limit
@@ -382,14 +391,7 @@ async def get_integration_logs(
 
     total_pages = (total + limit - 1) // limit if limit > 0 else 0
 
-    return {
-        "logs": logs,
-        "count": len(logs),
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "total_pages": total_pages
-    }
+    return {"logs": logs, "count": len(logs), "total": total, "page": page, "limit": limit, "total_pages": total_pages}
 
 
 @router.get("/finance/budget-vs-actual")
@@ -419,37 +421,21 @@ async def budget_vs_actual(
 
 # ── Credential Management ──────────────────────────────────────────────
 
+
 class SaveFinanceCredentialsRequest(BaseModel):
     credentials: dict[str, str]
 
+
 @router.get("/finance/integration/credentials")
-async def get_finance_credentials(
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics"))
-):
+async def get_finance_credentials(current_user: User = Depends(get_current_user), _perm=Depends(require_op("view_system_diagnostics"))):
     tenant_id = current_user.tenant_id
     logo_creds = await get_masked_credentials(tenant_id, "logo", ERP_CREDENTIAL_PROPERTY_ID)
     netsis_creds = await get_masked_credentials(tenant_id, "netsis", ERP_CREDENTIAL_PROPERTY_ID)
-    return {
-        "providers": {
-            "logo": {
-                "has_credentials": logo_creds is not None,
-                "credentials": logo_creds
-            },
-            "netsis": {
-                "has_credentials": netsis_creds is not None,
-                "credentials": netsis_creds
-            }
-        }
-    }
+    return {"providers": {"logo": {"has_credentials": logo_creds is not None, "credentials": logo_creds}, "netsis": {"has_credentials": netsis_creds is not None, "credentials": netsis_creds}}}
+
 
 @router.post("/finance/integration/credentials/{provider}")
-async def save_finance_credentials(
-    provider: str,
-    req: SaveFinanceCredentialsRequest,
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_system_settings"))
-):
+async def save_finance_credentials(provider: str, req: SaveFinanceCredentialsRequest, current_user: User = Depends(get_current_user), _perm=Depends(require_op("manage_system_settings"))):
     if provider not in ["logo", "netsis"]:
         raise HTTPException(status_code=400, detail=f"Unsupported finance provider: {provider}")
 

@@ -17,6 +17,4 @@ class ExelySnapshotAdapter(ProviderSnapshotAdapter):
         # Fail-closed doctrine:
         # Until the actual HTTP pull endpoint documentation is provided and implemented,
         # we explicitly raise Unavailable.
-        raise ProviderSnapshotUnavailable(
-            "Exely ARI snapshot pull is not yet implemented. Cannot fetch truth."
-        )
+        raise ProviderSnapshotUnavailable("Exely ARI snapshot pull is not yet implemented. Cannot fetch truth.")

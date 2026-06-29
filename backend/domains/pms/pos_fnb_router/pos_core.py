@@ -1020,12 +1020,7 @@ async def transfer_table(
     tenant_id = current_user.tenant_id
 
     # 1. Fetch Source Transaction
-    source_transaction = await db.pos_transactions.find_one({
-        "tenant_id": tenant_id,
-        "outlet_id": outlet_id,
-        "table_number": from_table,
-        "status": "open"
-    })
+    source_transaction = await db.pos_transactions.find_one({"tenant_id": tenant_id, "outlet_id": outlet_id, "table_number": from_table, "status": "open"})
 
     if not source_transaction:
         raise HTTPException(status_code=404, detail=f"No active transaction found for table {from_table}")
@@ -1037,12 +1032,7 @@ async def transfer_table(
         # Transfer entire table.
         # SECURITY: defense-in-depth with tenant_id filter.
         await db.pos_transactions.update_one(
-            {"_id": source_id, "tenant_id": tenant_id, "status": "open"},
-            {"$set": {
-                "table_number": to_table,
-                "updated_at": datetime.now(UTC).isoformat(),
-                "updated_by": current_user.username
-            }}
+            {"_id": source_id, "tenant_id": tenant_id, "status": "open"}, {"$set": {"table_number": to_table, "updated_at": datetime.now(UTC).isoformat(), "updated_by": current_user.username}}
         )
 
         return {
@@ -1109,12 +1099,7 @@ async def transfer_table(
         new_target_total_delta = _recalc_totals(transferred_items)
 
         # We must carefully read the target and either insert or update
-        target_transaction = await db.pos_transactions.find_one({
-            "tenant_id": tenant_id,
-            "outlet_id": outlet_id,
-            "table_number": to_table,
-            "status": "open"
-        })
+        target_transaction = await db.pos_transactions.find_one({"tenant_id": tenant_id, "outlet_id": outlet_id, "table_number": to_table, "status": "open"})
 
         target_id = None
         if target_transaction:
@@ -1138,12 +1123,7 @@ async def transfer_table(
 
             # Atomic update on target
             res = await db.pos_transactions.update_one(
-                {"_id": target_transaction["_id"], "tenant_id": tenant_id},
-                {"$set": {
-                    "items": target_items,
-                    "total_amount": new_target_total,
-                    "updated_at": datetime.now(UTC).isoformat()
-                }}
+                {"_id": target_transaction["_id"], "tenant_id": tenant_id}, {"$set": {"items": target_items, "total_amount": new_target_total, "updated_at": datetime.now(UTC).isoformat()}}
             )
             if res.modified_count == 0:
                 raise HTTPException(status_code=409, detail="Target table state changed unexpectedly.")
@@ -1169,12 +1149,7 @@ async def transfer_table(
         # Atomic update on source
         # Only modify if it hasn't been closed/mutated unexpectedly
         src_res = await db.pos_transactions.update_one(
-            {"_id": source_id, "tenant_id": tenant_id, "status": "open"},
-            {"$set": {
-                "items": remaining_items,
-                "total_amount": new_source_total,
-                "updated_at": datetime.now(UTC).isoformat()
-            }}
+            {"_id": source_id, "tenant_id": tenant_id, "status": "open"}, {"$set": {"items": remaining_items, "total_amount": new_source_total, "updated_at": datetime.now(UTC).isoformat()}}
         )
 
         if src_res.modified_count == 0:

@@ -3,16 +3,19 @@ from abc import ABC, abstractmethod
 
 class ProviderSnapshotUnavailable(Exception):
     """Raised when the provider does not support snapshot pull or is temporarily down."""
+
     pass
 
 
 class CredentialsMissing(Exception):
     """Raised when the tenant has no credentials configured for the provider."""
+
     pass
 
 
 class UnsupportedProvider(Exception):
     """Raised when an unknown provider is requested for snapshot pull."""
+
     pass
 
 

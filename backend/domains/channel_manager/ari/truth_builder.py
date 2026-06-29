@@ -57,7 +57,7 @@ async def build_pms_ari_snapshot(
                 "restrictions": {
                     "min_stay": date_entry.get("min_stay", 1),
                     "stop_sell": date_entry.get("stop_sell", False),
-                }
+                },
             }
             pms_snapshot.append(snapshot_item)
 

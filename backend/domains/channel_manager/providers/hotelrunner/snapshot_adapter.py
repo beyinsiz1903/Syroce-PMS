@@ -18,6 +18,4 @@ class HotelRunnerSnapshotAdapter(ProviderSnapshotAdapter):
         # Until the actual HTTP pull endpoint documentation is provided and implemented,
         # we explicitly raise Unavailable. Returning a mock "success" or empty list
         # would create a false "drift_false" state in the system.
-        raise ProviderSnapshotUnavailable(
-            "HotelRunner ARI snapshot pull is not yet implemented. Cannot fetch truth."
-        )
+        raise ProviderSnapshotUnavailable("HotelRunner ARI snapshot pull is not yet implemented. Cannot fetch truth.")

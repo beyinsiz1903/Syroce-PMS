@@ -704,10 +704,7 @@ async def list_leave_requests(
     if staff_id:
         query["staff_id"] = staff_id
     # Get counts using aggregation
-    pipeline = [
-        {"$match": query},
-        {"$group": {"_id": "$status", "count": {"$sum": 1}}}
-    ]
+    pipeline = [{"$match": query}, {"$group": {"_id": "$status", "count": {"$sum": 1}}}]
     agg = await db.leave_requests.aggregate(pipeline).to_list(None)
     counts = {"pending": 0, "approved": 0, "rejected": 0}
     total = 0
@@ -721,14 +718,7 @@ async def list_leave_requests(
     items = await db.leave_requests.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(None)
 
     total_pages = (total + limit - 1) // limit if limit > 0 else 0
-    return {
-        "items": items,
-        "total": total,
-        "counts": counts,
-        "page": page,
-        "limit": limit,
-        "total_pages": total_pages
-    }
+    return {"items": items, "total": total, "counts": counts, "page": page, "limit": limit, "total_pages": total_pages}
 
 
 async def _apply_leave_to_shifts(
@@ -2443,14 +2433,7 @@ async def list_performance_reviews(
     avg = round(agg[0]["avg_score"], 2) if agg and agg[0].get("avg_score") is not None else 0
 
     total_pages = (total + limit - 1) // limit if limit > 0 else 0
-    return {
-        "items": items,
-        "total": total,
-        "avg_score": avg,
-        "page": page,
-        "limit": limit,
-        "total_pages": total_pages
-    }
+    return {"items": items, "total": total, "avg_score": avg, "page": page, "limit": limit, "total_pages": total_pages}
 
 
 # ============= Recruitment =============
@@ -2600,13 +2583,7 @@ async def list_job_postings(
     skip = (page - 1) * limit
     items = await db.job_postings.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(None)
     total_pages = (total + limit - 1) // limit if limit > 0 else 0
-    return {
-        "items": items,
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "total_pages": total_pages
-    }
+    return {"items": items, "total": total, "page": page, "limit": limit, "total_pages": total_pages}
 
 
 @router.post("/hr/job-posting/{job_id}/close")
@@ -3244,7 +3221,7 @@ async def get_staff_list(
             hr_emails = [e for e in hr_emails if e]
             # to handle case sensitivity, we might not be perfect with $in, but this covers 99%
             overlap = await db.users.count_documents({**user_query, "email": {"$in": hr_emails}})
-            total += (total_users - overlap)
+            total += total_users - overlap
         else:
             total += total_users
 
@@ -3281,7 +3258,7 @@ async def get_staff_list(
 
     combined = explicit + derived
     if source == "all":
-        combined = combined[skip:skip+limit]
+        combined = combined[skip : skip + limit]
 
     # Rol-bazlı PII maskeleme (post-query, response serializer aşamasında).
     # Personel DİZİNİ: finance burada PII'yi maskeli görür (operatör kararı —
@@ -3292,14 +3269,7 @@ async def get_staff_list(
 
     total_pages = (total + limit - 1) // limit if limit > 0 else 0
 
-    return {
-        "staff": [json_safe(s) for s in masked],
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "total_pages": total_pages,
-        "source": source
-    }
+    return {"staff": [json_safe(s) for s in masked], "total": total, "page": page, "limit": limit, "total_pages": total_pages, "source": source}
 
 
 @router.get("/hr/system-users")

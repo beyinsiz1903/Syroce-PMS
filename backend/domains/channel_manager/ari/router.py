@@ -19,8 +19,8 @@ from domains.channel_manager.providers.exely.snapshot_adapter import ExelySnapsh
 from domains.channel_manager.providers.hotelrunner.snapshot_adapter import HotelRunnerSnapshotAdapter
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
-
 from routers.integration_rollout import get_tenant_rollout_config
+
 from . import drift_worker, outbound_service
 from . import repositories as repo
 from .events import ARIChangeEvent
@@ -38,6 +38,8 @@ def _get_snapshot_adapter(provider: str):
     elif provider == "exely":
         return ExelySnapshotAdapter()
     raise UnsupportedProvider(f"Unknown provider: {provider}")
+
+
 from .provider_test_harness import ExelyTestRunner, HotelRunnerTestRunner, get_checklist
 from .schemas import (
     DriftCheckRequest,
@@ -264,9 +266,7 @@ async def check_drift(
             req.property_id,
         )
         if not credentials:
-            raise CredentialsMissing(
-                f"No credentials configured for {req.provider}/{req.property_id}"
-            )
+            raise CredentialsMissing(f"No credentials configured for {req.provider}/{req.property_id}")
 
         pms_snapshot = await build_pms_ari_snapshot(
             tenant_id=req.tenant_id,
@@ -295,28 +295,32 @@ async def check_drift(
         return result
 
     except CredentialsMissing as e:
-        await repo.upsert_drift_state({
-            "tenant_id": req.tenant_id,
-            "property_id": req.property_id,
-            "provider": req.provider,
-            "room_type_code": "SYSTEM",
-            "date_from": date_from,
-            "date_to": date_to,
-            "drift_detected": True,
-            "drift_type": "credentials_missing",
-        })
+        await repo.upsert_drift_state(
+            {
+                "tenant_id": req.tenant_id,
+                "property_id": req.property_id,
+                "provider": req.provider,
+                "room_type_code": "SYSTEM",
+                "date_from": date_from,
+                "date_to": date_to,
+                "drift_detected": True,
+                "drift_type": "credentials_missing",
+            }
+        )
         raise HTTPException(status_code=409, detail=str(e))
     except ProviderSnapshotUnavailable as e:
-        await repo.upsert_drift_state({
-            "tenant_id": req.tenant_id,
-            "property_id": req.property_id,
-            "provider": req.provider,
-            "room_type_code": "SYSTEM",
-            "date_from": date_from,
-            "date_to": date_to,
-            "drift_detected": True,
-            "drift_type": "provider_unavailable",
-        })
+        await repo.upsert_drift_state(
+            {
+                "tenant_id": req.tenant_id,
+                "property_id": req.property_id,
+                "provider": req.provider,
+                "room_type_code": "SYSTEM",
+                "date_from": date_from,
+                "date_to": date_to,
+                "drift_detected": True,
+                "drift_type": "provider_unavailable",
+            }
+        )
         raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
         logger.error(f"Unexpected error during drift check: {e}")

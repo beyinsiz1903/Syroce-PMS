@@ -8,9 +8,10 @@ On mismatch: generates corrective delta → push queue.
 import logging
 from datetime import UTC, datetime
 
+from routers.integration_rollout import get_tenant_rollout_config
+
 from . import repositories as repo
 from .repositories import compute_outbound_delta_hash
-from routers.integration_rollout import get_tenant_rollout_config
 
 logger = logging.getLogger(__name__)
 
