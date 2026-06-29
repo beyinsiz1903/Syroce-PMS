@@ -37,6 +37,8 @@ class DriftCheckRequest(BaseModel):
     tenant_id: str
     property_id: str
     provider: str
+    date_from: str | None = None
+    date_to: str | None = None
 
 
 class ARIStatsResponse(BaseModel):

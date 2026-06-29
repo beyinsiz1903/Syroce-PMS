@@ -19,6 +19,22 @@ from modules.pms_core.role_permission_service import require_op
 from . import drift_worker, outbound_service
 from . import repositories as repo
 from .events import ARIChangeEvent
+from datetime import UTC, datetime, timedelta
+from .provider_snapshot_contract import (
+    ProviderSnapshotUnavailable,
+    CredentialsMissing,
+    UnsupportedProvider,
+)
+from domains.channel_manager.providers.hotelrunner.snapshot_adapter import HotelRunnerSnapshotAdapter
+from domains.channel_manager.providers.exely.snapshot_adapter import ExelySnapshotAdapter
+from .truth_builder import build_pms_ari_snapshot
+
+def _get_snapshot_adapter(provider: str):
+    if provider == "hotelrunner":
+        return HotelRunnerSnapshotAdapter()
+    elif provider == "exely":
+        return ExelySnapshotAdapter()
+    raise UnsupportedProvider(f"Unknown provider: {provider}")
 from .provider_test_harness import ExelyTestRunner, HotelRunnerTestRunner, get_checklist
 from .schemas import (
     DriftCheckRequest,
@@ -219,19 +235,55 @@ async def check_drift(
     _perm=Depends(require_op("manage_channel_connectors")),
 ):
     """
-    Run a drift check.
-
-    Provider snapshot fetch is NOT yet implemented for any adapter (no
-    pull endpoint surface in HotelRunner/Exely ARI adapters). Returning
-    501 is the honest answer until the adapter contract is extended —
-    this prevents a "looks-OK-but-mock-data" false-negative.
+    Run a drift check by comparing the PMS truth with the provider snapshot.
     """
     if not _is_super_admin(current_user):
         req.tenant_id = current_user.tenant_id
-    raise HTTPException(
-        status_code=501,
-        detail=(f"drift/check requires provider snapshot fetch which is not implemented for {req.provider}. Use /resync to push the PMS truth and rely on the event-driven coalescer instead."),
-    )
+
+    try:
+        adapter = _get_snapshot_adapter(req.provider)
+    except UnsupportedProvider as e:
+        raise HTTPException(status_code=400, detail=str(e))
+        
+    date_from = req.date_from or datetime.now(UTC).date().isoformat()
+    date_to = req.date_to or (datetime.now(UTC) + timedelta(days=14)).date().isoformat()
+    
+    # We do not have real credentials vault retrieval yet, we pass empty dict.
+    # The adapter will fail-closed since it's not implemented yet.
+    credentials = {}
+
+    try:
+        pms_snapshot = await build_pms_ari_snapshot(
+            tenant_id=req.tenant_id,
+            property_id=req.property_id,
+            provider=req.provider,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        
+        provider_snapshot = await adapter.fetch_snapshot(
+            tenant_id=req.tenant_id,
+            property_id=req.property_id,
+            credentials=credentials,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        
+        return await drift_worker.check_drift(
+            tenant_id=req.tenant_id,
+            property_id=req.property_id,
+            provider=req.provider,
+            pms_snapshot=pms_snapshot,
+            provider_snapshot=provider_snapshot,
+        )
+        
+    except CredentialsMissing as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ProviderSnapshotUnavailable as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected error during drift check: {e}")
+        raise HTTPException(status_code=502, detail="Unexpected provider error")
 
 
 @router.post("/drift/reconcile")
