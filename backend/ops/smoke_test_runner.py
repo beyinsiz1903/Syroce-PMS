@@ -6,8 +6,8 @@ Used as the final gate in the deploy pipeline and after canary promotion.
 """
 
 import logging
-import time
 import os
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -51,7 +51,7 @@ SMOKE_TESTS = [
         "method": "POST",
         "path": "/api/auth/login",
         "body": {
-            "email": os.environ.get("DEMO_EMAIL", "demo@hotel.com"), 
+            "email": os.environ.get("DEMO_EMAIL", "demo@hotel.com"),
             "password": os.environ.get("DEMO_PASSWORD", "demo123")
         },
         "expected_status": 200,

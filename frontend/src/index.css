@@ -955,6 +955,7 @@ code {
 .dark .border-gray-200\/50 { border-color: hsl(var(--border) / 0.5); }
 .dark .border-slate-200\/70 { border-color: hsl(var(--border) / 0.7); }
 .dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-zinc-800 > :not([hidden]) ~ :not([hidden]),
 .dark .divide-slate-800 > :not([hidden]) ~ :not([hidden]) { border-color: hsl(var(--border)); }
 
 /* --- Renkli kenarlik hover/opaklik/divide -> hue-700 --- */

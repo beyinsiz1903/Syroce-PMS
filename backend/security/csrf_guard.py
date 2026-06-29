@@ -1,5 +1,5 @@
-import os
 import logging
+import os
 from urllib.parse import urlparse
 
 from fastapi import Request
@@ -25,7 +25,7 @@ async def csrf_guard_middleware(request: Request, call_next):
     auth_header = request.headers.get("Authorization", "")
     if auth_header.lower().startswith("bearer "):
         return await call_next(request)
-        
+
 
 
     origin = request.headers.get("Origin")

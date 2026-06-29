@@ -24,6 +24,14 @@ vi.mock('axios', () => {
 
 // Mock hooks that would crash the test
 vi.mock('@/hooks/usePushNotifications', () => ({ default: vi.fn() }));
+vi.mock('@/utils/offlineQueueDB', () => ({
+  listNotifications: vi.fn().mockResolvedValue([]),
+  initQueueDB: vi.fn().mockResolvedValue(),
+  OfflineDB: {
+    init: vi.fn().mockResolvedValue(),
+    list: vi.fn().mockResolvedValue([])
+  }
+}));
 
 describe('Auth Cookie Flow in App.jsx', () => {
   beforeEach(() => {

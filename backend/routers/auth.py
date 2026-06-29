@@ -4,9 +4,8 @@ Extracted from server.py for modularity.
 """
 
 import logging
-from datetime import UTC, datetime, timedelta
-
 import os
+from datetime import UTC, datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -280,7 +279,7 @@ def _build_token_response(user: User, tenant, response: Response = None) -> Toke
     """
     access = create_token(user.id, user.tenant_id)
     refresh, _ = create_refresh_token(user.id, user.tenant_id)
-    
+
     if response:
         response.set_cookie(
             key="access_token",
@@ -300,7 +299,7 @@ def _build_token_response(user: User, tenant, response: Response = None) -> Toke
             max_age=REFRESH_TOKEN_EXPIRATION_DAYS * 86400,
             path="/api/auth/refresh",
         )
-        
+
     return TokenResponse(
         access_token=access,
         user=user,
@@ -1455,17 +1454,17 @@ async def logout(
     )
 
     response.delete_cookie(
-        "access_token", 
-        path="/", 
-        httponly=True, 
-        secure=COOKIE_SECURE, 
+        "access_token",
+        path="/",
+        httponly=True,
+        secure=COOKIE_SECURE,
         samesite="lax"
     )
     response.delete_cookie(
-        "refresh_token", 
-        path="/api/auth/refresh", 
-        httponly=True, 
-        secure=COOKIE_SECURE, 
+        "refresh_token",
+        path="/api/auth/refresh",
+        httponly=True,
+        secure=COOKIE_SECURE,
         samesite="lax"
     )
 

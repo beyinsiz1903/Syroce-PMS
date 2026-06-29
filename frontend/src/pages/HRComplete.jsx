@@ -1495,7 +1495,7 @@ const HRComplete = () => {
                       className="w-full rounded-md border border-input px-3 py-2 text-sm"
                     >
                       <option value="">{t('cm.pages_HRComplete.secin_4f7bd')}</option>
-                      {staffList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      {staffDropdown.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   </div>
                   <div>

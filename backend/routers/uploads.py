@@ -25,7 +25,7 @@ async def get_upload(
 ):
     """
     Securely serve uploaded files.
-    Supports both legacy physical path URLs (e.g. {tenant_id}/rooms/...) 
+    Supports both legacy physical path URLs (e.g. {tenant_id}/rooms/...)
     and the new upload_id metadata layer.
     """
     if not path:
@@ -39,18 +39,18 @@ async def get_upload(
         upload_record = await db.uploads.find_one({"_id": upload_id})
         if not upload_record:
             raise HTTPException(status_code=404, detail="File not found")
-        
+
         # Verify ownership / tenant authorization
         if upload_record.get("tenant_id") != current_user.tenant_id and current_user.role != "super_admin":
             raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this file")
-            
+
         target_file_path = UPLOAD_DIR / upload_record["relative_path"]
     else:
         # Legacy path-based routing
         # Format 1: {tenant_id}/rooms/{room_id}/{filename}
         # Format 2: vendors/{vendor_id}/products/{filename}
         parts = path.split("/")
-        
+
         if parts[0] == "vendors":
             if len(parts) < 3:
                 raise HTTPException(status_code=400, detail="Invalid vendor path")

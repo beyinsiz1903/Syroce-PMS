@@ -250,7 +250,7 @@ export default function IntegrationObservabilityDashboard() {
                               {drift.drift_type === "credentials_missing" ? (
                                 <Badge className="bg-red-500/10 text-red-500">Credentials Missing</Badge>
                               ) : drift.drift_type === "provider_unavailable" ? (
-                                <Badge className="bg-orange-500/10 text-orange-500">Provider Down</Badge>
+                                <Badge className="bg-amber-500/10 text-amber-500">Provider Down</Badge>
                               ) : drift.drift_detected ? (
                                 <Badge className="bg-amber-500/10 text-amber-500">Drifted</Badge>
                               ) : (
