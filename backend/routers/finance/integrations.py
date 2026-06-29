@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 
 from modules.pms_core.role_permission_service import require_op  # v94 DW
@@ -39,35 +39,15 @@ security = HTTPBearer()
 folio_balance_read_service = FolioBalanceReadService()
 open_folio_service = OpenFolioService()
 
+from domains.channel_manager.credential_vault import get_decrypted_credentials
+from routers.finance.erp_connectors.base import ERPConnectionError, ERPSyncRejected, ERPSyncTimeout
+from routers.finance.erp_connectors.logo import LogoHttpConnector
+from routers.finance.erp_connectors.netsis import NetsisHttpConnector
 
-class LogoConnector:
-    """Mock Logo/Netsis connector for ERP sync"""
-
-    def __init__(self):
-        import os
-
-        self.base_url = os.environ.get("LOGO_API_URL", "https://logo.example/api")
-
-    async def send_invoice(self, invoice):
-        # Gercek Logo ERP HTTP entegrasyonu uygulanmadi; sahte 'synced' donmek
-        # yerine cagrildiginda hata ver (gelecekte yanlislikla fabrikasyon
-        # basari uretilmesini engeller).
-        raise NotImplementedError("Logo ERP send_invoice not implemented")
-
-    async def send_payment(self, payment):
-        raise NotImplementedError("Logo ERP send_payment not implemented")
+ERP_CREDENTIAL_PROPERTY_ID = "finance"
 
 
-class NetsisConnector:
-    """Netsis connector (entegrasyon henuz uygulanmadi)."""
 
-    def __init__(self):
-        import os
-
-        self.base_url = os.environ.get("NETSIS_API_URL", "https://netsis.example/api")
-
-    async def send_invoice(self, invoice):
-        raise NotImplementedError("Netsis ERP send_invoice not implemented")
 
 
 async def _gather_invoices(tenant_id: str, since=None):
@@ -108,6 +88,27 @@ async def sync_with_logo(
     invoices = await _gather_invoices(tenant_id)
     payments = await _gather_payments(tenant_id)
 
+    if len(invoices) == 0 and len(payments) == 0:
+        log_entry = await _log_accounting_sync(
+            tenant_id,
+            {
+                "provider": "logo",
+                "synced_invoices": 0,
+                "synced_payments": 0,
+                "synced_at": datetime.now(UTC).isoformat(),
+                "status": "noop",
+                "details": "No invoices or payments to sync.",
+            },
+        )
+        return {
+            "success": True,
+            "status": "noop",
+            "synced_invoices": 0,
+            "synced_payments": 0,
+            "log_id": log_entry["id"],
+            "message": "No data to sync.",
+        }
+
     # 2. Build ERP payloads (Logo Schema)
     logo_payloads = []
     for inv in invoices:
@@ -124,30 +125,66 @@ async def sync_with_logo(
             }
         )
 
-    # Note: HTTP call to actual Logo ERP is mocked
-    # async with httpx.AsyncClient() as client:
-    #     res = await client.post(LogoConnector().base_url + "/invoices", json=logo_payloads)
+    credentials = await get_decrypted_credentials(tenant_id, "logo", ERP_CREDENTIAL_PROPERTY_ID)
+    if not credentials:
+        raise HTTPException(status_code=409, detail="No credentials configured for Logo ERP")
 
-    log_entry = await _log_accounting_sync(
-        tenant_id,
-        {
-            "provider": "logo",
+    api_url = credentials.get("api_url")
+    if not api_url:
+        raise HTTPException(status_code=409, detail="API URL missing in credentials")
+
+    sync_id = str(uuid.uuid4())
+    connector = LogoHttpConnector()
+
+    try:
+        res = await connector.send_payload(api_url, logo_payloads, credentials, sync_id)
+
+        log_entry = await _log_accounting_sync(
+            tenant_id,
+            {
+                "provider": "logo",
+                "synced_invoices": len(invoices),
+                "synced_payments": len(payments),
+                "synced_at": datetime.now(UTC).isoformat(),
+                "status": "success",
+                "provider_response_status": res.get("status_code"),
+                "details": "Payloads synced to Logo ERP successfully",
+            },
+        )
+
+        return {
+            "success": True,
+            "data_available": True,
             "synced_invoices": len(invoices),
             "synced_payments": len(payments),
+            "log_id": log_entry["id"],
+            "message": "Logo ERP senkronizasyonu tamamlandi.",
+        }
+    except ERPConnectionError as e:
+        await _log_accounting_sync(tenant_id, {
+            "provider": "logo",
+            "status": "failed",
+            "error_type": "connection_error",
             "synced_at": datetime.now(UTC).isoformat(),
-            "status": "simulated",
-            "details": "Payloads built for Logo ERP (simulated)",
-        },
-    )
-
-    return {
-        "success": True,
-        "data_available": len(invoices) > 0 or len(payments) > 0,
-        "synced_invoices": len(invoices),
-        "synced_payments": len(payments),
-        "log_id": log_entry["id"],
-        "message": "Logo ERP payload şemaları oluşturuldu (simüle edildi).",
-    }
+        })
+        raise HTTPException(status_code=502, detail=str(e))
+    except ERPSyncTimeout as e:
+        await _log_accounting_sync(tenant_id, {
+            "provider": "logo",
+            "status": "failed",
+            "error_type": "timeout",
+            "synced_at": datetime.now(UTC).isoformat(),
+        })
+        raise HTTPException(status_code=504, detail=str(e))
+    except ERPSyncRejected as e:
+        await _log_accounting_sync(tenant_id, {
+            "provider": "logo",
+            "status": "failed",
+            "error_type": "provider_rejected",
+            "provider_response_status": e.status_code,
+            "synced_at": datetime.now(UTC).isoformat(),
+        })
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.post("/finance/netsis-integration/sync")
@@ -161,6 +198,27 @@ async def sync_with_netsis(
 
     invoices = await _gather_invoices(tenant_id)
     payments = await _gather_payments(tenant_id)
+
+    if len(invoices) == 0 and len(payments) == 0:
+        log_entry = await _log_accounting_sync(
+            tenant_id,
+            {
+                "provider": "netsis",
+                "synced_invoices": 0,
+                "synced_payments": 0,
+                "synced_at": datetime.now(UTC).isoformat(),
+                "status": "noop",
+                "details": "No invoices or payments to sync.",
+            },
+        )
+        return {
+            "success": True,
+            "status": "noop",
+            "synced_invoices": 0,
+            "synced_payments": 0,
+            "log_id": log_entry["id"],
+            "message": "No data to sync.",
+        }
 
     # 2. Build ERP payloads (Netsis Schema)
     netsis_payloads = []
@@ -178,25 +236,66 @@ async def sync_with_netsis(
             }
         )
 
-    log_entry = await _log_accounting_sync(
-        tenant_id,
-        {
-            "provider": "netsis",
+    credentials = await get_decrypted_credentials(tenant_id, "netsis", ERP_CREDENTIAL_PROPERTY_ID)
+    if not credentials:
+        raise HTTPException(status_code=409, detail="No credentials configured for Netsis ERP")
+
+    api_url = credentials.get("api_url")
+    if not api_url:
+        raise HTTPException(status_code=409, detail="API URL missing in credentials")
+
+    sync_id = str(uuid.uuid4())
+    connector = NetsisHttpConnector()
+
+    try:
+        res = await connector.send_payload(api_url, netsis_payloads, credentials, sync_id)
+
+        log_entry = await _log_accounting_sync(
+            tenant_id,
+            {
+                "provider": "netsis",
+                "synced_invoices": len(invoices),
+                "synced_payments": len(payments),
+                "synced_at": datetime.now(UTC).isoformat(),
+                "status": "success",
+                "provider_response_status": res.get("status_code"),
+                "details": "Payloads synced to Netsis ERP successfully",
+            },
+        )
+
+        return {
+            "success": True,
+            "data_available": True,
             "synced_invoices": len(invoices),
             "synced_payments": len(payments),
+            "log_id": log_entry["id"],
+            "message": "Netsis ERP senkronizasyonu tamamlandi.",
+        }
+    except ERPConnectionError as e:
+        await _log_accounting_sync(tenant_id, {
+            "provider": "netsis",
+            "status": "failed",
+            "error_type": "connection_error",
             "synced_at": datetime.now(UTC).isoformat(),
-            "status": "simulated",
-            "details": "Payloads built for Netsis ERP (simulated)",
-        },
-    )
-
-    return {
-        "success": True,
-        "data_available": len(invoices) > 0 or len(payments) > 0,
-        "synced_invoices": len(invoices),
-        "log_id": log_entry["id"],
-        "message": "Netsis ERP payload şemaları oluşturuldu (simüle edildi).",
-    }
+        })
+        raise HTTPException(status_code=502, detail=str(e))
+    except ERPSyncTimeout as e:
+        await _log_accounting_sync(tenant_id, {
+            "provider": "netsis",
+            "status": "failed",
+            "error_type": "timeout",
+            "synced_at": datetime.now(UTC).isoformat(),
+        })
+        raise HTTPException(status_code=504, detail=str(e))
+    except ERPSyncRejected as e:
+        await _log_accounting_sync(tenant_id, {
+            "provider": "netsis",
+            "status": "failed",
+            "error_type": "provider_rejected",
+            "provider_response_status": e.status_code,
+            "synced_at": datetime.now(UTC).isoformat(),
+        })
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.get("/finance/integration/logs")
