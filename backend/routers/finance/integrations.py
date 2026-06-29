@@ -39,8 +39,9 @@ security = HTTPBearer()
 folio_balance_read_service = FolioBalanceReadService()
 open_folio_service = OpenFolioService()
 
-from domains.channel_manager.credential_vault import get_decrypted_credentials, store_secret, get_masked_credentials
 from pydantic import BaseModel
+
+from domains.channel_manager.credential_vault import get_decrypted_credentials, get_masked_credentials, store_secret
 from routers.finance.erp_connectors.base import ERPConnectionError, ERPSyncRejected, ERPSyncTimeout
 from routers.finance.erp_connectors.logo import LogoHttpConnector
 from routers.finance.erp_connectors.netsis import NetsisHttpConnector
@@ -440,16 +441,16 @@ async def save_finance_credentials(
 ):
     if provider not in ["logo", "netsis"]:
         raise HTTPException(status_code=400, detail=f"Unsupported finance provider: {provider}")
-        
+
     creds = dict(req.credentials)
-    
+
     # Normalize endpoint_url from UI to api_url required by connector
     if creds.get("endpoint_url") and not creds.get("api_url"):
         creds["api_url"] = creds["endpoint_url"]
-        
+
     if not creds.get("api_url"):
         raise HTTPException(status_code=400, detail="api_url is required")
-        
+
     await store_secret(
         credentials=creds,
         tenant_id=current_user.tenant_id,

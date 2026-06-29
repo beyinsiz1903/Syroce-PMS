@@ -276,6 +276,16 @@ async def upsert_drift_state(ds: dict) -> None:
     )
 
 
+async def clear_system_drift_state(tenant_id: str, property_id: str, provider: str) -> None:
+    """Clear any SYSTEM level errors for this provider."""
+    await db[COLL_ARI_DRIFT_STATE].delete_many({
+        "tenant_id": tenant_id,
+        "property_id": property_id,
+        "provider": provider,
+        "room_type_code": "SYSTEM"
+    })
+
+
 async def get_drift_states(
     tenant_id: str,
     property_id: str,

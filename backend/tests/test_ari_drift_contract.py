@@ -64,15 +64,18 @@ async def test_ari_drift_provider_unavailable(mock_build, mock_creds, client):
         "provider": "hotelrunner"
     }
     
-    with patch("domains.channel_manager.ari.drift_worker.repo.upsert_drift_state", new_callable=AsyncMock) as mock_upsert:
+    with patch("domains.channel_manager.ari.router.repo.upsert_drift_state", new_callable=AsyncMock) as mock_upsert:
         response = client.post("/api/channel-manager/ari/drift/check", json=payload)
         
         # Must fail-closed with 502
         assert response.status_code == 502
         assert "not yet implemented" in response.json()["detail"]
         
-        # Must NOT have written any drift states (no fake "drift false" or "matched")
-        mock_upsert.assert_not_called()
+        # Should have written SYSTEM error drift state
+        mock_upsert.assert_called_once()
+        args = mock_upsert.call_args[0][0]
+        assert args["drift_type"] == "provider_unavailable"
+        assert args["room_type_code"] == "SYSTEM"
 
 
 @patch("domains.channel_manager.ari.router.get_decrypted_credentials")
@@ -90,9 +93,13 @@ async def test_ari_drift_credentials_missing(mock_build, mock_creds, client):
         "provider": "hotelrunner"
     }
     
-    response = client.post("/api/channel-manager/ari/drift/check", json=payload)
+    with patch("domains.channel_manager.ari.router.repo.upsert_drift_state", new_callable=AsyncMock) as mock_upsert:
+        response = client.post("/api/channel-manager/ari/drift/check", json=payload)
+        
     assert response.status_code == 409
     assert "No credentials" in response.json()["detail"]
+    mock_upsert.assert_called_once()
+    assert mock_upsert.call_args[0][0]["drift_type"] == "credentials_missing"
 
 
 @patch("domains.channel_manager.ari.router.get_decrypted_credentials")
@@ -124,7 +131,8 @@ async def test_ari_drift_successful_reconciliation_no_drift(mock_build, mock_get
         "provider": "exely"
     }
     
-    with patch("domains.channel_manager.ari.drift_worker.repo.upsert_drift_state", new_callable=AsyncMock) as mock_upsert:
+    with patch("domains.channel_manager.ari.drift_worker.repo.upsert_drift_state", new_callable=AsyncMock) as mock_upsert, \
+         patch("domains.channel_manager.ari.router.repo.clear_system_drift_state", new_callable=AsyncMock) as mock_clear:
         response = client.post("/api/channel-manager/ari/drift/check", json=payload)
         
         assert response.status_code == 200
@@ -178,7 +186,8 @@ async def test_ari_drift_successful_reconciliation_with_drift(mock_build, mock_g
         "provider": "hotelrunner"
     }
     
-    with patch("domains.channel_manager.ari.drift_worker.repo.upsert_drift_state", new_callable=AsyncMock) as mock_upsert:
+    with patch("domains.channel_manager.ari.drift_worker.repo.upsert_drift_state", new_callable=AsyncMock) as mock_upsert, \
+         patch("domains.channel_manager.ari.router.repo.clear_system_drift_state", new_callable=AsyncMock) as mock_clear:
         response = client.post("/api/channel-manager/ari/drift/check", json=payload)
         
         assert response.status_code == 200

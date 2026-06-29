@@ -247,10 +247,24 @@ export default function IntegrationObservabilityDashboard() {
                             <td className="px-4 py-2 capitalize">{drift.provider}</td>
                             <td className="px-4 py-2 whitespace-nowrap">{drift.date}</td>
                             <td className="px-4 py-2">
-                              {drift.drift_detected ? <Badge className="bg-amber-500/10 text-amber-500">Drifted</Badge> : <Badge className="bg-emerald-500/10 text-emerald-500">Synced</Badge>}
+                              {drift.drift_type === "credentials_missing" ? (
+                                <Badge className="bg-red-500/10 text-red-500">Credentials Missing</Badge>
+                              ) : drift.drift_type === "provider_unavailable" ? (
+                                <Badge className="bg-orange-500/10 text-orange-500">Provider Down</Badge>
+                              ) : drift.drift_detected ? (
+                                <Badge className="bg-amber-500/10 text-amber-500">Drifted</Badge>
+                              ) : (
+                                <Badge className="bg-emerald-500/10 text-emerald-500">Synced</Badge>
+                              )}
                             </td>
                             <td className="px-4 py-2 text-xs font-mono text-zinc-400">
-                              {drift.drift_detected && drift.diffs ? JSON.stringify(drift.diffs).substring(0, 50) + '...' : '-'}
+                              {drift.drift_type === "credentials_missing" ? (
+                                "Check Credential Vault"
+                              ) : drift.drift_type === "provider_unavailable" ? (
+                                "API connection failed"
+                              ) : drift.drift_detected && drift.drift_fields ? (
+                                JSON.stringify(drift.drift_fields).substring(0, 50) + '...'
+                              ) : '-'}
                             </td>
                           </tr>
                         ))}

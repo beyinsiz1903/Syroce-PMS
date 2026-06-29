@@ -278,17 +278,39 @@ async def check_drift(
             date_to=date_to,
         )
 
-        return await drift_worker.check_drift(
+        result = await drift_worker.check_drift(
             tenant_id=req.tenant_id,
             property_id=req.property_id,
             provider=req.provider,
             pms_snapshot=pms_snapshot,
             provider_snapshot=provider_snapshot,
         )
+        await repo.clear_system_drift_state(req.tenant_id, req.property_id, req.provider)
+        return result
 
     except CredentialsMissing as e:
+        await repo.upsert_drift_state({
+            "tenant_id": req.tenant_id,
+            "property_id": req.property_id,
+            "provider": req.provider,
+            "room_type_code": "SYSTEM",
+            "date_from": date_from,
+            "date_to": date_to,
+            "drift_detected": True,
+            "drift_type": "credentials_missing",
+        })
         raise HTTPException(status_code=409, detail=str(e))
     except ProviderSnapshotUnavailable as e:
+        await repo.upsert_drift_state({
+            "tenant_id": req.tenant_id,
+            "property_id": req.property_id,
+            "provider": req.provider,
+            "room_type_code": "SYSTEM",
+            "date_from": date_from,
+            "date_to": date_to,
+            "drift_detected": True,
+            "drift_type": "provider_unavailable",
+        })
         raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
         logger.error(f"Unexpected error during drift check: {e}")
