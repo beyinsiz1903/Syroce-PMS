@@ -17,17 +17,17 @@ class NetsisHttpConnector(AccountingHttpConnector):
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 res = await client.post(f"{url}/{resource}", json=payloads, headers=headers)
-                
+
                 if res.status_code >= 500:
                     raise ERPConnectionError(f"Netsis ERP server error for {resource}", status_code=res.status_code)
                 elif res.status_code >= 400:
                     raise ERPSyncRejected(f"Netsis ERP rejected {resource} sync: {res.text}", status_code=res.status_code)
-                
+
                 return {
                     "status_code": res.status_code,
                     "response": res.text
                 }
-                
+
         except httpx.TimeoutException as e:
             raise ERPSyncTimeout(f"Timeout while syncing {resource} to Netsis ERP: {e}")
         except httpx.RequestError as e:
