@@ -160,6 +160,20 @@ export default defineConfig(async () => {
       },
     },
   },
+  preview: {
+    port: 3000,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/ws': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        ws: true,
+      },
+    },
+  },
   oxc: {
     drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : [],
   },
