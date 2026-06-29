@@ -92,10 +92,7 @@ Multi-tenant Property Management System with integrated Channel Manager, Control
 ## Quick Start
 
 ### Demo Account
-```
-Email: demo@hotel.com
-Password: demo123
-```
+Public demo credentials are not published for security reasons. Temporary demo access is provisioned per environment.
 
 ### Local Development
 ```bash

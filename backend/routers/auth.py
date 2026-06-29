@@ -4,12 +4,15 @@ Extracted from server.py for modularity.
 """
 
 import logging
+import os
 from datetime import UTC, datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
+COOKIE_SECURE = os.environ.get("ENV", "development").lower() in ("production", "staging")
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, EmailStr
 
@@ -259,7 +262,7 @@ def _derive_username(email: str, name: str | None = None) -> str:
     return base
 
 
-def _build_token_response(user: User, tenant) -> TokenResponse:
+def _build_token_response(user: User, tenant, response: Response = None) -> TokenResponse:
     """Single source of truth for the V3 login/refresh response shape.
 
     Every successful authentication path (direct login, cached login,
@@ -276,6 +279,27 @@ def _build_token_response(user: User, tenant) -> TokenResponse:
     """
     access = create_token(user.id, user.tenant_id)
     refresh, _ = create_refresh_token(user.id, user.tenant_id)
+
+    if response:
+        response.set_cookie(
+            key="access_token",
+            value=access,
+            httponly=True,
+            secure=COOKIE_SECURE,
+            samesite="lax",
+            max_age=JWT_EXPIRATION_MINUTES * 60,
+            path="/",
+        )
+        response.set_cookie(
+            key="refresh_token",
+            value=refresh,
+            httponly=True,
+            secure=COOKIE_SECURE,
+            samesite="lax",
+            max_age=REFRESH_TOKEN_EXPIRATION_DAYS * 86400,
+            path="/api/auth/refresh",
+        )
+
     return TokenResponse(
         access_token=access,
         user=user,
@@ -286,7 +310,7 @@ def _build_token_response(user: User, tenant) -> TokenResponse:
 
 
 @router.post("/auth/register", response_model=TokenResponse)
-async def register_tenant(data: TenantRegister, request: Request):
+async def register_tenant(data: TenantRegister, request: Request, response: Response):
     # Self-servis tenant kaydi fail-closed: yalnizca SELF_REGISTRATION_ENABLED
     # acikca etkinlestirildiginde calisir. Varsayilan KAPALI — pilotta yeni
     # tesis onboarding'i super_admin/seed uzerinden yapilir. (register-guest
@@ -355,11 +379,11 @@ async def register_tenant(data: TenantRegister, request: Request):
     user_dict = encrypt_user_doc(user_dict)
     await db.users.insert_one(user_dict)
 
-    return _build_token_response(user, tenant)
+    return _build_token_response(user, tenant, response)
 
 
 @router.post("/auth/register-guest", response_model=TokenResponse)
-async def register_guest(data: GuestRegister, request: Request):
+async def register_guest(data: GuestRegister, request: Request, response: Response):
     # v54 (Bug CO): per-IP and per-email throttle (see register_tenant).
     from security.auth_throttle import (
         REGISTER_EMAIL,
@@ -386,11 +410,11 @@ async def register_guest(data: GuestRegister, request: Request):
     prefs = NotificationPreferences(user_id=user.id)
     await db.notification_preferences.insert_one(prefs.model_dump())
 
-    return _build_token_response(user, None)
+    return _build_token_response(user, None, response)
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-async def login(data: UserLogin, request: Request):
+async def login(data: UserLogin, request: Request, response: Response):
     """Hotel staff login via (hotel_id + username) OR legacy guest login via (email).
 
     Resolution order:
@@ -513,7 +537,7 @@ async def login(data: UserLogin, request: Request):
                             await LOGIN_ACCOUNT.reset(_acct_key)
                         except Exception:
                             pass
-                        return _build_token_response(cached_user, cached.get("tenant"))
+                        return _build_token_response(cached_user, cached.get("tenant"), response)
             else:
                 # No user_id in cache → cannot verify watermark/2FA freshness.
                 # Fail-closed: evict and fall through.
@@ -668,7 +692,7 @@ async def login(data: UserLogin, request: Request):
             challenge_token=challenge,
         )
 
-    response = _build_token_response(user, tenant)
+    token_resp = _build_token_response(user, tenant, response)
 
     # Usage metering
     if user.tenant_id:
@@ -686,9 +710,9 @@ async def login(data: UserLogin, request: Request):
     _login_cache.set(
         cache_key,
         {
-            "access_token": response.access_token,
-            "user": response.user,
-            "tenant": response.tenant,
+            "access_token": token_resp.access_token,
+            "user": token_resp.user,
+            "tenant": token_resp.tenant,
             "cached_at": int(datetime.now(UTC).timestamp()),
         },
         ttl=300,
@@ -704,7 +728,7 @@ async def login(data: UserLogin, request: Request):
     except Exception:
         pass
 
-    return response
+    return token_resp
 
 
 # ── 2FA verify (exchange challenge_token for real access_token) ──
@@ -714,7 +738,7 @@ class TwoFAVerifyIn(BaseModel):
 
 
 @router.post("/auth/2fa/verify", response_model=TokenResponse)
-async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
+async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request, response: Response):
     # Task-137 (peer of Task-135 doctrine) — verify-first, record-on-fail,
     # drain-on-success ordering on the 2FA brute-force surface (TOTP code
     # match). Per-IP + per-user-id throttles still cap brute-force, but
@@ -967,7 +991,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
     # V3: 2FA-verified login must also issue a refresh token so the
     # mobile rotation lifecycle works identically whether the user
     # took the 2FA path or the direct path.
-    return _build_token_response(user, tenant)
+    return _build_token_response(user, tenant, response)
 
 
 _USER_RESPONSE_SAFE = set(User.model_fields.keys())
@@ -1176,7 +1200,7 @@ def _enforce_refresh_invariants(user_doc: dict, payload: dict, *, kind: str) -> 
 
 
 @router.post("/auth/refresh-token")
-async def refresh_token(request: Request, body: dict | None = Body(default=None)):
+async def refresh_token(request: Request, response: Response, body: dict | None = Body(default=None)):
     """JWT token yenileme — V3 dual-mode endpoint.
 
     Path A (V3 / mobile, preferred):
@@ -1197,8 +1221,8 @@ async def refresh_token(request: Request, body: dict | None = Body(default=None)
 
     body = body or {}
 
-    submitted_refresh: str | None = None
-    if isinstance(body, dict):
+    submitted_refresh: str | None = request.cookies.get("refresh_token")
+    if not submitted_refresh and isinstance(body, dict):
         rt = body.get("refresh_token")
         if isinstance(rt, str) and rt.strip():
             submitted_refresh = rt.strip()
@@ -1322,6 +1346,7 @@ async def refresh_token(request: Request, body: dict | None = Body(default=None)
 @router.post("/auth/logout")
 async def logout(
     request: Request,
+    response: Response,
     body: dict | None = Body(default=None),
     current_user: User = Depends(get_current_user),
 ):
@@ -1428,7 +1453,22 @@ async def logout(
         }
     )
 
-    return {"success": True, "message": "Çıkış yapıldı"}
+    response.delete_cookie(
+        "access_token",
+        path="/",
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax"
+    )
+    response.delete_cookie(
+        "refresh_token",
+        path="/api/auth/refresh",
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax"
+    )
+
+    return {"message": "Çıkış başarılı"}
 
 
 @router.get("/security/summary")
@@ -1651,7 +1691,7 @@ async def request_verification_code(data: EmailVerificationRequest, request: Req
 
 
 @router.post("/auth/verify-email", response_model=TokenResponse)
-async def verify_email_and_register(data: VerifyCodeRequest, request: Request):
+async def verify_email_and_register(data: VerifyCodeRequest, request: Request, response: Response):
     """E-posta kodunu doğrula ve kullanıcı oluştur.
 
     v54 (Bug CO): added per-email sliding-window throttle (5 / 15 min)
@@ -1733,7 +1773,7 @@ async def verify_email_and_register(data: VerifyCodeRequest, request: Request):
 
         await email_service.send_welcome_email(data.email, verification["name"])
 
-        return _build_token_response(user, tenant)
+        return _build_token_response(user, tenant, response)
 
     else:
         # Guest kullanıcısı
@@ -1757,7 +1797,7 @@ async def verify_email_and_register(data: VerifyCodeRequest, request: Request):
 
         await email_service.send_welcome_email(data.email, verification["name"])
 
-        return _build_token_response(user, None)
+        return _build_token_response(user, None, response)
 
 
 _FORGOT_GENERIC_RESPONSE = {

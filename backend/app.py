@@ -358,15 +358,14 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
             media_type="application/zip",
         )
 
-    # ── Static file serving (uploads) ───────────────────────────────
+    # ── Uploads are now served via the authenticated /api/uploads endpoint ──
+    # The static mount was removed for security (authorization enforcement).
     upload_dir = Path(os.environ.get("UPLOAD_DIR", str(_backend_dir / "uploads")))
     try:
         upload_dir.mkdir(parents=True, exist_ok=True)
-        application.mount("/api/uploads", StaticFiles(directory=str(upload_dir)), name="uploads")
     except (PermissionError, OSError) as e:
         import logging
-
-        logging.getLogger(__name__).warning("Upload static mount failed (%s): %s", upload_dir, e)
+        logging.getLogger(__name__).warning("Upload dir creation failed (%s): %s", upload_dir, e)
 
     # ── Frontend SPA static serving (combined deployment) ───────────
     # Replit autoscale: serve built frontend through FastAPI so one URL

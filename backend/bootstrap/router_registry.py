@@ -97,6 +97,7 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("routers.cross_property", "router", ["cross-property"], None, None),
     ("routers.procurement", "router", ["procurement"], None, None),
     ("routers.integration_rollout", "router", ["integration-rollout"], None, None),
+    ("routers.uploads", "router", ["uploads"], None, None),
     # Domain routers (Phase B extraction)
     ("domains.channel_manager.router", "router", ["channel-manager-domain"], None, None),
     ("domains.guest.router", "router", ["guest-profile-domain"], None, None),

@@ -279,7 +279,7 @@ export default function CredentialVaultDashboard() {
                     <div className="space-y-4 p-4 border border-zinc-800 rounded-lg">
                       <div className="flex justify-between items-center">
                         <h3 className="font-semibold text-lg flex items-center gap-2">
-                          <LinkIcon className="w-4 h-4 text-purple-500" />
+                          <LinkIcon className="w-4 h-4 text-indigo-500" />
                           Channel Manager ARI
                         </h3>
                         {readiness.channel.status === 'Ready' ? (

@@ -26,7 +26,7 @@ log = logging.getLogger("seed_demo")
 HOTEL_ID = "100001"
 DEMO_EMAIL = "demo@syroce.com"
 DEMO_USERNAME = "demo"
-DEMO_PASSWORD = "demo123"
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD")
 DEMO_HOTEL_NAME = "Syroce Demo Hotel"
 
 
@@ -39,6 +39,12 @@ def _now_iso() -> str:
 
 
 async def seed() -> None:
+    env = os.environ.get("ENV", "development").lower()
+    if env == "production":
+        raise RuntimeError("Demo user seeding is forbidden in production")
+    if not DEMO_PASSWORD:
+        raise RuntimeError("DEMO_PASSWORD must be set in environment (e.g. CI secrets)")
+
     mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
     db_name = os.environ.get("DB_NAME", "hotel_pms_test")
     client = AsyncIOMotorClient(mongo_url)
@@ -93,7 +99,7 @@ async def seed() -> None:
             "email": DEMO_EMAIL,
             "username": DEMO_USERNAME,
             "name": "Demo Admin",
-            "role": "super_admin",
+            "role": "demo_manager_readonly",
             "phone": "+905551234567",
             "is_active": True,
             "email_verified": True,

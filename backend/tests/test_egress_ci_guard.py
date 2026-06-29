@@ -84,6 +84,8 @@ def _scan_backend(pattern: re.Pattern, marker: str) -> dict[str, list[int]]:
         rel = py.relative_to(REPO_ROOT).as_posix()
         if "/tests/" in rel or rel.endswith("test_egress_ci_guard.py"):
             continue
+        if "/.venv/" in rel:
+            continue
         if rel.endswith("integrations/xchange/safety.py"):
             continue
         try:
