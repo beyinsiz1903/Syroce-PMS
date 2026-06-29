@@ -23,6 +23,7 @@ import {
 } from "@/routes/ProtectedRoute";
 import { registerRoutes } from "@/routes/preload";
 import { prefetchHeavyModules } from "@/lib/prefetch";
+import { websocket } from "@/lib/websocket";
 
 // Sesli softphone (Contact Center Faz 2) — yalnızca personel için, lazy.
 // Twilio Voice SDK + mikrofon izni operatör "Aktifleştir"e basınca yüklenir.
@@ -171,7 +172,6 @@ function App() {
     // socket.io handshake and the user joins their tenant-scoped rooms
     // (internal_chat:{tenant}:user:{uid}, :dept:{dept}, :broadcast).
     try {
-      const { websocket } = await import('@/lib/websocket');
       websocket.reconnectWithFreshAuth?.();
     } catch { /* non-fatal */ }
 
@@ -227,9 +227,7 @@ function App() {
     // clear stale internal-chat state immediately (it would otherwise wait
     // for the page reload below).
     notifyAuthChanged();
-    import('@/lib/websocket').then(({ websocket }) => {
-      try { websocket.disconnect?.(); } catch { /* noop */ }
-    }).catch(() => { /* non-fatal */ });
+    try { websocket.disconnect?.(); } catch { /* noop */ }
     window.location.replace("/auth");
   };
 

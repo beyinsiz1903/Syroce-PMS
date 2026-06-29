@@ -151,14 +151,17 @@ async def sync_with_logo(
     try:
         synced_invoices_count = 0
         synced_payments_count = 0
-        
+        response_statuses = {}
+
         if logo_payloads:
             res_inv = await connector.send_payload(api_url, "invoices", logo_payloads, credentials, sync_id)
             synced_invoices_count = len(invoices)
-            
+            response_statuses["invoices"] = res_inv.get("status_code")
+
         if logo_payment_payloads:
             res_pay = await connector.send_payload(api_url, "payments", logo_payment_payloads, credentials, sync_id)
             synced_payments_count = len(payments)
+            response_statuses["payments"] = res_pay.get("status_code")
 
         log_entry = await _log_accounting_sync(
             tenant_id,
@@ -168,7 +171,7 @@ async def sync_with_logo(
                 "synced_payments": synced_payments_count,
                 "synced_at": datetime.now(UTC).isoformat(),
                 "status": "success",
-                "provider_response_status": 200,
+                "provider_response_status": response_statuses,
                 "details": "Payloads synced to Logo ERP successfully",
             },
         )
@@ -283,14 +286,17 @@ async def sync_with_netsis(
     try:
         synced_invoices_count = 0
         synced_payments_count = 0
-        
+        response_statuses = {}
+
         if netsis_payloads:
             res_inv = await connector.send_payload(api_url, "invoices", netsis_payloads, credentials, sync_id)
             synced_invoices_count = len(invoices)
-            
+            response_statuses["invoices"] = res_inv.get("status_code")
+
         if netsis_payment_payloads:
             res_pay = await connector.send_payload(api_url, "payments", netsis_payment_payloads, credentials, sync_id)
             synced_payments_count = len(payments)
+            response_statuses["payments"] = res_pay.get("status_code")
 
         log_entry = await _log_accounting_sync(
             tenant_id,
@@ -300,7 +306,7 @@ async def sync_with_netsis(
                 "synced_payments": synced_payments_count,
                 "synced_at": datetime.now(UTC).isoformat(),
                 "status": "success",
-                "provider_response_status": 200,
+                "provider_response_status": response_statuses,
                 "details": "Payloads synced to Netsis ERP successfully",
             },
         )

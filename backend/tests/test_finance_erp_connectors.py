@@ -152,7 +152,7 @@ async def test_logo_sync_success(mock_log, mock_payments, mock_invoices, mock_cr
     mock_log.assert_called_once()
     log_arg = mock_log.call_args[0][1]
     assert log_arg["status"] == "success"
-    assert log_arg["provider_response_status"] == 200
+    assert log_arg["provider_response_status"] == {"invoices": 200}
     
     # Ensure X-Syroce-Sync-Id is sent
     mock_post.assert_called_once()
