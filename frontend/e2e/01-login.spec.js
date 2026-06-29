@@ -25,6 +25,7 @@ test.describe.serial('Login', () => {
     });
 
     test('demo kullanıcı ile login → dashboard', async ({ page, context }) => {
+        page.on('console', msg => console.log('BROWSER CONSOLE:', msg.text()));
         await loginAsDemo(page);
         // Layout shell yüklendi mi (sidebar ya da header).
         // ÖNEMLİ: /app/dashboard rotası lazy chunk olduğundan Suspense fallback
@@ -33,7 +34,7 @@ test.describe.serial('Login', () => {
         // hidratasyonu beklenebilir).
         await expect(page.locator('body')).toBeVisible();
         await expect(
-            page.locator('nav, [role="navigation"], aside').first()
+            page.locator('[data-testid="app-shell"]')
         ).toBeVisible({ timeout: 15_000 });
 
         // Storage state'i kaydet (sonraki spec'ler kullansın)

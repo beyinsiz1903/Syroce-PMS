@@ -86,13 +86,11 @@ function _hardLogout() {
 //   { transient: true } — 5xx/ağ; oturum SİLİNMEZ, istek reddedilir
 //   { invalid: true }  — 401/400; refresh token gerçekten ölmüş, hard logout
 async function _attemptRefresh() {
-  const refreshToken = localStorage.getItem("refresh_token");
-  if (!refreshToken) return { invalid: true };
   if (!_refreshInFlight) {
     _refreshInFlight = axios
       .post(
         "/auth/refresh-token",
-        { refresh_token: refreshToken },
+        {},
         { headers: { Authorization: undefined }, _skipAuthRetry: true },
       )
       .then((r) => {
@@ -144,10 +142,10 @@ axios.interceptors.response.use(
         console.warn("Refresh transient failure (5xx/network); session preserved");
         return Promise.reject(error);
       }
-      console.warn("401 Unauthorized - refresh failed, clearing session");
+      console.warn("401 Unauthorized - refresh failed, clearing session. URL:", original.url);
       _hardLogout();
     } else if (error.response?.status === 401) {
-      console.warn("401 Unauthorized - clearing session");
+      console.warn("401 Unauthorized - clearing session. URL:", original.url);
       _hardLogout();
     }
     if (error.response?.data?.detail) {
