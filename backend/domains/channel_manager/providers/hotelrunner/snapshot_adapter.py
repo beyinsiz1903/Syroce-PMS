@@ -14,7 +14,7 @@ class HotelRunnerSnapshotAdapter(ProviderSnapshotAdapter):
         date_from: str,
         date_to: str,
     ) -> list[dict]:
-        # Fail-closed doctrine: 
+        # Fail-closed doctrine:
         # Until the actual HTTP pull endpoint documentation is provided and implemented,
         # we explicitly raise Unavailable. Returning a mock "success" or empty list
         # would create a false "drift_false" state in the system.

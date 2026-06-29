@@ -49,9 +49,11 @@ async def test_ari_drift_unsupported_provider(client):
     assert "Unknown provider" in response.json()["detail"]
 
 
+@patch("domains.channel_manager.ari.router.get_decrypted_credentials")
 @patch("domains.channel_manager.ari.router.build_pms_ari_snapshot")
 @pytest.mark.asyncio
-async def test_ari_drift_provider_unavailable(mock_build, client):
+async def test_ari_drift_provider_unavailable(mock_build, mock_creds, client):
+    mock_creds.return_value = {"api_key": "fake"}
     # build_pms_ari_snapshot doesn't throw
     mock_build.return_value = [{"room_type_code": "R1", "rate_plan_code": "RP1", "date": "2024-01-01", "availability": 5}]
     
@@ -73,15 +75,14 @@ async def test_ari_drift_provider_unavailable(mock_build, client):
         mock_upsert.assert_not_called()
 
 
-@patch("domains.channel_manager.ari.router._get_snapshot_adapter")
+@patch("domains.channel_manager.ari.router.get_decrypted_credentials")
 @patch("domains.channel_manager.ari.router.build_pms_ari_snapshot")
 @pytest.mark.asyncio
-async def test_ari_drift_credentials_missing(mock_build, mock_get_adapter, client):
+async def test_ari_drift_credentials_missing(mock_build, mock_creds, client):
     mock_build.return_value = []
     
-    mock_adapter = AsyncMock()
-    mock_adapter.fetch_snapshot.side_effect = CredentialsMissing("No credentials configured for tenant")
-    mock_get_adapter.return_value = mock_adapter
+    # Simulate missing credentials
+    mock_creds.return_value = None
     
     payload = {
         "tenant_id": "tenant-1",
@@ -94,10 +95,12 @@ async def test_ari_drift_credentials_missing(mock_build, mock_get_adapter, clien
     assert "No credentials" in response.json()["detail"]
 
 
+@patch("domains.channel_manager.ari.router.get_decrypted_credentials")
 @patch("domains.channel_manager.ari.router._get_snapshot_adapter")
 @patch("domains.channel_manager.ari.router.build_pms_ari_snapshot")
 @pytest.mark.asyncio
-async def test_ari_drift_successful_reconciliation_no_drift(mock_build, mock_get_adapter, client):
+async def test_ari_drift_successful_reconciliation_no_drift(mock_build, mock_get_adapter, mock_creds, client):
+    mock_creds.return_value = {"api_key": "fake"}
     # Both PMS and Provider return exact same snapshot
     snapshot = [
         {
@@ -135,10 +138,12 @@ async def test_ari_drift_successful_reconciliation_no_drift(mock_build, mock_get
         assert call_args["drift_detected"] is False
 
 
+@patch("domains.channel_manager.ari.router.get_decrypted_credentials")
 @patch("domains.channel_manager.ari.router._get_snapshot_adapter")
 @patch("domains.channel_manager.ari.router.build_pms_ari_snapshot")
 @pytest.mark.asyncio
-async def test_ari_drift_successful_reconciliation_with_drift(mock_build, mock_get_adapter, client):
+async def test_ari_drift_successful_reconciliation_with_drift(mock_build, mock_get_adapter, mock_creds, client):
+    mock_creds.return_value = {"api_key": "fake"}
     # PMS has 5 available, Provider has 3 (drift!)
     pms_snapshot = [
         {

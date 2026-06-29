@@ -1,8 +1,7 @@
-from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from models.schemas import User
 from domains.channel_manager.unified_rate_manager_router import get_unified_grid
+from models.schemas import User
 
 
 async def build_pms_ari_snapshot(
@@ -15,7 +14,7 @@ async def build_pms_ari_snapshot(
     """
     Build the gold source of truth for ARI (Availability, Rates, Inventory)
     by unifying local rooms, bookings, room mappings, and rate calendars.
-    
+
     This invokes the Unified Rate Manager's core grid builder to ensure
     100% parity with what the PMS expects the channel state to be.
     """
@@ -29,22 +28,22 @@ async def build_pms_ari_snapshot(
         role="super_admin",
         is_active=True,
     )
-    
+
     grid_response = await get_unified_grid(
         start_date=date_from,
         end_date=date_to,
         provider=provider,
         current_user=dummy_user,
     )
-    
+
     grid_data = grid_response.get("grid", [])
-    
+
     pms_snapshot = []
-    
+
     for row in grid_data:
         rt_code = row.get("room_type_code")
         rp_code = row.get("rate_plan_code")
-        
+
         for date_entry in row.get("dates", []):
             snapshot_item = {
                 "room_type_code": rt_code,
@@ -61,5 +60,5 @@ async def build_pms_ari_snapshot(
                 }
             }
             pms_snapshot.append(snapshot_item)
-            
+
     return pms_snapshot

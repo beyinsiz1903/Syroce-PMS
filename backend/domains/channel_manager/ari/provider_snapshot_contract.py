@@ -31,7 +31,7 @@ class ProviderSnapshotAdapter(ABC):
     ) -> list[dict]:
         """
         Fetch the current snapshot from the provider and normalize it.
-        
+
         Must return a list of dictionaries with the exact format:
         {
             "room_type_code": str,
@@ -41,7 +41,7 @@ class ProviderSnapshotAdapter(ABC):
             "rate": float | None,
             "restrictions": dict
         }
-        
+
         Should raise ProviderSnapshotUnavailable if the API is missing/failing,
         so the caller does not falsely assume a drift_false state.
         """

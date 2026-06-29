@@ -3,6 +3,7 @@ ARI Push Engine — API Router.
 """
 
 import logging
+from datetime import UTC, datetime, timedelta
 
 from fastapi import (
     APIRouter,
@@ -13,21 +14,22 @@ from fastapi import (
 
 from cache_manager import cached
 from core.security import _is_super_admin, get_current_user
+from domains.channel_manager.credential_vault import get_decrypted_credentials
+from domains.channel_manager.providers.exely.snapshot_adapter import ExelySnapshotAdapter
+from domains.channel_manager.providers.hotelrunner.snapshot_adapter import HotelRunnerSnapshotAdapter
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
 
 from . import drift_worker, outbound_service
 from . import repositories as repo
 from .events import ARIChangeEvent
-from datetime import UTC, datetime, timedelta
 from .provider_snapshot_contract import (
-    ProviderSnapshotUnavailable,
     CredentialsMissing,
+    ProviderSnapshotUnavailable,
     UnsupportedProvider,
 )
-from domains.channel_manager.providers.hotelrunner.snapshot_adapter import HotelRunnerSnapshotAdapter
-from domains.channel_manager.providers.exely.snapshot_adapter import ExelySnapshotAdapter
 from .truth_builder import build_pms_ari_snapshot
+
 
 def _get_snapshot_adapter(provider: str):
     if provider == "hotelrunner":
@@ -244,15 +246,21 @@ async def check_drift(
         adapter = _get_snapshot_adapter(req.provider)
     except UnsupportedProvider as e:
         raise HTTPException(status_code=400, detail=str(e))
-        
+
     date_from = req.date_from or datetime.now(UTC).date().isoformat()
     date_to = req.date_to or (datetime.now(UTC) + timedelta(days=14)).date().isoformat()
-    
-    # We do not have real credentials vault retrieval yet, we pass empty dict.
-    # The adapter will fail-closed since it's not implemented yet.
-    credentials = {}
 
     try:
+        credentials = await get_decrypted_credentials(
+            req.tenant_id,
+            req.provider,
+            req.property_id,
+        )
+        if not credentials:
+            raise CredentialsMissing(
+                f"No credentials configured for {req.provider}/{req.property_id}"
+            )
+
         pms_snapshot = await build_pms_ari_snapshot(
             tenant_id=req.tenant_id,
             property_id=req.property_id,
@@ -260,7 +268,7 @@ async def check_drift(
             date_from=date_from,
             date_to=date_to,
         )
-        
+
         provider_snapshot = await adapter.fetch_snapshot(
             tenant_id=req.tenant_id,
             property_id=req.property_id,
@@ -268,7 +276,7 @@ async def check_drift(
             date_from=date_from,
             date_to=date_to,
         )
-        
+
         return await drift_worker.check_drift(
             tenant_id=req.tenant_id,
             property_id=req.property_id,
@@ -276,7 +284,7 @@ async def check_drift(
             pms_snapshot=pms_snapshot,
             provider_snapshot=provider_snapshot,
         )
-        
+
     except CredentialsMissing as e:
         raise HTTPException(status_code=409, detail=str(e))
     except ProviderSnapshotUnavailable as e:

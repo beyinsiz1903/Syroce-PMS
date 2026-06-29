@@ -1021,9 +1021,9 @@ async def transfer_table(
 
     # 1. Fetch Source Transaction
     source_transaction = await db.pos_transactions.find_one({
-        "tenant_id": tenant_id, 
-        "outlet_id": outlet_id, 
-        "table_number": from_table, 
+        "tenant_id": tenant_id,
+        "outlet_id": outlet_id,
+        "table_number": from_table,
         "status": "open"
     })
 
@@ -1037,7 +1037,7 @@ async def transfer_table(
         # Transfer entire table.
         # SECURITY: defense-in-depth with tenant_id filter.
         await db.pos_transactions.update_one(
-            {"_id": source_id, "tenant_id": tenant_id, "status": "open"}, 
+            {"_id": source_id, "tenant_id": tenant_id, "status": "open"},
             {"$set": {
                 "table_number": to_table,
                 "updated_at": datetime.now(UTC).isoformat(),
@@ -1072,19 +1072,19 @@ async def transfer_table(
             if idx in transfer_requests:
                 requested_qty = transfer_requests[idx]
                 current_qty = item.get("quantity", 1)
-                
+
                 if requested_qty is not None:
                     if requested_qty <= 0:
                         raise HTTPException(status_code=400, detail="quantity must be > 0")
                     if requested_qty > current_qty:
                         raise HTTPException(status_code=400, detail="quantity exceeds source item quantity")
-                    
+
                     if requested_qty < current_qty:
                         # Partial quantity transfer
                         transfer_item = item.copy()
                         transfer_item["quantity"] = requested_qty
                         transferred_items.append(transfer_item)
-                        
+
                         remain_item = item.copy()
                         remain_item["quantity"] = current_qty - requested_qty
                         remaining_items.append(remain_item)
@@ -1110,9 +1110,9 @@ async def transfer_table(
 
         # We must carefully read the target and either insert or update
         target_transaction = await db.pos_transactions.find_one({
-            "tenant_id": tenant_id, 
-            "outlet_id": outlet_id, 
-            "table_number": to_table, 
+            "tenant_id": tenant_id,
+            "outlet_id": outlet_id,
+            "table_number": to_table,
             "status": "open"
         })
 
@@ -1133,21 +1133,21 @@ async def transfer_table(
                             break
                 if not merged:
                     target_items.append(t_item)
-            
+
             new_target_total = _recalc_totals(target_items)
 
             # Atomic update on target
             res = await db.pos_transactions.update_one(
                 {"_id": target_transaction["_id"], "tenant_id": tenant_id},
                 {"$set": {
-                    "items": target_items, 
-                    "total_amount": new_target_total, 
+                    "items": target_items,
+                    "total_amount": new_target_total,
                     "updated_at": datetime.now(UTC).isoformat()
                 }}
             )
             if res.modified_count == 0:
                 raise HTTPException(status_code=409, detail="Target table state changed unexpectedly.")
-            
+
             target_id = target_transaction.get("id")
         else:
             # Create new target transaction
@@ -1169,16 +1169,16 @@ async def transfer_table(
         # Atomic update on source
         # Only modify if it hasn't been closed/mutated unexpectedly
         src_res = await db.pos_transactions.update_one(
-            {"_id": source_id, "tenant_id": tenant_id, "status": "open"}, 
+            {"_id": source_id, "tenant_id": tenant_id, "status": "open"},
             {"$set": {
-                "items": remaining_items, 
-                "total_amount": new_source_total, 
+                "items": remaining_items,
+                "total_amount": new_source_total,
                 "updated_at": datetime.now(UTC).isoformat()
             }}
         )
 
         if src_res.modified_count == 0:
-            # Revert target if possible, though strict atomic is hard without session. 
+            # Revert target if possible, though strict atomic is hard without session.
             # In a replica-set, we would wrap this all in session.start_transaction().
             raise HTTPException(status_code=409, detail="Source table state changed during transfer. Operation aborted or partially failed.")
 
