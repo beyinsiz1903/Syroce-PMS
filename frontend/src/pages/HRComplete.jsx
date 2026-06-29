@@ -23,6 +23,9 @@ import { KpiCard } from '@/components/ui/kpi-card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatCurrency } from '@/lib/currency';
 import { useTranslation } from 'react-i18next';
+import PaginationBar from '@/components/PaginationBar';
+import SkeletonRow from '@/components/SkeletonRow';
+import { useHRPagination } from '@/hooks/useHRPagination';
 
 const LEAVE_TYPE_LABEL = {
   annual: 'Yıllık İzin',
@@ -65,8 +68,8 @@ const HRComplete = () => {
   const [activeTab, setActiveTab] = useState('attendance');
   const [refreshing, setRefreshing] = useState(false);
 
-  // Staff (gerçek backend'den)
-  const [staffList, setStaffList] = useState([]);
+  // Staff (dropdown data only)
+  const [staffDropdown, setStaffDropdown] = useState([]);
   const [selectedStaffId, setSelectedStaffId] = useState('');
 
   // Attendance
@@ -86,16 +89,19 @@ const HRComplete = () => {
   const [revising, setRevising] = useState(false);
   const [loadingRun, setLoadingRun] = useState(false);
 
-  // Leave
-  const [leaveItems, setLeaveItems] = useState([]);
+  // Pagination hooks
+  const staffPage = useHRPagination('/hr/staff', {}, { enabled: activeTab === 'leave' || activeTab === 'performance' || activeTab === 'attendance' || activeTab === 'payroll' });
+  const leavePage = useHRPagination('/hr/leave-requests', {}, { enabled: activeTab === 'leave' });
+  const performancePage = useHRPagination('/hr/performance', {}, { enabled: activeTab === 'performance' });
+
+  // Leave Dropdown & Form
   const [leaveCounts, setLeaveCounts] = useState({ pending: 0, approved: 0, rejected: 0 });
   const [leaveForm, setLeaveForm] = useState({
     staff_id: '', leave_type: 'annual', start_date: '', end_date: '', reason: '',
   });
   const [creatingLeave, setCreatingLeave] = useState(false);
 
-  // Performance
-  const [performanceItems, setPerformanceItems] = useState([]);
+  // Performance Form
   const [perfAvg, setPerfAvg] = useState(0);
   const [perfTemplates, setPerfTemplates] = useState([]);
   const [perfForm, setPerfForm] = useState({
@@ -138,18 +144,18 @@ const HRComplete = () => {
   const [expiringTrainTotal, setExpiringTrainTotal] = useState(0);
 
   // Loaders
-  const loadStaff = useCallback(async () => {
+  const loadStaffDropdown = useCallback(async () => {
     try {
-      const res = await axios.get('/hr/staff');
-      const list = res.data?.staff || [];
-      setStaffList(list);
+      const res = await axios.get('/hr/staff', { params: { limit: 500, source: 'hr' } });
+      const list = res.data?.staff || res.data?.items || [];
+      setStaffDropdown(list);
       if (!selectedStaffId && list.length > 0) {
         setSelectedStaffId(list[0].id);
         setLeaveForm((f) => ({ ...f, staff_id: list[0].id }));
         setPerfForm((f) => ({ ...f, staff_id: list[0].id }));
       }
     } catch (e) {
-      console.error('Staff yüklenemedi', e);
+      console.error('Dropdown staff listesi yüklenemedi', e);
       toast.error('Personel listesi yüklenemedi');
     }
   }, [selectedStaffId]);
@@ -166,26 +172,6 @@ const HRComplete = () => {
     } catch (e) {
       console.error('Attendance yüklenemedi', e);
       toast.error('Devam verileri yüklenemedi');
-    }
-  }, []);
-
-  const loadLeaves = useCallback(async () => {
-    try {
-      const res = await axios.get('/hr/leave-requests');
-      setLeaveItems(res.data?.items || []);
-      setLeaveCounts(res.data?.counts || { pending: 0, approved: 0, rejected: 0 });
-    } catch (e) {
-      console.error('Leave yüklenemedi', e);
-    }
-  }, []);
-
-  const loadPerformance = useCallback(async () => {
-    try {
-      const res = await axios.get('/hr/performance');
-      setPerformanceItems(res.data?.items || []);
-      setPerfAvg(res.data?.avg_score || 0);
-    } catch (e) {
-      console.error('Performance yüklenemedi', e);
     }
   }, []);
 
@@ -439,11 +425,11 @@ const HRComplete = () => {
     setRefreshing(true);
     try {
       // Sadece en temel (herkese lazım olan veya KPI için gereken) verileri önden yükle
-      await Promise.all([loadStaff(), loadCompliance()]);
+      await Promise.all([loadStaffDropdown(), loadCompliance()]);
     } finally {
       setRefreshing(false);
     }
-  }, [loadStaff, loadCompliance]);
+  }, [loadStaffDropdown, loadCompliance]);
 
   useEffect(() => {
     loadAll();
@@ -458,11 +444,9 @@ const HRComplete = () => {
         if (!overtimeCounts) loadOvertimeRequests();
         break;
       case 'leave':
-        if (leaveItems.length === 0) loadLeaves();
-        if (staffList.length > 0) loadLeaveBalances(staffList.map((s) => s.id));
+        if (staffPage.items.length > 0) loadLeaveBalances(staffPage.items.map((s) => s.id));
         break;
       case 'performance':
-        if (performanceItems.length === 0) loadPerformance();
         if (perfTemplates.length === 0) loadPerfTemplates();
         break;
       case 'recruitment':
@@ -477,7 +461,7 @@ const HRComplete = () => {
         break;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, staffList.length]);
+  }, [activeTab, staffPage.items]);
 
   // Attendance actions
   const clockIn = async () => {
@@ -717,7 +701,7 @@ const HRComplete = () => {
       await axios.post('/hr/leave-request', leaveForm);
       toast.success('İzin talebi oluşturuldu');
       setLeaveForm({ ...leaveForm, start_date: '', end_date: '', reason: '' });
-      loadLeaves();
+      leavePage.refresh();
     } catch (error) {
       const msg = error.response?.data?.detail || 'İzin talebi oluşturulamadı';
       toast.error(typeof msg === 'string' ? msg : 'Hata');
@@ -750,7 +734,7 @@ const HRComplete = () => {
         : decision === 'dept_approve' ? 'Departman onayı verildi (HR final onayı bekleniyor)'
         : `İzin onaylandı${created ? ` • ${created} gün vardiyaya 'izinli' işlendi` : ''}`;
       toast.success(msg);
-      loadLeaves();
+      leavePage.refresh();
     } catch (error) {
       const msg = error.response?.status === 403
         ? 'Onay yetkiniz yok'
@@ -775,7 +759,7 @@ const HRComplete = () => {
       });
       toast.success('Performans değerlendirmesi kaydedildi');
       setPerfForm({ ...perfForm, period: '', overall_score: '', strengths: '', improvement_areas: '', goals: '', competency_scores: {} });
-      loadPerformance();
+      performancePage.refresh();
     } catch (error) {
       const msg = error.response?.data?.detail || 'Kaydedilemedi';
       toast.error(typeof msg === 'string' ? msg : 'Hata');
@@ -832,8 +816,8 @@ const HRComplete = () => {
   }, [attendanceSummary]);
 
   const selectedStaffName = useMemo(
-    () => staffList.find((s) => s.id === selectedStaffId)?.name || '',
-    [staffList, selectedStaffId],
+    () => staffDropdown.find((s) => s.id === selectedStaffId)?.name || '',
+    [staffDropdown, selectedStaffId],
   );
 
   const fmtCurrency = (v) => formatCurrency(v ?? 0, 'TRY');
@@ -933,8 +917,8 @@ const HRComplete = () => {
                     className="rounded-md border border-input px-3 py-1.5 text-sm min-w-[200px]"
                     data-testid="select-staff"
                   >
-                    {staffList.length === 0 && <option value="">— Personel yok —</option>}
-                    {staffList.map((s) => (
+                    {staffDropdown.length === 0 && <option value="">— Personel yok —</option>}
+                    {staffDropdown.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name} {s.department ? `(${s.department})` : ''}
                       </option>
@@ -949,7 +933,7 @@ const HRComplete = () => {
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
-                {staffList.length === 0 && (
+                {staffDropdown.length === 0 && (
                   <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                     {t('cm.pages_HRComplete.personel_listesi_bos_personel_eklemek_ic')}
                     <Button variant="link" size="sm" className="px-1.5" onClick={() => navigate('/staff-management')}>
@@ -1292,7 +1276,7 @@ const HRComplete = () => {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="flex items-center gap-2"><Calendar className="w-4 h-4" />Personel İzin Bakiyesi ({new Date().getFullYear()})</CardTitle>
-                <Button size="sm" variant="outline" onClick={() => loadLeaveBalances(staffList.map((s) => s.id))} disabled={balanceLoading}>
+                <Button size="sm" variant="outline" onClick={() => loadLeaveBalances(staffPage.items.map((s) => s.id))} disabled={balanceLoading}>
                   <RefreshCw className={`w-3.5 h-3.5 mr-1 ${balanceLoading ? 'animate-spin' : ''}`} />Yenile
                 </Button>
               </CardHeader>
@@ -1310,7 +1294,7 @@ const HRComplete = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {staffList.map((s) => {
+                      {staffPage.items.map((s) => {
                         const b = leaveBalances[s.id];
                         if (!b) return (
                           <tr key={s.id} className="border-t border-slate-100">
@@ -1333,11 +1317,21 @@ const HRComplete = () => {
                           </tr>
                         );
                       })}
-                      {staffList.length === 0 && (
+                      {staffPage.items.length === 0 && (
                         <tr><td colSpan={6} className="py-6 text-center text-slate-500">Personel yok</td></tr>
                       )}
                     </tbody>
                   </table>
+                {!staffPage.loading && staffPage.total > 0 && (
+                  <PaginationBar
+                    page={staffPage.page}
+                    totalPages={staffPage.totalPages}
+                    total={staffPage.total}
+                    limit={staffPage.limit}
+                    onPageChange={staffPage.setPage}
+                    onLimitChange={staffPage.setLimit}
+                  />
+                )}
                 </div>
               </CardContent>
             </Card>
@@ -1355,7 +1349,7 @@ const HRComplete = () => {
                       data-testid="select-leave-staff"
                     >
                       <option value="">{t('cm.pages_HRComplete.secin')}</option>
-                      {staffList.map((s) => (
+                      {staffDropdown.map((s) => (
                         <option key={s.id} value={s.id}>{s.name}</option>
                       ))}
                     </select>
@@ -1420,9 +1414,13 @@ const HRComplete = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {leaveItems.map((item) => (
-                        <tr key={item.id} className="border-t border-slate-100">
-                          <td className="py-2 font-medium">{item.staff_name}</td>
+                      {leavePage.loading ? (
+                        <SkeletonRow cols={7} rows={3} />
+                      ) : (
+                        <>
+                          {leavePage.items.map((item) => (
+                            <tr key={item.id} className="border-t border-slate-100">
+                              <td className="py-2 font-medium">{item.staff_name}</td>
                           <td>{LEAVE_TYPE_LABEL[item.leave_type] || item.leave_type}</td>
                           <td>{item.start_date}</td>
                           <td>{item.end_date}</td>
@@ -1453,12 +1451,24 @@ const HRComplete = () => {
                             )}
                           </td>
                         </tr>
-                      ))}
-                      {leaveItems.length === 0 && (
-                        <tr><td colSpan={7} className="py-6 text-center text-slate-500">{t('cm.pages_HRComplete.henuz_izin_talebi_yok')}</td></tr>
+                          ))}
+                          {leavePage.items.length === 0 && (
+                            <tr><td colSpan={7} className="py-6 text-center text-slate-500">{t('cm.pages_HRComplete.henuz_izin_talebi_yok')}</td></tr>
+                          )}
+                        </>
                       )}
                     </tbody>
                   </table>
+                {!leavePage.loading && leavePage.total > 0 && (
+                  <PaginationBar
+                    page={leavePage.page}
+                    totalPages={leavePage.totalPages}
+                    total={leavePage.total}
+                    limit={leavePage.limit}
+                    onPageChange={leavePage.setPage}
+                    onLimitChange={leavePage.setLimit}
+                  />
+                )}
                 </div>
               </CardContent>
             </Card>
@@ -1469,7 +1479,7 @@ const HRComplete = () => {
         <TabsContent value="performance" className="mt-4">
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-2">
-              <KpiCard intent="info" icon={Award} label={t('cm.pages_HRComplete.toplam_degerlendirme')} value={performanceItems.length} />
+              <KpiCard intent="info" icon={Award} label={t('cm.pages_HRComplete.toplam_degerlendirme')} value={performancePage.total || 0} />
               <KpiCard intent="success" icon={TrendingUp} label="Ortalama Puan" value={(perfAvg || 0).toFixed(2)} sub="0–10 ölçek" />
             </div>
 
@@ -1565,20 +1575,36 @@ const HRComplete = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {performanceItems.map((item) => (
-                        <tr key={item.id} className="border-t border-slate-100 align-top">
-                          <td className="py-2 font-medium">{item.staff_name}</td>
+                      {performancePage.loading ? (
+                        <SkeletonRow cols={5} rows={3} />
+                      ) : (
+                        <>
+                          {performancePage.items.map((item) => (
+                            <tr key={item.id} className="border-t border-slate-100 align-top">
+                              <td className="py-2 font-medium">{item.staff_name}</td>
                           <td>{item.period || '—'}</td>
                           <td>{(item.reviewed_at || '').slice(0, 10)}</td>
                           <td className="text-right font-semibold">{item.overall_score}</td>
                           <td className="text-slate-600 max-w-md truncate">{item.strengths || item.goals || '—'}</td>
                         </tr>
-                      ))}
-                      {performanceItems.length === 0 && (
-                        <tr><td colSpan={5} className="py-6 text-center text-slate-500">{t('cm.pages_HRComplete.henuz_degerlendirme_yok')}</td></tr>
+                          ))}
+                          {performancePage.items.length === 0 && (
+                            <tr><td colSpan={5} className="py-6 text-center text-slate-500">{t('cm.pages_HRComplete.henuz_degerlendirme_yok')}</td></tr>
+                          )}
+                        </>
                       )}
                     </tbody>
                   </table>
+                {!performancePage.loading && performancePage.total > 0 && (
+                  <PaginationBar
+                    page={performancePage.page}
+                    totalPages={performancePage.totalPages}
+                    total={performancePage.total}
+                    limit={performancePage.limit}
+                    onPageChange={performancePage.setPage}
+                    onLimitChange={performancePage.setLimit}
+                  />
+                )}
                 </div>
               </CardContent>
             </Card>

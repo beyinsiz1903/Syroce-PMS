@@ -24,6 +24,9 @@ import { KpiCard } from '@/components/ui/kpi-card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatCurrency } from '@/lib/currency';
 import { confirmDialog } from '@/lib/dialogs';
+import PaginationBar from '@/components/PaginationBar';
+import SkeletonRow from '@/components/SkeletonRow';
+import { useHRPagination } from '@/hooks/useHRPagination';
 
 const LEAVE_TYPE_LABEL = {
   annual: 'Yıllık', sick: 'Hastalık', maternity: 'Doğum',
@@ -59,17 +62,42 @@ const StaffProfile = () => {
   const [data, setData] = useState(null);
   const [activeTab, setActiveTab] = useState('attendance');
 
-  // Section states
-  const [certs, setCerts] = useState({ items: [], active: 0, expired: 0, error: null });
-  const [docs, setDocs] = useState([]);
-  const [docsError, setDocsError] = useState(null);
-  const [salaryHistory, setSalaryHistory] = useState([]);
-  const [salaryError, setSalaryError] = useState(null);
+  // ── Pagination hooks for the 6 lazy sub-resource tabs ──────────────
+  // Each hook is enabled only when its corresponding tab is active,
+  // so data fetches are lazy and page state is preserved per tab.
+  const certsPage = useHRPagination(
+    id ? `/hr/staff/${id}/certifications` : null,
+    {},
+    { enabled: activeTab === 'certifications' },
+  );
+  const docsPage = useHRPagination(
+    id ? `/hr/staff/${id}/documents` : null,
+    {},
+    { enabled: activeTab === 'documents' },
+  );
+  const salaryPage = useHRPagination(
+    id ? `/hr/staff/${id}/salary-history` : null,
+    {},
+    { enabled: activeTab === 'salary' },
+  );
+  const equipmentPage = useHRPagination(
+    id ? `/hr/staff/${id}/equipment` : null,
+    {},
+    { enabled: activeTab === 'equipment' },
+  );
+  const warningsPage = useHRPagination(
+    id ? `/hr/staff/${id}/warnings` : null,
+    {},
+    { enabled: activeTab === 'warnings' },
+  );
+  const trainingsPage = useHRPagination(
+    id ? `/hr/staff/${id}/trainings` : null,
+    {},
+    { enabled: activeTab === 'trainings' },
+  );
+
+  // Legacy section states (kept for backward compat with existing render code)
   const [termination, setTermination] = useState(null);
-  // Task #265 (İK v2 Lifecycle): Zimmet / Uyarı / Eğitim section state.
-  const [equipment, setEquipment] = useState({ items: [], active: 0, returned: 0, lost: 0, error: null });
-  const [warnings, setWarnings] = useState({ items: [], by_type: { verbal: 0, written: 0, final: 0 }, error: null });
-  const [trainings, setTrainings] = useState({ items: [], valid: 0, expired: 0, error: null });
 
   // Dialogs
   const [certDialog, setCertDialog] = useState({ open: false, form: null });
@@ -97,35 +125,6 @@ const StaffProfile = () => {
     }
   }, [id]);
 
-  const loadCerts = useCallback(async () => {
-    try {
-      const r = await axios.get(`/hr/staff/${id}/certifications`);
-      setCerts({ items: r.data.items || [], active: r.data.active || 0, expired: r.data.expired || 0, error: null });
-    } catch (err) {
-      setCerts((s) => ({ ...s, error: err?.response?.data?.detail || 'Sertifikalar yüklenemedi' }));
-    }
-  }, [id]);
-
-  const loadDocs = useCallback(async () => {
-    try {
-      const r = await axios.get(`/hr/staff/${id}/documents`);
-      setDocs(r.data.items || []);
-      setDocsError(null);
-    } catch (err) {
-      setDocsError(err?.response?.data?.detail || 'Belgeler yüklenemedi');
-    }
-  }, [id]);
-
-  const loadSalary = useCallback(async () => {
-    try {
-      const r = await axios.get(`/hr/staff/${id}/salary-history`);
-      setSalaryHistory(r.data.items || []);
-      setSalaryError(null);
-    } catch (err) {
-      setSalaryError(err?.response?.data?.detail || 'Maaş geçmişi yüklenemedi');
-    }
-  }, [id]);
-
   const loadTermination = useCallback(async () => {
     try {
       const r = await axios.get(`/hr/staff/${id}/termination`);
@@ -139,76 +138,11 @@ const StaffProfile = () => {
     }
   }, [id]);
 
-  const loadEquipment = useCallback(async () => {
-    try {
-      const r = await axios.get(`/hr/staff/${id}/equipment`);
-      setEquipment({
-        items: r.data.items || [], active: r.data.active || 0,
-        returned: r.data.returned || 0, lost: r.data.lost_or_damaged || 0, error: null,
-      });
-    } catch (err) {
-      setEquipment((s) => ({ ...s, error: err?.response?.data?.detail || 'Zimmet listesi yüklenemedi' }));
-    }
-  }, [id]);
-
-  const loadWarnings = useCallback(async () => {
-    try {
-      const r = await axios.get(`/hr/staff/${id}/warnings`);
-      setWarnings({
-        items: r.data.items || [],
-        by_type: r.data.by_type || { verbal: 0, written: 0, final: 0 },
-        error: null,
-      });
-    } catch (err) {
-      setWarnings((s) => ({ ...s, error: err?.response?.data?.detail || 'Uyarı geçmişi yüklenemedi' }));
-    }
-  }, [id]);
-
-  const loadTrainings = useCallback(async () => {
-    try {
-      const r = await axios.get(`/hr/staff/${id}/trainings`);
-      setTrainings({
-        items: r.data.items || [], valid: r.data.valid || 0,
-        expired: r.data.expired || 0, error: null,
-      });
-    } catch (err) {
-      setTrainings((s) => ({ ...s, error: err?.response?.data?.detail || 'Eğitim geçmişi yüklenemedi' }));
-    }
-  }, [id]);
-
   useEffect(() => {
-    // Only load basic profile data initially
     load();
     loadTermination();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, loadTermination]);
-
-  // Lazy Fan-out Reduction: Load tab data only when the tab is visited
-  useEffect(() => {
-    switch (activeTab) {
-      case 'certifications':
-        if (certs.items.length === 0 && !certs.error) loadCerts();
-        break;
-      case 'documents':
-        if (docs.length === 0 && !docsError) loadDocs();
-        break;
-      case 'salary':
-        if (salaryHistory.length === 0 && !salaryError) loadSalary();
-        break;
-      case 'equipment':
-        if (equipment.items.length === 0 && !equipment.error) loadEquipment();
-        break;
-      case 'warnings':
-        if (warnings.items.length === 0 && !warnings.error) loadWarnings();
-        break;
-      case 'trainings':
-        if (trainings.items.length === 0 && !trainings.error) loadTrainings();
-        break;
-      default:
-        break;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
 
   // ===== Certifications =====
   const openCertDialog = () => setCertDialog({
@@ -222,7 +156,7 @@ const StaffProfile = () => {
       await axios.post(`/hr/staff/${id}/certifications`, certDialog.form);
       toast.success('Sertifika eklendi');
       setCertDialog({ open: false, form: null });
-      loadCerts();
+      certsPage.refresh();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Eklenemedi');
     } finally { setSaving(false); }
@@ -231,7 +165,7 @@ const StaffProfile = () => {
     if (!await confirmDialog({ message: `"${cert.name}" sertifikası silinsin mi?` })) return;
     try {
       await axios.delete(`/hr/certifications/${cert.id}`);
-      toast.success('Silindi'); loadCerts();
+      toast.success('Silindi'); certsPage.refresh();
     } catch (err) { toast.error(err.response?.data?.detail || 'Silinemedi'); }
   };
 
@@ -253,7 +187,7 @@ const StaffProfile = () => {
       );
       toast.success('Belge yüklendi');
       setDocDialog({ open: false, file: null, doc_type: 'contract', label: '' });
-      loadDocs();
+      docsPage.refresh();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Yüklenemedi');
     } finally { setSaving(false); }
@@ -273,7 +207,7 @@ const StaffProfile = () => {
     if (!await confirmDialog({ message: `"${doc.label || doc.filename}" silinsin mi?` })) return;
     try {
       await axios.delete(`/hr/documents/${doc.id}`);
-      toast.success('Silindi'); loadDocs();
+      toast.success('Silindi'); docsPage.refresh();
     } catch (err) { toast.error(err.response?.data?.detail || 'Silinemedi'); }
   };
 
@@ -296,7 +230,7 @@ const StaffProfile = () => {
       });
       toast.success('Maaş değişikliği kaydedildi');
       setSalaryDialog({ open: false, form: null });
-      loadSalary();
+      salaryPage.refresh();
       load();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Kaydedilemedi');
@@ -314,7 +248,7 @@ const StaffProfile = () => {
       severance_override: '',
       eligible_for_rehire: true,
     },
-    outstanding: (equipment.items || []).filter((it) => it.status === 'assigned'),
+    outstanding: (equipmentPage.items || []).filter((it) => it.status === 'assigned'),
   });
   const submitTerm = async (e, { forceRelease = false } = {}) => {
     if (e && e.preventDefault) e.preventDefault();
@@ -334,7 +268,7 @@ const StaffProfile = () => {
       const r = await axios.post(url, payload);
       toast.success(`Ayrılış kaydedildi. Kıdem: ${formatCurrency(r.data.termination?.severance_paid || 0, 'TRY')}`);
       setTermDialog({ open: false, form: null, outstanding: [] });
-      loadTermination(); load(); loadEquipment();
+      loadTermination(); load(); equipmentPage.refresh();
     } catch (err) {
       const detail = err.response?.data?.detail;
       if (err.response?.status === 409 && detail && detail.code === 'outstanding_equipment') {
@@ -356,7 +290,7 @@ const StaffProfile = () => {
         ...s,
         outstanding: (s.outstanding || []).filter((x) => x.id !== eq.id),
       }));
-      loadEquipment();
+      equipmentPage.refresh();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'İade alınamadı');
     }
@@ -410,7 +344,7 @@ const StaffProfile = () => {
       await axios.post(`/hr/staff/${id}/equipment`, eqDialog.form);
       toast.success('Zimmet kaydedildi');
       setEqDialog({ open: false, form: null });
-      loadEquipment();
+      equipmentPage.refresh();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Kaydedilemedi');
     } finally { setSaving(false); }
@@ -422,14 +356,14 @@ const StaffProfile = () => {
         returned_at: new Date().toISOString().slice(0, 10),
         condition_on_return: 'good',
       });
-      toast.success('İade alındı'); loadEquipment();
+      toast.success('İade alındı'); equipmentPage.refresh();
     } catch (err) { toast.error(err.response?.data?.detail || 'İade alınamadı'); }
   };
   const deleteEq = async (eq) => {
     if (!await confirmDialog({ message: `"${eq.item_label}" zimmet kaydı silinsin mi?` })) return;
     try {
       await axios.delete(`/hr/equipment/${eq.id}`);
-      toast.success('Silindi'); loadEquipment();
+      toast.success('Silindi'); equipmentPage.refresh();
     } catch (err) { toast.error(err.response?.data?.detail || 'Silinemedi'); }
   };
 
@@ -445,7 +379,7 @@ const StaffProfile = () => {
       await axios.post(`/hr/staff/${id}/warnings`, warnDialog.form);
       toast.success('Uyarı kaydedildi');
       setWarnDialog({ open: false, form: null });
-      loadWarnings();
+      warningsPage.refresh();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Kaydedilemedi');
     } finally { setSaving(false); }
@@ -453,14 +387,14 @@ const StaffProfile = () => {
   const ackWarn = async (w) => {
     try {
       await axios.post(`/hr/warnings/${w.id}/acknowledge`);
-      toast.success('Onaylandı'); loadWarnings();
+      toast.success('Onaylandı'); warningsPage.refresh();
     } catch (err) { toast.error(err.response?.data?.detail || 'Onaylanamadı'); }
   };
   const deleteWarn = async (w) => {
     if (!await confirmDialog({ message: `Uyarı kaydı silinsin mi?` })) return;
     try {
       await axios.delete(`/hr/warnings/${w.id}`);
-      toast.success('Silindi'); loadWarnings();
+      toast.success('Silindi'); warningsPage.refresh();
     } catch (err) { toast.error(err.response?.data?.detail || 'Silinemedi'); }
   };
 
@@ -486,7 +420,7 @@ const StaffProfile = () => {
       await axios.post(`/hr/staff/${id}/trainings`, payload);
       toast.success('Eğitim kaydedildi');
       setTrainDialog({ open: false, form: null });
-      loadTrainings();
+      trainingsPage.refresh();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Kaydedilemedi');
     } finally { setSaving(false); }
@@ -495,7 +429,7 @@ const StaffProfile = () => {
     if (!await confirmDialog({ message: `"${t.title}" eğitim kaydı silinsin mi?` })) return;
     try {
       await axios.delete(`/hr/trainings/${t.id}`);
-      toast.success('Silindi'); loadTrainings();
+      toast.success('Silindi'); trainingsPage.refresh();
     } catch (err) { toast.error(err.response?.data?.detail || 'Silinemedi'); }
   };
 
@@ -595,7 +529,7 @@ const StaffProfile = () => {
         <KpiCard intent="info" icon={Clock} label="Son 30g Saat" value={att.total_hours_30d || 0} sub={`${att.days_present_30d || 0} gün`} />
         <KpiCard intent="warning" icon={Calendar} label="Bekleyen İzin" value={lv.pending || 0} sub={`Toplam ${lv.total || 0} talep`} />
         <KpiCard intent="success" icon={Award} label="Performans Ort." value={perf.avg_score || 0} sub={`${perf.total || 0} değerlendirme`} />
-        <KpiCard intent={certs.expired > 0 ? 'danger' : 'info'} icon={GraduationCap} label="Aktif Sertifika" value={certs.active} sub={certs.expired > 0 ? `${certs.expired} süresi geçmiş` : `${docs.length} belge`} />
+        <KpiCard intent={certsPage.meta?.expired > 0 ? 'danger' : 'info'} icon={GraduationCap} label="Aktif Sertifika" value={certsPage.meta?.active || 0} sub={certsPage.meta?.expired > 0 ? `${certsPage.meta?.expired} süresi geçmiş` : `${docsPage.total || 0} belge`} />
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -833,51 +767,65 @@ const StaffProfile = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {certs.error && (
+              {certsPage.error && (
                 <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                  {certs.error} <button onClick={loadCerts} className="underline ml-2">Tekrar dene</button>
+                  {certsPage.error} <button onClick={certsPage.refresh} className="underline ml-2">Tekrar dene</button>
                 </div>
               )}
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="text-left text-slate-500 border-b">
-                    <th className="py-2">Sertifika</th><th>Veren</th><th>Veriliş</th>
-                    <th>Bitiş</th><th>Numara</th><th>Durum</th><th></th>
-                  </tr></thead>
-                  <tbody>
-                    {certs.items.map((c) => {
-                      const today = new Date().toISOString().slice(0, 10);
-                      const expired = c.expiry_date && c.expiry_date < today;
-                      const expiringSoon = c.expiry_date && !expired && new Date(c.expiry_date) - new Date() < 90 * 86400000;
-                      return (
-                        <tr key={c.id} className="border-t border-slate-100">
-                          <td className="py-2 font-medium">{c.name}{c.file_url && <a href={c.file_url} target="_blank" rel="noreferrer" className="ml-2 text-sky-600 hover:underline text-xs">dosya</a>}</td>
-                          <td>{c.issuer || '—'}</td>
-                          <td>{c.issue_date}</td>
-                          <td>{c.expiry_date || 'süresiz'}</td>
-                          <td className="text-xs">{c.certificate_no || '—'}</td>
-                          <td>
-                            {expired
-                              ? <StatusBadge intent="danger">Süresi geçmiş</StatusBadge>
-                              : expiringSoon
-                                ? <StatusBadge intent="warning">Yakında bitecek</StatusBadge>
-                                : <StatusBadge intent="success">Geçerli</StatusBadge>}
-                          </td>
-                          <td className="text-right">
-                            <Button size="sm" variant="ghost" onClick={() => deleteCert(c)}>
-                              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {certs.items.length === 0 && (
-                      <tr><td colSpan={7} className="py-6 text-center text-slate-500">
-                        Henüz sertifika yok — yangın eğitimi, hijyen sertifikası gibi compliance kayıtlarını ekleyin
-                      </td></tr>
-                    )}
-                  </tbody>
-                </table>
+                {certsPage.loading ? (
+                  <SkeletonRow cols={5} rows={3} />
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead><tr className="text-left text-slate-500 border-b">
+                      <th className="py-2">Sertifika</th><th>Veren</th><th>Veriliş</th>
+                      <th>Bitiş</th><th>Numara</th><th>Durum</th><th></th>
+                    </tr></thead>
+                    <tbody>
+                      {certsPage.items.map((c) => {
+                        const today = new Date().toISOString().slice(0, 10);
+                        const expired = c.expiry_date && c.expiry_date < today;
+                        const expiringSoon = c.expiry_date && !expired && new Date(c.expiry_date) - new Date() < 90 * 86400000;
+                        return (
+                          <tr key={c.id} className="border-t border-slate-100">
+                            <td className="py-2 font-medium">{c.name}{c.file_url && <a href={c.file_url} target="_blank" rel="noreferrer" className="ml-2 text-sky-600 hover:underline text-xs">dosya</a>}</td>
+                            <td>{c.issuer || '—'}</td>
+                            <td>{c.issue_date}</td>
+                            <td>{c.expiry_date || 'süresiz'}</td>
+                            <td className="text-xs">{c.certificate_no || '—'}</td>
+                            <td>
+                              {expired
+                                ? <StatusBadge intent="danger">Süresi geçmiş</StatusBadge>
+                                : expiringSoon
+                                  ? <StatusBadge intent="warning">Yakında bitecek</StatusBadge>
+                                  : <StatusBadge intent="success">Geçerli</StatusBadge>}
+                            </td>
+                            <td className="text-right">
+                              <Button size="sm" variant="ghost" onClick={() => deleteCert(c)}>
+                                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {certsPage.items.length === 0 && (
+                        <tr><td colSpan={7} className="py-6 text-center text-slate-500">
+                          Henüz sertifika yok — yangın eğitimi, hijyen sertifikası gibi compliance kayıtlarını ekleyin
+                        </td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                )}
+                {!certsPage.loading && certsPage.total > 0 && (
+                  <PaginationBar
+                    page={certsPage.page}
+                    totalPages={certsPage.totalPages}
+                    total={certsPage.total}
+                    limit={certsPage.limit}
+                    onPageChange={certsPage.setPage}
+                    onLimitChange={certsPage.setLimit}
+                  />
+                )}
               </div>
             </CardContent>
           </Card>
@@ -895,42 +843,56 @@ const StaffProfile = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {docsError && (
+              {docsPage.error && (
                 <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                  {docsError} <button onClick={loadDocs} className="underline ml-2">Tekrar dene</button>
+                  {docsPage.error} <button onClick={docsPage.refresh} className="underline ml-2">Tekrar dene</button>
                 </div>
               )}
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="text-left text-slate-500 border-b">
-                    <th className="py-2">Etiket</th><th>Tür</th><th>Dosya Adı</th>
-                    <th className="text-right">Boyut</th><th>Yüklenme</th><th></th>
-                  </tr></thead>
-                  <tbody>
-                    {docs.map((d) => (
-                      <tr key={d.id} className="border-t border-slate-100">
-                        <td className="py-2 font-medium">{d.label}</td>
-                        <td><StatusBadge intent="neutral">{DOC_TYPE_LABEL[d.doc_type] || d.doc_type}</StatusBadge></td>
-                        <td className="text-xs text-slate-600">{d.filename}</td>
-                        <td className="text-right text-xs">{((d.size_bytes || 0) / 1024).toFixed(1)} KB</td>
-                        <td className="text-xs">{(d.uploaded_at || '').slice(0, 10)}</td>
-                        <td className="text-right space-x-1">
-                          <Button size="sm" variant="ghost" onClick={() => downloadDoc(d)}>
-                            <Download className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => deleteDoc(d)}>
-                            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                    {docs.length === 0 && (
-                      <tr><td colSpan={6} className="py-6 text-center text-slate-500">
-                        Henüz belge yok — sözleşme, kimlik, diploma gibi belgeleri yükleyin (max 5MB, PDF/Word/JPEG)
-                      </td></tr>
-                    )}
-                  </tbody>
-                </table>
+                {docsPage.loading ? (
+                  <SkeletonRow cols={5} rows={3} />
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead><tr className="text-left text-slate-500 border-b">
+                      <th className="py-2">Etiket</th><th>Tür</th><th>Dosya Adı</th>
+                      <th className="text-right">Boyut</th><th>Yüklenme</th><th></th>
+                    </tr></thead>
+                    <tbody>
+                      {docsPage.items.map((d) => (
+                        <tr key={d.id} className="border-t border-slate-100">
+                          <td className="py-2 font-medium">{d.label}</td>
+                          <td><StatusBadge intent="neutral">{DOC_TYPE_LABEL[d.doc_type] || d.doc_type}</StatusBadge></td>
+                          <td className="text-xs text-slate-600">{d.filename}</td>
+                          <td className="text-right text-xs">{((d.size_bytes || 0) / 1024).toFixed(1)} KB</td>
+                          <td className="text-xs">{(d.uploaded_at || '').slice(0, 10)}</td>
+                          <td className="text-right space-x-1">
+                            <Button size="sm" variant="ghost" onClick={() => downloadDoc(d)}>
+                              <Download className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => deleteDoc(d)}>
+                              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                      {docsPage.items.length === 0 && (
+                        <tr><td colSpan={6} className="py-6 text-center text-slate-500">
+                          Henüz belge yok — sözleşme, kimlik, diploma gibi belgeleri yükleyin (max 5MB, PDF/Word/JPEG)
+                        </td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                )}
+                {!docsPage.loading && docsPage.total > 0 && (
+                  <PaginationBar
+                    page={docsPage.page}
+                    totalPages={docsPage.totalPages}
+                    total={docsPage.total}
+                    limit={docsPage.limit}
+                    onPageChange={docsPage.setPage}
+                    onLimitChange={docsPage.setLimit}
+                  />
+                )}
               </div>
             </CardContent>
           </Card>
@@ -948,38 +910,52 @@ const StaffProfile = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {salaryError && (
+              {salaryPage.error && (
                 <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                  {salaryError} <button onClick={loadSalary} className="underline ml-2">Tekrar dene</button>
+                  {salaryPage.error} <button onClick={salaryPage.refresh} className="underline ml-2">Tekrar dene</button>
                 </div>
               )}
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="text-left text-slate-500 border-b">
-                    <th className="py-2">Yürürlük</th><th>Tür</th>
-                    <th className="text-right">Eski</th><th className="text-right">Yeni</th>
-                    <th className="text-right">Δ%</th><th>Sebep</th>
-                  </tr></thead>
-                  <tbody>
-                    {salaryHistory.map((r) => (
-                      <tr key={r.id} className="border-t border-slate-100">
-                        <td className="py-2">{r.effective_date}</td>
-                        <td><StatusBadge intent={r.change_type === 'demotion' ? 'danger' : r.change_type === 'promotion' ? 'success' : 'info'}>{CHANGE_TYPE_LABEL[r.change_type] || r.change_type}</StatusBadge></td>
-                        <td className="text-right text-slate-500">{formatCurrency(r.old_hourly_rate, 'TRY')}</td>
-                        <td className="text-right font-semibold">{formatCurrency(r.new_hourly_rate, 'TRY')}</td>
-                        <td className={`text-right ${r.delta_pct > 0 ? 'text-emerald-700' : r.delta_pct < 0 ? 'text-rose-700' : ''}`}>
-                          {r.delta_pct > 0 ? '+' : ''}{r.delta_pct}%
-                        </td>
-                        <td className="text-xs text-slate-600 max-w-xs">{r.reason || '—'}</td>
-                      </tr>
-                    ))}
-                    {salaryHistory.length === 0 && (
-                      <tr><td colSpan={6} className="py-6 text-center text-slate-500">
-                        Henüz maaş değişikliği yok — şu anki saatlik: {s.hourly_rate ? formatCurrency(s.hourly_rate, 'TRY') : '140 TRY (default)'}
-                      </td></tr>
-                    )}
-                  </tbody>
-                </table>
+                {salaryPage.loading ? (
+                  <SkeletonRow cols={5} rows={3} />
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead><tr className="text-left text-slate-500 border-b">
+                      <th className="py-2">Yürürlük</th><th>Tür</th>
+                      <th className="text-right">Eski</th><th className="text-right">Yeni</th>
+                      <th className="text-right">Δ%</th><th>Sebep</th>
+                    </tr></thead>
+                    <tbody>
+                      {salaryPage.items.map((r) => (
+                        <tr key={r.id} className="border-t border-slate-100">
+                          <td className="py-2">{r.effective_date}</td>
+                          <td><StatusBadge intent={r.change_type === 'demotion' ? 'danger' : r.change_type === 'promotion' ? 'success' : 'info'}>{CHANGE_TYPE_LABEL[r.change_type] || r.change_type}</StatusBadge></td>
+                          <td className="text-right text-slate-500">{formatCurrency(r.old_hourly_rate, 'TRY')}</td>
+                          <td className="text-right font-semibold">{formatCurrency(r.new_hourly_rate, 'TRY')}</td>
+                          <td className={`text-right ${r.delta_pct > 0 ? 'text-emerald-700' : r.delta_pct < 0 ? 'text-rose-700' : ''}`}>
+                            {r.delta_pct > 0 ? '+' : ''}{r.delta_pct}%
+                          </td>
+                          <td className="text-xs text-slate-600 max-w-xs">{r.reason || '—'}</td>
+                        </tr>
+                      ))}
+                      {salaryPage.items.length === 0 && (
+                        <tr><td colSpan={6} className="py-6 text-center text-slate-500">
+                          Henüz maaş değişikliği yok — şu anki saatlik: {s.hourly_rate ? formatCurrency(s.hourly_rate, 'TRY') : '140 TRY (default)'}
+                        </td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                )}
+                {!salaryPage.loading && salaryPage.total > 0 && (
+                  <PaginationBar
+                    page={salaryPage.page}
+                    totalPages={salaryPage.totalPages}
+                    total={salaryPage.total}
+                    limit={salaryPage.limit}
+                    onPageChange={salaryPage.setPage}
+                    onLimitChange={salaryPage.setLimit}
+                  />
+                )}
               </div>
             </CardContent>
           </Card>
@@ -995,52 +971,66 @@ const StaffProfile = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {trainings.error && (
+              {trainingsPage.error && (
                 <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                  {trainings.error} <button onClick={loadTrainings} className="underline ml-2">Tekrar dene</button>
+                  {trainingsPage.error} <button onClick={trainingsPage.refresh} className="underline ml-2">Tekrar dene</button>
                 </div>
               )}
               <div className="mb-3 flex gap-2 text-xs">
-                <StatusBadge intent="success">{trainings.valid} geçerli</StatusBadge>
-                {trainings.expired > 0 && <StatusBadge intent="danger">{trainings.expired} tazelenmeli</StatusBadge>}
+                <StatusBadge intent="success">{trainingsPage.meta?.valid || 0} geçerli</StatusBadge>
+                {(trainingsPage.meta?.expired || 0) > 0 && <StatusBadge intent="danger">{trainingsPage.meta?.expired || 0} tazelenmeli</StatusBadge>}
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="text-left text-slate-500 border-b">
-                    <th className="py-2">Eğitim</th><th>Tür</th><th>Veren</th>
-                    <th>Tamamlandı</th><th>Geçerlilik</th><th className="text-right">Saat</th><th></th>
-                  </tr></thead>
-                  <tbody>
-                    {trainings.items.map((t) => {
-                      const today = new Date().toISOString().slice(0, 10);
-                      const expired = t.valid_until && t.valid_until < today;
-                      return (
-                        <tr key={t.id} className="border-t border-slate-100">
-                          <td className="py-2 font-medium">{t.title}</td>
-                          <td className="text-xs uppercase">{t.training_type}</td>
-                          <td>{t.provider || '—'}</td>
-                          <td>{t.completed_at}</td>
-                          <td>{t.valid_until
-                            ? (expired
-                              ? <StatusBadge intent="danger">{t.valid_until}</StatusBadge>
-                              : <StatusBadge intent="success">{t.valid_until}</StatusBadge>)
-                            : <span className="text-slate-400">süresiz</span>}</td>
-                          <td className="text-right">{t.hours ?? '—'}</td>
-                          <td className="text-right">
-                            <Button size="sm" variant="ghost" onClick={() => deleteTrain(t)}>
-                              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {trainings.items.length === 0 && (
-                      <tr><td colSpan={7} className="py-6 text-center text-slate-500">
-                        Henüz eğitim kaydı yok — hijyen tazeleme, iş güvenliği yıllık, oryantasyon gibi periyodik eğitimleri ekleyin
-                      </td></tr>
-                    )}
-                  </tbody>
-                </table>
+                {trainingsPage.loading ? (
+                  <SkeletonRow cols={5} rows={3} />
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead><tr className="text-left text-slate-500 border-b">
+                      <th className="py-2">Eğitim</th><th>Tür</th><th>Veren</th>
+                      <th>Tamamlandı</th><th>Geçerlilik</th><th className="text-right">Saat</th><th></th>
+                    </tr></thead>
+                    <tbody>
+                      {trainingsPage.items.map((t) => {
+                        const today = new Date().toISOString().slice(0, 10);
+                        const expired = t.valid_until && t.valid_until < today;
+                        return (
+                          <tr key={t.id} className="border-t border-slate-100">
+                            <td className="py-2 font-medium">{t.title}</td>
+                            <td className="text-xs uppercase">{t.training_type}</td>
+                            <td>{t.provider || '—'}</td>
+                            <td>{t.completed_at}</td>
+                            <td>{t.valid_until
+                              ? (expired
+                                ? <StatusBadge intent="danger">{t.valid_until}</StatusBadge>
+                                : <StatusBadge intent="success">{t.valid_until}</StatusBadge>)
+                              : <span className="text-slate-400">süresiz</span>}</td>
+                            <td className="text-right">{t.hours ?? '—'}</td>
+                            <td className="text-right">
+                              <Button size="sm" variant="ghost" onClick={() => deleteTrain(t)}>
+                                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {trainingsPage.items.length === 0 && (
+                        <tr><td colSpan={7} className="py-6 text-center text-slate-500">
+                          Henüz eğitim kaydı yok — hijyen tazeleme, iş güvenliği yıllık, oryantasyon gibi periyodik eğitimleri ekleyin
+                        </td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                )}
+                {!trainingsPage.loading && trainingsPage.total > 0 && (
+                  <PaginationBar
+                    page={trainingsPage.page}
+                    totalPages={trainingsPage.totalPages}
+                    total={trainingsPage.total}
+                    limit={trainingsPage.limit}
+                    onPageChange={trainingsPage.setPage}
+                    onLimitChange={trainingsPage.setLimit}
+                  />
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1056,55 +1046,69 @@ const StaffProfile = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {equipment.error && (
+              {equipmentPage.error && (
                 <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                  {equipment.error} <button onClick={loadEquipment} className="underline ml-2">Tekrar dene</button>
+                  {equipmentPage.error} <button onClick={equipmentPage.refresh} className="underline ml-2">Tekrar dene</button>
                 </div>
               )}
               <div className="mb-3 flex gap-2 text-xs">
-                <StatusBadge intent="warning">{equipment.active} aktif</StatusBadge>
-                <StatusBadge intent="success">{equipment.returned} iade</StatusBadge>
-                {equipment.lost > 0 && <StatusBadge intent="danger">{equipment.lost} kayıp/hasar</StatusBadge>}
+                <StatusBadge intent="warning">{equipmentPage.meta?.active || 0} aktif</StatusBadge>
+                <StatusBadge intent="success">{equipmentPage.meta?.returned || 0} iade</StatusBadge>
+                {(equipmentPage.meta?.lost_or_damaged || 0) > 0 && <StatusBadge intent="danger">{equipmentPage.meta?.lost_or_damaged || 0} kayıp/hasar</StatusBadge>}
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="text-left text-slate-500 border-b">
-                    <th className="py-2">Eşya</th><th>Tür</th><th>Seri No</th>
-                    <th>Zimmet Tarihi</th><th>İade Tarihi</th><th>Durum</th><th></th>
-                  </tr></thead>
-                  <tbody>
-                    {equipment.items.map((eq) => (
-                      <tr key={eq.id} className="border-t border-slate-100">
-                        <td className="py-2 font-medium">{eq.item_label}</td>
-                        <td className="text-xs uppercase">{eq.item_type}</td>
-                        <td className="text-xs">{eq.serial_no || '—'}</td>
-                        <td>{eq.assigned_at}</td>
-                        <td>{eq.returned_at || '—'}</td>
-                        <td>
-                          {eq.status === 'assigned' && <StatusBadge intent="warning">Aktif</StatusBadge>}
-                          {eq.status === 'returned' && <StatusBadge intent="success">İade alındı</StatusBadge>}
-                          {eq.status === 'lost' && <StatusBadge intent="danger">Kayıp</StatusBadge>}
-                          {eq.status === 'damaged' && <StatusBadge intent="danger">Hasarlı</StatusBadge>}
-                        </td>
-                        <td className="text-right whitespace-nowrap">
-                          {eq.status === 'assigned' && (
-                            <Button size="sm" variant="ghost" onClick={() => returnEq(eq)} title="İade al">
-                              <RotateCcw className="w-3.5 h-3.5 text-emerald-700" />
+                {equipmentPage.loading ? (
+                  <SkeletonRow cols={5} rows={3} />
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead><tr className="text-left text-slate-500 border-b">
+                      <th className="py-2">Eşya</th><th>Tür</th><th>Seri No</th>
+                      <th>Zimmet Tarihi</th><th>İade Tarihi</th><th>Durum</th><th></th>
+                    </tr></thead>
+                    <tbody>
+                      {equipmentPage.items.map((eq) => (
+                        <tr key={eq.id} className="border-t border-slate-100">
+                          <td className="py-2 font-medium">{eq.item_label}</td>
+                          <td className="text-xs uppercase">{eq.item_type}</td>
+                          <td className="text-xs">{eq.serial_no || '—'}</td>
+                          <td>{eq.assigned_at}</td>
+                          <td>{eq.returned_at || '—'}</td>
+                          <td>
+                            {eq.status === 'assigned' && <StatusBadge intent="warning">Aktif</StatusBadge>}
+                            {eq.status === 'returned' && <StatusBadge intent="success">İade alındı</StatusBadge>}
+                            {eq.status === 'lost' && <StatusBadge intent="danger">Kayıp</StatusBadge>}
+                            {eq.status === 'damaged' && <StatusBadge intent="danger">Hasarlı</StatusBadge>}
+                          </td>
+                          <td className="text-right whitespace-nowrap">
+                            {eq.status === 'assigned' && (
+                              <Button size="sm" variant="ghost" onClick={() => returnEq(eq)} title="İade al">
+                                <RotateCcw className="w-3.5 h-3.5 text-emerald-700" />
+                              </Button>
+                            )}
+                            <Button size="sm" variant="ghost" onClick={() => deleteEq(eq)}>
+                              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                             </Button>
-                          )}
-                          <Button size="sm" variant="ghost" onClick={() => deleteEq(eq)}>
-                            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                    {equipment.items.length === 0 && (
-                      <tr><td colSpan={7} className="py-6 text-center text-slate-500">
-                        Henüz zimmet yok — üniforma, kart, telsiz, anahtar gibi tahsis edilen eşyaları kaydedin
-                      </td></tr>
-                    )}
-                  </tbody>
-                </table>
+                          </td>
+                        </tr>
+                      ))}
+                      {equipmentPage.items.length === 0 && (
+                        <tr><td colSpan={7} className="py-6 text-center text-slate-500">
+                          Henüz zimmet yok — üniforma, kart, telsiz, anahtar gibi tahsis edilen eşyaları kaydedin
+                        </td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                )}
+                {!equipmentPage.loading && equipmentPage.total > 0 && (
+                  <PaginationBar
+                    page={equipmentPage.page}
+                    totalPages={equipmentPage.totalPages}
+                    total={equipmentPage.total}
+                    limit={equipmentPage.limit}
+                    onPageChange={equipmentPage.setPage}
+                    onLimitChange={equipmentPage.setLimit}
+                  />
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1120,54 +1124,68 @@ const StaffProfile = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {warnings.error && (
+              {warningsPage.error && (
                 <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                  {warnings.error} <button onClick={loadWarnings} className="underline ml-2">Tekrar dene</button>
+                  {warningsPage.error} <button onClick={warningsPage.refresh} className="underline ml-2">Tekrar dene</button>
                 </div>
               )}
               <div className="mb-3 flex gap-2 text-xs">
-                <StatusBadge intent="info">{warnings.by_type.verbal} sözlü</StatusBadge>
-                <StatusBadge intent="warning">{warnings.by_type.written} yazılı</StatusBadge>
-                {warnings.by_type.final > 0 && <StatusBadge intent="danger">{warnings.by_type.final} son ihtar</StatusBadge>}
+                <StatusBadge intent="info">{warningsPage.meta?.by_type?.verbal || 0} sözlü</StatusBadge>
+                <StatusBadge intent="warning">{warningsPage.meta?.by_type?.written || 0} yazılı</StatusBadge>
+                {(warningsPage.meta?.by_type?.final || 0) > 0 && <StatusBadge intent="danger">{warningsPage.meta?.by_type?.final || 0} son ihtar</StatusBadge>}
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="text-left text-slate-500 border-b">
-                    <th className="py-2">Tarih</th><th>Tür</th><th>Şiddet</th>
-                    <th>Sebep</th><th>Onay</th><th></th>
-                  </tr></thead>
-                  <tbody>
-                    {warnings.items.map((w) => (
-                      <tr key={w.id} className="border-t border-slate-100">
-                        <td className="py-2">{w.issued_at}</td>
-                        <td>
-                          {w.warning_type === 'verbal' && <StatusBadge intent="info">Sözlü</StatusBadge>}
-                          {w.warning_type === 'written' && <StatusBadge intent="warning">Yazılı</StatusBadge>}
-                          {w.warning_type === 'final' && <StatusBadge intent="danger">Son ihtar</StatusBadge>}
-                        </td>
-                        <td className="text-xs uppercase">{w.severity}</td>
-                        <td className="text-xs text-slate-700 max-w-md">{w.reason}</td>
-                        <td className="text-xs">
-                          {w.acknowledged_at
-                            ? <span className="text-emerald-700">✓ {w.acknowledged_at.slice(0, 10)}</span>
-                            : <Button size="sm" variant="outline" onClick={() => ackWarn(w)}>
-                                <Check className="w-3 h-3 mr-1" />Onayla
-                              </Button>}
-                        </td>
-                        <td className="text-right">
-                          <Button size="sm" variant="ghost" onClick={() => deleteWarn(w)}>
-                            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                    {warnings.items.length === 0 && (
-                      <tr><td colSpan={6} className="py-6 text-center text-slate-500">
-                        Disiplin kaydı yok — İş K. m.25/II referansıyla sözlü/yazılı/son ihtar süreçlerini buradan yönetin
-                      </td></tr>
-                    )}
-                  </tbody>
-                </table>
+                {warningsPage.loading ? (
+                  <SkeletonRow cols={5} rows={3} />
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead><tr className="text-left text-slate-500 border-b">
+                      <th className="py-2">Tarih</th><th>Tür</th><th>Şiddet</th>
+                      <th>Sebep</th><th>Onay</th><th></th>
+                    </tr></thead>
+                    <tbody>
+                      {warningsPage.items.map((w) => (
+                        <tr key={w.id} className="border-t border-slate-100">
+                          <td className="py-2">{w.issued_at}</td>
+                          <td>
+                            {w.warning_type === 'verbal' && <StatusBadge intent="info">Sözlü</StatusBadge>}
+                            {w.warning_type === 'written' && <StatusBadge intent="warning">Yazılı</StatusBadge>}
+                            {w.warning_type === 'final' && <StatusBadge intent="danger">Son ihtar</StatusBadge>}
+                          </td>
+                          <td className="text-xs uppercase">{w.severity}</td>
+                          <td className="text-xs text-slate-700 max-w-md">{w.reason}</td>
+                          <td className="text-xs">
+                            {w.acknowledged_at
+                              ? <span className="text-emerald-700">✓ {w.acknowledged_at.slice(0, 10)}</span>
+                              : <Button size="sm" variant="outline" onClick={() => ackWarn(w)}>
+                                  <Check className="w-3 h-3 mr-1" />Onayla
+                                </Button>}
+                          </td>
+                          <td className="text-right">
+                            <Button size="sm" variant="ghost" onClick={() => deleteWarn(w)}>
+                              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                      {warningsPage.items.length === 0 && (
+                        <tr><td colSpan={6} className="py-6 text-center text-slate-500">
+                          Disiplin kaydı yok — İş K. m.25/II referansıyla sözlü/yazılı/son ihtar süreçlerini buradan yönetin
+                        </td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                )}
+                {!warningsPage.loading && warningsPage.total > 0 && (
+                  <PaginationBar
+                    page={warningsPage.page}
+                    totalPages={warningsPage.totalPages}
+                    total={warningsPage.total}
+                    limit={warningsPage.limit}
+                    onPageChange={warningsPage.setPage}
+                    onLimitChange={warningsPage.setLimit}
+                  />
+                )}
               </div>
             </CardContent>
           </Card>

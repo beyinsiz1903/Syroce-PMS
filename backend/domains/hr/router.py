@@ -326,7 +326,12 @@ def _today_local() -> date:
 
 
 async def _get_staff_map(tenant_id: str):
-    staff = await db.staff_members.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(500)
+    staff = await db.staff_members.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(2000)
+    if len(staff) == 2000:
+        logger.warning(
+            "_get_staff_map: hit 2000-row cap for tenant_id=%s; payroll/attendance aggregations may be incomplete",
+            tenant_id,
+        )
     return {member["id"]: member for member in staff}
 
 
@@ -5398,6 +5403,8 @@ async def create_salary_change(
 @router.get("/hr/staff/{staff_id}/salary-history")
 async def list_salary_history(
     staff_id: str,
+    page: int = Query(1, ge=1),
+    limit: int = Query(25, ge=1, le=200),
     current_user: User = Depends(get_current_user),
 ):
     """Maaş geçmişi — RBAC: tenant + dept scope + self-service (`_authorize_staff_access`).
@@ -5410,22 +5417,27 @@ async def list_salary_history(
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     _authorize_staff_access(staff, current_user)
+    q = {"tenant_id": current_user.tenant_id, "staff_id": staff_id}
+    total = await db.salary_history.count_documents(q)
+    skip = (page - 1) * limit
     items = (
-        await db.salary_history.find(
-            {
-                "tenant_id": current_user.tenant_id,
-                "staff_id": staff_id,
-            },
-            {"_id": 0},
-        )
+        await db.salary_history.find(q, {"_id": 0})
         .sort("effective_date", -1)
-        .to_list(500)
+        .skip(skip)
+        .limit(limit)
+        .to_list(limit)
     )
     # v2 Foundation: maaş alanları rol-bazlı maskelenir — sadece manage_hr unmask.
     self_id = str(getattr(current_user, "id", "") or "")
     self_email = str(getattr(current_user, "email", "") or "")
     masked = [_mask_hr_pii(it, current_user, self_id=self_id, self_email=self_email) or it for it in items]
-    return {"items": masked, "total": len(masked)}
+    return {
+        "items": masked,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": max(1, -(-total // limit)),
+    }
 
 
 # ============= 4. İşten Ayrılma Süreci =============
@@ -5638,27 +5650,37 @@ async def add_certification(
 @router.get("/hr/staff/{staff_id}/certifications")
 async def list_staff_certifications(
     staff_id: str,
+    page: int = Query(1, ge=1),
+    limit: int = Query(25, ge=1, le=200),
     current_user: User = Depends(get_current_user),
 ):
     staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     _authorize_staff_access(staff, current_user)
+    q = {"tenant_id": current_user.tenant_id, "staff_id": staff_id}
+    total = await db.staff_certifications.count_documents(q)
+    skip = (page - 1) * limit
     items = (
-        await db.staff_certifications.find(
-            {
-                "tenant_id": current_user.tenant_id,
-                "staff_id": staff_id,
-            },
-            {"_id": 0},
-        )
+        await db.staff_certifications.find(q, {"_id": 0})
         .sort("issue_date", -1)
-        .to_list(500)
+        .skip(skip)
+        .limit(limit)
+        .to_list(limit)
     )
     today = _today_local().isoformat()
-    expiring = sum(1 for it in items if it.get("expiry_date") and it["expiry_date"] >= today)
-    expired = sum(1 for it in items if it.get("expiry_date") and it["expiry_date"] < today)
-    return {"items": items, "total": len(items), "active": expiring, "expired": expired}
+    # Aggregate counts reflect the full dataset, not just the current page
+    active_total = await db.staff_certifications.count_documents({**q, "expiry_date": {"$gte": today}})
+    expired_total = await db.staff_certifications.count_documents({**q, "expiry_date": {"$lt": today}})
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": max(1, -(-total // limit)),
+        "active": active_total,
+        "expired": expired_total,
+    }
 
 
 @router.delete("/hr/certifications/{cert_id}")
@@ -5807,6 +5829,8 @@ async def upload_staff_document(
 @router.get("/hr/staff/{staff_id}/documents")
 async def list_staff_documents(
     staff_id: str,
+    page: int = Query(1, ge=1),
+    limit: int = Query(25, ge=1, le=200),
     current_user: User = Depends(get_current_user),
 ):
     """Personel belge listesi — RBAC: dept scope + self bypass."""
@@ -5814,15 +5838,23 @@ async def list_staff_documents(
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     _authorize_staff_access(staff, current_user)
+    q = {"tenant_id": current_user.tenant_id, "staff_id": staff_id}
+    total = await db.staff_documents.count_documents(q)
+    skip = (page - 1) * limit
     items = (
-        await db.staff_documents.find(
-            {"tenant_id": current_user.tenant_id, "staff_id": staff_id},
-            {"_id": 0, "data_b64": 0},  # Legacy binary alanı liste yanıtında olmasın
-        )
+        await db.staff_documents.find(q, {"_id": 0, "data_b64": 0})  # Legacy binary alanı liste yanıtında olmasın
         .sort("uploaded_at", -1)
-        .to_list(500)
+        .skip(skip)
+        .limit(limit)
+        .to_list(limit)
     )
-    return {"items": items, "total": len(items)}
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": max(1, -(-total // limit)),
+    }
 
 
 @router.get("/hr/documents/{doc_id}/download")
@@ -6856,6 +6888,8 @@ async def assign_equipment(
 async def list_staff_equipment(
     staff_id: str,
     status: str | None = Query(None, max_length=20),
+    page: int = Query(1, ge=1),
+    limit: int = Query(25, ge=1, le=200),
     current_user: User = Depends(get_current_user),
 ):
     """Personelin zimmet listesi — RBAC: dept scope + self bypass."""
@@ -6868,11 +6902,29 @@ async def list_staff_equipment(
         if status not in EQUIPMENT_STATUSES:
             raise HTTPException(status_code=400, detail=f"Geçersiz durum. İzinli: {sorted(EQUIPMENT_STATUSES)}")
         q["status"] = status
-    items = await db.staff_equipment.find(q, {"_id": 0}).sort("assigned_at", -1).to_list(500)
-    active = sum(1 for it in items if it.get("status") == "assigned")
-    returned = sum(1 for it in items if it.get("status") == "returned")
-    lost = sum(1 for it in items if it.get("status") in ("lost", "damaged"))
-    return {"items": items, "total": len(items), "active": active, "returned": returned, "lost_or_damaged": lost}
+    total = await db.staff_equipment.count_documents(q)
+    skip = (page - 1) * limit
+    items = (
+        await db.staff_equipment.find(q, {"_id": 0})
+        .sort("assigned_at", -1)
+        .skip(skip)
+        .limit(limit)
+        .to_list(limit)
+    )
+    base_q = {"tenant_id": current_user.tenant_id, "staff_id": staff_id}
+    active = await db.staff_equipment.count_documents({**base_q, "status": "assigned"})
+    returned = await db.staff_equipment.count_documents({**base_q, "status": "returned"})
+    lost = await db.staff_equipment.count_documents({**base_q, "status": {"$in": ["lost", "damaged"]}})
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": max(1, -(-total // limit)),
+        "active": active,
+        "returned": returned,
+        "lost_or_damaged": lost,
+    }
 
 
 @router.post("/hr/equipment/{equipment_id}/return")
@@ -7035,6 +7087,8 @@ async def add_warning(
 @router.get("/hr/staff/{staff_id}/warnings")
 async def list_staff_warnings(
     staff_id: str,
+    page: int = Query(1, ge=1),
+    limit: int = Query(25, ge=1, le=200),
     current_user: User = Depends(get_current_user),
 ):
     """Personel uyarı geçmişi — RBAC: dept scope + self bypass (kendi sicilini görür)."""
@@ -7042,23 +7096,28 @@ async def list_staff_warnings(
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     _authorize_staff_access(staff, current_user)
+    q = {"tenant_id": current_user.tenant_id, "staff_id": staff_id}
+    total = await db.staff_warnings.count_documents(q)
+    skip = (page - 1) * limit
     items = (
-        await db.staff_warnings.find(
-            {
-                "tenant_id": current_user.tenant_id,
-                "staff_id": staff_id,
-            },
-            {"_id": 0},
-        )
+        await db.staff_warnings.find(q, {"_id": 0})
         .sort("issued_at", -1)
-        .to_list(500)
+        .skip(skip)
+        .limit(limit)
+        .to_list(limit)
     )
-    by_type = {"verbal": 0, "written": 0, "final": 0}
-    for it in items:
-        wt = it.get("warning_type")
-        if wt in by_type:
-            by_type[wt] += 1
-    return {"items": items, "total": len(items), "by_type": by_type}
+    # by_type reflects full dataset counts
+    verbal = await db.staff_warnings.count_documents({**q, "warning_type": "verbal"})
+    written = await db.staff_warnings.count_documents({**q, "warning_type": "written"})
+    final = await db.staff_warnings.count_documents({**q, "warning_type": "final"})
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": max(1, -(-total // limit)),
+        "by_type": {"verbal": verbal, "written": written, "final": final},
+    }
 
 
 @router.post("/hr/warnings/{warning_id}/acknowledge")
@@ -7228,6 +7287,8 @@ async def add_training(
 @router.get("/hr/staff/{staff_id}/trainings")
 async def list_staff_trainings(
     staff_id: str,
+    page: int = Query(1, ge=1),
+    limit: int = Query(25, ge=1, le=200),
     current_user: User = Depends(get_current_user),
 ):
     """Personel eğitim geçmişi + bitmek üzere olan eğitim sayısı."""
@@ -7235,21 +7296,29 @@ async def list_staff_trainings(
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     _authorize_staff_access(staff, current_user)
+    q = {"tenant_id": current_user.tenant_id, "staff_id": staff_id}
+    total = await db.staff_trainings.count_documents(q)
+    skip = (page - 1) * limit
     items = (
-        await db.staff_trainings.find(
-            {
-                "tenant_id": current_user.tenant_id,
-                "staff_id": staff_id,
-            },
-            {"_id": 0},
-        )
+        await db.staff_trainings.find(q, {"_id": 0})
         .sort("completed_at", -1)
-        .to_list(500)
+        .skip(skip)
+        .limit(limit)
+        .to_list(limit)
     )
     today = _today_local().isoformat()
-    expired = sum(1 for it in items if it.get("valid_until") and it["valid_until"] < today)
-    valid = sum(1 for it in items if not it.get("valid_until") or it["valid_until"] >= today)
-    return {"items": items, "total": len(items), "valid": valid, "expired": expired}
+    # valid/expired counts reflect full dataset, not just current page
+    expired_total = await db.staff_trainings.count_documents({**q, "valid_until": {"$lt": today, "$exists": True}})
+    valid_total = total - expired_total
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": max(1, -(-total // limit)),
+        "valid": valid_total,
+        "expired": expired_total,
+    }
 
 
 @router.delete("/hr/trainings/{training_id}")
