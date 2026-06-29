@@ -245,7 +245,7 @@ export default function IntegrationObservabilityDashboard() {
                         ) : driftStates.map((drift, i) => (
                           <tr key={i}>
                             <td className="px-4 py-2 capitalize">{drift.provider}</td>
-                            <td className="px-4 py-2 whitespace-nowrap">{drift.date}</td>
+                            <td className="px-4 py-2 whitespace-nowrap">{drift.date || drift.date_from || '-'}</td>
                             <td className="px-4 py-2">
                               {drift.drift_type === "credentials_missing" ? (
                                 <Badge className="bg-red-500/10 text-red-500">Credentials Missing</Badge>
