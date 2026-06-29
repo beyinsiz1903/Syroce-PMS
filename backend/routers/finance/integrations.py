@@ -347,9 +347,36 @@ async def sync_with_netsis(
 
 
 @router.get("/finance/integration/logs")
-async def get_integration_logs(limit: int = 20, current_user: User = Depends(get_current_user)):
-    logs = await db.accounting_sync_logs.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
-    return {"logs": logs, "count": len(logs)}
+async def get_integration_logs(
+    page: int = 1,
+    limit: int = 20,
+    provider: str | None = None,
+    status: str | None = None,
+    current_user: User = Depends(get_current_user)
+):
+    if limit > 100:
+        limit = 100
+    skip = (page - 1) * limit
+
+    query = {"tenant_id": current_user.tenant_id}
+    if provider:
+        query["provider"] = provider
+    if status:
+        query["status"] = status
+
+    total = await db.accounting_sync_logs.count_documents(query)
+    logs = await db.accounting_sync_logs.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+
+    total_pages = (total + limit - 1) // limit if limit > 0 else 0
+
+    return {
+        "logs": logs,
+        "count": len(logs),
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": total_pages
+    }
 
 
 @router.get("/finance/budget-vs-actual")

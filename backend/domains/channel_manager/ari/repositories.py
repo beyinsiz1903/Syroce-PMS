@@ -282,14 +282,18 @@ async def get_drift_states(
     provider: str | None = None,
     drift_only: bool = False,
     limit: int = 50,
-) -> list[dict]:
+    skip: int = 0,
+) -> tuple[list[dict], int]:
     query: dict[str, Any] = {"tenant_id": tenant_id, "property_id": property_id}
     if provider:
         query["provider"] = provider
     if drift_only:
         query["drift_detected"] = True
-    cursor = db[COLL_ARI_DRIFT_STATE].find(query, {"_id": 0}).sort("last_checked_at", -1).limit(limit)
-    return await cursor.to_list(length=limit)
+
+    total = await db[COLL_ARI_DRIFT_STATE].count_documents(query)
+    cursor = db[COLL_ARI_DRIFT_STATE].find(query, {"_id": 0}).sort("last_checked_at", -1).skip(skip).limit(limit)
+    states = await cursor.to_list(length=limit)
+    return states, total
 
 
 # ── Per-Tenant Drift Mode ────────────────────────────────────────────

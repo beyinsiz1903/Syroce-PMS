@@ -2,7 +2,7 @@ import {
   DataPipelineDashboard, EventBusDashboard, SystemHealthDashboard,
   ObservabilityDashboard, SecurityHub, RuntimeInfrastructureDashboard,
   InfraHardeningDashboard, ProductionGoLiveDashboard, PlatformScalingDashboard,
-  PIIStrictModeDashboard,
+  PIIStrictModeDashboard, IntegrationObservabilityDashboard,
 } from "./lazyPages";
 
 export function infrastructureRoutes({ p }) {
@@ -11,6 +11,7 @@ export function infrastructureRoutes({ p }) {
     { path: "/event-bus", ...p(EventBusDashboard) },
     { path: "/system-health", ...p(SystemHealthDashboard), wrapLayout: true, layoutModule: "system_health" },
     { path: "/observability", ...p(ObservabilityDashboard) },
+    { path: "/integration-observability", ...p(IntegrationObservabilityDashboard), wrapLayout: true },
     { path: "/security-hardening", type: "redirect", to: "/security?tab=hardening" },
     { path: "/security", ...p(SecurityHub), wrapLayout: true, layoutModule: "security" },
     { path: "/app/security", ...p(SecurityHub), wrapLayout: true, layoutModule: "security" },

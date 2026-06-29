@@ -222,12 +222,13 @@ async def list_drift_states(
     provider: str | None = None,
     drift_only: bool = False,
     limit: int = Query(50, le=200),
+    skip: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),
 ):
     eff_tid, eff_pid = _resolve_scope(current_user, tenant_id, property_id)
-    states = await repo.get_drift_states(eff_tid, eff_pid, provider, drift_only, limit)
-    return {"drift_states": states, "count": len(states)}
+    states, total = await repo.get_drift_states(eff_tid, eff_pid, provider, drift_only, limit, skip)
+    return {"drift_states": states, "count": len(states), "total": total, "skip": skip, "limit": limit}
 
 
 @router.post("/drift/check")
