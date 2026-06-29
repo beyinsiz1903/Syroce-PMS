@@ -300,3 +300,51 @@ async def test_partial_transfer_compensation(fake_db, monkeypatch):
     t2_tx = await fake_db.pos_transactions.find_one({"table_number": "T2", "tenant_id": "tenant1"})
     assert t2_tx is None
 
+
+@pytest.mark.asyncio
+async def test_partial_transfer_existing_target_compensation(fake_db, monkeypatch):
+    # Pre-create a target transaction for T2
+    await fake_db.pos_transactions.insert_one({
+        "_id": "target_1",
+        "id": "target_uuid_1",
+        "tenant_id": "tenant1",
+        "outlet_id": "out1",
+        "table_number": "T2",
+        "status": "open",
+        "items": [
+            {"item_id": "i1", "name": "Burger", "price": 100, "quantity": 1, "tax_amount": 9}
+        ],
+        "total_amount": 109,
+    })
+
+    monkeypatch.setattr(pos_core, "db", fake_db)
+    
+    # We want source update to fail.
+    original_update_one = fake_db.pos_transactions.update_one
+    async def mock_update_one(flt, update, session=None, upsert=False):
+        if flt.get("table_number") == "T1" or flt.get("_id") == "src_1":
+            return SimpleNamespace(modified_count=0, matched_count=0)
+        return await original_update_one(flt, update, session, upsert)
+        
+    monkeypatch.setattr(fake_db.pos_transactions, "update_one", mock_update_one)
+    
+    with pytest.raises(HTTPException) as exc:
+        await pos_core.transfer_table(
+            from_table="T1",
+            to_table="T2",
+            outlet_id="out1",
+            transfer_all=False,
+            items_to_transfer=[1],  # Coke
+            current_user=await _fake_user(),
+            _perm=None
+        )
+    assert exc.value.status_code == 409
+    assert "Operation aborted and compensated" in exc.value.detail
+    
+    # Check that T2 items list and total amount are reverted back to original (Burger only, total_amount=109)
+    t2_tx = await fake_db.pos_transactions.find_one({"id": "target_uuid_1"})
+    assert len(t2_tx["items"]) == 1
+    assert t2_tx["items"][0]["item_id"] == "i1"
+    assert t2_tx["total_amount"] == 109
+
+

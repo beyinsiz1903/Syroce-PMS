@@ -144,3 +144,31 @@ async def test_approve_orders_payload(mock_get_db, mock_place_order, override_de
     assert response.json()["success"] is True
     assert mock_place_order.call_count == 1
     mock_db.procurement_b2b_replenishments.insert_one.assert_called_once()
+
+
+@patch("routers.procurement_b2b.get_system_db")
+@pytest.mark.asyncio
+async def test_get_proposals_malformed_db_data(mock_get_db, override_deps):
+    from unittest.mock import MagicMock
+    mock_db = MagicMock()
+    mock_get_db.return_value = mock_db
+    
+    mock_db.inventory_items = MagicMock()
+    mock_db.mp_products = MagicMock()
+    
+    # 1. Return item with missing SKU/name fields
+    mock_inventory_cursor = AsyncMock()
+    mock_inventory_cursor.to_list.return_value = [
+        {
+            "id": "item-2",
+            "tenant_id": "tenant-1"
+            # SKU and name are missing
+        }
+    ]
+    mock_db.inventory_items.find.return_value = mock_inventory_cursor
+    
+    response = client.get("/api/procurement/b2b/proposals")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["proposals"] == []
+

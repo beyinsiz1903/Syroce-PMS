@@ -36,12 +36,16 @@ const ProcurementB2BTab = () => {
     // Collect all lines across all vendors
     const lines = [];
     proposals.forEach(vendor => {
-      vendor.lines.forEach(item => {
-        lines.push({
-          inventory_item_id: item.inventory_item_id,
-          mp_product_id: item.mp_product_id,
-          quantity: item.proposed_qty
-        });
+      const vendorLines = Array.isArray(vendor.lines) ? vendor.lines : [];
+      vendorLines.forEach(item => {
+        const qty = Number(item.proposed_qty || 0);
+        if (qty > 0) {
+          lines.push({
+            inventory_item_id: item.inventory_item_id,
+            mp_product_id: item.mp_product_id,
+            quantity: qty
+          });
+        }
       });
     });
 
@@ -114,20 +118,26 @@ const ProcurementB2BTab = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {vendor.lines.map((item, idx) => (
-                        <tr key={idx} className="border-b last:border-0">
-                          <td className="py-2 font-mono text-xs">{item.sku}</td>
-                          <td className="py-2 font-medium">{item.name}</td>
-                          <td className="py-2 text-red-600">{item.reorder_level - item.current_stock > 0 ? (item.reorder_level - item.current_stock).toFixed(0) : 0} {item.unit}</td>
-                          <td className="py-2 text-indigo-600 font-semibold">{item.proposed_qty} {item.unit}</td>
-                          <td className="py-2 text-right">{item.unit_price} ₺</td>
-                          <td className="py-2 text-right font-medium">{item.total_price.toFixed(2)} ₺</td>
-                        </tr>
-                      ))}
+                      {(() => {
+                        const vendorLines = Array.isArray(vendor.lines) ? vendor.lines : [];
+                        return vendorLines.map((item, idx) => (
+                          <tr key={idx} className="border-b last:border-0">
+                            <td className="py-2 font-mono text-xs">{item.sku}</td>
+                            <td className="py-2 font-medium">{item.name}</td>
+                            <td className="py-2 text-red-600">{Number(item.reorder_level || 0) - Number(item.current_stock || 0) > 0 ? (Number(item.reorder_level || 0) - Number(item.current_stock || 0)).toFixed(0) : 0} {item.unit}</td>
+                            <td className="py-2 text-indigo-600 font-semibold">{Number(item.proposed_qty || 0)} {item.unit}</td>
+                            <td className="py-2 text-right">{item.unit_price} ₺</td>
+                            <td className="py-2 text-right font-medium">{Number(item.total_price || 0).toFixed(2)} ₺</td>
+                          </tr>
+                        ));
+                      })()}
                     </tbody>
                   </table>
                   <div className="mt-3 text-right text-sm font-bold text-gray-800 bg-gray-50 p-2 rounded">
-                    Tedarikçi Ara Toplam: {vendor.lines.reduce((sum, item) => sum + item.total_price, 0).toFixed(2)} ₺
+                    Tedarikçi Ara Toplam: {(() => {
+                      const vendorLines = Array.isArray(vendor.lines) ? vendor.lines : [];
+                      return vendorLines.reduce((sum, item) => sum + Number(item.total_price || 0), 0).toFixed(2);
+                    })()} ₺
                   </div>
                 </div>
               ))}

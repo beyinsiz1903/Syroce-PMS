@@ -1170,11 +1170,13 @@ async def transfer_table(
 
             target_id = None
             if target_transaction:
+                import copy
+
                 target_updated = True
-                old_target_items = target_transaction.get("items", [])
+                old_target_items = copy.deepcopy(target_transaction.get("items", []))
                 old_target_total = target_transaction.get("total_amount", 0.0)
 
-                target_items = target_transaction.get("items", [])
+                target_items = copy.deepcopy(old_target_items)
                 for t_item in transferred_items:
                     merged = False
                     if t_item.get("item_id"):
