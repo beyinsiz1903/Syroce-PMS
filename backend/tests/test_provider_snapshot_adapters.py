@@ -164,6 +164,7 @@ async def test_exely_snapshot_golden_path(mock_transport_class):
         "username": "exely_user",
         "password": "exely_password",
         "hotel_code": "exely_hotel_999",
+        "api_url": "https://pmsconnect.prod.hopenapi.com/api/PMSConnect.svc",
     }
     result = await adapter.fetch_snapshot(
         "tenant-1", "prop-1", creds, date_from="2026-06-29", date_to="2026-06-30"
@@ -217,6 +218,7 @@ async def test_exely_snapshot_soap_fault(mock_transport_class):
         "username": "exely_user",
         "password": "exely_password",
         "hotel_code": "exely_hotel_999",
+        "api_url": "https://pmsconnect.prod.hopenapi.com/api/PMSConnect.svc",
     }
     with pytest.raises(ProviderSnapshotUnavailable) as exc:
         await adapter.fetch_snapshot(
@@ -247,6 +249,7 @@ async def test_exely_snapshot_ota_errors(mock_transport_class):
         "username": "exely_user",
         "password": "exely_password",
         "hotel_code": "exely_hotel_999",
+        "api_url": "https://pmsconnect.prod.hopenapi.com/api/PMSConnect.svc",
     }
     with pytest.raises(ProviderSnapshotUnavailable) as exc:
         await adapter.fetch_snapshot(
@@ -318,3 +321,187 @@ async def test_drift_check_router_provider_unavailable(
     saved_state = mock_repo.upsert_drift_state.call_args[0][0]
     assert saved_state["drift_type"] == "provider_unavailable"
     assert saved_state["room_type_code"] == "SYSTEM"
+
+
+# ── Sprint 2A.1 Hardening Tests ───────────────────────────────────────
+
+
+@patch("domains.channel_manager.providers.hotelrunner.snapshot_adapter.HotelRunnerHttpClient")
+@pytest.mark.asyncio
+async def test_hotelrunner_malformed_quantity_raises_unavailable(mock_client_class):
+    """qty='not-a-number' in availability response → ProviderSnapshotUnavailable."""
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock()
+    mock_client_class.return_value = mock_client
+    mock_client.close = AsyncMock()
+
+    mock_client.get.side_effect = [
+        HttpResult(
+            success=True,
+            status_code=200,
+            data={"availability": [{"room_code": "STD", "date": "2026-06-29", "quantity": "not-a-number"}]},
+        ),
+        HttpResult(
+            success=True,
+            status_code=200,
+            data={"rates": [{"room_code": "STD", "date": "2026-06-29", "rate_code": "BAR", "price": 1500, "min_stay": 1, "stop_sell": False}]},
+        ),
+    ]
+
+    adapter = HotelRunnerSnapshotAdapter()
+    creds = {"token": "valid_token", "hr_id": "valid_hr_id"}
+    with pytest.raises(ProviderSnapshotUnavailable) as exc:
+        await adapter.fetch_snapshot("tenant-1", "prop-1", creds, date_from="2026-06-29", date_to="2026-06-30")
+    assert "quantity" in str(exc.value)
+
+
+@patch("domains.channel_manager.providers.hotelrunner.snapshot_adapter.HotelRunnerHttpClient")
+@pytest.mark.asyncio
+async def test_hotelrunner_malformed_price_raises_unavailable(mock_client_class):
+    """price='bad_price' in rates response → ProviderSnapshotUnavailable."""
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock()
+    mock_client_class.return_value = mock_client
+    mock_client.close = AsyncMock()
+
+    mock_client.get.side_effect = [
+        HttpResult(
+            success=True,
+            status_code=200,
+            data={"availability": [{"room_code": "STD", "date": "2026-06-29", "quantity": 5}]},
+        ),
+        HttpResult(
+            success=True,
+            status_code=200,
+            data={"rates": [{"room_code": "STD", "date": "2026-06-29", "rate_code": "BAR", "price": "bad_price", "min_stay": 1, "stop_sell": False}]},
+        ),
+    ]
+
+    adapter = HotelRunnerSnapshotAdapter()
+    creds = {"token": "valid_token", "hr_id": "valid_hr_id"}
+    with pytest.raises(ProviderSnapshotUnavailable) as exc:
+        await adapter.fetch_snapshot("tenant-1", "prop-1", creds, date_from="2026-06-29", date_to="2026-06-30")
+    assert "price" in str(exc.value)
+
+
+@patch("domains.channel_manager.providers.hotelrunner.snapshot_adapter.HotelRunnerHttpClient")
+@pytest.mark.asyncio
+async def test_hotelrunner_malformed_bool_stop_sell_raises_unavailable(mock_client_class):
+    """stop_sell='garbage' (not bool-compatible string) → ProviderSnapshotUnavailable."""
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock()
+    mock_client_class.return_value = mock_client
+    mock_client.close = AsyncMock()
+
+    mock_client.get.side_effect = [
+        HttpResult(
+            success=True,
+            status_code=200,
+            data={"availability": [{"room_code": "STD", "date": "2026-06-29", "quantity": 5}]},
+        ),
+        HttpResult(
+            success=True,
+            status_code=200,
+            data={"rates": [{"room_code": "STD", "date": "2026-06-29", "rate_code": "BAR", "price": 1500, "min_stay": 1, "stop_sell": "garbage"}]},
+        ),
+    ]
+
+    adapter = HotelRunnerSnapshotAdapter()
+    creds = {"token": "valid_token", "hr_id": "valid_hr_id"}
+    with pytest.raises(ProviderSnapshotUnavailable) as exc:
+        await adapter.fetch_snapshot("tenant-1", "prop-1", creds, date_from="2026-06-29", date_to="2026-06-30")
+    assert "stop_sell" in str(exc.value)
+
+
+@patch("domains.channel_manager.providers.hotelrunner.snapshot_adapter.HotelRunnerHttpClient")
+@pytest.mark.asyncio
+async def test_hotelrunner_string_false_stop_sell_parses_correctly(mock_client_class):
+    """stop_sell='false' (string) must parse to False, not True (as naive bool() would)."""
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock()
+    mock_client_class.return_value = mock_client
+    mock_client.close = AsyncMock()
+
+    mock_client.get.side_effect = [
+        HttpResult(
+            success=True,
+            status_code=200,
+            data={"availability": [{"room_code": "STD", "date": "2026-06-29", "quantity": 5}]},
+        ),
+        HttpResult(
+            success=True,
+            status_code=200,
+            data={"rates": [{"room_code": "STD", "date": "2026-06-29", "rate_code": "BAR", "price": 1500, "min_stay": 1, "stop_sell": "false"}]},
+        ),
+    ]
+
+    adapter = HotelRunnerSnapshotAdapter()
+    creds = {"token": "valid_token", "hr_id": "valid_hr_id"}
+    result = await adapter.fetch_snapshot("tenant-1", "prop-1", creds, date_from="2026-06-29", date_to="2026-06-30")
+    assert result[0]["restrictions"]["stop_sell"] is False
+
+
+@patch("domains.channel_manager.providers.hotelrunner.snapshot_adapter.HotelRunnerHttpClient")
+@pytest.mark.asyncio
+async def test_hotelrunner_empty_snapshot_raises_unavailable(mock_client_class):
+    """Valid HTTP response but no rates data → ProviderSnapshotUnavailable."""
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock()
+    mock_client_class.return_value = mock_client
+    mock_client.close = AsyncMock()
+
+    mock_client.get.side_effect = [
+        HttpResult(success=True, status_code=200, data={"availability": []}),
+        HttpResult(success=True, status_code=200, data={"rates": []}),
+    ]
+
+    adapter = HotelRunnerSnapshotAdapter()
+    creds = {"token": "valid_token", "hr_id": "valid_hr_id"}
+    with pytest.raises(ProviderSnapshotUnavailable) as exc:
+        await adapter.fetch_snapshot("tenant-1", "prop-1", creds, date_from="2026-06-29", date_to="2026-06-30")
+    assert "empty ARI snapshot" in str(exc.value)
+    assert "refusing to clear drift state" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_exely_missing_api_url_raises_credentials_missing():
+    """Exely credentials without api_url → CredentialsMissing (no test-endpoint fallback)."""
+    adapter = ExelySnapshotAdapter()
+    creds = {
+        "username": "exely_user",
+        "password": "exely_password",
+        "hotel_code": "exely_hotel_999",
+        # api_url intentionally absent
+    }
+    with pytest.raises(CredentialsMissing) as exc:
+        await adapter.fetch_snapshot("tenant-1", "prop-1", creds, date_from="2026-06-29", date_to="2026-06-30")
+    assert "api_url" in str(exc.value)
+
+
+@patch("domains.channel_manager.providers.exely.snapshot_adapter.ExelySoapTransport")
+@pytest.mark.asyncio
+async def test_exely_empty_snapshot_raises_unavailable(mock_transport_class):
+    """Exely response parses successfully but RoomStays contains no usable RoomRate → ProviderSnapshotUnavailable."""
+    mock_transport = MagicMock()
+    mock_transport_class.return_value = mock_transport
+
+    empty_rs_xml = """<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+      <soapenv:Body>
+        <OTA_HotelAvailRS xmlns="http://www.opentravel.org/OTA/2003/05" Version="1.0">
+          <RoomStays/>
+        </OTA_HotelAvailRS>
+      </soapenv:Body>
+    </soapenv:Envelope>"""
+    mock_transport.send_soap = AsyncMock(return_value=empty_rs_xml.encode("utf-8"))
+
+    adapter = ExelySnapshotAdapter()
+    creds = {
+        "username": "exely_user",
+        "password": "exely_password",
+        "hotel_code": "exely_hotel_999",
+        "api_url": "https://pmsconnect.prod.hopenapi.com/api/PMSConnect.svc",
+    }
+    with pytest.raises(ProviderSnapshotUnavailable) as exc:
+        await adapter.fetch_snapshot("tenant-1", "prop-1", creds, date_from="2026-06-29", date_to="2026-06-30")
+    assert "empty ARI snapshot" in str(exc.value)
+    assert "refusing to clear drift state" in str(exc.value)

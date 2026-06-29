@@ -30,7 +30,9 @@ class ExelySnapshotAdapter(ProviderSnapshotAdapter):
         if not username or not password or not hotel_code:
             raise CredentialsMissing("Exely credentials 'username', 'password', and 'hotel_code' are required.")
 
-        endpoint_url = credentials.get("api_url") or "https://pmsconnect.test.hopenapi.com/api/PMSConnect.svc"
+        endpoint_url = credentials.get("api_url")
+        if not endpoint_url:
+            raise CredentialsMissing("Exely credential 'api_url' is required; refusing to fall back to test endpoint in production.")
 
         try:
             transport = ExelySoapTransport(endpoint_url=endpoint_url)
@@ -145,5 +147,8 @@ class ExelySnapshotAdapter(ProviderSnapshotAdapter):
                                     }
                                 )
                                 curr_dt += timedelta(days=1)
+
+        if not normalized:
+            raise ProviderSnapshotUnavailable("Exely returned an empty ARI snapshot; refusing to clear drift state.")
 
         return normalized

@@ -11,6 +11,38 @@ from domains.channel_manager.providers.hotelrunner.client import HotelRunnerHttp
 logger = logging.getLogger("hotelrunner.snapshot_adapter")
 
 
+def _parse_int(value, field_name: str) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (ValueError, TypeError) as e:
+        raise ProviderSnapshotUnavailable(f"Malformed HotelRunner field '{field_name}': expected int, got {value!r}") from e
+
+
+def _parse_float(value, field_name: str) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError) as e:
+        raise ProviderSnapshotUnavailable(f"Malformed HotelRunner field '{field_name}': expected float, got {value!r}") from e
+
+
+def _parse_bool(value, field_name: str) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "1", "yes", "y"}:
+            return True
+        if lowered in {"false", "0", "no", "n"}:
+            return False
+    raise ProviderSnapshotUnavailable(f"Malformed HotelRunner field '{field_name}': expected boolean-compatible value, got {value!r}")
+
+
 class HotelRunnerSnapshotAdapter(ProviderSnapshotAdapter):
     async def fetch_snapshot(
         self,
@@ -58,7 +90,7 @@ class HotelRunnerSnapshotAdapter(ProviderSnapshotAdapter):
             dt = item.get("date")
             qty = item.get("quantity")
             if rc and dt:
-                avail_map[(rc, dt)] = int(qty) if qty is not None else None
+                avail_map[(rc, dt)] = _parse_int(qty, "quantity")
 
         normalized = []
         for rate_item in rates_data.get("rates", []):
@@ -68,21 +100,21 @@ class HotelRunnerSnapshotAdapter(ProviderSnapshotAdapter):
             if not rc or not dt or not rate_code:
                 continue
 
-            price = rate_item.get("price")
-            min_stay = rate_item.get("min_stay")
-            stop_sell = rate_item.get("stop_sell")
-
-            qty = avail_map.get((rc, dt))
-
             normalized.append(
                 {
                     "room_type_code": str(rc),
                     "rate_plan_code": str(rate_code),
                     "date": str(dt),
-                    "availability": qty,
-                    "rate": float(price) if price is not None else None,
-                    "restrictions": {"min_stay_through": int(min_stay) if min_stay is not None else None, "stop_sell": bool(stop_sell) if stop_sell is not None else None},
+                    "availability": avail_map.get((rc, dt)),
+                    "rate": _parse_float(rate_item.get("price"), "price"),
+                    "restrictions": {
+                        "min_stay_through": _parse_int(rate_item.get("min_stay"), "min_stay"),
+                        "stop_sell": _parse_bool(rate_item.get("stop_sell"), "stop_sell"),
+                    },
                 }
             )
+
+        if not normalized:
+            raise ProviderSnapshotUnavailable("HotelRunner returned an empty ARI snapshot; refusing to clear drift state.")
 
         return normalized
