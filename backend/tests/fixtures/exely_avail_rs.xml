@@ -1,0 +1,58 @@
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <OTA_HotelAvailRS xmlns="http://www.opentravel.org/OTA/2003/05" Version="1.0">
+      <RoomStays>
+        <RoomStay>
+          <RoomTypes>
+            <RoomType RoomTypeCode="STD"/>
+          </RoomTypes>
+          <RatePlans>
+            <RatePlan RatePlanCode="BAR"/>
+          </RatePlans>
+          <RoomRates>
+            <RoomRate RoomTypeCode="STD" RatePlanCode="BAR">
+              <Rates>
+                <Rate Start="2026-06-29" End="2026-06-30">
+                  <BaseByGuestAmts>
+                    <BaseByGuestAmt AmountBeforeTax="1500.0" CurrencyCode="TRY"/>
+                  </BaseByGuestAmts>
+                  <AdditionalGuestAmounts>
+                    <AdditionalGuestAmount MinStay="2" StopSell="false"/>
+                  </AdditionalGuestAmounts>
+                </Rate>
+              </Rates>
+            </RoomRate>
+          </RoomRates>
+          <Availability>
+            <Qty RoomTypeCode="STD" Date="2026-06-29">5</Qty>
+          </Availability>
+        </RoomStay>
+        <RoomStay>
+          <RoomTypes>
+            <RoomType RoomTypeCode="DLX"/>
+          </RoomTypes>
+          <RatePlans>
+            <RatePlan RatePlanCode="BAR"/>
+          </RatePlans>
+          <RoomRates>
+            <RoomRate RoomTypeCode="DLX" RatePlanCode="BAR">
+              <Rates>
+                <Rate Start="2026-06-29" End="2026-06-30">
+                  <BaseByGuestAmts>
+                    <BaseByGuestAmt AmountBeforeTax="2500.0" CurrencyCode="TRY"/>
+                  </BaseByGuestAmts>
+                  <AdditionalGuestAmounts>
+                    <AdditionalGuestAmount MinStay="1" StopSell="false"/>
+                  </AdditionalGuestAmounts>
+                </Rate>
+              </Rates>
+            </RoomRate>
+          </RoomRates>
+          <Availability>
+            <Qty RoomTypeCode="DLX" Date="2026-06-29">3</Qty>
+          </Availability>
+        </RoomStay>
+      </RoomStays>
+    </OTA_HotelAvailRS>
+  </soapenv:Body>
+</soapenv:Envelope>
