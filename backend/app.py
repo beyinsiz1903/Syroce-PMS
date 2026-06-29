@@ -16,6 +16,8 @@ from fastapi.responses import FileResponse, ORJSONResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 
+from security.env_guard import enforce_production_safety_gate
+
 # ── Lifespan registry ────────────────────────────────────────────────
 # Modules import `register_startup` / `register_shutdown` to schedule
 # coroutines that should run during the FastAPI lifespan. Replaces the
@@ -177,6 +179,8 @@ class _CachedStaticFiles(StaticFiles):
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application instance."""
+    
+    enforce_production_safety_gate()
 
     application = FastAPI(
         lifespan=_lifespan,
