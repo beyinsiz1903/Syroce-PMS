@@ -139,6 +139,13 @@ function App() {
     localStorage.setItem("token_ts", String(Date.now()));
     localStorage.setItem("tenant", tenantData ? JSON.stringify(tenantData) : "null");
 
+    // In-memory token fallback: ensures immediate API requests (like /auth/me or /pms/dashboard)
+    // succeed even if the browser/test-runner drops the newly set SameSite=Lax cookie.
+    // This is safe against persistent XSS because it lives only in JS memory, not localStorage.
+    if (token) {
+      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+    }
+
     // Canonical user from /auth/me — role/permission kaynağı login response değil, /me
     let canonicalUser = userData;
     try {
