@@ -6,7 +6,7 @@ from .base import AccountingHttpConnector, ERPConnectionError, ERPSyncRejected, 
 
 
 class LogoHttpConnector(AccountingHttpConnector):
-    async def send_payload(self, url: str, payloads: list[dict], credentials: dict, sync_id: str) -> dict[str, Any]:
+    async def send_payload(self, url: str, resource: str, payloads: list[dict], credentials: dict, sync_id: str) -> dict[str, Any]:
         api_key = credentials.get("api_key", "")
         headers = {
             "Content-Type": "application/json",
@@ -16,12 +16,12 @@ class LogoHttpConnector(AccountingHttpConnector):
 
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                res = await client.post(f"{url}/invoices", json=payloads, headers=headers)
+                res = await client.post(f"{url}/{resource}", json=payloads, headers=headers)
 
                 if res.status_code >= 500:
-                    raise ERPConnectionError("Logo ERP server error", status_code=res.status_code)
+                    raise ERPConnectionError(f"Logo ERP server error for {resource}", status_code=res.status_code)
                 elif res.status_code >= 400:
-                    raise ERPSyncRejected(f"Logo ERP rejected sync: {res.text}", status_code=res.status_code)
+                    raise ERPSyncRejected(f"Logo ERP rejected {resource} sync: {res.text}", status_code=res.status_code)
 
                 return {
                     "status_code": res.status_code,
@@ -29,6 +29,6 @@ class LogoHttpConnector(AccountingHttpConnector):
                 }
 
         except httpx.TimeoutException as e:
-            raise ERPSyncTimeout(f"Timeout while syncing to Logo ERP: {e}")
+            raise ERPSyncTimeout(f"Timeout while syncing {resource} to Logo ERP: {e}")
         except httpx.RequestError as e:
-            raise ERPConnectionError(f"Connection error to Logo ERP: {e}")
+            raise ERPConnectionError(f"Connection error to Logo ERP for {resource}: {e}")

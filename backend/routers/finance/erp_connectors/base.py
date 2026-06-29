@@ -18,7 +18,7 @@ class ERPSyncRejected(Exception):
         self.status_code = status_code
 
 class AccountingHttpConnector:
-    async def send_payload(self, url: str, payloads: list[dict], credentials: dict, sync_id: str) -> dict[str, Any]:
+    async def send_payload(self, url: str, resource: str, payloads: list[dict], credentials: dict, sync_id: str) -> dict[str, Any]:
         """
         Sends the ERP payload to the target provider.
         Should raise ERPConnectionError, ERPSyncTimeout, or ERPSyncRejected on failure.

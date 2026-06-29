@@ -158,3 +158,112 @@ async def test_logo_sync_success(mock_log, mock_payments, mock_invoices, mock_cr
     mock_post.assert_called_once()
     headers = mock_post.call_args[1].get("headers", {})
     assert "X-Syroce-Sync-Id" in headers
+
+
+@patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+@patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
+@patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
+@patch("routers.finance.integrations._gather_payments", new_callable=AsyncMock)
+@patch("routers.finance.integrations._log_accounting_sync", new_callable=AsyncMock)
+@pytest.mark.asyncio
+async def test_logo_sync_success_both(mock_log, mock_payments, mock_invoices, mock_creds, mock_post, client):
+    mock_invoices.return_value = [{"invoice_number": "INV-1"}]
+    mock_payments.return_value = [{"receipt_number": "PAY-1"}]
+    mock_creds.return_value = {"api_url": "https://logo.example", "api_key": "secret"}
+    
+    mock_response = httpx.Response(status_code=200, text="OK")
+    mock_post.return_value = mock_response
+    
+    mock_log.return_value = {"id": "log-123"}
+    
+    response = client.post("/finance/logo-integration/sync")
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert data["synced_invoices"] == 1
+    assert data["synced_payments"] == 1
+    
+    assert mock_post.call_count == 2
+    args_list = mock_post.call_args_list
+    assert args_list[0][0][0].endswith("/invoices")
+    assert args_list[1][0][0].endswith("/payments")
+
+
+@patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+@patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
+@patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
+@patch("routers.finance.integrations._gather_payments", new_callable=AsyncMock)
+@patch("routers.finance.integrations._log_accounting_sync", new_callable=AsyncMock)
+@pytest.mark.asyncio
+async def test_logo_sync_only_payments(mock_log, mock_payments, mock_invoices, mock_creds, mock_post, client):
+    mock_invoices.return_value = []
+    mock_payments.return_value = [{"receipt_number": "PAY-1"}]
+    mock_creds.return_value = {"api_url": "https://logo.example", "api_key": "secret"}
+    
+    mock_response = httpx.Response(status_code=200, text="OK")
+    mock_post.return_value = mock_response
+    
+    mock_log.return_value = {"id": "log-123"}
+    
+    response = client.post("/finance/logo-integration/sync")
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["synced_invoices"] == 0
+    assert data["synced_payments"] == 1
+    
+    assert mock_post.call_count == 1
+    assert mock_post.call_args[0][0].endswith("/payments")
+
+
+@patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+@patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
+@patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
+@patch("routers.finance.integrations._gather_payments", new_callable=AsyncMock)
+@patch("routers.finance.integrations._log_accounting_sync", new_callable=AsyncMock)
+@pytest.mark.asyncio
+async def test_netsis_sync_success_both(mock_log, mock_payments, mock_invoices, mock_creds, mock_post, client):
+    mock_invoices.return_value = [{"invoice_number": "INV-1"}]
+    mock_payments.return_value = [{"receipt_number": "PAY-1"}]
+    mock_creds.return_value = {"api_url": "https://netsis.example", "api_key": "secret"}
+    
+    mock_response = httpx.Response(status_code=200, text="OK")
+    mock_post.return_value = mock_response
+    
+    mock_log.return_value = {"id": "log-123"}
+    
+    response = client.post("/finance/netsis-integration/sync")
+    
+    assert response.status_code == 200
+    assert mock_post.call_count == 2
+    args_list = mock_post.call_args_list
+    assert args_list[0][0][0].endswith("/invoices")
+    assert args_list[1][0][0].endswith("/payments")
+
+
+@patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+@patch("routers.finance.integrations.get_decrypted_credentials", new_callable=AsyncMock)
+@patch("routers.finance.integrations._gather_invoices", new_callable=AsyncMock)
+@patch("routers.finance.integrations._gather_payments", new_callable=AsyncMock)
+@patch("routers.finance.integrations._log_accounting_sync", new_callable=AsyncMock)
+@pytest.mark.asyncio
+async def test_logo_sync_payment_error_fails_sync(mock_log, mock_payments, mock_invoices, mock_creds, mock_post, client):
+    mock_invoices.return_value = [{"invoice_number": "INV-1"}]
+    mock_payments.return_value = [{"receipt_number": "PAY-1"}]
+    mock_creds.return_value = {"api_url": "https://logo.example", "api_key": "secret"}
+    
+    # invoice success, payment fails with timeout
+    mock_post.side_effect = [
+        httpx.Response(status_code=200, text="OK"),
+        httpx.TimeoutException("Read timeout")
+    ]
+    
+    response = client.post("/finance/logo-integration/sync")
+    
+    assert response.status_code == 504
+    
+    mock_log.assert_called_once()
+    log_arg = mock_log.call_args[0][1]
+    assert log_arg["status"] == "failed"
+    assert log_arg["error_type"] == "timeout"

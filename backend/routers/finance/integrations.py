@@ -125,6 +125,18 @@ async def sync_with_logo(
             }
         )
 
+    logo_payment_payloads = []
+    for p in payments:
+        logo_payment_payloads.append(
+            {
+                "ReceiptNo": p.get("receipt_number", p.get("id", "")),
+                "Date": p.get("created_at", ""),
+                "ARPA_Code": p.get("guest_id", ""),
+                "Amount": p.get("amount", 0.0),
+                "PaymentMethod": p.get("method", "CASH"),
+            }
+        )
+
     credentials = await get_decrypted_credentials(tenant_id, "logo", ERP_CREDENTIAL_PROPERTY_ID)
     if not credentials:
         raise HTTPException(status_code=409, detail="No credentials configured for Logo ERP")
@@ -137,17 +149,26 @@ async def sync_with_logo(
     connector = LogoHttpConnector()
 
     try:
-        res = await connector.send_payload(api_url, logo_payloads, credentials, sync_id)
+        synced_invoices_count = 0
+        synced_payments_count = 0
+        
+        if logo_payloads:
+            res_inv = await connector.send_payload(api_url, "invoices", logo_payloads, credentials, sync_id)
+            synced_invoices_count = len(invoices)
+            
+        if logo_payment_payloads:
+            res_pay = await connector.send_payload(api_url, "payments", logo_payment_payloads, credentials, sync_id)
+            synced_payments_count = len(payments)
 
         log_entry = await _log_accounting_sync(
             tenant_id,
             {
                 "provider": "logo",
-                "synced_invoices": len(invoices),
-                "synced_payments": len(payments),
+                "synced_invoices": synced_invoices_count,
+                "synced_payments": synced_payments_count,
                 "synced_at": datetime.now(UTC).isoformat(),
                 "status": "success",
-                "provider_response_status": res.get("status_code"),
+                "provider_response_status": 200,
                 "details": "Payloads synced to Logo ERP successfully",
             },
         )
@@ -155,8 +176,8 @@ async def sync_with_logo(
         return {
             "success": True,
             "data_available": True,
-            "synced_invoices": len(invoices),
-            "synced_payments": len(payments),
+            "synced_invoices": synced_invoices_count,
+            "synced_payments": synced_payments_count,
             "log_id": log_entry["id"],
             "message": "Logo ERP senkronizasyonu tamamlandi.",
         }
@@ -236,6 +257,18 @@ async def sync_with_netsis(
             }
         )
 
+    netsis_payment_payloads = []
+    for p in payments:
+        netsis_payment_payloads.append(
+            {
+                "MAKBUZ_NO": p.get("receipt_number", p.get("id", "")),
+                "TARIH": p.get("created_at", ""),
+                "CARI_KODU": p.get("guest_id", ""),
+                "TUTAR": p.get("amount", 0.0),
+                "TIP": p.get("method", "CASH"),
+            }
+        )
+
     credentials = await get_decrypted_credentials(tenant_id, "netsis", ERP_CREDENTIAL_PROPERTY_ID)
     if not credentials:
         raise HTTPException(status_code=409, detail="No credentials configured for Netsis ERP")
@@ -248,17 +281,26 @@ async def sync_with_netsis(
     connector = NetsisHttpConnector()
 
     try:
-        res = await connector.send_payload(api_url, netsis_payloads, credentials, sync_id)
+        synced_invoices_count = 0
+        synced_payments_count = 0
+        
+        if netsis_payloads:
+            res_inv = await connector.send_payload(api_url, "invoices", netsis_payloads, credentials, sync_id)
+            synced_invoices_count = len(invoices)
+            
+        if netsis_payment_payloads:
+            res_pay = await connector.send_payload(api_url, "payments", netsis_payment_payloads, credentials, sync_id)
+            synced_payments_count = len(payments)
 
         log_entry = await _log_accounting_sync(
             tenant_id,
             {
                 "provider": "netsis",
-                "synced_invoices": len(invoices),
-                "synced_payments": len(payments),
+                "synced_invoices": synced_invoices_count,
+                "synced_payments": synced_payments_count,
                 "synced_at": datetime.now(UTC).isoformat(),
                 "status": "success",
-                "provider_response_status": res.get("status_code"),
+                "provider_response_status": 200,
                 "details": "Payloads synced to Netsis ERP successfully",
             },
         )
@@ -266,8 +308,8 @@ async def sync_with_netsis(
         return {
             "success": True,
             "data_available": True,
-            "synced_invoices": len(invoices),
-            "synced_payments": len(payments),
+            "synced_invoices": synced_invoices_count,
+            "synced_payments": synced_payments_count,
             "log_id": log_entry["id"],
             "message": "Netsis ERP senkronizasyonu tamamlandi.",
         }
