@@ -75,6 +75,10 @@ test.describe.serial('Core PMS happy-path: booking → check-in → folio → ch
         const loginCtx = await playwright.request.newContext({
             baseURL: API_BASE_URL,
             ignoreHTTPSErrors: true,
+            extraHTTPHeaders: {
+                Origin: 'http://localhost:3000',
+                Referer: 'http://localhost:3000/'
+            }
         });
         const loginRes = await loginCtx.post('/api/auth/login', {
             data: { email: E2E_EMAIL, password: PASSWORD },
