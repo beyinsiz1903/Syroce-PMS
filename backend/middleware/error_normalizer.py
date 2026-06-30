@@ -29,31 +29,43 @@ class ErrorNormalizerMiddleware(BaseHTTPMiddleware):
                 else:
                     body_bytes += chunk
 
-            raw_headers = dict(response.headers.items())
+            # Preserve all raw headers, but let Starlette handle content-length
+            # for the reconstructed responses.
+            original_headers = [(k, v) for k, v in response.raw_headers if k.lower() != b"content-length"]
 
             try:
                 data = json.loads(body_bytes)
             except (json.JSONDecodeError, UnicodeDecodeError):
-                return Response(
+                fallback_resp = Response(
                     content=body_bytes,
                     status_code=response.status_code,
-                    headers=raw_headers,
                     media_type=response.media_type,
                 )
+                # Replace headers, ensuring we keep the new content-length
+                new_cl = [h for h in fallback_resp.raw_headers if h[0].lower() == b"content-length"]
+                fallback_resp.raw_headers = original_headers + new_cl
+                return fallback_resp
 
             if isinstance(data, dict) and data.get("success") is False:
                 detail = data.get("error") or data.get("message") or data.get("detail") or "Operation failed"
                 normalized = {"detail": detail, "success": False}
-                return JSONResponse(
+                error_resp = JSONResponse(
                     status_code=400,
                     content=normalized,
                 )
+                # Keep original headers except content-type, content-length
+                filtered_headers = [(k, v) for k, v in original_headers if k.lower() != b"content-type"]
+                new_cl = [h for h in error_resp.raw_headers if h[0].lower() in (b"content-length", b"content-type")]
+                error_resp.raw_headers = filtered_headers + new_cl
+                return error_resp
 
-            return Response(
+            success_resp = Response(
                 content=body_bytes,
                 status_code=response.status_code,
-                headers=raw_headers,
                 media_type=response.media_type,
             )
+            new_cl = [h for h in success_resp.raw_headers if h[0].lower() == b"content-length"]
+            success_resp.raw_headers = original_headers + new_cl
+            return success_resp
 
         return response

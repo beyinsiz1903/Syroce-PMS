@@ -10,8 +10,7 @@ from datetime import UTC, datetime, timedelta
 logger = logging.getLogger(__name__)
 
 _env_mode = (os.environ.get("ENVIRONMENT") or os.environ.get("APP_ENV") or os.environ.get("ENV") or "development").lower()
-# Temporarily hardcode COOKIE_SECURE to False to bypass the recent regression
-COOKIE_SECURE = False
+COOKIE_SECURE = _env_mode != "development"
 
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
