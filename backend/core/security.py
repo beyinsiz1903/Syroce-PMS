@@ -305,17 +305,27 @@ def create_refresh_token(user_id: str, tenant_id: str | None = None) -> tuple[st
 
 
 async def get_current_user(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request | None = None,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ):
     """Decode JWT token and return the authenticated User."""
     # Import here to avoid circular imports with schemas
     from models.schemas import User
     from security.encrypted_lookup import decrypt_user_doc
+    from fastapi.security import HTTPAuthorizationCredentials
+    from starlette.requests import Request as StarletteRequest
+
+    # Support backwards compatibility for manual calls like: get_current_user(credentials)
+    # where credentials object is passed as the first positional argument `request`.
+    if isinstance(request, HTTPAuthorizationCredentials):
+        credentials = request
+        request = None
 
     try:
-        token = request.cookies.get("access_token")
-        if not token and credentials:
+        token = None
+        if isinstance(request, StarletteRequest):
+            token = request.cookies.get("access_token")
+        if not token and credentials and hasattr(credentials, "credentials"):
             token = credentials.credentials
 
         if not token:
