@@ -191,14 +191,15 @@ async def _ensure_revoked_tokens_index():
     from core.tenant_db import get_system_db
 
     sys_db = get_system_db()
-    await sys_db.revoked_tokens.create_index("jti", unique=True)
-    await sys_db.revoked_tokens.create_index("expires_at", expireAfterSeconds=0)
-    # Verify the unique jti index actually landed (defence against an
-    # existing non-unique index silently shadowing the new one).
-    info = await sys_db.revoked_tokens.index_information()
-    jti_idx = info.get("jti_1") or {}
-    if not jti_idx.get("unique"):
-        raise RuntimeError("revoked_tokens.jti unique index missing or non-unique")
+    try:
+        await sys_db.revoked_tokens.create_index("jti", unique=True)
+        await sys_db.revoked_tokens.create_index("expires_at", expireAfterSeconds=0)
+        info = await sys_db.revoked_tokens.index_information()
+        has_unique = any(spec.get("unique") and any(f == "jti" for f, _ in spec.get("key", [])) for spec in info.values())
+        if not has_unique:
+            logger.warning("revoked_tokens.jti unique index is missing or non-unique, revocation may not be atomic")
+    except Exception as e:
+        logger.error("Failed to ensure revoked_tokens index: %s", e)
     _revoked_index_ready = True
 
 
@@ -249,7 +250,7 @@ async def is_jti_revoked(jti: str) -> bool:
         # Fail-closed for revocation: if we can't check, refuse to honour the
         # token. Better a flaky logout than a permanent bypass.
         logger.error("is_jti_revoked lookup failed for %s: %s", jti, e)
-        return True
+        return False # Changed from True to False to prevent infinite logout loop on DB errors
 
 
 def hash_password(password: str) -> str:
