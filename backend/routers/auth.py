@@ -9,7 +9,8 @@ from datetime import UTC, datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
-COOKIE_SECURE = os.environ.get("ENV", "development").lower() in ("production", "staging")
+_env_mode = (os.environ.get("ENVIRONMENT") or os.environ.get("APP_ENV") or os.environ.get("ENV") or "development").lower()
+COOKIE_SECURE = _env_mode in ("production", "staging")
 
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
