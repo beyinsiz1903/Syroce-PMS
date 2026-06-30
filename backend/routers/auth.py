@@ -286,7 +286,7 @@ def _build_token_response(user: User, tenant, response: Response = None) -> Toke
             value=access,
             httponly=True,
             secure=COOKIE_SECURE,
-            samesite="lax",
+            samesite="none" if COOKIE_SECURE else "lax",
             max_age=JWT_EXPIRATION_MINUTES * 60,
             path="/",
         )
@@ -295,7 +295,7 @@ def _build_token_response(user: User, tenant, response: Response = None) -> Toke
             value=refresh,
             httponly=True,
             secure=COOKIE_SECURE,
-            samesite="lax",
+            samesite="none" if COOKIE_SECURE else "lax",
             max_age=REFRESH_TOKEN_EXPIRATION_DAYS * 86400,
             path="/api/auth/refresh",
         )
@@ -1458,14 +1458,14 @@ async def logout(
         path="/",
         httponly=True,
         secure=COOKIE_SECURE,
-        samesite="lax"
+        samesite="none" if COOKIE_SECURE else "lax"
     )
     response.delete_cookie(
         "refresh_token",
         path="/api/auth/refresh",
         httponly=True,
         secure=COOKIE_SECURE,
-        samesite="lax"
+        samesite="none" if COOKIE_SECURE else "lax"
     )
 
     return {"message": "Çıkış başarılı"}
