@@ -41,7 +41,7 @@ logger = logging.getLogger("core.tenant_db")
 _tenant_ctx: ContextVar[str | None] = ContextVar("tenant_id", default=None)
 
 # ── Configuration ───────────────────────────────────────────────
-STRICT_TENANT_MODE = os.environ.get("STRICT_TENANT_MODE", "false").lower() == "true"
+STRICT_TENANT_MODE = os.environ.get("STRICT_TENANT_MODE", "true").lower() == "true"
 
 # ── Collections where tenant_id filter is MANDATORY ─────────────
 TENANT_SCOPED_COLLECTIONS: set[str] = {
