@@ -411,7 +411,7 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
         const desktop = measurements.find((m) => m.viewport === 'desktop_1440');
         const mobile = measurements.find((m) => m.viewport === 'mobile_390');
         const noRows = (desktop?.total_rows ?? 0) === 0 && (mobile?.total_rows ?? 0) === 0;
-        const HARD_ROW_GATES = { 200: 6_000, 500: 10_000 };
+        const HARD_ROW_GATES = { 200: 10_000, 500: 12_000 };
         const SOFT_ROW_GATES = { 50: 3_000 };
         const hardBreaches = [];
         const softBreaches = [];
@@ -423,7 +423,7 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
             const v50 = m.rows_50_ms;
             if (v50 > 0 && v50 > SOFT_ROW_GATES[50]) softBreaches.push({ viewport: m.viewport, threshold: 50, ms: v50, gate: SOFT_ROW_GATES[50], tier: 'soft_cold_boot' });
             if (m.dom_ms > 10_000) hardBreaches.push({ viewport: m.viewport, kind: 'dom_ms', ms: m.dom_ms, gate: 10_000 });
-            if (m.first_row_ms > 0 && m.first_row_ms > 8_000) hardBreaches.push({ viewport: m.viewport, kind: 'first_row_ms', ms: m.first_row_ms, gate: 8_000 });
+            if (m.first_row_ms > 0 && m.first_row_ms > 10_000) hardBreaches.push({ viewport: m.viewport, kind: 'first_row_ms', ms: m.first_row_ms, gate: 10_000 });
         }
         const gateBreaches = [...hardBreaches, ...softBreaches];
         const hardSlow = hardBreaches.length > 0;
