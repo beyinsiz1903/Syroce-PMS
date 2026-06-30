@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("security.csrf_guard")
 
-_RAW_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:8000,http://localhost:8001,http://localhost:3000")
+_RAW_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:8000,http://localhost:8001,http://localhost:3000,https://pms.syroce.com,https://www.pms.syroce.com,https://syroce.com,https://syroce-b2b-api.syroce.com,https://emergent-yeni-uygulama-1.replit.app,https://emergent-yeni-uygulama-1-syroce.replit.app")
 ALLOWED_ORIGINS = {o.strip().lower() for o in _RAW_ORIGINS.split(",") if o.strip()}
 
 CSRF_PROTECTED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
