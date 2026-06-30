@@ -14,7 +14,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://*.replit.app/*", "https://*.replit.dev/*"],
+      "matches": ["https://*.syroce.com/*", "https://*.syroce.local/*"],
       "js": ["content.js"],
       "run_at": "document_idle",
       "all_frames": false

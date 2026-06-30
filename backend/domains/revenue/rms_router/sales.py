@@ -575,7 +575,7 @@ def _approvals_page_url() -> str:
     """Absolute URL to the approvals page, or the bare path if no app URL set."""
     import os
 
-    base = (os.environ.get("PUBLIC_APP_URL") or os.environ.get("REPLIT_DEV_DOMAIN") or "").strip().rstrip("/")
+    base = (os.environ.get("PUBLIC_APP_URL") or os.environ.get("CLOUD_DEV_DOMAIN") or "").strip().rstrip("/")
     if not base:
         return _CONTRACT_APPROVALS_PATH
     if not base.startswith("http"):

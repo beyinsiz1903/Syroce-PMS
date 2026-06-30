@@ -3,7 +3,7 @@
 CM Backlog Alarm — Cron-friendly threshold alert for outbox + breakers
 =======================================================================
 Reads ``backend/infra/cm_observability_check.get_cm_observability_snapshot``
-and exits with a verdict-coded status so cron / Sentry-cron / Replit
+and exits with a verdict-coded status so cron / Sentry-cron / DigitalOcean
 scheduled jobs can route alerts.
 
 Run modes:

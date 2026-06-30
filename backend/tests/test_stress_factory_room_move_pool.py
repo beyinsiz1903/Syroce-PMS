@@ -3,7 +3,7 @@
 These tests do NOT touch the DB. They validate the pure factory contract so
 the 03-room-move setup can rely on a deterministic vacant pool.
 
-Acceptance per `replit.md` F8A tur-10 gotcha:
+Acceptance per `digitalocean.md` F8A tur-10 gotcha:
   * 3 extra vacant rooms per ROOM_TYPE (=60 total for default seed)
   * extra rooms: status=available, current_booking_id=None, no booking/RNL
   * stress_seed + stress_prefix tagged → cleanup prefix-scoped removes them

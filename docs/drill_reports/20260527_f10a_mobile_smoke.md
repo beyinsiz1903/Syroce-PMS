@@ -76,7 +76,7 @@ Console-error allowlist (intentional, tight) lives in `mobile/e2e/routes.ts` `CO
 - This drill report (BLOCKED status, honest).
 - `docs/F10_MOBILE_COVERAGE_ROADMAP.md` §5 F10A row clarified: status stays **scaffolded — operator dispatch pending**, with pointer to this report. Status does **not** move to **verified** until a green run artifact is in hand.
 
-What does **not** ship: any change to `replit.md` Gotchas baseline pointer, any roadmap row claiming F10A is verified, any change to coverage counts.
+What does **not** ship: any change to `digitalocean.md` Gotchas baseline pointer, any roadmap row claiming F10A is verified, any change to coverage counts.
 
 ---
 

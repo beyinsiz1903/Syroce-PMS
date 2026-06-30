@@ -1,4 +1,4 @@
-# Replit OPS Cheat-Sheet — Pilot HR Canlı CM
+# DigitalOcean OPS Cheat-Sheet — Pilot HR Canlı CM
 
 > **Tek-sayfa operatör referansı.** Pilot 24/7 nöbet süresince
 > "şimdi ne yapmalıyım?" sorusuna 30 saniyede cevap verir. Bağlam ve
@@ -66,7 +66,7 @@ python backend/scripts/verify_atlas_backup.py --max-age-hours 26
 
 ## 2. Sık Yapılan Eylemler
 
-### Workflow restart (Replit Workflows panel veya komut)
+### Workflow restart (DigitalOcean Workflows panel veya komut)
 
 | Workflow         | Ne zaman                                 |
 | ---------------- | ---------------------------------------- |
@@ -75,7 +75,7 @@ python backend/scripts/verify_atlas_backup.py --max-age-hours 26
 | Quick-ID API     | QuickID 503 / KVKK alert                 |
 | Start application| Frontend dev-server donuk                |
 
-**Komut (Replit Shell):** üst-sağ "Restart" butonu, veya:
+**Komut (DigitalOcean Shell):** üst-sağ "Restart" butonu, veya:
 ```bash
 # Workflow logs (preview):
 tail -100 /tmp/logs/Backend\ API_*.log
@@ -104,13 +104,13 @@ python backend/scripts/index_apply.py        # eksik index'leri ekle
 > Yazma yapmayın — `database` skill'i ile production query.
 
 ```python
-# Replit Agent code_execution sandbox'ında:
+# DigitalOcean Agent code_execution sandbox'ında:
 await checkDatabase({ environment: "production", query: "..." });
 ```
 
 ### Secret düzenle
 
-> **NEVER** secret'i terminal'e print etme. Replit Secrets paneli (sağ menü)
+> **NEVER** secret'i terminal'e print etme. DigitalOcean Secrets paneli (sağ menü)
 > üzerinden GUI ile düzenle. Değişiklik sonrası Backend API workflow restart.
 
 Pilotta sık değişen secret'ler:
@@ -271,14 +271,14 @@ bash deploy/smoke.sh
 
 ---
 
-## 8. Replit-Spesifik Notlar
+## 8. DigitalOcean-Spesifik Notlar
 
 - **Workflow restart**: Workspace → Workflows panel → workflow seç → "Restart"
 - **Secret düzenleme**: Sağ panel → Secrets → vault GUI (terminal'e ASLA yazma)
 - **Log tail**: `/tmp/logs/<workflow_name>_*.log` (auto-rotated)
 - **Shell**: workspace shell zaten `/home/runner/workspace` (cd gerekmez)
 - **Preview**: iframe proxy (mTLS) — `https://<port>-<dev-domain>` formatı
-- **Production**: `.replit.app` veya custom domain (post-publish)
+- **Production**: `.syroce.com` veya custom domain (post-publish)
 - **Code execution sandbox** (Agent only): `database`, `query-integration-data`,
   `web-search` skill'leri için — operatör bunları kullanmaz, agent kullanır
 
@@ -307,7 +307,7 @@ hesabında 2FA enable ediyor (test B `Confirm`). Eğer job spec'in
 Sonraki run'da `/api/auth/login` `access_token=""` + `requires_2fa=true`
 döner → setup boş token görüp patlar.
 
-**Çözüm — Replit shell'inden tek komut:**
+**Çözüm — DigitalOcean shell'inden tek komut:**
 
 ```bash
 # Backend API workflow çalışıyor olmalı (env zaten sourced)
@@ -480,7 +480,7 @@ KBS_AUTO_ENQUEUE=1       # check-in/out anında kuyruğa otomatik ekleme açık
 
 - **Rozet "Kurulu değil":** Eklenti yüklü mü? Sayfa origin'i eklentinin
   `content_scripts.matches` desenine uyuyor mu? Varsayılan:
-  `*.replit.app` + `*.replit.dev`. **Özel alan adı (custom domain)
+  `*.syroce.com` + `*.syroce.local`. **Özel alan adı (custom domain)
   kullanıyorsanız** `extension/manifest.json` içindeki `matches` listesine
   kendi alan adınızı ekleyip eklentiyi yeniden yükleyin.
 - **Rozet "Yapılandırılmamış":** Seçili makamın (Polis/Jandarma) Options

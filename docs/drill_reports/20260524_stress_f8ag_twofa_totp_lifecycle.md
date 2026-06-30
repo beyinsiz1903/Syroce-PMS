@@ -104,7 +104,7 @@ F8AG bu sertleştirmenin regression-guard'ıdır.
 - Spec dosyası yazıldı ✅
 - `STRESS_COLLECTIONS` extended ✅
 - Roadmap F8AG section + baseline note güncellendi ✅
-- `replit.md` gotcha line eklendi ✅
+- `digitalocean.md` gotcha line eklendi ✅
 - **Targeted run + full-suite run BEKLEMEDE** — Workflows kapalı,
   Backend API + Mongo + Redis sandbox'ta çalışmıyor; CI workflow'u
   (`github actions full operational stress suite`) bir sonraki turda

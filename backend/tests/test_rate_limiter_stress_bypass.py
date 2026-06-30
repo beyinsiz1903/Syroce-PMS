@@ -6,7 +6,7 @@ switch to the elevated test-env profile.
 CI 2026-05-25 (98-ops-surface-smoke "B) shift_handover") failed with
 429 because prod limits (write=120/min) collapsed under the bursty
 stress surface. This test pins the bypass without leaking through
-when only REPLIT_DEPLOYMENT=1 is set.
+when only CLOUD_DEPLOYMENT=1 is set.
 """
 import importlib
 import os
@@ -16,13 +16,13 @@ import pytest
 
 def _fresh_limiter(monkeypatch, env: dict):
     for k in (
-        "REPLIT_DEPLOYMENT",
+        "CLOUD_DEPLOYMENT",
         "E2E_ALLOW_DESTRUCTIVE_STRESS",
         "TESTING",
         "CI",
         "APP_ENV",
-        "REPL_ID",
-        "REPLIT_DEV_DOMAIN",
+        "CLOUD_INSTANCE_ID",
+        "CLOUD_DEV_DOMAIN",
     ):
         monkeypatch.delenv(k, raising=False)
     for k, v in env.items():
@@ -34,14 +34,14 @@ def _fresh_limiter(monkeypatch, env: dict):
 
 
 def test_prod_deployment_without_flag_uses_prod_limits(monkeypatch):
-    rl = _fresh_limiter(monkeypatch, {"REPLIT_DEPLOYMENT": "1"})
+    rl = _fresh_limiter(monkeypatch, {"CLOUD_DEPLOYMENT": "1"})
     assert rl.limits["write"] == (120, 60)
     assert rl.limits["default"] == (300, 60)
 
 
 def test_prod_deployment_with_stress_flag_uses_elevated_limits(monkeypatch):
     rl = _fresh_limiter(monkeypatch, {
-        "REPLIT_DEPLOYMENT": "1",
+        "CLOUD_DEPLOYMENT": "1",
         "E2E_ALLOW_DESTRUCTIVE_STRESS": "true",
     })
     # Elevated for bursty authenticated surfaces.
@@ -58,7 +58,7 @@ def test_prod_deployment_with_stress_flag_uses_elevated_limits(monkeypatch):
 
 def test_stress_flag_case_insensitive(monkeypatch):
     rl = _fresh_limiter(monkeypatch, {
-        "REPLIT_DEPLOYMENT": "1",
+        "CLOUD_DEPLOYMENT": "1",
         "E2E_ALLOW_DESTRUCTIVE_STRESS": "TRUE",
     })
     assert rl.limits["write"] == (10000, 60)
@@ -67,14 +67,14 @@ def test_stress_flag_case_insensitive(monkeypatch):
 
 def test_stress_flag_false_keeps_prod_limits(monkeypatch):
     rl = _fresh_limiter(monkeypatch, {
-        "REPLIT_DEPLOYMENT": "1",
+        "CLOUD_DEPLOYMENT": "1",
         "E2E_ALLOW_DESTRUCTIVE_STRESS": "false",
     })
     assert rl.limits["write"] == (120, 60)
 
 
 def test_dev_env_unchanged(monkeypatch):
-    rl = _fresh_limiter(monkeypatch, {"REPL_ID": "abc"})
+    rl = _fresh_limiter(monkeypatch, {"CLOUD_INSTANCE_ID": "abc"})
     assert rl.limits["write"] == (10000, 60)
 
 
@@ -84,7 +84,7 @@ def test_has_token_requires_valid_bearer_structure(monkeypatch):
     `anonymous` bucket into `default`/`write` — especially relevant under
     the stress profile where those buckets are 10000/min."""
     rl = _fresh_limiter(monkeypatch, {
-        "REPLIT_DEPLOYMENT": "1",
+        "CLOUD_DEPLOYMENT": "1",
         "E2E_ALLOW_DESTRUCTIVE_STRESS": "true",
     })
 
@@ -135,11 +135,11 @@ def test_static_spa_assets_exempt_from_rate_limit(monkeypatch):
     import importlib
 
     for k in (
-        "REPLIT_DEPLOYMENT", "E2E_ALLOW_DESTRUCTIVE_STRESS", "TESTING",
-        "CI", "APP_ENV", "REPL_ID", "REPLIT_DEV_DOMAIN",
+        "CLOUD_DEPLOYMENT", "E2E_ALLOW_DESTRUCTIVE_STRESS", "TESTING",
+        "CI", "APP_ENV", "CLOUD_INSTANCE_ID", "CLOUD_DEV_DOMAIN",
     ):
         monkeypatch.delenv(k, raising=False)
-    monkeypatch.setenv("REPLIT_DEPLOYMENT", "1")  # force prod profile
+    monkeypatch.setenv("CLOUD_DEPLOYMENT", "1")  # force prod profile
 
     import apm_middleware
     importlib.reload(apm_middleware)

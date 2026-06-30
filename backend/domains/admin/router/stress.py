@@ -3268,8 +3268,8 @@ async def stress_external_calls_status(
     # F8A run #20 NO-GO root-cause #1 fix (tur-8): `dry_run_enforced` was a pure
     # self-report on `E2E_EXTERNAL_DRY_RUN` env. The CI workflow sets that env on
     # the *runner* process (stress.yml:66), but the backend we hit lives on a
-    # *separate Replit deployment* (`STRESS_E2E_BASE_URL` secret) whose process
-    # env is configured via Replit Secrets — not propagated from the runner. So
+    # *separate DigitalOcean deployment* (`STRESS_E2E_BASE_URL` secret) whose process
+    # env is configured via DigitalOcean Secrets — not propagated from the runner. So
     # the flag was ~always false in CI even when no calls were actually made,
     # forcing the helper to FAIL despite an empty outbox.
     #

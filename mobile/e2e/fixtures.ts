@@ -117,7 +117,7 @@ const RESOURCE_STATUS_RE = /the server responded with a status of (\d{3})/i;
  *   - 401/403 — role gating. Mirrors the network-observer policy below;
  *     the same auth-gated fetch must not hard-fail render-only smoke when
  *     it merely surfaces as a console twin of an already-ignored 401/403.
- *   - the SPA-shell document 404 — Replit static deployments serve the
+ *   - the SPA-shell document 404 — DigitalOcean static deployments serve the
  *     SPA shell (index.html copied to 404.html, see mobile/build-web.sh)
  *     for any client route that isn't a real file, with a 404 *status*.
  *     The app boots and renders fine; the 404 is on the main-document

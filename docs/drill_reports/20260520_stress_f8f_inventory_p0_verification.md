@@ -102,7 +102,7 @@ This is a **deployment-drift** issue, not a code issue. The Task #209 patch itse
 |-------|--------|
 | Guard code on `main` | PASS (`git log` + handler inspection) |
 | Guard works on dev backend (port 8000) | PASS (15/15 pytest, including parallel-out race) |
-| Guard works on stress env (stress.replit.app or equivalent) | **FAIL** — stress env image is stale |
+| Guard works on stress env (stress.syroce.com or equivalent) | **FAIL** — stress env image is stale |
 | § D / § E executed (not skipped after § C) | PASS — both `lowstock_and_isolation` and pilot-drift ran; § C hard-asserts ran independently |
 
 ### Other P0/P1 findings (out of #213 scope, sibling tasks #214/#215/#216 cover most)
@@ -173,7 +173,7 @@ The lag between merged code and stress env image is now visible end-to-end. The 
 
 These were necessary to even reach the inventory_stock spec under the new image; documented here for traceability:
 
-1. `backend/app.py` — added `/` root probe handler + warm-up gate allow-list entry. Replit autoscale's default HTTP probe was failing the deploy itself with 503 during bootstrap.
+1. `backend/app.py` — added `/` root probe handler + warm-up gate allow-list entry. Cloud autoscale's default HTTP probe was failing the deploy itself with 503 during bootstrap.
 2. `frontend/e2e-stress/global-setup.js` — 3-phase warmup (5min ceiling) to survive cold-start of the redeployed image.
 3. `.github/workflows/stress.yml` — preflight now polls `/health` (warm-up-gate-bypassing) with 30 retries × 5s.
 4. `.github/workflows/ci-cd.yml` — ignored 5 new pip-audit advisories (all disputed or non-applicable to prod surface; rationale inline).

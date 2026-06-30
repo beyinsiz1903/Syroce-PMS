@@ -133,8 +133,8 @@ async def main():
     print("\nDemo vendor login:")
     print(f"  email:    {DEMO_EMAIL}")
     # v109 round-8: do not echo the seed password to stdout (hounddog CRITICAL).
-    # The credential is documented in replit.md under "Demo seeds" for operators.
-    print("  password: <see replit.md → Demo seeds → DEMO_PASSWORD env var>")
+    # The credential is documented in digitalocean.md under "Demo seeds" for operators.
+    print("  password: <see digitalocean.md → Demo seeds → DEMO_PASSWORD env var>")
 
 
 if __name__ == "__main__":

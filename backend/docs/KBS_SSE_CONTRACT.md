@@ -260,7 +260,7 @@ W1. This is implemented by the Redis pub/sub bridge in
 curl -N \
   -H "Authorization: Bearer <jwt>" \
   -H "Accept: text/event-stream" \
-  "$REPLIT_DEV_DOMAIN/api/kbs/queue/stream"
+  "$CLOUD_DEV_DOMAIN/api/kbs/queue/stream"
 ```
 
 Expected initial output:
@@ -281,7 +281,7 @@ curl -X POST \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{"booking_id":"<booking>","action":"checkin","payload":{...}}' \
-  "$REPLIT_DEV_DOMAIN/api/kbs/queue"
+  "$CLOUD_DEV_DOMAIN/api/kbs/queue"
 ```
 
 The first terminal should immediately print:

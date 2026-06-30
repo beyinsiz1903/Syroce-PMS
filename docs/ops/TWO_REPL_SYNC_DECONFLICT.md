@@ -1,11 +1,11 @@
 # İki-Repl Senkron Çakışması — Kalıcı Çözüm (Operatör Prosedürü)
 
-Bu GitHub origin'i (`beyinsiz1903/emergent-yeni-uygulama`, branch `main`) İKİ ayrı
-Replit repl'inden besleniyor:
+Bu GitHub origin'i (`beyinsiz1903/syroce-pms`, branch `main`) İKİ ayrı
+DigitalOcean repl'inden besleniyor:
 
-- **Mobil/statik repl** — bu repl. Canlı host: `emergent-yeni-uygulama-1-syroce.replit.app`,
+- **Mobil/statik repl** — bu repl. Canlı host: `www.pms.syroce.com`,
   deployment tipi `static`, `mobile/build-web.sh` → `mobile/dist` yayınlar.
-- **VM web+backend repl** — ayrı repl. Canlı host: `emergent-yeni-uygulama-1.replit.app`,
+- **VM web+backend repl** — ayrı repl. Canlı host: `pms.syroce.com`,
   deployment tipi `vm`, FastAPI backend + React `frontend/build` sunar.
 
 (Kimlik `getDeploymentInfo()` ile doğrulandı: bu repl `static` / `-syroce`.)
@@ -15,7 +15,7 @@ Replit repl'inden besleniyor:
 Şu üç dosya/dizin her repl'de **farklı** üretilip commit'leniyordu, dolayısıyla
 HER GitHub Pull'da çakışıyordu ve elle çözmek gerekiyordu:
 
-- `.replit` — deployment bloğu (static vs vm), workflows, userenv her repl'de farklı.
+- `.digitalocean` — deployment bloğu (static vs vm), workflows, userenv her repl'de farklı.
 - `frontend/build/` — üretilmiş React SPA derlemesi (her repl kendi build'ini üretir).
 - `.agents/memory/` — ajan iç hafızası (index + topic dosyaları); her repl bağımsız yazar.
 
@@ -32,17 +32,17 @@ izlenmeye devam eder. Aşağıdaki adım **HER İKİ repl'de de** bir kez koşul
 
 ### Adım 1 — Bu repl (mobil/statik) — zaten yapıldı (ajan tarafı)
 
-- `.replit` deployment hedefi `static`'e geri çekildi (`deployConfig`).
-- `.gitignore`'a `.replit`, `frontend/build/`, `.agents/memory/` eklendi.
+- `.digitalocean` deployment hedefi `static`'e geri çekildi (`deployConfig`).
+- `.gitignore`'a `.digitalocean`, `frontend/build/`, `.agents/memory/` eklendi.
 
-### Adım 2 — Operatör, BU repl'de (Replit Shell)
+### Adım 2 — Operatör, BU repl'de (DigitalOcean Shell)
 
 ```bash
 # Önce git index lock varsa temizle (varsa)
 rm -f .git/index.lock 2>/dev/null || true
 # İzlemeyi bırak (dosyalar diskte KALIR, sadece git'ten düşer)
-git rm -r --cached .replit frontend/build .agents/memory
-git commit -m "chore: stop tracking per-repl divergent files (.replit, frontend/build, .agents/memory)"
+git rm -r --cached .digitalocean frontend/build .agents/memory
+git commit -m "chore: stop tracking per-repl divergent files (.digitalocean, frontend/build, .agents/memory)"
 ```
 Sonra **Git panelinden Push** et (Shell'den `git push` kimlik bilgisi olmayabilir).
 
@@ -53,14 +53,14 @@ Pull aldığında alacak. Diğer repl'de de bir kez:
 
 ```bash
 rm -f .git/index.lock 2>/dev/null || true
-git rm -r --cached .replit frontend/build .agents/memory
+git rm -r --cached .digitalocean frontend/build .agents/memory
 git commit -m "chore: stop tracking per-repl divergent files"
 ```
 Git panelinden Push et.
 
 **VM repl için EK ZORUNLU adım:** `frontend/build` artık commit'lenmediği için, VM
 repl'in deployment **build** komutu publish öncesi `frontend/build`'i üretmeli.
-VM repl'in `.replit` `[deployment].build` değeri şu olmalı (NO-OP değil):
+VM repl'in `.digitalocean` `[deployment].build` değeri şu olmalı (NO-OP değil):
 
 ```
 build = ["bash", "-c", "cd frontend && yarn install --frozen-lockfile && yarn build"]
@@ -75,7 +75,7 @@ güven" yaklaşımı artık geçersiz.)
 - Bundan sonra Pull yalnızca gerçek kaynak kod değişikliklerini getirir; bu üç
   yolda çakışma çıkmaz.
 - Bu repl'in deployment hedefi her senkronda `static` kalır (elle teyit gerekmez).
-- `.replit` izlenmediği için userenv sırları gelecekteki commit'lerden düşer
+- `.digitalocean` izlenmediği için userenv sırları gelecekteki commit'lerden düşer
   (geçmişteki commit'lerde hâlâ duruyorlar — ayrı bir temizlik konusu, bu görev
   kapsamı dışında).
 

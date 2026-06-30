@@ -259,7 +259,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
         </div>
       )}
 
-      {/* Tur 21 #6: purple → indigo (replit.md Color Palette Convention) */}
+      {/* Tur 21 #6: purple → indigo (digitalocean.md Color Palette Convention) */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
         <KPICard title={t('cm.pages_B2BAnalyticsDashboard.toplam_rez')} value={kpis.total_bookings || 0} icon={FileText} color="blue" />
         <KPICard title="Onaylanan" value={kpis.approved_bookings || 0} icon={TrendingUp} color="green" />

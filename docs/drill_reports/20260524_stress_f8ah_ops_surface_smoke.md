@@ -61,4 +61,4 @@ Beş düşük-yüzey ops endpoint'i tek spec'te birleştirildi (5 module-block
 - `backend/domains/admin/router/stress.py` (`STRESS_COLLECTIONS` += `shift_handovers`)
 - `docs/adr/2026-05-f8ah-ops-surface-smoke.md` (NEW)
 - `docs/STRESS_TEST_ROADMAP.md` (F8AH section)
-- `replit.md` (Gotchas one-liner)
+- `digitalocean.md` (Gotchas one-liner)

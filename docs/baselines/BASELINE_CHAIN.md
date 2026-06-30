@@ -62,7 +62,7 @@ yok.
   by-design/data-state/deploy-gap, yeni gerçek failure YOK. Düz "GO" / "/100"
   iddiası YOK.
 - **Provenance (anonim public GitHub API, fabrike EDİLMEDİ):** repo
-  `beyinsiz1903/emergent-yeni-uygulama`, run #206 (id 27000015675),
+  `beyinsiz1903/syroce-pms`, run #206 (id 27000015675),
   head_sha=`d672292f884bc5cfcb6b7c1d3de8968049b240dd`, conclusion=success,
   event=schedule, actor=beyinsiz1903. Artifacts (2): stress-drill-report
   (28756 B) — sha256:`e9d88d25fbf2e85c6738a62bddcf4666c12030d328727dbe70e69bafb6128453`,
@@ -118,7 +118,7 @@ yok.
   (rate_limit auth_login) onarımı: (a) `LOGIN_IP` (20/60s) + `LOGIN_ACCOUNT`
   (10/300s) throttle policy'leri tüm peer login yüzeyleri (agency/vendor/cashier/
   2FA/reset) zaten `always_on=True` (Mongo cross-instance) iken non-always_on kalan
-  tek brute-force-kritik login yüzeyiydi → Replit autoscale fan-out'unda burst
+  tek brute-force-kritik login yüzeyiydi → Cloud autoscale fan-out'unda burst
   instance/process'lere dağılıp cap tetiklenmiyordu; `always_on=True` + stabil
   `name=` (peer pattern) yapıldı. (b) `97-rate-limit-boundary.spec.js` auth_login
   burst payload'ı `@stress.invalid` kullanıyordu → `.invalid` TLD (RFC 6761)
@@ -141,7 +141,7 @@ yok.
   diğerleri eşit, regresyon YOK.** E#11 fix'in "bir sonraki full stress'te P2 düşer"
   tahmini doğrulandı. Düz "GO" / "/100" iddiası YOK.
 - **Provenance (anonim public GitHub API, fabrike EDİLMEDİ):** repo
-  `beyinsiz1903/emergent-yeni-uygulama`, run #205 (id 26977075695),
+  `beyinsiz1903/syroce-pms`, run #205 (id 26977075695),
   head_sha=`6aa53ed835944d409d237aa66af9cd1955482c66`, conclusion=success,
   event=workflow_dispatch, actor=beyinsiz1903. Artifacts (2): stress-drill-report
   (28777 B) — sha256:`85e258f89e3f314d324e2b5a241ee3e1f94b38a54048402ed12c55fd16e66d6f`,
@@ -177,7 +177,7 @@ yok.
   bağımsız olarak non-markup case'lerde + 18 birim testle kanıtlı). Düz "GO" / "/100"
   iddiası YOK.
 - **Provenance (anonim public GitHub API, fabrike EDİLMEDİ):** repo
-  `beyinsiz1903/emergent-yeni-uygulama`, run #204 (id 26968589924),
+  `beyinsiz1903/syroce-pms`, run #204 (id 26968589924),
   head_sha=`0606bef9b0a15bf6a89b6da777f285fbe7260bce`, conclusion=success,
   event=workflow_dispatch, actor=beyinsiz1903. Artifacts (2): stress-drill-report
   (29013 B) — sha256:`054512aeb4f108cfa5ac14d9c708fdb02e5219411e3c465b5430ebe7cd1bd325`,
@@ -224,7 +224,7 @@ yok.
   değil, ondan DAHA TEMİZ. Bu, #197'nin reddedilme gerekçesinin (REVIEW +5) tersi;
   #198 promote barını net geçer. Düz "GO" / "/100" iddiası YOK.
 - **Provenance (anonim public GitHub API, fabrike EDİLMEDİ):** repo
-  `beyinsiz1903/emergent-yeni-uygulama`, run #198 (id 26912829694),
+  `beyinsiz1903/syroce-pms`, run #198 (id 26912829694),
   head_sha=`b03557d1`, conclusion=success, event=workflow_dispatch. Artifacts (2):
   stress-drill-report (29882 B) —
   sha256:`1689f90c410ae5f5300118a870b12a871861168eb2e92e5918e3b4331ee07098`,
@@ -259,7 +259,7 @@ yok.
   PASS/FAIL/REVIEW/SKIP=1592/0/20/11, P0=P1=0, P2=22 / P3=0, external_calls=[],
   pilot_drift=0, verdict **GO WITH WATCH**.
 - **Provenance (anonim GitHub API, fabrike YOK):** repo
-  `beyinsiz1903/emergent-yeni-uygulama`, run #197 (id 26904195621),
+  `beyinsiz1903/syroce-pms`, run #197 (id 26904195621),
   head_sha=`218054fb`, conclusion=success. Artifacts: stress-drill-report
   `sha256:ff5ffbb3969fc1788889c39de99b6aef857367953e3692f095f2e450aef0ef73`,
   playwright-stress-report
@@ -313,7 +313,7 @@ yok.
   unblock'lanan step by-design koşula çarpıp SKIP→REVIEW'e döner. Gerçek sayım
   düşüşü yalnızca gerçekten kırık şeyi onarmaktan veya meşru reclassify'dan gelir
   (by-design'lar reclassify EDİLEMEZ).
-- **Run URL:** https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26891329963
+- **Run URL:** https://github.com/beyinsiz1903/syroce-pms/actions/runs/26891329963
   (run #196, run ID 26891329963, event=workflow_dispatch).
 - **Provenance:** anonim GitHub API'dan doğrulandı — head_sha=2582b14c,
   conclusion=success; artifacts stress-drill-report digest
@@ -345,7 +345,7 @@ yok.
   EDİLMEDİ (yalnızca canlı probe ile doğrulandı); kalan finding ayrı bir yüzey
   olan `auth_login` burst'üdür (0 throttled — login-throttle ordering, yeni WATCH
   adayı). activity-PII (T004) by-design olarak sürüyor (beklenen).
-- **Run URL:** https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26879084806
+- **Run URL:** https://github.com/beyinsiz1903/syroce-pms/actions/runs/26879084806
   (run #195, run ID 26879084806, job ID 79274137231, event=workflow_dispatch,
   run_attempt=1, branch main, süre ~70dk / 1h10m8s).
 - **Artifacts (2) — provenance TAM (GitHub Actions API `digest` alanından doğrulandı, fabrike EDİLMEDİ):**
@@ -381,7 +381,7 @@ yok.
 - **#190 → #194 delta:** PASS +94, REVIEW −4, SKIP −33, P2 −6, P3 −2;
   FAIL/P0/P1 sabit 0. Güçlü pozitif ilerleme (folio-mass void, HR modülleri,
   settings_audit artık temiz koşuyor); regresyon yok. En değerli kazanım SKIP 44→11.
-- **Run URL:** https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26869789889
+- **Run URL:** https://github.com/beyinsiz1903/syroce-pms/actions/runs/26869789889
   (run #194, run ID 26869789889, job ID 79241995727, event=schedule, branch main).
 - **Artifacts (2) — provenance TAM (GitHub Actions API `digest` alanından doğrulandı, fabrike EDİLMEDİ):**
   - stress-drill-report — ID `7379444307` (30627 B) —
@@ -413,7 +413,7 @@ yok.
 - **#184 → #190 delta:** PASS +31, REVIEW +2, SKIP −10, P2 −1; FAIL/P0/P1 sabit 0.
   Pozitif ilerleme (önceden module-blocked/atlanan yüzeyler artık koşuyor);
   regresyon yok. REVIEW +2 data-state varyansı.
-- **Run URL:** https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26819935740
+- **Run URL:** https://github.com/beyinsiz1903/syroce-pms/actions/runs/26819935740
   (run #190, run ID 26819935740, job ID 79071540497, branch main).
 - **Artifacts (2) — provenance TAM (GitHub Actions API `digest` alanından doğrulandı, fabrike EDİLMEDİ):**
   - stress-drill-report — ID `7359234557` (31639 B) —
@@ -436,7 +436,7 @@ yok.
   PASS/FAIL/REVIEW/SKIP=1440/0/19/54, P0=P1=0, P2=31 / P3=2 informational,
   external_calls=[], pilot_drift=0, cleanup#2 idempotent=true, verdict
   **GO WITH WATCH** (metrikler operatör raporundan; CI conclusion=success doğrulandı).
-- **Run URL:** https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26771158900
+- **Run URL:** https://github.com/beyinsiz1903/syroce-pms/actions/runs/26771158900
   (run #184, run ID 26771158900, job ID 78910688457, branch main).
 - **Artifacts (2) — provenance TAM (GitHub Actions API `digest` alanından doğrulandı):**
   - stress-drill-report — ID `7339879559` (32351 B) —
@@ -444,7 +444,7 @@ yok.
   - playwright-stress-report — ID `7339879193` (788756 B) —
     sha256:`ebc0cb3b4cd3a26ce69cd2b0d278b6d5028680ebcadafaec2b0a6202e92b34ac`.
 - **Drift notu:** #184 operatör tarafından current baseline sayıldı ama bu zincir
-  ve `replit.md` o tarihte hiç #184'e güncellenmedi (docs #171'de kaldı). Bu kayıt
+  ve `digitalocean.md` o tarihte hiç #184'e güncellenmedi (docs #171'de kaldı). Bu kayıt
   ilk kez backfill'dir; provenance CI'dan doğrulandı, fabrike EDİLMEDİ. #190
   promote'u sırasında historical'a alındı.
 
@@ -463,7 +463,7 @@ yok.
   Temiz ve pozitif ilerleme; regresyon yok. e-Fatura test verisi düzeltmesi
   karşılığını verdi → `accounting_expenses` artık tamamen temiz
   (10 PASS / 0 REVIEW / 0 SKIP).
-- **Run URL:** https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26708567911
+- **Run URL:** https://github.com/beyinsiz1903/syroce-pms/actions/runs/26708567911
   (run #171, run ID 26708567911, job ID 78714440738, branch main).
 - **Artifacts (2) — provenance TAM (CI'dan doğrulandı, fabrike EDİLMEDİ):**
   - stress-drill-report — ID 7315902501 —
@@ -488,7 +488,7 @@ yok.
   güvenlik commit'i (`ef7fac1f`) + publish (`78bef111`). Test-yüzeyi delta (PASS +3 /
   SKIP −1 / P2 −1) data-state varyansıdır, koda atfedilmez (Exely pull worker arka
   plan işçisi, HTTP test yüzeyinde görünmez; regresyon yok).
-- **Run URL:** https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26690524113
+- **Run URL:** https://github.com/beyinsiz1903/syroce-pms/actions/runs/26690524113
   (run #168, run ID 26690524113, branch main).
 - **Artifacts (2):** playwright-stress-report (754KB,
   sha256:`cf37bf93d5f570e442ac962c9dac50149b21454acb0486c031723c9ea705c8e4`) +
@@ -527,7 +527,7 @@ yok.
 
 - 2026-05-30, commit `0b99607fe3a64a7ada660d1f1bcb8607bd47f5dd`,
   PASS/FAIL/REVIEW/SKIP=1379/0/48/44, P2=58/P3=1, verdict GO WITH WATCH.
-- Run URL: https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26687012176
+- Run URL: https://github.com/beyinsiz1903/syroce-pms/actions/runs/26687012176
   (run ID 26687012176, job ID 78656853578).
 - Artifacts: stress-drill-report ID 7309449913 + playwright-stress-report ID 7309449854.
 - Drill: `docs/drill_reports/20260530_stress_full_stress_suite_GREEN_702test_run167.md`
@@ -537,7 +537,7 @@ yok.
 
 - 2026-05-29, 702 test, commit `bde7662744c9b94a5c9294fa778202d813319dfc`,
   PASS/FAIL/REVIEW/SKIP=1316/0/46/61, P2=60/P3=1, verdict GO WITH WATCH.
-- Run URL: https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26653464472
+- Run URL: https://github.com/beyinsiz1903/syroce-pms/actions/runs/26653464472
   (run ID 26653464472, job ID 78557501168).
 - Artifacts: stress-drill-report ID 7298692917 + playwright-stress-report ID 7298692578.
 - Drill: `docs/drill_reports/20260529_stress_full_stress_suite_GREEN_702test.md`.
@@ -546,7 +546,7 @@ yok.
 
 - 2026-05-29, 702 test, commit `ba9dfc7aafc0a694b70841d3405f8445ecfc1b67`,
   P2=65/REVIEW=48/P3=1, verdict GO WITH WATCH.
-- Run URL: https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26641150604
+- Run URL: https://github.com/beyinsiz1903/syroce-pms/actions/runs/26641150604
   (run ID 26641150604, job ID 78514272098).
 - Artifacts: stress-drill-report ID 7293609890 + playwright-stress-report ID 7293609632.
 - provenance+metrics drill comparison block'ta korunmuştur

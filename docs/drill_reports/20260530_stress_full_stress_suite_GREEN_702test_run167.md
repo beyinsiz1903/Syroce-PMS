@@ -15,7 +15,7 @@ baseline. Run #162 historical reference'a düşürüldü.
 | Date | 2026-05-30 |
 | Workflow | GitHub Actions — Full Stress Suite (one-shot) |
 | Run | **#167** |
-| Run URL | https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26687012176 |
+| Run URL | https://github.com/beyinsiz1903/syroce-pms/actions/runs/26687012176 |
 | Run ID / Job ID | 26687012176 / 78656853578 |
 | Branch | `main` |
 | Commit SHA | `0b99607fe3a64a7ada660d1f1bcb8607bd47f5dd` |

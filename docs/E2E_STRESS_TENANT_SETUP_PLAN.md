@@ -15,7 +15,7 @@ Pilot üzerinde 500 oda + 500 booking + 500 folio + room move + housekeeping mut
 - KVKK ihlali (500 sahte misafir kaydı + ID/iletişim alanları)
 - Cleanup pattern eksik (audit_logs ve bazı outbox kayıtları silinmez)
 - Pilot operatörünün gözlemlediği gerçek dashboard'ı kirletir
-- Atlas 500-koleksiyon limiti (replit.md gotcha) yakın — extra tenant koleksiyonları ile aşılabilir
+- Atlas 500-koleksiyon limiti (digitalocean.md gotcha) yakın — extra tenant koleksiyonları ile aşılabilir
 - Gerçek Sentry alert'leri test verisinden tetiklenir → on-call kirlenmesi
 
 **Çözüm**: Aşağıdaki üç deployment paterninden birini seç ve ayrı tenant_id'li, izole MongoDB/Redis ile çalıştır.
@@ -38,17 +38,17 @@ Pilot üzerinde 500 oda + 500 booking + 500 folio + room move + housekeeping mut
 - Tamamen fiziksel izolasyon. Pilot'a sıfır risk.
 - Maliyet: Atlas M10 ~$60/ay.
 
-### Pattern C — Local MongoDB Replit'te (en izole, ~1 saat ama persistence yok)
+### Pattern C — Local MongoDB DigitalOcean'te (en izole, ~1 saat ama persistence yok)
 - `backend/start.sh` zaten local Mongo başlatıyor.
 - `MONGO_ATLAS_URI` boş bırakılırsa fallback local'a düşer mi? — `backend/core/database.py` kontrol edilmeli. Eğer hard-coded Atlas ise küçük patch lazım.
-- Replit container yeniden başlayınca veri uçar → bir koşum için tek yeterli.
-- Replit Reserved VM gerekli (storage persistence). Maliyet: $7/ay.
+- DigitalOcean container yeniden başlayınca veri uçar → bir koşum için tek yeterli.
+- DigitalOcean Reserved VM gerekli (storage persistence). Maliyet: $7/ay.
 
 **Tavsiye**: **Pattern A** + ayrı stress tenant_id ile başla. Pre-flight tenant-leak audit'i yap (3-4 saat). Sorun çıkarsa B'ye geç.
 
 ---
 
-## 3. Gerekli env / secret listesi (Replit Secrets)
+## 3. Gerekli env / secret listesi (DigitalOcean Secrets)
 
 ### Mevcut (yeniden kullanılacak)
 - `MONGO_ATLAS_URI` — Pattern A için aynı; Pattern B için `MONGO_ATLAS_URI_STRESS` ayrıca lazım.
@@ -73,7 +73,7 @@ Pilot üzerinde 500 oda + 500 booking + 500 folio + room move + housekeeping mut
 | `ENABLE_SETUP_ENDPOINTS` | `1` (sadece stress kurulum sırasında) | Stress tenant + ilk admin user yaratmak için |
 | `SETUP_SECRET` | (güçlü random) | Setup endpoint koruması |
 | `ROOM_QR_SECRET` | (güçlü random) | QR guest request bölümü için (zaten missing_secrets'te) |
-| `PUBLIC_APP_URL` | `https://${REPLIT_DEV_DOMAIN}` | QR ve mail link'leri için (zaten missing) |
+| `PUBLIC_APP_URL` | `https://${CLOUD_DEV_DOMAIN}` | QR ve mail link'leri için (zaten missing) |
 
 ### Dış servis dry-run gate'leri (suite içinde okunacak)
 | Gate Env | Default | Davranış |
@@ -223,7 +223,7 @@ markdown-reporter.mjs             # Konsolide rapor üretici
 Aşağıdaki 10 madde tek tek ✅ olduğunda stress suite tetiklenebilir:
 
 1. ✅ Pattern A/B/C kararı verildi ve cluster hazır
-2. ✅ Yeni 14 secret Replit'e eklendi (Bölüm 3)
+2. ✅ Yeni 14 secret DigitalOcean'e eklendi (Bölüm 3)
 3. ✅ `e2e_stress_500` tenant `POST /api/admin/tenants` ile yaratıldı + ilk admin login doğrulandı
 4. ✅ `STRICT_TENANT_MODE=true` aktif, restart sonrası backend up
 5. ✅ Pre-flight tenant-leak audit (Bölüm 6) çalıştı, kalan leak yok
@@ -240,7 +240,7 @@ Aşağıdaki 10 madde tek tek ✅ olduğunda stress suite tetiklenebilir:
 | Faz | İş | Süre | Çıktı |
 |---|---|---:|---|
 | **F1** | Pattern A/B/C kararı + Atlas tier upgrade (gerekirse) | 30 dk | Karar dokümanı |
-| **F2** | 14 secret hazırlama + Replit'e ekleme | 30 dk | Secrets aktif |
+| **F2** | 14 secret hazırlama + DigitalOcean'e ekleme | 30 dk | Secrets aktif |
 | **F3** | Stress tenant create + admin user + STRICT_TENANT_MODE on | 45 dk | Login çalışıyor |
 | **F4** | Pre-flight tenant-leak audit + bulgu fix | 2-3 saat | Audit raporu, temiz |
 | **F5** | Bulk seed/cleanup endpoint + 10-oda smoke | 2-3 saat | API hazır |
@@ -266,7 +266,7 @@ Aşağıdaki 10 madde tek tek ✅ olduğunda stress suite tetiklenebilir:
 
 ## 11. Karar noktaları (kullanıcıdan beklenen)
 
-1. **Pattern seçimi**: A (aynı cluster + STRICT mode), B (ayrı cluster, $60/ay), C (local Replit, persistence yok) — hangisi?
+1. **Pattern seçimi**: A (aynı cluster + STRICT mode), B (ayrı cluster, $60/ay), C (local DigitalOcean, persistence yok) — hangisi?
 2. **Atlas tier**: Pattern A için mevcut tier 500-oda working set'e yeterli mi? Upgrade gerekli mi?
 3. **Sentry**: `stress` environment için ayrı project/key mi yoksa mevcut DSN tag-based ayrım mı?
 4. **F4 pre-flight audit**: Tenant-leak bulgu çıkarsa fix bu turun parçası mı yoksa ayrı tur mu?

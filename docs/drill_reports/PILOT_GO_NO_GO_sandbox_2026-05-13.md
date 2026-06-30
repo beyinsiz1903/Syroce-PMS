@@ -105,11 +105,11 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 1
 ```
 
-> **Not**: Retry policy `providers/sync_scheduler.py:117-118` içinde `pull_for_tenant` instantiation'ında set edilir — module-level constant değildir. replit.md gotcha "HotelRunner Pull Retries" bu konumu gösterir.
+> **Not**: Retry policy `providers/sync_scheduler.py:117-118` içinde `pull_for_tenant` instantiation'ında set edilir — module-level constant değildir. digitalocean.md gotcha "HotelRunner Pull Retries" bu konumu gösterir.
 
 **Notes**:
-- replit.md gotcha "HotelRunner Pull Retries": manual=3, scheduled=2. Scheduled retries 0 değil → transient 504 kendiliğinden absorb edilir.
-- HR token Replit Secrets'ta `HR_TOKEN` olarak; demo değer prod boot'unda reddedilir (PRE_DEPLOY_CHECKLIST adım 1).
+- digitalocean.md gotcha "HotelRunner Pull Retries": manual=3, scheduled=2. Scheduled retries 0 değil → transient 504 kendiliğinden absorb edilir.
+- HR token DigitalOcean Secrets'ta `HR_TOKEN` olarak; demo değer prod boot'unda reddedilir (PRE_DEPLOY_CHECKLIST adım 1).
 - Sync cadence pilot otelin OTA volume'una göre tune edilebilir (`sync_scheduler.py` — pilot süresi içinde gözlem).
 
 ---
@@ -136,7 +136,7 @@ test_noshow_releases_room_night_locks PASSED
 ```
 
 **Notes**:
-- replit.md gotcha "CM-Hardening Series": #3a (event production), #3b (HR inventory recompute, Strategy A).
+- digitalocean.md gotcha "CM-Hardening Series": #3a (event production), #3b (HR inventory recompute, Strategy A).
 - `outbox_dispatcher.EVENT_TYPE_TO_CM_EVENT["booking.no_show.v1"] = "booking_no_show"`.
 - HR provider'da transactional booking metodu YOK → cancel ve no-show ikisi de `inventory recompute` patternine düşer (aynı kod yolu).
 - Detay → `docs/adr/2026-05-cm-hardening.md`.
@@ -339,7 +339,7 @@ Pilot deploy öncesi staging'de koşum zorunlu (PILOT_GO_NO_GO #6 CI green satı
 - `deploy/DEPLOYMENT_GUIDE.md` — deploy + rollback adımları
 - `docs/adr/2026-05-cm-hardening.md` — CM-Hardening Turu #1a–#4 + #3c discovery
 - `docs/adr/2026-05-production-hardening.md` — No-show terminal-state guard, lock release, folio refund/void guard
-- `replit.md` — gotcha'lar (HR Pull Retries, JWT lifespan, Atlas 500-collection limiti, vb.)
+- `digitalocean.md` — gotcha'lar (HR Pull Retries, JWT lifespan, Atlas 500-collection limiti, vb.)
 
 ---
 

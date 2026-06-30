@@ -19,15 +19,15 @@ bu tag'e göre filtre alır.
 
 | Env değeri      | Ne zaman                              | Hangi alarmlar tetiklenir         |
 | --------------- | ------------------------------------- | --------------------------------- |
-| `development`   | Lokal / Replit sandbox (default)      | Hiçbiri (dev gürültüsü mute)      |
+| `development`   | Lokal / DigitalOcean sandbox (default)      | Hiçbiri (dev gürültüsü mute)      |
 | `pilot`         | HR pilot tenant'ı, canlı veri         | **Tüm critical + error**          |
 | `production`    | Genel availability (post-pilot)       | Tüm critical + error + warning    |
 | `staging`       | Pre-prod doğrulama ortamı             | Sadece critical (smoke trigger)   |
 
 **Set edileceği yerler:**
-- Backend: `SENTRY_ENVIRONMENT=pilot` (Replit Secrets, deploy adımı).
+- Backend: `SENTRY_ENVIRONMENT=pilot` (DigitalOcean Secrets, deploy adımı).
   Mevcut default `infra/env.production.template:31`'de `production`,
-  `infra/k8s/base.yml:24`'te `production`. Pilot için **Replit Secrets'a
+  `infra/k8s/base.yml:24`'te `production`. Pilot için **DigitalOcean Secrets'a
   `SENTRY_ENVIRONMENT=pilot` ekleyin** (override'ler bu sırada okunur).
 - Frontend: `import.meta.env.MODE` otomatik (`development`/`production`).
   Pilot binary'ler `production` build olduğu için `production` döner —
@@ -167,7 +167,7 @@ Sentry-UI:
 
 ## 7. Manuel Kurulum Checklist (Pilot Deploy Öncesi)
 
-- [ ] **Replit Secrets**: `SENTRY_ENVIRONMENT=pilot` ekle
+- [ ] **DigitalOcean Secrets**: `SENTRY_ENVIRONMENT=pilot` ekle
 - [ ] **Sentry-UI → Settings → Projects → syroce-pms-backend**:
   - Inbound filters: enable IP filter for staff bastion IPs
   - Data scrubbing: ek olarak `tenant_id`, `property_id`, `phone_e164`,

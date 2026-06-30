@@ -5,7 +5,7 @@
 **Scope:** `frontend/e2e-stress/specs/10..13` (4 spec, 22 test), F8A operasyonel paketin üstüne QR/complaints/messaging yüzeyleri.
 **Drill rapor:** `docs/drill_reports/20260517_stress_f8b_guest_experience_qr_requests.md`
 
-Bu ADR F8B stres test suite'inin tur detaylarını içerir. `replit.md` "Gotchas" bölümünde tek-satır özet bırakılmıştır.
+Bu ADR F8B stres test suite'inin tur detaylarını içerir. `digitalocean.md` "Gotchas" bölümünde tek-satır özet bırakılmıştır.
 
 ---
 

@@ -20,7 +20,7 @@ import requests
 
 # API URLs
 MOCK_SERVER_URL = "http://localhost:9999"
-API_URL = os.environ.get("VITE_BACKEND_URL", "https://secure-key-registry.preview.emergentagent.com")
+API_URL = os.environ.get("VITE_BACKEND_URL", "https://test-api.syroce.local")
 
 # Mock server credentials
 MOCK_TOKEN = "mock-hr-token-001"

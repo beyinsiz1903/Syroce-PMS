@@ -10,11 +10,11 @@ hedeflenir.
 ```bash
 cd mobile
 npm install
-EXPO_PUBLIC_API_URL="https://<replit-dev-domain>" npx expo start
+EXPO_PUBLIC_API_URL="https://<digitalocean-dev-domain>" npx expo start
 ```
 
 `EXPO_PUBLIC_API_URL` arka uç (FastAPI, port 8000) için temel URL. Yerel
-geliştirmede Replit dev domain'ini kullanın; backend `/api/...` ön ekiyle
+geliştirmede DigitalOcean dev domain'ini kullanın; backend `/api/...` ön ekiyle
 yanıt verir.
 
 `EXPO_PUBLIC_QUICKID_URL` Quick-ID kimlik tarama servisi (varsayılan
@@ -97,7 +97,7 @@ kullanmayacaksanız atlayabilirsiniz. Bu iki komut tamamlanmadan
 `eas build` çalıştırmayın — projeyi sunucuya bağlamak için zorunludur.
 
 > **Not:** `eas init` mutlaka **sizin yerel makinenizden** ve sizin
-> Expo hesabınızla çalıştırılmalıdır; bu Replit container'ından
+> Expo hesabınızla çalıştırılmalıdır; bu DigitalOcean container'ından
 > çalıştırıldığında sizin hesabınıza bağlanamaz. Komut tamamlanınca
 > `app.json` içindeki `extra.eas.projectId` değeri commit edilir, böylece
 > tüm geliştiriciler ve CI aynı projeye build/submit eder.

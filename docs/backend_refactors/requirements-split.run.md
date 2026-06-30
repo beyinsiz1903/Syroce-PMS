@@ -194,7 +194,7 @@ flagged here for Phase 4 (Docker reconciliation), not for Phase 2/3 fix:
 - `pip check` then reports:
   `fastapi 0.135.1 has requirement starlette>=0.46.0, but you have starlette 0.37.2`
 - **Why this is preexisting**: aggregate has the same pin. The conflict only
-  manifests in this Replit Python 3.12 venv that overlays Nix-managed system
+  manifests in this DigitalOcean Python 3.12 venv that overlays Nix-managed system
   site-packages. In the production Docker image (clean 3.11-slim), pip
   installs `starlette==1.0.0` cleanly — no fallback, no resolver conflict.
 - **Phase 4 action**: verify on actual Docker build that `starlette==1.0.0`
@@ -202,7 +202,7 @@ flagged here for Phase 4 (Docker reconciliation), not for Phase 2/3 fix:
   outside the split scope).
 
 ### b. `pipdeptree 2.31.0 requires pip>=25.2 (have 25.0.1)`
-- Replit Nix bundles pip 25.0.1; pipdeptree was bumped to 2.31.0 in aggregate.
+- DigitalOcean Nix bundles pip 25.0.1; pipdeptree was bumped to 2.31.0 in aggregate.
 - Cosmetic only; pipdeptree still functions for advisory use.
 
 ### c. `typer 0.24.0 requires click>=8.2.1 (have 8.1.8)`
@@ -280,7 +280,7 @@ All preserved verbatim:
 | 1 | litellm override preserved | ✓ Verbatim — same line, same flags |
 | 2 | requirements/ folder added to build context | ✓ Separate `COPY requirements/ ./requirements/` |
 | 3 | Parity only, no API image shrink | ✓ Uses `all.txt` (= aggregate footprint) |
-| 4 | Build smoke after | ⚠ Docker daemon not available in this Replit env; equivalent verified in Phase 3 (real `pip install -r backend/requirements/all.txt` + combined import smoke passed). Full Docker build will run in production CI. |
+| 4 | Build smoke after | ⚠ Docker daemon not available in this DigitalOcean env; equivalent verified in Phase 3 (real `pip install -r backend/requirements/all.txt` + combined import smoke passed). Full Docker build will run in production CI. |
 | 5 | Starlette pin behavior in Docker build | ⚠ Flagged Phase 3 §a: in clean Docker (3.11-slim) without Nix overlay, `starlette==1.0.0` should install cleanly. Must observe first CI build for confirmation. |
 
 ## Why pip-level parity is sufficient evidence
@@ -310,7 +310,7 @@ resolves to the same package set. The only Docker-specific risks are:
 - `backend/requirements.txt`: untouched (Phase 8)
 - `backend/requirements-ci.txt`: untouched
 
-## Replit dev workflow continuity
+## DigitalOcean dev workflow continuity
 
 Backend API workflow (`bash backend/start.sh`) starts uvicorn directly,
 **does not use Dockerfile**. All 4 dev workflows still running with new logs
@@ -648,13 +648,13 @@ worker boot smoke OK — both modules importable in current env
 ```
 
 This confirms the AST scan's optimistic interpretation **at the import-graph
-level in the Replit dev environment**. The full Docker container boot smoke
+level in the DigitalOcean dev environment**. The full Docker container boot smoke
 (`docker run --rm syroce-worker celery -A celery_app inspect ping`) cannot
 run here (no daemon) and remains a CI gate.
 
-## Replit workflow continuity
+## DigitalOcean workflow continuity
 
-There is no `worker` workflow in this Replit dev environment (only Backend
+There is no `worker` workflow in this DigitalOcean dev environment (only Backend
 API, Mobile Web, Quick-ID API, Start application — all started via
 shell scripts, not the worker Dockerfile). The worker Dockerfile change
 therefore has zero local runtime impact. All 4 dev workflows confirmed
@@ -795,9 +795,9 @@ runtime build itself.
   aggregate intentional (Phase 8 may reconsider)
 - `deploy/DEPLOYMENT_GUIDE.md` — rsync example is documentation only
 
-## Replit workflow continuity
+## DigitalOcean workflow continuity
 
-Zero local impact. CI workflows do not run in the Replit dev
+Zero local impact. CI workflows do not run in the DigitalOcean dev
 environment. All four dev workflows (Backend API, Mobile Web,
 Quick-ID API, Start application) confirmed running with new logs
 after the edits.
@@ -1083,7 +1083,7 @@ RUN ... -r requirements/api-runtime.txt ... && \
 The `--no-deps` second install upgrades it to the desired version
 without dragging in incompatible httpx/openai pins.
 
-## Replit dev environment continuity
+## DigitalOcean dev environment continuity
 
 All 4 dev workflows confirmed running with new logs after the edit:
 - Backend API (uvicorn) — boot smoke passed in the same Python env
@@ -1091,7 +1091,7 @@ All 4 dev workflows confirmed running with new logs after the edit:
 - Quick-ID API
 - Start application (frontend)
 
-Worker process is not run in Replit dev (no workflow), so Phase 5+6.1
+Worker process is not run in DigitalOcean dev (no workflow), so Phase 5+6.1
 combined Dockerfile changes have ZERO local runtime impact. The dev
 backend continues to use the system-installed Python + raw imports
 (not the Docker image) as before.
@@ -1128,7 +1128,7 @@ job (mirrors the Phase 7 wiring):
 ```
 
 Same OAuth-workflow-scope caveat as Phase 7 — needs to be added via
-GitHub web UI directly on main, not pushed from Replit. Deferred
+GitHub web UI directly on main, not pushed from DigitalOcean. Deferred
 until ChatGPT confirms; it is a nice-to-have, not a blocker (the
 script's exit code 0 with REVIEW-NEEDED verdict means a CI run would
 PASS today since exit is 0 for unmapped-only cases).
@@ -1185,11 +1185,11 @@ Per ChatGPT review of Phase 6.1, two small follow-ups before Phase 8:
 
 ## OAuth-scope caveat (same as Phase 7)
 
-The Replit ↔ GitHub OAuth lacks the `workflow` scope, so any change
-under `.github/workflows/` cannot be pushed from Replit. Same workflow
+The DigitalOcean ↔ GitHub OAuth lacks the `workflow` scope, so any change
+under `.github/workflows/` cannot be pushed from DigitalOcean. Same workflow
 as Phase 7:
 
-- **From Replit**: push only the docstring change
+- **From DigitalOcean**: push only the docstring change
   (`backend/scripts/check_api_import_closure.py`), since it lives
   outside `.github/workflows/`. This is safe to push immediately
   alongside Phase 6.1 source changes.
@@ -1226,7 +1226,7 @@ Zero. Both changes are documentation/CI-only — no runtime code, no
 package install changes. All 4 dev workflows confirmed running with
 new logs after the edits.
 
-**Phase 7.1 status: COMPLETE in source. Push split: script change pushable from Replit; ci-cd.yml change requires GitHub web UI commit (same OAuth-scope limitation as Phase 7).**
+**Phase 7.1 status: COMPLETE in source. Push split: script change pushable from DigitalOcean; ci-cd.yml change requires GitHub web UI commit (same OAuth-scope limitation as Phase 7).**
 
 ---
 
@@ -1335,9 +1335,9 @@ $ rg 'hashFiles.*requirements|cache-dependency-path.*requirements' .github/workf
 
 **No CI pip cache is keyed off `requirements.txt`.** Phase 8.1/8.2 swaps will NOT invalidate any cached pip downloads (which would slow CI). This is a clean signal — confirmed safe.
 
-## Replit/Procfile/pyproject check
+## DigitalOcean/Procfile/pyproject check
 
-`.replit`, `replit.nix`, `pyproject.toml`, `Procfile`, `setup.py`, `setup.cfg`, `backend/start.sh` — **none** reference `requirements.txt`. No surprise out-of-band install path. Replit dev workflows install via `backend/start.sh` (which does NOT use any requirements file — depends on system-installed Python packages).
+`.digitalocean`, `digitalocean.nix`, `pyproject.toml`, `Procfile`, `setup.py`, `setup.cfg`, `backend/start.sh` — **none** reference `requirements.txt`. No surprise out-of-band install path. DigitalOcean dev workflows install via `backend/start.sh` (which does NOT use any requirements file — depends on system-installed Python packages).
 
 ## Proposed Phase 8 alt-phase split
 
@@ -1390,7 +1390,7 @@ After Phase 8.1, `backend/requirements.txt` would have **zero live consumers**. 
 
 - It is NOT a code change. Working tree `git diff` is empty for everything except this run.md edit.
 - It is NOT a final decision. ChatGPT must approve scope of 8.1 / 8.2 alt-phases before any edits.
-- It is NOT exhaustive about edge cases (e.g. third-party tools that scan requirements.txt — none found, but couldn't enumerate every Replit/CI agent ever attached).
+- It is NOT exhaustive about edge cases (e.g. third-party tools that scan requirements.txt — none found, but couldn't enumerate every DigitalOcean/CI agent ever attached).
 
 ## What's left
 
@@ -1406,7 +1406,7 @@ After Phase 8.1, `backend/requirements.txt` would have **zero live consumers**. 
 ChatGPT approved Phase 8.1 scope with explicit ordering: deploy_pipeline.py
 path fix FIRST, then everything else. Workflow file patches deferred to
 GitHub web UI (same Phase 7 / 7.1 OAuth-scope dance) so the source push
-from Replit Git pane is not blocked.
+from DigitalOcean Git pane is not blocked.
 
 ## Edits applied
 
@@ -1487,7 +1487,7 @@ The 4 CI install commands in `.github/workflows/ci-cd.yml` (lines 135, 239,
 identical pattern. They MUST be swapped to keep CI green after Phase 8.2
 deletes `requirements.txt`.
 
-These workflow files are NOT edited from Replit (would block the source push
+These workflow files are NOT edited from DigitalOcean (would block the source push
 because the OAuth integration lacks `workflow` scope — same Phase 7 / 7.1
 limitation). Apply via GitHub web UI:
 
@@ -1574,7 +1574,7 @@ design (the guard's whole job is to compare aggregate vs split).
 
 ## Push split
 
-- **Replit Git pane** (this turn): 9 source files
+- **DigitalOcean Git pane** (this turn): 9 source files
   (`backend/ops/deploy_pipeline.py`, `backend/Dockerfile`, `worker/Dockerfile`,
   `backend/requirements-ci.txt`, `scripts/post-merge.sh`, `README.md`,
   `backend/README.md`, `deploy/DEPLOYMENT_GUIDE.md`,
@@ -1793,7 +1793,7 @@ split") listed 6 steps. Actual delivery:
 
 ## Push split
 
-- **Replit Git pane** (this turn): 8 source/doc files modified + 2 files deleted.
+- **DigitalOcean Git pane** (this turn): 8 source/doc files modified + 2 files deleted.
   - `backend/scripts/check_requirements_split_parity.py` (rewritten)
   - `backend/Dockerfile` (block-comment update)
   - `worker/Dockerfile` (block-comment update)
@@ -1891,7 +1891,7 @@ flow.
 
 ## Push
 
-- **Replit Git pane** (this turn): 1 doc file
+- **DigitalOcean Git pane** (this turn): 1 doc file
   (`docs/backend_refactors/requirements-split.run.md` — Phase 8.2-W
   closing section).
 - **GitHub web UI** (next, REQUIRED for operational closure): 2

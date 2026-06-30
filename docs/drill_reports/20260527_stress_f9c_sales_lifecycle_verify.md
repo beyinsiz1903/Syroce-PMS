@@ -2,12 +2,12 @@
 
 ## Scope
 Task #47: verify `frontend/e2e-stress/specs/98-sales-basic-lifecycle.spec.js`
-against the live backend (`https://emergent-yeni-uygulama-1.replit.app`).
+against the live backend (`https://pms.syroce.com`).
 
 ## Run mode
 Spec was executed end-to-end via the Playwright stress harness
 (`yarn run test:e2e:stress specs/98-sales-basic-lifecycle.spec.js`)
-inside a Replit workflow (`Stress Sales Spec`) so the long-lived
+inside a DigitalOcean workflow (`Stress Sales Spec`) so the long-lived
 process survives the agent's bash-tool budget. globalSetup re-seeded
 the stress tenant (500 rooms, prefix `E2E_STRESS_F7_1779881908259_`)
 and globalTeardown ran two cleanup rounds (8187 deletions then
@@ -25,7 +25,7 @@ FastAPI.
 Reproduction with a minimal Playwright APIRequestContext script
 showed that every GET path (`/api/sales/leads`, `/api/sales/funnel`,
 `/api/pms/rooms`, `/api/pms/bookings`, `/api/health`, ...) returned a
-400 HTML response from the Replit edge proxy whenever the request
+400 HTML response from the DigitalOcean edge proxy whenever the request
 carried `data: null` + `Content-Type: application/json`. Playwright
 serializes `data: null` as a 4-byte literal body `null`; the edge
 proxy then rejects any GET that arrives with a body

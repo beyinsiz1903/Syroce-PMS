@@ -109,7 +109,7 @@ def is_production_env() -> bool:
 
     Returns True when ANY of these is set to ``"production"`` (case-insensitive):
         - ``APP_ENV``       (used by crypto/secrets/controlplane fail-hard checks)
-        - ``ENVIRONMENT``   (Replit deployment convention)
+        - ``ENVIRONMENT``   (DigitalOcean deployment convention)
         - ``NODE_ENV``      (frontend / cross-stack convention)
 
     A single helper prevents the bug where one production gate activates while
@@ -127,7 +127,7 @@ def is_strict_env() -> bool:
     Used by the crypto/secrets/controlplane startup blocks that historically
     re-raise on init failures in both production and staging environments.
     Mirrors the prior ``APP_ENV in ("production", "staging")`` semantics but
-    additionally honors ENVIRONMENT/NODE_ENV so deployments using the Replit
+    additionally honors ENVIRONMENT/NODE_ENV so deployments using the DigitalOcean
     naming convention are protected by the same fail-hard gates.
     """
     for key in ("APP_ENV", "ENVIRONMENT", "NODE_ENV"):
@@ -304,7 +304,7 @@ class ProductionConfigValidator:
         tenant_guard_violation = is_prod and not strict_ok
 
         # v109 round-8 architect 3rd-pass: production must NOT boot with the
-        # known leaked dev values present in `.replit` plaintext. We use only
+        # known leaked dev values present in `.digitalocean` plaintext. We use only
         # SHA-256 fingerprints (the actual secret bytes are never embedded in
         # code). The table lives at module scope so tests can monkey-patch it
         # to validate this real code path with a synthetic sentinel hash.
@@ -350,11 +350,11 @@ class ProductionConfigValidator:
         if forbidden_present:
             logger.error(
                 "Startup check FAILED — production environment is using KNOWN DEV/LEAKED "
-                "values for: %s. Rotate these secrets via the Replit Secrets vault BEFORE "
-                "publishing and remove the plaintext from .replit. Refusing to boot.",
+                "values for: %s. Rotate these secrets via the DigitalOcean Secrets vault BEFORE "
+                "publishing and remove the plaintext from .digitalocean. Refusing to boot.",
                 forbidden_present,
             )
-            raise RuntimeError(f"Production refused to boot: forbidden dev secret values detected for {forbidden_present}. See replit.md → Round-8 production checklist.")
+            raise RuntimeError(f"Production refused to boot: forbidden dev secret values detected for {forbidden_present}. See digitalocean.md → Round-8 production checklist.")
         # Task #33: VAPID gate. In production, missing Web Push keys must
         # abort the boot so urgent push notifications never silently degrade.
         # In dev, log a single warning so the developer notices but local
@@ -363,12 +363,12 @@ class ProductionConfigValidator:
             if vapid_violation:
                 logger.error(
                     "Startup check FAILED — Web Push VAPID keys are not configured: %s. "
-                    "Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY as Replit Secrets so every "
+                    "Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY as DigitalOcean Secrets so every "
                     "backend instance shares the same keypair and the private key is never "
                     "written to MongoDB. Refusing to boot.",
                     vapid_missing,
                 )
-                raise RuntimeError(f"Production refused to boot: missing Web Push VAPID env vars {vapid_missing}. Configure them in Replit Secrets before deploying.")
+                raise RuntimeError(f"Production refused to boot: missing Web Push VAPID env vars {vapid_missing}. Configure them in DigitalOcean Secrets before deploying.")
             logger.warning(
                 "Startup check — Web Push VAPID keys are not set (%s). Development "
                 "fallback (db-persisted auto-generated keypair) will be used; production "

@@ -97,5 +97,5 @@ REVIEW 48 → 38-42 · SKIP 44 → 32-36 · P2 58 → 45-50. Tek turda sıfırla
 1. A1 — Exely test-auth gate (backend kod + pytest).
 2. A2/A3/A4 — operatör devops env runbook (kod yok).
 3. B1/B2/B3 — incele; yalnız güvenli olanı uygula.
-4. candidate doc + GOTCHAS + replit.md (env notu değiştiyse).
+4. candidate doc + GOTCHAS + digitalocean.md (env notu değiştiyse).
 5. architect review PASS.

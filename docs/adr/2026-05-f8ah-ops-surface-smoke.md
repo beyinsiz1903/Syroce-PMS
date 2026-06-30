@@ -122,7 +122,7 @@ F8AH `f8ah_setup` 2 PASS / 1 SKIP + `f8ah_cleanup` 4 PASS / 0 FAIL.
     (`backend/domains/pms/pos_fnb_router/kitchen.py`).
 
 - **Tur 2 (commits `147266d4` + `67374954` + `8f7f77b6`) — P0 TWOFA throttle:**
-  - **Root cause:** (1) Replit autoscale per-instance Redis dilution,
+  - **Root cause:** (1) Cloud autoscale per-instance Redis dilution,
     (2) GitHub Actions / CDN / NAT egress IP rotation per-IP throttle
     key bypass paterni.
   - **Fix:** Mongo-backed cross-instance throttle

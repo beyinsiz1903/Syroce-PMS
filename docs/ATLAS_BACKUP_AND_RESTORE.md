@@ -21,7 +21,7 @@ S3'e şifreli yazılır, retention konfigüre edilebilir, restore tek tıkla.
 | Sentry events                       | ❌                       | Sentry kendi tutar (90 gün ücretsiz plan) |
 
 > **Eksik kapsam:** File uploads. Ayrı bir backup gerekli — pilot için
-> Replit volume snapshot yeterli, sonra S3/R2 sync. Bkz. ileri adımlar.
+> DigitalOcean volume snapshot yeterli, sonra S3/R2 sync. Bkz. ileri adımlar.
 
 ## Atlas otomatik snapshot zamanlaması (M10 default)
 
@@ -51,7 +51,7 @@ Pilot için default önerilir.
 7. **Restore** → ~10-15 dakika bekle
 8. Yeni cluster'ın connection string'ini al, içeriği doğrula
 9. **Connection string cutover** ile app'i yeni cluster'a yönlendir:
-   - Replit Secrets → `MONGO_URL` (veya `MONGO_ATLAS_URI`) güncelle
+   - DigitalOcean Secrets → `MONGO_URL` (veya `MONGO_ATLAS_URI`) güncelle
    - `bash deploy/deploy.sh` çalıştır (smoke koşar)
    - Smoke PASS sonrası eski cluster'ı Atlas console → Terminate
    > **Not:** Atlas console'da "swap cluster" tek-tık eylemi YOK —
@@ -79,7 +79,7 @@ Pilot için default önerilir.
 Atlas Admin API key'leri ile son snapshot'ın tazeliğini script'le kontrol:
 
 ```bash
-# Replit Secrets'a ekle (opsiyonel, doğrulama için):
+# DigitalOcean Secrets'a ekle (opsiyonel, doğrulama için):
 #   ATLAS_API_PUBLIC_KEY
 #   ATLAS_API_PRIVATE_KEY
 #   ATLAS_PROJECT_ID
@@ -97,7 +97,7 @@ python backend/scripts/verify_atlas_backup.py --max-age-hours 26
 
 API key'siz çalışıyorsa readiness validator zaten URI'den Atlas
 yapılandırmasını algılıyor (`backend/infra/atlas_backup_check.py`)
-ve `ATLAS_TIER` env-var'ından plan'ı okuyor. **Replit Secrets'a şunları
+ve `ATLAS_TIER` env-var'ından plan'ı okuyor. **DigitalOcean Secrets'a şunları
 eklemek yeterli:**
 
 ```
@@ -133,7 +133,7 @@ zaten yedek alıyor.
 Eğer "Atlas dahi gitse elimde lokal yedek olsun" diyorsanız:
 
 ```bash
-# .env / Replit Secrets:
+# .env / DigitalOcean Secrets:
 BACKUP_ENABLED=true
 BACKUP_PATH=/var/backups/syroce
 BACKUP_RETENTION_DAYS=7

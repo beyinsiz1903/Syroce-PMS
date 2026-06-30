@@ -40,7 +40,7 @@ Last updated: 24 Apr 2026 — after v106 round-9 closure + v107 P0 mini-batch.
 
 ### 1. Secrets Rotation (kritik)
 
-Production deploy'dan ÖNCE Replit Secrets vault'tan **mutlaka** rotate edilmeli:
+Production deploy'dan ÖNCE DigitalOcean Secrets vault'tan **mutlaka** rotate edilmeli:
 
 - `JWT_SECRET` — şu an dev/leaked hash listesinde, prod'da boot'u reddeder
 - `QUICKID_SERVICE_KEY` — aynı şekilde
@@ -48,7 +48,7 @@ Production deploy'dan ÖNCE Replit Secrets vault'tan **mutlaka** rotate edilmeli
 - `CM_MASTER_KEY_CURRENT` — aynı şekilde
 - `HR_TOKEN` — demo HotelRunner token, prod'da gerçek token gerekir
 
-Yöntem: Replit → Tools → Secrets → her birini sil + yeni `openssl rand -base64 32` ile değer üret.
+Yöntem: DigitalOcean → Tools → Secrets → her birini sil + yeni `openssl rand -base64 32` ile değer üret.
 
 ### 2. Environment Matrix
 
@@ -75,15 +75,15 @@ Production deploy'da bu env'ler tutarlı olmalı:
   ```python
   logging.getLogger("httpx").setLevel(logging.WARNING)
   ```
-- MongoDB Atlas IP allowlist'inde Replit deployment IP'leri ekli olduğunu doğrula.
+- MongoDB Atlas IP allowlist'inde DigitalOcean deployment IP'leri ekli olduğunu doğrula.
 
 ### 4. Smoke Test (deploy sonrası)
 
 Production URL üzerinden:
 
 ```bash
-curl -i https://YOUR-DEPLOY.replit.app/api/health        # 307 bekleniyor
-curl -i https://YOUR-DEPLOY.replit.app/api/auth/me       # 403 (auth yok)
+curl -i https://YOUR-DEPLOY.syroce.com/api/health        # 307 bekleniyor
+curl -i https://YOUR-DEPLOY.syroce.com/api/auth/me       # 403 (auth yok)
 ```
 
 İlk login + dashboard render testi tarayıcıdan yapılmalı.

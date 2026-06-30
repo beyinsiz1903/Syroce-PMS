@@ -201,7 +201,7 @@ Smoke ≠ mutation. These need real action flows, not render-only.
   every gate.
 - **No fake green.** Verbal "test passed" without an attached drill
   artifact is candidate evidence at best.
-- **No artifact, no baseline.** Replit-environment runs (including Task
+- **No artifact, no baseline.** DigitalOcean-environment runs (including Task
   #57's 723-test run) are candidate evidence only. Provenance (run URL
   + run number + commit SHA) is part of the artifact.
 - **No ZERO route/module may remain pilot-accessible** without either
@@ -224,4 +224,4 @@ Smoke ≠ mutation. These need real action flows, not render-only.
 - `docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md` — Run #143 baseline drill (oldest historical)
 - `docs/drill_reports/20260528_twofa_round5_candidate_fix_pending_verification.md` — TWOFA Round-3/4/5 candidate detail
 - `docs/STRESS_TEST_ROADMAP.md` — F8/F9/F10 roadmap (single source of truth)
-- `replit.md` — F8 Stress Test Series section (pointer source of truth)
+- `digitalocean.md` — F8 Stress Test Series section (pointer source of truth)

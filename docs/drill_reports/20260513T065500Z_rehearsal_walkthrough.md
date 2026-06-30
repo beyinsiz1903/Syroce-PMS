@@ -1,7 +1,7 @@
 # Pilot Production Launch Rehearsal — Sandbox Walkthrough
 
 **Tarih:** 2026-05-13 06:55Z
-**Ortam:** Replit sandbox (cluster=hotel_pms Atlas BAĞLI, Backend canlı)
+**Ortam:** DigitalOcean sandbox (cluster=hotel_pms Atlas BAĞLI, Backend canlı)
 **Operatör:** Agent (rehearsal mode)
 **Doc:** `docs/PRODUCTION_LAUNCH_REHEARSAL.md`
 **Verdict:** **NO-GO** — sandbox pilot configürasyonu eksik (4 zorunlu secret unset, 1 keşfedilen bug fix'lendi).
@@ -12,7 +12,7 @@
 
 | # | Kapı | Sonuç | Not |
 |---|------|-------|-----|
-| 1 | Replit Secrets matrix | ⚠️ **PARTIAL** | 9/13 zorunlu set, 4 unset (§1 detay) |
+| 1 | DigitalOcean Secrets matrix | ⚠️ **PARTIAL** | 9/13 zorunlu set, 4 unset (§1 detay) |
 | 2 | Sentry UI 11 alarm | N/A | Operatör eylemi (Sentry projesi sandbox'ta yok) |
 | 3 | Sentry Crons (cm-backlog) | N/A | Operatör eylemi |
 | 4 | Slack/PagerDuty routing | N/A | Operatör eylemi |
@@ -164,7 +164,7 @@ Multi-gate hard-stop kuralı (`PRODUCTION_LAUNCH_REHEARSAL.md` §6):
 Sandbox'ta her ikisi de FAIL → **NO-GO** karar verildi. Bu beklenen
 sonuç; sandbox pilot ortam değil. Gerçek pilot için aksiyon listesi:
 
-1. **Replit Secrets vault'a 4 zorunlu secret ekle:**
+1. **DigitalOcean Secrets vault'a 4 zorunlu secret ekle:**
    - `ATLAS_TIER=M10`
    - `SENTRY_ENVIRONMENT=pilot`
    - `EXELY_IP_WHITELIST=<comma-separated IPs>` (HR+Exely ise)
@@ -192,7 +192,7 @@ sonuç; sandbox pilot ortam değil. Gerçek pilot için aksiyon listesi:
    gelecek rehearsal'ler bu raporu baseline olarak kullanır.
 3. **📝 GO/NO-GO kopyası:** `drill_reports/PILOT_GO_NO_GO_sandbox_2026-05-13.md`
    placeholder doldurma için hazır.
-4. **📌 Replit.md gotcha eklendi:** "MONGO_URL alias cron'da yok"
+4. **📌 DigitalOcean.md gotcha eklendi:** "MONGO_URL alias cron'da yok"
    gelecek refactor'larda regression önler.
 
 **Sonuç değerlendirmesi:** Doc'un kendisi (PRODUCTION_LAUNCH_REHEARSAL)

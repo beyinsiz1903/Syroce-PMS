@@ -287,5 +287,5 @@ Aşağıdakiler gerçek müşteri verisi olmadan zayıf çalışır; pilot/demo'
 ## Pointers
 
 - ChatGPT mimari incelemesi: `attached_assets/Pasted-Murat-ilk-izlenimim-net-bu-repo-basit-otel-otomasyonu-d_1778424796518.txt`
-- Sprint A standartları: `replit.md` Gotchas → "Sprint A Design System (May 2026)"
-- Pages Layout Wrap kuralı: `replit.md` Gotchas → "Pages Layout Wrap"
+- Sprint A standartları: `digitalocean.md` Gotchas → "Sprint A Design System (May 2026)"
+- Pages Layout Wrap kuralı: `digitalocean.md` Gotchas → "Pages Layout Wrap"

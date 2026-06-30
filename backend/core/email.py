@@ -94,7 +94,7 @@ def _frontend_base_url() -> str:
     candidates = [
         os.environ.get("FRONTEND_URL"),
         os.environ.get("PUBLIC_APP_URL"),
-        os.environ.get("REPLIT_DEV_DOMAIN") and f"https://{os.environ['REPLIT_DEV_DOMAIN']}",
+        os.environ.get("CLOUD_DEV_DOMAIN") and f"https://{os.environ['CLOUD_DEV_DOMAIN']}",
         "http://localhost:5000",
     ]
     return next((c for c in candidates if c), "http://localhost:5000")

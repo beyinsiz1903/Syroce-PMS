@@ -24,13 +24,13 @@ tüketiciler.
 | `.github/workflows/ci-cd.yml` L105, L209, L337 | 3 ayrı job `pip install -r requirements.txt` | Hepsi aggregate'ten kuruyor |
 | `.github/workflows/frontend-quality.yml` L74 | `pip install -r requirements.txt` | Frontend job neden backend req kuruyor? — ayrı incelenecek |
 | `.github/workflows/ci-cd.yml` L383 | `--exclude="requirements.txt"` (rsync exclude) | **Önemli**: rsync exclude'u split sonrası `requirements/**` tüm klasörü dışlamalı |
-| `backend/start.sh` | Doğrudan `requirements*` referansı yok (workflow zaten dependency olduğu varsayımıyla çalışır) | Replit dev workflow için güvenli |
+| `backend/start.sh` | Doğrudan `requirements*` referansı yok (workflow zaten dependency olduğu varsayımıyla çalışır) | DigitalOcean dev workflow için güvenli |
 
-### 1.3 Replit secrets / runtime context
+### 1.3 DigitalOcean secrets / runtime context
 
 `backend/start.sh` workflow'u Mongo Atlas + local Redis + uvicorn server
-başlatır. Dependency kurulumu Replit ortamında **runtime'da değil** önceden
-yapılmış varsayılır. Yani Replit dev tarafında split anlık kırmaz; risk
+başlatır. Dependency kurulumu DigitalOcean ortamında **runtime'da değil** önceden
+yapılmış varsayılır. Yani DigitalOcean dev tarafında split anlık kırmaz; risk
 Docker/CI tarafında.
 
 ## 2. Hedef Grup Tablosu

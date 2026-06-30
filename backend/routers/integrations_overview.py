@@ -14,7 +14,7 @@ Iyzico, vb.) — owner bunları otellere ayrı modüller olarak atayıp
 ayrı ayrı ücretlendirebilsin diye.
 
 Credential mevcudiyeti kontrolü:
-  • os.environ      — Replit Secrets / deployment env
+  • os.environ      — DigitalOcean Secrets / deployment env
   • integration_credentials koleksiyonu (DB'de şifreli saklanan)
 
 Bir env eksiği DB'den ya da Secrets'tan girilince bir sonraki refresh'te

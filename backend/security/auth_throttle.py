@@ -12,10 +12,10 @@ unbounded request volume per IP and per account, enabling:
   - Reset-token brute-force (Bug AX)
 
 This module provides a small in-memory sliding-window throttle plus a
-`client_ip` resolver that honours the Replit edge proxy (`X-Forwarded-For`).
+`client_ip` resolver that honours the DigitalOcean edge proxy (`X-Forwarded-For`).
 
 Caveats (acknowledged):
-  * In-memory: per-uvicorn-worker. Sufficient for single-worker dev/Replit
+  * In-memory: per-uvicorn-worker. Sufficient for single-worker dev/DigitalOcean
     deployment; for multi-worker prod, swap to Redis-backed implementation.
   * Sliding window uses a deque per key — O(N) per check where N == max.
     Throttle thresholds are small (≤30) so cost is negligible.
@@ -36,25 +36,25 @@ from fastapi import HTTPException, Request
 # AYNI senaryo ile başarısız oldu (17×401 / 21×401, hiç 429). İkisi de
 # `always_on=True` Mongo-backed throttle. Bu sistemik bir backend
 # kullanılabilirlik sorununa işaret eder: `_check_mongo` sessiz hata ile
-# fall-through olup per-container in-memory yedeğine düşüyor → Replit
+# fall-through olup per-container in-memory yedeğine düşüyor → DigitalOcean
 # autoscale (deploymentTarget=autoscale) altında her container kendi
 # sayacını tutuyor → cap asla tetiklenmiyor. Tanılayıcı için structured
 # logger eklendi — production loglarında root cause'u görmek için her
 # bypass'ı kaydeder.
 logger = logging.getLogger(__name__)
 
-# When True, trust the rightmost X-Forwarded-For hop (Replit edge proxy
+# When True, trust the rightmost X-Forwarded-For hop (DigitalOcean edge proxy
 # appends the real peer IP at the END of the chain). When False, ignore XFF
 # entirely and use the raw socket peer (safe for non-proxied environments
 # where any XFF must be assumed attacker-controlled).
-# Default True because production runs behind Replit's mTLS edge.
+# Default True because production runs behind DigitalOcean's mTLS edge.
 TRUST_PROXY = os.getenv("TRUST_PROXY", "1") == "1"
 
 
 # ── Redis-backed sliding window state (shared across replicas/workers) ──
 #
 # F8AH P0 fix — original SlidingWindowThrottle held counters in a process-local
-# `dict[str, deque]`. In a multi-replica/multi-worker deployment (Replit
+# `dict[str, deque]`. In a multi-replica/multi-worker deployment (DigitalOcean
 # autoscale, gunicorn workers, etc.) each process sees only a fraction of
 # requests, so a 17-burst attack against /api/auth/2fa/verify distributed
 # across N replicas can hit ~ceil(17/N) per replica — never tripping the
@@ -72,7 +72,7 @@ _REDIS_RETRY_BACKOFF_SECONDS = 30.0  # re-attempt after transient failures
 
 # ── MongoDB-backed sliding window (cross-instance shared state) ──────────
 #
-# F8AH P0 follow-up — the Redis path is per-instance under Replit autoscale
+# F8AH P0 follow-up — the Redis path is per-instance under Cloud autoscale
 # (each container runs its own `localhost:6380` redis-server, so two
 # instances mean two independent throttle counters and a 17-burst attack
 # distributed across them only hits each one with ~9 requests, never
@@ -445,7 +445,7 @@ class SlidingWindowThrottle:
         """Return (allowed, retry_after_seconds). Records the hit when allowed."""
         # F8AH P0 follow-up — security-critical (`always_on`) throttles MUST
         # use the cross-instance Mongo backend. The local Redis path is
-        # per-deployment-instance under Replit autoscale, so a multi-
+        # per-deployment-instance under Cloud autoscale, so a multi-
         # instance fan-out dilutes the cap. Mongo Atlas is shared and
         # the only backend that gives the production guarantee these
         # throttles are documented to provide.
@@ -559,11 +559,11 @@ class SlidingWindowThrottle:
 
 
 def client_ip(request: Request) -> str:
-    """Resolve client IP, honouring the Replit edge proxy.
+    """Resolve client IP, honouring the DigitalOcean edge proxy.
 
     Architect-flagged bypass risk (v38): naively trusting the FIRST hop of
     `X-Forwarded-For` lets a malicious client send `X-Forwarded-For: 1.2.3.4`
-    and have the throttle key it. The Replit edge proxy APPENDS the real
+    and have the throttle key it. The DigitalOcean edge proxy APPENDS the real
     peer IP at the END of the chain, so the rightmost hop is the only entry
     that originated inside the trust boundary. We use that.
 
@@ -599,7 +599,7 @@ def normalize_identity(value: str | None) -> str:
 # surfaces still on the non-always_on (Redis→in-memory) backend while every
 # peer (AGENCY_LOGIN_*, VENDOR_LOGIN_*, CASHIER_*, TWOFA_*, RESET_CODE_*) had
 # already been moved to always_on=True (Mongo-backed, cross-instance) by the
-# F8AH P0 / Task-55 waves. Under Replit autoscale (deploymentTarget=autoscale)
+# F8AH P0 / Task-55 waves. Under Cloud autoscale (deploymentTarget=autoscale)
 # the per-instance Redis (localhost) / per-process in-memory deque only ever
 # saw a fraction of a fan-out burst, so a 60-request wrong-credential spray
 # distributed across N instances hit each counter with ~60/N < cap(20) and

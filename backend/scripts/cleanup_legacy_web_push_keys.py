@@ -3,7 +3,7 @@
 Background
 ----------
 Production reads the active VAPID keypair from the ``VAPID_PUBLIC_KEY`` and
-``VAPID_PRIVATE_KEY`` environment variables (Replit Secrets). Before that
+``VAPID_PRIVATE_KEY`` environment variables (DigitalOcean Secrets). Before that
 contract was enforced, the backend would auto-generate a P-256 keypair on
 first use and persist it to ``db.web_push_keys`` so subsequent restarts
 reused the same identifier. Those records are now obsolete in production

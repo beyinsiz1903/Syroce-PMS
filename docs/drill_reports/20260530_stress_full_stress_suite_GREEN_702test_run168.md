@@ -36,7 +36,7 @@ skip-as-pass YOK.
   Run #168 commit'inden yalnız import-sort / ruff I001 farkı; **davranış
   değişikliği yok**, metrikler güncel HEAD için de geçerli.
 - **Branch:** main
-- **Run URL:** https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26690524113
+- **Run URL:** https://github.com/beyinsiz1903/syroce-pms/actions/runs/26690524113
 - **Run ID:** 26690524113
 - **Artifacts (2):**
   - playwright-stress-report — 754KB —

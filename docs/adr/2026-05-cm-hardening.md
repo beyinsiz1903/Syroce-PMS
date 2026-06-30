@@ -1,6 +1,6 @@
 # ADR — CM-Hardening Series (May 2026)
 
-Channel Manager pilot readiness sırasında uygulanan hardening turları. Her tur ayrı PR ile merge edildi; bu doküman replit.md'deki dense gotcha entry'lerinin tam detayını taşıyor.
+Channel Manager pilot readiness sırasında uygulanan hardening turları. Her tur ayrı PR ile merge edildi; bu doküman digitalocean.md'deki dense gotcha entry'lerinin tam detayını taşıyor.
 
 ---
 
@@ -219,7 +219,7 @@ else:
 ### Discovery turunun ürettiği değişiklikler
 
 **Kod**: 0 satır (sadece keşif).
-**Doküman**: bu bölüm + `replit.md` gotcha güncellemesi (eski Strategy etiketleri ve path referansları düzeltildi).
+**Doküman**: bu bölüm + `digitalocean.md` gotcha güncellemesi (eski Strategy etiketleri ve path referansları düzeltildi).
 
 ---
 

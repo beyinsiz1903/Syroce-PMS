@@ -128,7 +128,7 @@ operatör-kontrollü backend-env wiring; kod görevi YOK.
 
 **Operatör aksiyonu:** stres backend deployment env'inde `SENTRY_ENVIRONMENT=stress`
 (veya APP_ENV/ENVIRONMENT) set → introspection otomatik kapanır; alternatif
-`GRAPHQL_INTROSPECTION=false`. Prod aynı şekilde. (replit.md env listesi zaten her
+`GRAPHQL_INTROSPECTION=false`. Prod aynı şekilde. (digitalocean.md env listesi zaten her
 iki değişkeni içeriyor — yeni env eklenmedi.)
 
 ## 8. Admin/settings RBAC surface — CONFIRM-BY-DESIGN (Wave 8)

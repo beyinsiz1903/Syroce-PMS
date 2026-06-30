@@ -116,10 +116,10 @@ def evaluate_controls(tenant_signals: dict[str, Any] | None = None) -> list[dict
     has_jwt_secret = bool(os.environ.get("JWT_SECRET"))
     has_encryption_key = _has_env("FIELD_ENCRYPTION_KEY", "ENCRYPTION_KEY")
     has_hsts = _has_module("security.security_headers_middleware") or _has_module("middleware.security_headers")
-    # Replit edge zaten TLS terminate eder; HSTS modülü varsa transport posture met
+    # DigitalOcean edge zaten TLS terminate eder; HSTS modülü varsa transport posture met
     # sayılır — FORCE_HTTPS app-level guard ek pekiştirme (yokluğunda partial DEĞİL).
     force_https = os.environ.get("FORCE_HTTPS", "").lower() in {"1", "true", "yes"}
-    is_managed_runtime = bool(os.environ.get("REPLIT_DEPLOYMENT") or os.environ.get("REPLIT_DEV_DOMAIN"))
+    is_managed_runtime = bool(os.environ.get("CLOUD_DEPLOYMENT") or os.environ.get("CLOUD_DEV_DOMAIN"))
     has_ci_security_scan = os.environ.get("CI_SECURITY_SCAN_ENABLED", "").lower() in {"1", "true", "yes"}
     # CI scan attestation YOKSA bile in-app SAST/dep audit varsa partial
     # değil "met" sayılabilir — runtime kanıtı kabul edilir.
@@ -138,12 +138,12 @@ def evaluate_controls(tenant_signals: dict[str, Any] | None = None) -> list[dict
             "title": "Ağ güvenlik kontrollerini kurun ve sürdürün",
             "status": "shared",
             "evidence": [
-                "TLS sonlandırma + WAF Replit dağıtım katmanında yapılır",
+                "TLS sonlandırma + WAF DigitalOcean dağıtım katmanında yapılır",
                 "Uygulama yalnızca HTTPS çerezleri ve HSTS başlıkları kullanır",
-                *(["Yönetilen çalışma ortamı (REPLIT_DEPLOYMENT algılandı)"] if is_managed_runtime else []),
+                *(["Yönetilen çalışma ortamı (CLOUD_DEPLOYMENT algılandı)"] if is_managed_runtime else []),
             ],
             "recommendations": [
-                "Replit tarafından yönetilen güvenlik duvarı ve giriş kurallarını PCI kanıt paketinizde belgeleyin",
+                "DigitalOcean tarafından yönetilen güvenlik duvarı ve giriş kurallarını PCI kanıt paketinizde belgeleyin",
             ],
         },
         {
@@ -182,13 +182,13 @@ def evaluate_controls(tenant_signals: dict[str, Any] | None = None) -> list[dict
         {
             "req_id": "4",
             "title": "Açık ağlar üzerinden iletim sırasında kart sahibi verisini güçlü kriptografi ile koruyun",
-            # Replit edge TLS + HSTS modülü varsa met. FORCE_HTTPS opsiyonel pekiştirme.
+            # DigitalOcean edge TLS + HSTS modülü varsa met. FORCE_HTTPS opsiyonel pekiştirme.
             "status": "met" if (has_hsts or is_managed_runtime or force_https) else "partial",
             "evidence": [
                 "Webhook imzaları HMAC-SHA256 kullanır (örn. Af-sadakat entegrasyonu)",
                 "Servisler arası belirteçler kısa TTL'li HS256 JWT'leridir",
                 *(["HSTS / güvenlik başlıkları middleware'i aktif"] if has_hsts else []),
-                *(["Yönetilen uç TLS (Replit) — HTTPS platform katmanında zorlanır"] if is_managed_runtime else []),
+                *(["Yönetilen uç TLS (DigitalOcean) — HTTPS platform katmanında zorlanır"] if is_managed_runtime else []),
                 *(["FORCE_HTTPS=true (uygulama katmanında HTTP→HTTPS yönlendirme)"] if force_https else []),
             ],
             "recommendations": (
@@ -205,7 +205,7 @@ def evaluate_controls(tenant_signals: dict[str, Any] | None = None) -> list[dict
             "title": "Tüm sistemleri ve ağları kötü amaçlı yazılımlardan koruyun",
             "status": "shared",
             "evidence": [
-                "Yönetilen çalışma ortamı (Replit) ana sistem düzeyinde AV/EDR sağlar",
+                "Yönetilen çalışma ortamı (DigitalOcean) ana sistem düzeyinde AV/EDR sağlar",
                 "Uygulamada güvenilmeyen dosya yürütme yolu yoktur",
             ],
             "recommendations": [

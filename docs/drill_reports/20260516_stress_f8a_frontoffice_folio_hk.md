@@ -97,7 +97,7 @@ cd frontend && yarn test:e2e:stress
 ## 8) Tur-8 ek fix — `dry_run_enforced` env coupling (2026-05-16 ikinci pass)
 
 ### Verifikasyon
-- `.github/workflows/stress.yml:66` workflow env'ine `E2E_EXTERNAL_DRY_RUN: 'true'` set ediyor — **fakat bu CI runner process'i**. Backend `STRESS_E2E_BASE_URL` secret'ında belirtilen **ayrı Replit deployment**; kendi process env'i Replit Deployment Secrets üzerinden konfigüre — runner env'i deploy backend'e propagate etmez.
+- `.github/workflows/stress.yml:66` workflow env'ine `E2E_EXTERNAL_DRY_RUN: 'true'` set ediyor — **fakat bu CI runner process'i**. Backend `STRESS_E2E_BASE_URL` secret'ında belirtilen **ayrı DigitalOcean deployment**; kendi process env'i DigitalOcean Deployment Secrets üzerinden konfigüre — runner env'i deploy backend'e propagate etmez.
 - `rg "E2E_EXTERNAL_DRY_RUN" backend/` → sadece **2 kullanım** (stress.py:127 ve eski 563). Flag hiçbir yerde dispatcher davranışını gerçek olarak kapı tutmuyor; pure self-report.
 - Helper `runtimeOk = calls.length===0 && dry_run_enforced===true && query_errors.length===0` (stress-helpers.js:129). `dry_run_enforced=false` olunca calls=[] olsa bile FAIL.
 - Sonuç: stress backend'i `E2E_EXTERNAL_DRY_RUN=true` env'i ile başlatılmadıkça helper SAHTE FAIL veriyor; gerçek invariant (outbox boş + worker dispatch yok) tutarken bile.
@@ -134,4 +134,4 @@ cd frontend && yarn test:e2e:stress
 - HTML report: `frontend/playwright-stress-report/` (CI generates per-run)
 - Trace: `frontend/test-results-stress/`
 - Önceki tur snapshot'ları: `docs/drill_reports/20260514_stress_f8a_*`
-- Gotcha güncellemesi: `replit.md` → "F8A Stress" entry (run #20 NO-GO → fix bullet eklendi)
+- Gotcha güncellemesi: `digitalocean.md` → "F8A Stress" entry (run #20 NO-GO → fix bullet eklendi)

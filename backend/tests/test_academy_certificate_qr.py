@@ -27,7 +27,7 @@ import pytest
 from core import academy
 from core.security import generate_qr_code
 
-_BASE_ENV_VARS = ("FRONTEND_URL", "PUBLIC_APP_URL", "REPLIT_DEV_DOMAIN")
+_BASE_ENV_VARS = ("FRONTEND_URL", "PUBLIC_APP_URL", "CLOUD_DEV_DOMAIN")
 
 CERT = {
     "user_name": "Ayse Yilmaz",

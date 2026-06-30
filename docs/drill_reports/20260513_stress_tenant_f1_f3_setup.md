@@ -51,7 +51,7 @@ Gerekçe (kullanıcı kararı):
 | `VITE_SENTRY_DSN` | mevcut | ✅ | Tag-based env ayrımı |
 | `E2E_BASE_URL` / `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD` | mevcut (process env) | ✅ | F3 tenant create için pilot admin token alındı |
 
-### 3.2 F3'te oluşturulan, manuel Replit secret olarak eklenmesi gerekenler
+### 3.2 F3'te oluşturulan, manuel DigitalOcean secret olarak eklenmesi gerekenler
 
 | Secret | Değer | Hassasiyet | Nereye |
 |---|---|---|---|
@@ -61,9 +61,9 @@ Gerekçe (kullanıcı kararı):
 | `E2E_STRESS_ADMIN_EMAIL` | `stress-admin@e2e-stress.example.com` | düşük | Login |
 | `E2E_STRESS_ADMIN_PASSWORD` | (28-char güçlü random — `.local/stress_tenant_credentials.txt`) | **YÜKSEK** | Login |
 
-> **Önemli**: Şifre + tenant ID `.local/stress_tenant_credentials.txt` dosyasında saklı (gitignored). Bu turdan sonra **kullanıcı manuel olarak** Replit Secrets UI'sından bu 5 değeri ekleyecek. Agent secret yazma yetkisini kullanmadı çünkü değerler zaten dosyada hazır ve user kontrolünde olmalı.
+> **Önemli**: Şifre + tenant ID `.local/stress_tenant_credentials.txt` dosyasında saklı (gitignored). Bu turdan sonra **kullanıcı manuel olarak** DigitalOcean Secrets UI'sından bu 5 değeri ekleyecek. Agent secret yazma yetkisini kullanmadı çünkü değerler zaten dosyada hazır ve user kontrolünde olmalı.
 
-### 3.3 Suite-time env'leri (CI/local `.env` ya da Replit secrets, kullanıcı tercihine göre)
+### 3.3 Suite-time env'leri (CI/local `.env` ya da DigitalOcean secrets, kullanıcı tercihine göre)
 
 | Env | Değer | Anlam |
 |---|---|---|
@@ -265,7 +265,7 @@ Toplam kalan: ~18-27 saat (F4-F10).
 ## 9. Kullanıcı için aksiyon listesi (F4 öncesi)
 
 1. ✅ Plan §11 karar noktaları yanıtlandı (Pattern A, Sentry tag-based, dış servisler dry-run, F1-F3 → F4 sırası)
-2. ⏳ `.local/stress_tenant_credentials.txt` dosyasını gözden geçirip **5 stress secret'ı** Replit Secrets UI'sına ekle (F7'de suite koşumu öncesi gerekli, F4 için zorunlu değil)
+2. ⏳ `.local/stress_tenant_credentials.txt` dosyasını gözden geçirip **5 stress secret'ı** DigitalOcean Secrets UI'sına ekle (F7'de suite koşumu öncesi gerekli, F4 için zorunlu değil)
 3. ⏳ F4 turunu açtığında: agent tenant-leak audit'i çalıştırır, raporu dropper, varsa P0/P1 fix önerileri sunar
 4. ⏳ STRICT_TENANT_MODE=true backend restart kararı F4 audit sonrası verilir (P0 yoksa açılır)
 

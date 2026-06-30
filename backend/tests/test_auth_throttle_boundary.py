@@ -25,7 +25,7 @@ from security.auth_throttle import (
 def test_main_login_policies_are_cross_instance_always_on():
     """WATCH E#11 regression — the main `/api/auth/login` per-IP and
     per-account throttles MUST be `always_on=True` (Mongo-backed,
-    cross-instance) so a wrong-credential burst fanned out across Replit
+    cross-instance) so a wrong-credential burst fanned out across DigitalOcean
     autoscale instances still trips the cap. They were the last login
     surfaces left on the per-instance Redis/in-memory backend while every
     peer (AGENCY/VENDOR/CASHIER/TWOFA/RESET) had already been promoted; a

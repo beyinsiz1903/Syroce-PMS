@@ -13,8 +13,8 @@ _ALWAYS_ALLOWED_ORIGINS = [
     "https://www.pms.syroce.com",
     "https://syroce.com",
     "https://syroce-b2b-api.syroce.com",
-    "https://emergent-yeni-uygulama-1.replit.app",
-    "https://emergent-yeni-uygulama-1-syroce.replit.app"
+    "https://pms.syroce.com",
+    "https://www.pms.syroce.com"
 ]
 ALLOWED_ORIGINS = {o.strip().lower() for o in _RAW_ORIGINS.split(",") if o.strip()}
 ALLOWED_ORIGINS.update({o.lower() for o in _ALWAYS_ALLOWED_ORIGINS})

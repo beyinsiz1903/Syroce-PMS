@@ -1,6 +1,6 @@
 # Syroce PMS — B2B Acente Otomasyon Uygulamasi Devir Promptu (T005)
 
-Bu dosya, AYRI bir Replit projesinde calisacak "acente otomasyon uygulamasi"
+Bu dosya, AYRI bir DigitalOcean projesinde calisacak "acente otomasyon uygulamasi"
 agent'ina verilecek devir (handoff) promptudur. Syroce PMS, bu uygulama icin
 yetkili (authoritative) iki-yonlu B2B backend'idir: REST uzerinden rezervasyon/
 musaitlik/fiyat (Kanal A) ve Redis Streams uzerinden gercek zamanli ARI fanout
@@ -304,7 +304,7 @@ XREADGROUP GROUP agency-consumers <consumer_name> COUNT 100 \
 
 ## 7. Acente uygulamasi agent'ina verilecek GOREV PROMPTU
 
-> Asagidaki blok, yeni Replit projesinde acente otomasyon uygulamasini kuracak
+> Asagidaki blok, yeni DigitalOcean projesinde acente otomasyon uygulamasini kuracak
 > agent'a yapistirilacak talimattir.
 
 ```

@@ -50,7 +50,7 @@ Manual reproduce: bogus_id + stress_token PUT = **404** ✅
 
 Re-run sırasında F8X spec hâlâ 200 aldı — root cause: stress suite
 production deployment URL'sine koşuyor
-(`E2E_BASE_URL=https://emergent-yeni-uygulama-1.replit.app`); fix
+(`E2E_BASE_URL=https://pms.syroce.com`); fix
 dev/main'de uygulanmış ama prod hâlâ eski binary'i serve ediyor.
 F8S precedent'iyle birebir paralel: backend fix → **republish** → spec
 re-run → CI yeşil. Republish bekleniyor; ardından targeted re-run

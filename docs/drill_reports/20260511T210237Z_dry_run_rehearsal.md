@@ -1,7 +1,7 @@
 # Pilot Go/No-Go — Dry-Run Rehearsal Report
 
 **Tarih (UTC)**: 2026-05-11T21:02:37Z
-**Ortam**: Sandbox/development (lokal Replit)
+**Ortam**: Sandbox/development (lokal DigitalOcean)
 **Pilot tenant**: _N/A — rehearsal_
 **Operatör**: Murat (agent-assisted)
 **Kaynak checklist**: `docs/PILOT_GO_NO_GO.md`
@@ -150,7 +150,7 @@ $ grep -E "_interval_seconds|max_retries" backend/domains/channel_manager/sync_s
         self._interval_seconds = interval_seconds
         threshold = now - timedelta(seconds=self._interval_seconds)
 ```
-- Manual sync `max_retries=3`, scheduled `max_retries=2` (replit.md gotcha
+- Manual sync `max_retries=3`, scheduled `max_retries=2` (digitalocean.md gotcha
   — HotelRunnerProvider init parametreleri, sync_scheduler.pull_for_tenant'ta).
 
 ---
@@ -190,10 +190,10 @@ HTTP 200 — body: {"runbooks":[{"id":"reservation_import_failed", ...}, ...]}
 
 **Deploy ÖNCESİ (DevOps):**
 1. `python backend/scripts/index_apply.py --env production` koş → **#13 fix**
-2. `EXELY_IP_WHITELIST` Replit Secrets'ta literal IP'ler set
+2. `EXELY_IP_WHITELIST` DigitalOcean Secrets'ta literal IP'ler set
 3. `PILOT_EXELY_IPS` env değişkeni hazır
 4. `JWT_SECRET`, `CM_MASTER_KEY_CURRENT`, `RESEND_API_KEY`, `ROOM_QR_SECRET`,
-   `SENTRY_DSN`, `VITE_SENTRY_DSN` Replit Secrets'ta
+   `SENTRY_DSN`, `VITE_SENTRY_DSN` DigitalOcean Secrets'ta
 5. `CORS_ORIGINS` pilot domain ekli
 6. CI son commit yeşil (`gh run list`)
 

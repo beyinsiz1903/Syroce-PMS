@@ -26,7 +26,7 @@ celery_app = Celery("hotel_pms", broker=REDIS_URL, backend=REDIS_URL)
 # ("A rediss:// URL must have parameter ssl_cert_reqs"). Configure both. Then
 # normalize REDIS_URL in this worker process so the redis-py clients pulled in by
 # task modules (cache, event bus) also connect over TLS without failing cert
-# verification against the managed CA. No-op for plain redis:// (Replit/local).
+# verification against the managed CA. No-op for plain redis:// (DigitalOcean/local).
 _redis_ssl = celery_ssl_conf(REDIS_URL)
 if _redis_ssl:
     celery_app.conf.broker_use_ssl = _redis_ssl

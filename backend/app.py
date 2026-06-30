@@ -55,7 +55,7 @@ async def _lifespan(application: FastAPI):
 
     _log = _logging.getLogger(__name__)
 
-    # Replit autoscale (and similar PaaS) wait ~60s for the listening port
+    # Cloud autoscale (and similar PaaS) wait ~60s for the listening port
     # to open. Our bootstrap (control plane indexes, channel manager init,
     # outbox workers, event bus, etc.) takes longer than that, so when
     # DEFER_STARTUP_BOOTSTRAP=1 we fire the callbacks in a background task
@@ -72,7 +72,7 @@ async def _lifespan(application: FastAPI):
         # like register_routers(). Without this, the scheduler can pick up
         # this background task immediately after `yield` in _lifespan and
         # the sync work blocks the loop for 20+s — uvicorn never gets the
-        # tick it needs to call socket.bind(), and Replit autoscale fails
+        # tick it needs to call socket.bind(), and Cloud autoscale fails
         # the deploy with "expected port 5000 never opened".
         if defer:
             await asyncio.sleep(0.5)
@@ -234,7 +234,7 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
         ],
     )
 
-    # ── Warm-up gate (Replit autoscale: port must open within ~30s) ─
+    # ── Warm-up gate (Cloud autoscale: port must open within ~30s) ─
     # When DEFER_STARTUP_BOOTSTRAP=1, server.py defers the heavy
     # register_routers() call into a background startup callback so the
     # port opens immediately. During the warm-up window (typ. 20-30s),
@@ -250,7 +250,7 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
             # Allow lightweight probes AND static SPA assets during warm-up:
             #   - /health* (explicit health endpoints)
             #   - /favicon.ico (browser noise)
-            #   - "/" (Replit autoscale default HTTP probe path —
+            #   - "/" (Cloud autoscale default HTTP probe path —
             #     served by the deploy_root_probe handler below)
             #   - public static files: the /js, /assets, /logos, /landing
             #     eager StaticFiles mounts plus any root-level static asset
@@ -285,7 +285,7 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
     _backend_dir = Path(__file__).parent
     frontend_build = Path(os.environ.get("FRONTEND_BUILD_DIR", str(_backend_dir.parent / "frontend" / "build")))
 
-    # ── Root route (Replit autoscale default health path + SPA entry) ─
+    # ── Root route (Cloud autoscale default health path + SPA entry) ─
     # The autoscale HTTP probe hits "/". When the built frontend is
     # present we serve index.html so the SPA landing page shows at the
     # root URL (the HTML response is a 200, so the probe still passes).
@@ -309,7 +309,7 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
             )
         return {"status": "ok", "service": "syroce-pms"}
 
-    # ── Liveness vs Readiness ayrımı (Kubernetes/Replit Deploy uyumlu) ──
+    # ── Liveness vs Readiness ayrımı (Kubernetes/DigitalOcean Deploy uyumlu) ──
     # /health/live  → süreç ayakta mı? (her zaman 200 — DB sorgulamaz)
     # /health/ready → trafik almaya hazır mı? (DB ping + boot tamam mı)
     # Platform readiness 503 görürse trafiği başka instance'a yönlendirir;
@@ -372,7 +372,7 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
         logging.getLogger(__name__).warning("Upload dir creation failed (%s): %s", upload_dir, e)
 
     # ── Frontend SPA static serving (combined deployment) ───────────
-    # Replit autoscale: serve built frontend through FastAPI so one URL
+    # Cloud autoscale: serve built frontend through FastAPI so one URL
     # hosts both API (/api/*, /ws, /docs) and SPA. Skipped when build dir
     # is absent (dev mode uses Vite on a separate port).
     # frontend_build is defined above (near the root route). Deep links use

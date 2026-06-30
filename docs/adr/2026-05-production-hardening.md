@@ -1,6 +1,6 @@
 # ADR — Production Hardening Series (May 2026)
 
-Pilot readiness'in CM dışı production hardening turları. Her tur ayrı PR ile merge edildi; bu doküman replit.md'deki dense gotcha entry'lerinin tam detayını taşıyor.
+Pilot readiness'in CM dışı production hardening turları. Her tur ayrı PR ile merge edildi; bu doküman digitalocean.md'deki dense gotcha entry'lerinin tam detayını taşıyor.
 
 ---
 

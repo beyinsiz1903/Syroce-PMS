@@ -12,7 +12,7 @@ is the official stress baseline**, superseding Run #161
 (`ba9dfc7aafc0a694b70841d3405f8445ecfc1b67`, now historical reference),
 Run #159 (`e23a4ec603cc32984b741d77d67d57a0abba698b`, older historical
 reference) and Run #143 (`3b3891d`, oldest historical reference). Pointer
-moved in `replit.md`, `docs/STRESS_TEST_ROADMAP.md`, and
+moved in `digitalocean.md`, `docs/STRESS_TEST_ROADMAP.md`, and
 `docs/TEST_COVERAGE_SCORECARD_100.md`.
 
 This run validates the **Wave 1–5 P2/REVIEW cleanup candidate changes**
@@ -74,7 +74,7 @@ All numeric and safety gates are satisfied:
 | Metric | Run #161 (2026-05-29) — historical | This artifact — Run #162 (2026-05-29) — official |
 |---|---|---|
 | commit SHA | `ba9dfc7aafc0a694b70841d3405f8445ecfc1b67` | `bde7662744c9b94a5c9294fa778202d813319dfc` |
-| run URL | https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26641150604 | https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26653464472 |
+| run URL | https://github.com/beyinsiz1903/syroce-pms/actions/runs/26641150604 | https://github.com/beyinsiz1903/syroce-pms/actions/runs/26653464472 |
 | run ID / job ID | 26641150604 / 78514272098 | 26653464472 / 78557501168 |
 | totalTests | 702 | 702 |
 | failedTests | 0 | 0 |
@@ -98,7 +98,7 @@ historical reference.
 
 ```
 Workflow               : Full Stress Suite (one-shot)
-GitHub Actions run URL : https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26653464472
+GitHub Actions run URL : https://github.com/beyinsiz1903/syroce-pms/actions/runs/26653464472
 GitHub Actions run num : #162
 Run ID                 : 26653464472
 Job ID                 : 78557501168
@@ -120,7 +120,7 @@ Artifact (pw report)   : playwright-stress-report, ID 7298692578,
 - [x] Artifact IDs + digests recorded above (both artifacts)
 - [x] `docs/STRESS_TEST_ROADMAP.md` — latest verified baseline updated to Run #162 / 2026-05-29 / 702 test / `bde7662`; Run #161 moved to historical reference; Run #159/#143 kept as older historical references
 - [x] `docs/TEST_COVERAGE_SCORECARD_100.md` — official pointer updated to Run #162 (full-suite artifact present; /100 NOT achieved; mobile/F10 open)
-- [x] `replit.md` — F8 Stress Test Series baseline pointer updated to Run #162 / 2026-05-29 / 702 test / `bde7662744c9b94a5c9294fa778202d813319dfc` / GO WITH WATCH; Run #161 marked historical reference
+- [x] `digitalocean.md` — F8 Stress Test Series baseline pointer updated to Run #162 / 2026-05-29 / 702 test / `bde7662744c9b94a5c9294fa778202d813319dfc` / GO WITH WATCH; Run #161 marked historical reference
 
 All boxes checked. **Run #162 (`bde7662`) is the official baseline.**
 
@@ -142,4 +142,4 @@ All boxes checked. **Run #162 (`bde7662`) is the official baseline.**
 - `docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md` — Run #143 baseline (oldest historical reference)
 - `docs/TEST_COVERAGE_SCORECARD_100.md` — /100 scorecard (central reference)
 - `docs/STRESS_TEST_ROADMAP.md` — roadmap / latest verified baseline
-- `replit.md` — baseline pointer source of truth
+- `digitalocean.md` — baseline pointer source of truth

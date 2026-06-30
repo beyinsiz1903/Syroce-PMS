@@ -1792,7 +1792,7 @@
   "cm.pages_CapXIntegration.entegrasyon_anahtarlari": "Entegrasyon Anahtarları",
   "cm.pages_CapXIntegration.sayfasindan_ekleyin": "sayfasından ekleyin.",
   "cm.pages_CapXIntegration.capx_in_eslesme_olaylarini_match_created": "CapX'in eşleşme olaylarını (match.created / match.cancelled) bu otele\n              push edeceği herkese açık webhook adresi. \"Aktive Et\" CapX'e",
-  "cm.pages_CapXIntegration.bos_birakirsaniz_ortam_degiskenlerinden_": "Boş bırakırsanız ortam değişkenlerinden\n                (PUBLIC_BASE_URL/REPLIT_DEV_DOMAIN) tenant-aware varsayılan üretilir.",
+  "cm.pages_CapXIntegration.bos_birakirsaniz_ortam_degiskenlerinden_": "Boş bırakırsanız ortam değişkenlerinden\n                (PUBLIC_BASE_URL/CLOUD_DEV_DOMAIN) tenant-aware varsayılan üretilir.",
   "cm.pages_CapXIntegration.otel_hesabinizin_capx_paneli_login_token": "otel hesabınızın CapX paneli login token'ı",
   "cm.pages_CapXIntegration.spec_1_jwt_bekliyor_bos_birakirsaniz_bea": "Spec §1 JWT bekliyor. Boş bırakırsanız Bearer API key fallback\n                denenir; CapX kabul etmezse 401/403 döner.",
   "cm.pages_CapXIntegration.varsayilani_yenile": "Varsayılanı Yenile",

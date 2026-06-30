@@ -92,7 +92,7 @@ no Xchange `POSTING_CHARGE` event fires during the F8Z.2 batch.
 ## Verification status
 
 - **Spec compiles + targeted run (2026-05-24):** EXECUTED against
-  `https://emergent-yeni-uygulama-1.replit.app` (commit `013d96e6`).
+  `https://pms.syroce.com` (commit `013d96e6`).
   - Result: **3 passed / 1 failed / 7 skipped** (serial-describe halts on
     first failure, by design). Total wall-clock 1m12s including 500-row
     seed + cleanup. Setup gates ✅, seed ✅, teardown ✅

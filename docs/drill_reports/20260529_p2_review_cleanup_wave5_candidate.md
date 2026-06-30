@@ -77,9 +77,9 @@ tests/test_cm_signed_path_idempotency.py tests/test_ops_readiness_endpoints.py
 tests/test_invoice_tax_id_contract.py + Wave 1-4 dosyaları`.
 
 ## Env / operator notları
-- replit.md değişmedi (yeni env yok). Tüm ilgili env'ler (ENABLE_GUEST_ANONYMIZATION,
+- digitalocean.md değişmedi (yeni env yok). Tüm ilgili env'ler (ENABLE_GUEST_ANONYMIZATION,
   HOTELRUNNER_WEBHOOK_SECRET/ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK, EXELY_IP_WHITELIST,
-  ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK) zaten replit.md/threat_model'de mevcut.
+  ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK) zaten digitalocean.md/threat_model'de mevcut.
 
 ## Sonraki adım
 Wave 5 candidate kapandıktan sonra resmi full stress suite operator dispatch ile

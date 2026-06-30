@@ -160,6 +160,6 @@ Drill çıktıları `docs/drill_reports/<UTC>Z_cm_sandbox_drill_<n>.md` formatı
 
 ## İmza
 
-Discovery — Replit Agent (kod yazmadan, salt-okuma + analiz turu).
+Discovery — DigitalOcean Agent (kod yazmadan, salt-okuma + analiz turu).
 Architect verdict for prior hardening rounds: PASS (Turu #1, #2, Mini-Tur).
-Bu rapor `replit.md` Gotchas içine eklenmedi (operasyonel drill artefaktı, kod kuralı değil).
+Bu rapor `digitalocean.md` Gotchas içine eklenmedi (operasyonel drill artefaktı, kod kuralı değil).

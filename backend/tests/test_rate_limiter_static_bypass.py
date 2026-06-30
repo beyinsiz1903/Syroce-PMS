@@ -18,13 +18,13 @@ import pytest
 
 def _fresh_limiter(monkeypatch, env: dict):
     for k in (
-        "REPLIT_DEPLOYMENT",
+        "CLOUD_DEPLOYMENT",
         "E2E_ALLOW_DESTRUCTIVE_STRESS",
         "TESTING",
         "CI",
         "APP_ENV",
-        "REPL_ID",
-        "REPLIT_DEV_DOMAIN",
+        "CLOUD_INSTANCE_ID",
+        "CLOUD_DEV_DOMAIN",
     ):
         monkeypatch.delenv(k, raising=False)
     for k, v in env.items():
@@ -64,14 +64,14 @@ def _call(rl, path, method="GET", ip="9.9.9.9"):
 
 def test_static_js_chunks_never_throttled(monkeypatch):
     """A code-split page load (>60 /js chunks) must all pass — zero 429s."""
-    rl = _fresh_limiter(monkeypatch, {"REPLIT_DEPLOYMENT": "1"})
+    rl = _fresh_limiter(monkeypatch, {"CLOUD_DEPLOYMENT": "1"})
     statuses = [_call(rl, f"/js/chunk-{i}.js") for i in range(120)]
     assert set(statuses) == {200}, "static /js chunks must never be rate-limited"
 
 
 def test_static_asset_prefixes_bypass(monkeypatch):
     """All non-API static surfaces (assets/logos/landing/root/favicon) bypass."""
-    rl = _fresh_limiter(monkeypatch, {"REPLIT_DEPLOYMENT": "1"})
+    rl = _fresh_limiter(monkeypatch, {"CLOUD_DEPLOYMENT": "1"})
     for path in (
         "/assets/index-abc.css",
         "/logos/brand.svg",
@@ -85,7 +85,7 @@ def test_static_asset_prefixes_bypass(monkeypatch):
 
 def test_api_auth_login_still_throttled(monkeypatch):
     """The /api auth surface MUST stay throttled (15/min) — no weakening."""
-    rl = _fresh_limiter(monkeypatch, {"REPLIT_DEPLOYMENT": "1"})
+    rl = _fresh_limiter(monkeypatch, {"CLOUD_DEPLOYMENT": "1"})
     assert rl.limits["auth"] == (15, 60)
     statuses = [_call(rl, "/api/auth/login", method="POST") for _ in range(40)]
     assert 429 in statuses, "login brute-force must still trip the auth limiter"
@@ -95,7 +95,7 @@ def test_api_auth_login_still_throttled(monkeypatch):
 
 def test_api_anonymous_still_throttled(monkeypatch):
     """A non-whitelisted anonymous /api path keeps the 60/min anon bucket."""
-    rl = _fresh_limiter(monkeypatch, {"REPLIT_DEPLOYMENT": "1"})
+    rl = _fresh_limiter(monkeypatch, {"CLOUD_DEPLOYMENT": "1"})
     assert rl.limits["anonymous"] == (60, 60)
     statuses = [_call(rl, "/api/public/some-endpoint") for _ in range(100)]
     assert 429 in statuses, "anonymous /api DoS surface must still be throttled"

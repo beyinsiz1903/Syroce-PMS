@@ -231,7 +231,7 @@ async function provisionAgencyAdmin(api, stressAdminToken) {
     return out;
 }
 
-// Replit Autoscale (1 Max instance) idle olunca soğuk başlar; CI'dan ilk POST
+// DigitalOcean Autoscale (1 Max instance) idle olunca soğuk başlar; CI'dan ilk POST
 // 60s timeout'a takılabiliyor (Mongo Atlas + Redis init + bootstrap phases A-G).
 // Fresh deploy bootstrap'ı 90-120s'yi bulabiliyor; warm-up gate /api/* yollarına
 // 503 dönerken /health her zaman 200 verir, /health/ready ise bootstrap tamamen
@@ -257,7 +257,7 @@ async function warmup(api) {
         await new Promise((res) => setTimeout(res, 5000));
     }
     // Phase 2: bootstrap-complete check via /health/ready (BOOT_READY flag).
-    // CI #48 NO-GO root cause (20260521): Replit Autoscale fresh deploy'da
+    // CI #48 NO-GO root cause (20260521): DigitalOcean Autoscale fresh deploy'da
     // bootstrap phase D (Mongo Atlas conn pool + Redis init + cache_warmer
     // first cycle + index build) 6+ dakikayı bulabildi. Önceki ceiling
     // 60×5s=5min idi → 503 "warming up" boyunca exhausted, login 503 patladı.
@@ -328,7 +328,7 @@ export default async function globalSetup() {
     const baseURL = process.env.E2E_BASE_URL;
     const api = await request.newContext({ baseURL, ignoreHTTPSErrors: true, timeout: 120_000 });
 
-    // 0) Warmup — Replit Autoscale cold-start guard (idle instance ilk POST'ta 60s'yi aşabiliyor)
+    // 0) Warmup — DigitalOcean Autoscale cold-start guard (idle instance ilk POST'ta 60s'yi aşabiliyor)
     await warmup(api);
 
     // 1) Stress admin login

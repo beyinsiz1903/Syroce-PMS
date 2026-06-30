@@ -4,7 +4,7 @@
 > **Doctrine:** failedTests=0, P0=P1=0, external_calls=[], pilot_drift=0 per spec.
 > **Path unblocked by:** Task #59 (`spec_pattern` workflow_dispatch input wired to `.github/workflows/stress.yml`).
 
-The Replit Agent environment cannot dispatch GitHub Actions workflows.
+The DigitalOcean Agent environment cannot dispatch GitHub Actions workflows.
 The 7 F9C specs are all green locally (`node --check` + `--list` clean)
 and the BEO (#99) + Sales (#98-sales-basic) runs are already in the
 drill report archive. The 5 specs below need an explicit dispatch on

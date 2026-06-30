@@ -62,7 +62,7 @@ geçerli tipler etkilenmez.
 
 ## Baseline / süreç
 
-- Run #162 baseline pointer (`bde7662`, `replit.md`) **TAŞINMADI** — yeni GREEN
+- Run #162 baseline pointer (`bde7662`, `digitalocean.md`) **TAŞINMADI** — yeni GREEN
   CI artifact doğrulanana kadar official kalır.
 - Agent CI dispatch edemez; operatör `stress.yml` re-dispatch eder.
 - Beklenti: bu fix sonrası ai_pricing 21/0/0/0, FAIL adım=0; diğer invariantlar

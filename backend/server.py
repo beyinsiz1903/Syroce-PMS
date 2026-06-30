@@ -30,7 +30,7 @@ load_dotenv(ROOT_DIR / ".env")
 # event bus from the Celery workers. Normalize the URL once, before any router or
 # module constructs a redis client (cache = CacheManager() and
 # redis_cluster = RedisClusterManager() build their pools at import time). No-op
-# for plain redis:// (Replit/local dev).
+# for plain redis:// (DigitalOcean/local dev).
 from redis_ssl import normalize_redis_url_for_redis_py  # noqa: E402
 
 _redis_url = os.environ.get("REDIS_URL")
@@ -155,32 +155,32 @@ _always_allowed = [
     # Mobile (Expo Web) production deploy origin. Cross-origin to this API
     # backend, so it must be enumerated explicitly (single host, NOT a
     # wildcard — see Bug AL note below) or its CORS preflight is rejected.
-    # Live-verified topology (2026-06-16): emergent-yeni-uygulama-1.replit.app
+    # Live-verified topology (2026-06-16): pms.syroce.com
     # is this web+backend host's own origin (Reserved VM, serves /api JSON);
     # the -1-syroce host is the SEPARATE static Expo Web (mobile) bundle that
     # calls this backend cross-origin, so it needs the CORS grant.
-    "https://emergent-yeni-uygulama-1.replit.app",
-    "https://emergent-yeni-uygulama-1-syroce.replit.app",
+    "https://pms.syroce.com",
+    "https://www.pms.syroce.com",
 ]
 for origin in _always_allowed:
     if origin not in _cors_origins:
         _cors_origins.append(origin)
 
-# Replit dev domain auto-detection (development convenience)
-_replit_dev = os.environ.get("REPLIT_DEV_DOMAIN")
+# DigitalOcean dev domain auto-detection (development convenience)
+_replit_dev = os.environ.get("CLOUD_DEV_DOMAIN")
 if _replit_dev and f"https://{_replit_dev}" not in _cors_origins:
     _cors_origins.append(f"https://{_replit_dev}")
 
-# Bug AL: previous regex allowed ANY *.replit.app subdomain — an attacker
-# could publish their own evil.replit.app and ride credentials=true to
+# Bug AL: previous regex allowed ANY *.syroce.com subdomain — an attacker
+# could publish their own evil.syroce.com and ride credentials=true to
 # perform CSRF/XHR against a logged-in user. Production hosts MUST be
 # enumerated explicitly via CORS_ORIGINS or _always_allowed; we only
-# auto-allow ephemeral *.replit.dev preview hosts here (those are
+# auto-allow ephemeral *.syroce.local preview hosts here (those are
 # tied to a single Repl owner and not registrable by attackers).
 _env_mode = (os.environ.get("ENVIRONMENT") or os.environ.get("ENV") or "development").lower()
 _cors_origin_regex = None
 if _env_mode != "production":
-    _cors_origin_regex = r"^https://[a-z0-9-]+\.(replit\.dev|riker\.replit\.dev)$"
+    _cors_origin_regex = r"^https://[a-z0-9-]+\.(digitalocean\.dev|riker\.digitalocean\.dev)$"
 
 # Avoid the wildcard + credentials CORS protocol violation
 _allow_credentials = True
@@ -469,7 +469,7 @@ except ImportError:
 
 # ── External routers (via bootstrap registry) ───────────────────────
 # This is the slow step: register_routers() imports ~189 router modules
-# synchronously (~17-34s). On Replit autoscale the port-open window is
+# synchronously (~17-34s). On Cloud autoscale the port-open window is
 # ~30s, so when DEFER_STARTUP_BOOTSTRAP=1 we defer the call into a
 # startup callback. The app.py warm-up middleware returns 503 for
 # non-health requests until app.state.routes_ready flips to True.
@@ -532,7 +532,7 @@ async def _warm_pdf_renderer():
         logger.info("WeasyPrint PDF renderer worker'a önceden yüklendi (native lib resident; per-request import-time EIO/503 önlendi)")
     except Exception as _warm_err:  # incl. ImportError / OSError EIO — must NOT propagate
         logger.error(
-            "WeasyPrint önyükleme BAŞARISIZ (%s); PDF endpoint'leri import anında 503 verebilir — replit.nix + LD_LIBRARY_PATH/VM IO baskısını incele",
+            "WeasyPrint önyükleme BAŞARISIZ (%s); PDF endpoint'leri import anında 503 verebilir — digitalocean.nix + LD_LIBRARY_PATH/VM IO baskısını incele",
             _warm_err,
         )
 
