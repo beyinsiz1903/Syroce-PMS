@@ -179,7 +179,7 @@ class _CachedStaticFiles(StaticFiles):
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application instance."""
-    
+
     enforce_production_safety_gate()
 
     application = FastAPI(

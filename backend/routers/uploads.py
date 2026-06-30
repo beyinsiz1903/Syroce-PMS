@@ -53,7 +53,7 @@ async def get_upload(
     """
     if not path:
         raise HTTPException(status_code=400, detail="Invalid path")
-        
+
     if not optional_user and not optional_vendor_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -67,7 +67,7 @@ async def get_upload(
             raise HTTPException(status_code=404, detail="File not found")
 
         owner_type = upload_record.get("owner_type", "tenant")
-        
+
         # Verify ownership / tenant authorization
         if owner_type == "vendor":
             # If a vendor tries to access a file, they MUST own it
@@ -94,12 +94,12 @@ async def get_upload(
             elif not optional_user and not optional_vendor_id:
                 # Handled by the check at the top, but for completeness
                 raise HTTPException(status_code=403, detail="Forbidden")
-                
+
         else: # owner_type == "tenant"
             # Vendors cannot access tenant files
             if not optional_user:
                 raise HTTPException(status_code=403, detail="Forbidden: Vendors cannot access tenant files")
-                
+
             if upload_record.get("tenant_id") != optional_user.tenant_id and optional_user.role != "super_admin":
                 raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this file")
 
@@ -113,7 +113,7 @@ async def get_upload(
         if parts[0] == "vendors":
             if len(parts) < 4 or parts[2] != "products":
                 raise HTTPException(status_code=400, detail="Invalid vendor path")
-            
+
             target_vendor_id = parts[1]
             if optional_vendor_id and target_vendor_id != optional_vendor_id:
                 # Log unauthorized cross-vendor access for legacy paths too
@@ -130,7 +130,7 @@ async def get_upload(
                 except Exception as e:
                     logger.warning(f"Failed to log vendor access violation (legacy): {e}")
                 raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this vendor file")
-                
+
             # If user, allow (implicit marketplace_public since format mandates 'products')
             if not optional_user and not optional_vendor_id:
                 raise HTTPException(status_code=403, detail="Forbidden")
@@ -138,7 +138,7 @@ async def get_upload(
             # Tenant upload
             if not optional_user:
                 raise HTTPException(status_code=403, detail="Forbidden: Vendors cannot access tenant files")
-                
+
             target_tenant_id = parts[0]
             if target_tenant_id != optional_user.tenant_id and optional_user.role != "super_admin":
                 raise HTTPException(status_code=403, detail="Forbidden: Tenant mismatch")
@@ -168,7 +168,7 @@ async def get_upload(
             parts = path.split("/")
             if len(parts) > 0 and parts[0] != "vendors":
                 file_owner_tenant = parts[0]
-            
+
         if file_owner_tenant and optional_user.tenant_id != file_owner_tenant:
             try:
                 await db.audit_logs.insert_one({

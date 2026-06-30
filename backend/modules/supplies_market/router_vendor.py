@@ -215,7 +215,7 @@ async def vendor_upload_product_image(
     filename = f"{uuid.uuid4().hex}{ext}"
     relative_path = f"vendors/{vendor_id}/products/{filename}"
     (folder / filename).write_bytes(content)
-    
+
     upload_id = str(uuid.uuid4())
     upload_record = {
         "_id": upload_id,
@@ -229,10 +229,10 @@ async def vendor_upload_product_image(
         "size_bytes": len(content),
         "created_at": datetime.now(UTC).isoformat(),
     }
-    
+
     from core.database import db
     await db.uploads.insert_one(upload_record)
-    
+
     url = f"/api/uploads/{upload_id}"
     return {"url": url}
 

@@ -1,5 +1,6 @@
 import os
 
+
 def enforce_production_safety_gate() -> None:
     """
     Enforces strict security checks on environment variables when the app is
@@ -7,7 +8,7 @@ def enforce_production_safety_gate() -> None:
     with dangerous or insecure configurations by raising a RuntimeError.
     """
     env = os.environ.get("ENV", "").lower()
-    
+
     # 1. We only apply these strict guards if we are in production or staging
     is_production = env == "production"
     is_staging = env == "staging"
@@ -29,9 +30,9 @@ def enforce_production_safety_gate() -> None:
         allowed_origins = os.environ.get("ALLOWED_ORIGINS")
         if allowed_origins is None:
             raise RuntimeError("Cannot run production without ALLOWED_ORIGINS explicitly set")
-            
+
         origins = [o.strip().lower() for o in allowed_origins.split(",") if o.strip()]
-        
+
         for origin in origins:
             if origin == "*" or "localhost" in origin or "127.0.0.1" in origin or "0.0.0.0" in origin:
                 raise RuntimeError(f"Cannot run production with dangerous ALLOWED_ORIGINS: {origin}")
@@ -52,7 +53,7 @@ def enforce_production_safety_gate() -> None:
             "JWT_SECRET",
             "CM_MASTER_KEY_CURRENT",
         ]
-        
+
         # Sadece varsayılan COOKIE_SECRET varsa kontrol et, bazı frameworkler SESSION_SECRET kullanıyor olabilir
         if os.environ.get("COOKIE_SECRET") is not None:
             critical_secrets.append("COOKIE_SECRET")
