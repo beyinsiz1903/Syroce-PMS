@@ -427,7 +427,8 @@ async def get_current_user(
     except HTTPException:
         raise
     except Exception as e:
-        logger.info(f"Auth error: {str(e)}")
+        import traceback
+        logger.info(f"Auth error: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication failed")
 
 

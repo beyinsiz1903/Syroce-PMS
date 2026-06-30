@@ -93,26 +93,35 @@ class TenantContextMiddleware:
             clear_request_context()
 
     def _extract_tenant_id(self, raw_headers: list) -> str:
+        token = None
         for key, value in raw_headers:
             if key == b"authorization":
                 auth_header = value.decode("latin-1")
-                if not auth_header.startswith("Bearer "):
-                    return ""
-                token = auth_header[7:]
-                try:
-                    # v42 Bug BH (defense-in-depth): enforce JWT expiry here
-                    # too. Previously verify_exp=False meant expired tokens
-                    # still set tenant_context — if any route ever forgets
-                    # `Depends(get_current_user)`, stolen-token TTL becomes
-                    # infinite for tenant-scoped queries. Now expired tokens
-                    # silently produce no tenant context (matches behavior
-                    # for unsigned/tampered tokens).
-                    payload = jwt.decode(
-                        token,
-                        self._jwt_secret,
-                        algorithms=[self._jwt_algorithm],
-                    )
-                    return payload.get("tenant_id", "")
-                except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, jwt.DecodeError):
-                    return ""
+                if auth_header.startswith("Bearer "):
+                    token = auth_header[7:]
+            elif key == b"cookie" and not token:
+                cookie_header = value.decode("latin-1")
+                for chunk in cookie_header.split(";"):
+                    chunk = chunk.strip()
+                    if chunk.startswith("access_token="):
+                        token = chunk[len("access_token="):]
+                        break
+
+        if token:
+            try:
+                # v42 Bug BH (defense-in-depth): enforce JWT expiry here
+                # too. Previously verify_exp=False meant expired tokens
+                # still set tenant_context — if any route ever forgets
+                # `Depends(get_current_user)`, stolen-token TTL becomes
+                # infinite for tenant-scoped queries. Now expired tokens
+                # silently produce no tenant context (matches behavior
+                # for unsigned/tampered tokens).
+                payload = jwt.decode(
+                    token,
+                    self._jwt_secret,
+                    algorithms=[self._jwt_algorithm],
+                )
+                return payload.get("tenant_id", "")
+            except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, jwt.DecodeError):
+                return ""
         return ""
