@@ -111,7 +111,7 @@ async def get_upload(
         parts = path.split("/")
 
         if parts[0] == "vendors":
-            if len(parts) < 3:
+            if len(parts) < 4 or parts[2] != "products":
                 raise HTTPException(status_code=400, detail="Invalid vendor path")
             
             target_vendor_id = parts[1]
@@ -131,10 +131,7 @@ async def get_upload(
                     logger.warning(f"Failed to log vendor access violation (legacy): {e}")
                 raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this vendor file")
                 
-            # If user, allow if it's a "products" directory path (implicit marketplace_public)
-            if optional_user and parts[2] != "products":
-                raise HTTPException(status_code=403, detail="Forbidden: Only product images are public")
-                
+            # If user, allow (implicit marketplace_public since format mandates 'products')
             if not optional_user and not optional_vendor_id:
                 raise HTTPException(status_code=403, detail="Forbidden")
         else:
