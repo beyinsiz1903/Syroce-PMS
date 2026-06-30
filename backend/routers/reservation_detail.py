@@ -7,7 +7,7 @@ payment processing, cari transfers, room changes, and front office operations.
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from core.database import db
@@ -237,9 +237,7 @@ async def _log_activity(tenant_id: str, booking_id: str, action: str, actor: str
 # ── Endpoints ──
 
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Header
 
-# ... (other imports remain, but we add Header to fastapi)
 
 @router.get("/reservations/{booking_id}/full-detail")
 async def get_reservation_full_detail(
@@ -250,7 +248,7 @@ async def get_reservation_full_detail(
     """Get comprehensive reservation detail with all related data."""
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
-    
+
     is_cross_tenant = False
     if target_tenant and target_tenant != current_user.tenant_id:
         if current_user.role != "super_admin":
