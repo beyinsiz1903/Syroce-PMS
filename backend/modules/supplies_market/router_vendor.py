@@ -213,8 +213,25 @@ async def vendor_upload_product_image(
     folder = _UPLOAD_DIR / "vendors" / vendor_id / "products"
     folder.mkdir(parents=True, exist_ok=True)
     filename = f"{uuid.uuid4().hex}{ext}"
+    relative_path = f"vendors/{vendor_id}/products/{filename}"
     (folder / filename).write_bytes(content)
-    url = f"/api/uploads/vendors/{vendor_id}/products/{filename}"
+    
+    upload_id = str(uuid.uuid4())
+    upload_record = {
+        "_id": upload_id,
+        "owner_type": "vendor",
+        "vendor_id": vendor_id,
+        "filename": filename,
+        "relative_path": relative_path,
+        "content_type": getattr(file, "content_type", "application/octet-stream"),
+        "size_bytes": len(content),
+        "created_at": datetime.now(UTC).isoformat(),
+    }
+    
+    from core.database import db
+    await db.uploads.insert_one(upload_record)
+    
+    url = f"/api/uploads/{upload_id}"
     return {"url": url}
 
 
