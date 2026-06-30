@@ -132,7 +132,12 @@ async def health_check_simple():
     Simple health check endpoint
     Returns 200 if service is up
     """
-    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat(), "service": "hotel_pms"}
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "service": "hotel_pms",
+        "commit": "ed87344ac"
+    }
 
 
 @health_router.get("/liveness")
