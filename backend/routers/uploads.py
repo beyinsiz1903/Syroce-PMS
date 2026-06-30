@@ -86,7 +86,11 @@ async def get_upload(
                 except Exception as e:
                     logger.warning(f"Failed to log vendor access violation: {e}")
                 raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this vendor file")
-            # If a user tries to access a vendor file, allow it (Marketplace public images)
+            # If a user tries to access a vendor file, allow it ONLY if it is marketplace_public
+            elif optional_user:
+                visibility = upload_record.get("visibility")
+                if visibility != "marketplace_public":
+                    raise HTTPException(status_code=403, detail="Forbidden: This vendor file is not public")
             elif not optional_user and not optional_vendor_id:
                 # Handled by the check at the top, but for completeness
                 raise HTTPException(status_code=403, detail="Forbidden")
@@ -112,7 +116,25 @@ async def get_upload(
             
             target_vendor_id = parts[1]
             if optional_vendor_id and target_vendor_id != optional_vendor_id:
+                # Log unauthorized cross-vendor access for legacy paths too
+                try:
+                    await db.audit_logs.insert_one({
+                        "id": str(uuid.uuid4()),
+                        "vendor_id": optional_vendor_id,
+                        "target_vendor_id": target_vendor_id,
+                        "action": "unauthorized_vendor_file_access",
+                        "resource_type": "upload",
+                        "resource_id": path,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    })
+                except Exception as e:
+                    logger.warning(f"Failed to log vendor access violation (legacy): {e}")
                 raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this vendor file")
+                
+            # If user, allow if it's a "products" directory path (implicit marketplace_public)
+            if optional_user and parts[2] != "products":
+                raise HTTPException(status_code=403, detail="Forbidden: Only product images are public")
+                
             if not optional_user and not optional_vendor_id:
                 raise HTTPException(status_code=403, detail="Forbidden")
         else:

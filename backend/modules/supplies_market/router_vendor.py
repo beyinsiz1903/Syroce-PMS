@@ -221,6 +221,8 @@ async def vendor_upload_product_image(
         "_id": upload_id,
         "owner_type": "vendor",
         "vendor_id": vendor_id,
+        "file_scope": "product_image",
+        "visibility": "marketplace_public",
         "filename": filename,
         "relative_path": relative_path,
         "content_type": getattr(file, "content_type", "application/octet-stream"),
