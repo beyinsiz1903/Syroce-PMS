@@ -25,7 +25,7 @@ def test_login_cookie_attributes():
     
     assert refresh_cookie_args["httponly"] is True
     assert refresh_cookie_args["samesite"] == "lax"
-    assert refresh_cookie_args["path"] == "/api/auth/refresh"
+    assert refresh_cookie_args["path"] == "/api/auth/refresh-token"
 
 @pytest.mark.asyncio
 async def test_logout_clears_cookies():

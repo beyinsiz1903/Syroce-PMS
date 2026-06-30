@@ -305,7 +305,7 @@ def create_refresh_token(user_id: str, tenant_id: str | None = None) -> tuple[st
 
 
 async def get_current_user(
-    request: Request | None = None,
+    request: Request = None,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ):
     """Decode JWT token and return the authenticated User."""

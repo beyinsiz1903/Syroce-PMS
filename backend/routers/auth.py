@@ -298,7 +298,7 @@ def _build_token_response(user: User, tenant, response: Response = None) -> Toke
             secure=COOKIE_SECURE,
             samesite="lax",
             max_age=REFRESH_TOKEN_EXPIRATION_DAYS * 86400,
-            path="/api/auth/refresh",
+            path="/api/auth/refresh-token",
         )
 
     return TokenResponse(
@@ -1463,7 +1463,7 @@ async def logout(
     )
     response.delete_cookie(
         "refresh_token",
-        path="/api/auth/refresh",
+        path="/api/auth/refresh-token",
         httponly=True,
         secure=COOKIE_SECURE,
         samesite="none" if COOKIE_SECURE else "lax"
