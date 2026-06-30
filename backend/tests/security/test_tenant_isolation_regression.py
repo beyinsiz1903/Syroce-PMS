@@ -1,153 +1,133 @@
 import pytest
+import os
 import uuid
-import jwt
-from datetime import datetime, UTC, timedelta
-from unittest.mock import patch, AsyncMock
+from fastapi import HTTPException
+from unittest.mock import patch
 
-from fastapi.testclient import TestClient
-from server import app
-from core.security import JWT_SECRET as USER_JWT_SECRET, JWT_ALGORITHM
+try:
+    from motor.motor_asyncio import AsyncIOMotorClient
+except ImportError:
+    AsyncIOMotorClient = None
 
-client = TestClient(app)
+from core.tenant_db import TenantAwareDBProxy
+from models.schemas import User
 
-def create_user_token(user_id, tenant_id, role="admin"):
-    payload = {
-        "user_id": user_id,
-        "tenant_id": tenant_id,
-        "role": role,
-        "type": "access",
-        "exp": datetime.now(UTC) + timedelta(minutes=15)
-    }
-    return jwt.encode(payload, USER_JWT_SECRET, algorithm=JWT_ALGORITHM)
+from routers.reservation_detail import get_reservation_full_detail
+from routers.folio_ledger import post_payment, ChargeRequest
+from routers.pms_guests import update_guest
 
-@pytest.fixture(autouse=True)
-def clear_overrides():
-    app.dependency_overrides.clear()
-    yield
-    app.dependency_overrides.clear()
+pytestmark = [pytest.mark.asyncio, pytest.mark.live_mongo]
 
-# --- Mock DB Behaviors ---
-async def mock_bookings_find_one(query, *args, **kwargs):
-    if query.get("id") == "booking_A" and query.get("tenant_id") == "hotel_A":
-        return {"id": "booking_A", "tenant_id": "hotel_A", "guest_id": "guest_A", "room_id": "room_A"}
-    return None
+MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+DB_NAME = os.environ.get("DB_NAME", "hotel_pms")
 
-async def mock_guests_find_one(query, *args, **kwargs):
-    if query.get("id") == "guest_A" and query.get("tenant_id") == "hotel_A":
-        return {"id": "guest_A", "tenant_id": "hotel_A", "name": "Tenant A Guest"}
-    return None
+TENANT_A = "hotel_a_real"
+TENANT_B = "hotel_b_real"
 
-async def mock_folios_find_one(query, *args, **kwargs):
-    if query.get("id") == "folio_A" and query.get("tenant_id") == "hotel_A":
-        return {"id": "folio_A", "tenant_id": "hotel_A", "balance": 100}
-    return None
+BOOKING_A = "booking_A_test"
+GUEST_A = "guest_A_test"
+FOLIO_A = "folio_A_test"
 
-# --- TESTS ---
+USER_B = User(id="user_b", user_id="user_b", email="b@b.com", name="User B", tenant_id=TENANT_B, role="admin", is_active=True, failed_login_attempts=0)
+USER_A = User(id="user_a", user_id="user_a", email="a@a.com", name="User A", tenant_id=TENANT_A, role="admin", is_active=True, failed_login_attempts=0)
+SUPER_ADMIN_A = User(id="sa_a", user_id="sa_a", email="sa@a.com", name="Super Admin A", tenant_id=TENANT_A, role="super_admin", is_active=True, failed_login_attempts=0)
 
-@patch("routers.reservation_detail.db")
-def test_reservation_full_detail_tenant_isolation(mock_db):
+async def _mongo_or_skip():
+    if AsyncIOMotorClient is None:
+        pytest.skip("motor not installed")
+    client = AsyncIOMotorClient(MONGO_URL, serverSelectionTimeoutMS=1500)
+    try:
+        await client.admin.command("ping")
+    except Exception:
+        client.close()
+        pytest.skip(f"MongoDB unreachable ({MONGO_URL})")
+    return client
+
+@pytest.fixture
+async def live_test_db(monkeypatch):
+    client = await _mongo_or_skip()
+    db_name = f"test_isolation_{uuid.uuid4().hex[:8]}"
+    raw_db = client[db_name]
+    
+    # Insert Tenant A data directly into raw_db
+    await raw_db.bookings.insert_one({"id": BOOKING_A, "tenant_id": TENANT_A, "guest_id": GUEST_A, "status": "confirmed"})
+    await raw_db.guests.insert_one({"id": GUEST_A, "tenant_id": TENANT_A, "name": "Tenant A Guest"})
+    await raw_db.folios.insert_one({"id": FOLIO_A, "tenant_id": TENANT_A, "balance": 100.0, "booking_id": BOOKING_A})
+    
+    # We patch the GLOBAL db object in all relevant modules so they use our throwaway DB.
+    # Note: the endpoints use `from core.database import db` directly.
+    import core.database
+    import routers.reservation_detail
+    import routers.folio_ledger
+    import routers.pms_guests
+    import core.folio_ledger_service
+    
+    # Create the proxy wrapping our test raw_db
+    proxy_db = TenantAwareDBProxy(raw_db)
+    
+    monkeypatch.setattr(core.database, "db", proxy_db)
+    monkeypatch.setattr(routers.reservation_detail, "db", proxy_db)
+    monkeypatch.setattr(routers.folio_ledger, "db", proxy_db)
+    monkeypatch.setattr(routers.pms_guests, "db", proxy_db)
+    
+    # FolioLedgerService stores db on init. We just mock its db.
+    monkeypatch.setattr(core.folio_ledger_service, "db", proxy_db)
+    
+    yield raw_db
+    
+    await client.drop_database(db_name)
+    client.close()
+
+async def test_reservation_full_detail_tenant_isolation(live_test_db):
+    """User B cannot access User A's reservation (returns 404)."""
+    with pytest.raises(HTTPException) as exc:
+        await get_reservation_full_detail(booking_id=BOOKING_A, current_user=USER_B)
+    assert exc.value.status_code == 404
+    
+    # User A CAN access it
+    res = await get_reservation_full_detail(booking_id=BOOKING_A, current_user=USER_A)
+    assert res is not None
+
+async def test_reservation_payment_tenant_isolation(live_test_db):
+    """User B cannot post a payment to User A's folio (returns 404)."""
+    req = ChargeRequest(amount=100.0, description="Test", charge_code="PAYMENT", currency="TRY", tax_amount=0)
+    with pytest.raises(HTTPException) as exc:
+        await post_payment(folio_id=FOLIO_A, body=req, current_user=USER_B)
+    assert exc.value.status_code == 404
+
+async def test_guest_update_tenant_isolation(live_test_db):
+    """User B cannot update User A's guest profile (returns 404)."""
+    update_req = {"name": "Hacked"}
+    with pytest.raises(HTTPException) as exc:
+        await update_guest(guest_id=GUEST_A, data=update_req, current_user=USER_B)
+    assert exc.value.status_code == 404
+
+@pytest.mark.asyncio
+async def test_super_admin_cross_tenant_access(live_test_db):
     """
-    Test that user from hotel_B cannot access hotel_A's reservation.
+    Super Admin in tenant A tries to access hotel_B's reservation.
+    For this test, let's create a booking_B in tenant_B.
     """
-    mock_db.bookings.find_one = AsyncMock(side_effect=mock_bookings_find_one)
-    mock_db.guests.find_one = AsyncMock(return_value=None)
-    mock_db.rooms.find_one = AsyncMock(return_value=None)
-    mock_db.folios.find_one = AsyncMock(return_value=None)
+    BOOKING_B = "booking_B_test"
+    await live_test_db.bookings.insert_one({"id": BOOKING_B, "tenant_id": TENANT_B, "status": "confirmed"})
     
-    token_B = create_user_token(user_id="user_B", tenant_id="hotel_B")
-    headers_B = {"Authorization": f"Bearer {token_B}"}
+    # Assuming there's a mechanism like target_tenant parameter or it automatically falls back
+    # The application currently doesn't support this parameter, but we test the behavior we want to implement.
+    # We will just pass the target booking and expect it to return 200 for a super admin.
     
-    with patch("core.security._user_doc_cache_get") as mock_cache:
-        mock_cache.return_value = {"_id": "user_B", "tenant_id": "hotel_B", "email": "userB@test.com", "name": "Hotel B User", "role": "admin", "is_active": True, "failed_login_attempts": 0}
-        with patch("infra.auth_cache_pubsub.auth_cache_pubsub"):
-            # Attempt to fetch hotel_A's booking
-            response = client.get("/api/pms/reservations/booking_A/full-detail", headers=headers_B)
-            print("ERROR BODY:", response.text)
-            
-            # Since the router queries by current_user.tenant_id, it queries {"id": "booking_A", "tenant_id": "hotel_B"}
-            # This should return 404, acting as if the reservation does not exist.
-            assert response.status_code == 404
-            
-    # Also verify that hotel_A user CAN access it
-    token_A = create_user_token(user_id="user_A", tenant_id="hotel_A")
-    headers_A = {"Authorization": f"Bearer {token_A}"}
-    with patch("core.security._user_doc_cache_get") as mock_cache_A:
-        mock_cache_A.return_value = {"_id": "user_A", "tenant_id": "hotel_A", "email": "userA@test.com", "name": "Hotel A User", "role": "admin", "is_active": True, "failed_login_attempts": 0}
-        with patch("infra.auth_cache_pubsub.auth_cache_pubsub"):
-            response_A = client.get("/api/pms/reservations/booking_A/full-detail", headers=headers_A)
-            assert response_A.status_code == 200
-
-@patch("routers.reservation_detail.db")
-def test_reservation_payment_tenant_isolation(mock_db):
-    """
-    Test that user from hotel_B cannot post a payment to hotel_A's reservation.
-    """
-    mock_db.bookings.find_one = AsyncMock(side_effect=mock_bookings_find_one)
-    mock_db.guests.find_one = AsyncMock(return_value=None)
-    mock_db.rooms.find_one = AsyncMock(return_value=None)
-    mock_db.folios.find_one = AsyncMock(return_value=None)
+    # Currently, this will fail because the endpoint doesn't accept target_tenant and get_current_user
+    # assigns TENANT_A to SUPER_ADMIN_A, causing the db query to scope to TENANT_A.
+    # To fix this, we will later modify the endpoint to check role and log audit.
     
-    token_B = create_user_token(user_id="user_B", tenant_id="hotel_B")
-    headers_B = {"Authorization": f"Bearer {token_B}"}
+    # Now pass the target_tenant explicitly (as the endpoint expects)
+    res = await get_reservation_full_detail(booking_id=BOOKING_B, current_user=SUPER_ADMIN_A, target_tenant=TENANT_B)
+    assert res is not None
     
-    payload = {
-        "amount": 100.0,
-        "method": "card",
-        "payment_type": "deposit"
-    }
-    
-    with patch("core.security._user_doc_cache_get") as mock_cache:
-        mock_cache.return_value = {"_id": "user_B", "tenant_id": "hotel_B", "email": "userB@test.com", "name": "Hotel B User", "role": "admin", "is_active": True, "failed_login_attempts": 0}
-        with patch("infra.auth_cache_pubsub.auth_cache_pubsub"):
-            response = client.post("/api/pms/reservations/booking_A/payments", json=payload, headers=headers_B)
-            # Should fail because booking_A under tenant hotel_B is not found
-            assert response.status_code == 404
-
-@patch("routers.pms_guests.db")
-def test_guest_update_tenant_isolation(mock_db):
-    """
-    Test that user from hotel_B cannot update hotel_A's guest profile.
-    """
-    mock_db.guests.find_one = AsyncMock(side_effect=mock_guests_find_one)
-    
-    token_B = create_user_token(user_id="user_B", tenant_id="hotel_B")
-    headers_B = {"Authorization": f"Bearer {token_B}"}
-    
-    payload = {
-        "name": "Hacked Profile"
-    }
-    
-    with patch("core.security._user_doc_cache_get") as mock_cache:
-        mock_cache.return_value = {"_id": "user_B", "tenant_id": "hotel_B", "email": "userB@test.com", "name": "Hotel B User", "role": "admin", "is_active": True, "failed_login_attempts": 0}
-        with patch("infra.auth_cache_pubsub.auth_cache_pubsub"):
-            response = client.put("/api/guests/guest_A", json=payload, headers=headers_B)
-            # Should return 404 Not Found since it searches by hotel_B
-            assert response.status_code == 404
-
-@pytest.mark.skip(reason="Router path needs verification")
-def test_folio_retrieval_tenant_isolation():
-    pass
-
-@patch("routers.reservation_detail.db")
-def test_super_admin_cross_tenant_access(mock_db):
-    """
-    Super Admin in tenant hotel_A tries to access hotel_B's reservation.
-    Since current_user.tenant_id is hotel_A, the query looks for tenant_id=hotel_A.
-    This means even a super admin cannot cross-pollinate data just by guessing an ID,
-    ensuring 100% isolation by default (unless they use a specific cross-tenant endpoint which would have audit logs).
-    """
-    mock_db.bookings.find_one = AsyncMock(side_effect=mock_bookings_find_one)
-    mock_db.guests.find_one = AsyncMock(return_value=None)
-    mock_db.rooms.find_one = AsyncMock(return_value=None)
-    mock_db.folios.find_one = AsyncMock(return_value=None)
-    
-    # super_admin from hotel_A trying to access booking from hotel_B (which doesn't exist in hotel_A)
-    token_SA = create_user_token(user_id="sa_A", tenant_id="hotel_A", role="super_admin")
-    headers_SA = {"Authorization": f"Bearer {token_SA}"}
-    
-    with patch("core.security._user_doc_cache_get") as mock_cache:
-        mock_cache.return_value = {"_id": "sa_A", "tenant_id": "hotel_A", "email": "sa@test.com", "name": "Super Admin", "role": "super_admin", "is_active": True, "failed_login_attempts": 0}
-        with patch("infra.auth_cache_pubsub.auth_cache_pubsub"):
-            response = client.get("/api/pms/reservations/booking_B/full-detail", headers=headers_SA)
-            # Returns 404 because booking_B does not belong to hotel_A
-            assert response.status_code == 404
+    # Verify audit log was written
+    audit_log = await live_test_db.audit_logs.find_one({
+        "user_id": SUPER_ADMIN_A.id, 
+        "event_type": "super_admin_cross_tenant_access"
+    })
+    assert audit_log is not None
+    assert audit_log["target_tenant"] == TENANT_B
+    assert audit_log["resource"] == f"booking:{BOOKING_B}"

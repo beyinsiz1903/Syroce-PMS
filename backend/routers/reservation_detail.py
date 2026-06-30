@@ -237,18 +237,33 @@ async def _log_activity(tenant_id: str, booking_id: str, action: str, actor: str
 # ── Endpoints ──
 
 
+from fastapi import APIRouter, Depends, HTTPException, Request, Header
+
+# ... (other imports remain, but we add Header to fastapi)
+
 @router.get("/reservations/{booking_id}/full-detail")
 async def get_reservation_full_detail(
     booking_id: str,
     current_user: User = Depends(get_current_user),
+    target_tenant: str | None = Header(None, alias="X-Tenant-ID")
 ):
     """Get comprehensive reservation detail with all related data."""
     _ensure_hotel_context(current_user)
     tid = current_user.tenant_id
+    
+    is_cross_tenant = False
+    if target_tenant and target_tenant != current_user.tenant_id:
+        if current_user.role != "super_admin":
+            # For non-super_admins, pretend the resource doesn't exist to prevent leakage
+            raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+        tid = target_tenant
+        is_cross_tenant = True
 
-    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
-    if not booking:
-        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+    from core.tenant_db import tenant_context
+    with tenant_context(tid):
+        booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+        if not booking:
+            raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
 
     # Fetch related data in parallel-like fashion
     guest = None
@@ -361,6 +376,16 @@ async def get_reservation_full_detail(
     except Exception:
         # Fail-open on decrypt errors: API still works, audit handled in service
         pass
+
+    if is_cross_tenant:
+        from core.audit import append_audit_log
+        # Execute outside of the with block so it logs to the Super Admin's tenant
+        await append_audit_log(
+            event_type="super_admin_cross_tenant_access",
+            user_id=current_user.id,
+            resource=f"booking:{booking_id}",
+            details={"target_tenant": target_tenant}
+        )
 
     return {
         "booking": booking,
