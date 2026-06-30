@@ -4,8 +4,9 @@ Pilot Demo Hotel Seed Data Script (Sprint 5 Task 1)
 Generates a realistic "Clean State" demo hotel environment for a pilot demo.
 Features:
 - Idempotent: Drops existing tenant data and recreates it.
-- ENV check: Exits immediately if ENV=production.
+- ENV check: Exits immediately if ENV=production or prod. Requires DEMO_MODE=1 or ALLOW_DEMO_SEED=1.
 - Generates Rooms, Users, Guests, Bookings, Folios, Payments, Housekeeping Tasks.
+- Deterministic minimum outputs for Demo Readiness.
 """
 import asyncio
 import os
@@ -23,7 +24,7 @@ from core.security import hash_password
 # ================= Configuration =================
 TENANT_ID = "syroce_demo_pilot"
 HOTEL_NAME = "Syroce Demo Hotel"
-DEFAULT_PASSWORD = "demo"
+DEFAULT_PASSWORD = os.environ.get("DEMO_PASSWORD", "demo")
 
 ROOM_TYPES = {
     "Standard": {"count": 20, "rate": 120, "occupancy": 2},
@@ -33,10 +34,10 @@ ROOM_TYPES = {
 }
 
 USERS = [
-    {"email": "gm@hotel.com", "role": "admin", "name": "General Manager"},
-    {"email": "frontdesk@hotel.com", "role": "front_desk", "name": "Receptionist"},
-    {"email": "housekeeping@hotel.com", "role": "housekeeping", "name": "Housekeeping Supervisor"},
-    {"email": "finance@hotel.com", "role": "finance", "name": "Cashier"},
+    {"email": "gm@syroce-demo.local", "role": "admin", "name": "General Manager"},
+    {"email": "frontdesk@syroce-demo.local", "role": "front_desk", "name": "Receptionist"},
+    {"email": "housekeeping@syroce-demo.local", "role": "housekeeping", "name": "Housekeeping Supervisor"},
+    {"email": "finance@syroce-demo.local", "role": "finance", "name": "Cashier"},
 ]
 
 GUEST_NAMES = [
@@ -47,6 +48,23 @@ GUEST_NAMES = [
 # =================================================
 
 
+def enforce_guards():
+    env = os.environ.get("ENV", "").lower()
+    app_env = os.environ.get("APP_ENV", "").lower()
+    environment = os.environ.get("ENVIRONMENT", "").lower()
+
+    if any(e in ["production", "prod"] for e in [env, app_env, environment]):
+        print("CRITICAL GUARD: Cannot run seed script in production environment. Exiting.")
+        sys.exit(1)
+
+    if os.environ.get("DEMO_MODE") != "1" and os.environ.get("ALLOW_DEMO_SEED") != "1":
+        print("GUARD: DEMO_MODE=1 or ALLOW_DEMO_SEED=1 is required to run this script. Exiting.")
+        sys.exit(1)
+
+    if "demo" not in TENANT_ID.lower():
+        raise RuntimeError(f"GUARD: TENANT_ID '{TENANT_ID}' must contain 'demo' to prevent accidental wipes.")
+
+
 async def clear_existing_tenant():
     print(f"Cleaning up existing data for tenant '{TENANT_ID}'...")
     collections_to_clean = [
@@ -55,9 +73,10 @@ async def clear_existing_tenant():
     ]
     for coll_name in collections_to_clean:
         if coll_name == "tenants":
-            await _raw_db[coll_name].delete_many({"_id": TENANT_ID})
+            res = await _raw_db[coll_name].delete_many({"_id": TENANT_ID})
         else:
-            await _raw_db[coll_name].delete_many({"tenant_id": TENANT_ID})
+            res = await _raw_db[coll_name].delete_many({"tenant_id": TENANT_ID})
+        print(f" - Deleted {res.deleted_count} from {coll_name}")
 
 
 async def seed_tenant_and_users():
@@ -89,10 +108,13 @@ async def seed_tenant_and_users():
 
 
 async def seed_rooms():
-    print("Seeding rooms...")
+    print("Seeding rooms with deterministic minimum statuses...")
     rooms = []
     floor = 1
     number = 1
+    
+    # Deterministic guarantees
+    status_requirements = ["dirty", "dirty", "dirty", "out_of_order", "inspected"]
     
     for r_type, info in ROOM_TYPES.items():
         for _ in range(info["count"]):
@@ -102,16 +124,10 @@ async def seed_rooms():
                 
             room_num = f"{floor}{number:02d}"
             
-            # 80% Clean, 10% Dirty, 5% Inspected, 5% Out of Order
-            status_roll = random.random()
-            if status_roll < 0.8:
-                status = "clean"
-            elif status_roll < 0.9:
-                status = "dirty"
-            elif status_roll < 0.95:
-                status = "inspected"
+            if status_requirements:
+                status = status_requirements.pop(0)
             else:
-                status = "out_of_order"
+                status = "clean"
                 
             rooms.append({
                 "_id": str(uuid.uuid4()),
@@ -152,7 +168,7 @@ async def seed_guests():
 
 
 async def seed_bookings_and_folios(rooms, guests):
-    print("Seeding bookings, folios, payments...")
+    print("Seeding bookings, folios, payments deterministically...")
     now = datetime.now(UTC)
     today = now.replace(hour=14, minute=0, second=0, microsecond=0)
     
@@ -160,24 +176,23 @@ async def seed_bookings_and_folios(rooms, guests):
     folios = []
     payments = []
     
-    # Let's create specific scenarios:
     scenarios = [
-        # Today Check-in
-        {"days_offset": 0, "length": 3, "status": "confirmed", "payment": "partial"},
-        # Today Check-out
-        {"days_offset": -3, "length": 3, "status": "checked_in", "payment": "full"},
-        # In-House
-        {"days_offset": -1, "length": 4, "status": "checked_in", "payment": "unpaid"},
-        # Future
-        {"days_offset": 5, "length": 2, "status": "confirmed", "payment": "unpaid"},
-        # No-show candidate
-        {"days_offset": -1, "length": 2, "status": "confirmed", "payment": "unpaid"},
-        # Cancelled
-        {"days_offset": 2, "length": 3, "status": "cancelled", "payment": "unpaid"},
-        # Group booking (3 rooms)
-        {"days_offset": 1, "length": 2, "status": "confirmed", "payment": "full", "group": True},
-        {"days_offset": 1, "length": 2, "status": "confirmed", "payment": "full", "group": True},
-        {"days_offset": 1, "length": 2, "status": "confirmed", "payment": "full", "group": True},
+        # Bugün giriş yapacak rezervasyonlar
+        {"days_offset": 0, "length": 3, "status": "confirmed", "payment": "partial", "source": "direct", "tag": "today_check_in"},
+        # Bugün çıkış yapacak rezervasyonlar
+        {"days_offset": -3, "length": 3, "status": "checked_in", "payment": "full", "source": "ota", "tag": "today_check_out"},
+        # Konaklayan misafirler
+        {"days_offset": -1, "length": 4, "status": "checked_in", "payment": "unpaid", "source": "corporate", "tag": "in_house"},
+        # Gelecek tarihli rezervasyonlar
+        {"days_offset": 5, "length": 2, "status": "confirmed", "payment": "unpaid", "source": "direct", "tag": "future"},
+        # No-show adayı
+        {"days_offset": -1, "length": 2, "status": "confirmed", "payment": "unpaid", "source": "direct", "tag": "no_show_candidate"},
+        # İptal edilmiş rezervasyon
+        {"days_offset": 2, "length": 3, "status": "cancelled", "payment": "unpaid", "source": "ota", "tag": "cancelled"},
+        # Grup rezervasyon (3 rooms)
+        {"days_offset": 1, "length": 2, "status": "confirmed", "payment": "full", "source": "group", "tag": "group_member"},
+        {"days_offset": 1, "length": 2, "status": "confirmed", "payment": "full", "source": "group", "tag": "group_member"},
+        {"days_offset": 1, "length": 2, "status": "confirmed", "payment": "full", "source": "group", "tag": "group_member"},
     ]
     
     for scenario in scenarios:
@@ -202,7 +217,8 @@ async def seed_bookings_and_folios(rooms, guests):
             "adults": random.randint(1, room["max_occupancy"]),
             "status": scenario["status"],
             "total_amount": total_amount,
-            "source": random.choice(["direct", "ota", "corporate"]),
+            "source": scenario["source"],
+            "scenario_tag": scenario["tag"],
             "created_at": (check_in - timedelta(days=random.randint(1, 10))).isoformat()
         })
         
@@ -284,10 +300,7 @@ async def seed_housekeeping_tasks(rooms):
 
 
 async def run_seed():
-    if os.environ.get("ENV") == "production":
-        print("ERROR: Cannot run seed script in production environment.")
-        sys.exit(1)
-
+    enforce_guards()
     print("========================================")
     print("Starting Pilot Demo Hotel Seed Process")
     print("========================================")
@@ -302,7 +315,7 @@ async def run_seed():
     print("\n✅ Seed process completed successfully!")
     print("Login Credentials:")
     for u in USERS:
-        print(f" - {u['role'].capitalize()}: {u['email']} / {DEFAULT_PASSWORD}")
+        print(f" - {u['role'].capitalize()}: {u['email']} (password configured via DEMO_PASSWORD or default demo)")
 
 
 if __name__ == "__main__":
