@@ -27,7 +27,7 @@ def _get_mongo_uri() -> str:
 
     Resolution mirrors `backend/core/database.py:19` (`MONGO_URL` first)
     and falls back to `MONGO_ATLAS_URI` for environments where the
-    Atlas string is the only one stored in Replit Secrets.
+    Atlas string is the only one stored in DigitalOcean Secrets.
     """
     return os.environ.get("MONGO_URL") or os.environ.get("MONGO_ATLAS_URI") or ""
 

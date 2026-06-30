@@ -189,7 +189,7 @@ async def provision_tenant(tenant_id: str) -> dict[str, Any]:
 
 
 def _pms_callback_base() -> str:
-    return os.environ.get("PUBLIC_BASE_URL") or os.environ.get("REPLIT_DEV_DOMAIN_HTTPS") or "http://localhost:8000"
+    return os.environ.get("PUBLIC_BASE_URL") or os.environ.get("CLOUD_DEV_DOMAIN_HTTPS") or "http://localhost:8000"
 
 
 def mint_sso_token(tenant_id: str, user: dict[str, Any]) -> str:

@@ -10,7 +10,7 @@ if [ -n "$MONGO_ATLAS_URI" ]; then
   echo "✅ MongoDB: Atlas Cloud kullanılıyor (DB: $DB_NAME)"
 else
   echo "⚠️  MONGO_ATLAS_URI tanımlı değil, local MongoDB başlatılıyor..."
-  # KALICI dbpath: /tmp Replit restart'ta silinir, workspace kalır.
+  # KALICI dbpath: /tmp DigitalOcean restart'ta silinir, workspace kalır.
   MONGO_DBPATH="${SYROCE_MONGO_DBPATH:-$HOME/.syroce-mongodb-data}"
   mkdir -p "$MONGO_DBPATH"
   # Eski /tmp verisini bir kez taşı (varsa ve hedef boşsa)
@@ -30,7 +30,7 @@ else
   export DB_NAME="${DB_NAME:-syroce-pms}"
 fi
 
-# Redis: yerel instance'ı 6380 portunda başlat (6379 Replit proxy ile çakışıyor).
+# Redis: yerel instance'ı 6380 portunda başlat (6379 DigitalOcean proxy ile çakışıyor).
 REDIS_PORT="${SYROCE_REDIS_PORT:-6380}"
 if ! redis-cli -p "$REDIS_PORT" ping > /dev/null 2>&1; then
   if command -v redis-server > /dev/null 2>&1; then
@@ -74,7 +74,7 @@ export DISABLE_AUTH_THROTTLE="${DISABLE_AUTH_THROTTLE:-1}"
 # here with safe defaults so the stress endpoints can validate
 # `target_tenant_id`. The destructive flag (E2E_ALLOW_DESTRUCTIVE_STRESS)
 # is *intentionally* omitted from these defaults — it must be set
-# externally (e.g. .local/.stress_env or Replit Secrets) for any
+# externally (e.g. .local/.stress_env or DigitalOcean Secrets) for any
 # stress operation to run. Fail-closed.
 export E2E_STRESS_TENANT_ID="${E2E_STRESS_TENANT_ID:-23377306-a501-4232-adc8-8aea50e243c0}"
 export PILOT_TENANT_ID="${PILOT_TENANT_ID:-5bad4a34-6ee3-4566-9053-741b7375a9cf}"
@@ -103,11 +103,11 @@ cd "$(dirname "$0")"
 # worker again, so watch for event-loop starvation under heavy load. Dev is
 # unchanged: uvicorn binds the port directly and Vite serves the frontend on
 # its own port.
-if [ -n "$REPLIT_DEPLOYMENT" ]; then
+if [ -n "$CLOUD_DEPLOYMENT" ]; then
   EXTERNAL_PORT="${PORT:-5000}"
   UVICORN_PORT="${SYROCE_UVICORN_INTERNAL_PORT:-8001}"
   UVICORN_HOST="127.0.0.1"
-  # Replit autoscale port-open timeout (~60s) is shorter than our heavy
+  # Cloud autoscale port-open timeout (~60s) is shorter than our heavy
   # bootstrap (control plane + outbox + event bus + CM indexes). Defer
   # bootstrap to a background task so uvicorn opens the port immediately.
   export DEFER_STARTUP_BOOTSTRAP="${DEFER_STARTUP_BOOTSTRAP:-1}"
@@ -124,7 +124,7 @@ fi
 WAIT_PORT="$UVICORN_PORT"
 
 # WeasyPrint (PDF export) ve diğer native-lib bağımlı paketler libgobject/glib,
-# pango, cairo gibi paylaşımlı kütüphaneleri dlopen ile yükler. Replit dev
+# pango, cairo gibi paylaşımlı kütüphaneleri dlopen ile yükler. DigitalOcean dev
 # shell'inde bunlar gcc/NIX_LDFLAGS fallback'i ile bulunur; ancak VM deployment
 # runtime'ında C derleyici yoktur ve LD_LIBRARY_PATH otomatik doldurulmaz ->
 # "OSError: cannot load library 'libgobject-2.0-0'" (/api/reports/builder/export/pdf).
@@ -151,7 +151,7 @@ fi
 # derivation above is enough in the dev Nix shell, but the Reserved-VM deploy
 # runtime has been observed to leave glib/pango/cairo unreachable (PDF endpoints
 # 503 with "cannot load library 'libgobject-2.0-0'") even though the packages
-# ARE declared in replit.nix and the derivation ran. A cheap dlopen probe
+# ARE declared in digitalocean.nix and the derivation ran. A cheap dlopen probe
 # (honors LD_LIBRARY_PATH exactly like WeasyPrint's loader, ~0.5s, no slow
 # render) decides whether a LAST-resort Nix-store lib-dir lookup is needed.
 # NO-OP on the working path; the store glob is bounded by `timeout` so it can
@@ -187,14 +187,14 @@ fi
 if _pdf_libs_ok; then
   echo "WeasyPrint native lib kontrolü: gobject/pango/cairo YÜKLENEBİLİYOR (native lib hazır; PDF render font/CSS/iş-kuralı hataları için ayrıca doğrulanmalı)"
 else
-  echo "HATA: WeasyPrint native lib kontrolü BAŞARISIZ -> PDF export (beo.pdf, reports/builder/export/pdf) 503 verecek; replit.nix glib/pango/cairo + LD_LIBRARY_PATH'i incele"
+  echo "HATA: WeasyPrint native lib kontrolü BAŞARISIZ -> PDF export (beo.pdf, reports/builder/export/pdf) 503 verecek; digitalocean.nix glib/pango/cairo + LD_LIBRARY_PATH'i incele"
 fi
 
 # Celery worker + beat (Task #362). Night audit now runs as a per-tenant Celery
 # flow: a once-a-minute beat dispatcher (night_audit_dispatch_task) enqueues
 # per-tenant hardened audits at each tenant's LOCAL configured time, executed by
 # the worker (night_audit_for_tenant). In production these run as dedicated K8s /
-# docker-compose worker+beat containers; on Replit (no separate worker process)
+# docker-compose worker+beat containers; on DigitalOcean (no separate worker process)
 # we start them here so the audit actually fires for the pilot. Without this,
 # retiring the in-process asyncio loop would mean the audit never triggers.
 # Requires Redis as the broker; skipped (with a clear log) if Redis is absent.
@@ -212,7 +212,7 @@ if [ "${SYROCE_START_CELERY:-1}" = "1" ] && [ -n "$REDIS_URL" ]; then
       --schedule /tmp/celerybeat-schedule &
   }
 
-  if [ -n "$REPLIT_DEPLOYMENT" ]; then
+  if [ -n "$CLOUD_DEPLOYMENT" ]; then
     # In deployment, uvicorn races a platform port-open deadline. Celery's
     # `-A celery_app` import pulls in the whole app (and ML modules via
     # importlib); started concurrently it starves uvicorn for CPU on a
@@ -253,7 +253,7 @@ else
 fi
 
 # ── Server launch ───────────────────────────────────────────────
-if [ -n "$REPLIT_DEPLOYMENT" ]; then
+if [ -n "$CLOUD_DEPLOYMENT" ]; then
   # Deployment: Caddy static-front + uvicorn on an internal port, supervised
   # by THIS script (PID1). If EITHER process exits, kill the other and exit
   # nonzero so the platform restarts the whole deployment — this avoids the

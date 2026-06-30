@@ -1,6 +1,6 @@
 """Regression for the warm-up gate static-asset allow-list (white-screen fix).
 
-Production incident (2026-06-05): on Replit autoscale cold start the heavy
+Production incident (2026-06-05): on Cloud autoscale cold start the heavy
 bootstrap (cache warming 10k+ bookings + schedulers) keeps
 `app.state.routes_ready=False` for several minutes. The `_warmup_gate`
 middleware returned 503 "Server is warming up" for EVERYTHING except

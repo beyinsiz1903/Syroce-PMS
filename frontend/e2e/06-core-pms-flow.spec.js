@@ -29,7 +29,7 @@
 //   E2E_API_URL=http://localhost:8000 \
 //   yarn e2e -- --project=chromium-desktop --grep="Core PMS"
 //
-// Replit ortamı varsayılan portları: frontend=5000 (vite), backend=8000.
+// DigitalOcean ortamı varsayılan portları: frontend=5000 (vite), backend=8000.
 // CI/farklı ortamlarda env üzerinden override edin.
 //
 // Demo creds: 01-login.spec.js → fixtures/auth.js

@@ -369,7 +369,7 @@ def test_booking_payload_uses_contact_person_or_name_for_guest():
 def test_build_callback_url_uses_public_base_url(monkeypatch):
     from routers.capx_integration import _build_callback_url
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://pms.example.com")
-    monkeypatch.delenv("REPLIT_DEV_DOMAIN", raising=False)
+    monkeypatch.delenv("CLOUD_DEV_DOMAIN", raising=False)
     assert _build_callback_url(TENANT_ID) == (
         f"https://pms.example.com/api/webhooks/capx/by-tenant/{TENANT_ID}"
     )
@@ -378,7 +378,7 @@ def test_build_callback_url_uses_public_base_url(monkeypatch):
 def test_build_callback_url_fallback_to_replit_dev_domain(monkeypatch):
     from routers.capx_integration import _build_callback_url
     monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
-    monkeypatch.setenv("REPLIT_DEV_DOMAIN", "abc-123.replit.dev")
+    monkeypatch.setenv("CLOUD_DEV_DOMAIN", "abc-123.syroce.local")
     assert _build_callback_url(TENANT_ID) == (
-        f"https://abc-123.replit.dev/api/webhooks/capx/by-tenant/{TENANT_ID}"
+        f"https://abc-123.syroce.local/api/webhooks/capx/by-tenant/{TENANT_ID}"
     )

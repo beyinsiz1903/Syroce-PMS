@@ -264,14 +264,14 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
         // /housekeeping route'una navigate eder ve TTI ölçer.
         //
         // FE base URL: stress config sadece backend BASE_URL içerir; frontend'i
-        // REPLIT_DEV_DOMAIN üzerinden port 5000'e map ederiz (vite.config.js:125).
+        // CLOUD_DEV_DOMAIN üzerinden port 5000'e map ederiz (vite.config.js:125).
         // E2E_FE_BASE_URL env override'ı destekleniyor.
-        const replitDomain = process.env.REPLIT_DEV_DOMAIN;
+        const replitDomain = process.env.CLOUD_DEV_DOMAIN;
         let feBase = process.env.E2E_FE_BASE_URL;
         if (!feBase && replitDomain) feBase = `https://5000-${replitDomain}`;
         if (!feBase) {
             rec(testInfo, { module: MOD, step: 'fe_render_tti', status: 'REVIEW',
-                note: "E2E_FE_BASE_URL ve REPLIT_DEV_DOMAIN ikisi de unset — FE TTI ölçümü atlandı. CI run'da env set edilmeli." });
+                note: "E2E_FE_BASE_URL ve CLOUD_DEV_DOMAIN ikisi de unset — FE TTI ölçümü atlandı. CI run'da env set edilmeli." });
             return;
         }
 
@@ -399,7 +399,7 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
         //     renders all rooms in a SINGLE batch (no incremental/virtualized
         //     paint), so time-to-50-rows ≡ time-to-first-paint ≡ cold nav +
         //     JS bundle + /auth/me + /housekeeping/rooms fetch through the
-        //     Replit dev-proxy. It carries NO row-scaling signal distinct from
+        //     DigitalOcean dev-proxy. It carries NO row-scaling signal distinct from
         //     first_row_ms (already hard-gated at <8s), and through the CI
         //     proxy under the full ~1h suite load it drifts ±a few hundred ms
         //     around the 3s mark (CI 2026-06-01: 3284/3394ms — first_row,

@@ -37,7 +37,7 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 | Date | 2026-05-30 |
 | Workflow | GitHub Actions — Full Stress Suite (one-shot) |
 | Run | **#167** |
-| Run URL | https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26687012176 |
+| Run URL | https://github.com/beyinsiz1903/syroce-pms/actions/runs/26687012176 |
 | Run ID / Job ID | 26687012176 / 78656853578 |
 | Trigger | one-shot dispatch |
 | Branch | `main` |
@@ -65,7 +65,7 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 |---|---|
 | Date | 2026-05-29 |
 | Run | **#162** (superseded by #167 on 2026-05-30) |
-| Run URL | https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26653464472 |
+| Run URL | https://github.com/beyinsiz1903/syroce-pms/actions/runs/26653464472 |
 | Run ID / Job ID | 26653464472 / 78557501168 |
 | Commit SHA | `bde7662744c9b94a5c9294fa778202d813319dfc` |
 | Duration | 3576.2s (~59m 36s) |
@@ -86,7 +86,7 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 |---|---|
 | Date | 2026-05-29 |
 | Run | **#161** (superseded by #162 on 2026-05-29) |
-| Run URL | https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26641150604 |
+| Run URL | https://github.com/beyinsiz1903/syroce-pms/actions/runs/26641150604 |
 | Run ID / Job ID | 26641150604 / 78514272098 |
 | Commit SHA | `ba9dfc7aafc0a694b70841d3405f8445ecfc1b67` |
 | Duration | 3441.6s (~57m 22s) |
@@ -107,7 +107,7 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 |---|---|
 | Date | 2026-05-28 |
 | Run | **#159** (superseded by #161 on 2026-05-29) |
-| Run URL | https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26601324830 |
+| Run URL | https://github.com/beyinsiz1903/syroce-pms/actions/runs/26601324830 |
 | Run ID / Job ID | 26601324830 / 78385405937 |
 | Commit SHA | `e23a4ec603cc32984b741d77d67d57a0abba698b` |
 | Duration | 3623.6s (~60m 24s) |
@@ -1157,7 +1157,7 @@ F8D v2 başlatılana kadar bu liste değiştirilmez.
      `docs/drill_reports/20260524_stress_full_stress_suite_f8ah_NOT_GREEN.md`.
 4. **Drill report** (`docs/drill_reports/<date>_stress_<phase>_*.md`).
 5. **ADR** (`docs/adr/<yyyy-mm>-<phase>-*.md`).
-6. **replit.md** "Gotchas" → tek-satırlık pointer.
+6. **digitalocean.md** "Gotchas" → tek-satırlık pointer.
 
 ## Acceptance contract (her faz)
 
@@ -1203,7 +1203,7 @@ sıralı:
 
 **Faz bazlı ayrı workflow yok** — full suite tek bir koşuda kapsamı
 veriyor. İleride F8F/G/H/I/J eklendiğinde de aynı dosya kullanılır
-(timeout 60dk tampon var). Faz-bazlı koşu lokal Replit sandbox'ta
+(timeout 60dk tampon var). Faz-bazlı koşu lokal DigitalOcean sandbox'ta
 `-g <pattern>` ile yapılır (110s tool-budget gotcha — `docs/GOTCHAS.md`
 "F8A Stress Suite").
 

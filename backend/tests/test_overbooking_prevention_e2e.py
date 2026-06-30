@@ -21,7 +21,7 @@ import pytest
 import httpx
 
 # Use public URL from environment
-BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://secure-key-registry.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "https://test-api.syroce.local").rstrip("/")
 AUTH_CREDS = {"email": "demo@hotel.com", "password": "demo123"}
 
 # Use unique year range per run to avoid collisions

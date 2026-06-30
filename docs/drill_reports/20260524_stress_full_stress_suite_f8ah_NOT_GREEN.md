@@ -2,7 +2,7 @@
 
 - **Date**: 2026-05-24
 - **Runner**: agent task-21 (`yarn test:e2e:stress` via `Stress Suite` workflow)
-- **Base URL**: `https://emergent-yeni-uygulama-1.replit.app` (deployed pilot)
+- **Base URL**: `https://pms.syroce.com` (deployed pilot)
 - **Stress tenant**: `23377306-a501-4232-adc8-8aea50e243c0`
 - **Pilot tenant**: `5bad4a34-6ee3-4566-9053-741b7375a9cf`
 - **Result**: ❌ NOT GREEN
@@ -43,7 +43,7 @@ Server returns `{"detail":"Rate limit exceeded","limit":120,"remaining":0,"retry
 - `12-complaints.spec.js:31` — Setup: `owned=0` despite seed reporting `service_complaints=100`.
 
 ### D. Environment regression (1 test)
-- `08-housekeeping-mass.spec.js:195` — `browserType.launch: Executable doesn't exist at .cache/ms-playwright/chromium_headless_shell-1217/…`. Mobile viewport (390×844) test needs the headless-shell variant which was not installed in this Replit container after the most recent Playwright update.
+- `08-housekeeping-mass.spec.js:195` — `browserType.launch: Executable doesn't exist at .cache/ms-playwright/chromium_headless_shell-1217/…`. Mobile viewport (390×844) test needs the headless-shell variant which was not installed in this DigitalOcean container after the most recent Playwright update.
 
 ## Pilot Drift / External Calls
 Per spec-level invariants asserted in `try/finally` blocks, no pilot mutation or external-call leakage was observed in the passing 303 tests. The 10 failures bailed in setup/early lifecycle so their per-test pilot_drift / external_calls assertions did not run; full-suite invariant cannot be re-confirmed until the rate-limit + rooms-fetch issues are addressed.

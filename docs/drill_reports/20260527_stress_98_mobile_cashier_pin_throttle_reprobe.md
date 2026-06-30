@@ -3,7 +3,7 @@
 > Suite: `frontend/e2e-stress/` (Playwright config: `playwright.stress.config.js`).
 > Run tag: `98_mobile_cashier_pin_throttle_reprobe` · Task #123 deliverable.
 > Spec: `frontend/e2e-stress/specs/98-mobile-cashier-surface.spec.js` (tests Setup, L, M, N).
-> Target: `https://emergent-yeni-uygulama-1.replit.app` (deployed pilot).
+> Target: `https://pms.syroce.com` (deployed pilot).
 
 ## 1) Yönetici özeti
 

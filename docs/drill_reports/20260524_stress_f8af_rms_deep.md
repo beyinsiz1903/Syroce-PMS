@@ -186,6 +186,6 @@ gerçek HTTP çağrısı tetiklenirse invariant patlar.
 - `backend/domains/revenue/pricing_router/ai_pricing.py` — AI pricing
   auto-publish surface
 - `docs/STRESS_TEST_ROADMAP.md` — F8AF baseline note
-- `docs/GOTCHAS.md` / `replit.md` — F8 Stress Test Series altında F8AF satırı
+- `docs/GOTCHAS.md` / `digitalocean.md` — F8 Stress Test Series altında F8AF satırı
 - `frontend/e2e-stress/fixtures/stress-helpers.js` — reuse-only
 - `frontend/e2e-stress/fixtures/stress-context.js` — reuse-only

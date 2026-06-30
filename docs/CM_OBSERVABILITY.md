@@ -49,7 +49,7 @@ import from it so a tuning change is one-place.
 `exit 1` → Sentry monitor failure → on-call'a page.
 `exit 2` → DBA kuyruğuna page (script ya da DB bozuk).
 
-Sentry-cli yoksa düz cron + Replit secret-based webhook:
+Sentry-cli yoksa düz cron + DigitalOcean secret-based webhook:
 
 ```bash
 * * * * * python /app/backend/scripts/cm_backlog_alert.py --quiet || \

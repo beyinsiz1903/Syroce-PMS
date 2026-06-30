@@ -72,7 +72,7 @@ To promote this candidate fix toward baseline status:
 
 ## Baseline Promotion Gate
 
-The Run #143 baseline pointer in `replit.md` MUST NOT be moved unless
+The Run #143 baseline pointer in `digitalocean.md` MUST NOT be moved unless
 the full-suite drill artifact explicitly demonstrates ALL of the
 following:
 
@@ -85,7 +85,7 @@ following:
 - Verdict ≥ **GO WITH WATCH**
 
 Any deviation (even one P1, even one external call, even partial cleanup
-non-idempotency) blocks promotion. Doctrinal absolutes from `replit.md`
+non-idempotency) blocks promotion. Doctrinal absolutes from `digitalocean.md`
 "F8 Stress Test Series" closing note apply: no assertion loosening, no
 skip-as-pass, P0=P1=0 hard floor.
 
@@ -103,5 +103,5 @@ skip-as-pass, P0=P1=0 hard floor.
 ## Pointer Updates
 
 None until verification artifact confirms baseline-grade results.
-`replit.md` "F8 Stress Test Series" GREEN BASELINE block continues to
+`digitalocean.md` "F8 Stress Test Series" GREEN BASELINE block continues to
 point at Run #143 / commit `3b3891d` / 2026-05-26.

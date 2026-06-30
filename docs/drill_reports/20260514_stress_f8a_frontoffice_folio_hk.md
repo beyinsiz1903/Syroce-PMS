@@ -1,6 +1,6 @@
 # F8A — Front Office + Folio + Housekeeping Operational Stress — 20260514
 
-> **STATUS UPDATE 2026-05-15**: Bu rapor #161 fix'inden ÖNCEKİ NO-GO snapshot'ıdır. Aşağıdaki `04 folio-mass A/B/C s400` P1 finding'i, `5587e010 fix(stress): seed bookings with folio_id` commit'i ile root-cause düzeyinde çözüldü (`backend/domains/admin/router/stress.py:233`). Sonraki F8A workflow run'ı verdict'i GO/GO WITH WATCH'e döndürmeli. Detay: `replit.md` Gotchas → "F8A Stress (DONE — #161 RESOLVED)".
+> **STATUS UPDATE 2026-05-15**: Bu rapor #161 fix'inden ÖNCEKİ NO-GO snapshot'ıdır. Aşağıdaki `04 folio-mass A/B/C s400` P1 finding'i, `5587e010 fix(stress): seed bookings with folio_id` commit'i ile root-cause düzeyinde çözüldü (`backend/domains/admin/router/stress.py:233`). Sonraki F8A workflow run'ı verdict'i GO/GO WITH WATCH'e döndürmeli. Detay: `digitalocean.md` Gotchas → "F8A Stress (DONE — #161 RESOLVED)".
 
 > Suite: `frontend/e2e-stress/` (Playwright config: `playwright.stress.config.js`). Üretildi: 2026-05-14T02:17:56.835Z · Tag: `f8a_frontoffice_folio_hk`
 
@@ -84,9 +84,9 @@ _Performans örneği yok._
 - State: `frontend/e2e-stress/.auth/stress-state.json` (gitignored)
 - Teardown log: `frontend/e2e-stress/.auth/teardown.json` (gitignored)
 
-## 10) Chunked run aggregate (Replit sandbox 110s tool budget workaround)
+## 10) Chunked run aggregate (DigitalOcean sandbox 110s tool budget workaround)
 
-Replit agent sandbox tool çağrı süresi ~110s ile sınırlı; 26-test'lik full F8A suite tek-call'da
+DigitalOcean agent sandbox tool çağrı süresi ~110s ile sınırlı; 26-test'lik full F8A suite tek-call'da
 sığmadığı için spec'ler `--workers=4 -g <pattern>` ile parallel chunk'lara bölünüp her biri ayrı
 tag ile koşuldu. Her chunk **kendi seed+cleanup cycle'ını** çalıştırdı (idempotency ve
 isolation defansı her seferinde doğrulandı). Aggregate sonuç:

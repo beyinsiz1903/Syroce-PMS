@@ -11,8 +11,8 @@
 
 | Item | Status | Notes |
 |---|---|---|
-| **Official baseline** | ✅ Run #143 (2026-05-26, commit `3b3891d`) — 84 spec / 556 test GREEN GO WITH WATCH | **Unchanged.** Pointer in `replit.md` Gotchas remains Run #143. |
-| **Candidate evidence** | ⚠️ Task #57 Replit-equivalent 723-test full suite (commit `d47a5e30`, 41.3 min, `workers=1`, `destructive_stress=true`, `external_dry_run=true`, pacing fix verified) | **NOT an official baseline.** GH Actions dispatch was unavailable in task sandbox; result is pre-baseline candidate evidence only. |
+| **Official baseline** | ✅ Run #143 (2026-05-26, commit `3b3891d`) — 84 spec / 556 test GREEN GO WITH WATCH | **Unchanged.** Pointer in `digitalocean.md` Gotchas remains Run #143. |
+| **Candidate evidence** | ⚠️ Task #57 DigitalOcean-equivalent 723-test full suite (commit `d47a5e30`, 41.3 min, `workers=1`, `destructive_stress=true`, `external_dry_run=true`, pacing fix verified) | **NOT an official baseline.** GH Actions dispatch was unavailable in task sandbox; result is pre-baseline candidate evidence only. |
 | **Next official baseline** | ❌ BLOCKED on GH Actions full-suite artifact | Requires manual `workflow_dispatch` of `.github/workflows/stress.yml` from GitHub UI; artifact + summary attached to drill report before baseline pointer moves. |
 | **Pilot mutation budget** | ✅ 0 (all targeted verifies dry-run + cleanup idempotent) | F9C live drills (Task #82) used non-destructive probes against pilot. |
 
@@ -122,7 +122,7 @@
 
 | Commit | Task | Drill |
 |---|---|---|
-| `d47a5e30` | #57 | **723-test Replit-equivalent full suite** (candidate evidence only — not GH Actions) |
+| `d47a5e30` | #57 | **723-test DigitalOcean-equivalent full suite** (candidate evidence only — not GH Actions) |
 | `92505463` | #82 | 5 remaining F9C deep stress specs verified against live pilot |
 | `e1e2017b` | #47 | F9C Sales lifecycle spec verified |
 | `eb57419f` | #53 | F&B BEO spec verified |
@@ -196,7 +196,7 @@ To move the baseline pointer from Run #143 to a post-F9C run, the following must
    - `docs/STRESS_TEST_ROADMAP.md` — new official baseline row
    - `docs/TEST_COVERAGE_GAP_MAP_20260527.md` — ZERO→PARTIAL transitions confirmed
    - `docs/PILOT_TRUST_NARRATIVE.md` — verified coverage line bumped
-   - `replit.md` Gotchas — baseline pointer moved off Run #143
+   - `digitalocean.md` Gotchas — baseline pointer moved off Run #143
 
 ---
 
@@ -209,7 +209,7 @@ To move the baseline pointer from Run #143 to a post-F9C run, the following must
 | Targeted regression run | ❌ Cannot run from this environment (deploy + CI required) — proposed as Project Task |
 | Full-suite GH Actions run | ❌ Cannot dispatch from this environment — proposed as Project Task |
 | F10A mobile smoke run | ❌ Cannot run from this environment — proposed as Project Task |
-| Baseline pointer move in `replit.md` | ❌ Intentionally NOT moved — gated on artifact above |
+| Baseline pointer move in `digitalocean.md` | ❌ Intentionally NOT moved — gated on artifact above |
 | `STRESS_TEST_ROADMAP.md` / gap map / trust narrative updates | ❌ Intentionally deferred — gated on artifact above |
 
 ---

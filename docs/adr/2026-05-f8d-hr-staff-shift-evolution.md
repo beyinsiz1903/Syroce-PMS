@@ -5,7 +5,7 @@
 **Scope:** `frontend/e2e-stress/specs/20..23` (4 spec, 19 test), F8A+F8B+F8C operasyonel paketinin üzerine HR yüzeyleri.
 **Drill rapor:** `docs/drill_reports/20260518_stress_f8d_hr_staff_shift_leave.md`
 
-Bu ADR F8D stres test suite'inin tur detaylarını içerir. `replit.md` "Gotchas" bölümünde tek-satır özet bırakılmıştır.
+Bu ADR F8D stres test suite'inin tur detaylarını içerir. `digitalocean.md` "Gotchas" bölümünde tek-satır özet bırakılmıştır.
 
 ---
 

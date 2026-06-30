@@ -8,7 +8,7 @@ messages to the OS notification centre even when the recipient has no tab open.
 Design notes
 ------------
 * VAPID keys MUST be supplied via `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`
-  environment variables (Replit Secrets in production). The optional
+  environment variables (DigitalOcean Secrets in production). The optional
   `VAPID_SUBJECT` env var sets the `sub` claim required by the VAPID spec
   (defaults to `mailto:noreply@syroce.com`).
 * In production (`is_production_env()` true) the env vars are *required* —
@@ -140,7 +140,7 @@ async def get_vapid_keys() -> dict[str, str]:
     if is_production_env():
         raise VapidKeysMissingError(
             "VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY must be set in production. "
-            "Configure them as Replit Secrets (or your secret manager) so all "
+            "Configure them as DigitalOcean Secrets (or your secret manager) so all "
             "backend instances share a stable keypair and the private key is "
             "never written to MongoDB."
         )

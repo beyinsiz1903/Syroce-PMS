@@ -25,7 +25,7 @@
 | 5   | Admin "Sistem Sağlığı" ekranı         | ✅ **DONE** (12 May 2026)      | HAYIR          | ~~2–3 saat~~ |
 | 6   | Kill-switch / feature flag standardı  | ✅ **DONE** (12 May 2026)      | HAYIR          | ~~2 saat~~   |
 | 7   | İlk 24 saat izleme runbook'u          | ✅ **DONE** (12 May 2026)      | HAYIR          | ~~1 saat~~   |
-| 8   | Replit OPS cheat-sheet                | ✅ **DONE** (12 May 2026)      | HAYIR          | ~~1–2 saat~~ |
+| 8   | DigitalOcean OPS cheat-sheet                | ✅ **DONE** (12 May 2026)      | HAYIR          | ~~1–2 saat~~ |
 
 **Kalan pilot-blocker iş yükü:** YOK ✅ — pilot güvenlik dörtgeni
 (rollback + backup + observability + alarm) tamam.
@@ -58,7 +58,7 @@
    - §0 30-saniye TL;DR
    - §1 Yeni flag ekleme standardı (parsing, naming, fail-closed,
      registry güncelleme, audit log)
-   - §2 Operatör akışı (Replit Secrets → restart → readiness ile
+   - §2 Operatör akışı (DigitalOcean Secrets → restart → readiness ile
      doğrula)
    - §3 Mevcut 5 kill-switch envanteri (wire noktası, etki, açma
      süresi, side-effect kolonları)
@@ -95,7 +95,7 @@
 5. **Truthy `y/t` tek-harf kabul:** Codebase'de zaten varyans var;
    liberal parser tek-yer-tutarlılık sağlar. Bilinmeyen token
    warning'i typo'ları yakalar.
-6. **`sandbox` allowed_envs'e dahil:** Pilot Replit sandbox'ta
+6. **`sandbox` allowed_envs'e dahil:** Pilot DigitalOcean sandbox'ta
    koşar; production guard sandbox'ta honoured olmalı (test
    senaryoları). Pilot prod'da APP_ENV=production set olur ve
    sandbox flag yoksayılır.
@@ -182,7 +182,7 @@ ağırlıklı izleme.
 
 ## ✅ Kapsam #8 — Tamamlandı (12 Mayıs 2026)
 
-**Replit OPS cheat-sheet — tek-sayfa operatör referansı:**
+**DigitalOcean OPS cheat-sheet — tek-sayfa operatör referansı:**
 
 **Yazılan kod:** Sadece dokümantasyon — `docs/REPLIT_OPS_CHEATSHEET.md`
 9 bölüm:
@@ -193,7 +193,7 @@ ağırlıklı izleme.
 5. Eskalasyon kanalları (CRITICAL/ERROR/WARNING/DBA)
 6. Komut hızlı referansı (alfabetik, kopyala-yapıştır hazır)
 7. İlgili doküman çapraz-link (9 doküman)
-8. Replit-spesifik notlar (workflow restart, secret panel, log paths)
+8. DigitalOcean-spesifik notlar (workflow restart, secret panel, log paths)
 9. Sürüm
 
 **Tasarım kararı:** "30 saniyede cevap" — operatör nöbette panik
@@ -241,7 +241,7 @@ açıklama değil. Detay için her bölüm ilgili runbook'a link verir.
   9. Out of scope (Sentry CLI provisioning, multi-region)
   10. İlgili dosya pinleri
 
-**Replit Secrets'a eklenmesi gereken (deploy adımı):**
+**DigitalOcean Secrets'a eklenmesi gereken (deploy adımı):**
 - `SENTRY_ENVIRONMENT=pilot` (default `production` — pilot için override)
 - `SENTRY_DSN` zaten var (VITE_SENTRY_DSN frontend için, SENTRY_DSN backend)
 
@@ -317,7 +317,7 @@ continuous backup + PITR sunuyor (S3 managed, retention configurable).
 - `docs/ROLLBACK.md` — 4 senaryo (kod hatası, auto-rollback, Atlas
   restore, tam felaket) + doğrulama komutları.
 
-**Replit Secrets'a eklenmesi gereken (deploy zamanı):**
+**DigitalOcean Secrets'a eklenmesi gereken (deploy zamanı):**
 - `ATLAS_TIER=M10` (veya M20/M30)
 - Opsiyonel: `ATLAS_API_PUBLIC_KEY`, `ATLAS_API_PRIVATE_KEY`,
   `ATLAS_PROJECT_ID`, `ATLAS_CLUSTER_NAME` — sadece snapshot tazelik
@@ -402,7 +402,7 @@ Kapsam #2 (durable backup) öncelik: backup yoksa rollback bile veri kaybını
 ### Risk
 **EN KRİTİK GAP.** Pilotta veri bozulursa elde güvenilir geri dönüş noktası
 **yok**. `BACKUP_ENABLED=true` set edilse bile `/tmp/backups` ephemeral.
-Replit deployments restart'ta volume sıfırlanırsa yedek kaybolur.
+DigitalOcean deployments restart'ta volume sıfırlanırsa yedek kaybolur.
 
 ### Yapılacak iş
 1. **Backup'ı schedule'a bağla**: `backend/celery_app.py` beat'ine
@@ -411,7 +411,7 @@ Replit deployments restart'ta volume sıfırlanırsa yedek kaybolur.
 2. **Durable upload modülü yaz**: `backend/infra/backup_uploader.py` —
    tamamlanmış backup dizinini `tar.gz` yapıp S3/R2/GCS'e yükler. Env:
    `BACKUP_DURABLE_PROVIDER=s3|r2|gcs`, `BACKUP_DURABLE_BUCKET`,
-   credentials Replit Secrets'tan. `boto3` (s3-compatible R2 dahil) ya
+   credentials DigitalOcean Secrets'tan. `boto3` (s3-compatible R2 dahil) ya
    da `google-cloud-storage` dependency ekle.
 3. **`readiness_validator` backup check'ini sertleştir**: son başarılı
    backup 26 saatten eskiyse (24h + 2h tolerans) score 0.0, JSON'a
@@ -495,7 +495,7 @@ test 30 dk).
 ### Mevcut durum
 - ✅ `backend/infra/cloud_observability.py:90-130` — Sentry SDK init,
   DSN registration, environment tagging.
-- ✅ Frontend `VITE_SENTRY_DSN` Replit Secrets'ta mevcut.
+- ✅ Frontend `VITE_SENTRY_DSN` DigitalOcean Secrets'ta mevcut.
 - ✅ `infra/alertmanager/alertmanager.yml` ve `infra/prometheus/alerts.yml`
   dosyaları mevcut (içerik denetlenmedi).
 - ❌ Sentry için **alert routing/threshold konfigürasyonu YOK**. Hangi
@@ -523,7 +523,7 @@ tag varsa anında müdahale gerekir; manuel email/Slack rotası tanımlı değil
 3. **`backend/infra/cloud_observability.py`** — `before_send` hook'unda
    `tenant_leak` tag'i set eden bir filter (varsa onaylanmalı; yoksa
    eklenmeli).
-4. Replit Secrets'ta `SENTRY_ENVIRONMENT=pilot` set et (deploy adımı).
+4. DigitalOcean Secrets'ta `SENTRY_ENVIRONMENT=pilot` set et (deploy adımı).
 
 ### Süre
 1–2 saat (doküman 1 saat, hook check 30 dk, tag setup 30 dk).
@@ -650,7 +650,7 @@ zorunda kalır; izleme sıklığı net değil.
 
 ---
 
-## Kapsam #8 — Replit OPS cheat-sheet
+## Kapsam #8 — DigitalOcean OPS cheat-sheet
 
 ### Mevcut durum
 - ❌ `docs/OPS_CHEATSHEET_REPLIT.md` **YOK**.
@@ -757,7 +757,7 @@ sorusuna cevap olarak şunu der:
 
 ---
 
-**Hazırlayan:** Replit Agent (sandbox discovery)
+**Hazırlayan:** DigitalOcean Agent (sandbox discovery)
 **Tarih:** 12 Mayıs 2026
 **Dayanak:** sandbox'ta kod referansı bazlı keşif; production deploy
 durumu doğrulanmadı.

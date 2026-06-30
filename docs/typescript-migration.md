@@ -113,7 +113,7 @@ Her flag açılışından önce `tsc --noEmit` 0 hata olmalı.
 - CI'da `yarn typecheck` hard gate
 - `pages/calendar/ReservationCalendar.tsx` + en kritik 10 sayfa explicit `Booking`
   / `Folio` / `Room` tipleri kullanır
-- Bu doküman güncellenir + `replit.md` Stack bölümü "TypeScript" ekler.
+- Bu doküman güncellenir + `digitalocean.md` Stack bölümü "TypeScript" ekler.
 
 ## Tahmin
 

@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Reject Replit package-firewall URLs in lockfiles
+      - name: Reject DigitalOcean package-firewall URLs in lockfiles
         run: bash scripts/check-lockfile-hosts.sh
 
   # ============ BACKEND LINTING (HARD GATE) ============

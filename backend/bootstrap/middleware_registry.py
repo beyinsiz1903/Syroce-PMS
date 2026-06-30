@@ -15,7 +15,7 @@ def register_middleware(app: FastAPI) -> None:
     # violation that browsers normally ignore, but it ALSO caused a
     # second CORS layer that could shadow the strict regex configured in
     # server.py). The single authoritative CORS layer now lives in
-    # `backend/server.py` (origin allow-list + tightened *.replit.dev
+    # `backend/server.py` (origin allow-list + tightened *.syroce.local
     # regex). Do not re-introduce a wildcard CORSMiddleware here.
 
     # GZip compression for responses > 500 bytes

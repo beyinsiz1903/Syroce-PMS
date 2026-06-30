@@ -18,7 +18,7 @@ Her iki FAIL de **deploy-env** kaynaklidir; **kod regresyonu DEGIL**, baseline *
 ## FAIL #1 — `08-housekeeping-mass.spec.js:260` (G: FE render TTI /housekeeping 50/200/500 satir)
 
 - Diger 5 HK testi (A-E) GREEN; yalniz FE-render TTI (~1.7m) FAIL.
-- Siniflandirma: **BILINEN deploy-env single-worker static-starvation** (memory `stress-housekeeping-render-zerorow-triage.md` + replit.md 2026-06-13 triage). HTTP 200 doner ama tek uvicorn worker API+statik+in-process isleri ayni event-loop'ta tasidigi icin agir grid render TTI esigini asar.
+- Siniflandirma: **BILINEN deploy-env single-worker static-starvation** (memory `stress-housekeeping-render-zerorow-triage.md` + digitalocean.md 2026-06-13 triage). HTTP 200 doner ama tek uvicorn worker API+statik+in-process isleri ayni event-loop'ta tasidigi icin agir grid render TTI esigini asar.
 - Kod degisikligi YOK. Cozum deploy-side: Caddy static-front (kodu mevcut, deploy EDILMEMIS).
 
 ---

@@ -189,7 +189,7 @@ export function _resetPacerForTests() {
 
 async function _doCallOnce(request, method, path, body, token, timeoutMs, extraHeaders) {
     const t0 = Date.now();
-    // Task #47: Replit edge proxy rejects GET-with-body (HTTP 400 "malformed
+    // Task #47: DigitalOcean edge proxy rejects GET-with-body (HTTP 400 "malformed
     // or illegal request"). Previously the helper always set `data: body` and
     // `Content-Type: application/json` — Playwright then serialized `data: null`
     // as a literal 4-byte body "null", which the edge proxy bounced before it

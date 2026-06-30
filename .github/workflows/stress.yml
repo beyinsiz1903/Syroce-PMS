@@ -2,7 +2,7 @@ name: Full Stress Suite (one-shot)
 
 # Task #163 + #192 review fix — TÜM stress suite'ini (`yarn test:e2e:stress`)
 # tek deterministik koşuda çalıştırır: seed → F8A+F8B+F8C+F8D+F8E specs (00..28,
-# ~140 test) sırayla → cleanup. Local Replit sandbox'taki chunked `-g <pattern>`
+# ~140 test) sırayla → cleanup. Local DigitalOcean sandbox'taki chunked `-g <pattern>`
 # koşularının (110s tool-budget gotcha — bkz `docs/GOTCHAS.md` "F8A Stress
 # Suite") yakalayamadığı ordering / state-sharing regression'larını burada
 # yakalıyoruz.

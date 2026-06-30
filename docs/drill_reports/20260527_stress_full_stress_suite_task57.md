@@ -1608,7 +1608,7 @@ _Audit logs are NEVER deleted (KVKK retention) — bu liste sadece stress-seeded
 
 ## 11) Task #57 — Pacing fix end-to-end verification (addendum)
 
-> Run trigger: Task #57 (Replit `Stress Suite Task57` workflow, not the GH Actions
+> Run trigger: Task #57 (DigitalOcean `Stress Suite Task57` workflow, not the GH Actions
 > nightly — GITHUB_TOKEN was not authorized for this repo from the task sandbox,
 > so the canonical `Full Stress Suite (one-shot)` workflow was reproduced 1:1 via
 > `cd frontend && STRESS_REPORT_TAG=full_stress_suite_task57 yarn test:e2e:stress`
@@ -1663,7 +1663,7 @@ pre-existing environmental / module-availability issues:
 
 - Pacing fix verified end-to-end on the deployed stress pilot: **0 × unexpected
   429**, all five previously-429ing lifecycle specs PASS.
-- The GREEN baseline pointer in `replit.md` Gotchas is **NOT** moved off Run #143
+- The GREEN baseline pointer in `digitalocean.md` Gotchas is **NOT** moved off Run #143
   (commit `3b3891d`, 84 spec / 556 test, 2026-05-26) because this run is overall
   NO-GO on 11 unrelated regressions. Promoting a new baseline requires the 11
   failures above to be closed first (those map to existing open tasks plus three

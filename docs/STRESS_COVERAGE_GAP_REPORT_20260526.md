@@ -194,9 +194,9 @@ non-negotiable, per F8 series rules):
 
 1. **Unblock full-suite execution path** (one of):
    - Repair GitHub Actions: workflow file change (`checkout@v5` → `@v4`)
-     pending push because Replit OAuth lacks `workflow` scope. Resolution
+     pending push because DigitalOcean OAuth lacks `workflow` scope. Resolution
      paths: (a) edit `.github/workflows/stress.yml` directly on github.com;
-     (b) reconnect Replit ↔ GitHub with `workflow` scope.
+     (b) reconnect DigitalOcean ↔ GitHub with `workflow` scope.
    - Run locally against `http://localhost:8000` — requires
      `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD` (pilot super_admin) which
      are not currently provisioned as workspace secrets.
@@ -208,7 +208,7 @@ non-negotiable, per F8 series rules):
 4. **Promote baseline** in `docs/STRESS_TEST_ROADMAP.md`, write new
    `docs/drill_reports/YYYYMMDD_stress_full_stress_suite_GREEN_*.md`,
    touch ADR verified-status sections, update
-   `docs/PILOT_TRUST_NARRATIVE.md` and `replit.md` Gotchas pointer.
+   `docs/PILOT_TRUST_NARRATIVE.md` and `digitalocean.md` Gotchas pointer.
 
 Until §7.1 is unblocked, this report is the audit of record. **The 68-spec
 2026-05-24 GREEN baseline remains the only line eligible for production

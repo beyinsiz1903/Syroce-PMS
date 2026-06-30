@@ -1,7 +1,7 @@
 """Contact Center — Faz 2 sesli softphone (Twilio Voice) yapılandırması.
 
 Doktrin (fail-closed, no fake-green):
-- Kimlik bilgileri YALNIZCA ortam değişkeninden (Replit Secrets / deploy env)
+- Kimlik bilgileri YALNIZCA ortam değişkeninden (DigitalOcean Secrets / deploy env)
   okunur; eksikse ``has_credentials``/``is_configured`` False döner ve çağıran
   ``not_configured`` ile sessizce canlıya GEÇMEZ.
 - Sır değerleri ASLA loglanmaz; bu modül yalnızca varlık (bool) bilgisini açar.

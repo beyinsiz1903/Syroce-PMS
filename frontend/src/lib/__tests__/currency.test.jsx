@@ -37,7 +37,7 @@ describe('currency.formatCurrency', () => {
     expect(formatCurrency('abc')).toMatch(/0/);
   });
 
-  it('boş currency → TRY default (regression: $ → TRY fix replit.md)', () => {
+  it('boş currency → TRY default (regression: $ → TRY fix digitalocean.md)', () => {
     const out = formatCurrency(100, '');
     expect(out).toMatch(/₺|TRY/);
     expect(out).not.toContain('$');

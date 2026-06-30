@@ -40,7 +40,7 @@ def public_callback_url(path: str) -> str:
     base = _env("PUBLIC_BASE_URL", "").rstrip("/")
     if not base:
         # geliştirme ortamı fallback — production'da ayarlanmalı
-        base = ((_env("REPLIT_DEV_DOMAIN") and f"https://{_env('REPLIT_DEV_DOMAIN')}") or "").rstrip("/")
+        base = ((_env("CLOUD_DEV_DOMAIN") and f"https://{_env('CLOUD_DEV_DOMAIN')}") or "").rstrip("/")
     return f"{base}{path}" if base else path
 
 

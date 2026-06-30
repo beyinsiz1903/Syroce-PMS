@@ -31,7 +31,7 @@ skip-as-pass YOK. Düz "GO" iddiası YOK; "/100 kapsam" iddiası YOK; mobile/F10
   HR RBAC/PII spec-36 false-RED fix içerir).
 - **Branch:** main
 - **Job süresi:** 2026-06-02T12:33:17Z → 13:36:12Z (~1s 3dk; ekran görüntüsü "1h 2m 58s" toplam süre ile uyumlu).
-- **Run URL:** https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26819935740
+- **Run URL:** https://github.com/beyinsiz1903/syroce-pms/actions/runs/26819935740
 - **Artifacts (2) — provenance TAM (GitHub Actions API `digest` alanından doğrulandı, fabrike EDİLMEDİ):**
   - stress-drill-report — ID `7359234557` (31639 B) —
     `sha256:827b360b95d91d78d02d9571fadbb7b92e91bc96cc43707d381fb3817df15454`

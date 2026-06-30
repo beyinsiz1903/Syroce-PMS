@@ -175,7 +175,7 @@ Tam tablo reporter artifact'ında (85 modül).
 brute-force surface açık.
 
 **Root cause:**
-1. Replit autoscale instance'ları per-process Redis (`localhost:6380`)
+1. Cloud autoscale instance'ları per-process Redis (`localhost:6380`)
    kullanıyor; throttle state instance'lar arası shared değil → cap
    dilution.
 2. GitHub Actions runner egress IP havuzu (3+ rotating IP) → per-IP key

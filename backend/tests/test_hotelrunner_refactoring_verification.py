@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
-    BASE_URL = "https://secure-key-registry.preview.emergentagent.com"
+    BASE_URL = "https://test-api.syroce.local"
 
 TENANT_ID = "044f122b-87b5-480a-88b4-b9534b0c8c90"
 TEST_EMAIL = "demo@hotel.com"

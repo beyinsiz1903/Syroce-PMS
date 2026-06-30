@@ -17,10 +17,10 @@
 
 ## Yöntem dürüstlüğü (enumeration caveat)
 
-Run #195 artifact ZIP gövdesi auth-gated (replit.md "Stress Current State" +
+Run #195 artifact ZIP gövdesi auth-gated (digitalocean.md "Stress Current State" +
 memory `stress-provenance-github-digest`). 26 kalemin (15 REVIEW + 11 SKIP)
 satır-satır artifact gövdesinden RE-TÜRETİLMESİ mümkün değil. Bu triage,
-replit.md WATCH listesinde + drill #194/#195'te İSİMLENDİRİLMİŞ yüzeylere ve 3
+digitalocean.md WATCH listesinde + drill #194/#195'te İSİMLENDİRİLMİŞ yüzeylere ve 3
 explore subagent triajına dayanır. Sayı projeksiyonları bu yüzden "CI-pending"
 etiketlidir; fabrike GREEN iddiası YOKTUR.
 
@@ -208,7 +208,7 @@ yazmak yanlış hedefe çalışır — drill projeksiyonu canlı probe ile sağl
 
 ## OUTCOME — Run #197 (db-stats fix CI-DOĞRULANDI)
 
-- **Provenance (anonim GitHub API, fabrike YOK):** repo `beyinsiz1903/emergent-yeni-uygulama`,
+- **Provenance (anonim GitHub API, fabrike YOK):** repo `beyinsiz1903/syroce-pms`,
   run #197 (id 26904195621), head_sha=`218054fb`, conclusion=success.
   Artifacts: stress-drill-report `sha256:ff5ffbb3…`, playwright-stress-report `sha256:b95dd97d…`.
 - **Sonuç:** 708 test, PASS/FAIL/REVIEW/SKIP=1592/0/20/11, P0=P1=0, P2=22/P3=0,

@@ -8,7 +8,7 @@ provenance (run URL + run number + commit SHA) is fully documented.
 
 As of 2026-05-28, **Run #159 (commit `e23a4ec603cc32984b741d77d67d57a0abba698b`)
 is the official stress baseline**, superseding Run #143 (`3b3891d`,
-now historical reference). Pointer moved in `replit.md`,
+now historical reference). Pointer moved in `digitalocean.md`,
 `docs/STRESS_TEST_ROADMAP.md`, and `docs/TEST_COVERAGE_SCORECARD_100.md`.
 
 ## Artifact metrics (as received)
@@ -87,7 +87,7 @@ or green. It is a valid successor candidate — pending provenance.
 
 ```
 Workflow               : Full Stress Suite (one-shot)
-GitHub Actions run URL : https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26601324830
+GitHub Actions run URL : https://github.com/beyinsiz1903/syroce-pms/actions/runs/26601324830
 GitHub Actions run num : #159
 Run ID                 : 26601324830
 Job ID                 : 78385405937
@@ -107,7 +107,7 @@ Artifact (pw report)   : playwright-stress-report, ID 7278146888,
 - [x] Commit SHA recorded above (`e23a4ec603cc32984b741d77d67d57a0abba698b`)
 - [x] `docs/STRESS_TEST_ROADMAP.md` — latest verified baseline updated to Run #159 / 2026-05-28 / 702 test / `e23a4ec`; Run #143 moved to historical reference
 - [x] `docs/TEST_COVERAGE_SCORECARD_100.md` — official score block updated (full-suite artifact present; official score → 84/100; /100 NOT achieved; mobile/F10 open)
-- [x] `replit.md` — F8 Stress Test Series baseline pointer updated to Run #159 / 2026-05-28 / 702 test / `e23a4ec603cc32984b741d77d67d57a0abba698b` / GO WITH WATCH; Run #143 marked historical reference
+- [x] `digitalocean.md` — F8 Stress Test Series baseline pointer updated to Run #159 / 2026-05-28 / 702 test / `e23a4ec603cc32984b741d77d67d57a0abba698b` / GO WITH WATCH; Run #143 marked historical reference
 
 All boxes checked. **Run #159 (`e23a4ec`) is the official baseline.**
 
@@ -126,4 +126,4 @@ All boxes checked. **Run #159 (`e23a4ec`) is the official baseline.**
 - `docs/TEST_COVERAGE_SCORECARD_100.md` — /100 scorecard (central reference)
 - `docs/DAILY_CHANGE_REVIEW_20260528_POST_UPDATES.md` — post-#143 commit inventory
 - `docs/STRESS_TEST_ROADMAP.md` — roadmap / latest verified baseline
-- `replit.md` — baseline pointer source of truth
+- `digitalocean.md` — baseline pointer source of truth

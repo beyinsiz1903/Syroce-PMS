@@ -51,7 +51,7 @@
 | 27 | `21a41ab7` | f9b probe + smoke | +`97-backend-router-coverage-probe.spec.js` (319 satır), smoke PII scan | HIGH | ✅ Spec syntax OK | ❌ Targeted run drill **YOK** | Pending |
 | 28 | `ff8eed50` | f9a smoke matrix | `routes.js` (+54), `fixtures.js` (+28) — 31 ZERO route + PII scan | MEDIUM | ✅ Smoke matrix | ❌ Smoke targeted run drill **YOK** | Pending |
 | 29 | `8f210d2c` | docs | +`TEST_COVERAGE_GAP_MAP_20260527.md` (227 satır) | LOW | n/a | n/a | n/a |
-| 30 | `b17c8347` | docs | Roadmap closing note + replit.md | LOW | n/a | n/a | n/a |
+| 30 | `b17c8347` | docs | Roadmap closing note + digitalocean.md | LOW | n/a | n/a | n/a |
 | 31 | `20801a03` | docs | P2/REVIEW triage classification | LOW | n/a | n/a | n/a |
 | 32 | `6f48e71e` | workers / sentry noise | 11 worker dosyası — `TransientFailureTracker` | MEDIUM (observability) | ✅ Architect Round-2 PASS | n/a | Pending |
 | 33 | `b5fb1c21` | docs | P2/REVIEW triage backlog | LOW | n/a | n/a | n/a |

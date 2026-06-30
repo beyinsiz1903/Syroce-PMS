@@ -5,7 +5,7 @@
 **Scope:** `frontend/e2e-stress/specs/14..17` (4 spec, 19-23 test), F8A+F8B operasyonel paketinin üzerine MICE & sales yüzeyleri.
 **Drill rapor:** `docs/drill_reports/20260517_stress_f8c_mice_event_banquet.md`
 
-Bu ADR F8C stres test suite'inin tur detaylarını içerir. `replit.md` "Gotchas" bölümünde tek-satır özet bırakılmıştır.
+Bu ADR F8C stres test suite'inin tur detaylarını içerir. `digitalocean.md` "Gotchas" bölümünde tek-satır özet bırakılmıştır.
 
 ---
 

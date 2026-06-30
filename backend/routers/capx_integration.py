@@ -82,7 +82,7 @@ class CallbackRegisterPayload(BaseModel):
         default=None,
         description=(
             "PMS'in CapX'e bildireceği inbound webhook URL'si. Boş bırakılırsa "
-            "REPLIT_DEV_DOMAIN/PUBLIC_BASE_URL üzerinden tenant-aware path "
+            "CLOUD_DEV_DOMAIN/PUBLIC_BASE_URL üzerinden tenant-aware path "
             "(/api/webhooks/capx/by-tenant/{tenant_id}) otomatik üretilir."
         ),
     )
@@ -320,13 +320,13 @@ async def delete_tenant_creds(tenant_id: str) -> dict[str, Any]:
 def _build_callback_url(tenant_id: str) -> str:
     """Public callback URL'i ortam değişkenlerinden üretir.
 
-    Öncelik: PUBLIC_BASE_URL > REPLIT_DEV_DOMAIN (https eklenir) > localhost.
+    Öncelik: PUBLIC_BASE_URL > CLOUD_DEV_DOMAIN (https eklenir) > localhost.
     """
     import os as _os
 
     base = _os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
     if not base:
-        dev = _os.getenv("REPLIT_DEV_DOMAIN", "").strip()
+        dev = _os.getenv("CLOUD_DEV_DOMAIN", "").strip()
         if dev:
             base = f"https://{dev}".rstrip("/")
     if not base:

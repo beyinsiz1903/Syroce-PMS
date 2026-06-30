@@ -2,7 +2,7 @@
 """
 Generate production secrets for the DigitalOcean (or any) deployment.
 
-Run this in a TRUSTED shell (e.g. the Replit Shell). It prints four secret
+Run this in a TRUSTED shell (e.g. the DigitalOcean Shell). It prints four secret
 values to STDOUT and writes NOTHING to disk. Copy each ``KEY=VALUE`` line into
 the deployment platform's ENCRYPTED environment variables, then close the
 terminal.

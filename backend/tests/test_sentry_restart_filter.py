@@ -1,13 +1,13 @@
 """Tests for Sentry workflow-restart port-bind noise filter.
 
-Context: `.replit` previously tagged the local Replit workspace as
+Context: `.digitalocean` previously tagged the local Cloud workspace as
 ``SENTRY_ENVIRONMENT=pilot``, so transient ``OSError: [Errno 98] address
 already in use`` raised during workflow restart (uvicorn SIGTERM → new
 bind race on port 8000) paged the pilot on-call channel.
 
 Fix layers:
-  1. Env split — local Replit dev → ``replit-dev``; deploy → ``pilot``
-     (handled by Replit env-vars, not asserted here).
+  1. Env split — local DigitalOcean dev → ``digitalocean-dev``; deploy → ``pilot``
+     (handled by DigitalOcean env-vars, not asserted here).
   2. ``_sentry_before_send`` drops the specific restart-race pattern
      before it leaves the process. Other bind failures (different port,
      different errno) still flow through.
@@ -140,7 +140,7 @@ class TestNonProdSustainedTransientDb:
     the streak); in production/pilot it is a real incident and must page."""
 
     def test_dropped_in_replit_dev(self, monkeypatch):
-        monkeypatch.setenv("SENTRY_ENVIRONMENT", "replit-dev")
+        monkeypatch.setenv("SENTRY_ENVIRONMENT", "digitalocean-dev")
         assert _is_nonprod_sustained_transient_db(
             {"logentry": {"message": _SUSTAINED_MSG}}
         ) is True
@@ -165,13 +165,13 @@ class TestNonProdSustainedTransientDb:
 
     def test_unrelated_error_in_dev_passes_through(self, monkeypatch):
         """Only the sustained-transient template is dropped; real errors flow."""
-        monkeypatch.setenv("SENTRY_ENVIRONMENT", "replit-dev")
+        monkeypatch.setenv("SENTRY_ENVIRONMENT", "digitalocean-dev")
         assert _is_nonprod_sustained_transient_db(
             {"logentry": {"message": "KeyError: tenant_id missing"}}
         ) is False
 
     def test_before_send_drops_and_counts_in_dev(self, monkeypatch):
-        monkeypatch.setenv("SENTRY_ENVIRONMENT", "replit-dev")
+        monkeypatch.setenv("SENTRY_ENVIRONMENT", "digitalocean-dev")
         before = get_sentry_filter_stats()["nonprod_transient_db_drops"]
         assert _sentry_before_send({"logentry": {"message": _SUSTAINED_MSG}}, {}) is None
         after = get_sentry_filter_stats()["nonprod_transient_db_drops"]
@@ -440,7 +440,7 @@ class TestStaticClientDisconnect:
 
     def _static_event(
         self,
-        url="https://x.syroce.replit.app/js/js/NotificationContext-CoJe4oGl.js",
+        url="https://x.syroce.syroce.com/js/js/NotificationContext-CoJe4oGl.js",
         method="GET",
     ):
         return {
@@ -459,18 +459,18 @@ class TestStaticClientDisconnect:
         assert _is_static_client_disconnect(self._static_event(), {}) is True
 
     def test_static_css_asset_detected(self):
-        ev = self._static_event(url="https://x.syroce.replit.app/assets/index-abc.css")
+        ev = self._static_event(url="https://x.syroce.syroce.com/assets/index-abc.css")
         assert _is_static_client_disconnect(ev, {}) is True
 
     def test_api_path_passes_through(self):
         """Same message on a real API endpoint is a possible truncation bug — page it."""
-        ev = self._static_event(url="https://x.syroce.replit.app/api/reservations")
+        ev = self._static_event(url="https://x.syroce.syroce.com/api/reservations")
         assert _is_static_client_disconnect(ev, self._hint()) is False
 
     def test_api_path_with_static_segment_passes_through(self):
         """Prefix-anchored, not substring: an API path that merely CONTAINS a
         static-looking segment must still page (real truncation bug)."""
-        ev = self._static_event(url="https://x.syroce.replit.app/api/v2/assets/export")
+        ev = self._static_event(url="https://x.syroce.syroce.com/api/v2/assets/export")
         assert _is_static_client_disconnect(ev, self._hint()) is False
 
     def test_post_method_passes_through(self):

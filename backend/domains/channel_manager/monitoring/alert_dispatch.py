@@ -152,7 +152,7 @@ _REDACT_SUBSTRINGS = (
 def _redact_context(context: dict[str, Any] | None) -> dict[str, Any]:
     """Return a shallow copy of ``context`` with sensitive values masked.
 
-    External notification channels (email/Slack) leave Replit's egress —
+    External notification channels (email/Slack) leave DigitalOcean's egress —
     we must never include raw provider URLs, tokens, exception strings or
     upstream error messages that may carry credentials.
     """

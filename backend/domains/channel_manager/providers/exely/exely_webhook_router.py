@@ -382,7 +382,7 @@ async def receive_reservation(request: Request):
 
     # v109 Bug DAJ round-4/5 (architect P1 follow-up): proxy/IP trust.
     # request.client.host = *immediate* TCP peer. In any reverse-proxy/LB
-    # deployment (Replit, nginx, ELB, Cloudflare) this is the proxy address,
+    # deployment (DigitalOcean, nginx, ELB, Cloudflare) this is the proxy address,
     # NOT the real Exely SOAP client. Two attacker classes to defend against:
     #   (a) Whitelist contains proxy IP → any tenant of that proxy bypasses.
     #   (b) Whitelist contains real Exely IP but XFF is honored blindly →

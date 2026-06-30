@@ -110,7 +110,7 @@ Source of truth: `mobile/e2e/routes.ts` (25 surfaces). Confirmed by `--list` (28
 - `docs/TEST_COVERAGE_SCORECARD_100.md`: F10 row + Sprint-1 note updated to "scaffolded + locally runnable + partially proven; full matrix BLOCKED; NOT verified".
 - `docs/F10_MOBILE_COVERAGE_ROADMAP.md`: added 2026-05-29 F10A update note; reconciled §6 tooling decision to match the §5 locked decision (Playwright primary / Maestro native / Detox rejected for F10A).
 
-What does **not** ship: no committed Playwright report artifact (generated dir removed + gitignored), any baseline-pointer change (`replit.md` Run #159 stays), any roadmap/scorecard row claiming F10A verified, any coverage-count change, any claim that mobile/F10 is closed.
+What does **not** ship: no committed Playwright report artifact (generated dir removed + gitignored), any baseline-pointer change (`digitalocean.md` Run #159 stays), any roadmap/scorecard row claiming F10A verified, any coverage-count change, any claim that mobile/F10 is closed.
 
 ---
 

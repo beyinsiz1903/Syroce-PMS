@@ -268,7 +268,7 @@ def _verify_token(tenant_id: str, room_id: str, token: str, salt: str | None = N
 
 
 def _public_url_base(request: Request) -> str:
-    env_url = os.environ.get("PUBLIC_APP_URL") or os.environ.get("REPLIT_DEV_DOMAIN")
+    env_url = os.environ.get("PUBLIC_APP_URL") or os.environ.get("CLOUD_DEV_DOMAIN")
     if env_url:
         if not env_url.startswith("http"):
             env_url = f"https://{env_url}"

@@ -109,7 +109,7 @@ kod tarafında hiçbir komut yok.**
    `mongo "<uri>"` → bozulmadan önceki veri orada olmalı
 9. Doğrulandıysa: app'i yeni cluster'a **connection string cutover**
    ile yönlendir:
-   - Replit Secrets → `MONGO_URL` (veya `MONGO_ATLAS_URI`) değerini
+   - DigitalOcean Secrets → `MONGO_URL` (veya `MONGO_ATLAS_URI`) değerini
      yeni cluster'ın connection string'i ile güncelle
    - `bash deploy/deploy.sh` ile yeniden başlat (smoke koşar)
    - Smoke PASS olduktan sonra eski cluster'ı Atlas console'dan
@@ -143,10 +143,10 @@ yükseltin (~$57/ay).
 Bu senaryo gerçekleşmemeli (Atlas SLA %99.95) ama yine de:
 
 1. Atlas Status: https://status.mongodb.com — outage var mı?
-2. Replit Status: https://status.replit.com — platform sorunu mu?
+2. DigitalOcean Status: https://status.digitalocean.com — platform sorunu mu?
 3. Eğer Atlas region outage'ı: Atlas dashboard → cluster ayarları →
    region failover (eğer multi-region yapılandırıldıysa)
-4. Eğer Replit outage'ı: bekleme dışında seçenek yok; müşteri iletişimi
+4. Eğer DigitalOcean outage'ı: bekleme dışında seçenek yok; müşteri iletişimi
 5. Hiçbiri değilse: `docs/procedures/DISASTER_RECOVERY.md` (71 satır)
 
 ---

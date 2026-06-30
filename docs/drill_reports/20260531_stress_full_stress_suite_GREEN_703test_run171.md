@@ -30,7 +30,7 @@ skip-as-pass YOK. Düz "GO" iddiası YOK; "/100 kapsam" iddiası YOK.
   ("Published your App" — Post-#170 Minimal Fix Pack'i içerir: e-Fatura VKN spec
   fix + housekeeping selector-not hizalama).
 - **Branch:** main
-- **Run URL:** https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26708567911
+- **Run URL:** https://github.com/beyinsiz1903/syroce-pms/actions/runs/26708567911
 - **GitHub job durumu:** completed/success — full stress step + drill report
   verification + artifact upload adımlarının hepsi başarılı.
 - **Artifacts (2) — provenance TAM (CI'dan doğrulandı):**

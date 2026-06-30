@@ -99,7 +99,7 @@ _PROCESS_BOOT_TS = _time.monotonic()
 # window and reach Sentry normally.
 _RESTART_DROP_WINDOW_SECONDS = 30
 
-# Managed ports: dev workflow (8000) and Replit deployment (5000).
+# Managed ports: dev workflow (8000) and DigitalOcean deployment (5000).
 # Other ports (e.g. mock_server 9999) are NOT in scope.
 _MANAGED_BIND_PORTS = (8000, 5000)
 
@@ -166,7 +166,7 @@ def get_sentry_filter_stats() -> dict[str, int]:
 
 
 # Environments where a SUSTAINED transient-DB escalation is a real incident and
-# must still page Sentry. Everywhere else (dev / replit-dev / stress) the
+# must still page Sentry. Everywhere else (dev / digitalocean-dev / stress) the
 # workflow console already carries the WARNING/ERROR streak, so the Sentry page
 # is pure noise from inherently flaky non-prod Atlas connectivity.
 _TRANSIENT_DB_ALERT_ENVS = frozenset({"production", "prod", "pilot"})
@@ -181,7 +181,7 @@ def _is_nonprod_sustained_transient_db(event: dict) -> bool:
     (``streak >= threshold``) to ERROR via the log template
     ``"... sustained transient db error ..."``. In production/pilot that
     escalation is a real, actionable incident and must page. In
-    dev/replit-dev/stress the Atlas link is inherently flaky and the workflow
+    dev/digitalocean-dev/stress the Atlas link is inherently flaky and the workflow
     console already carries the WARNING/ERROR streak, so the Sentry page is pure
     noise. We require BOTH a non-prod environment AND the literal log-template
     substring — we never drop on environment alone, so every other event

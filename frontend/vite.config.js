@@ -131,15 +131,15 @@ export default defineConfig(async () => {
     host: '0.0.0.0',
     port: 5000,
     allowedHosts: true,
-    // HMR through Replit's mTLS proxy:
-    //   - host: must be the public REPLIT_DEV_DOMAIN, NOT localhost
+    // HMR through DigitalOcean's mTLS proxy:
+    //   - host: must be the public CLOUD_DEV_DOMAIN, NOT localhost
     //     (otherwise the browser tries wss://localhost and gets ECONNREFUSED).
     //   - clientPort 443 because the browser hits the proxy on https/wss.
-    //   - hmr is disabled when REPLIT_DEV_DOMAIN is missing (e.g. CI builds)
+    //   - hmr is disabled when CLOUD_DEV_DOMAIN is missing (e.g. CI builds)
     //     so a missing env var never poisons the WS URL.
-    hmr: process.env.REPLIT_DEV_DOMAIN
+    hmr: process.env.CLOUD_DEV_DOMAIN
       ? {
-          host: process.env.REPLIT_DEV_DOMAIN,
+          host: process.env.CLOUD_DEV_DOMAIN,
           clientPort: 443,
           protocol: 'wss',
           timeout: 15000,

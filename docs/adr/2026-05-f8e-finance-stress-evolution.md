@@ -5,7 +5,7 @@
 **Scope:** `frontend/e2e-stress/specs/24..27` (4 spec, 16 test), F8A+B+C+D operasyonel paketinin üzerine finansal/muhasebe yüzeyleri.
 **Drill rapor:** `docs/drill_reports/20260518_stress_f8e_finance_cashier_accounting.md`
 
-Bu ADR F8E stres test suite'inin tur detaylarını içerir. `replit.md` "Gotchas" bölümünde tek-satır özet bırakılmıştır.
+Bu ADR F8E stres test suite'inin tur detaylarını içerir. `digitalocean.md` "Gotchas" bölümünde tek-satır özet bırakılmıştır.
 
 ---
 
@@ -148,7 +148,7 @@ Task #189 kapsamında F8E v2 push (kapatma turu). Mevcut spec 24-27 üzerine **y
 
 - T001 ✅ Seed extension applied (`stress.py` syntax OK; kontrat doğrulanmış; runtime test CI'da).
 - T002 ✅ 4 spec yazıldı, kontrat-uyumlu (Node `--check` parse OK, 16 test toplam).
-- T003 ✅ Docs + ADR + drill rapor + roadmap + replit.md pointer.
+- T003 ✅ Docs + ADR + drill rapor + roadmap + digitalocean.md pointer.
 - T004 ✅ tur-2 hot-fix: soft-fail tiered pattern (CI #38 NO-GO → CI #39 GO WITH WATCH bekleniyor).
 - T005 ✅ tur-3 hot-fix (CI #39 hâlâ NO-GO sonrası): spec 14/17/23'te de aynı pattern eksikti (rec FAIL var ama expect hard-guard yok → failedTests=0, FAIL=1). Düzeltme:
     - Spec 14 (payment_schedule): soft-fail tiered + `expect(okReplace).toBeGreaterThanOrEqual(replaceFloor)` hard guard.

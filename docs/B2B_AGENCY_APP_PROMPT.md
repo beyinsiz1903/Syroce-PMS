@@ -1,10 +1,10 @@
 # Syroce PMS — Acente Otomasyon Uygulaması Görev Promptu (Senaryo B)
 
-Bu dosya, AYRI bir Replit projesinde geliştirilen acente otomasyon uygulamasının
+Bu dosya, AYRI bir DigitalOcean projesinde geliştirilen acente otomasyon uygulamasının
 agent'ına **olduğu gibi yapıştırılacak** kendi-kendine yeten görev promptudur.
 
 Kaynak: kilitli kontrat `docs/B2B_AGENCY_APP_HANDOFF.md`. Bu dosya o kontratın
-**Senaryo B** (acente ayrı Replit projesinde; güvenlik yalnızca X-API-Key; gerçek-zaman
+**Senaryo B** (acente ayrı DigitalOcean projesinde; güvenlik yalnızca X-API-Key; gerçek-zaman
 için Redis Streams DEĞİL, webhook aboneliği + REST polling) için sadeleştirilmiş, eksiksiz
 sürümüdür. Uç adları/parametreleri/şemaları canlı OpenAPI (`/api/openapi.json`) ile
 doğrulanmıştır; locked-contract'ta açık JSON gövdesi olmayan yerlerde şekil tahmin
@@ -12,7 +12,7 @@ EDİLMEMİŞ, OpenAPI'ye yönlendirilmiştir.
 
 Senaryo A farkı (yalnızca PMS DigitalOcean'da + acente VPC/özel ağ paylaşıyorsa): ek
 olarak mTLS + sabit çıkış IP allowlist ingress'te zorunludur ve gerçek-zaman için Redis
-Streams (`b2b:tenant:{t}:agency:{a}:ari:v1`) kullanılabilir. Ayrı Replit projeleri
+Streams (`b2b:tenant:{t}:agency:{a}:ari:v1`) kullanılabilir. Ayrı DigitalOcean projeleri
 arasında Redis erişilemez; Senaryo A'yı YALNIZCA özel ağ varken uygula.
 
 ---
@@ -30,7 +30,7 @@ hiçbir gizli değeri (X-API-Key, request_token, connect code) log'lama/ekrana y
 
 ORTAM (Senaryo B — bu uygulamanın varsayılanı)
 - Güvenlik: yalnızca X-API-Key (uygulama seviyesi). mTLS / IP-allowlist YOK (bunlar yalnızca
-  PMS DigitalOcean ingress'inde, Senaryo A'da zorlanır — Replit-Replit'te kurma).
+  PMS DigitalOcean ingress'inde, Senaryo A'da zorlanır — DigitalOcean-DigitalOcean'te kurma).
 - Gerçek-zaman: PMS'in Redis'i dışarıdan ERİŞİLEMEZ. Redis Streams KURMA. Bunun yerine
   webhook aboneliği + periyodik REST polling kullan.
 
@@ -218,7 +218,7 @@ REST POLLING (müsaitlik / fiyat / stop-sale senkronu)
     anahtarıyla son değeri yaz (last-write-wins).
 
 NOT: Redis Streams (Kanal B) bu senaryoda KULLANILMAZ; PMS Redis'i public değildir ve ayrı
-Replit projeleri arasında erişilemez. (Yalnızca Senaryo A / DO+VPC'de stream tüketimi
+DigitalOcean projeleri arasında erişilemez. (Yalnızca Senaryo A / DO+VPC'de stream tüketimi
 geçerlidir.)
 
 ==================================================================
@@ -262,7 +262,7 @@ geçerlidir.)
 ---
 
 ## Senaryo B'de "yapma" listesi (özet)
-- Redis Streams tüketicisi kurma (PMS Redis'i ayrı Replit projesinden erişilemez).
+- Redis Streams tüketicisi kurma (PMS Redis'i ayrı DigitalOcean projesinden erişilemez).
 - Uygulama kodunda mTLS / sabit IP allowlist kurma (yalnızca DO ingress / Senaryo A).
 - API key'i önceden secret olarak bekleme — key, onboarding (connect-request) ile tek
   seferlik çekilir.

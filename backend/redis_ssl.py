@@ -25,7 +25,7 @@ provider's private network, where shipping and trusting the provider CA in every
 container is impractical. Set ``REDIS_TLS_CERT_REQS=required`` (with a properly
 trusted CA) to harden.
 
-All helpers are no-ops for plain ``redis://`` URLs, so Replit/local development is
+All helpers are no-ops for plain ``redis://`` URLs, so DigitalOcean/local development is
 unaffected.
 """
 

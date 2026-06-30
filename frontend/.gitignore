@@ -9,7 +9,7 @@
 /coverage
 
 # production
-# NOTE: frontend/build is intentionally NOT ignored. The Replit autoscale
+# NOTE: frontend/build is intentionally NOT ignored. The Cloud autoscale
 # deploy packaging ("Repl layer") excludes gitignored paths, so the build
 # produced during the deploy build step would be dropped before runtime,
 # leaving the backend to serve only the health JSON instead of the SPA.

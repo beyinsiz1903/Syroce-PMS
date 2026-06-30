@@ -2,7 +2,7 @@
 
 Registers a connector record and prints its plaintext key EXACTLY ONCE. Only the
 salted hash is stored; the key cannot be recovered later. Run this on the server
-(or via the Replit shell) when installing the Brassco connector at a hotel.
+(or via the DigitalOcean shell) when installing the Brassco connector at a hotel.
 
 Usage:
     python -m scripts.provision_lock_connector --tenant <TENANT_ID> --name "Resepsiyon PC"

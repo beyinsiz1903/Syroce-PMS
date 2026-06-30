@@ -13,7 +13,7 @@ trafiği AÇILMAZ.
 
 | # | Kapı                             | Sahip      | Süre  | Hard | Sandbox kanıtı |
 |---|----------------------------------|------------|-------|------|----------------|
-| 1 | Replit Secrets matrix tamamlandı  | DevOps     | 5 dk  | ✅   | §1             |
+| 1 | DigitalOcean Secrets matrix tamamlandı  | DevOps     | 5 dk  | ✅   | §1             |
 | 2 | Sentry UI 11 alarm kurulu         | DevOps     | 15 dk | ✅   | §2             |
 | 3 | Sentry Crons (cm-backlog) kurulu  | DevOps     | 5 dk  | ✅   | §2.4           |
 | 4 | Slack/PagerDuty routing canlı     | DevOps     | 10 dk | ✅   | §3             |
@@ -27,7 +27,7 @@ Bir tek **Hard** kapı FAIL → pilot trafiği AÇMA, §6 eskalasyon zinciri.
 
 ---
 
-## §1 — Replit Secrets checklist
+## §1 — DigitalOcean Secrets checklist
 
 Vault: Workspace → Tools → Secrets. **ASLA terminal'den `export ...` yapma**
 — workflow restart'ında kaybolur. Kıyaslama: `python -c "import os;
@@ -38,7 +38,7 @@ print([k for k in ['ATLAS_TIER','SENTRY_ENVIRONMENT','SENTRY_DSN'] if os.environ
 | Secret                  | Beklenen değer / format               | Kontrol                                      |
 |-------------------------|----------------------------------------|----------------------------------------------|
 | `JWT_SECRET`            | ≥32 karakter random                    | `readiness.checks.jwt_secret`                |
-| `JWT_EXPIRATION_MINUTES`| `10080` (7 gün, default 15 override)   | `replit.md` Auth gotcha                      |
+| `JWT_EXPIRATION_MINUTES`| `10080` (7 gün, default 15 override)   | `digitalocean.md` Auth gotcha                      |
 | `MONGO_ATLAS_URI`       | `mongodb+srv://...mongodb.net/...`     | atlas backup check `.mongodb.net` algılar    |
 | `ATLAS_TIER`            | `M10` (M0 + production → readiness FAIL)| `readiness.checks.backup`                   |
 | `SENTRY_DSN`            | `https://...@sentry.io/...`            | `readiness.checks.sentry_active`             |
@@ -52,7 +52,7 @@ print([k for k in ['ATLAS_TIER','SENTRY_ENVIRONMENT','SENTRY_DSN'] if os.environ
 | `PUBLIC_APP_URL`        | `https://<frontend-domain>`            | email link'leri, OAuth callback              |
 
 **HotelRunner credentials** (HR-only pilot için zorunlu): tenant başına
-encrypted credentials DB'de, env-var DEĞİL — `replit.md` "CapX
+encrypted credentials DB'de, env-var DEĞİL — `digitalocean.md` "CapX
 Integration" + ADR `2026-05-cm-hardening.md`.
 
 ### 1.2 Opsiyonel (eksiklik = degraded ama startup OK)
@@ -71,7 +71,7 @@ Integration" + ADR `2026-05-cm-hardening.md`.
 ### 1.3 Doğrulama tek-komut
 
 ```bash
-# Replit Shell:
+# DigitalOcean Shell:
 curl -fsS http://localhost:8000/api/production-golive/readiness | jq '.verdict, .score, .checks | keys'
 # Beklenen: "PASS" veya "REVIEW", score ≥ 0.8, 12+ check key
 ```
@@ -260,7 +260,7 @@ rehearsal, cm_sandbox_discovery) — yeni rehearsal ek satır olur.
 
 | FAIL kapısı                           | Aksiyon                                                  |
 |---------------------------------------|----------------------------------------------------------|
-| §1 zorunlu secret eksik               | DevOps → Replit Secrets ekle → workflow restart          |
+| §1 zorunlu secret eksik               | DevOps → DigitalOcean Secrets ekle → workflow restart          |
 | §2 Sentry rule kurulmadı              | Sentry-UI 15 dk içinde tamamlanabilir, T-1h kapısı       |
 | §3 Slack/PD test mesajı gelmedi       | Webhook URL doğrula → Sentry rule "Then" action güncelle |
 | §4.1 rollback dry-run FAIL (post-deploy) | DevOps + Pilot Lead — deploy.sh `.last_good_tag` yazıyor mu kontrol |

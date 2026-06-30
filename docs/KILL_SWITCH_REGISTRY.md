@@ -9,12 +9,12 @@
 ## §0 — 30 saniyede ne öğrenmeliyim?
 
 - **Kill-switch nedir?** Bir özelliği koddaki yerinden değil, env-var'dan
-  kapatma. Operatör Replit Secrets vault'undan flip eder, restart ile
+  kapatma. Operatör DigitalOcean Secrets vault'undan flip eder, restart ile
   uygulanır (60s'de canlı).
 - **Naming standardı:** `ENABLE_*` opt-in (default OFF, fail-closed) /
   `DISABLE_*` opt-out (default ON). Production guard'lı `DISABLE_*`
   switch'ler production'da YOKSAYILIR (sadece dev/test/sandbox).
-- **Acil durum:** "Bir şeyi kapatmam lazım" → §3 envanter; flag'i Replit
+- **Acil durum:** "Bir şeyi kapatmam lazım" → §3 envanter; flag'i DigitalOcean
   Secrets'a ekle, ilgili workflow'u restart et, `/api/production-golive/readiness`
   ile doğrula.
 
@@ -95,7 +95,7 @@ production_guard leak'i veya bilinmeyen token için WARNING basar.
 ```
 1. Sorunu tespit et   → SystemHealthDashboard / Sentry / Slack alarmı
 2. Doğru flag'i seç   → §3 envanter (etkisi + side-effect kolonları)
-3. Replit Secrets'a   → Workspace → Tools → Secrets → New Secret
+3. DigitalOcean Secrets'a   → Workspace → Tools → Secrets → New Secret
    "DISABLE_X" = "1"
 4. Workflow restart   → ilgili workflow'u tek-tık restart (Backend API)
 5. Doğrula            → curl /api/production-golive/readiness
@@ -104,7 +104,7 @@ production_guard leak'i veya bilinmeyen token için WARNING basar.
 6. Geri açma          → Secret'ı sil veya "0" yap, restart
 ```
 
-**Kural:** ASLA terminal'den `export DISABLE_X=1` yapma — Replit workflow
+**Kural:** ASLA terminal'den `export DISABLE_X=1` yapma — DigitalOcean workflow
 restart'ında kaybolur. SADECE Secrets vault.
 
 ---
@@ -142,7 +142,7 @@ Tüm flag'ler `feature_flags.snapshot()` ile programatik okunabilir.
 | Kind          | `enable` (default **ON** — istisna)                         |
 | Wire noktası  | `backend/controlplane/security_ops_router.py:126` (display) |
 | Etki          | Vault provider başarısız olursa env-var'dan secret oku      |
-| Pilot kullanım| AÇIK — Replit Secrets vault güvenilir, yine de fallback iyi |
+| Pilot kullanım| AÇIK — DigitalOcean Secrets vault güvenilir, yine de fallback iyi |
 | Açma süresi   | Anında (her secret read'inde okunur)                        |
 | Side-effect   | KAPATMA: vault outage'ında auth/payment/CM kırılır          |
 

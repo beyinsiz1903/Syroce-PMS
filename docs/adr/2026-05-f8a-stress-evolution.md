@@ -6,7 +6,7 @@
 **Defans baseline:** 5 gate, `external_calls_made:[]` (post-batch re-assert hook'u dahil), cleanup#1 + idempotent#2, pilot drift=0.
 **Acceptance contract:** `P0=0`, `P1≤1` (tur-27+: NA timeout `status=0` informational P1 kabul edilir; gerçek regression P1 değil), `failedTests=0`, `FAIL adım=0`, final verdict ≥ GO-WITH-WATCH.
 
-Bu ADR F8A stres test suite'inin tur-by-tur tarihçesini içerir. `replit.md` "Gotchas" bölümünde tek-satır özet bırakılmıştır — detay için bu dosyaya bakın.
+Bu ADR F8A stres test suite'inin tur-by-tur tarihçesini içerir. `digitalocean.md` "Gotchas" bölümünde tek-satır özet bırakılmıştır — detay için bu dosyaya bakın.
 
 ---
 
@@ -35,7 +35,7 @@ Bu ADR F8A stres test suite'inin tur-by-tur tarihçesini içerir. `replit.md` "G
 
 ### Tur-7 + Tur-8 (run #19 → MERGED)
 
-Tur-8 ek (2026-05-16 ikinci pass): `dry_run_enforced` env-only self-report idi (`stress.py:563`); workflow `E2E_EXTERNAL_DRY_RUN=true` ı CI runner process'ine set ediyor (`stress.yml:66`) ama backend ayrı Replit deployment'ta, env propagate olmuyor → flag false → helper sahte FAIL.
+Tur-8 ek (2026-05-16 ikinci pass): `dry_run_enforced` env-only self-report idi (`stress.py:563`); workflow `E2E_EXTERNAL_DRY_RUN=true` ı CI runner process'ine set ediyor (`stress.yml:66`) ama backend ayrı DigitalOcean deployment'ta, env propagate olmuyor → flag false → helper sahte FAIL.
 
 - Fix: `dry_run_enforced = env_dry OR structural_dry` (structural = `db.channel_connections.count_documents({tenant_id, status:"active"})==0` — stress tenant'ında active CM connector olmaması yapısal dry-run kanıtı; EventSyncService "No active connectors" döner, dispatcher attempt yapamaz).
 - Response'a `dry_run_source/dry_run_env_flag/dry_run_structural/active_connectors_count` debug alanları eklendi.
@@ -148,7 +148,7 @@ Stress seed `bookings_docs[].folio_id = fid` ekledi (`stress.py:233`); spec'in `
 
 ## Operasyonel notlar
 
-- **Replit 110s sandbox:** chunked `-g <pattern>` runs.
+- **DigitalOcean 110s sandbox:** chunked `-g <pattern>` runs.
 - **Eski rapor snapshot:** `docs/drill_reports/20260514_stress_f8a_frontoffice_folio_hk.md` (NO-GO).
 - **Güncel rapor:** `docs/drill_reports/20260516_stress_f8a_frontoffice_folio_hk.md`.
 - **Targeted run komutları:**

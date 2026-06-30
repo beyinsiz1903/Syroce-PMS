@@ -54,7 +54,7 @@ def _public_url(request: Request) -> str:
     """Twilio imzasının doğrulanacağı dış URL'i kurar (proxy-güvenli).
 
     Twilio, yapılandırdığı tam webhook URL'ine (sorgu dizesi dâhil) imza atar;
-    Replit/ters-proxy ardında ``request.url`` iç şemayı taşıyabilir, bu yüzden varsa
+    DigitalOcean/ters-proxy ardında ``request.url`` iç şemayı taşıyabilir, bu yüzden varsa
     ``PUBLIC_APP_URL`` esas alınır. Sorgu dizesi (örn. giden çağrı callback'lerindeki
     imzalı ``tenant_id``) imza doğrulaması için KORUNMALI.
     """
@@ -162,7 +162,7 @@ async def issue_voice_token(
 async def voice_readiness(current_user: User = Depends(get_current_user)):
     """Salt-okunur sesli-softphone hazırlık teşhisi (YALNIZCA super_admin).
 
-    Operatör DO/Replit secret'larını girdikten sonra "sistem uyandı mı, neyi
+    Operatör DO/DigitalOcean secret'larını girdikten sonra "sistem uyandı mı, neyi
     eksik" sorusunu tek bakışta görür. YALNIZCA varlık (bool) bilgisi döner;
     secret değeri, kısmî değeri, uzunluğu veya maskeli hâli ASLA dönmez/loglanmaz.
     Üretim env'i geneldir (kiracıya değil) → super_admin kapısı; bir kiracının

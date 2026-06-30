@@ -220,7 +220,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 ```
 
 **Notes**:
-- Backend: `SENTRY_DSN` Replit Secrets'ta.
+- Backend: `SENTRY_DSN` DigitalOcean Secrets'ta.
 - Frontend: `VITE_SENTRY_DSN` build-time set.
 - Smoke step 6 ile çakışıyor — orada PASS ise burası da PASS.
 
@@ -243,7 +243,7 @@ access-control-allow-origin: https://pilot.syroce.com
 ```
 
 **Notes**:
-- `CORS_ORIGINS` `.replit`'te / production secret'larda.
+- `CORS_ORIGINS` `.digitalocean`'te / production secret'larda.
 - Wildcard `*` pilot için **kabul edilemez** — explicit domain.
 
 ---
@@ -285,7 +285,7 @@ HotelRunnerProvider(max_retries=2)   # scheduled
 ```
 
 **Notes**:
-- Manual sync 3 retry, scheduled 2 retry (replit.md gotcha).
+- Manual sync 3 retry, scheduled 2 retry (digitalocean.md gotcha).
 - Pilot'ta hangi provider'lar aktif: ☐ Exely  ☐ HotelRunner  ☐ Diğer: ____
 
 ---
@@ -309,8 +309,8 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 ```
 
 **Notes**:
-- `JWT_SECRET`, `CM_MASTER_KEY_CURRENT`, `RESEND_API_KEY`, `ROOM_QR_SECRET` Replit Secrets'ta.
-- `.replit`'te açıkta hardcoded değer → boot blocker.
+- `JWT_SECRET`, `CM_MASTER_KEY_CURRENT`, `RESEND_API_KEY`, `ROOM_QR_SECRET` DigitalOcean Secrets'ta.
+- `.digitalocean`'te açıkta hardcoded değer → boot blocker.
 - Pilot komutunda `jq '{critical_pass, missing_critical, forbidden_dev_secrets_present}'`.
 
 ---
@@ -340,7 +340,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 **Verification** (manuel):
 - Son 24 saatte staging'de rollback drill yapıldı.
-- `bash deploy/rollback.sh` veya Replit checkpoint restore süresi <5 dk (detay: `docs/ROLLBACK.md`).
+- `bash deploy/rollback.sh` veya DigitalOcean checkpoint restore süresi <5 dk (detay: `docs/ROLLBACK.md`).
 - DB rollback adımı doküman olarak hazır (`deploy/DEPLOYMENT_GUIDE.md`).
 
 **Expected**:
@@ -517,7 +517,7 @@ bash deploy/rollback.sh            # tek komut — last_good_tag'e döner + smok
 - `docs/PILOT_READINESS_CHECKLIST.md` — operasyonel detay + hard-blocker tarihçesi
 - `deploy/SMOKE.md` — post-deploy 6 adımlı smoke runbook
 - `deploy/DEPLOYMENT_GUIDE.md` — deploy + rollback adımları
-- `replit.md` — gotcha'lar (EXELY format, JWT lifespan, Atlas 500-collection limiti, vb.)
+- `digitalocean.md` — gotcha'lar (EXELY format, JWT lifespan, Atlas 500-collection limiti, vb.)
 - `backend/scripts/verify_exely_whitelist.py` — EXELY verdict modeli (`--help`)
 - `backend/infra/readiness_validator.py` — 9 alt-check, score 0-100
 - `tools/tenant_restore_drill.py` — Faz 2 restore drill

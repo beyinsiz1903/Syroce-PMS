@@ -15,7 +15,7 @@ uplift** but it is NOT a new baseline.
 |---|---|
 | `shipped` | Code merged to main branch, deploy checkpoint exists |
 | `targeted-verified` | Spec/unit test run against deployed backend with passing artifact attached to the source task |
-| `replit-equivalent-verified` | Replit-environment full or partial suite run cited as candidate evidence (e.g. Task #57) — NOT a GitHub Actions official artifact |
+| `digitalocean-equivalent-verified` | DigitalOcean-environment full or partial suite run cited as candidate evidence (e.g. Task #57) — NOT a GitHub Actions official artifact |
 | `full-suite-verified` | GitHub Actions full stress suite run with attached drill artifact |
 | `official-baseline-included` | Part of Run #143 baseline |
 | `pending-artifact` | No verification artifact attached |
@@ -101,8 +101,8 @@ uplift** but it is NOT a new baseline.
 | `acfa284b` | Task #52 — F9D deep stress spec for finance folio & guest-purchase | shipped, pending-artifact |
 | `e1e2017b` | Task #47 — verify F9C §98 sales lifecycle vs live backend | shipped, targeted-verified |
 | `eb57419f` | Task #53 — verify F&B BEO stress spec vs live backend | shipped, targeted-verified |
-| `27687d0f` | Task #34 — stress suite pacing (cumulative rate under prod rate-limit) | shipped, replit-equivalent-verified (via Task #57) |
-| `d47a5e30` | Task #57 — verify stress pacing fix end-to-end on deployed pilot | shipped, **replit-equivalent-verified (723 test run, NOT GH Actions artifact)** |
+| `27687d0f` | Task #34 — stress suite pacing (cumulative rate under prod rate-limit) | shipped, digitalocean-equivalent-verified (via Task #57) |
+| `d47a5e30` | Task #57 — verify stress pacing fix end-to-end on deployed pilot | shipped, **digitalocean-equivalent-verified (723 test run, NOT GH Actions artifact)** |
 | `309f4e4f` | Task #48 — seed stress-tenant package for Sales quote pricing | shipped, pending-artifact |
 | `6a2c9aca` | Task #58 — enable mice add-on for stress tenant + entitlement probe | shipped, pending-artifact |
 | `812b7f45` | Task #87 — defer mice_sales RBAC role grant for stress admin | shipped, pending-artifact |
@@ -111,7 +111,7 @@ uplift** but it is NOT a new baseline.
 | `ba404e5f` | Task #33 — verify /api/pms/rooms mid-suite 0-row regression closed | shipped, targeted-verified |
 
 **Critical clarification on Task #57 (`d47a5e30`)**: The 723-test run that
-the change-summary cites is a Replit-environment equivalent of the full
+the change-summary cites is a DigitalOcean-environment equivalent of the full
 suite, **not** a GitHub Actions official artifact. Commit message itself
 acknowledges OAuth lacks workflow dispatch scope. This is strong
 candidate evidence but it does NOT promote the baseline pointer.
@@ -177,14 +177,14 @@ candidate evidence but it does NOT promote the baseline pointer.
 | `21a81e76` | fix test setup to properly fetch rooms by prefix | shipped |
 | `ca592672` | ci(stress) — bump timeout 60→90 (CI cancel post-warmup) | shipped |
 | `d34145ca` | F8AH tur-4 — 4 deferred RCA items closed (architect Round 2 PASS) | shipped |
-| `79a25149` | Task #136 — RCA + fix for run #57 stress suite failures | shipped, replit-equivalent-verified (via Task #57) |
+| `79a25149` | Task #136 — RCA + fix for run #57 stress suite failures | shipped, digitalocean-equivalent-verified (via Task #57) |
 | `af64e790` | Task #99 — fix staff notification preferences page crash | shipped, pending-artifact |
 | `26f22e1a` | Task #73 — backend tests for transfer history report | shipped, targeted-verified |
 | `afdd8a76` | TWOFA Round-5 candidate fix pending-verification doc | docs only (this review's predecessor) |
 
 ## Aggregated commitment status
 
-| Domain | Shipped | Targeted-verified | Replit-eq verified | GH Actions verified |
+| Domain | Shipped | Targeted-verified | DigitalOcean-eq verified | GH Actions verified |
 |---|---:|---:|---:|---:|
 | Security / Auth | 17 | 0 | 0 | 0 |
 | Finance / Idempotency | 7 | 2 | 0 | 0 |
@@ -198,7 +198,7 @@ candidate evidence but it does NOT promote the baseline pointer.
 
 ## Targeted regression pack — environment check
 
-This Replit session **cannot safely execute the targeted regression
+This DigitalOcean session **cannot safely execute the targeted regression
 pack**:
 
 - `playwright.stress.config.js` requires `E2E_BASE_URL` (not in
@@ -213,7 +213,7 @@ pack**:
   explicit operator approval" gate.
 - Atlas serverless cold-start budget per spec is up to 10 min; running
   the full targeted pack here would consume ~30-60 min wall clock and
-  produce a Replit-environment artifact, which by the rules at the
+  produce a DigitalOcean-environment artifact, which by the rules at the
   top of this document does NOT promote the baseline anyway.
 - Honest no-fake-green doctrine: the right place to run this pack is
   either the deployed pilot via a properly seeded operator run, or
@@ -241,7 +241,7 @@ created.
    independent from web PMS.
 3. **GitHub Actions Full Stress Suite one-shot** ONLY after targeted
    regressions are green. Requires re-applying the dispatch workflow
-   via GitHub web UI (OAuth token in Replit lacks `workflow` scope —
+   via GitHub web UI (OAuth token in DigitalOcean lacks `workflow` scope —
    see `d0f6c735`, `da421ccc`).
 4. **Baseline promotion** ONLY if the GitHub Actions artifact
    demonstrates ALL of:
@@ -260,10 +260,10 @@ created.
 
 - **No fake green.** Verbal "test yeşil döndü" without an attached
   drill output is candidate evidence at best.
-- **No artifact, no baseline.** Pointer in `replit.md` stays at Run
+- **No artifact, no baseline.** Pointer in `digitalocean.md` stays at Run
   #143 / `3b3891d` / 2026-05-26 until a GitHub Actions full-suite
   artifact arrives and clears every gate.
-- **Replit-environment runs are candidate evidence only**, regardless
+- **DigitalOcean-environment runs are candidate evidence only**, regardless
   of how many tests they cover (Task #57's 723-test run included).
 - **Security surfaces require real artifact evidence.** 2FA brute-force,
   peer-login throttles, cashier PIN throttle, idempotency replay
@@ -275,5 +275,5 @@ created.
 
 - `docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md` — Run #143 baseline drill report
 - `docs/drill_reports/20260528_twofa_round5_candidate_fix_pending_verification.md` — TWOFA Round-3/4/5 candidate fix detail
-- `replit.md` — F8 Stress Test Series section (pointer source of truth)
+- `digitalocean.md` — F8 Stress Test Series section (pointer source of truth)
 - `docs/STRESS_TEST_ROADMAP.md` — roadmap including F9C and F8C coverage gaps

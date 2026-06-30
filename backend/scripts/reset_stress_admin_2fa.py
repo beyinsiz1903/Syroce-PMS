@@ -32,7 +32,7 @@ Dry-run (default — shows current state, no mutation):
 Apply (clears two_factor_enabled + secret + backup codes):
     python backend/scripts/reset_stress_admin_2fa.py --apply
 
-From a Replit shell where Backend API is running but env isn't sourced
+From a DigitalOcean shell where Backend API is running but env isn't sourced
 into the current shell:
     PID=$(pgrep -f "uvicorn.*server:app" | head -1)
     while IFS='=' read -r k v; do

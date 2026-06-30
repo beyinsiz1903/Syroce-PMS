@@ -383,11 +383,11 @@ class EnhancedRateLimitMiddleware:
 
         # Rate limit tiers: (max_requests, window_seconds)
         # In test/CI/dev environments, use higher limits to avoid test failures.
-        # Replit dev environment is detected via REPL_ID / REPLIT_DEV_DOMAIN
-        # (always set inside the Replit workspace, absent in deployed prod).
-        # Fail-closed: if REPLIT_DEPLOYMENT=1 (published deployment), force prod
+        # DigitalOcean dev environment is detected via CLOUD_INSTANCE_ID / CLOUD_DEV_DOMAIN
+        # (always set inside the Cloud workspace, absent in deployed prod).
+        # Fail-closed: if CLOUD_DEPLOYMENT=1 (published deployment), force prod
         # limits regardless of any other dev signals.
-        is_replit_deployment = os.environ.get("REPLIT_DEPLOYMENT", "") == "1"
+        is_replit_deployment = os.environ.get("CLOUD_DEPLOYMENT", "") == "1"
         # E2E stress suites run against the published app with
         # `E2E_ALLOW_DESTRUCTIVE_STRESS=true` set as a deployment secret
         # (already enforced fail-closed in backend/domains/admin/router/stress.py).
@@ -406,11 +406,11 @@ class EnhancedRateLimitMiddleware:
                 os.environ.get("TESTING", "") == "1"
                 or os.environ.get("CI", "") != ""
                 or os.environ.get("APP_ENV", "") == "development"
-                or os.environ.get("REPL_ID", "") != ""
-                or os.environ.get("REPLIT_DEV_DOMAIN", "") != ""
+                or os.environ.get("CLOUD_INSTANCE_ID", "") != ""
+                or os.environ.get("CLOUD_DEV_DOMAIN", "") != ""
             )
         logger.info(
-            f"Rate limiter profile: {'DEV (10000/min)' if is_test_env else 'PROD'} | REPLIT_DEPLOYMENT={os.environ.get('REPLIT_DEPLOYMENT', '')} | REPL_ID_set={bool(os.environ.get('REPL_ID', ''))}"
+            f"Rate limiter profile: {'DEV (10000/min)' if is_test_env else 'PROD'} | CLOUD_DEPLOYMENT={os.environ.get('CLOUD_DEPLOYMENT', '')} | CLOUD_INSTANCE_ID_set={bool(os.environ.get('CLOUD_INSTANCE_ID', ''))}"
         )
         if is_test_env:
             self.limits = {

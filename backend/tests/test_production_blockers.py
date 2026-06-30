@@ -39,7 +39,7 @@ def clean_env(monkeypatch):
     """Strip env keys that influence startup_check.
 
     Includes all 5 forbidden-fingerprinted vars so the test process is
-    isolated from whatever the dev environment has loaded from `.replit`.
+    isolated from whatever the dev environment has loaded from `.digitalocean`.
     """
     for k in (
         "APP_ENV",

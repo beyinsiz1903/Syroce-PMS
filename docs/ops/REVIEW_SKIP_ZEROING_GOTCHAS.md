@@ -1,8 +1,8 @@
 # REVIEW/SKIP Zeroing & Reduction — GOTCHAS Archive
 
-Bu dosya, `replit.md`'den taşınan uzun REVIEW/SKIP Zeroing (Wave 6–9) ve REVIEW/SKIP
+Bu dosya, `digitalocean.md`'den taşınan uzun REVIEW/SKIP Zeroing (Wave 6–9) ve REVIEW/SKIP
 Reduction (Package A+B → F) detay kayıtlarının arşividir. Tek-satırlık özetler ve
-mevcut durum `replit.md`'de; baseline zinciri `docs/baselines/BASELINE_CHAIN.md`'de;
+mevcut durum `digitalocean.md`'de; baseline zinciri `docs/baselines/BASELINE_CHAIN.md`'de;
 paket damıtımı `docs/drill_reports/20260530_review_skip_packages_ab_to_f_summary.md`'de.
 
 Doktrin (her fazda mutlak): pilot mutation=0 · external_calls=[] · failedTests=0 ·

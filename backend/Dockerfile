@@ -75,7 +75,7 @@ EXPOSE 8001
 ENV STRICT_TENANT_MODE=true
 
 # Bind to $PORT when the platform injects one (Render / Heroku-style), else
-# fall back to 8001 (docker-compose, local, Replit). Shell form + `exec` keeps
+# fall back to 8001 (docker-compose, local, DigitalOcean). Shell form + `exec` keeps
 # uvicorn as PID 1 so SIGTERM still triggers a graceful shutdown. Worker count
 # is tunable per host plan via WEB_CONCURRENCY (default 4 = unchanged).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

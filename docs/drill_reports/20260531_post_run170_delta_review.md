@@ -68,7 +68,7 @@ Etiketler: **OPERATOR-ENV** (kod doğru, stress backend/CI env veya secret eksik
 ### 3.1 Housekeeping (Package F) — **OPERATOR-ENV (FE-render) + minör SPEC-DRIFT (stale not)**
 
 - Fix CI'a ulaştı: G testi `/housekeeping-status`'a navigate ediyor, whitelist `[data-testid^="room-card-"]` ile başlıyor (L288–295).
-- REVIEW devam ediyor çünkü `noRows` (desktop+mobile `total_rows=0`, L354) → REVIEW (L366, L377). Yani route doğru ama **CI ortamında grid 0 satır render ediyor**. Olası kök: `E2E_FE_BASE_URL`/`REPLIT_DEV_DOMAIN`'in gösterdiği FE'de `stress_token` ile `/housekeeping-status` grid'inin auth/data ile dolmaması (FE-render env / data-state) → **OPERATOR-ENV**, ürün route fix'i değil.
+- REVIEW devam ediyor çünkü `noRows` (desktop+mobile `total_rows=0`, L354) → REVIEW (L366, L377). Yani route doğru ama **CI ortamında grid 0 satır render ediyor**. Olası kök: `E2E_FE_BASE_URL`/`CLOUD_DEV_DOMAIN`'in gösterdiği FE'de `stress_token` ile `/housekeeping-status` grid'inin auth/data ile dolmaması (FE-render env / data-state) → **OPERATOR-ENV**, ürün route fix'i değil.
 - **Murat'ın "eski mesaj" gözlemi açıklandı:** REVIEW not string'i (L379) hâlâ ESKİ selector listesini hardcode ediyor (`[data-testid="room-card"], tr[data-room-id], ...`) — denenen selector listesi (L288) yeni olmasına rağmen. Yani "eski string" = **stale not metni**, drift'li route değil. Bu küçük **SPEC-DRIFT** (yanıltıcı log).
 
 ### 3.2 Exely webhook (Package A+B) — **OPERATOR-ENV**

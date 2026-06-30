@@ -8,8 +8,8 @@
 ## Çalıştırma komutu
 ```bash
 cd frontend
-E2E_BASE_URL="https://${REPLIT_DEV_DOMAIN}" \
-E2E_API_URL="https://8000-${REPLIT_DEV_DOMAIN}" \
+E2E_BASE_URL="https://${CLOUD_DEV_DOMAIN}" \
+E2E_API_URL="https://8000-${CLOUD_DEV_DOMAIN}" \
 npx playwright test e2e/06-core-pms-flow.spec.js \
   --project=chromium-desktop --reporter=list
 ```
@@ -17,7 +17,7 @@ npx playwright test e2e/06-core-pms-flow.spec.js \
 ## Önceki tur (orijinal koşum, düzeltme öncesi)
 - **Sonuç:** 8 PASS + 1 SKIP (test 9 UI smoke — auth state inject yetersizdi)
 - **Süre:** ~18.3 sn
-- **Komut çıktısı:** Replit workflow konsolunda — kalıcı CI artifact yok (yerel run)
+- **Komut çıktısı:** DigitalOcean workflow konsolunda — kalıcı CI artifact yok (yerel run)
 
 ## Bu turun düzeltmeleri (ChatGPT review)
 1. **Test 8 URL fix:** `&include_completed=true` eklendi — yorumla URL artık eşleşiyor; checkout sonrası `checked_out` kayıt default listeden gizlense bile bulunur.

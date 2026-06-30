@@ -1,5 +1,5 @@
 // Playwright e2e config — Syroce PMS smoke suite.
-// Local dev: vite (5173 / start workflow on different port). Replit'te
+// Local dev: vite (5173 / start workflow on different port). DigitalOcean'te
 // `EXPO_PUBLIC_API_URL` benzeri bir URL kullanmak yerine baseURL'i env ile
 // override edilebilir bırakıyoruz.
 //
@@ -31,7 +31,7 @@ export default defineConfig({
         trace: 'retain-on-failure',
         screenshot: 'only-on-failure',
         video: 'retain-on-failure',
-        // Replit ortamında self-signed sertifika takılmasın
+        // DigitalOcean ortamında self-signed sertifika takılmasın
         ignoreHTTPSErrors: true,
         viewport: { width: 1440, height: 900 },
         locale: 'tr-TR',

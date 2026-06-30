@@ -2,15 +2,15 @@
 
 > **Task #117.** Pre-baseline evidence pack: each surface touched by the 35 post-#143 commits exercised individually against the deployed pilot backend, so any single-surface regression is caught in isolation before the full-suite GH Actions run that will promote the next official baseline.
 >
-> **Baseline pointer:** Run #143 (2026-05-26, commit `3b3891d`) remains the binding baseline in `replit.md` / `docs/STRESS_TEST_ROADMAP.md`. This pack does **not** move the pointer.
+> **Baseline pointer:** Run #143 (2026-05-26, commit `3b3891d`) remains the binding baseline in `digitalocean.md` / `docs/STRESS_TEST_ROADMAP.md`. This pack does **not** move the pointer.
 
 ## 1) Run conditions
 
 | Field | Value |
 |---|---|
 | Date (UTC) | 2026-05-27 |
-| Runner | Replit task agent — workflow `Post-F9C Pack` (`bash .local/run_post_f9c_pack.sh`) |
-| Deployed backend | `$E2E_BASE_URL` = `https://emergent-yeni-uygulama-1.replit.app` (warmed via `/health` → `/health/ready` → `/api/health`) |
+| Runner | DigitalOcean task agent — workflow `Post-F9C Pack` (`bash .local/run_post_f9c_pack.sh`) |
+| Deployed backend | `$E2E_BASE_URL` = `https://pms.syroce.com` (warmed via `/health` → `/health/ready` → `/api/health`) |
 | Branch / commit | task isolation branch (post-#143 cumulative HEAD) |
 | Stress tenant | `E2E_STRESS_TENANT_ID=23377306-…-50e243c0` (≠ `PILOT_TENANT_ID=5bad4a34-…-1b7375a9cf` — fail-closed gate enforced by globalSetup) |
 | Playwright config | `frontend/playwright.stress.config.js` (`workers=1`, `retries=0`, per-test timeout 180s, full markdown reporter) |
