@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, ClipboardList, DollarSign, RotateCcw, FileText, ArrowLeftRight, Printer, Send, Loader2, KeyRound, RefreshCw } from 'lucide-react';
+import { Plus, ClipboardList, DollarSign, RotateCcw, FileText, ArrowLeftRight, Printer, Send, Loader2, KeyRound, RefreshCw, AlertTriangle } from 'lucide-react';
 
 const VAT_OPTIONS = [
   { value: '0', label: '%0' },
@@ -839,38 +839,54 @@ th{background:#f5f5f5}
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Hedef Folio *</Label>
+              <Label className="text-sm font-semibold text-gray-700 mb-2 block">Hedef Folio *</Label>
               <Select value={transferTargetId} onValueChange={setTransferTargetId}>
-                <SelectTrigger><SelectValue placeholder="Açık folio seçin" /></SelectTrigger>
-                <SelectContent>
+                <SelectTrigger className="h-14 bg-gray-50 border-gray-200"><SelectValue placeholder="Aktarım yapılacak folio'yu seçin" /></SelectTrigger>
+                <SelectContent className="max-w-xl">
                   {openFolios.length === 0 ? (
                     <SelectItem value="__none__" disabled>Aktarılabilir açık folio yok</SelectItem>
                   ) : openFolios.map(f => (
-                    <SelectItem key={f.id} value={f.id}>
-                      {f.folio_number} • {f.folio_type?.toUpperCase?.() || ''} • Bakiye: {fmt(f.balance)} ₺
+                    <SelectItem key={f.id} value={f.id} className="py-3 px-4 cursor-pointer focus:bg-gray-50">
+                      <div className="flex items-center justify-between w-full min-w-[400px]">
+                        <div className="flex flex-col text-left">
+                          <span className="font-bold text-gray-800 text-base">{f.folio_number}</span>
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500">{f.folio_type || 'GUEST'} FOLIO</span>
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <span className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold">Güncel Bakiye</span>
+                          <span className={`font-bold tabular-nums text-sm ${f.balance > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>{fmt(f.balance)} ₺</span>
+                        </div>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Aktarılacak İşlemler ({transferChargeIds.length} seçili)</Label>
-              <div className="border rounded max-h-72 overflow-y-auto divide-y">
+              <Label className="text-sm font-semibold text-gray-700 mb-2 block flex items-center justify-between">
+                <span>Aktarılacak İşlemler</span>
+                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{transferChargeIds.length} seçili</span>
+              </Label>
+              <div className="border border-gray-200 rounded-lg max-h-[300px] overflow-y-auto divide-y divide-gray-100 bg-white shadow-sm">
                 {folioCharges.filter(c => !c.voided).length === 0 ? (
-                  <div className="p-4 text-center text-sm text-gray-400">Aktarılabilir işlem yok</div>
+                  <div className="p-8 text-center text-sm text-gray-400 flex flex-col items-center">
+                    <AlertTriangle className="w-8 h-8 text-gray-300 mb-2" />
+                    Aktarılabilir işlem yok
+                  </div>
                 ) : folioCharges.filter(c => !c.voided).map(c => (
-                  <label key={c.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 cursor-pointer text-sm">
+                  <label key={c.id} className="flex items-center gap-4 p-3 hover:bg-blue-50/50 cursor-pointer transition-colors group">
                     <input
                       type="checkbox"
+                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
                       checked={transferChargeIds.includes(c.id)}
                       onChange={() => toggleTransferCharge(c.id)}
                     />
                     <div className="flex-1">
-                      <div className="font-medium">{c.description}</div>
-                      <div className="text-xs text-gray-500 capitalize">{c.charge_category}</div>
+                      <div className="font-semibold text-gray-800 text-sm group-hover:text-blue-900 transition-colors">{c.description}</div>
+                      <div className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">{c.charge_category} • {new Date(c.date || c.created_at).toLocaleDateString()}</div>
                     </div>
                     <div className="text-right">
-                      <div className="font-semibold">{fmt(c.total ?? c.amount)} ₺</div>
+                      <div className="font-bold tabular-nums text-gray-900">{fmt(c.total ?? c.amount)} ₺</div>
                     </div>
                   </label>
                 ))}
