@@ -102,10 +102,10 @@ class DemoSmokeTest:
             return None, 0, str(e)
 
     def _log_step(self, step_name, method, endpoint, resp, lat, err, expected_status=[200]):
-        status_code = resp.status_code if resp else "ERROR"
+        status_code = resp.status_code if resp is not None else "ERROR"
         
         resp_summary = ""
-        if resp:
+        if resp is not None:
             try:
                 resp_json = resp.json()
                 safe_json = redact_tokens(resp_json)
@@ -114,7 +114,7 @@ class DemoSmokeTest:
             except:
                 resp_summary = resp.text[:150] + "..." if len(resp.text) > 150 else resp.text
 
-        is_success = resp and resp.status_code in expected_status
+        is_success = resp is not None and resp.status_code in expected_status
         
         step_result = {
             "step": step_name,
@@ -122,7 +122,7 @@ class DemoSmokeTest:
             "endpoint": endpoint,
             "status_code": status_code,
             "latency_ms": lat,
-            "success": is_success,
+            "success": bool(is_success),
             "response_summary": resp_summary,
             "error_reason": err if err else (f"Unexpected Status {status_code}" if not is_success else None)
         }
@@ -150,7 +150,7 @@ class DemoSmokeTest:
         reports_dir.mkdir(parents=True, exist_ok=True)
         filename = reports_dir / f"smoke_demo_flow_{self.ts_id}.json"
         with open(filename, "w") as f:
-            json.dump(self.report_data, f, indent=2)
+            json.dump(self.report_data, f, indent=2, default=str)
         log_info(f"JSON Report saved to {filename}")
 
     def check_tenant_safety(self):
