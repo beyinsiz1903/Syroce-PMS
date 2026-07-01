@@ -12,7 +12,9 @@ import requests
 def parse_args():
     parser = argparse.ArgumentParser(description="Smoke Test Script for Pilot Demo Flow")
     parser.add_argument("--base-url", type=str, default="http://localhost:8000", help="Base URL of the backend")
-    parser.add_argument("--email", type=str, default="info@syroce.com", help="Admin email")
+    parser.add_argument("--email", type=str, default="demo@syroce.com", help="Admin email")
+    parser.add_argument("--hotel-id", type=str, help="Optional hotel ID for login")
+    parser.add_argument("--username", type=str, help="Optional username for login")
     parser.add_argument("--password", type=str, help="Admin password (required unless SMOKE_PASSWORD env is set)")
     parser.add_argument("--allow-mutations", action="store_true", help="Allow state-changing (destructive) operations")
     parser.add_argument("--read-only", action="store_true", help="Explicitly mark read-only mode (default if --allow-mutations is omitted)")
@@ -72,9 +74,11 @@ def redact_tokens(data):
 
 
 class DemoSmokeTest:
-    def __init__(self, base_url, email, password, allow_mutations, origin=None):
+    def __init__(self, base_url, email, password, allow_mutations, origin=None, hotel_id=None, username=None):
         self.base_url = base_url.rstrip("/")
         self.email = email
+        self.hotel_id = hotel_id
+        self.username = username
         self.password = password
         self.allow_mutations = allow_mutations
         self.origin = origin.rstrip("/") if origin else self.base_url
@@ -191,8 +195,14 @@ class DemoSmokeTest:
 
         # Step 1: Login
         method, ep = "POST", "/api/auth/login"
-        resp, lat, err = self._req(method, ep, json={"email": self.email, "password": self.password})
-
+        login_payload = {"email": self.email, "password": self.password}
+        if self.hotel_id:
+            login_payload["hotel_id"] = self.hotel_id
+        if self.username:
+            login_payload["username"] = self.username
+            
+        resp, lat, err = self._req(method, ep, json=login_payload)
+        
         success, resp = self._log_step("1. Login", method, ep, resp, lat, err, expected_status=[200, 201])
         if success:
             data = resp.json()
@@ -346,5 +356,13 @@ class DemoSmokeTest:
 
 if __name__ == "__main__":
     args = parse_args()
-    test = DemoSmokeTest(args.base_url, args.email, args.password, args.allow_mutations, args.origin)
+    test = DemoSmokeTest(
+        base_url=args.base_url,
+        email=args.email,
+        password=args.password,
+        allow_mutations=args.allow_mutations,
+        origin=args.origin,
+        hotel_id=args.hotel_id,
+        username=args.username
+    )
     test.run()
