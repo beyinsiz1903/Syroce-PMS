@@ -66,17 +66,36 @@ class _MockCollection:
     def find(self, flt, *_a, **_kw):
         matching = []
         for d in self.docs.values():
-            if flt.get("tenant_id") == flt.get("tenant_id"):
+            if d.get("tenant_id") == flt.get("tenant_id"):
                 match = True
                 for k, v in flt.items():
                     if k in ("tenant_id", "description", "status"):
                         continue
-                    val = d.get(k)
-                    if isinstance(v, dict) and "$in" in v:
-                        if val not in v["$in"]:
+                    if k == "$or" and isinstance(v, list):
+                        or_match = False
+                        for cond in v:
+                            cond_match = True
+                            for ck, cv in cond.items():
+                                val = d.get(ck)
+                                if isinstance(cv, dict):
+                                    if "$gte" in cv and not (val >= cv["$gte"]):
+                                        cond_match = False
+                                    if "$lte" in cv and not (val <= cv["$lte"]):
+                                        cond_match = False
+                                elif val != cv:
+                                    cond_match = False
+                            if cond_match:
+                                or_match = True
+                                break
+                        if not or_match:
                             match = False
-                    elif val != v:
-                        match = False
+                    else:
+                        val = d.get(k)
+                        if isinstance(v, dict) and "$in" in v:
+                            if val not in v["$in"]:
+                                match = False
+                        elif val != v:
+                            match = False
                 if match:
                     matching.append(dict(d))
         return _FakeCursor(matching)
@@ -209,3 +228,62 @@ def test_trigger_room_preparations(env):
     # Verify booking special requests updated
     booking = env.db.bookings.docs[_BOOKING_ID]
     assert "[MİSAFİR İLİŞKİLERİ DİREKTİFİ]" in booking["special_requests"]
+
+
+def test_cross_tenant_isolation(env):
+    # Add a mock guest, booking, and spa appt belonging to a different tenant
+    other_tenant = "t-gr-other"
+    other_guest_id = "guest-other-1"
+
+    env.db.guests.docs[other_guest_id] = {
+        "id": other_guest_id,
+        "tenant_id": other_tenant,
+        "name": "Foreign Guest",
+        "pillow_preference": "Ortopedik Sert"
+    }
+    env.db.bookings.docs["booking-other"] = {
+        "id": "booking-other",
+        "tenant_id": other_tenant,
+        "guest_id": other_guest_id,
+        "guest_name": "Foreign Guest",
+        "room_id": "105",
+        "check_in": (datetime.now(UTC) + timedelta(hours=24)).isoformat(),
+        "status": "confirmed",
+        "special_requests": ""
+    }
+
+    # Try to access other tenant's guest analysis using our tenant context (TENANT_ID)
+    r = env.client.get(f"/api/guest-relations/profiles/{other_guest_id}/analysis")
+    # Should return 404 because the DB queries are scoped to TENANT_ID
+    assert r.status_code == 404
+
+
+def test_guest_profile_analysis_unauthorized(env):
+    from modules.pms_core.role_permission_service import require_op
+    from core.security import get_current_user
+
+    # Store old overrides
+    old_require_op = env.app.dependency_overrides.get(require_op)
+    old_current_user = env.app.dependency_overrides.get(get_current_user)
+
+    # Set override for get_current_user to return a user with a non-admin role
+    async def _low_perm_user():
+        return SimpleNamespace(
+            id="u2", username="receptionist",
+            tenant_id=TENANT_ID, role="housekeeping",  # housekeeping role has no view_guest_list
+            granted_permissions=[],
+        )
+
+    env.app.dependency_overrides[get_current_user] = _low_perm_user
+    if require_op in env.app.dependency_overrides:
+        del env.app.dependency_overrides[require_op]
+
+    try:
+        r = env.client.get(f"/api/guest-relations/profiles/{_GUEST_ID}/analysis")
+        # Should return 403 Forbidden due to insufficient permissions
+        assert r.status_code == 403
+    finally:
+        # Restore overrides
+        env.app.dependency_overrides[get_current_user] = old_current_user
+        if old_require_op is not None:
+            env.app.dependency_overrides[require_op] = old_require_op

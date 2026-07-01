@@ -132,20 +132,22 @@ async def trigger_room_preparations(
     tomorrow_start = now + timedelta(hours=12)
     tomorrow_end = now + timedelta(hours=36)
 
-    # Find bookings arriving tomorrow
-    # Query check_in timestamp range (supports ISO string)
-    bookings = await db.bookings.find({"tenant_id": tenant_id, "status": {"$in": ["confirmed", "checked_in", "in_house"]}}).to_list(1000)
+    tomorrow_start_iso = tomorrow_start.isoformat()
+    tomorrow_end_iso = tomorrow_end.isoformat()
+    tomorrow_start_z = tomorrow_start_iso.replace("+00:00", "Z")
+    tomorrow_end_z = tomorrow_end_iso.replace("+00:00", "Z")
+    tomorrow_date_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    tomorrow_bookings = []
-    for b in bookings:
-        try:
-            ci = datetime.fromisoformat(b["check_in"].replace("Z", "+00:00"))
-            if tomorrow_start <= ci <= tomorrow_end:
-                tomorrow_bookings.append(b)
-        except Exception:
-            # Fallback for simple date strings
-            if b["check_in"] == (now + timedelta(days=1)).strftime("%Y-%m-%d"):
-                tomorrow_bookings.append(b)
+    # Find bookings arriving tomorrow directly via MongoDB query (TI-003 and performant index matching)
+    tomorrow_bookings = await db.bookings.find({
+        "tenant_id": tenant_id,
+        "status": {"$in": ["confirmed", "checked_in", "in_house"]},
+        "$or": [
+            {"check_in": {"$gte": tomorrow_start_iso, "$lte": tomorrow_end_iso}},
+            {"check_in": {"$gte": tomorrow_start_z, "$lte": tomorrow_end_z}},
+            {"check_in": tomorrow_date_str}
+        ]
+    }).to_list(1000)
 
     generated_count = 0
     for booking in tomorrow_bookings:
