@@ -34,6 +34,7 @@ const FolioViewDialog = ({
   onChargePosted,
   onPaymentPosted,
   onPickFolio,
+  isLoading = false,
 }) => {
   const { t } = useTranslation();
   const [subDialog, setSubDialog] = useState(null);
@@ -286,13 +287,30 @@ th{background:#f5f5f5}
             </DialogDescription>
           </DialogHeader>
 
-          {!selectedFolio && folios.length === 0 && (
+          {isLoading && (
             <div className="py-12 text-center" data-testid="folio-loading">
               <Loader2 className="w-8 h-8 mx-auto animate-spin text-indigo-500 mb-3" />
               <p className="text-sm text-gray-600">Folyo yükleniyor…</p>
               <p className="text-xs text-gray-400 mt-1">
                 Birkaç saniye sürebilir. Yanıt gelmezse sayfayı yenileyin.
               </p>
+            </div>
+          )}
+
+          {!isLoading && !selectedFolio && folios.length === 0 && (
+            <div className="py-16 text-center px-4" data-testid="folio-empty">
+              <div className="mx-auto w-16 h-16 bg-gray-50 flex items-center justify-center rounded-full mb-4 border border-gray-100 shadow-sm">
+                <FileText className="w-8 h-8 text-gray-400 opacity-80" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-800 mb-2 font-['Space_Grotesk']">Folyo Bulunamadı</h3>
+              <p className="text-sm text-gray-500 max-w-sm mx-auto leading-relaxed">
+                Bu rezervasyon için henüz oluşturulmuş bir folyo yok. Genellikle check-in işlemi yapıldığında veya rezervasyona bir harcama işlendiğinde folyo otomatik olarak açılır.
+              </p>
+              <div className="mt-6 flex justify-center">
+                <Button variant="outline" onClick={onClose} className="px-6">
+                  Kapat
+                </Button>
+              </div>
             </div>
           )}
 

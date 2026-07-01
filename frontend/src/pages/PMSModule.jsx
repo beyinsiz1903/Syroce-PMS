@@ -126,6 +126,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
   const [folio, setFolio] = useState(null);
   const [folios, setFolios] = useState([]);
+  const [folioLoading, setFolioLoading] = useState(false);
   const [selectedFolio, setSelectedFolio] = useState(null);
   const folioReqIdRef = useRef(null);
   const [folioCharges, setFolioCharges] = useState([]);
@@ -709,6 +710,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     setFolios([]);
     setSelectedBooking(bookingId);
     setOpenDialog('folio-view');
+    setFolioLoading(true);
     // 2) Race-guard: A→B hızlı tıklamalarda A'nın geç gelen yanıtı
     //    B'nin state'ini ezmesin. selectedBookingRef'in en son istek
     //    olduğunu doğrula.
@@ -720,15 +722,18 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         ? response.data
         : (response.data?.folios || []);
       setFolios(list);
-      if (list.length === 0) {
-        toast.warning('Bu rezervasyon için folyo bulunamadı (check-in yapılmamış olabilir)');
-        return;
+      
+      if (list.length > 0) {
+        const guestFolio = list.find(f => f.folio_type === 'guest') || list[0];
+        if (guestFolio?.id) loadFolioDetails(guestFolio.id);
       }
-      const guestFolio = list.find(f => f.folio_type === 'guest') || list[0];
-      if (guestFolio?.id) loadFolioDetails(guestFolio.id);
     } catch (error) {
       if (folioReqIdRef.current !== bookingId) return; // stale yanıt
       toast.error('Folyo yüklenemedi: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      if (folioReqIdRef.current === bookingId) {
+        setFolioLoading(false);
+      }
     }
   };
 
@@ -957,7 +962,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         <CompanyDialog open={openDialog === 'company'} onClose={() => setOpenDialog(null)} newCompany={newCompany} setNewCompany={setNewCompany} onSubmit={handleCreateCompany} />
         {visitedDialogs.has('folio-view') && (
           <Suspense fallback={null}>
-            <FolioViewDialog open={openDialog === 'folio-view'} onClose={() => setOpenDialog(null)} selectedFolio={selectedFolio} folios={folios} folioCharges={folioCharges} folioPayments={folioPayments} guests={guests} bookings={bookings} onChargePosted={(folioId) => { loadFolioDetails(folioId); }} onPaymentPosted={(folioId) => { loadFolioDetails(folioId); }} onPickFolio={(folioId) => loadFolioDetails(folioId)} />
+            <FolioViewDialog open={openDialog === 'folio-view'} onClose={() => setOpenDialog(null)} selectedFolio={selectedFolio} folios={folios} folioCharges={folioCharges} folioPayments={folioPayments} guests={guests} bookings={bookings} onChargePosted={(folioId) => { loadFolioDetails(folioId); }} onPaymentPosted={(folioId) => { loadFolioDetails(folioId); }} onPickFolio={(folioId) => loadFolioDetails(folioId)} isLoading={folioLoading} />
           </Suspense>
         )}
         <HKTaskDialog open={openDialog === 'hktask'} onClose={() => setOpenDialog(null)} rooms={rooms} newHKTask={newHKTask} setNewHKTask={setNewHKTask} onSubmit={handleCreateHKTask} />

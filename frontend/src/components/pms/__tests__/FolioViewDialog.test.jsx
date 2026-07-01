@@ -48,12 +48,13 @@ describe('FolioViewDialog — empty/loading/picker states', () => {
     expect(screen.queryByText(/Folyo Yönetimi/i)).toBeNull();
   });
 
-  it('selectedFolio=null + folios=[] → loading state ("Folyo yükleniyor…")', () => {
+  it('selectedFolio=null + folios=[] + isLoading=true → loading state ("Folyo yükleniyor…")', () => {
     render(
       <FolioViewDialog
         {...baseProps}
         selectedFolio={null}
         folios={[]}
+        isLoading={true}
       />
     );
     // Loader testid + mesaj
@@ -61,6 +62,20 @@ describe('FolioViewDialog — empty/loading/picker states', () => {
     expect(screen.getByText(/Folyo yükleniyor/i)).toBeInTheDocument();
     // Picker görünmemeli
     expect(screen.queryByTestId('folio-picker')).toBeNull();
+  });
+
+  it('selectedFolio=null + folios=[] + isLoading=false → empty state ("Folyo Bulunamadı")', () => {
+    render(
+      <FolioViewDialog
+        {...baseProps}
+        selectedFolio={null}
+        folios={[]}
+        isLoading={false}
+      />
+    );
+    expect(screen.getByTestId('folio-empty')).toBeInTheDocument();
+    expect(screen.getByText(/Folyo Bulunamadı/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('folio-loading')).toBeNull();
   });
 
   it('selectedFolio=null + folios>1 → folio picker render eder, butona tıklayınca onPickFolio tetiklenir', () => {
