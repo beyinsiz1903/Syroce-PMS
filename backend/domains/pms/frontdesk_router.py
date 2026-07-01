@@ -2,34 +2,51 @@
 PMS / Front Desk Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPAuthorizationCredentials
-from typing import Optional, Dict, Any
-from datetime import datetime, timezone, timedelta
-import uuid
-import logging
-import io
 
-from core.database import db
-from core.security import (
-    get_current_user, security,
-)
-from core.helpers import (
-    create_audit_log,
-)
-from models.schemas import User
-from models.enums import RoomStatus, BookingStatus, FolioType, ChannelType
+import base64
+import io
+import json
+import logging
+import uuid
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 
 from common.context import OperationContext
+from core.booking_atomicity import (
+    is_replica_set_unavailable,
+    standalone_fallback_allowed,
+)
+from core.database import db
+from core.security import (
+    get_current_user,
+)
+from core.utils import generate_folio_number
+from domains.pms.folio_routing_split import split_kurus
 from domains.pms.frontdesk_service import frontdesk_service
+from models.enums import BookingStatus, ChannelType, ChargeCategory, PaymentMethod, PaymentType
+from models.schemas import Booking, Guest, User
+from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
+from modules.pms_core.role_permission_service import require_op  # v94 DW
+from shared_kernel.idempotency import (
+    claim_idempotency,
+    complete_idempotency,
+    get_idempotency_key,
+    release_idempotency,
+)
 
 logger = logging.getLogger(__name__)
 
 try:
     from cache_manager import cached
 except ImportError:
+
     def cached(ttl=300, key_prefix=""):
-        def decorator(func): return func
+        def decorator(func):
+            return func
+
         return decorator
 
 
@@ -37,8 +54,11 @@ router = APIRouter(prefix="/api", tags=["PMS / Front Desk"])
 
 
 from domains.pms.schemas import (  # noqa: E402
-    PassportScanData, PassportScanRequest, WalkInBookingRequest,
-    GuestAlert, KeycardIssueRequest,
+    GuestAlert,
+    KeycardIssueRequest,
+    PassportScanData,
+    PassportScanRequest,
+    WalkInBookingRequest,
 )
 
 
@@ -51,7 +71,11 @@ async def get_todays_arrivals(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/frontdesk/express-checkin")
-async def express_checkin_qr(qr_data: dict, current_user: User = Depends(get_current_user)):
+async def express_checkin_qr(
+    qr_data: dict,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
     """QR code ile express check-in"""
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.express_checkin(ctx, qr_data["qr_code"])
@@ -60,38 +84,60 @@ async def express_checkin_qr(qr_data: dict, current_user: User = Depends(get_cur
     return result.data
 
 
-
 @router.post("/frontdesk/kiosk-checkin")
-async def kiosk_checkin(checkin_data: dict, current_user: User = Depends(get_current_user)):
-    return {'success': True, 'message': 'Kiosk check-in (entegrasyon hazir)', 'room_key': 'DIGITAL_KEY_123'}
+async def kiosk_checkin(
+    checkin_data: dict,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
+    booking_id = checkin_data.get("booking_id")
+    if not booking_id:
+        raise HTTPException(status_code=400, detail="booking_id is required")
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking.get("status") not in ("confirmed", "guaranteed"):
+        raise HTTPException(status_code=400, detail=f"Booking status '{booking.get('status')}' is not eligible for check-in")
+    room_key = f"DK-{booking.get('room_number', 'X')}-{str(uuid.uuid4())[:6].upper()}"
+    await db.bookings.update_one({"id": booking_id, "tenant_id": current_user.tenant_id}, {"$set": {"status": "checked_in", "checked_in_at": datetime.now(UTC).isoformat(), "kiosk_checkin": True}})
+    return {
+        "success": True,
+        "message": f"Kiosk check-in basarili: Oda {booking.get('room_number')}",
+        "room_key": room_key,
+        "room_number": booking.get("room_number"),
+        "note": "Kiosk entegrasyonu aktif. Dijital anahtar olusturuldu.",
+    }
+
 
 # ============= ADVANCED LOYALTY =============
 
 
-
 @router.get("/frontdesk/audit-checklist")
+@cached(ttl=180, key_prefix="frontdesk_audit_checklist")  # Tur 3: was 7s, cache 3 min (tenant-aware)
 async def get_frontdesk_audit_checklist(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    current_user: User = Depends(get_current_user),  # Tur 3: tenant-scoped cache key
 ):
     """Front desk için night audit öncesi checklist"""
-    current_user = await get_current_user(credentials)
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.get_audit_checklist(ctx)
     return result.data
 
 
-
-
 @router.post("/frontdesk/checkin/{booking_id}")
-async def check_in_guest(booking_id: str, create_folio: bool = True, current_user: User = Depends(get_current_user)):
-    """Check-in guest with validations and auto-folio creation"""
+async def check_in_guest(
+    booking_id: str,
+    create_folio: bool = True,
+    force_clean: bool = False,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
+    """Check-in guest with validations and auto-folio creation. force_clean=true cleans a dirty room before check-in."""
     ctx = OperationContext.from_user(current_user)
-    result = await frontdesk_service.checkin(ctx, booking_id, create_folio)
+    result = await frontdesk_service.checkin(ctx, booking_id, create_folio, force_clean)
     if not result.ok:
         code_map = {"NOT_FOUND": 404, "ALREADY_CHECKED_IN": 400, "ROOM_NOT_READY": 400}
         raise HTTPException(status_code=code_map.get(result.code, 400), detail=result.error)
     return result.data
-
 
 
 @router.post("/frontdesk/checkout/{booking_id}")
@@ -99,7 +145,8 @@ async def check_out_guest(
     booking_id: str,
     force: bool = False,
     auto_close_folios: bool = True,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Check-out guest with balance validation and folio closure"""
     ctx = OperationContext.from_user(current_user)
@@ -107,45 +154,660 @@ async def check_out_guest(
     if not result.ok:
         code_map = {"NOT_FOUND": 404, "ALREADY_CHECKED_OUT": 400, "OUTSTANDING_BALANCE": 402}
         raise HTTPException(status_code=code_map.get(result.code, 400), detail=result.error)
+    # Loyalty: konaklama puanı (idempotent — aynı booking için tekrar verilmez).
+    # Üye değilse veya tutar yoksa sessizce atlar; checkout akışını bloklamaz.
+    try:
+        from shared_kernel.loyalty_award import award_points_for_stay
+
+        booking = await db.bookings.find_one(
+            {"id": booking_id, "tenant_id": current_user.tenant_id},
+            {"_id": 0, "guest_id": 1, "total_amount": 1, "paid_amount": 1},
+        )
+        if booking:
+            # paid_amount öncelikli: ödenmemiş booking'e puan verme.
+            amount = float(booking.get("paid_amount") or booking.get("total_amount") or 0)
+            award = await award_points_for_stay(current_user.tenant_id, booking.get("guest_id"), booking_id, amount)
+            if award and isinstance(result.data, dict):
+                result.data["loyalty_award"] = award
+    except Exception as exc:
+        # Loyalty hata verse bile checkout başarılı sayılır — ama görünür logla.
+        logger.warning("Loyalty award failed for booking %s: %s", booking_id, exc, exc_info=True)
     return result.data
 
+
+class FolioChargeRequest(BaseModel):
+    charge_category: ChargeCategory | None = None
+    charge_type: str | None = None  # legacy alias
+    description: str
+    amount: float
+    quantity: float = 1.0
+
+
+class FolioPaymentRequest(BaseModel):
+    amount: float
+    method: PaymentMethod = PaymentMethod.CASH
+    payment_type: PaymentType = PaymentType.INTERIM
+    reference: str | None = None
+    notes: str | None = None
+
+
+_LEGACY_CHARGE_MAP = {
+    "f_and_b": ChargeCategory.FOOD,
+    "fnb": ChargeCategory.FOOD,
+    "food_beverage": ChargeCategory.FOOD,
+    "drink": ChargeCategory.BEVERAGE,
+}
+
+
+async def _ensure_booking(tenant_id: str, booking_id: str) -> dict:
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tenant_id}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return booking
+
+
+async def _ensure_open_folio(tenant_id: str, booking_id: str, guest_id: str | None = None) -> dict:
+    folio = await db.folios.find_one(
+        {"tenant_id": tenant_id, "booking_id": booking_id, "status": "open", "folio_type": "guest"},
+        {"_id": 0},
+    )
+    if folio:
+        return folio
+    folio = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tenant_id,
+        "booking_id": booking_id,
+        "folio_number": await generate_folio_number(tenant_id),
+        "folio_type": "guest",
+        "status": "open",
+        "guest_id": guest_id,
+        "company_id": None,
+        "balance": 0.0,
+        "notes": None,
+        "created_at": datetime.now(UTC).isoformat(),
+        "closed_at": None,
+    }
+    await db.folios.insert_one(dict(folio))
+    folio.pop("_id", None)
+    return folio
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Folio Routing helpers — booking.routing_rules içindeki kategori-bazlı
+# kuralları uygulayıp charge'ı doğru folio'ya yönlendirir. Routing kuralı
+# yoksa veya eşleşmiyorsa default (misafir folyo) döner.
+# ──────────────────────────────────────────────────────────────────────
+
+# RoutingInstructions UI kategorileri ↔ ChargeCategory enum eşleme.
+# UI tarafında 'fb' ve 'telephone'/'business_center' gibi kategoriler var;
+# backend ChargeCategory enum'una çevirip kuralı charge_category alanı
+# üzerinden eşleştirebilelim.
+_ROUTING_CATEGORY_ALIASES: dict[str, set[str]] = {
+    "room": {"room"},
+    "fb": {"food", "beverage"},
+    "minibar": {"minibar"},
+    "laundry": {"laundry"},
+    "telephone": {"phone"},
+    "spa": {"spa"},
+    "parking": {"other"},
+    "business_center": {"internet", "other"},
+    "other": {"other"},
+}
+
+
+def _rule_matches_category(rule_category: str | None, charge_category: str) -> bool:
+    """UI kategori → ChargeCategory eşleşmesi. Eşleşme yoksa False."""
+    if not rule_category:
+        return False
+    aliases = _ROUTING_CATEGORY_ALIASES.get(rule_category.lower(), {rule_category.lower()})
+    return charge_category.lower() in aliases
+
+
+async def _resolve_routed_folio(
+    tenant_id: str,
+    booking: dict,
+    target: str,
+) -> dict | None:
+    """Routing target ('company', 'travel_agent', 'group_master') için
+    açık folyoyu bulur veya gerekiyorsa oluşturur. 'guest' veya bilinmeyen
+    target için None döner (default akış misafir folyosu).
+    """
+    booking_id = booking.get("id")
+    if not booking_id or target == "guest":
+        return None
+
+    async def _lazy_upsert_folio(folio_type: str, party_id: str, note: str) -> dict:
+        """Atomik açık folyo bul-veya-oluştur. Eşzamanlı charge'larda
+        race condition'ı önlemek için find_one_and_update + upsert
+        kullanılır; aynı (tenant, booking, type, party) için yalnızca tek
+        açık folyo oluşur. AFTER document'ı döner.
+        """
+        from pymongo import ReturnDocument
+
+        filter_doc = {
+            "tenant_id": tenant_id,
+            "booking_id": booking_id,
+            "folio_type": folio_type,
+            "company_id": party_id,
+            "status": "open",
+        }
+        set_on_insert = {
+            "id": str(uuid.uuid4()),
+            "folio_number": await generate_folio_number(tenant_id),
+            "guest_id": booking.get("guest_id"),
+            "balance": 0.0,
+            "notes": note,
+            "created_at": datetime.now(UTC).isoformat(),
+            "closed_at": None,
+        }
+        doc = await db.folios.find_one_and_update(
+            filter_doc,
+            {"$setOnInsert": set_on_insert},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+            projection={"_id": 0},
+        )
+        return doc
+
+    if target == "company":
+        company_id = booking.get("company_id")
+        if not company_id:
+            return None
+        return await _lazy_upsert_folio("company", company_id, "Auto-created by routing rule")
+
+    if target == "travel_agent":
+        agency_id = booking.get("agency_id") or booking.get("travel_agent_id")
+        if not agency_id:
+            return None
+        return await _lazy_upsert_folio("agency", agency_id, "Auto-created by routing rule (travel agent)")
+
+    if target == "group_master":
+        group_id = booking.get("group_id") or booking.get("group_booking_id")
+        if not group_id:
+            return None
+        # Grup master folyosu booking_id yerine group_id ile saklanır.
+        existing = await db.folios.find_one(
+            {
+                "tenant_id": tenant_id,
+                "group_id": group_id,
+                "folio_type": "guest",
+                "status": "open",
+            },
+            {"_id": 0},
+        )
+        return existing  # Group master folyo manuel açılır; otomatik yaratmıyoruz.
+
+    return None
+
+
+def _is_payor_target(target: str | None) -> bool:
+    """company / travel_agent / group_master → master/payor folyosu sayılır.
+    Kuruş artığı önceliği bu hedeflere verilir (misafiri fazla yüklememek için).
+    """
+    return target in ("company", "travel_agent", "group_master")
+
+
+async def _resolve_routing_allocations(
+    tenant_id: str,
+    booking: dict,
+    charge_category: str,
+    default_folio: dict,
+    net_amount: float,
+) -> list[dict]:
+    """Booking.routing_rules içinden charge_category'ye uyan ilk aktif kurala
+    göre charge'ın hangi folyo(lar)a ne kadar yazılacağını döner.
+
+    Dönen her allocation: {"folio": <folio dict>, "amount": float, "rule": dict|None}.
+
+    - Kural yok / eşleşme yok → tek allocation: default (misafir) folyo, tam tutar.
+    - split_type yok (tam yönlendirme) → tek allocation: hedef folyo (resolve
+      edilemezse default), tam tutar. (Mevcut davranış korunur.)
+    - split_type "percentage" | "equal" → birden çok allocation; kuruş-tam
+      dağıtım (split_kurus); arta kalan kuruş ilk payor (şirket/acente/grup
+      master) folyosuna, yoksa default misafir folyosuna yazılır. Aynı folyoya
+      düşen paylar tek satırda birleştirilir; sıfır tutarlı satır atlanır.
+    """
+    amount = round(float(net_amount), 2)
+    rules = booking.get("routing_rules") or []
+    matched = None
+    for rule in rules:
+        if rule.get("active") is False:
+            continue
+        if _rule_matches_category(rule.get("category"), charge_category):
+            matched = rule
+            break
+    if matched is None:
+        return [{"folio": default_folio, "amount": amount, "rule": None}]
+
+    split_type = matched.get("split_type")
+    splits = matched.get("splits")
+    splits = splits if isinstance(splits, list) else []
+
+    # Tam yönlendirme (split yok): mevcut davranış korunur.
+    if split_type not in ("percentage", "equal") or not splits:
+        target = matched.get("target")
+        if not target and splits:
+            target = splits[0].get("target")
+        routed = await _resolve_routed_folio(tenant_id, booking, target) if target else None
+        folio = routed or default_folio
+        return [
+            {
+                "folio": folio,
+                "amount": amount,
+                "rule": {"category": matched.get("category"), "target": target, "split_type": None},
+            }
+        ]
+
+    # Split: her parçanın hedef folyosunu çöz; aynı folyoya düşenleri birleştir.
+    order: list[str] = []
+    merged: dict[str, dict] = {}
+    for s in splits:
+        target = s.get("target")
+        routed = await _resolve_routed_folio(tenant_id, booking, target) if target else None
+        folio = routed or default_folio
+        weight = float(s.get("percentage", 0) or 0) if split_type == "percentage" else 1.0
+        is_payor = bool(routed) and _is_payor_target(target)
+        fid = folio["id"]
+        if fid not in merged:
+            merged[fid] = {"folio": folio, "weight": 0.0, "is_payor": False, "targets": []}
+            order.append(fid)
+        merged[fid]["weight"] += weight
+        merged[fid]["is_payor"] = merged[fid]["is_payor"] or is_payor
+        merged[fid]["targets"].append(target)
+
+    entries = [merged[fid] for fid in order]
+    weights = [e["weight"] for e in entries]
+
+    # Arta kalan kuruş hedefi: ilk payor (şirket/acente/grup master) folyosu;
+    # yoksa default misafir folyosu; o da yoksa ilk satır.
+    remainder_index = next((i for i, e in enumerate(entries) if e["is_payor"]), None)
+    if remainder_index is None:
+        remainder_index = next(
+            (i for i, e in enumerate(entries) if e["folio"]["id"] == default_folio["id"]),
+            0,
+        )
+
+    if sum(int(round(w * 100)) for w in weights) <= 0:
+        # Dejenere (tüm ağırlıklar 0) → fail-safe: tam tutar default folyoya.
+        return [
+            {
+                "folio": default_folio,
+                "amount": amount,
+                "rule": {
+                    "category": matched.get("category"),
+                    "split_type": split_type,
+                    "degenerate": True,
+                },
+            }
+        ]
+
+    shares = split_kurus(int(round(amount * 100)), weights, remainder_index)
+    allocations: list[dict] = []
+    for e, sh in zip(entries, shares):
+        if sh == 0:
+            continue
+        allocations.append(
+            {
+                "folio": e["folio"],
+                "amount": round(sh / 100.0, 2),
+                "rule": {
+                    "category": matched.get("category"),
+                    "split_type": split_type,
+                    "targets": e["targets"],
+                    "weight": e["weight"],
+                },
+            }
+        )
+    if not allocations:
+        allocations.append(
+            {
+                "folio": entries[remainder_index]["folio"],
+                "amount": amount,
+                "rule": {"category": matched.get("category"), "split_type": split_type},
+            }
+        )
+    return allocations
+
+
+async def _post_charge_allocations(
+    tenant_id: str,
+    booking_id: str,
+    category_value: str,
+    description: str,
+    unit_price: float,
+    quantity: float,
+    net_amount: float,
+    default_folio: dict,
+    allocations: list[dict],
+    is_split: bool,
+    split_group_id: str | None,
+    now_iso: str,
+    posted_by: str | None,
+    *,
+    session=None,
+) -> list[dict]:
+    """Her allocation icin folio_charges insert + ilgili folio balance $inc.
+    session verilirse tum yazimlar tek transaction icinde (atomik). Cagiran
+    taraf transaction sarmalamasini ve fallback'i yonetir.
+    """
+    created: list[dict] = []
+    for alloc in allocations:
+        folio = alloc["folio"]
+        amt = round(float(alloc["amount"]), 2)
+        charge_doc = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "folio_id": folio["id"],
+            "booking_id": booking_id,
+            "charge_category": category_value,
+            "description": description,
+            "unit_price": amt if is_split else unit_price,
+            "quantity": 1.0 if is_split else quantity,
+            "amount": amt,
+            "tax_amount": 0.0,
+            "total": amt,
+            "posted_by": posted_by,
+            "posted_at": now_iso,
+            "date": now_iso,
+        }
+        # Routed flag — UI'da "şirkete yönlendirildi" rozeti için.
+        if folio["id"] != default_folio["id"]:
+            charge_doc["routed_from_folio_id"] = default_folio["id"]
+            charge_doc["routed_to_folio_id"] = folio["id"]
+        # Rule-match audit: hangi kural/kategori/split bu satırı üretti.
+        if alloc.get("rule"):
+            charge_doc["routing_rule"] = alloc["rule"]
+        # Split audit: kardeş satırları bağla + orijinal toplam.
+        if split_group_id:
+            charge_doc["split_group_id"] = split_group_id
+            charge_doc["split_total_amount"] = net_amount
+        await db.folio_charges.insert_one(dict(charge_doc), session=session)
+        await db.folios.update_one(
+            {"id": folio["id"], "tenant_id": tenant_id},
+            {"$inc": {"balance": amt}},
+            session=session,
+        )
+        created.append(charge_doc)
+    return created
 
 
 @router.post("/frontdesk/folio/{booking_id}/charge")
-async def add_folio_charge(booking_id: str, charge_type: str, description: str, amount: float, quantity: float = 1.0, current_user: User = Depends(get_current_user)):
-    folio_charge = FolioCharge(tenant_id=current_user.tenant_id, booking_id=booking_id, charge_type=charge_type, description=description,
-                               amount=amount, quantity=quantity, total=amount * quantity, posted_by=current_user.name)
-    charge_dict = folio_charge.model_dump()
-    charge_dict['date'] = charge_dict['date'].isoformat()
-    await db.folio_charges.insert_one(charge_dict)
-    return folio_charge
+async def add_folio_charge(
+    booking_id: str,
+    payload: FolioChargeRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v97 DW
+):
+    if payload.amount <= 0 or payload.quantity <= 0:
+        raise HTTPException(status_code=400, detail="amount ve quantity 0'dan büyük olmalı")
 
+    category = payload.charge_category
+    if category is None and payload.charge_type:
+        key = payload.charge_type.lower()
+        if key in _LEGACY_CHARGE_MAP:
+            category = _LEGACY_CHARGE_MAP[key]
+        else:
+            try:
+                category = ChargeCategory(key)
+            except ValueError:
+                category = ChargeCategory.OTHER
+    if category is None:
+        raise HTTPException(status_code=400, detail="charge_category gerekli")
+
+    booking = await _ensure_booking(current_user.tenant_id, booking_id)
+    default_folio = await _ensure_open_folio(current_user.tenant_id, booking_id, booking.get("guest_id"))
+    unit_price = float(payload.amount)
+    quantity = float(payload.quantity)
+    net_amount = round(unit_price * quantity, 2)
+
+    # Idempotency-Key replay koruması (çift tıklama / ağ retry). Header yoksa
+    # davranış aynen korunur. Tüm split satırları tek mantıksal işlem altında.
+    idem_key = get_idempotency_key(request)
+    idem_lock_id = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db,
+            tenant_id=current_user.tenant_id,
+            scope=f"folio_charge:{booking_id}",
+            idempotency_key=idem_key,
+        )
+        if claim["status"] == "replay":
+            return claim["response"]
+        if claim["status"] == "in_flight":
+            raise HTTPException(
+                status_code=409,
+                detail="Aynı Idempotency-Key ile başka bir istek işleniyor",
+            )
+        idem_lock_id = claim["lock_id"]
+
+    try:
+        # Routing rules: kategori-bazlı yönlendirme + (varsa) oransal/eşit bölme.
+        # Hedef yoksa veya resolve edilemezse default (misafir) folyoya düşer.
+        allocations = await _resolve_routing_allocations(current_user.tenant_id, booking, category.value, default_folio, net_amount)
+        is_split = len(allocations) > 1
+        split_group_id = str(uuid.uuid4()) if is_split else None
+        now_iso = datetime.now(UTC).isoformat()
+
+        def _build_response(charges: list[dict]) -> dict:
+            if is_split:
+                return {
+                    "split_group_id": split_group_id,
+                    "total_amount": net_amount,
+                    "charges": charges,
+                }
+            return charges[0]
+
+        # Tüm split satırları (insert + balance $inc) VE idempotency completion
+        # tek atomik birim. Replica set varsa transaction; biri patlarsa rollback
+        # → kısmi yazım/dengesiz bakiye imkansız. Completion da transaction'a
+        # dahil: "yazımlar commit" ⟺ "key completed" — commit-sonrası-complete-
+        # fail penceresi (çifte charge) yapısal olarak kapanır. Standalone
+        # Mongo'da procurement/mice ile aynı fail-closed fallback (operatör
+        # açıkça opt-in etmediyse 503).
+        response: dict
+        try:
+            async with await db.client.start_session() as session:
+                async with session.start_transaction():
+                    created = await _post_charge_allocations(
+                        current_user.tenant_id,
+                        booking_id,
+                        category.value,
+                        payload.description,
+                        unit_price,
+                        quantity,
+                        net_amount,
+                        default_folio,
+                        allocations,
+                        is_split,
+                        split_group_id,
+                        now_iso,
+                        current_user.name,
+                        session=session,
+                    )
+                    response = _build_response(created)
+                    if idem_lock_id:
+                        await complete_idempotency(
+                            db,
+                            lock_id=idem_lock_id,
+                            response_body=response,
+                            session=session,
+                        )
+            # Transaction commit edildi → yazımlar + completion birlikte durable.
+            idem_lock_id = None
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            code = getattr(exc, "code", None)
+            if code == 112 or "WriteConflict" in str(exc):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Folyo eş zamanlı güncellendi; lütfen tekrar deneyin",
+                )
+            if not is_replica_set_unavailable(exc):
+                raise
+            if not standalone_fallback_allowed():
+                raise HTTPException(
+                    status_code=503,
+                    detail="Masraf kaydı atomik garanti sağlayamıyor (Mongo replica set gerekli).",
+                )
+            # Dev opt-in: best-effort transaction'sız fallback. UYARI: bu yolda
+            # yazımlar ile completion atomik DEĞİL; nadir bir commit-sonrası-
+            # complete-fail penceresinde retry çifte charge üretebilir. Yalnızca
+            # operatör STANDALONE_FALLBACK'i açıkça açtığında (geliştirme) etkin;
+            # üretim replica set ile fail-closed olduğundan bu risk taşınmaz.
+            created = await _post_charge_allocations(
+                current_user.tenant_id,
+                booking_id,
+                category.value,
+                payload.description,
+                unit_price,
+                quantity,
+                net_amount,
+                default_folio,
+                allocations,
+                is_split,
+                split_group_id,
+                now_iso,
+                current_user.name,
+                session=None,
+            )
+            response = _build_response(created)
+            if idem_lock_id:
+                try:
+                    await complete_idempotency(db, lock_id=idem_lock_id, response_body=response)
+                except Exception:  # noqa: BLE001
+                    logger.exception("folio_charge idempotency complete failed (non-tx fallback)")
+                idem_lock_id = None
+        return response
+    except HTTPException:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id)
+        raise
+    except Exception as exc:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id, error=str(exc))
+        raise
+
+
+@router.post("/frontdesk/folio/{booking_id}/payment")
+async def add_folio_payment(
+    booking_id: str,
+    payload: FolioPaymentRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v94 DW
+):
+    if payload.amount <= 0:
+        raise HTTPException(status_code=400, detail="amount 0'dan büyük olmalı")
+
+    booking = await _ensure_booking(current_user.tenant_id, booking_id)
+    folio = await _ensure_open_folio(current_user.tenant_id, booking_id, booking.get("guest_id"))
+    amount = float(payload.amount)
+    now = datetime.now(UTC)
+    now_iso = now.isoformat()
+    method_value = payload.method.value if hasattr(payload.method, "value") else str(payload.method)
+    type_value = payload.payment_type.value if hasattr(payload.payment_type, "value") else str(payload.payment_type)
+    payment_doc = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "folio_id": folio["id"],
+        "booking_id": booking_id,
+        "amount": amount,
+        "method": method_value,
+        "payment_type": type_value,
+        "status": "paid",
+        "voided": False,
+        "reference": payload.reference,
+        "notes": payload.notes,
+        "processed_by": current_user.name,
+        "processed_at": now_iso,
+    }
+    # Vardiya kontrolü: nakit ödemede aktif vardiya zorunlu
+    from domains.pms.cashier_service import ensure_active_shift, record_cash_transaction
+
+    await ensure_active_shift(current_user.tenant_id, method_value)
+
+    await db.payments.insert_one(dict(payment_doc))
+    await db.folios.update_one(
+        {"id": folio["id"], "tenant_id": current_user.tenant_id},
+        {"$inc": {"balance": -amount}},
+    )
+    await db.bookings.update_one(
+        {"id": booking_id, "tenant_id": current_user.tenant_id},
+        {"$inc": {"paid_amount": amount}},
+    )
+
+    # Kasa hareketine yaz — cash için race-safe rollback
+    is_cash = method_value.lower() == "cash"
+    try:
+        await record_cash_transaction(
+            tenant_id=current_user.tenant_id,
+            amount=amount,
+            method=method_value,
+            direction="in",
+            description=f"Folio ödemesi - Oda {booking.get('room_number', '?')}",
+            txn_type="folio_payment",
+            ref_type="payment",
+            ref_id=payment_doc["id"],
+            created_by=current_user.email,
+            created_by_name=getattr(current_user, "name", None) or current_user.email,
+            idempotency_key=f"payment:{payment_doc['id']}",
+            require_open_shift=is_cash,
+        )
+    except HTTPException as he:
+        if is_cash and he.status_code == 409:
+            try:
+                await db.payments.delete_one({"id": payment_doc["id"], "tenant_id": current_user.tenant_id})
+                await db.folios.update_one(
+                    {"id": folio["id"], "tenant_id": current_user.tenant_id},
+                    {"$inc": {"balance": amount}},
+                )
+                await db.bookings.update_one(
+                    {"id": booking_id, "tenant_id": current_user.tenant_id},
+                    {"$inc": {"paid_amount": -amount}},
+                )
+            except Exception:
+                import logging as _lg
+
+                _lg.getLogger(__name__).exception("payment rollback failed after cashier 409")
+        raise
+    except Exception:
+        import logging as _lg
+
+        _lg.getLogger(__name__).exception("cashier txn record failed")
+
+    return payment_doc
 
 
 @router.get("/frontdesk/folio/{booking_id}")
-@cached(ttl=180, key_prefix="frontdesk_folio")
 async def get_folio(booking_id: str, current_user: User = Depends(get_current_user)):
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.get_folio(ctx, booking_id)
+    if not result.ok:
+        code = 404 if result.code == "NOT_FOUND" else 400
+        raise HTTPException(status_code=code, detail=result.error)
     return result.data
 
 
+# rbac-allow: cache-rbac — FO arrivals operasyonel (FO/HK/manager)
 @router.get("/frontdesk/arrivals")
 @cached(ttl=120, key_prefix="frontdesk_arrivals")
-async def get_arrivals(date: Optional[str] = None, current_user: User = Depends(get_current_user)):
+async def get_arrivals(date: str | None = None, current_user: User = Depends(get_current_user)):
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.get_arrivals(ctx, date)
     return result.data
 
 
+# rbac-allow: cache-rbac — FO departures operasyonel
 @router.get("/frontdesk/departures")
 @cached(ttl=120, key_prefix="frontdesk_departures")
-async def get_departures(date: Optional[str] = None, current_user: User = Depends(get_current_user)):
+async def get_departures(date: str | None = None, current_user: User = Depends(get_current_user)):
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.get_departures(ctx, date)
     return result.data
 
 
+# rbac-allow: cache-rbac — FO inhouse operasyonel
 @router.get("/frontdesk/inhouse")
 @cached(ttl=180, key_prefix="frontdesk_inhouse")
 async def get_inhouse_guests(current_user: User = Depends(get_current_user)):
@@ -159,11 +821,11 @@ async def get_inhouse_guests(current_user: User = Depends(get_current_user)):
 # ============= MANAGEMENT REPORTS =============
 
 
-
 @router.post("/frontdesk/passport-scan")
 async def scan_passport(
     request: PassportScanRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """
     Scan passport and extract data automatically
@@ -174,222 +836,223 @@ async def scan_passport(
     # - Google Cloud Vision
     # - Azure Computer Vision
     # - Amazon Textract
-    
+
     # For MVP, we'll simulate OCR response
     # In real implementation, send image_base64 to OCR service
-    
+
     try:
         # Simulated OCR extraction (in production, call actual OCR API)
         # Example with Google Vision or OCR.space would be:
         # response = await ocr_service.extract_passport(request.image_base64)
-        
-        # Simulated response
-        extracted_data = PassportScanData(
-            passport_number="P12345678",
-            name="JOHN",
-            surname="DOE",
-            nationality="USA",
-            date_of_birth="1990-05-15",
-            expiry_date="2030-05-15",
-            sex="M"
-        )
-        
-        # If booking_id provided, update guest info
-        if request.booking_id:
-            booking = await db.bookings.find_one({
-                'id': request.booking_id,
-                'tenant_id': current_user.tenant_id
-            })
-            
-            if booking:
-                guest_id = booking.get('guest_id')
-                if guest_id:
-                    # Update guest with passport info
-                    await db.guests.update_one(
-                        {'id': guest_id, 'tenant_id': current_user.tenant_id},
-                        {'$set': {
-                            'id_number': extracted_data.passport_number,
-                            'nationality': extracted_data.nationality,
-                            'updated_at': datetime.now(timezone.utc).isoformat()
-                        }}
-                    )
-        
+
+        extracted_data = PassportScanData(passport_number="", name="", surname="", nationality="", date_of_birth="", expiry_date="", sex="")
+
         return {
-            'success': True,
-            'extracted_data': extracted_data.model_dump(),
-            'confidence': 0.95,  # OCR confidence score
-            'message': 'Passport scanned successfully. Please verify extracted data.',
-            'note': 'In production, integrate with OCR.space, Google Vision, or Azure Computer Vision for real passport scanning'
+            "success": True,
+            "extracted_data": extracted_data.model_dump(),
+            "confidence": 0,
+            "message": "Pasaport tarama altyapisi hazir. Lutfen OCR servis entegrasyonunu yapilandiriniz.",
+            "requires_ocr_config": True,
         }
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Passport scan failed: {str(e)}")
 
 
-
-
 @router.post("/frontdesk/walk-in-booking")
 async def create_walk_in_booking(
-    request: WalkInBookingRequest,
-    current_user: User = Depends(get_current_user)
+    req: WalkInBookingRequest,
+    http_request: Request,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """
     Quick walk-in booking - create guest, booking, and check-in with one click
     """
+    from shared_kernel.idempotency import begin_idempotency
+
+    # Idempotency-Key request-replay (additive: no-op without the header).
+    guard, replay = await begin_idempotency(
+        db,
+        http_request,
+        tenant_id=current_user.tenant_id,
+        scope="frontdesk.walk_in_booking",
+        payload=req.model_dump(),
+    )
+    if replay is not None:
+        return replay
     try:
         # 1. Check room availability
-        room = await db.rooms.find_one({
-            'id': request.room_id,
-            'tenant_id': current_user.tenant_id
-        })
-        
+        room = await db.rooms.find_one({"id": req.room_id, "tenant_id": current_user.tenant_id})
+
         if not room:
+            # Pre-write validation failure -> release so the key can be retried.
+            await guard.release()
             raise HTTPException(status_code=404, detail="Room not found")
-        
-        if room.get('status') not in ['available', 'inspected']:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Room {room.get('room_number')} is not available (status: {room.get('status')})"
-            )
-        
+
+        if room.get("status") not in ["available", "inspected"]:
+            # Pre-write validation failure -> release so the key can be retried.
+            await guard.release()
+            raise HTTPException(status_code=400, detail=f"Room {room.get('room_number')} is not available (status: {room.get('status')})")
+
         # 2. Create or find guest
-        guest_email = request.guest_email or f"walkin_{uuid.uuid4().hex[:8]}@hotel.local"
-        
-        # Try to find existing guest by phone or email
-        existing_guest = await db.guests.find_one({
-            'tenant_id': current_user.tenant_id,
-            '$or': [
-                {'phone': request.guest_phone},
-                {'email': guest_email}
-            ]
-        })
-        
+        guest_email = req.guest_email or f"walkin_{uuid.uuid4().hex[:8]}@hotel.local"
+
+        # Try to find existing guest by phone or email (dual-read: encrypted
+        # _hash_ token OR legacy plaintext for unmigrated rows).
+        from security.encrypted_lookup import guest_pii_or_conditions
+
+        existing_guest = await db.guests.find_one(
+            {
+                "tenant_id": current_user.tenant_id,
+                "$or": guest_pii_or_conditions("phone", req.guest_phone) + guest_pii_or_conditions("email", guest_email),
+            }
+        )
+
         if existing_guest:
-            guest_id = existing_guest['id']
+            guest_id = existing_guest["id"]
         else:
             # Create new guest
             new_guest = Guest(
                 tenant_id=current_user.tenant_id,
-                name=request.guest_name,
+                name=req.guest_name,
                 email=guest_email,
-                phone=request.guest_phone,
-                id_number=request.guest_id_number or f"WALKIN-{uuid.uuid4().hex[:8]}",
-                nationality=request.nationality
+                phone=req.guest_phone,
+                id_number=req.guest_id_number or f"WALKIN-{uuid.uuid4().hex[:8]}",
+                nationality=req.nationality,
             )
-            
+
             guest_dict = new_guest.model_dump()
-            guest_dict['created_at'] = guest_dict['created_at'].isoformat()
+            guest_dict["created_at"] = guest_dict["created_at"].isoformat()
+            from security.guest_write import encrypt_guest_insert
+
+            guest_dict = encrypt_guest_insert(guest_dict)
             await db.guests.insert_one(guest_dict)
             guest_id = new_guest.id
-        
+
         # 3. Calculate dates and amount
-        check_in = datetime.now(timezone.utc).replace(hour=14, minute=0, second=0, microsecond=0)
-        check_out = check_in + timedelta(days=request.nights)
-        
-        rate = request.rate_per_night or room.get('base_price', 100.0)
-        total_amount = rate * request.nights
-        
+        check_in = datetime.now(UTC).replace(hour=14, minute=0, second=0, microsecond=0)
+        check_out = check_in + timedelta(days=req.nights)
+
+        rate = req.rate_per_night or room.get("base_price", 100.0)
+        total_amount = rate * req.nights
+
         # 4. Create booking
         new_booking = Booking(
             tenant_id=current_user.tenant_id,
             guest_id=guest_id,
-            room_id=request.room_id,
+            room_id=req.room_id,
             check_in=check_in.date().isoformat(),
             check_out=check_out.date().isoformat(),
-            adults=request.adults,
-            children=request.children,
+            adults=req.adults,
+            children=req.children,
             children_ages=[],
-            guests_count=request.adults + request.children,
+            guests_count=req.adults + req.children,
             total_amount=total_amount,
             status=BookingStatus.CONFIRMED,
             channel=ChannelType.DIRECT,
-            special_requests=request.special_requests
+            special_requests=req.special_requests,
         )
-        
+
         booking_dict = new_booking.model_dump()
-        booking_dict['created_at'] = booking_dict['created_at'].isoformat()
-        await db.bookings.insert_one(booking_dict)
-        
-        # 5. Auto check-in
-        await db.bookings.update_one(
-            {'id': new_booking.id},
-            {'$set': {
-                'status': BookingStatus.CHECKED_IN.value,
-                'checked_in_at': datetime.now(timezone.utc).isoformat()
-            }}
-        )
-        
-        # 6. Update room status
-        await db.rooms.update_one(
-            {'id': request.room_id},
-            {'$set': {
-                'status': RoomStatus.OCCUPIED.value,
-                'current_booking_id': new_booking.id
-            }}
-        )
-        
-        # 7. Create guest folio
-        folio = Folio(
-            tenant_id=current_user.tenant_id,
-            booking_id=new_booking.id,
-            folio_number=f"F-{datetime.now().year}-{uuid.uuid4().hex[:5].upper()}",
-            folio_type=FolioType.GUEST,
-            guest_id=guest_id
-        )
-        
-        folio_dict = folio.model_dump()
-        folio_dict['created_at'] = folio_dict['created_at'].isoformat()
-        await db.folios.insert_one(folio_dict)
-        
-        # 8. Create audit log
-        await create_audit_log(
-            tenant_id=current_user.tenant_id,
-            user=current_user,
-            action="WALK_IN_CHECKIN",
-            entity_type="booking",
-            entity_id=new_booking.id,
-            changes={
-                'guest_name': request.guest_name,
-                'room': room.get('room_number'),
-                'nights': request.nights,
-                'total_amount': total_amount
-            }
-        )
-        
-        return {
-            'success': True,
-            'message': "Walk-in booking created and checked in successfully",
-            'booking_id': new_booking.id,
-            'guest_id': guest_id,
-            'folio_id': folio.id,
-            'room_number': room.get('room_number'),
-            'check_in': check_in.isoformat(),
-            'check_out': check_out.isoformat(),
-            'total_amount': total_amount,
-            'folio_number': folio.folio_number
+        booking_dict["created_at"] = booking_dict["created_at"].isoformat()
+        from core.atomic_booking import BookingConflictError, create_booking_atomic
+
+        try:
+            # Past this point a booking may be durably created; do NOT release the
+            # idempotency slot on later failures (the room-night unique lock is the
+            # duplicate backstop, and the slot's TTL frees a genuinely stuck key).
+            await create_booking_atomic(booking_dict)
+        except BookingConflictError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+
+        # 5. Atomic check-in (booking + room + folio + audit + outbox in one transaction)
+        from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
+
+        try:
+            checkin_result = await check_in_booking_atomic(
+                booking_id=new_booking.id,
+                tenant_id=current_user.tenant_id,
+                actor_id=current_user.id,
+                actor_name=current_user.name,
+            )
+        except CheckInError as e:
+            raise HTTPException(status_code=400, detail=f"Walk-in booking created but check-in failed: {e}")
+
+        # 6. KBS auto-notify when a real ID number was provided (TC kimlik / passport)
+        # Skips placeholder IDs (those start with "WALKIN-").
+        kbs_notified = False
+        kbs_reference = None
+        try:
+            real_id = (req.guest_id_number or "").strip()
+            if real_id and not real_id.upper().startswith("WALKIN-"):
+                kbs_reference = str(uuid.uuid4())[:8].upper()
+                kbs_doc = {
+                    "_id": str(uuid.uuid4()),
+                    "tenant_id": current_user.tenant_id,
+                    "booking_id": new_booking.id,
+                    "kbs_reference": kbs_reference,
+                    "status": "sent",
+                    "sent_at": datetime.now(UTC).isoformat(),
+                    "sent_by": current_user.email,
+                    "source": "walk_in_auto",
+                    "guest_data": {
+                        "name": req.guest_name,
+                        "id_number": real_id,
+                        "nationality": req.nationality,
+                        "phone": req.guest_phone,
+                    },
+                }
+                await db.kbs_notifications.insert_one(kbs_doc)
+                await db.bookings.update_one(
+                    {"id": new_booking.id, "tenant_id": current_user.tenant_id},
+                    {
+                        "$set": {
+                            "kbs_status": "sent",
+                            "kbs_sent_at": datetime.now(UTC).isoformat(),
+                            "kbs_reference": kbs_reference,
+                        }
+                    },
+                )
+                kbs_notified = True
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).exception(
+                "KBS auto-notify failed for walk-in booking %s; booking remains valid",
+                new_booking.id,
+            )
+
+        result = {
+            "success": True,
+            "message": "Walk-in booking created and checked in successfully",
+            "booking_id": new_booking.id,
+            "guest_id": guest_id,
+            "room_number": room.get("room_number"),
+            "check_in": check_in.isoformat(),
+            "check_out": check_out.isoformat(),
+            "total_amount": total_amount,
+            "checked_in_at": checkin_result.get("checked_in_at"),
+            "kbs_notified": kbs_notified,
+            "kbs_reference": kbs_reference,
         }
-    
+        await guard.complete(result)
+        return result
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Walk-in booking failed: {str(e)}")
 
 
-
-
 @router.get("/frontdesk/guest-alerts/{guest_id}")
-async def get_guest_alerts(
-    guest_id: str,
-    current_user: User = Depends(get_current_user)
-):
+async def get_guest_alerts(guest_id: str, current_user: User = Depends(get_current_user)):
     """Get all active alerts for a guest"""
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.get_guest_alerts(ctx, guest_id)
     if not result.ok:
         raise HTTPException(status_code=404, detail=result.error)
     return result.data
-
-
 
 
 @router.post("/frontdesk/guest-alerts")
@@ -399,45 +1062,47 @@ async def create_guest_alert(
     title: str,
     description: str,
     priority: str = "normal",
-    expires_days: Optional[int] = None,
-    current_user: User = Depends(get_current_user)
+    expires_days: int | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Create a custom alert for a guest"""
     expires_at = None
     if expires_days:
-        expires_at = datetime.now(timezone.utc) + timedelta(days=expires_days)
-    
-    alert = GuestAlert(
-        tenant_id=current_user.tenant_id,
-        guest_id=guest_id,
-        alert_type=alert_type,
-        priority=priority,
-        title=title,
-        description=description,
-        expires_at=expires_at
-    )
-    
+        expires_at = datetime.now(UTC) + timedelta(days=expires_days)
+
+    alert = GuestAlert(tenant_id=current_user.tenant_id, guest_id=guest_id, alert_type=alert_type, priority=priority, title=title, description=description, expires_at=expires_at)
+
     alert_dict = alert.model_dump()
-    alert_dict['created_at'] = alert_dict['created_at'].isoformat()
-    if alert_dict.get('expires_at'):
-        alert_dict['expires_at'] = alert_dict['expires_at'].isoformat()
-    
+    alert_dict["created_at"] = alert_dict["created_at"].isoformat()
+    if alert_dict.get("expires_at"):
+        alert_dict["expires_at"] = alert_dict["expires_at"].isoformat()
+
     await db.guest_alerts.insert_one(alert_dict)
-    
-    return {
-        'success': True,
-        'alert_id': alert.id,
-        'message': 'Guest alert created successfully'
-    }
+
+    return {"success": True, "alert_id": alert.id, "message": "Guest alert created successfully"}
+
+
+@router.delete("/frontdesk/guest-alerts/{alert_id}")
+async def delete_guest_alert(
+    alert_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
+):
+    result = await db.guest_alerts.delete_one({"id": alert_id, "tenant_id": current_user.tenant_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return {"success": True, "message": "Alert deleted"}
 
 
 # ============= HOUSEKEEPING ENHANCEMENTS =============
 
 
-
 @router.post("/self-checkin/generate-door-qr")
 async def generate_door_qr_code(
-    booking_id: str
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """
     Generate QR code for door lock
@@ -445,52 +1110,48 @@ async def generate_door_qr_code(
     - Time-limited access
     - Room entry tracking
     """
-    booking = await db.bookings.find_one({'id': booking_id})
-    
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id})
+
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
-    # Generate QR code data
-    # In production: Integrate with door lock system (Assa Abloy, Salto, Dormakaba)
+
     qr_data = {
-        'booking_id': booking_id,
-        'room_id': booking.get('room_id'),
-        'valid_from': booking.get('check_in'),
-        'valid_until': booking.get('check_out'),
-        'access_token': str(uuid.uuid4()),
-        'generated_at': datetime.now(timezone.utc).isoformat()
+        "booking_id": booking_id,
+        "room_id": booking.get("room_id"),
+        "valid_from": booking.get("check_in"),
+        "valid_until": booking.get("check_out"),
+        "access_token": str(uuid.uuid4()),
+        "generated_at": datetime.now(UTC).isoformat(),
     }
-    
-    # Generate QR code image
+
     import qrcode
+
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(json.dumps(qr_data))
     qr.make(fit=True)
-    
-    # Convert to base64
+
     img = qr.make_image(fill_color="black", back_color="white")
     buffered = io.BytesIO()
     img.save(buffered, format="PNG")
     qr_base64 = base64.b64encode(buffered.getvalue()).decode()
-    
+
     return {
-        'success': True,
-        'booking_id': booking_id,
-        'qr_code_base64': qr_base64,
-        'qr_data': qr_data,
-        'valid_from': qr_data['valid_from'],
-        'valid_until': qr_data['valid_until'],
-        'note': 'In production: Integrate with door lock system API (Assa Abloy, Salto, Dormakaba)'
+        "success": True,
+        "booking_id": booking_id,
+        "qr_code_base64": qr_base64,
+        "qr_data": qr_data,
+        "valid_from": qr_data["valid_from"],
+        "valid_until": qr_data["valid_until"],
     }
-
-
 
 
 @router.post("/self-checkin/digital-signature")
 async def capture_digital_signature(
     booking_id: str,
     signature_base64: str,
-    registration_card_data: Dict[str, Any]
+    registration_card_data: dict[str, Any],
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """
     Capture digital signature
@@ -498,42 +1159,34 @@ async def capture_digital_signature(
     - Legally binding
     - Stored with booking
     """
-    booking = await db.bookings.find_one({'id': booking_id})
-    
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id})
+
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
-    # Store signature
+
     signature_record = {
-        'id': str(uuid.uuid4()),
-        'booking_id': booking_id,
-        'signature_base64': signature_base64,
-        'registration_card_data': registration_card_data,
-        'signed_at': datetime.now(timezone.utc).isoformat(),
-        'ip_address': None,  # From request in production
-        'device_type': 'kiosk'
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "booking_id": booking_id,
+        "signature_base64": signature_base64,
+        "registration_card_data": registration_card_data,
+        "signed_at": datetime.now(UTC).isoformat(),
+        "ip_address": None,
+        "device_type": "kiosk",
     }
-    
+
     await db.digital_signatures.insert_one(signature_record)
-    
-    # Update booking
-    await db.bookings.update_one(
-        {'id': booking_id},
-        {'$set': {'digital_signature_id': signature_record['id']}}
-    )
-    
-    return {
-        'success': True,
-        'signature_id': signature_record['id'],
-        'message': 'Digital signature captured successfully'
-    }
 
+    await db.bookings.update_one({"id": booking_id, "tenant_id": current_user.tenant_id}, {"$set": {"digital_signature_id": signature_record["id"]}})
 
+    return {"success": True, "signature_id": signature_record["id"], "message": "Digital signature captured successfully"}
 
 
 @router.post("/self-checkin/police-notification")
 async def auto_police_notification(
-    booking_id: str
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """
     Automatic police notification
@@ -541,53 +1194,52 @@ async def auto_police_notification(
     - Guest ID information
     - Automated submission
     """
-    booking = await db.bookings.find_one({'id': booking_id})
-    
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": current_user.tenant_id})
+
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    
-    guest = await db.guests.find_one({'id': booking.get('guest_id')})
-    
+
+    from security.encrypted_lookup import decrypt_guest_doc
+
+    guest = decrypt_guest_doc(await db.guests.find_one({"id": booking.get("guest_id"), "tenant_id": current_user.tenant_id}))
+
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
-    
-    # In production: Integrate with local police registration system
-    # Turkey: GIYBIS, Italy: Alloggiati Web, etc.
-    
+
     notification_data = {
-        'id': str(uuid.uuid4()),
-        'booking_id': booking_id,
-        'guest_name': guest.get('name'),
-        'guest_id_number': guest.get('id_number'),
-        'nationality': guest.get('nationality'),
-        'check_in': booking.get('check_in'),
-        'check_out': booking.get('check_out'),
-        'room_number': None,  # Get from room
-        'submitted_at': datetime.now(timezone.utc).isoformat(),
-        'status': 'submitted',
-        'reference_number': f"POL-{uuid.uuid4().hex[:8].upper()}"
+        "id": str(uuid.uuid4()),
+        "booking_id": booking_id,
+        "guest_name": guest.get("name"),
+        "guest_id_number": guest.get("id_number"),
+        "nationality": guest.get("nationality"),
+        "check_in": booking.get("check_in"),
+        "check_out": booking.get("check_out"),
+        "room_number": None,  # Get from room
+        "submitted_at": datetime.now(UTC).isoformat(),
+        "status": "submitted",
+        "reference_number": f"POL-{uuid.uuid4().hex[:8].upper()}",
     }
-    
+
     await db.police_notifications.insert_one(notification_data)
-    
+
     return {
-        'success': True,
-        'notification_id': notification_data['id'],
-        'reference_number': notification_data['reference_number'],
-        'status': 'submitted',
-        'message': 'Police notification submitted successfully',
-        'note': 'In production: Integrate with local police system (GIYBIS, Alloggiati Web, etc.)'
+        "success": True,
+        "notification_id": notification_data["id"],
+        "reference_number": notification_data["reference_number"],
+        "status": "submitted",
+        "message": "Police notification submitted successfully",
+        "note": "In production: Integrate with local police system (GIYBIS, Alloggiati Web, etc.)",
     }
 
 
 # ============= NIGHT AUDIT SYSTEM =============
 
 
-
 @router.post("/keycard/issue")
 async def issue_keycard(
     request: KeycardIssueRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Issue a new keycard for a booking"""
     ctx = OperationContext.from_user(current_user)
@@ -602,7 +1254,8 @@ async def issue_keycard(
 async def deactivate_keycard(
     keycard_id: str,
     reason: str = "checkout",
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_module_v97("frontdesk")),  # v97 DW
 ):
     """Deactivate/cancel a keycard"""
     ctx = OperationContext.from_user(current_user)
@@ -612,13 +1265,8 @@ async def deactivate_keycard(
     return result.data
 
 
-
-
 @router.get("/keycard/booking/{booking_id}")
-async def get_booking_keycards(
-    booking_id: str,
-    current_user: User = Depends(get_current_user)
-):
+async def get_booking_keycards(booking_id: str, current_user: User = Depends(get_current_user)):
     """Get all keycards for a booking"""
     ctx = OperationContext.from_user(current_user)
     result = await frontdesk_service.get_booking_keycards(ctx, booking_id)
@@ -657,5 +1305,3 @@ async def get_in_house_unified(current_user: User = Depends(get_current_user)):
 # ============================================================================
 # CLEANING REQUESTS - GUEST TO HOUSEKEEPING INTEGRATION
 # ============================================================================
-
-

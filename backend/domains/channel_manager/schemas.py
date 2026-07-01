@@ -2,11 +2,12 @@
 Channel Manager Domain — Schemas
 Request/response models extracted from channel_manager routers.
 """
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
-from datetime import datetime, timezone
-from enum import Enum
+
 import uuid
+from datetime import UTC, datetime
+from enum import Enum
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CMActorType(str, Enum):
@@ -33,10 +34,10 @@ class APIKeyModel(BaseModel):
     key_hash: str
     actor_type: CMActorType = CMActorType.agency
     is_active: bool = True
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    created_by: Optional[str] = None
-    last_used_at: Optional[str] = None
-    scopes: List[str] = ["cm:read", "cm:write"]
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    created_by: str | None = None
+    last_used_at: str | None = None
+    scopes: list[str] = ["cm:read", "cm:write"]
 
 
 class CMRestrictions(BaseModel):
@@ -44,16 +45,16 @@ class CMRestrictions(BaseModel):
     min_stay: int = 1
     cta: bool = False
     ctd: bool = False
-    max_stay: Optional[int] = None
+    max_stay: int | None = None
 
 
 class CMRateInfo(BaseModel):
-    amount: Optional[float] = None
+    amount: float | None = None
     currency: str = "TRY"
     tax_included: bool = True
-    source: Optional[str] = None
-    rate_plan_id: Optional[str] = None
-    board_code: Optional[str] = None
+    source: str | None = None
+    rate_plan_id: str | None = None
+    board_code: str | None = None
 
 
 class CMARIDay(BaseModel):
@@ -67,7 +68,7 @@ class CMARIDay(BaseModel):
 class CMARIRoomType(BaseModel):
     room_type_id: str
     name: str
-    days: List[CMARIDay]
+    days: list[CMARIDay]
 
 
 class CMARIV2Response(BaseModel):
@@ -75,7 +76,7 @@ class CMARIV2Response(BaseModel):
     currency: str = "TRY"
     date_from: str
     date_to: str
-    room_types: List[CMARIRoomType]
+    room_types: list[CMARIRoomType]
 
 
 class CMARIResponseDay(BaseModel):
@@ -84,26 +85,26 @@ class CMARIResponseDay(BaseModel):
     available: int
     sold: int
     stop_sell: bool = False
-    rate: Optional[float] = None
+    rate: float | None = None
     currency: str = "TRY"
-    rate_source: Optional[str] = None
+    rate_source: str | None = None
 
 
 class CMARIResponse(BaseModel):
     tenant_id: str
     start_date: str
     end_date: str
-    days: List[CMARIResponseDay]
+    days: list[CMARIResponseDay]
 
 
 class ChannelConnectionCreate(BaseModel):
     channel_name: str
     channel_type: str = "ota"
-    api_key: Optional[str] = None
-    api_secret: Optional[str] = None
-    hotel_id: Optional[str] = None
-    property_code: Optional[str] = None
-    endpoint_url: Optional[str] = None
+    api_key: str | None = None
+    api_secret: str | None = None
+    hotel_id: str | None = None
+    property_code: str | None = None
+    endpoint_url: str | None = None
     is_active: bool = True
     sync_inventory: bool = True
     sync_rates: bool = True

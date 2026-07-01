@@ -16,25 +16,28 @@ Endpoints:
   GET  /api/channel-manager/reconciliation/metrics       — Reconciliation metrics
   GET  /api/channel-manager/reconciliation/worker/status — Worker status
 """
+
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from core.security import get_current_user
-from models.schemas import User
 from core.database import db
-
+from core.security import get_current_user
 from domains.channel_manager import unified_repository as repo
 from domains.channel_manager.data_model import (
-    CaseStatus, COLL_RECONCILIATION_CASES,
+    COLL_RECONCILIATION_CASES,
+    CaseStatus,
 )
+from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v101 DW
+
 from .reconciliation_worker import (
+    get_reconciliation_worker_state,
     reconciliation_run_once,
     reconciliation_run_with_snapshots,
-    get_reconciliation_worker_state,
 )
 
 logger = logging.getLogger("reconciliation.router")
@@ -48,6 +51,7 @@ router = APIRouter(
 
 
 # ── Request Models ────────────────────────────────────────────────────
+
 
 class ResolveCaseRequest(BaseModel):
     resolution: str
@@ -64,23 +68,24 @@ class AcknowledgeCaseRequest(BaseModel):
 class RunWithSnapshotsRequest(BaseModel):
     provider: str
     property_id: str = "prop-001"
-    snapshots: List[Dict[str, Any]] = Field(default_factory=list)
+    snapshots: list[dict[str, Any]] = Field(default_factory=list)
 
 
 # ── List Cases ────────────────────────────────────────────────────────
 
+
 @router.get("/cases")
 async def list_reconciliation_cases(
-    property_id: Optional[str] = None,
-    provider: Optional[str] = None,
-    status: Optional[str] = Query(None),
-    case_type: Optional[str] = None,
-    severity: Optional[str] = None,
+    property_id: str | None = None,
+    provider: str | None = None,
+    status: str | None = Query(None),
+    case_type: str | None = None,
+    severity: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
     """List reconciliation cases with filters."""
-    q: Dict[str, Any] = {"tenant_id": current_user.tenant_id}
+    q: dict[str, Any] = {"tenant_id": current_user.tenant_id}
     if property_id:
         q["property_id"] = property_id
     if provider:
@@ -92,14 +97,22 @@ async def list_reconciliation_cases(
     if severity:
         q["severity"] = severity
 
-    cases = await db[COLL_RECONCILIATION_CASES].find(
-        q, _NO_ID,
-    ).sort("created_at", -1).limit(limit).to_list(limit)
+    cases = (
+        await db[COLL_RECONCILIATION_CASES]
+        .find(
+            q,
+            _NO_ID,
+        )
+        .sort("created_at", -1)
+        .limit(limit)
+        .to_list(limit)
+    )
 
     return {"cases": cases, "count": len(cases)}
 
 
 # ── Get Case Detail ───────────────────────────────────────────────────
+
 
 @router.get("/cases/{case_id}")
 async def get_case_detail(
@@ -115,11 +128,13 @@ async def get_case_detail(
 
 # ── Resolve Case ──────────────────────────────────────────────────────
 
+
 @router.post("/cases/{case_id}/resolve")
 async def resolve_case(
     case_id: str,
     req: ResolveCaseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Resolve a reconciliation case."""
     case = await repo.get_reconciliation_case(current_user.tenant_id, case_id)
@@ -128,22 +143,27 @@ async def resolve_case(
     if case.get("status") in ["resolved", "ignored", "dismissed"]:
         raise HTTPException(status_code=400, detail="Case already closed")
 
-    await repo.update_reconciliation_case(case_id, {
-        "status": CaseStatus.RESOLVED.value,
-        "resolution": req.resolution,
-        "resolved_by": current_user.id,
-        "resolved_at": datetime.now(timezone.utc).isoformat(),
-    })
+    await repo.update_reconciliation_case(
+        case_id,
+        {
+            "status": CaseStatus.RESOLVED.value,
+            "resolution": req.resolution,
+            "resolved_by": current_user.id,
+            "resolved_at": datetime.now(UTC).isoformat(),
+        },
+    )
     return {"message": "Case resolved", "case_id": case_id}
 
 
 # ── Ignore Case ───────────────────────────────────────────────────────
+
 
 @router.post("/cases/{case_id}/ignore")
 async def ignore_case(
     case_id: str,
     req: IgnoreCaseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Ignore a reconciliation case."""
     case = await repo.get_reconciliation_case(current_user.tenant_id, case_id)
@@ -152,45 +172,55 @@ async def ignore_case(
     if case.get("status") in ["resolved", "ignored", "dismissed"]:
         raise HTTPException(status_code=400, detail="Case already closed")
 
-    await repo.update_reconciliation_case(case_id, {
-        "status": CaseStatus.IGNORED.value,
-        "dismiss_reason": req.reason,
-        "resolved_by": current_user.id,
-        "resolved_at": datetime.now(timezone.utc).isoformat(),
-    })
+    await repo.update_reconciliation_case(
+        case_id,
+        {
+            "status": CaseStatus.IGNORED.value,
+            "dismiss_reason": req.reason,
+            "resolved_by": current_user.id,
+            "resolved_at": datetime.now(UTC).isoformat(),
+        },
+    )
     return {"message": "Case ignored", "case_id": case_id}
 
 
 # ── Acknowledge Case ─────────────────────────────────────────────────
+
 
 @router.post("/cases/{case_id}/acknowledge")
 async def acknowledge_case(
     case_id: str,
     req: AcknowledgeCaseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Acknowledge a case (mark as under review)."""
     case = await repo.get_reconciliation_case(current_user.tenant_id, case_id)
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
 
-    await repo.update_reconciliation_case(case_id, {
-        "status": CaseStatus.ACKNOWLEDGED.value,
-        "details": {
-            **(case.get("details") or {}),
-            "acknowledged_by": current_user.id,
-            "acknowledged_at": datetime.now(timezone.utc).isoformat(),
-            "acknowledge_note": req.note,
+    await repo.update_reconciliation_case(
+        case_id,
+        {
+            "status": CaseStatus.ACKNOWLEDGED.value,
+            "details": {
+                **(case.get("details") or {}),
+                "acknowledged_by": current_user.id,
+                "acknowledged_at": datetime.now(UTC).isoformat(),
+                "acknowledge_note": req.note,
+            },
         },
-    })
+    )
     return {"message": "Case acknowledged", "case_id": case_id}
 
 
 # ── Trigger Manual Run ────────────────────────────────────────────────
 
+
 @router.post("/run")
 async def trigger_reconciliation(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Trigger a manual reconciliation run across all providers."""
     result = await reconciliation_run_once()
@@ -199,10 +229,12 @@ async def trigger_reconciliation(
 
 # ── Run With Snapshots (Test) ─────────────────────────────────────────
 
+
 @router.post("/run-with-snapshots")
 async def run_with_snapshots(
     req: RunWithSnapshotsRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """
     Run reconciliation with explicitly provided provider snapshots.
@@ -219,16 +251,17 @@ async def run_with_snapshots(
 
 # ── Dashboard Data ────────────────────────────────────────────────────
 
+
 @router.get("/dashboard")
 async def get_dashboard_data(
-    provider: Optional[str] = None,
+    provider: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """Get comprehensive dashboard data for reconciliation."""
     tenant_id = current_user.tenant_id
 
     # Open cases count
-    open_q: Dict[str, Any] = {
+    open_q: dict[str, Any] = {
         "tenant_id": tenant_id,
         "status": {"$in": ["open", "acknowledged"]},
     }
@@ -240,7 +273,7 @@ async def get_dashboard_data(
         {"$match": open_q},
         {"$group": {"_id": "$severity", "count": {"$sum": 1}}},
     ]
-    severity_counts: Dict[str, int] = {}
+    severity_counts: dict[str, int] = {}
     async for doc in db[COLL_RECONCILIATION_CASES].aggregate(severity_pipeline):
         severity_counts[doc["_id"]] = doc["count"]
 
@@ -249,7 +282,7 @@ async def get_dashboard_data(
         {"$match": open_q},
         {"$group": {"_id": "$provider", "count": {"$sum": 1}}},
     ]
-    provider_breakdown: Dict[str, int] = {}
+    provider_breakdown: dict[str, int] = {}
     async for doc in db[COLL_RECONCILIATION_CASES].aggregate(provider_pipeline):
         provider_breakdown[doc["_id"]] = doc["count"]
 
@@ -258,15 +291,21 @@ async def get_dashboard_data(
         {"$match": open_q},
         {"$group": {"_id": "$case_type", "count": {"$sum": 1}}},
     ]
-    type_breakdown: Dict[str, int] = {}
+    type_breakdown: dict[str, int] = {}
     async for doc in db[COLL_RECONCILIATION_CASES].aggregate(type_pipeline):
         type_breakdown[doc["_id"]] = doc["count"]
 
     # Recent cases (last 20)
-    recent_cases = await db[COLL_RECONCILIATION_CASES].find(
-        {"tenant_id": tenant_id} | ({"provider": provider} if provider else {}),
-        _NO_ID,
-    ).sort("created_at", -1).limit(20).to_list(20)
+    recent_cases = (
+        await db[COLL_RECONCILIATION_CASES]
+        .find(
+            {"tenant_id": tenant_id} | ({"provider": provider} if provider else {}),
+            _NO_ID,
+        )
+        .sort("created_at", -1)
+        .limit(20)
+        .to_list(20)
+    )
 
     total_open = sum(severity_counts.values())
 
@@ -282,6 +321,7 @@ async def get_dashboard_data(
 
 # ── Metrics ───────────────────────────────────────────────────────────
 
+
 @router.get("/metrics")
 async def get_reconciliation_metrics(
     current_user: User = Depends(get_current_user),
@@ -294,7 +334,7 @@ async def get_reconciliation_metrics(
         {"$match": {"tenant_id": tenant_id}},
         {"$group": {"_id": "$status", "count": {"$sum": 1}}},
     ]
-    by_status: Dict[str, int] = {}
+    by_status: dict[str, int] = {}
     async for doc in db[COLL_RECONCILIATION_CASES].aggregate(status_pipeline):
         by_status[doc["_id"]] = doc["count"]
 
@@ -303,7 +343,7 @@ async def get_reconciliation_metrics(
         {"$match": {"tenant_id": tenant_id, "status": {"$in": ["open", "acknowledged"]}}},
         {"$group": {"_id": "$case_type", "count": {"$sum": 1}}},
     ]
-    mismatch_counts: Dict[str, int] = {}
+    mismatch_counts: dict[str, int] = {}
     async for doc in db[COLL_RECONCILIATION_CASES].aggregate(mismatch_pipeline):
         mismatch_counts[doc["_id"]] = doc["count"]
 
@@ -325,6 +365,7 @@ async def get_reconciliation_metrics(
 
 
 # ── Worker Status ─────────────────────────────────────────────────────
+
 
 @router.get("/worker/status")
 async def get_worker_status(

@@ -2,28 +2,28 @@
 Input Sanitization & Validation Utilities
 XSS, NoSQL injection, ve path traversal koruması
 """
-import re
-import html
-from typing import Any
 
+import html
+import re
+from typing import Any
 
 # NoSQL injection patterns
 NOSQL_PATTERNS = [
-    re.compile(r'\$(?:gt|gte|lt|lte|ne|in|nin|and|or|not|nor|exists|type|regex|where|all|elemMatch|size|mod|text|search)', re.I),
-    re.compile(r'\{.*\$.*\}'),
+    re.compile(r"\$(?:gt|gte|lt|lte|ne|in|nin|and|or|not|nor|exists|type|regex|where|all|elemMatch|size|mod|text|search)", re.I),
+    re.compile(r"\{.*\$.*\}"),
 ]
 
 # Path traversal patterns
-PATH_TRAVERSAL = re.compile(r'\.\.[\\/]|[\\/]\.\.|\.\./|\.\.\\')
+PATH_TRAVERSAL = re.compile(r"\.\.[\\/]|[\\/]\.\.|\.\./|\.\.\\")
 
 # Script injection patterns
 XSS_PATTERNS = [
-    re.compile(r'<script[^>]*>', re.I),
-    re.compile(r'javascript\s*:', re.I),
-    re.compile(r'on\w+\s*=', re.I),
-    re.compile(r'<iframe[^>]*>', re.I),
-    re.compile(r'<object[^>]*>', re.I),
-    re.compile(r'<embed[^>]*>', re.I),
+    re.compile(r"<script[^>]*>", re.I),
+    re.compile(r"javascript\s*:", re.I),
+    re.compile(r"on\w+\s*=", re.I),
+    re.compile(r"<iframe[^>]*>", re.I),
+    re.compile(r"<object[^>]*>", re.I),
+    re.compile(r"<embed[^>]*>", re.I),
 ]
 
 
@@ -36,6 +36,29 @@ def sanitize_string(value: str, max_length: int = 10000) -> str:
     return value.strip()
 
 
+# Strip-only sanitizer for fields that will be embedded in XML/UBL documents
+# (e.g. e-Fatura customer_name). HTML escape is not enough — leftover </Name>
+# or <Party> fragments still corrupt UBL signature scope.
+_TAG_STRIP_RE = re.compile(r"<[^>]*>")
+_CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def sanitize_plaintext(value: Any, max_length: int = 500) -> Any:
+    """
+    Strip ALL XML/HTML tags and control chars; keep readable plain text.
+    Safe for invoice customer fields, supplier names, addresses — anything
+    that may end up in a UBL XML envelope or a PDF / on-screen label.
+    """
+    if value is None:
+        return value
+    if not isinstance(value, str):
+        return value
+    cleaned = _TAG_STRIP_RE.sub("", value)
+    cleaned = _CTRL_RE.sub("", cleaned)
+    cleaned = cleaned.strip()
+    return cleaned[:max_length]
+
+
 def check_nosql_injection(value: Any) -> bool:
     """Check if value contains NoSQL injection patterns. Returns True if suspicious."""
     if isinstance(value, str):
@@ -44,7 +67,7 @@ def check_nosql_injection(value: Any) -> bool:
                 return True
     elif isinstance(value, dict):
         for k, v in value.items():
-            if isinstance(k, str) and k.startswith('$'):
+            if isinstance(k, str) and k.startswith("$"):
                 return True
             if check_nosql_injection(v):
                 return True
@@ -76,36 +99,34 @@ def sanitize_dict(data: dict, max_depth: int = 5) -> dict:
     """Recursively sanitize a dictionary of input data."""
     if max_depth <= 0:
         return data
-    
+
     cleaned = {}
     for key, value in data.items():
         # Sanitize keys
         clean_key = str(key)[:100]
-        
+
         if isinstance(value, str):
             cleaned[clean_key] = sanitize_string(value)
         elif isinstance(value, dict):
             cleaned[clean_key] = sanitize_dict(value, max_depth - 1)
         elif isinstance(value, list):
             cleaned[clean_key] = [
-                sanitize_string(v) if isinstance(v, str)
-                else sanitize_dict(v, max_depth - 1) if isinstance(v, dict)
-                else v
+                sanitize_string(v) if isinstance(v, str) else sanitize_dict(v, max_depth - 1) if isinstance(v, dict) else v
                 for v in value[:1000]  # Limit list size
             ]
         else:
             cleaned[clean_key] = value
-    
+
     return cleaned
 
 
 def validate_email(email: str) -> bool:
     """Basic email validation."""
-    pattern = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+    pattern = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
     return bool(pattern.match(email)) and len(email) <= 254
 
 
 def validate_phone(phone: str) -> bool:
     """Basic phone validation."""
-    cleaned = re.sub(r'[\s\-\(\)\+]', '', phone)
+    cleaned = re.sub(r"[\s\-\(\)\+]", "", phone)
     return cleaned.isdigit() and 7 <= len(cleaned) <= 15

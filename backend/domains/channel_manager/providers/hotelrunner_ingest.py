@@ -7,10 +7,11 @@ Architecture:
   Schema Normalizer → Decision Engine → PMS ReservationService →
   Folio/Allocation/Availability → Audit Log
 """
+
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional, Literal
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -19,7 +20,8 @@ logger = logging.getLogger(__name__)
 
 # ── Canonical Reservation Model ──────────────────────────────────────
 
-def normalize_reservation(raw: Dict[str, Any], source: str = "webhook") -> Dict[str, Any]:
+
+def normalize_reservation(raw: dict[str, Any], source: str = "webhook") -> dict[str, Any]:
     """
     Convert HotelRunner reservation payload to canonical PMS format.
     PMS should never see HotelRunner-specific field names.
@@ -29,16 +31,18 @@ def normalize_reservation(raw: Dict[str, Any], source: str = "webhook") -> Dict[
 
     room_details = []
     for room in rooms:
-        room_details.append({
-            "room_type_code": room.get("room_code", ""),
-            "rate_plan_code": room.get("rate_code", ""),
-            "room_name": room.get("room_name", ""),
-            "adults": room.get("adults", 1),
-            "children": room.get("children", 0),
-            "amount": room.get("total"),
-            "daily_rates": room.get("daily_rates", []),
-            "guest_name": room.get("guest", ""),
-        })
+        room_details.append(
+            {
+                "room_type_code": room.get("room_code", ""),
+                "rate_plan_code": room.get("rate_code", ""),
+                "room_name": room.get("room_name", ""),
+                "adults": room.get("adults", 1),
+                "children": room.get("children", 0),
+                "amount": room.get("total"),
+                "daily_rates": room.get("daily_rates", []),
+                "guest_name": room.get("guest", ""),
+            }
+        )
 
     # Map HotelRunner status to canonical status
     hr_state = (raw.get("state") or "").lower()
@@ -96,7 +100,7 @@ def normalize_reservation(raw: Dict[str, Any], source: str = "webhook") -> Dict[
     }
 
 
-def _calc_nights(checkin: Optional[str], checkout: Optional[str]) -> int:
+def _calc_nights(checkin: str | None, checkout: str | None) -> int:
     if not checkin or not checkout:
         return 0
     try:
@@ -118,48 +122,54 @@ def _parse_float(val) -> float:
 
 # ── Raw Event Store ──────────────────────────────────────────────────
 
+
 async def store_raw_event(
     tenant_id: str,
     event_type: str,
     hr_number: str,
     channel: str,
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     source: str = "webhook",
 ) -> str:
     """Store raw event for replay, audit, and debugging."""
     event_id = str(uuid.uuid4())
-    await db.hotelrunner_raw_events.insert_one({
-        "id": event_id,
-        "tenant_id": tenant_id,
-        "provider": "hotelrunner",
-        "event_type": event_type,
-        "hr_number": hr_number,
-        "channel": channel,
-        "source": source,
-        "payload": payload,
-        "received_at": datetime.now(timezone.utc).isoformat(),
-        "processed_at": None,
-        "status": "pending",
-        "error_message": None,
-        "retry_count": 0,
-    })
+    await db.hotelrunner_raw_events.insert_one(
+        {
+            "id": event_id,
+            "tenant_id": tenant_id,
+            "provider": "hotelrunner",
+            "event_type": event_type,
+            "hr_number": hr_number,
+            "channel": channel,
+            "source": source,
+            "payload": payload,
+            "received_at": datetime.now(UTC).isoformat(),
+            "processed_at": None,
+            "status": "pending",
+            "error_message": None,
+            "retry_count": 0,
+        }
+    )
     return event_id
 
 
-async def mark_event_processed(event_id: str, status: str = "processed", error: Optional[str] = None):
+async def mark_event_processed(event_id: str, status: str = "processed", error: str | None = None):
     await db.hotelrunner_raw_events.update_one(
         {"id": event_id},
-        {"$set": {
-            "processed_at": datetime.now(timezone.utc).isoformat(),
-            "status": status,
-            "error_message": error,
-        }},
+        {
+            "$set": {
+                "processed_at": datetime.now(UTC).isoformat(),
+                "status": status,
+                "error_message": error,
+            }
+        },
     )
 
 
 # ── Idempotency Guard ────────────────────────────────────────────────
 
-async def check_idempotency(tenant_id: str, hr_number: str, channel: str, event_type: str) -> Dict[str, Any]:
+
+async def check_idempotency(tenant_id: str, hr_number: str, channel: str, event_type: str) -> dict[str, Any]:
     """
     Two-layer idempotency:
     1. Reservation identity: provider + hr_number + channel
@@ -191,12 +201,13 @@ async def check_idempotency(tenant_id: str, hr_number: str, channel: str, event_
 
 # ── Reservation Decision Engine ──────────────────────────────────────
 
+
 async def process_reservation(
     tenant_id: str,
-    canonical: Dict[str, Any],
+    canonical: dict[str, Any],
     event_type: str,
     event_id: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Decision engine: create / update / cancel / skip / pending_mapping
     """
@@ -216,7 +227,7 @@ async def process_reservation(
     has_mapping = await _check_room_mapping(tenant_id, canonical["rooms"])
 
     # 3. Build reservation document
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     res_doc = {
         "tenant_id": tenant_id,
         "hr_number": hr_number,
@@ -276,13 +287,15 @@ async def process_reservation(
     elif action == "cancel":
         await db.hotelrunner_reservations.update_one(
             {"tenant_id": tenant_id, "hr_number": hr_number},
-            {"$set": {
-                "state": "cancelled",
-                "pms_status": "cancellation_pending",
-                "cancelled_at": now,
-                "synced_at": now,
-                "raw_event_id": event_id,
-            }},
+            {
+                "$set": {
+                    "state": "cancelled",
+                    "pms_status": "cancellation_pending",
+                    "cancelled_at": now,
+                    "synced_at": now,
+                    "raw_event_id": event_id,
+                }
+            },
         )
         await mark_event_processed(event_id, "processed")
 
@@ -301,10 +314,12 @@ async def _check_room_mapping(tenant_id: str, rooms: list) -> bool:
         hr_code = room.get("room_type_code", "")
         if not hr_code:
             continue
-        mapping = await db.hotelrunner_room_mappings.find_one({
-            "tenant_id": tenant_id,
-            "hr_inv_code": hr_code,
-        })
+        mapping = await db.hotelrunner_room_mappings.find_one(
+            {
+                "tenant_id": tenant_id,
+                "hr_inv_code": hr_code,
+            }
+        )
         if not mapping:
             return False
     return True
@@ -312,12 +327,13 @@ async def _check_room_mapping(tenant_id: str, rooms: list) -> bool:
 
 # ── Full Ingest Pipeline (Entry Point) ───────────────────────────────
 
+
 async def ingest_reservation(
     tenant_id: str,
-    raw_payload: Dict[str, Any],
+    raw_payload: dict[str, Any],
     event_type: str = "reservation",
     source: str = "webhook",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Full ingest pipeline entry point.
     Raw Store → Normalize → Idempotency → Decision → Import

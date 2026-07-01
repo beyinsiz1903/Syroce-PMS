@@ -4,12 +4,12 @@ Provider Test Harness — Validation checklists for HotelRunner and Exely.
 Each step is independently testable. Used for sandbox and live provider validation.
 Returns structured results for dashboard display.
 """
+
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
-from .events import ARIChangeEvent, ARIDelta, ProviderResult
+from .events import ARIDelta
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,7 @@ def get_checklist(provider: str) -> list:
 
 # ── HotelRunner Test Runner ─────────────────────────────────────────
 
+
 class HotelRunnerTestRunner:
     """Runs each checklist step against HotelRunner's sandbox/live API."""
 
@@ -66,7 +67,7 @@ class HotelRunnerTestRunner:
                 "duration_ms": duration,
                 "detail": result.get("detail", ""),
                 "data": result.get("data"),
-                "tested_at": datetime.now(timezone.utc).isoformat(),
+                "tested_at": datetime.now(UTC).isoformat(),
             }
         except Exception as e:
             duration = int((time.time() - start) * 1000)
@@ -75,7 +76,7 @@ class HotelRunnerTestRunner:
                 "success": False,
                 "duration_ms": duration,
                 "detail": f"Exception: {str(e)}",
-                "tested_at": datetime.now(timezone.utc).isoformat(),
+                "tested_at": datetime.now(UTC).isoformat(),
             }
 
     async def run_all(self) -> list:
@@ -86,13 +87,15 @@ class HotelRunnerTestRunner:
             if not r["success"] and item["step"] == "connect":
                 # Can't continue without connection
                 for remaining in HOTELRUNNER_CHECKLIST[1:]:
-                    results.append({
-                        "step": remaining["step"],
-                        "success": False,
-                        "duration_ms": 0,
-                        "detail": "Skipped: connection failed",
-                        "tested_at": datetime.now(timezone.utc).isoformat(),
-                    })
+                    results.append(
+                        {
+                            "step": remaining["step"],
+                            "success": False,
+                            "duration_ms": 0,
+                            "detail": "Skipped: connection failed",
+                            "tested_at": datetime.now(UTC).isoformat(),
+                        }
+                    )
                 break
         return results
 
@@ -133,13 +136,16 @@ class HotelRunnerTestRunner:
             return {"success": True, "detail": "DRY-RUN: Availability push would send to /inventory/update"}
         delta = ARIDelta(
             provider="hotelrunner",
-            tenant_id="test", property_id="test",
+            tenant_id="test",
+            property_id="test",
             change_scope="availability",
             room_type_code="STD",
-            date_from="2026-12-01", date_to="2026-12-01",
+            date_from="2026-12-01",
+            date_to="2026-12-01",
             payload={"availability": 10},
         )
         from .adapters.hotelrunner_ari_adapter import HotelRunnerARIAdapter
+
         adapter = HotelRunnerARIAdapter(provider_client=self._client)
         result = await adapter.push_availability(delta)
         return {"success": result.success, "detail": f"Status: {result.status_code}, Duration: {result.duration_ms}ms"}
@@ -149,13 +155,17 @@ class HotelRunnerTestRunner:
             return {"success": True, "detail": "DRY-RUN: Rate push would send to /rates/update"}
         delta = ARIDelta(
             provider="hotelrunner",
-            tenant_id="test", property_id="test",
+            tenant_id="test",
+            property_id="test",
             change_scope="rate",
-            room_type_code="STD", rate_plan_code="BAR",
-            date_from="2026-12-01", date_to="2026-12-01",
+            room_type_code="STD",
+            rate_plan_code="BAR",
+            date_from="2026-12-01",
+            date_to="2026-12-01",
             payload={"price": 500, "currency": "TRY"},
         )
         from .adapters.hotelrunner_ari_adapter import HotelRunnerARIAdapter
+
         adapter = HotelRunnerARIAdapter(provider_client=self._client)
         result = await adapter.push_rate(delta)
         return {"success": result.success, "detail": f"Status: {result.status_code}"}
@@ -165,13 +175,16 @@ class HotelRunnerTestRunner:
             return {"success": True, "detail": "DRY-RUN: Restriction push would send to /restrictions/update"}
         delta = ARIDelta(
             provider="hotelrunner",
-            tenant_id="test", property_id="test",
+            tenant_id="test",
+            property_id="test",
             change_scope="restriction",
             room_type_code="STD",
-            date_from="2026-12-01", date_to="2026-12-01",
+            date_from="2026-12-01",
+            date_to="2026-12-01",
             payload={"min_stay": 2, "cta": 0, "ctd": 0},
         )
         from .adapters.hotelrunner_ari_adapter import HotelRunnerARIAdapter
+
         adapter = HotelRunnerARIAdapter(provider_client=self._client)
         result = await adapter.push_restrictions(delta)
         return {"success": result.success, "detail": f"Status: {result.status_code}"}
@@ -183,6 +196,7 @@ class HotelRunnerTestRunner:
 
 
 # ── Exely Test Runner ────────────────────────────────────────────────
+
 
 class ExelyTestRunner:
     """Runs each checklist step against Exely's SOAP API."""
@@ -202,7 +216,7 @@ class ExelyTestRunner:
                 "duration_ms": duration,
                 "detail": result.get("detail", ""),
                 "data": result.get("data"),
-                "tested_at": datetime.now(timezone.utc).isoformat(),
+                "tested_at": datetime.now(UTC).isoformat(),
             }
         except Exception as e:
             duration = int((time.time() - start) * 1000)
@@ -211,7 +225,7 @@ class ExelyTestRunner:
                 "success": False,
                 "duration_ms": duration,
                 "detail": f"Exception: {str(e)}",
-                "tested_at": datetime.now(timezone.utc).isoformat(),
+                "tested_at": datetime.now(UTC).isoformat(),
             }
 
     async def run_all(self) -> list:
@@ -221,13 +235,15 @@ class ExelyTestRunner:
             results.append(r)
             if not r["success"] and item["step"] == "wsse_auth":
                 for remaining in EXELY_CHECKLIST[1:]:
-                    results.append({
-                        "step": remaining["step"],
-                        "success": False,
-                        "duration_ms": 0,
-                        "detail": "Skipped: WSSE authentication failed",
-                        "tested_at": datetime.now(timezone.utc).isoformat(),
-                    })
+                    results.append(
+                        {
+                            "step": remaining["step"],
+                            "success": False,
+                            "duration_ms": 0,
+                            "detail": "Skipped: WSSE authentication failed",
+                            "tested_at": datetime.now(UTC).isoformat(),
+                        }
+                    )
                 break
         return results
 
@@ -255,13 +271,16 @@ class ExelyTestRunner:
             return {"success": True, "detail": "DRY-RUN: OTA_HotelAvailNotifRQ would push availability to Exely"}
         delta = ARIDelta(
             provider="exely",
-            tenant_id="test", property_id="test",
+            tenant_id="test",
+            property_id="test",
             change_scope="availability",
             room_type_code="STD",
-            date_from="2026-12-01", date_to="2026-12-01",
+            date_from="2026-12-01",
+            date_to="2026-12-01",
             payload={"BookingLimit": 10},
         )
         from .adapters.exely_ari_adapter import ExelyARIAdapter
+
         adapter = ExelyARIAdapter(exely_client=self._client)
         result = await adapter.push_availability(delta)
         return {"success": result.success, "detail": f"Status: {result.status_code}"}
@@ -271,13 +290,17 @@ class ExelyTestRunner:
             return {"success": True, "detail": "DRY-RUN: OTA_HotelRateAmountNotifRQ would push rates to Exely"}
         delta = ARIDelta(
             provider="exely",
-            tenant_id="test", property_id="test",
+            tenant_id="test",
+            property_id="test",
             change_scope="rate",
-            room_type_code="STD", rate_plan_code="BAR",
-            date_from="2026-12-01", date_to="2026-12-01",
+            room_type_code="STD",
+            rate_plan_code="BAR",
+            date_from="2026-12-01",
+            date_to="2026-12-01",
             payload={"AmountAfterTax": "500.00", "CurrencyCode": "TRY"},
         )
         from .adapters.exely_ari_adapter import ExelyARIAdapter
+
         adapter = ExelyARIAdapter(exely_client=self._client)
         result = await adapter.push_rate(delta)
         return {"success": result.success, "detail": f"Status: {result.status_code}"}

@@ -2,25 +2,26 @@
 Common — Normalized API Response Helpers
 Standardised response envelope for all domain endpoints.
 """
-from datetime import datetime, timezone
-from typing import Any, Optional
+
+from datetime import UTC, datetime
+from typing import Any
 
 
 def api_response(
     data: Any = None,
     *,
     status: str = "ok",
-    message: Optional[str] = None,
+    message: str | None = None,
     severity: str = "info",
-    correlation_id: Optional[str] = None,
-    action_available: Optional[str] = None,
-    suggested_action: Optional[str] = None,
+    correlation_id: str | None = None,
+    action_available: str | None = None,
+    suggested_action: str | None = None,
 ):
     """Build a normalized API response dict."""
     resp = {
         "status": status,
         "severity": severity,
-        "last_updated_at": datetime.now(timezone.utc).isoformat(),
+        "last_updated_at": datetime.now(UTC).isoformat(),
     }
     if data is not None:
         resp["data"] = data
@@ -35,7 +36,7 @@ def api_response(
     return resp
 
 
-def from_service_result(result, *, correlation_id: Optional[str] = None):
+def from_service_result(result, *, correlation_id: str | None = None):
     """Convert a ServiceResult to a normalized API response."""
     if result.ok:
         return api_response(

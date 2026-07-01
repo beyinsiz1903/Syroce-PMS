@@ -1,0 +1,23 @@
+node_modules/
+.expo/
+dist/
+.unit-build/
+web-build/
+*.log
+.env
+.env.local
+
+# F10A mobile smoke — generated local reports (NOT official artifact;
+# official F10A evidence = GitHub Actions `mobile-web-smoke-report`)
+e2e/playwright-mobile-smoke-report/
+e2e/test-results-mobile-smoke/
+test-results-mobile-smoke/
+
+# EAS / store credentials — asla commit edilmemeli
+play-service-account.json
+*.p8
+*.p12
+*.mobileprovision
+*.keystore
+ios/Pods/
+android/app/google-services.json

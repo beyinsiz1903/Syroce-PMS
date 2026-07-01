@@ -1,20 +1,20 @@
 """
-Channel Manager — Credential Vault
-====================================
+Channel Manager — Credential Vault (REFACTORED)
 
 Encrypted secret storage for provider credentials.
-Vault-ready abstraction: today encrypted MongoDB collection,
-tomorrow real secret manager (AWS Secrets Manager, HashiCorp Vault, etc.)
+Delegates all encryption to core.crypto.CredentialEncryptionService.
 
 provider_connections stores credentials_ref → provider_secrets stores encrypted payload.
 """
-import uuid
-import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
 
+import logging
+import os
+import uuid
+from datetime import UTC, datetime
+from typing import Any
+
+from core.crypto import AADContext, get_crypto_service
 from core.database import db
-from .encryption import encrypt_credential, decrypt_credential, mask_credential
 
 logger = logging.getLogger("channel_manager.credential_vault")
 
@@ -23,36 +23,62 @@ _NO_ID = {"_id": 0}
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
-def _encrypt_payload(credentials: Dict[str, str]) -> Dict[str, str]:
+def _build_aad(tenant_id: str, provider: str, property_id: str) -> AADContext:
+    return AADContext(
+        tenant_id=tenant_id,
+        provider=provider,
+        property_id=property_id,
+        environment=os.environ.get("APP_ENV", "development"),
+        context_type="credential",
+    )
+
+
+def _encrypt_payload(
+    credentials: dict[str, str],
+    tenant_id: str,
+    provider: str,
+    property_id: str,
+) -> dict[str, str]:
     """Encrypt all values in a credentials dict."""
-    return {k: encrypt_credential(str(v)) for k, v in credentials.items() if v}
+    svc = get_crypto_service()
+    aad = _build_aad(tenant_id, provider, property_id)
+    return svc.encrypt_dict(credentials, aad=aad)
 
 
-def _decrypt_payload(encrypted: Dict[str, str]) -> Dict[str, str]:
+def _decrypt_payload(
+    encrypted: dict[str, str],
+    tenant_id: str,
+    provider: str,
+    property_id: str,
+) -> dict[str, str]:
     """Decrypt all values in an encrypted credentials dict."""
-    return {k: decrypt_credential(v) for k, v in encrypted.items()}
+    svc = get_crypto_service()
+    aad = _build_aad(tenant_id, provider, property_id)
+    return svc.decrypt_dict(encrypted, aad=aad)
 
 
-def _mask_payload(credentials: Dict[str, str]) -> Dict[str, str]:
+def _mask_payload(credentials: dict[str, str]) -> dict[str, str]:
     """Mask all values for display."""
-    return {k: mask_credential(str(v)) for k, v in credentials.items()}
+    svc = get_crypto_service()
+    return svc.mask_credentials(credentials)
 
 
 # ── CRUD Operations ──────────────────────────────────────────────────
+
 
 async def store_secret(
     tenant_id: str,
     provider: str,
     property_id: str,
-    credentials: Dict[str, str],
+    credentials: dict[str, str],
 ) -> str:
     """Encrypt and store credentials. Returns secret_id (credentials_ref)."""
     secret_id = str(uuid.uuid4())
     now = _now()
-    encrypted = _encrypt_payload(credentials)
+    encrypted = _encrypt_payload(credentials, tenant_id, provider, property_id)
 
     doc = {
         "id": secret_id,
@@ -60,7 +86,7 @@ async def store_secret(
         "provider": provider,
         "property_id": property_id,
         "encrypted_payload": encrypted,
-        "key_version": "v1",
+        "key_version": get_crypto_service()._keyring.current_kid,
         "field_names": list(credentials.keys()),
         "created_at": now,
         "updated_at": now,
@@ -76,17 +102,20 @@ async def store_secret(
         secret_id = existing["id"]
         await db[COLL_PROVIDER_SECRETS].update_one(
             {"id": secret_id},
-            {"$set": {
-                "encrypted_payload": encrypted,
-                "field_names": list(credentials.keys()),
-                "updated_at": now,
-                "rotated_at": now,
-            }},
+            {
+                "$set": {
+                    "encrypted_payload": encrypted,
+                    "key_version": get_crypto_service()._keyring.current_kid,
+                    "field_names": list(credentials.keys()),
+                    "updated_at": now,
+                    "rotated_at": now,
+                }
+            },
         )
-        logger.info(f"Rotated credentials for {provider}/{property_id}")
+        logger.info("Rotated credentials for %s/%s", provider, property_id)
     else:
         await db[COLL_PROVIDER_SECRETS].insert_one(doc)
-        logger.info(f"Stored new credentials for {provider}/{property_id}")
+        logger.info("Stored new credentials for %s/%s", provider, property_id)
 
     return secret_id
 
@@ -95,7 +124,7 @@ async def get_decrypted_credentials(
     tenant_id: str,
     provider: str,
     property_id: str,
-) -> Optional[Dict[str, str]]:
+) -> dict[str, str] | None:
     """Retrieve and decrypt credentials."""
     doc = await db[COLL_PROVIDER_SECRETS].find_one(
         {"tenant_id": tenant_id, "provider": provider, "property_id": property_id},
@@ -103,14 +132,19 @@ async def get_decrypted_credentials(
     )
     if not doc:
         return None
-    return _decrypt_payload(doc.get("encrypted_payload", {}))
+    return _decrypt_payload(
+        doc.get("encrypted_payload", {}),
+        tenant_id,
+        provider,
+        property_id,
+    )
 
 
 async def get_masked_credentials(
     tenant_id: str,
     provider: str,
     property_id: str,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Get masked credentials for display (never expose raw values)."""
     doc = await db[COLL_PROVIDER_SECRETS].find_one(
         {"tenant_id": tenant_id, "provider": provider, "property_id": property_id},
@@ -119,7 +153,12 @@ async def get_masked_credentials(
     if not doc:
         return None
 
-    decrypted = _decrypt_payload(doc.get("encrypted_payload", {}))
+    decrypted = _decrypt_payload(
+        doc.get("encrypted_payload", {}),
+        tenant_id,
+        provider,
+        property_id,
+    )
     masked = _mask_payload(decrypted)
 
     return {
@@ -154,6 +193,7 @@ async def link_credentials_to_connection(
 ) -> None:
     """Update provider_connection with credentials_ref."""
     from .data_model import COLL_PROVIDER_CONNECTIONS
+
     await db[COLL_PROVIDER_CONNECTIONS].update_one(
         {"tenant_id": tenant_id, "provider": provider, "property_id": property_id},
         {"$set": {"credentials_ref": secret_id, "updated_at": _now()}},

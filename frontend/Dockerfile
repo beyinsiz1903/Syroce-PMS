@@ -6,12 +6,13 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile --production=false
+COPY scripts/ scripts/
+RUN yarn install --ignore-engines --production=false
 
 COPY . .
 
-ARG REACT_APP_BACKEND_URL
-ENV REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL}
+ARG VITE_BACKEND_URL
+ENV VITE_BACKEND_URL=${VITE_BACKEND_URL}
 
 RUN yarn build
 

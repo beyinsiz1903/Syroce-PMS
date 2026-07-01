@@ -2,23 +2,24 @@
 Exely SOAP API Client
 Handles HTTP transport for SOAP messages with retry and logging.
 """
+
 import logging
 import time
-from typing import Dict, Any, Optional
+from typing import Any
 
 import httpx
 
-from .soap_builder import (
-    build_read_rq,
-    build_hotel_avail_rq,
-    build_notif_report_rq,
-    build_ari_update_rq,
-)
 from .response_parser import (
-    parse_read_rs,
+    parse_ari_update_rs,
     parse_hotel_avail_rs,
     parse_notif_report_rs,
-    parse_ari_update_rs,
+    parse_read_rs,
+)
+from .soap_builder import (
+    build_ari_update_rq,
+    build_hotel_avail_rq,
+    build_notif_report_rq,
+    build_read_rq,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,11 +51,12 @@ class ExelyClient:
             resp.raise_for_status()
             return resp.content
 
-    async def test_connection(self) -> Dict[str, Any]:
+    async def test_connection(self) -> dict[str, Any]:
         """Test connection by attempting a room availability request."""
         start = time.time()
         try:
             from datetime import datetime, timedelta
+
             checkin = datetime.now().strftime("%Y-%m-%d")
             checkout = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
             xml = build_hotel_avail_rq(self.username, self.password, self.hotel_code, checkin, checkout)
@@ -74,10 +76,10 @@ class ExelyClient:
 
     async def pull_reservations(
         self,
-        from_date: Optional[str] = None,
-        to_date: Optional[str] = None,
-        reservation_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        from_date: str | None = None,
+        to_date: str | None = None,
+        reservation_id: str | None = None,
+    ) -> dict[str, Any]:
         """Pull reservations via OTA_ReadRQ."""
         start = time.time()
         try:
@@ -89,7 +91,7 @@ class ExelyClient:
         except Exception as e:
             return {"success": False, "error": str(e), "reservations": [], "duration_ms": int((time.time() - start) * 1000)}
 
-    async def discover_rooms(self, checkin: str, checkout: str) -> Dict[str, Any]:
+    async def discover_rooms(self, checkin: str, checkout: str) -> dict[str, Any]:
         """Discover available room types and rate plans via OTA_HotelAvailRQ."""
         start = time.time()
         try:
@@ -101,7 +103,7 @@ class ExelyClient:
         except Exception as e:
             return {"success": False, "error": str(e), "room_types": [], "rate_plans": [], "duration_ms": int((time.time() - start) * 1000)}
 
-    async def confirm_delivery(self, reservation_id: str, confirmation_number: str) -> Dict[str, Any]:
+    async def confirm_delivery(self, reservation_id: str, confirmation_number: str) -> dict[str, Any]:
         """Confirm reservation delivery via OTA_NotifReportRQ."""
         start = time.time()
         try:
@@ -115,21 +117,32 @@ class ExelyClient:
 
     async def push_ari(
         self,
-        room_type_code: str, rate_plan_code: str,
-        start_date: str, end_date: str,
-        availability: Optional[int] = None,
-        rate_amount: Optional[float] = None,
+        room_type_code: str,
+        rate_plan_code: str,
+        start_date: str,
+        end_date: str,
+        availability: int | None = None,
+        rate_amount: float | None = None,
         currency: str = "TRY",
-        stop_sell: Optional[bool] = None,
-        min_stay: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        stop_sell: bool | None = None,
+        min_stay: int | None = None,
+    ) -> dict[str, Any]:
         """Push ARI update via OTA_HotelAvailNotifRQ."""
         start = time.time()
         try:
             xml = build_ari_update_rq(
-                self.username, self.password, self.hotel_code,
-                room_type_code, rate_plan_code, start_date, end_date,
-                availability, rate_amount, currency, stop_sell, min_stay,
+                self.username,
+                self.password,
+                self.hotel_code,
+                room_type_code,
+                rate_plan_code,
+                start_date,
+                end_date,
+                availability,
+                rate_amount,
+                currency,
+                stop_sell,
+                min_stay,
             )
             raw = await self._send_soap(xml, "OTA_HotelAvailNotifRQ")
             result = parse_ari_update_rs(raw)

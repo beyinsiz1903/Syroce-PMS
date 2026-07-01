@@ -1,28 +1,39 @@
+"""
+Modify Reservation Bridge Tests
+Restored from quarantine: stale_room_locks — replaced async db.delegate with sync pymongo,
+added lock cleanup before bookings, increased date offsets.
+"""
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
+import random
 
 import pytest
 import requests
 
-import os
-import pytest
 if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
     pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
 
-from core.database import db
+from pymongo import MongoClient
+
+MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
+DB_NAME = os.environ.get("DB_NAME", "hotel_pms")
+
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
+
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set")
 
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-
-pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
+def _get_sync_db():
+    client = MongoClient(MONGO_URL)
+    return client, client[DB_NAME]
 
 
 class TestModifyReservationBridge:
     @pytest.fixture(autouse=True)
     def setup(self):
         if not BASE_URL:
-            pytest.skip('REACT_APP_BACKEND_URL missing')
+            pytest.skip('VITE_BACKEND_URL missing')
 
         self.session = requests.Session()
         self.session.headers.update({'Content-Type': 'application/json'})
@@ -38,10 +49,16 @@ class TestModifyReservationBridge:
         yield
 
     def _find_one(self, collection_name: str, query: dict):
-        return db.delegate[collection_name].find_one(query, {'_id': 0})
+        client, db = _get_sync_db()
+        result = db[collection_name].find_one(query, {'_id': 0})
+        client.close()
+        return result
 
     def _count_documents(self, collection_name: str, query: dict) -> int:
-        return db.delegate[collection_name].count_documents(query)
+        client, db = _get_sync_db()
+        count = db[collection_name].count_documents(query)
+        client.close()
+        return count
 
     def _get_guest_and_rooms(self):
         guests = self.session.get(f'{BASE_URL}/api/pms/guests?limit=5').json()
@@ -51,8 +68,9 @@ class TestModifyReservationBridge:
         return guests[0]['id'], rooms[0], rooms[1]
 
     def _build_create_payload(self, guest_id: str, room_id: str):
-        check_in = (datetime.utcnow().date() + timedelta(days=40)).isoformat() + 'T14:00:00Z'
-        check_out = (datetime.utcnow().date() + timedelta(days=42)).isoformat() + 'T12:00:00Z'
+        offset = 3000 + random.randint(0, 3000)
+        check_in = (datetime.now(timezone.utc).date() + timedelta(days=offset)).isoformat() + 'T14:00:00Z'
+        check_out = (datetime.now(timezone.utc).date() + timedelta(days=offset + 2)).isoformat() + 'T12:00:00Z'
         return {
             'guest_id': guest_id,
             'room_id': room_id,
@@ -66,11 +84,24 @@ class TestModifyReservationBridge:
             'special_requests': f'semantic-modify-create-{uuid.uuid4().hex[:8]}',
         }
 
+    def _clean_locks(self, room_id, check_in, check_out):
+        """Remove stale locks for this room in the date range."""
+        client, db = _get_sync_db()
+        ci_date = check_in.split('T')[0]
+        co_date = check_out.split('T')[0]
+        db.room_night_locks.delete_many({
+            "room_id": room_id,
+            "night_date": {"$gte": ci_date, "$lte": co_date},
+        })
+        client.close()
+
     def _create_booking(self):
         guest_id, original_room, updated_room = self._get_guest_and_rooms()
+        payload = self._build_create_payload(guest_id, original_room['id'])
+        self._clean_locks(original_room['id'], payload['check_in'], payload['check_out'])
         response = self.session.post(
             f'{BASE_URL}/api/pms/bookings',
-            json=self._build_create_payload(guest_id, original_room['id']),
+            json=payload,
             headers={'Authorization': f'Bearer {self.token}', 'Idempotency-Key': f'create-{uuid.uuid4()}'},
         )
         assert response.status_code == 200, response.text
@@ -80,6 +111,10 @@ class TestModifyReservationBridge:
         _, _, updated_room, booking = self._create_booking()
         new_total = booking['total_amount'] + 275.0
         new_note = f'semantic-modify-{uuid.uuid4().hex[:8]}'
+
+        # Clean locks for updated room dates
+        payload = self._build_create_payload("dummy", updated_room['id'])
+        self._clean_locks(updated_room['id'], payload['check_in'], payload['check_out'])
 
         response = self.session.put(
             f'{BASE_URL}/api/pms/bookings/{booking["id"]}',

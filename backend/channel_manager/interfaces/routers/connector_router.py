@@ -1,17 +1,18 @@
 """Connector CRUD, connection test, credential management endpoints."""
+
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 from ...application.connector_service import ConnectorService
+from ...domain.models.audit import AuditAction, IntegrationAuditLog
 from ...infrastructure.credential_vault import CredentialVault
 from ...infrastructure.rbac import enforce_credential_access
-from ...domain.models.audit import IntegrationAuditLog, AuditAction
 
 logger = logging.getLogger("channel_manager.routers.connector")
 
@@ -23,7 +24,7 @@ class CreateConnectorRequest(BaseModel):
     display_name: str
     property_id: str = ""
     credentials: dict = Field(default_factory=dict)
-    sync_config: Optional[dict] = None
+    sync_config: dict | None = None
 
 
 class UpdateCredentialsRequest(BaseModel):
@@ -37,7 +38,7 @@ class RotateCredentialsRequest(BaseModel):
 class ConnectionTestStepResult(BaseModel):
     status: str
     latency_ms: int = 0
-    error_code: Optional[str] = None
+    error_code: str | None = None
     message: str = ""
 
 
@@ -49,19 +50,20 @@ class ConnectionTestResponse(BaseModel):
     tested_at: str = ""
     total_latency_ms: int = 0
     summary: str = ""
-    auth_status: Optional[ConnectionTestStepResult] = None
-    property_access_status: Optional[ConnectionTestStepResult] = None
-    inventory_read_status: Optional[ConnectionTestStepResult] = None
-    rate_read_status: Optional[ConnectionTestStepResult] = None
-    xml_connectivity_status: Optional[ConnectionTestStepResult] = None
-    message: Optional[str] = None
+    auth_status: ConnectionTestStepResult | None = None
+    property_access_status: ConnectionTestStepResult | None = None
+    inventory_read_status: ConnectionTestStepResult | None = None
+    rate_read_status: ConnectionTestStepResult | None = None
+    xml_connectivity_status: ConnectionTestStepResult | None = None
+    message: str | None = None
 
 
 # ─── Connector CRUD ──────────────────────────────────────────────
 
+
 @router.get("/connectors")
 async def list_connectors(
-    status: Optional[str] = None,
+    status: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     svc = ConnectorService()
@@ -73,6 +75,7 @@ async def list_connectors(
 async def create_connector(
     req: CreateConnectorRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = ConnectorService()
     property_id = req.property_id or getattr(current_user, "property_id", "")
@@ -101,7 +104,7 @@ async def get_connector(
     if not connector:
         raise HTTPException(status_code=404, detail="Connector not found")
     if "credentials" in connector:
-        connector["credentials"] = {k: "***" for k in connector["credentials"]}
+        connector["credentials"] = dict.fromkeys(connector["credentials"], "***")
     return connector
 
 
@@ -109,6 +112,7 @@ async def get_connector(
 async def test_connector(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     svc = ConnectorService()
     result = await svc.test_connection(current_user.tenant_id, connector_id)
@@ -119,6 +123,7 @@ async def test_connector(
 async def activate_connector(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     svc = ConnectorService()
     result = await svc.activate_connector(current_user.tenant_id, connector_id, current_user.id)
@@ -129,6 +134,7 @@ async def activate_connector(
 async def pause_connector(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     svc = ConnectorService()
     result = await svc.pause_connector(current_user.tenant_id, connector_id, current_user.id)
@@ -140,10 +146,14 @@ async def update_credentials(
     connector_id: str,
     req: UpdateCredentialsRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     svc = ConnectorService()
     await svc.update_credentials(
-        current_user.tenant_id, connector_id, req.credentials, current_user.id,
+        current_user.tenant_id,
+        connector_id,
+        req.credentials,
+        current_user.id,
     )
     return {"message": "Credentials updated"}
 
@@ -152,6 +162,7 @@ async def update_credentials(
 async def delete_connector(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     svc = ConnectorService()
     deleted = await svc.delete_connector(current_user.tenant_id, connector_id, current_user.id)
@@ -162,22 +173,31 @@ async def delete_connector(
 
 # ─── Secure Credential Management ──────────────────────────────────
 
+
 @router.put("/connectors/{connector_id}/credentials/secure")
 async def update_credentials_secure(
     connector_id: str,
     req: UpdateCredentialsRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     await enforce_credential_access(
-        current_user, "credential_update", connector_id, repo, require_write=True,
+        current_user,
+        "credential_update",
+        connector_id,
+        repo,
+        require_write=True,
     )
     vault = CredentialVault()
     try:
         await vault.store_credentials(
-            current_user.tenant_id, connector_id,
-            req.credentials, current_user.id,
+            current_user.tenant_id,
+            connector_id,
+            req.credentials,
+            current_user.id,
         )
         return {"message": "Credentials securely updated (AES-256-GCM)"}
     except ValueError as e:
@@ -189,17 +209,25 @@ async def rotate_credentials(
     connector_id: str,
     req: RotateCredentialsRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     await enforce_credential_access(
-        current_user, "credential_rotation", connector_id, repo, require_write=True,
+        current_user,
+        "credential_rotation",
+        connector_id,
+        repo,
+        require_write=True,
     )
     vault = CredentialVault()
     try:
         await vault.rotate_credentials(
-            current_user.tenant_id, connector_id,
-            req.credentials, current_user.id,
+            current_user.tenant_id,
+            connector_id,
+            req.credentials,
+            current_user.id,
         )
         return {"message": "Credentials rotated successfully (AES-256-GCM)"}
     except ValueError as e:
@@ -212,9 +240,14 @@ async def get_masked_credentials(
     current_user: User = Depends(get_current_user),
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     await enforce_credential_access(
-        current_user, "credential_view", connector_id, repo, require_write=False,
+        current_user,
+        "credential_view",
+        connector_id,
+        repo,
+        require_write=False,
     )
     svc = ConnectorService()
     connector = await svc.get_connector(current_user.tenant_id, connector_id)
@@ -246,16 +279,24 @@ async def get_masked_credentials(
 async def migrate_credentials(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     await enforce_credential_access(
-        current_user, "credential_update", connector_id, repo, require_write=True,
+        current_user,
+        "credential_update",
+        connector_id,
+        repo,
+        require_write=True,
     )
     vault = CredentialVault()
     try:
         result = await vault.migrate_legacy_credentials(
-            current_user.tenant_id, connector_id, current_user.id,
+            current_user.tenant_id,
+            connector_id,
+            current_user.id,
         )
         return result
     except ValueError as e:

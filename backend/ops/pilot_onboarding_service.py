@@ -5,13 +5,13 @@ Manages the full lifecycle of onboarding a pilot hotel:
 tenant creation, property config, provider integration,
 operational validation.
 """
-import uuid
-import logging
-from datetime import datetime, timezone
-from typing import Dict
 
-from common.result import ServiceResult
+import logging
+import uuid
+from datetime import UTC, datetime
+
 from common.context import OperationContext
+from common.result import ServiceResult
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +51,11 @@ class PilotOnboardingService:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
-    async def create_onboarding(self, ctx: OperationContext, hotel_name: str, config: Dict = None) -> ServiceResult:
-        now = datetime.now(timezone.utc).isoformat()
+    async def create_onboarding(self, ctx: OperationContext, hotel_name: str, config: dict = None) -> ServiceResult:
+        now = datetime.now(UTC).isoformat()
         onboarding_id = str(uuid.uuid4())
 
         steps_status = {}
@@ -83,7 +84,8 @@ class PilotOnboardingService:
 
     async def get_onboarding(self, ctx: OperationContext) -> ServiceResult:
         onboarding = await self._db.pilot_onboardings.find_one(
-            {"tenant_id": ctx.tenant_id}, {"_id": 0},
+            {"tenant_id": ctx.tenant_id},
+            {"_id": 0},
             sort=[("created_at", -1)],
         )
         if not onboarding:
@@ -102,20 +104,22 @@ class PilotOnboardingService:
         return ServiceResult.success(onboarding)
 
     async def complete_step(self, ctx: OperationContext, step_id: str, notes: str = "") -> ServiceResult:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         valid_ids = {s["id"] for s in ONBOARDING_STEPS}
         if step_id not in valid_ids:
             return ServiceResult.fail(f"Unknown step: {step_id}", "INVALID_STEP")
 
         result = await self._db.pilot_onboardings.find_one_and_update(
             {"tenant_id": ctx.tenant_id, "status": "in_progress"},
-            {"$set": {
-                f"steps.{step_id}.status": "completed",
-                f"steps.{step_id}.completed_at": now,
-                f"steps.{step_id}.notes": notes,
-                f"steps.{step_id}.completed_by": ctx.actor_email,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    f"steps.{step_id}.status": "completed",
+                    f"steps.{step_id}.completed_at": now,
+                    f"steps.{step_id}.notes": notes,
+                    f"steps.{step_id}.completed_by": ctx.actor_email,
+                    "updated_at": now,
+                }
+            },
             sort=[("created_at", -1)],
         )
         if not result:
@@ -124,7 +128,7 @@ class PilotOnboardingService:
 
     async def run_auto_validations(self, ctx: OperationContext) -> ServiceResult:
         """Run all auto-validatable steps."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         results = []
 
         for step in ONBOARDING_STEPS:
@@ -138,22 +142,26 @@ class PilotOnboardingService:
 
             await self._db.pilot_onboardings.update_one(
                 {"tenant_id": ctx.tenant_id, "status": "in_progress"},
-                {"$set": {
-                    f"steps.{step['id']}.status": status,
-                    f"steps.{step['id']}.completed_at": now if status == "completed" else None,
-                    f"steps.{step['id']}.validation_result": validation_result,
-                    "updated_at": now,
-                }},
+                {
+                    "$set": {
+                        f"steps.{step['id']}.status": status,
+                        f"steps.{step['id']}.completed_at": now if status == "completed" else None,
+                        f"steps.{step['id']}.validation_result": validation_result,
+                        "updated_at": now,
+                    }
+                },
             )
             results.append({"step_id": step["id"], "status": status, "auto": True, **validation_result})
 
         passed = sum(1 for r in results if r["status"] == "completed")
-        return ServiceResult.success({
-            "results": results,
-            "passed": passed,
-            "total": len(results),
-            "auto_count": sum(1 for r in results if r.get("auto")),
-        })
+        return ServiceResult.success(
+            {
+                "results": results,
+                "passed": passed,
+                "total": len(results),
+                "auto_count": sum(1 for r in results if r.get("auto")),
+            }
+        )
 
     async def get_success_criteria(self, ctx: OperationContext) -> ServiceResult:
         """Evaluate pilot success criteria."""
@@ -161,24 +169,28 @@ class PilotOnboardingService:
         for criterion in PILOT_SUCCESS_CRITERIA:
             value = await self._evaluate_criterion(ctx, criterion["id"])
             met = self._check_threshold(criterion, value)
-            results.append({
-                "id": criterion["id"],
-                "name": criterion["name"],
-                "target": criterion["target"],
-                "current_value": value,
-                "met": met,
-            })
+            results.append(
+                {
+                    "id": criterion["id"],
+                    "name": criterion["name"],
+                    "target": criterion["target"],
+                    "current_value": value,
+                    "met": met,
+                }
+            )
 
         met_count = sum(1 for r in results if r["met"])
-        return ServiceResult.success({
-            "criteria": results,
-            "met_count": met_count,
-            "total": len(results),
-            "pilot_success": met_count == len(results),
-            "success_rate": round(met_count / len(results) * 100, 1),
-        })
+        return ServiceResult.success(
+            {
+                "criteria": results,
+                "met_count": met_count,
+                "total": len(results),
+                "pilot_success": met_count == len(results),
+                "success_rate": round(met_count / len(results) * 100, 1),
+            }
+        )
 
-    async def _run_step_validation(self, ctx: OperationContext, step_id: str) -> Dict:
+    async def _run_step_validation(self, ctx: OperationContext, step_id: str) -> dict:
         """Run validation for a specific step. Returns {passed, details}."""
         # Each step validates against real DB state
         if step_id == "tenant_creation":
@@ -186,15 +198,11 @@ class PilotOnboardingService:
             return {"passed": tenant is not None, "details": "Tenant exists" if tenant else "Tenant not found"}
 
         if step_id == "real_checkin":
-            checkins = await self._db.bookings.count_documents({
-                "tenant_id": ctx.tenant_id, "status": {"$in": ["checked_in", "checked_out"]}
-            })
+            checkins = await self._db.bookings.count_documents({"tenant_id": ctx.tenant_id, "status": {"$in": ["checked_in", "checked_out"]}})
             return {"passed": checkins > 0, "details": f"{checkins} check-ins found"}
 
         if step_id == "real_checkout":
-            checkouts = await self._db.bookings.count_documents({
-                "tenant_id": ctx.tenant_id, "status": "checked_out"
-            })
+            checkouts = await self._db.bookings.count_documents({"tenant_id": ctx.tenant_id, "status": "checked_out"})
             return {"passed": checkouts > 0, "details": f"{checkouts} check-outs found"}
 
         if step_id == "night_audit_run":
@@ -221,16 +229,12 @@ class PilotOnboardingService:
 
         if criterion_id == "ari_sync_success":
             syncs = await self._db.channel_sync_logs.count_documents({"tenant_id": ctx.tenant_id})
-            failures = await self._db.channel_sync_logs.count_documents(
-                {"tenant_id": ctx.tenant_id, "status": "failed"}
-            )
+            failures = await self._db.channel_sync_logs.count_documents({"tenant_id": ctx.tenant_id, "status": "failed"})
             return round((1 - failures / max(syncs, 1)) * 100, 2) if syncs > 0 else 100.0
 
         if criterion_id == "night_audit_success":
             runs = await self._db.night_audit_runs.count_documents({"tenant_id": ctx.tenant_id})
-            failures = await self._db.night_audit_runs.count_documents(
-                {"tenant_id": ctx.tenant_id, "status": "failed"}
-            )
+            failures = await self._db.night_audit_runs.count_documents({"tenant_id": ctx.tenant_id, "status": "failed"})
             return round((1 - failures / max(runs, 1)) * 100, 2) if runs > 0 else 100.0
 
         if criterion_id == "queue_backlog_stable":
@@ -244,7 +248,7 @@ class PilotOnboardingService:
 
         return 0.0
 
-    def _check_threshold(self, criterion: Dict, value: float) -> bool:
+    def _check_threshold(self, criterion: dict, value: float) -> bool:
         cid = criterion["id"]
         threshold = criterion["threshold"]
         # For queue/drift/incident: lower is better

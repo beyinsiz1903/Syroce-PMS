@@ -4,9 +4,10 @@ Reservation Ingest — Provider Normalizers
 
 Convert HotelRunner / Exely payloads into canonical reservation format.
 """
+
 import hashlib
 import json
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 def _safe_str(v: Any) -> str:
@@ -17,7 +18,8 @@ def _safe_str(v: Any) -> str:
 # Canonical Reservation Schema
 # ══════════════════════════════════════════════════════════════════════
 
-def empty_canonical() -> Dict[str, Any]:
+
+def empty_canonical() -> dict[str, Any]:
     return {
         "external_reservation_id": "",
         "provider": "",
@@ -43,68 +45,106 @@ def empty_canonical() -> Dict[str, Any]:
 # HotelRunner Normalizer
 # ══════════════════════════════════════════════════════════════════════
 
-def normalize_hotelrunner(payload: Dict[str, Any]) -> Dict[str, Any]:
+
+def normalize_hotelrunner(payload: dict[str, Any]) -> dict[str, Any]:
     """
     HotelRunner reservation payload → canonical format.
 
-    HotelRunner typically sends:
-    {
-      "hr_number": "HR-12345",
-      "guest": {"first_name": "...", "last_name": "...", "email": "...", "phone": "..."},
-      "check_in": "2026-04-10",
-      "check_out": "2026-04-15",
-      "room_type": "STD",
-      "rate_plan": "BAR",
-      "adults": 2, "children": 1,
-      "currency": "TRY",
-      "total": 5400.00,
-      "status": "confirmed",
-      "last_modified": "2026-03-13T12:00:00Z",
-      "channel": "booking.com"
-    }
+    Handles both the actual HotelRunner API format and simplified format:
+    - API format: firstname/lastname, checkin_date, address.email, rooms[].room_code, state
+    - Simplified: guest.first_name, check_in, guest.email, room_type
     """
-    guest = payload.get("guest", {})
-    first = _safe_str(guest.get("first_name", ""))
-    last = _safe_str(guest.get("last_name", ""))
+    # Guest info: handle string, dict, or address-based formats
+    guest_raw = payload.get("guest", {})
+    guest = guest_raw if isinstance(guest_raw, dict) else {}
+    address = payload.get("address", {}) or {}
+    rooms = payload.get("rooms", []) or []
+    first_room = rooms[0] if rooms and isinstance(rooms[0], dict) else {}
 
-    # Status mapping
-    hr_status = _safe_str(payload.get("status", "confirmed")).lower()
-    status_map = {
-        "confirmed": "confirmed",
-        "new": "confirmed",
-        "modified": "modified",
-        "cancelled": "cancelled",
-        "canceled": "cancelled",
-        "no_show": "cancelled",
-    }
-    canonical_status = status_map.get(hr_status, "confirmed")
+    # Name: try multiple field patterns
+    first = _safe_str(payload.get("firstname") or guest.get("first_name") or guest.get("firstname", ""))
+    last = _safe_str(payload.get("lastname") or guest.get("last_name") or guest.get("lastname", ""))
+    # Fallback: if guest is a string, use it as full name
+    if not first and not last and isinstance(guest_raw, str):
+        parts = guest_raw.strip().split(" ", 1)
+        first = parts[0]
+        last = parts[1] if len(parts) > 1 else ""
+
+    # Email/phone: address > guest dict
+    email = _safe_str(address.get("email") or guest.get("email", ""))
+    phone = _safe_str(address.get("phone") or guest.get("phone", ""))
+
+    # Dates: checkin_date > check_in
+    check_in = _safe_str(payload.get("checkin_date") or payload.get("check_in", ""))
+    check_out = _safe_str(payload.get("checkout_date") or payload.get("check_out", ""))
+
+    # Room/rate: from rooms array or direct fields
+    room_type = _safe_str(first_room.get("inv_code") or first_room.get("room_code") or payload.get("room_type", ""))
+    rate_plan = _safe_str(first_room.get("rate_code") or first_room.get("rate_plan_code") or payload.get("rate_plan", ""))
+
+    # Occupancy: from first room or direct fields
+    adults = int(first_room.get("total_adult") or first_room.get("adults") or payload.get("adults", 1) or 1)
+    children = len(first_room.get("child_ages", [])) or int(first_room.get("children") or payload.get("children", 0) or 0)
+
+    # Total: prefer room-level price for exploded sub-reservations, then reservation total
+    room_price = float(first_room.get("price", 0) or 0)
+    reservation_total = float(payload.get("total", 0.0) or 0.0)
+    # If this payload was exploded from a multi-room reservation (has _exploded_from),
+    # use the per-room price. Otherwise use the reservation total.
+    if payload.get("_exploded_from") and room_price > 0:
+        total_amount = room_price
+    elif room_price > 0 and len(rooms) == 1:
+        # Single room after explosion — use room price
+        total_amount = room_price
+    else:
+        total_amount = reservation_total
+
+    # Status: state > status
+    # For exploded sub-reservations, check room-level cancellation first
+    if payload.get("_room_cancelled"):
+        canonical_status = "cancelled"
+    else:
+        hr_status = _safe_str(payload.get("state") or payload.get("status", "confirmed")).lower()
+        status_map = {
+            "confirmed": "confirmed",
+            "new": "confirmed",
+            "modified": "modified",
+            "cancelled": "cancelled",
+            "canceled": "cancelled",
+            "no_show": "cancelled",
+            "pending": "pending",
+        }
+        canonical_status = status_map.get(hr_status, "confirmed")
+
+    # Last modified
+    last_mod = _safe_str(payload.get("updated_at") or payload.get("modified_at") or payload.get("last_modified", ""))
 
     return {
         "external_reservation_id": _safe_str(payload.get("hr_number", "")),
         "provider": "hotelrunner",
         "guest_name": f"{first} {last}".strip(),
-        "guest_email": _safe_str(guest.get("email", "")),
-        "guest_phone": _safe_str(guest.get("phone", "")),
-        "check_in": _safe_str(payload.get("check_in", "")),
-        "check_out": _safe_str(payload.get("check_out", "")),
-        "adults": int(payload.get("adults", 1)),
-        "children": int(payload.get("children", 0)),
-        "room_type_code": _safe_str(payload.get("room_type", "")),
-        "rate_plan_code": _safe_str(payload.get("rate_plan", "")),
+        "guest_email": email,
+        "guest_phone": phone,
+        "check_in": check_in,
+        "check_out": check_out,
+        "adults": adults,
+        "children": children,
+        "room_type_code": room_type,
+        "rate_plan_code": rate_plan,
         "currency": _safe_str(payload.get("currency", "TRY")),
-        "total_amount": float(payload.get("total", 0.0)),
+        "total_amount": total_amount,
         "status": canonical_status,
-        "provider_last_modified_at": _safe_str(payload.get("last_modified", "")),
-        "source_system": _safe_str(payload.get("channel", "")),
+        "provider_last_modified_at": last_mod,
+        "source_system": _safe_str(payload.get("channel") or payload.get("channel_display", "")),
         "source_payload_ref": _safe_str(payload.get("hr_number", "")),
     }
 
 
-def extract_hotelrunner_identity(payload: Dict[str, Any]) -> Dict[str, str]:
+def extract_hotelrunner_identity(payload: dict[str, Any]) -> dict[str, str]:
     """Extract HotelRunner identity fields for raw event."""
     hr_number = _safe_str(payload.get("hr_number", ""))
     event_type = _safe_str(payload.get("event_type", "reservation_create"))
-    last_modified = _safe_str(payload.get("last_modified", ""))
+    last_modified = _safe_str(payload.get("updated_at") or payload.get("modified_at") or payload.get("last_modified", ""))
     return {
         "external_reservation_id": hr_number,
         "provider_event_id": f"{hr_number}_{event_type}_{last_modified}",
@@ -117,7 +157,8 @@ def extract_hotelrunner_identity(payload: Dict[str, Any]) -> Dict[str, str]:
 # Exely Normalizer
 # ══════════════════════════════════════════════════════════════════════
 
-def normalize_exely(payload: Dict[str, Any]) -> Dict[str, Any]:
+
+def normalize_exely(payload: dict[str, Any]) -> dict[str, Any]:
     """
     Exely (OTA_ReadRQ) reservation payload → canonical format.
 
@@ -177,7 +218,7 @@ def normalize_exely(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def extract_exely_identity(payload: Dict[str, Any]) -> Dict[str, str]:
+def extract_exely_identity(payload: dict[str, Any]) -> dict[str, str]:
     """Extract Exely identity fields for raw event."""
     unique_id = _safe_str(payload.get("UniqueID", ""))
     res_status = _safe_str(payload.get("ResStatus", ""))
@@ -205,21 +246,21 @@ IDENTITY_EXTRACTORS = {
 }
 
 
-def normalize(provider: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+def normalize(provider: str, payload: dict[str, Any]) -> dict[str, Any]:
     fn = NORMALIZERS.get(provider)
     if not fn:
         raise ValueError(f"No normalizer for provider: {provider}")
     return fn(payload)
 
 
-def extract_identity(provider: str, payload: Dict[str, Any]) -> Dict[str, str]:
+def extract_identity(provider: str, payload: dict[str, Any]) -> dict[str, str]:
     fn = IDENTITY_EXTRACTORS.get(provider)
     if not fn:
         raise ValueError(f"No identity extractor for provider: {provider}")
     return fn(payload)
 
 
-def compute_canonical_hash(canonical: Dict[str, Any]) -> str:
+def compute_canonical_hash(canonical: dict[str, Any]) -> str:
     """Hash of canonical reservation data for change detection."""
     key_fields = {
         "check_in": canonical.get("check_in", ""),

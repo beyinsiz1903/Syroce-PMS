@@ -1,5 +1,7 @@
 """
 Mapping Engine Contract Tests
+Restored from quarantine: stale_fixtures — added cleanup-before-seed to prevent BulkWriteError.
+
 Tests the 6 critical mapping scenarios:
   1. Missing mapping detection
   2. Inactive local (PMS) entity
@@ -13,7 +15,7 @@ import pytest
 
 if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
     pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
-import pytest
+
 import uuid
 from datetime import datetime, timezone
 
@@ -27,10 +29,22 @@ TENANT = "test-mapping-tenant"
 PROPERTY = "test-mapping-property"
 
 
-# ─── Helpers ─────────────────────────────────────────────────────────────
+async def _cleanup(connector_id: str):
+    """Remove all test data for this connector to ensure a clean state."""
+    await db.rooms.delete_many({"tenant_id": TENANT})
+    await db.cm_external_room_types.delete_many({"tenant_id": TENANT, "connector_id": connector_id})
+    await db.cm_external_rate_plans.delete_many({"tenant_id": TENANT, "connector_id": connector_id})
+    await db.cm_connectors.delete_many({"tenant_id": TENANT, "id": connector_id})
+    await db.cm_mappings.delete_many({"tenant_id": TENANT, "connector_id": connector_id})
+    await db.cm_imported_reservations.delete_many({"tenant_id": TENANT, "connector_id": connector_id})
+    await db.cm_integration_audit.delete_many({"tenant_id": TENANT})
+
 
 async def _seed(connector_id: str):
-    """Seed PMS + external data for tests."""
+    """Seed PMS + external data for tests. Cleanup first to avoid duplicates."""
+    # Clean all tenant data first (not just connector-specific)
+    await _cleanup(connector_id)
+
     await db.rooms.insert_many([
         {"id": f"rm-1-{connector_id}", "tenant_id": TENANT, "property_id": PROPERTY, "room_type": "STD", "room_number": "101", "status": "available"},
         {"id": f"rm-2-{connector_id}", "tenant_id": TENANT, "property_id": PROPERTY, "room_type": "DLX", "room_number": "201", "status": "available"},
@@ -52,16 +66,6 @@ async def _seed(connector_id: str):
     })
 
 
-async def _cleanup(connector_id: str):
-    await db.rooms.delete_many({"tenant_id": TENANT, "id": {"$regex": connector_id}})
-    await db.cm_external_room_types.delete_many({"tenant_id": TENANT, "connector_id": connector_id})
-    await db.cm_external_rate_plans.delete_many({"tenant_id": TENANT, "connector_id": connector_id})
-    await db.cm_connectors.delete_many({"tenant_id": TENANT, "id": connector_id})
-    await db.cm_mappings.delete_many({"tenant_id": TENANT, "connector_id": connector_id})
-    await db.cm_imported_reservations.delete_many({"tenant_id": TENANT, "connector_id": connector_id})
-    await db.cm_integration_audit.delete_many({"tenant_id": TENANT})
-
-
 async def _create_mapping(svc, connector_id, entity_type, pms_id, ext_id, pms_name="", ext_name=""):
     return await svc.create_mapping(
         tenant_id=TENANT, property_id=PROPERTY, connector_id=connector_id,
@@ -70,9 +74,7 @@ async def _create_mapping(svc, connector_id, entity_type, pms_id, ext_id, pms_na
     )
 
 
-# ══════════════════════════════════════════════════════════════════════════
 # 1. MISSING MAPPING DETECTION
-# ══════════════════════════════════════════════════════════════════════════
 
 async def test_detect_missing_room_type():
     cid = f"c-miss-{uuid.uuid4().hex[:6]}"
@@ -112,9 +114,7 @@ async def test_zero_mappings_gives_zero_score():
         await _cleanup(cid)
 
 
-# ══════════════════════════════════════════════════════════════════════════
 # 2. INACTIVE LOCAL (PMS) ENTITY
-# ══════════════════════════════════════════════════════════════════════════
 
 async def test_mapping_to_out_of_service_room_is_invalid():
     cid = f"c-oos-{uuid.uuid4().hex[:6]}"
@@ -140,9 +140,7 @@ async def test_mapping_to_nonexistent_pms_room_is_invalid():
         await _cleanup(cid)
 
 
-# ══════════════════════════════════════════════════════════════════════════
 # 3. DELETED EXTERNAL ENTITY
-# ══════════════════════════════════════════════════════════════════════════
 
 async def test_mapping_to_inactive_external_room_is_invalid():
     cid = f"c-inact-{uuid.uuid4().hex[:6]}"
@@ -181,9 +179,7 @@ async def test_mapping_to_deleted_rate_plan_is_invalid():
         await _cleanup(cid)
 
 
-# ══════════════════════════════════════════════════════════════════════════
 # 4. DUPLICATE MAPPING PREVENTION
-# ══════════════════════════════════════════════════════════════════════════
 
 async def test_duplicate_pms_entity_rejected():
     cid = f"c-dupe1-{uuid.uuid4().hex[:6]}"
@@ -239,9 +235,7 @@ async def test_duplicate_detected_during_validation():
         await _cleanup(cid)
 
 
-# ══════════════════════════════════════════════════════════════════════════
 # 5. INVALID RATE PLAN MAPPING
-# ══════════════════════════════════════════════════════════════════════════
 
 async def test_rate_plan_to_nonexistent_ext_is_invalid():
     cid = f"c-rp1-{uuid.uuid4().hex[:6]}"
@@ -288,9 +282,7 @@ async def test_tax_mode_invalid_values():
         await _cleanup(cid)
 
 
-# ══════════════════════════════════════════════════════════════════════════
 # 6. REVALIDATE AFTER FIX
-# ══════════════════════════════════════════════════════════════════════════
 
 async def test_review_reservation_revalidated_on_mapping_create():
     cid = f"c-reval-{uuid.uuid4().hex[:6]}"
@@ -347,9 +339,7 @@ async def test_full_readiness_after_all_mappings():
         await _cleanup(cid)
 
 
-# ══════════════════════════════════════════════════════════════════════════
 # READINESS SCORE UNIT TESTS (pure, no DB)
-# ══════════════════════════════════════════════════════════════════════════
 
 def test_perfect_score():
     score = MappingService._calculate_readiness_score(
@@ -387,9 +377,7 @@ def test_invalids_reduce_score():
     assert score == 85
 
 
-# ══════════════════════════════════════════════════════════════════════════
 # LOOKUP TESTS
-# ══════════════════════════════════════════════════════════════════════════
 
 async def test_forward_lookup():
     cid = f"c-fwd-{uuid.uuid4().hex[:6]}"

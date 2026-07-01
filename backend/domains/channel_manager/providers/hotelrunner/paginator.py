@@ -5,8 +5,9 @@ HotelRunner Provider — Pagination Handler
 Centralizes pagination logic for the reservations endpoint.
 Includes safety limits, duplicate page detection, and infinite loop protection.
 """
+
 import logging
-from typing import Any, Callable, Awaitable, Dict, List
+from typing import Any, Awaitable, Callable
 
 from .errors import HotelRunnerPaginationError
 
@@ -27,8 +28,8 @@ class HotelRunnerPaginator:
 
     async def fetch_all_pages(
         self,
-        fetch_page_fn: Callable[[int], Awaitable[Dict[str, Any]]],
-    ) -> List[Dict[str, Any]]:
+        fetch_page_fn: Callable[[int], Awaitable[dict[str, Any]]],
+    ) -> list[dict[str, Any]]:
         """
         Fetch all pages by calling fetch_page_fn(page_number).
 
@@ -37,7 +38,7 @@ class HotelRunnerPaginator:
 
         Returns aggregated list of all reservation dicts.
         """
-        all_items: List[Dict[str, Any]] = []
+        all_items: list[dict[str, Any]] = []
         seen_first_ids: set[str] = set()
         page = 1
 
@@ -53,15 +54,12 @@ class HotelRunnerPaginator:
                 break
 
             # Duplicate page detection
-            first_id = str(
-                items[0].get("hr_number")
-                or items[0].get("reservation_id")
-                or items[0].get("message_uid", "")
-            )
+            first_id = str(items[0].get("hr_number") or items[0].get("reservation_id") or items[0].get("message_uid", ""))
             if first_id and first_id in seen_first_ids:
                 logger.warning(
                     "Duplicate page detected at page %d (first_id=%s), stopping",
-                    page, first_id,
+                    page,
+                    first_id,
                 )
                 break
             if first_id:
@@ -76,7 +74,8 @@ class HotelRunnerPaginator:
         if page > self.max_pages:
             logger.warning(
                 "Pagination safety limit reached: %d pages, %d items",
-                self.max_pages, len(all_items),
+                self.max_pages,
+                len(all_items),
             )
             raise HotelRunnerPaginationError(
                 max_pages=self.max_pages,
@@ -85,6 +84,7 @@ class HotelRunnerPaginator:
 
         logger.info(
             "Pagination complete: %d pages fetched, %d total items",
-            page, len(all_items),
+            page,
+            len(all_items),
         )
         return all_items

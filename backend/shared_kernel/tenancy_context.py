@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 from fastapi import Depends, HTTPException, Request, status
 
@@ -9,17 +8,17 @@ from core.security import get_current_user
 @dataclass(frozen=True)
 class TenantContext:
     tenant_id: str
-    user_id: Optional[str] = None
-    role: Optional[str] = None
-    correlation_id: Optional[str] = None
+    user_id: str | None = None
+    role: str | None = None
+    correlation_id: str | None = None
 
 
 @dataclass(frozen=True)
 class PropertyContext:
-    property_id: Optional[str] = None
+    property_id: str | None = None
 
 
-def build_tenant_context(current_user, request: Optional[Request] = None) -> TenantContext:
+def build_tenant_context(current_user, request: Request | None = None) -> TenantContext:
     tenant_id = getattr(current_user, "tenant_id", None)
     if not tenant_id:
         raise HTTPException(
@@ -39,7 +38,7 @@ def build_tenant_context(current_user, request: Optional[Request] = None) -> Ten
     )
 
 
-def build_property_context(current_user, request: Optional[Request] = None) -> PropertyContext:
+def build_property_context(current_user, request: Request | None = None) -> PropertyContext:
     property_id = None
     if request:
         property_id = request.headers.get("x-property-id")

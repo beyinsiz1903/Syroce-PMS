@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Syroce KBS Gonderici - Ayarlar</title>
+    <style>
+      body {
+        font-family: -apple-system, system-ui, Segoe UI, Roboto, sans-serif;
+        max-width: 640px;
+        margin: 24px auto;
+        padding: 0 16px;
+        color: #1f2937;
+      }
+      h1 { font-size: 18px; }
+      h2 { font-size: 15px; margin: 0; }
+      p.help { color: #6b7280; font-size: 13px; }
+      label { display: block; margin: 14px 0 4px; font-weight: 600; font-size: 13px; }
+      input, select, textarea {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 13px;
+      }
+      textarea { min-height: 84px; font-family: monospace; }
+      .row-help { color: #6b7280; font-size: 12px; margin-top: 2px; }
+      section {
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 12px 16px 18px;
+        margin: 18px 0;
+      }
+      section .sec-help { color: #6b7280; font-size: 12px; margin: 6px 0 0; }
+      button {
+        margin-top: 18px;
+        background: #111827;
+        color: #fff;
+        border: 0;
+        border-radius: 6px;
+        padding: 9px 16px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      #status { margin-left: 12px; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <h1>Syroce KBS Gonderici - Ayarlar</h1>
+    <p class="help">
+      Bu eklenti, KBS konaklama bildirimlerini resepsiyon bilgisayarinin
+      tarayicisindan (otelin internet IP adresinden) ilgili makama iletir. KBS
+      yonlendirmesi otelin kayitli adresine gore Polis (Emniyet) ya da Jandarma
+      sistemine gider. Otelinizin baglandigi makam(lar) icin asagidaki profili
+      doldurun. Polis ucu *.egm.gov.tr, Jandarma ucu *.jandarma.gov.tr olmak
+      zorundadir; baska adresler reddedilir.
+    </p>
+
+    <section>
+      <h2>Polis KBS (Emniyet)</h2>
+      <p class="sec-help">Gercek uc, alan adi *.egm.gov.tr olmalidir.</p>
+
+      <label for="polis_mode">Mod</label>
+      <select id="polis_mode">
+        <option value="test">Test (gercek gonderim yok, TEST- referans)</option>
+        <option value="cookie">Oturum cerezi (KBS portalinda acik oturum)</option>
+        <option value="token">API token</option>
+      </select>
+      <div class="row-help">
+        Test: prova icin. Oturum cerezi: ayni tarayicida KBS portalinda oturum
+        acik olmali. API token: entegrator/anahtar ile.
+      </div>
+
+      <label for="polis_endpoint">KBS ucu (URL)</label>
+      <input id="polis_endpoint" type="url" placeholder="https://...egm.gov.tr/..." />
+      <div class="row-help">https ve *.egm.gov.tr disindaki adresler reddedilir.</div>
+
+      <label for="polis_token">API token (yalnizca token modu)</label>
+      <input id="polis_token" type="password" autocomplete="off" />
+
+      <label for="polis_requestFormat">Istek bicimi</label>
+      <select id="polis_requestFormat">
+        <option value="json">JSON</option>
+        <option value="form">Form (x-www-form-urlencoded)</option>
+      </select>
+
+      <label for="polis_fieldMap">Alan eslestirme (opsiyonel, JSON)</label>
+      <textarea id="polis_fieldMap" placeholder='{"guest_name": "AdSoyad", "id_number": "TCKN"}'></textarea>
+      <div class="row-help">
+        Bos birakilirsa payload oldugu gibi gonderilir. Format:
+        {"canonical_alan": "KBS_alan_adi"}.
+      </div>
+
+      <label for="polis_referenceRegex">Referans regex (opsiyonel)</label>
+      <input id="polis_referenceRegex" type="text" placeholder="Referans:\s*([A-Z0-9-]+)" />
+      <div class="row-help">
+        HTML yanitlardan referans cikarmak icin. Bos ise JSON anahtarlari denenir.
+      </div>
+    </section>
+
+    <section>
+      <h2>Jandarma KBS</h2>
+      <p class="sec-help">Gercek uc, alan adi *.jandarma.gov.tr olmalidir.</p>
+
+      <label for="jandarma_mode">Mod</label>
+      <select id="jandarma_mode">
+        <option value="test">Test (gercek gonderim yok, TEST- referans)</option>
+        <option value="cookie">Oturum cerezi (KBS portalinda acik oturum)</option>
+        <option value="token">API token</option>
+      </select>
+      <div class="row-help">
+        Test: prova icin. Oturum cerezi: ayni tarayicida KBS portalinda oturum
+        acik olmali. API token: entegrator/anahtar ile.
+      </div>
+
+      <label for="jandarma_endpoint">KBS ucu (URL)</label>
+      <input id="jandarma_endpoint" type="url" placeholder="https://...jandarma.gov.tr/..." />
+      <div class="row-help">https ve *.jandarma.gov.tr disindaki adresler reddedilir.</div>
+
+      <label for="jandarma_token">API token (yalnizca token modu)</label>
+      <input id="jandarma_token" type="password" autocomplete="off" />
+
+      <label for="jandarma_requestFormat">Istek bicimi</label>
+      <select id="jandarma_requestFormat">
+        <option value="json">JSON</option>
+        <option value="form">Form (x-www-form-urlencoded)</option>
+      </select>
+
+      <label for="jandarma_fieldMap">Alan eslestirme (opsiyonel, JSON)</label>
+      <textarea id="jandarma_fieldMap" placeholder='{"guest_name": "AdSoyad", "id_number": "TCKN"}'></textarea>
+      <div class="row-help">
+        Bos birakilirsa payload oldugu gibi gonderilir. Format:
+        {"canonical_alan": "KBS_alan_adi"}.
+      </div>
+
+      <label for="jandarma_referenceRegex">Referans regex (opsiyonel)</label>
+      <input id="jandarma_referenceRegex" type="text" placeholder="Referans:\s*([A-Z0-9-]+)" />
+      <div class="row-help">
+        HTML yanitlardan referans cikarmak icin. Bos ise JSON anahtarlari denenir.
+      </div>
+    </section>
+
+    <div>
+      <button id="save">Kaydet</button>
+      <span id="status"></span>
+    </div>
+
+    <script src="options.js"></script>
+  </body>
+</html>

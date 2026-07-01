@@ -1,24 +1,27 @@
 """Reconciliation, observability, audit-trail, webhook, error-queue, admin endpoints."""
-import logging
-from typing import Optional, List
-from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body, Request
+import asyncio
+import logging
+from datetime import UTC, datetime, timedelta
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
+from core.cache import cached
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v90 DW
 
 from ...application.connector_service import ConnectorService
-from ...application.mapping_service import MappingService
+from ...application.error_queue_service import ErrorQueueService
 from ...application.inventory_sync_service import InventorySyncService
-from ...application.reconciliation_service import ReconciliationService
+from ...application.mapping_service import MappingService
 from ...application.observability_service import ObservabilityService
+from ...application.production_readiness_service import ProductionReadinessService
+from ...application.reconciliation_service import ReconciliationService
+from ...application.sandbox_validation_service import SandboxValidationService
 from ...application.scheduler_service import SchedulerService
 from ...application.webhook_service import WebhookService
-from ...application.error_queue_service import ErrorQueueService
-from ...application.production_readiness_service import ProductionReadinessService
-from ...application.sandbox_validation_service import SandboxValidationService
 from ...infrastructure.credential_vault import CredentialVault
 from ...infrastructure.rbac import enforce_credential_access
 
@@ -44,8 +47,8 @@ class CreateIssueRequest(BaseModel):
     issue_type: str
     severity: str
     description: str
-    suggested_actions: Optional[List[str]] = None
-    evidence_payload: Optional[dict] = None
+    suggested_actions: list[str] | None = None
+    evidence_payload: dict | None = None
 
 
 class ErrorQueueActionRequest(BaseModel):
@@ -55,27 +58,29 @@ class ErrorQueueActionRequest(BaseModel):
 
 
 class BulkRetryRequest(BaseModel):
-    item_ids: List[str]
+    item_ids: list[str]
     error_type: str
 
 
 class BulkDismissRequest(BaseModel):
-    item_ids: List[str]
+    item_ids: list[str]
     error_type: str
     reason: str = ""
 
 
 class BulkIssueActionRequest(BaseModel):
-    issue_ids: List[str]
+    issue_ids: list[str]
     reason: str = ""
 
 
 # ─── Reconciliation ──────────────────────────────────────────────
 
+
 @router.post("/reconciliation/run")
 async def run_reconciliation(
     connector_id: str = Body(..., embed=True),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = ReconciliationService()
     result = await svc.run_reconciliation(current_user.tenant_id, connector_id, current_user.id)
@@ -84,7 +89,7 @@ async def run_reconciliation(
 
 @router.get("/reconciliation/issues")
 async def list_reconciliation_issues(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     status: str = Query("open"),
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
@@ -96,7 +101,7 @@ async def list_reconciliation_issues(
 
 @router.get("/reconciliation/issues/summary")
 async def get_reconciliation_summary(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     svc = ReconciliationService()
@@ -120,6 +125,7 @@ async def update_issue_status(
     issue_id: str,
     req: UpdateIssueStatusRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = ReconciliationService()
     try:
@@ -133,6 +139,7 @@ async def resolve_issue(
     issue_id: str,
     req: ResolveIssueRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = ReconciliationService()
     return await svc.resolve_issue(current_user.tenant_id, issue_id, req.resolution, current_user.id)
@@ -143,6 +150,7 @@ async def dismiss_issue(
     issue_id: str,
     req: DismissIssueRequest = Body(DismissIssueRequest()),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = ReconciliationService()
     return await svc.dismiss_issue(current_user.tenant_id, issue_id, req.reason, current_user.id)
@@ -152,6 +160,7 @@ async def dismiss_issue(
 async def create_reconciliation_issue(
     req: CreateIssueRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = ReconciliationService()
     connector_svc = ConnectorService()
@@ -182,6 +191,7 @@ async def get_reconciliation_health(
 
 # ─── Observability ────────────────────────────────────────────────
 
+
 @router.get("/dashboard")
 async def get_dashboard(
     current_user: User = Depends(get_current_user),
@@ -201,11 +211,12 @@ async def get_connector_health(
 
 @router.get("/audit")
 async def get_audit_log(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     logs = await repo.get_audit_logs(current_user.tenant_id, connector_id, limit)
     return {"logs": logs, "count": len(logs)}
@@ -213,25 +224,29 @@ async def get_audit_log(
 
 # ─── Webhooks ────────────────────────────────────────────────────
 
+
 @router.post("/webhooks/{provider}")
 async def receive_webhook(
     provider: str,
     request: Request,
-    connector_id: Optional[str] = Query(None),
-    x_webhook_signature: Optional[str] = None,
-    x_webhook_timestamp: Optional[str] = None,
+    connector_id: str | None = Query(None),
+    x_webhook_signature: str | None = None,
+    x_webhook_timestamp: str | None = None,
 ):
     body = await request.body()
     tenant_id = ""
     if connector_id:
         from core.database import db
+
         connector = await db.cm_connectors.find_one({"id": connector_id}, {"_id": 0, "tenant_id": 1})
         if connector:
             tenant_id = connector.get("tenant_id", "")
     if not tenant_id:
         from core.database import db
+
         connector = await db.cm_connectors.find_one(
-            {"provider": provider, "status": "active"}, {"_id": 0, "tenant_id": 1, "id": 1},
+            {"provider": provider, "status": "active"},
+            {"_id": 0, "tenant_id": 1, "id": 1},
         )
         if connector:
             tenant_id = connector.get("tenant_id", "")
@@ -267,11 +282,12 @@ async def list_webhook_events(
 
 # ─── Admin: Reconciliation Issues ────────────────────────────────
 
+
 @router.get("/admin/reconciliation/issues")
 async def admin_list_issues(
-    connector_id: Optional[str] = None,
-    severity: Optional[str] = None,
-    issue_type: Optional[str] = None,
+    connector_id: str | None = None,
+    severity: str | None = None,
+    issue_type: str | None = None,
     status: str = Query("open"),
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
@@ -289,6 +305,7 @@ async def admin_list_issues(
 async def admin_retry_sync_for_issue(
     issue_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ReconciliationService()
     issue = await svc.get_issue_detail(current_user.tenant_id, issue_id)
@@ -299,8 +316,8 @@ async def admin_retry_sync_for_issue(
         result = await sync_svc.trigger_inventory_sync(
             tenant_id=current_user.tenant_id,
             connector_id=issue["connector_id"],
-            date_start=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-            date_end=(datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d"),
+            date_start=datetime.now(UTC).strftime("%Y-%m-%d"),
+            date_end=(datetime.now(UTC) + timedelta(days=7)).strftime("%Y-%m-%d"),
             triggered_by="admin",
             trigger_reason=f"Retry from issue {issue_id}",
             actor_id=current_user.id,
@@ -315,6 +332,7 @@ async def admin_retry_sync_for_issue(
 async def admin_retry_ack_for_issue(
     issue_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ReconciliationService()
     issue = await svc.get_issue_detail(current_user.tenant_id, issue_id)
@@ -323,6 +341,7 @@ async def admin_retry_ack_for_issue(
     related_res = issue.get("related_reservation_ids", [])
     if related_res:
         from ...infrastructure.repository import ChannelManagerRepository
+
         repo = ChannelManagerRepository()
         for res_id in related_res:
             await repo.update_imported_reservation(current_user.tenant_id, res_id, {"ack_status": "ack_pending"})
@@ -334,6 +353,7 @@ async def admin_retry_ack_for_issue(
 async def admin_revalidate_mapping_for_issue(
     issue_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ReconciliationService()
     issue = await svc.get_issue_detail(current_user.tenant_id, issue_id)
@@ -349,6 +369,7 @@ async def admin_revalidate_mapping_for_issue(
 async def admin_send_issue_to_review(
     issue_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ReconciliationService()
     try:
@@ -362,14 +383,17 @@ async def admin_send_issue_to_review(
 async def admin_bulk_dismiss_issues(
     req: BulkIssueActionRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     count = await repo.bulk_dismiss_issues(current_user.tenant_id, req.issue_ids, req.reason)
     return {"success": True, "dismissed_count": count}
 
 
 # ─── Admin: Scheduler ────────────────────────────────────────────
+
 
 @router.get("/admin/scheduler/status")
 async def admin_scheduler_status(
@@ -384,17 +408,19 @@ async def admin_scheduler_status(
         stale = [j for j in jobs if j.get("status") in ("pending", "dispatched")]
         failed = [j for j in jobs if j.get("status") == "failed"]
         last_sync = c.get("last_successful_sync")
-        statuses.append({
-            "connector_id": cid,
-            "display_name": c.get("display_name", ""),
-            "provider": c.get("provider", ""),
-            "status": c.get("status", ""),
-            "stale_jobs": len(stale),
-            "failed_jobs": len(failed),
-            "total_jobs": len(jobs),
-            "last_successful_sync": last_sync,
-            "consecutive_failures": c.get("consecutive_failures", 0),
-        })
+        statuses.append(
+            {
+                "connector_id": cid,
+                "display_name": c.get("display_name", ""),
+                "provider": c.get("provider", ""),
+                "status": c.get("status", ""),
+                "stale_jobs": len(stale),
+                "failed_jobs": len(failed),
+                "total_jobs": len(jobs),
+                "last_successful_sync": last_sync,
+                "consecutive_failures": c.get("consecutive_failures", 0),
+            }
+        )
     return {"connectors": statuses, "count": len(statuses)}
 
 
@@ -402,11 +428,14 @@ async def admin_scheduler_status(
 async def admin_trigger_scheduler(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     svc = SchedulerService()
     try:
         result = await svc.run_scheduled_check(
-            current_user.tenant_id, connector_id, current_user.id,
+            current_user.tenant_id,
+            connector_id,
+            current_user.id,
         )
         return result
     except ValueError as e:
@@ -416,6 +445,7 @@ async def admin_trigger_scheduler(
 @router.post("/admin/scheduler/trigger-all")
 async def admin_trigger_all_schedulers(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v90 DW
 ):
     svc = SchedulerService()
     return await svc.run_all_connectors(current_user.tenant_id)
@@ -423,33 +453,41 @@ async def admin_trigger_all_schedulers(
 
 # ─── Admin: Credentials ──────────────────────────────────────────
 
+
 @router.get("/admin/credentials")
 async def admin_list_credentials(
     current_user: User = Depends(get_current_user),
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     await enforce_credential_access(
-        current_user, "credential_view", "", repo, require_write=False,
+        current_user,
+        "credential_view",
+        "",
+        repo,
+        require_write=False,
     )
     connectors = await repo.get_connectors_by_tenant(current_user.tenant_id)
     vault = CredentialVault()
     creds = []
     for c in connectors:
         masked = vault.mask_credentials(c.get("credentials", {}))
-        creds.append({
-            "connector_id": c.get("id", ""),
-            "display_name": c.get("display_name", ""),
-            "provider": c.get("provider", ""),
-            "status": c.get("status", ""),
-            "environment": c.get("environment", "sandbox"),
-            "masked_credentials": masked,
-            "encrypted": c.get("credentials_encrypted", False),
-            "encryption_algorithm": c.get("encryption_algorithm", ""),
-            "last_tested": c.get("last_tested"),
-            "last_rotated": c.get("credentials_rotated_at"),
-            "credentials_updated_at": c.get("credentials_updated_at"),
-        })
+        creds.append(
+            {
+                "connector_id": c.get("id", ""),
+                "display_name": c.get("display_name", ""),
+                "provider": c.get("provider", ""),
+                "status": c.get("status", ""),
+                "environment": c.get("environment", "sandbox"),
+                "masked_credentials": masked,
+                "encrypted": c.get("credentials_encrypted", False),
+                "encryption_algorithm": c.get("encryption_algorithm", ""),
+                "last_tested": c.get("last_tested"),
+                "last_rotated": c.get("credentials_rotated_at"),
+                "credentials_updated_at": c.get("credentials_updated_at"),
+            }
+        )
     return {"credentials": creds, "count": len(creds)}
 
 
@@ -457,11 +495,17 @@ async def admin_list_credentials(
 async def admin_test_credential(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     await enforce_credential_access(
-        current_user, "credential_test", connector_id, repo, require_write=False,
+        current_user,
+        "credential_test",
+        connector_id,
+        repo,
+        require_write=False,
     )
     svc = ConnectorService()
     result = await svc.test_connection(current_user.tenant_id, connector_id)
@@ -472,21 +516,28 @@ async def admin_test_credential(
 async def admin_disable_connector(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     await enforce_credential_access(
-        current_user, "connector_disable", connector_id, repo, require_write=True,
+        current_user,
+        "connector_disable",
+        connector_id,
+        repo,
+        require_write=True,
     )
     connector = await repo.get_connector(current_user.tenant_id, connector_id)
     if not connector:
         raise HTTPException(status_code=404, detail="Connector not found")
     connector["status"] = "disabled"
-    connector["disabled_at"] = datetime.now(timezone.utc).isoformat()
+    connector["disabled_at"] = datetime.now(UTC).isoformat()
     connector["disabled_by"] = current_user.id
     await repo.upsert_connector(connector)
 
-    from ...domain.models.audit import IntegrationAuditLog, AuditAction
+    from ...domain.models.audit import AuditAction, IntegrationAuditLog
+
     log = IntegrationAuditLog(
         tenant_id=current_user.tenant_id,
         connector_id=connector_id,
@@ -499,33 +550,46 @@ async def admin_disable_connector(
 
 # ─── Admin: Sync Health ──────────────────────────────────────────
 
+
 @router.get("/admin/sync-health")
+@cached(ttl=30, key_prefix="cm_admin_sync_health")
 async def admin_sync_health_dashboard(
     current_user: User = Depends(get_current_user),
 ):
+    # Perf: N-connector × (health + metrics) seri await + summary/trend
+    # toplam ≈ 2.3s ölçüldü (observability.middleware SLOW REQUEST).
+    # Per-connector iki çağrı bağımsız, ayrıca error_summary+trend
+    # bağımsız; tümünü asyncio.gather ile paralel topla. 30s tenant-
+    # scoped cache, admin paneli sekme değiştirme/refresh için yeterli.
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     recon_svc = ReconciliationService()
     connectors = await repo.get_connectors_by_tenant(current_user.tenant_id)
 
-    connector_health = []
-    total_score = 0
-    for c in connectors:
+    async def _per_connector(c):
         cid = c.get("id", "")
-        health = await recon_svc.get_health_score(current_user.tenant_id, cid)
-        metrics = await repo.get_sync_metrics(current_user.tenant_id, cid)
-        connector_health.append({
+        health, metrics = await asyncio.gather(
+            recon_svc.get_health_score(current_user.tenant_id, cid),
+            repo.get_sync_metrics(current_user.tenant_id, cid),
+        )
+        return {
             **health,
             "display_name": c.get("display_name", ""),
             "provider": c.get("provider", ""),
             "connector_status": c.get("status", ""),
             "sync_metrics": metrics,
-        })
-        total_score += health.get("health_score", 0)
+        }
 
+    per_connector_task = asyncio.gather(*[_per_connector(c) for c in connectors]) if connectors else asyncio.sleep(0, result=[])
+    connector_health, error_summary, trend_data = await asyncio.gather(
+        per_connector_task,
+        repo.get_error_queue_summary(current_user.tenant_id),
+        repo.get_sync_trend_24h(current_user.tenant_id),
+    )
+
+    total_score = sum(h.get("health_score", 0) for h in connector_health)
     avg_score = round(total_score / max(len(connectors), 1))
-    error_summary = await repo.get_error_queue_summary(current_user.tenant_id)
-    trend_data = await repo.get_sync_trend_24h(current_user.tenant_id)
 
     return {
         "overall_health_score": avg_score,
@@ -543,6 +607,7 @@ async def admin_connector_sync_health(
     current_user: User = Depends(get_current_user),
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     recon_svc = ReconciliationService()
     health = await recon_svc.get_health_score(current_user.tenant_id, connector_id)
@@ -559,10 +624,11 @@ async def admin_connector_sync_health(
 
 # ─── Admin: Error Queue ──────────────────────────────────────────
 
+
 @router.get("/admin/error-queue")
 async def admin_error_queue(
-    connector_id: Optional[str] = None,
-    error_type: Optional[str] = None,
+    connector_id: str | None = None,
+    error_type: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
@@ -572,10 +638,11 @@ async def admin_error_queue(
 
 @router.get("/admin/error-queue/summary")
 async def admin_error_queue_summary(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     return await repo.get_error_queue_summary(current_user.tenant_id, connector_id)
 
@@ -584,6 +651,7 @@ async def admin_error_queue_summary(
 async def admin_retry_error(
     req: ErrorQueueActionRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ErrorQueueService()
     return await svc.retry_item(current_user.tenant_id, req.item_id, req.error_type, current_user.id)
@@ -593,6 +661,7 @@ async def admin_retry_error(
 async def admin_dismiss_error(
     req: ErrorQueueActionRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ErrorQueueService()
     return await svc.dismiss_item(current_user.tenant_id, req.item_id, req.error_type, req.reason, current_user.id)
@@ -602,6 +671,7 @@ async def admin_dismiss_error(
 async def admin_escalate_error(
     req: ErrorQueueActionRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ErrorQueueService()
     return await svc.escalate_item(current_user.tenant_id, req.item_id, req.error_type, current_user.id)
@@ -611,6 +681,7 @@ async def admin_escalate_error(
 async def admin_bulk_retry_errors(
     req: BulkRetryRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ErrorQueueService()
     return await svc.bulk_retry(current_user.tenant_id, req.item_ids, req.error_type, current_user.id)
@@ -620,6 +691,7 @@ async def admin_bulk_retry_errors(
 async def admin_bulk_dismiss_errors(
     req: BulkDismissRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ErrorQueueService()
     return await svc.bulk_dismiss(current_user.tenant_id, req.item_ids, req.error_type, req.reason, current_user.id)
@@ -627,12 +699,14 @@ async def admin_bulk_dismiss_errors(
 
 # ─── Admin: Observability Metrics ────────────────────────────────
 
+
 @router.get("/admin/observability/metrics")
 async def admin_observability_metrics(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     connectors = await repo.get_connectors_by_tenant(current_user.tenant_id)
     if connector_id:
@@ -652,48 +726,59 @@ async def admin_observability_metrics(
         retry_rate = round(retry_jobs / max(total_jobs, 1) * 100, 1)
 
         from core.database import db
-        total_imports = await db.cm_imported_reservations.count_documents({
-            "tenant_id": current_user.tenant_id, "connector_id": cid,
-        })
-        ack_sent = await db.cm_imported_reservations.count_documents({
-            "tenant_id": current_user.tenant_id, "connector_id": cid, "ack_status": "ack_sent",
-        })
+
+        total_imports = await db.cm_imported_reservations.count_documents(
+            {
+                "tenant_id": current_user.tenant_id,
+                "connector_id": cid,
+            }
+        )
+        ack_sent = await db.cm_imported_reservations.count_documents(
+            {
+                "tenant_id": current_user.tenant_id,
+                "connector_id": cid,
+                "ack_status": "ack_sent",
+            }
+        )
         ack_rate = round(ack_sent / max(total_imports, 1) * 100, 1)
 
         mappings = await repo.get_mappings(current_user.tenant_id, cid)
         valid_mappings = sum(1 for m in mappings if m.get("validation_status") != "invalid")
         mapping_rate = round(valid_mappings / max(len(mappings), 1) * 100, 1)
 
-        metrics_list.append({
-            "connector_id": cid,
-            "display_name": c.get("display_name", ""),
-            "provider": c.get("provider", ""),
-            "sync_success_rate": success_rate,
-            "sync_total": total_jobs,
-            "sync_succeeded": succeeded_jobs,
-            "sync_failed": failed_jobs,
-            "retry_jobs": retry_jobs,
-            "retry_rate": retry_rate,
-            "ack_success_rate": ack_rate,
-            "ack_sent": ack_sent,
-            "total_imports": total_imports,
-            "mapping_validation_rate": mapping_rate,
-            "total_mappings": len(mappings),
-            "valid_mappings": valid_mappings,
-            "open_issues": sync_metrics.get("open_issues", 0),
-        })
+        metrics_list.append(
+            {
+                "connector_id": cid,
+                "display_name": c.get("display_name", ""),
+                "provider": c.get("provider", ""),
+                "sync_success_rate": success_rate,
+                "sync_total": total_jobs,
+                "sync_succeeded": succeeded_jobs,
+                "sync_failed": failed_jobs,
+                "retry_jobs": retry_jobs,
+                "retry_rate": retry_rate,
+                "ack_success_rate": ack_rate,
+                "ack_sent": ack_sent,
+                "total_imports": total_imports,
+                "mapping_validation_rate": mapping_rate,
+                "total_mappings": len(mappings),
+                "valid_mappings": valid_mappings,
+                "open_issues": sync_metrics.get("open_issues", 0),
+            }
+        )
 
     return {"metrics": metrics_list, "count": len(metrics_list)}
 
 
 @router.get("/admin/observability/audit-trail")
 async def admin_audit_trail(
-    connector_id: Optional[str] = None,
-    action: Optional[str] = None,
+    connector_id: str | None = None,
+    action: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     logs = await repo.get_audit_logs(current_user.tenant_id, connector_id, limit)
     if action:
@@ -703,14 +788,18 @@ async def admin_audit_trail(
 
 # ─── Admin: Production Readiness ─────────────────────────────────
 
+
 @router.post("/admin/production-readiness/{connector_id}")
 async def admin_production_readiness(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     svc = ProductionReadinessService()
     return await svc.run_readiness_check(
-        current_user.tenant_id, connector_id, current_user.id,
+        current_user.tenant_id,
+        connector_id,
+        current_user.id,
     )
 
 
@@ -719,6 +808,7 @@ async def admin_production_readiness_overview(
     current_user: User = Depends(get_current_user),
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     svc = ProductionReadinessService()
     connectors = await repo.get_connectors_by_tenant(current_user.tenant_id)
@@ -737,15 +827,19 @@ async def admin_production_readiness_overview(
 
 # ─── Sandbox Validation ──────────────────────────────────────────
 
+
 @router.post("/sandbox/validate/{connector_id}")
 async def run_sandbox_validation(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = SandboxValidationService()
     try:
         return await svc.run_validation(
-            current_user.tenant_id, connector_id, current_user.id,
+            current_user.tenant_id,
+            connector_id,
+            current_user.id,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -755,6 +849,7 @@ async def run_sandbox_validation(
 async def run_full_sandbox_validation(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = SandboxValidationService()
     try:
@@ -769,9 +864,7 @@ async def run_full_sandbox_validation(
         report["required_next_actions"] = []
         for check in report.get("checks", []):
             if not check.get("success"):
-                report["required_next_actions"].append(
-                    f"Fix: {check['check_name']} — {check.get('error', check.get('response_summary', ''))}"
-                )
+                report["required_next_actions"].append(f"Fix: {check['check_name']} — {check.get('error', check.get('response_summary', ''))}")
         report["connector_health_impact"] = "high" if report.get("failed_checks", 0) > 3 else ("medium" if report.get("failed_checks", 0) > 0 else "low")
         return report
     except ValueError as e:

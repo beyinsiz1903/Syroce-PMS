@@ -1,11 +1,13 @@
 """
 ML Scheduler Router - Schedule policies, execution triggers, status monitoring.
 """
-from typing import Optional
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
+
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 router = APIRouter(prefix="/api/data-intelligence/schedules", tags=["ml-scheduler"])
 
@@ -15,8 +17,9 @@ _service = None
 def _get_service():
     global _service
     if _service is None:
-        from server import db
         from modules.ml_scheduler.service import MLSchedulerService
+        from server import db
+
         _service = MLSchedulerService(db)
     return _service
 
@@ -35,33 +38,39 @@ async def get_schedule_policies(current_user: User = Depends(get_current_user)):
 
 
 class UpdateScheduleReq(BaseModel):
-    interval_hours: Optional[int] = None
-    enabled: Optional[bool] = None
+    interval_hours: int | None = None
+    enabled: bool | None = None
 
 
 @router.put("/policies/{model_type}")
-async def update_schedule(model_type: str, req: UpdateScheduleReq,
-                           current_user: User = Depends(get_current_user)):
+async def update_schedule(
+    model_type: str,
+    req: UpdateScheduleReq,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     svc = _get_service()
     return await svc.update_schedule(current_user.tenant_id, model_type, req.interval_hours, req.enabled)
 
 
 class TriggerReq(BaseModel):
     model_type: str
-    property_id: Optional[str] = None
+    property_id: str | None = None
 
 
 @router.post("/trigger")
-async def trigger_execution(req: TriggerReq, current_user: User = Depends(get_current_user)):
+async def trigger_execution(
+    req: TriggerReq,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+):
     svc = _get_service()
-    return await svc.trigger_execution(
-        current_user.tenant_id, req.model_type, req.property_id, triggered_by=current_user.id
-    )
+    return await svc.trigger_execution(current_user.tenant_id, req.model_type, req.property_id, triggered_by=current_user.id)
 
 
 @router.get("/history")
 async def get_execution_history(
-    model_type: Optional[str] = None,
+    model_type: str | None = None,
     limit: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
 ):

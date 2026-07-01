@@ -306,10 +306,64 @@ class TestEventSyncService:
     def test_supported_events(self):
         expected = {
             "booking_created", "booking_modified", "booking_cancelled",
+            "booking_no_show",
             "room_blocked", "room_unblocked",
             "rate_changed", "restriction_changed",
         }
         assert SUPPORTED_EVENTS == expected
+
+    @pytest.mark.asyncio
+    async def test_booking_no_show_routed_like_cancelled(self, mock_repo):
+        """CM-Hardening Turu #3b: booking_no_show event MUST flow through the
+        same InventorySyncService.trigger_inventory_sync path as booking_cancelled
+        (Strategy A — inventory recompute, no dedicated HR no-show endpoint)."""
+        from unittest.mock import AsyncMock, patch
+        mock_repo.get_active_connectors = AsyncMock(return_value=[
+            {"id": "c-hr-1", "provider": "hotelrunner"},
+        ])
+        svc = EventSyncService(mock_repo)
+        with patch(
+            "channel_manager.application.inventory_sync_service.InventorySyncService.trigger_inventory_sync",
+            new=AsyncMock(return_value={"job_id": "j-noshow-1", "status": "queued"}),
+        ) as mock_trigger:
+            result = await svc.handle_event("t1", "booking_no_show", {
+                "property_id": "p1",
+                "check_in": "2026-05-20",
+                "check_out": "2026-05-22",
+                "room_type_id": "standard",
+            })
+        assert result["handled"] is True
+        assert result["sync_jobs_created"] == 1
+        mock_trigger.assert_awaited_once()
+        call_kwargs = mock_trigger.await_args.kwargs
+        assert call_kwargs["tenant_id"] == "t1"
+        assert call_kwargs["connector_id"] == "c-hr-1"
+        assert call_kwargs["date_start"] == "2026-05-20"
+        assert call_kwargs["date_end"] == "2026-05-22"
+        assert call_kwargs["room_type_ids"] == ["standard"]
+        assert "booking_no_show" in call_kwargs["trigger_reason"]
+
+    @pytest.mark.asyncio
+    async def test_booking_cancelled_regression_unchanged(self, mock_repo):
+        """Regression: ensure booking_cancelled still routes to trigger_inventory_sync
+        (parity reference for booking_no_show)."""
+        from unittest.mock import AsyncMock, patch
+        mock_repo.get_active_connectors = AsyncMock(return_value=[
+            {"id": "c-hr-1", "provider": "hotelrunner"},
+        ])
+        svc = EventSyncService(mock_repo)
+        with patch(
+            "channel_manager.application.inventory_sync_service.InventorySyncService.trigger_inventory_sync",
+            new=AsyncMock(return_value={"job_id": "j-cancel-1", "status": "queued"}),
+        ) as mock_trigger:
+            result = await svc.handle_event("t1", "booking_cancelled", {
+                "property_id": "p1",
+                "check_in": "2026-05-20",
+                "check_out": "2026-05-22",
+            })
+        assert result["handled"] is True
+        assert result["sync_jobs_created"] == 1
+        mock_trigger.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_unsupported_event(self, mock_repo):

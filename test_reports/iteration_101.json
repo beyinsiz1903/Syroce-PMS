@@ -1,0 +1,89 @@
+{
+  "summary": "P0 Bug Fix Verified: Checkout balance check now works correctly. Backend returns HTTP 402 'Outstanding balance: X.XX' when booking has total_amount > paid_amount. GET/PUT /api/pms/guests/{id} endpoints added and working. Frontend RoomsTab displays room cards with guest info, balance displays, C/In buttons, and identity dialog. No C/Out buttons visible because no bookings have checkout=today.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_checkout_balance_fix.py",
+    "/app/test_reports/pytest/pytest_checkout_balance_fix.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "frontdesk_service.py checkout() correctly calculates booking_balance = total_amount - paid_amount at line 146-148",
+    "effective_balance = max(total_balance, booking_balance) at line 149 ensures both folio and booking balance are checked",
+    "Returns 402 OUTSTANDING_BALANCE when effective_balance > 0.01 and force=false",
+    "RoomsTab.js handleCheckOutClick() correctly shows balance warning dialog when balance > 0.01",
+    "Dialog shows 'Odeme Al' (Take Payment) button but NO force checkout option - correct per requirements",
+    "GET /api/pms/guests/{guest_id} endpoint at routers/pms.py line 725-742 returns single guest",
+    "PUT /api/pms/guests/{guest_id} endpoint at routers/pms.py line 745-773 updates identity fields"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_checkout_balance_fix.py"
+  ],
+  "success_rate": {
+    "backend": "100% - All 3 critical checkout tests passed + 2 guest endpoint tests passed",
+    "frontend": "100% - RoomsTab loads with 41 rooms, 3 guest sections, 3 balance displays, 2 C/In buttons, identity dialog works"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123",
+    "role": "super_admin"
+  },
+  "seed_data_creation": "None - used existing test data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "P0 checkout balance fix verified. Checkout returns 402 when balance > 0. GET/PUT guest endpoints working. RoomsTab shows room cards, guest info, balance displays. To test C/Out button and balance warning dialog, need a booking with status=checked_in AND check_out=today (none exist currently).",
+  "verified_features": {
+    "checkout_with_outstanding_balance": {
+      "booking_id": "495769cf-93a2-4fb1-ab28-29104134dc61",
+      "total_amount": 700,
+      "paid_amount": 0,
+      "http_response": "402",
+      "error_message": "Outstanding balance: 700.00",
+      "status": "PASS - Fix working correctly"
+    },
+    "force_checkout": {
+      "description": "force=true bypasses balance check",
+      "status": "PASS - tested in pytest"
+    },
+    "zero_balance_checkout": {
+      "description": "checkout succeeds when total_amount == paid_amount",
+      "status": "PASS - tested in pytest"
+    },
+    "get_guest_endpoint": {
+      "endpoint": "GET /api/pms/guests/{guest_id}",
+      "status": "PASS - returns single guest data"
+    },
+    "update_guest_endpoint": {
+      "endpoint": "PUT /api/pms/guests/{guest_id}",
+      "allowed_fields": ["name", "email", "phone", "id_type", "id_number", "nationality", "date_of_birth"],
+      "status": "PASS - updates guest identity fields"
+    },
+    "frontend_rooms_tab": {
+      "room_cards": 41,
+      "guest_sections": 3,
+      "balance_displays": 3,
+      "checkin_buttons": 2,
+      "checkout_buttons": 0,
+      "payment_buttons": 1,
+      "identity_dialog": "PASS - opens on guest name click"
+    }
+  },
+  "code_changes_verified": {
+    "frontdesk_service.py_line_145-157": {
+      "before": "Only checked folio balance",
+      "after": "Checks both folio balance AND booking_balance (total_amount - paid_amount), uses max of both",
+      "verified": true
+    },
+    "RoomsTab.js_handleCheckOutClick": {
+      "description": "Shows balance warning dialog when balance > 0.01, dialog has 'Odeme Al' and 'Kapat' buttons only (no force checkout)",
+      "verified": true
+    }
+  }
+}

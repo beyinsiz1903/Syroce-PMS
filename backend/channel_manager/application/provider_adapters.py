@@ -9,20 +9,25 @@ Production-grade adapters that wrap the HotelRunner client with:
   - SyncJob lifecycle integration
   - Reconciliation issue creation on failure
 """
+
 import logging
 import time
 import uuid as _uuid
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
+from datetime import UTC, datetime
+from typing import Any
 
-from ..connectors.hotelrunner.client import HotelRunnerClient
-from ..connectors.hotelrunner.auth import HotelRunnerAuth
-from ..connectors.hotelrunner.errors import (
-    AuthenticationError, RateLimitError, ProviderUnavailableError,
-    XmlParseError, ProviderValidationError, SchemaMismatchError,
+from ..connectors.hotelrunner_v2.auth import HotelRunnerAuth
+from ..connectors.hotelrunner_v2.connector_errors import (
+    AuthenticationError,
+    ProviderUnavailableError,
+    ProviderValidationError,
+    RateLimitError,
+    SchemaMismatchError,
     UnknownResponseFormatError,
+    XmlParseError,
 )
-from ..domain.models.audit import IntegrationAuditLog, AuditAction
+from ..connectors.hotelrunner_v2.hr_client import HotelRunnerClient
+from ..domain.models.audit import AuditAction, IntegrationAuditLog
 from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.provider_adapters")
@@ -53,10 +58,12 @@ def _mask_payload(payload: str) -> str:
     for key in MASK_KEYS:
         if key in payload.lower():
             import re
+
             payload = re.sub(
                 rf'({key}["\s:=]+)([^"&\s<>]+)',
-                r'\1****',
-                payload, flags=re.IGNORECASE,
+                r"\1****",
+                payload,
+                flags=re.IGNORECASE,
             )
     return payload
 
@@ -73,7 +80,7 @@ class InventoryProviderAdapter:
     error handling, auditing, and reconciliation integration.
     """
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     async def push(
@@ -81,12 +88,12 @@ class InventoryProviderAdapter:
         tenant_id: str,
         connector_id: str,
         property_id: str,
-        updates: List[Dict[str, Any]],
-        credentials: Dict[str, str],
+        updates: list[dict[str, Any]],
+        credentials: dict[str, str],
         environment: str = "sandbox",
-        correlation_id: Optional[str] = None,
-        job_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        correlation_id: str | None = None,
+        job_id: str | None = None,
+    ) -> dict[str, Any]:
         corr_id = correlation_id or str(_uuid.uuid4())
         start = time.monotonic()
 
@@ -98,7 +105,7 @@ class InventoryProviderAdapter:
             "operation": "inventory_push",
             "environment": environment,
             "update_count": len(updates),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "job_id": job_id,
         }
 
@@ -106,16 +113,21 @@ class InventoryProviderAdapter:
             result = await client.push_availability(updates, correlation_id=corr_id)
             latency_ms = int((time.monotonic() - start) * 1000)
 
-            audit_entry.update({
-                "success": result.get("success", False),
-                "latency_ms": latency_ms,
-                "raw_request_len": result.get("raw_request_len", 0),
-                "raw_response_len": result.get("raw_response_len", 0),
-            })
+            audit_entry.update(
+                {
+                    "success": result.get("success", False),
+                    "latency_ms": latency_ms,
+                    "raw_request_len": result.get("raw_request_len", 0),
+                    "raw_response_len": result.get("raw_response_len", 0),
+                }
+            )
 
             await self._audit(
-                tenant_id, property_id, connector_id,
-                AuditAction.INVENTORY_PUSHED, metadata=audit_entry,
+                tenant_id,
+                property_id,
+                connector_id,
+                AuditAction.INVENTORY_PUSHED,
+                metadata=audit_entry,
             )
 
             return {
@@ -132,22 +144,32 @@ class InventoryProviderAdapter:
             latency_ms = int((time.monotonic() - start) * 1000)
             error_type = _categorise_error(e)
 
-            audit_entry.update({
-                "success": False,
-                "latency_ms": latency_ms,
-                "error_type": error_type,
-                "error_message": _truncate(str(e)),
-            })
+            audit_entry.update(
+                {
+                    "success": False,
+                    "latency_ms": latency_ms,
+                    "error_type": error_type,
+                    "error_message": _truncate(str(e)),
+                }
+            )
 
             await self._audit(
-                tenant_id, property_id, connector_id,
-                AuditAction.SYNC_JOB_FAILED, metadata=audit_entry,
+                tenant_id,
+                property_id,
+                connector_id,
+                AuditAction.SYNC_JOB_FAILED,
+                metadata=audit_entry,
             )
 
             # Create reconciliation issue for push failure
             await self._create_push_failure_issue(
-                tenant_id, property_id, connector_id,
-                error_type, str(e), corr_id, job_id,
+                tenant_id,
+                property_id,
+                connector_id,
+                error_type,
+                str(e),
+                corr_id,
+                job_id,
             )
 
             return {
@@ -161,10 +183,17 @@ class InventoryProviderAdapter:
             await client.close()
 
     async def _create_push_failure_issue(
-        self, tenant_id, property_id, connector_id,
-        error_type, error_message, correlation_id, job_id,
+        self,
+        tenant_id,
+        property_id,
+        connector_id,
+        error_type,
+        error_message,
+        correlation_id,
+        job_id,
     ):
         from ..application.reconciliation_service import ReconciliationService
+
         recon = ReconciliationService(self._repo)
         await recon.create_issue(
             tenant_id=tenant_id,
@@ -184,8 +213,12 @@ class InventoryProviderAdapter:
 
     async def _audit(self, tenant_id, property_id, connector_id, action, actor_id=None, metadata=None):
         log = IntegrationAuditLog(
-            tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-            action=action, actor_id=actor_id, metadata=metadata or {},
+            tenant_id=tenant_id,
+            property_id=property_id,
+            connector_id=connector_id,
+            action=action,
+            actor_id=actor_id,
+            metadata=metadata or {},
         )
         await self._repo.create_audit_log(log.to_doc())
 
@@ -196,7 +229,7 @@ class RateProviderAdapter:
     error handling, auditing, and reconciliation integration.
     """
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     async def push(
@@ -204,12 +237,12 @@ class RateProviderAdapter:
         tenant_id: str,
         connector_id: str,
         property_id: str,
-        updates: List[Dict[str, Any]],
-        credentials: Dict[str, str],
+        updates: list[dict[str, Any]],
+        credentials: dict[str, str],
         environment: str = "sandbox",
-        correlation_id: Optional[str] = None,
-        job_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        correlation_id: str | None = None,
+        job_id: str | None = None,
+    ) -> dict[str, Any]:
         corr_id = correlation_id or str(_uuid.uuid4())
         start = time.monotonic()
 
@@ -221,7 +254,7 @@ class RateProviderAdapter:
             "operation": "rate_push",
             "environment": environment,
             "update_count": len(updates),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "job_id": job_id,
         }
 
@@ -229,16 +262,21 @@ class RateProviderAdapter:
             result = await client.push_rates(updates, correlation_id=corr_id)
             latency_ms = int((time.monotonic() - start) * 1000)
 
-            audit_entry.update({
-                "success": result.get("success", False),
-                "latency_ms": latency_ms,
-                "raw_request_len": result.get("raw_request_len", 0),
-                "raw_response_len": result.get("raw_response_len", 0),
-            })
+            audit_entry.update(
+                {
+                    "success": result.get("success", False),
+                    "latency_ms": latency_ms,
+                    "raw_request_len": result.get("raw_request_len", 0),
+                    "raw_response_len": result.get("raw_response_len", 0),
+                }
+            )
 
             await self._audit(
-                tenant_id, property_id, connector_id,
-                AuditAction.RATES_PUSHED, metadata=audit_entry,
+                tenant_id,
+                property_id,
+                connector_id,
+                AuditAction.RATES_PUSHED,
+                metadata=audit_entry,
             )
 
             return {
@@ -255,20 +293,26 @@ class RateProviderAdapter:
             latency_ms = int((time.monotonic() - start) * 1000)
             error_type = _categorise_error(e)
 
-            audit_entry.update({
-                "success": False,
-                "latency_ms": latency_ms,
-                "error_type": error_type,
-                "error_message": _truncate(str(e)),
-            })
+            audit_entry.update(
+                {
+                    "success": False,
+                    "latency_ms": latency_ms,
+                    "error_type": error_type,
+                    "error_message": _truncate(str(e)),
+                }
+            )
 
             await self._audit(
-                tenant_id, property_id, connector_id,
-                AuditAction.SYNC_JOB_FAILED, metadata=audit_entry,
+                tenant_id,
+                property_id,
+                connector_id,
+                AuditAction.SYNC_JOB_FAILED,
+                metadata=audit_entry,
             )
 
             # Create reconciliation issue for rate push failure
             from ..application.reconciliation_service import ReconciliationService
+
             recon = ReconciliationService(self._repo)
             await recon.create_issue(
                 tenant_id=tenant_id,
@@ -298,7 +342,11 @@ class RateProviderAdapter:
 
     async def _audit(self, tenant_id, property_id, connector_id, action, actor_id=None, metadata=None):
         log = IntegrationAuditLog(
-            tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-            action=action, actor_id=actor_id, metadata=metadata or {},
+            tenant_id=tenant_id,
+            property_id=property_id,
+            connector_id=connector_id,
+            action=action,
+            actor_id=actor_id,
+            metadata=metadata or {},
         )
         await self._repo.create_audit_log(log.to_doc())

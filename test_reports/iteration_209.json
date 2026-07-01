@@ -1,0 +1,82 @@
+{
+  "summary": "Tested UI overlap resolution changes: 1) Enterprise Live Dashboard now has 3 tabs (Mesajlasma removed), 2) Platform Scaling has 4 tabs (Revenue ML removed), 3) Analitik & Raporlar has 3 tabs including new Revenue ML tab, 4) Standalone Messaging Dashboard works independently. All 7 test requirements passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Platform Scaling - Event Mimari tab",
+        "issues": ["Console warnings about chart width/height being 0 or -1 - charts may not render properly on initial load"]
+      },
+      {
+        "screen": "Analitik & Raporlar - Revenue ML tab",
+        "issues": ["Console warnings about chart width/height being 0 - charts may need explicit dimensions"]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_209.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Chart components in RevenueMLPanel.jsx and PlatformScalingDashboard.jsx show console warnings about width/height being 0 or -1. Consider adding explicit minWidth/minHeight to ResponsiveContainer components to prevent these warnings."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend only test)",
+    "frontend": "100% (all 7 test requirements passed)"
+  },
+  "test_credentials": "demo@hotel.com / demo123",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "UI overlap resolution completed. Enterprise Live at /enterprise-live has 3 tabs (Canli Operasyon, Oto-Fiyatlama, Entegrasyonlar). Platform Scaling at /platform-scaling has 4 tabs (Genel Bakis, Event Mimari, Multi-Property, CompSet Analiz) with ML Ozet summary card in Overview. Analitik & Raporlar at /app/analitik has 3 tabs (Revenue ML, Rapor Disa Aktarma, ML Zamanlayici). Standalone Messaging Dashboard at /messaging-dashboard has 7 tabs.",
+  "test_cases_executed": [
+    {
+      "test": "Enterprise Live Dashboard - No Mesajlasma tab",
+      "expected": "Only 3 tabs: Canli Operasyon, Oto-Fiyatlama, Entegrasyonlar",
+      "result": "PASS",
+      "details": "Confirmed 3 tabs, no Mesajlasma tab present"
+    },
+    {
+      "test": "Enterprise Live Dashboard - All tabs work",
+      "expected": "All 3 tabs clickable and render content",
+      "result": "PASS",
+      "details": "Canli Operasyon shows live data (occupancy, HK tasks), Oto-Fiyatlama shows pricing stats, Entegrasyonlar shows integration controls"
+    },
+    {
+      "test": "Standalone Messaging Dashboard works",
+      "expected": "Full messaging dashboard at /messaging-dashboard",
+      "result": "PASS",
+      "details": "7 tabs working: Mesaj Gonder, Sablonlar, Otomasyon, Aktivite, Loglar, Metrikler, Ayarlar"
+    },
+    {
+      "test": "Analitik & Raporlar - 3 tabs including Revenue ML",
+      "expected": "3 tabs: Revenue ML, Rapor Disa Aktarma, ML Zamanlayici",
+      "result": "PASS",
+      "details": "All 3 tabs present and clickable"
+    },
+    {
+      "test": "Analitik & Raporlar - Revenue ML loads ML data",
+      "expected": "Demand forecast, price optimization, conversion rates, at-risk bookings",
+      "result": "PASS",
+      "details": "All 4 ML data cards found: demand-forecast-card, price-optimization-card, conversion-rates-card, at-risk-bookings-card. Shows live data: Riskli Rez. Geliri 233,700 TL, Fiyat Opt. Firsati 6, Riskli Rez. Sayisi 7"
+    },
+    {
+      "test": "Platform Scaling - 4 tabs (no Revenue ML)",
+      "expected": "4 tabs: Genel Bakis, Event Mimari, Multi-Property, CompSet Analiz",
+      "result": "PASS",
+      "details": "Confirmed 4 tabs, Revenue ML tab correctly removed"
+    },
+    {
+      "test": "Platform Scaling - ML Ozet summary card in Overview",
+      "expected": "ML Ozet summary card visible in Genel Bakis tab",
+      "result": "PASS",
+      "details": "ML Ozet card found showing: Riskli Rez. Geliri 233,700 TL, Fiyat Opt. Firsati 6, Dusuk Talep Gunu 14/14, Riskli Rez. Sayisi 7"
+    }
+  ]
+}

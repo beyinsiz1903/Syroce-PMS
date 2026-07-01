@@ -1,0 +1,276 @@
+# ─────────────────────────────────────────────────────────────────────
+# Syroce PMS — DigitalOcean App Platform spec (Infrastructure as Code)
+#
+# ── NEDEN HAZIR IMAJ (pre-built image) ───────────────────────────────
+# App Platform'un BUILD makinesi sinirli bellekle calisir ve build 1
+# saatte timeout olur (instance_size_slug SADECE calisma anini buyutur,
+# build'i DEGIL). Worker imajimiz agir ML yigini (xgboost/scipy/sklearn +
+# nvidia-nccl) tasir; frontend ise React 19 + Vite build'i sirasinda yine
+# bellek tuketir — IKISI de DO'da derlenirken "terminated / resource
+# exhaustion" ile OLUR (ilk denemelerde frontend static_site build'i bu
+# yuzden patladi). Cozum (DO'nun resmi onerisi): DO'da HIC BUILD YAPMA;
+# GitHub Actions'in (ci-cd.yml + deploy.yml) ghcr.io'ya bastigi HAZIR
+# imajlari CEK. DORT bilesen de (backend/worker/beat/frontend) `image:`
+# ile GHCR'dan cekilir; DO yalniz pull yapar, DERLEME YOK.
+#
+# ── GHCR PRIVATE IMAJ ICIN KIMLIK BILGISI ────────────────────────────
+# GHCR paketleri PRIVATE. DO'nun cekebilmesi icin her `image:` blogunda
+# (ARTIK 4 BLOK: backend/worker/beat/frontend) `registry_credentials:
+# "<github_kullanici>:<PAT>"` gerekir; PAT classic
+# + SADECE `read:packages` yetkili (suresiz onerilir). Bu deger bu
+# dosyaya YAZILMAZ: DO panel > App Spec editorunde placeholder yerine
+# girilir, DO ilk kayitta SIFRELER. Sonraki guncellemelerde dosyadan
+# ham PAT ile RE-IMPORT ETMEYIN (sifreli degeri ezer); panelde duzenleyin.
+#
+# ── REDEPLOY ─────────────────────────────────────────────────────────
+# GHCR imajlarinda App Platform OTOMATIK redeploy DESTEKLEMEZ. Yeni kod:
+#   1) GitHub Actions "Deploy Pipeline (Manual)" calistir -> ghcr.io'ya
+#      yeni :latest basilir.
+#   2) DO panel > syroce-pms > Actions > "Force Rebuild/Redeploy" (ya da
+#      `doctl apps create-deployment <APP_ID>`) ile yeniden cek.
+#
+# BILESENLER:
+#   backend   : FastAPI API (GHCR image, service)        -> $PORT (8080)
+#   worker    : Celery worker (GHCR image, ML + reports DAHIL)
+#   beat      : Celery beat / scheduler (GHCR worker image + beat komutu)
+#   frontend  : React/Vite SPA (GHCR nginx imaji, service -> port 3000)
+#   Redis     : DO Managed Caching (Valkey/Redis) AYRI eklenir -> REDIS_URL
+#   MongoDB   : DO'da yonetilen Mongo YOK -> MongoDB Atlas -> MONGO_URL
+#
+# TOPOLOJI: Tek alan adi + ingress yol-yonlendirme. `/api/*` ve `/ws/*`
+#   -> backend (path PRESERVE), geri kalan her sey -> frontend SPA.
+#   Boylece frontend ile backend AYNI ORIGIN'de olur => CORS gereksiz.
+#
+# ── DIGER KRITIK NOTLAR ──────────────────────────────────────────────
+# 1) IMAJ ICERIGI: PDF (WeasyPrint) backend + worker imajlarinda ETKIN.
+#    ML yigini SADECE worker imajinda ('ml' kuyrugu); API ML import ETMEZ,
+#    sadece kuyruga dispatch eder. litellm worker'da da --no-deps >=1.84.0
+#    (CVE-2026-49468). Twilio (SMS/WhatsApp) pinli DEGIL, transport yok
+#    (fail-closed 503), imaja eklenmedi.
+# 2) App Platform'un sabit cikis IP'si yoktur. Atlas Network Access'te
+#    0.0.0.0/0 acin (guclu DB parolasi + TLS sart) ya da DO Dedicated
+#    Egress IP'lerini allowlist'leyin.
+# 3) Gercek SIR DEGERLERI bu dosyaya YAZILMAZ; hepsi panelde "Encrypted"
+#    girilir (asagidaki liste + registry_credentials).
+# 4) Frontend SPA deep-link fallback: nginx.conf `try_files .. /index.html`
+#    (imaj icinde); DO catchall_document'a gerek YOK.
+# 5) Imajlar yalniz linux/amd64. CI buildx varsayilani amd64 -> uyumlu.
+# ─────────────────────────────────────────────────────────────────────
+
+name: syroce-pms
+region: fra   # Frankfurt — Turkiye'ye en yakin DO bolgesi
+
+# ── Tek alan adinda yol-yonlendirme (CORS'u eler) ────────────────────
+ingress:
+  rules:
+    - match:
+        path:
+          prefix: /api
+      component:
+        name: backend
+        preserve_path_prefix: true   # /api onekini KORU (backend /api/... mount)
+    - match:
+        path:
+          prefix: /ws
+      component:
+        name: backend
+        preserve_path_prefix: true   # Socket.IO backend'de app.mount("/ws") -> onek KORUNUR
+    - match:
+        path:
+          prefix: /
+      component:
+        name: frontend
+
+# ── App seviyesi (TUM bilesenlere miras kalan) NON-SECRET config ──────
+envs:
+  - key: APP_ENV
+    value: production
+    scope: RUN_AND_BUILD_TIME
+  - key: ENVIRONMENT
+    value: production
+    scope: RUN_AND_BUILD_TIME
+  - key: LOG_LEVEL
+    value: INFO          # MUTLAKA buyuk harf: kucuk "info" worker'lari import'ta cokertir
+    scope: RUN_TIME
+  - key: DB_NAME
+    value: syroce-pms
+    scope: RUN_TIME
+  - key: STRICT_TENANT_MODE
+    value: "true"          # prod boot bunsuz REDDEDER (fail-closed)
+    scope: RUN_TIME
+  - key: STRICT_JWT_SECRET
+    value: "1"             # JWT_SECRET'i prod'da ZORUNLU kilar (yoksa boot REDDEDER)
+    scope: RUN_TIME
+  - key: SECRETS_PROVIDER
+    value: env
+    scope: RUN_TIME
+  - key: SECRET_ACCESS_AUDIT_ENABLED
+    value: "true"
+    scope: RUN_TIME
+  - key: EVENT_BUS_MODE
+    value: redis
+    scope: RUN_TIME
+  - key: REDIS_MODE
+    value: standalone
+    scope: RUN_TIME
+  - key: CM_KEY_VERSION
+    value: v1
+    scope: RUN_TIME
+  - key: MESSAGING_MODE
+    value: sandbox         # gercek SMS/WhatsApp icin "live" + saglayici key
+    scope: RUN_TIME
+  - key: BACKUP_ENABLED
+    value: "true"
+    scope: RUN_TIME
+  - key: SENTRY_ENVIRONMENT
+    value: production
+    scope: RUN_TIME
+  # --- Ortam'a ozel ADRESLER (gizli degil) ---
+  #   ${APP_URL} = DO'nun bu App'e atadigi tam https URL (or:
+  #   https://syroce-pms-xxxxx.ondigitalocean.app). DO deploy aninda
+  #   OTOMATIK doldurur — elle alan adi girmeye gerek YOK. Kendi alan
+  #   adinizi App'e baglarsaniz ${APP_URL} otomatik onu yansitir.
+  - key: PUBLIC_APP_URL
+    value: "${APP_URL}"                   # misafir/QR public taban URL
+    scope: RUN_TIME
+  - key: FRONTEND_URL
+    value: "${APP_URL}"
+    scope: RUN_TIME
+
+  # ═══════════════════════════════════════════════════════════════════
+  # PANELDE "ENCRYPTED" GIRILECEK SECRET'LAR (bu dosyaya DEGER yazmayin)
+  # App seviyesinde ekleyin -> backend + worker + beat hepsi gorur.
+  # ─ ZORUNLU ─
+  #   MONGO_URL                 (Atlas baglanti dizesi — parola icerir!)
+  #   REDIS_URL                 (DO Managed Redis baglanti dizesi)
+  #   JWT_SECRET                (uzun rastgele)
+  #   CM_MASTER_KEY_CURRENT     (alan-sifreleme ana anahtari, 32+ char — yoksa bazi router'lar yuklenmez)
+  #   VAPID_PUBLIC_KEY          (Web Push P-256 public, base64url — yoksa startup gate KAPALI kalir)
+  #   VAPID_PRIVATE_KEY         (Web Push P-256 private, base64url)
+  #   ROOM_QR_SECRET            (uzun rastgele)
+  #   FOLIO_FETCH_SECRET        (uzun rastgele)
+  #   TWOFA_SECRET              (uzun rastgele)
+  #   OPERATOR_ADMIN_PASSWORD   (ilk admin parolasi — ilk kurulum)
+  # ─ E-POSTA (misafir bildirim/davet icin GEREKLI) ─
+  #   RESEND_API_KEY
+  # ─ ONERILIR ─
+  #   SENTRY_DSN
+  # ─ ENTEGRASYON (kullaniyorsaniz) ─
+  #   QUICKID_SERVICE_KEY, QUICKID_SETTINGS_ENC_KEY
+  #   CM_ENCRYPTION_KEY, CM_CREDENTIAL_KEY   (CM_MASTER_KEY_CURRENT artik ZORUNLU listesinde)
+  #   HOTELRUNNER_WEBHOOK_SECRET
+  #   KBS_API_TOKEN
+  #   EFATURA_SUPPLIER_VKN
+  #   OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY
+  #   TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / WHATSAPP_PROVIDER_KEY
+  # ─ CONTACT CENTER FAZ 2 (sesli softphone) — TUMU OPSIYONEL ─
+  #   Girilmezse sesli katman fail-closed (not_configured) kalir; PMS'in
+  #   geri kalani etkilenmez. WebRTC AccessToken icin:
+  #     TWILIO_API_KEY_SID / TWILIO_API_KEY_SECRET / TWILIO_TWIML_APP_SID
+  #     TWILIO_VOICE_TOKEN_TTL (varsayilan 3600). Webhook imza dogrulama:
+  #     TWILIO_AUTH_TOKEN + TWILIO_ACCOUNT_SID (yukarida). Webhook URL'i icin
+  #     PUBLIC_APP_URL zorunlu (Twilio'ya /api/voice/* verilir).
+  #   Cagri kayitlari AYRI S3/Spaces bucket (recording_ref-only + AES-GCM):
+  #     CC_RECORDING_S3_BUCKET / CC_RECORDING_S3_REGION / CC_RECORDING_S3_ENDPOINT
+  #     CC_RECORDING_S3_ACCESS_KEY_ID / CC_RECORDING_S3_SECRET_ACCESS_KEY
+  #     CC_RECORDING_RETENTION_DAYS (varsayilan 90). worker+beat de gorur.
+  #   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY  (S3 offsite yedek)
+  #   ATLAS_API_PUBLIC_KEY / ATLAS_API_PRIVATE_KEY (Atlas yonetilen yedek)
+  #   VAPID_PRIVATE_KEY (web push)
+  #   AFSADAKAT_ADMIN_TOKEN
+  # ═══════════════════════════════════════════════════════════════════
+
+# ── HTTP servisi (web listener olan TEK bilesen) — GHCR hazir imaj ────
+services:
+  - name: backend                  # FastAPI API (ghcr.io/beyinsiz1903/syroce-backend)
+    image:
+      registry_type: GHCR
+      registry: beyinsiz1903              # GitHub kullanici/org (image sahibi)
+      repository: syroce-backend          # ci-cd.yml: ${owner}/syroce-backend
+      tag: latest                         # immutable istersen tag yerine digest
+      # PANELDE doldur: "<github_kullanici>:<read:packages_PAT>" (DO sifreler)
+      registry_credentials: GHCR_KULLANICI_ADI:GHCR_READ_PACKAGES_PAT
+    http_port: 8080                # imaj ${PORT}'a bind eder (asagida PORT=8080)
+    instance_size_slug: apps-s-1vcpu-2gb
+    instance_count: 1
+    health_check:
+      http_path: /health/live      # DB-siz, warm-up gate'inden MUAF, her zaman 200
+      initial_delay_seconds: 20
+      period_seconds: 30
+      timeout_seconds: 5
+      failure_threshold: 3
+    envs:
+      - key: PORT
+        value: "8080"              # imaj CMD'si ${PORT}'a bind eder (deterministik)
+        scope: RUN_TIME
+      - key: WEB_CONCURRENCY
+        value: "2"                 # uvicorn worker sayisi (instance'a gore)
+        scope: RUN_TIME
+      - key: CORS_ORIGINS          # ayni-origin: DO'nun otomatik App URL'i
+        value: "${APP_URL}"
+        scope: RUN_TIME
+      - key: DEFER_STARTUP_BOOTSTRAP   # portu hemen ac; agir bootstrap arkada (PaaS uyumu)
+        value: "1"
+        scope: RUN_TIME
+      # MONGO_URL / REDIS_URL / JWT_SECRET ... -> app seviyesinde ENCRYPTED
+
+  # ── Frontend SPA (React/Vite + nginx) — GHCR hazir imaj, DO'da BUILD YOK ─
+  - name: frontend                 # nginx (ghcr.io/beyinsiz1903/syroce-frontend)
+    image:
+      registry_type: GHCR
+      registry: beyinsiz1903
+      repository: syroce-frontend         # ci-cd.yml/deploy.yml: ${owner}/syroce-frontend
+      tag: latest
+      # PANELDE doldur: "<github_kullanici>:<read:packages_PAT>" (DO sifreler)
+      registry_credentials: GHCR_KULLANICI_ADI:GHCR_READ_PACKAGES_PAT
+    http_port: 3000                # nginx.conf `listen 3000` + Dockerfile EXPOSE 3000
+    instance_size_slug: apps-s-1vcpu-0.5gb   # statik nginx -> cok hafif
+    instance_count: 1
+    health_check:
+      http_path: /                 # nginx index.html -> 200
+      initial_delay_seconds: 10
+      period_seconds: 30
+      timeout_seconds: 5
+      failure_threshold: 3
+
+# ── Arka plan worker'lari (HTTP listener YOK) — GHCR hazir imaj ───────
+workers:
+  - name: worker                   # Celery worker (ghcr.io/beyinsiz1903/syroce-worker)
+    image:
+      registry_type: GHCR
+      registry: beyinsiz1903
+      repository: syroce-worker           # ci-cd.yml: ${owner}/syroce-worker
+      tag: latest
+      registry_credentials: GHCR_KULLANICI_ADI:GHCR_READ_PACKAGES_PAT
+    instance_size_slug: apps-s-1vcpu-2gb   # ML yigini (xgboost/scipy) icin >=2GB
+    instance_count: 1
+    # run_command YOK => imaj CMD'si (celery -A celery_app worker ... -Q default,ml,...)
+
+  - name: beat                     # Celery beat (scheduler, tek instance)
+    image:
+      registry_type: GHCR
+      registry: beyinsiz1903
+      repository: syroce-worker           # beat de AYNI worker imajini kullanir
+      tag: latest
+      registry_credentials: GHCR_KULLANICI_ADI:GHCR_READ_PACKAGES_PAT
+    run_command: celery -A celery_app beat --loglevel=info   # CMD'yi beat'e override
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    instance_count: 1              # beat HER ZAMAN tek instance
+
+# ── Frontend: ARTIK static_site DEGIL — GHCR nginx imaji (yukarida) ───
+# React 19 + Vite build'i de DO build makinesinde bellek tuketip OOM
+# oluyordu. Cozum: frontend de GHCR'dan HAZIR nginx imaji olarak cekilir
+# (yukaridaki `services` altinda `frontend`, port 3000). DO'da frontend
+# build'i YOK.
+#
+# ONEMLI — VITE_BACKEND_URL: frontend imaji CI'da (ci-cd.yml/deploy.yml)
+# `--build-arg VITE_BACKEND_URL=${secrets.VITE_BACKEND_URL}` ile build
+# edilir. Tek-origin ingress icin bu GitHub secret'i BOS/TANIMSIZ olmali;
+# o zaman frontend relative "/api" + ayni-origin websocket kullanir
+# (axiosConfig.js `|| "/api"`, websocket.jsx). Secret DOLUYSA yanlis API
+# tabani imaja gomulur. Degistirince "Deploy Pipeline (Manual)" ile imaji
+# YENIDEN bas, sonra DO'da redeploy et.
+
+# NOT: REDIS — DO panel > Create > Managed Caching (Valkey/Redis) ile ayri
+#   olusturup bu App'e baglayin; uretilen baglanti dizesini app seviyesinde
+#   REDIS_URL secret'ina girin (backend + worker + beat hepsi gorur).

@@ -7,10 +7,11 @@ Indexes:
   - (tenant_id, status)
   - (provider, status)
 """
+
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Optional, Dict, Any
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -38,7 +39,7 @@ class ConnectorAccount(BaseModel):
     display_name: str = ""
 
     # Provider-specific credentials (encrypted at rest)
-    credentials: Dict[str, Any] = Field(default_factory=dict)
+    credentials: dict[str, Any] = Field(default_factory=dict)
     # HotelRunner: { "token": "...", "hr_id": "..." }
 
     # Sync configuration
@@ -52,23 +53,23 @@ class ConnectorAccount(BaseModel):
     max_requests_per_hour: int = 1000
 
     # Health tracking
-    last_successful_sync: Optional[str] = None
-    last_error: Optional[str] = None
-    last_error_at: Optional[str] = None
+    last_successful_sync: str | None = None
+    last_error: str | None = None
+    last_error_at: str | None = None
     consecutive_failures: int = 0
     total_syncs: int = 0
     total_errors: int = 0
 
     # Audit
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    created_by: Optional[str] = None
-    updated_at: Optional[str] = None
-    updated_by: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    created_by: str | None = None
+    updated_at: str | None = None
+    updated_by: str | None = None
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         return self.model_dump()
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "ConnectorAccount":
+    def from_doc(cls, doc: dict[str, Any]) -> "ConnectorAccount":
         doc.pop("_id", None)
         return cls(**doc)

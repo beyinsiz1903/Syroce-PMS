@@ -5,10 +5,10 @@ HotelRunner Provider — Observability
 Records provider call metrics, logs, and health indicators.
 Writes to monitoring_metrics and ari_outbound_logs collections.
 """
+
 import logging
-import time
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("hotelrunner.observability")
 
@@ -40,7 +40,7 @@ def record_provider_call(
     """Record a provider API call outcome."""
     _metrics["call_count"] += 1
     _metrics["total_latency_ms"] += duration_ms
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     if success:
         _metrics["success_count"] += 1
@@ -52,8 +52,13 @@ def record_provider_call(
 
     logger.info(
         "[HR-OBS] %s %s -> %d (%dms) success=%s conn=%s corr=%s",
-        method, path, status_code, duration_ms, success,
-        connection_id, correlation_id,
+        method,
+        path,
+        status_code,
+        duration_ms,
+        success,
+        connection_id,
+        correlation_id,
     )
 
 
@@ -66,7 +71,7 @@ def record_provider_failure(
 ) -> None:
     """Record a provider failure for alerting."""
     _metrics["error_count"] += 1
-    _metrics["last_error_at"] = datetime.now(timezone.utc).isoformat()
+    _metrics["last_error_at"] = datetime.now(UTC).isoformat()
     _metrics["last_error_type"] = error_type
 
     if error_type == "auth":
@@ -76,7 +81,10 @@ def record_provider_failure(
 
     logger.error(
         "[HR-OBS] FAILURE %s: %s (conn=%s path=%s)",
-        error_type, message, connection_id, path,
+        error_type,
+        message,
+        connection_id,
+        path,
     )
 
 
@@ -86,17 +94,11 @@ def record_provider_latency(*, path: str, duration_ms: int) -> None:
     _metrics["call_count"] += 1
 
 
-def get_provider_health() -> Dict[str, Any]:
+def get_provider_health() -> dict[str, Any]:
     """Get current provider health snapshot for monitoring."""
     call_count = _metrics["call_count"]
-    avg_latency = (
-        round(_metrics["total_latency_ms"] / call_count)
-        if call_count > 0 else 0
-    )
-    success_rate = (
-        round((_metrics["success_count"] / call_count) * 100, 1)
-        if call_count > 0 else 100.0
-    )
+    avg_latency = round(_metrics["total_latency_ms"] / call_count) if call_count > 0 else 0
+    success_rate = round((_metrics["success_count"] / call_count) * 100, 1) if call_count > 0 else 100.0
     return {
         "provider": "hotelrunner",
         "call_count": call_count,
@@ -130,8 +132,8 @@ async def persist_outbound_log(
     operation: str,
     path: str,
     method: str,
-    request_payload: Optional[Dict] = None,
-    response_payload: Optional[Dict] = None,
+    request_payload: dict | None = None,
+    response_payload: dict | None = None,
     status_code: int = 0,
     duration_ms: int = 0,
     success: bool = True,
@@ -150,7 +152,7 @@ async def persist_outbound_log(
         "success": success,
         "error_type": error_type,
         "correlation_id": correlation_id,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
     if request_payload:
         log_doc["request_payload_summary"] = str(request_payload)[:1000]

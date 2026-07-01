@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "outDir": ".unit-build",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": [
+    "src/components/datePickerUtils.ts",
+    "src/components/__tests__/datePickerUtils.test.ts",
+    "src/utils/availabilityFilters.ts",
+    "src/utils/__tests__/availabilityFilters.test.ts",
+    "src/utils/availabilityGrid.ts",
+    "src/utils/__tests__/availabilityGrid.test.ts",
+    "src/utils/reservationCalendar.ts",
+    "src/utils/__tests__/reservationCalendar.test.ts",
+    "src/state/roleAccess.ts",
+    "src/state/__tests__/roleAccess.test.ts",
+    "src/utils/departmentScreens.ts",
+    "src/utils/__tests__/departmentScreens.test.ts",
+    "src/cache/posQueueCore.ts",
+    "src/cache/__tests__/posQueueCore.test.ts"
+  ]
+}

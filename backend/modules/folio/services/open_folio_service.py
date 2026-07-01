@@ -1,7 +1,7 @@
 import hashlib
 import json
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import HTTPException, Request, status
 
@@ -18,10 +18,10 @@ from shared_kernel.tenancy_context import build_property_context, build_tenant_c
 
 
 class OpenFolioService:
-    def __init__(self, repository: Optional[FolioRepository] = None):
+    def __init__(self, repository: FolioRepository | None = None):
         self.repository = repository or FolioRepository()
 
-    async def create(self, folio_data: FolioCreate, current_user, request: Request) -> Dict[str, Any]:
+    async def create(self, folio_data: FolioCreate, current_user, request: Request) -> dict[str, Any]:
         tenant_context = build_tenant_context(current_user, request)
         property_context = build_property_context(current_user, request)
         self._enforce_property_scope(tenant_context.tenant_id, property_context.property_id)
@@ -98,12 +98,7 @@ class OpenFolioService:
                 tenant_id=tenant_context.tenant_id,
                 correlation_id=correlation_id,
             ).timestamp
-            currency = (
-                tenant_doc.get("currency")
-                or tenant_doc.get("default_currency")
-                or booking.get("currency")
-                or "TRY"
-            )
+            currency = tenant_doc.get("currency") or tenant_doc.get("default_currency") or booking.get("currency") or "TRY"
 
             folio = Folio(
                 tenant_id=tenant_context.tenant_id,
@@ -168,7 +163,8 @@ class OpenFolioService:
             response_body = {
                 key: value
                 for key, value in folio_dict.items()
-                if key in {
+                if key
+                in {
                     "id",
                     "tenant_id",
                     "booking_id",
@@ -200,7 +196,7 @@ class OpenFolioService:
         serialized = json.dumps({"tenant_id": tenant_id, "payload": payload}, sort_keys=True, default=str)
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
-    def _enforce_property_scope(self, tenant_id: str, property_id: Optional[str]) -> None:
+    def _enforce_property_scope(self, tenant_id: str, property_id: str | None) -> None:
         if property_id and property_id != tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

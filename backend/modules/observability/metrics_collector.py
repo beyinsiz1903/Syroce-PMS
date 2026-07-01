@@ -2,10 +2,10 @@
 Metrics Collector — production-grade application metrics with histogram support.
 Collects counters, gauges, histograms. Supports flush to MongoDB.
 """
+
 import logging
-from datetime import datetime, timezone
-from typing import Dict, List
 from collections import defaultdict
+from datetime import UTC, datetime
 
 logger = logging.getLogger("observability.metrics")
 
@@ -14,18 +14,18 @@ class MetricsCollector:
     """Application-level metrics collector with persistent flush support."""
 
     def __init__(self):
-        self._counters: Dict[str, float] = defaultdict(float)
-        self._gauges: Dict[str, float] = {}
-        self._histograms: Dict[str, List[float]] = defaultdict(list)
+        self._counters: dict[str, float] = defaultdict(float)
+        self._gauges: dict[str, float] = {}
+        self._histograms: dict[str, list[float]] = defaultdict(list)
         self._max_histogram_size = 1000
 
         # Specific business metrics
         self._event_throughput = 0
-        self._websocket_latencies: List[float] = []
-        self._ml_execution_times: List[float] = []
+        self._websocket_latencies: list[float] = []
+        self._ml_execution_times: list[float] = []
         self._autopricing_results = {"success": 0, "failure": 0}
         self._messaging_delivery = {"success": 0, "failure": 0}
-        self._reservation_sync_lags: List[float] = []
+        self._reservation_sync_lags: list[float] = []
 
     def increment(self, name: str, value: float = 1, tags: dict = None):
         key = self._make_key(name, tags)
@@ -78,7 +78,7 @@ class MetricsCollector:
 
     # ── Stat helpers ──
 
-    def _summarize_list(self, values: List[float]) -> dict:
+    def _summarize_list(self, values: list[float]) -> dict:
         if not values:
             return {"count": 0, "avg": 0, "p95": 0, "max": 0}
         sorted_v = sorted(values)
@@ -100,16 +100,11 @@ class MetricsCollector:
             "ml_execution_time": self._summarize_list(self._ml_execution_times),
             "autopricing": {
                 **self._autopricing_results,
-                "success_rate": (
-                    self._autopricing_results["success"] /
-                    max(self._autopricing_results["success"] + self._autopricing_results["failure"], 1)
-                ),
+                "success_rate": (self._autopricing_results["success"] / max(self._autopricing_results["success"] + self._autopricing_results["failure"], 1)),
             },
             "messaging_delivery": {
                 **self._messaging_delivery,
-                "delivery_rate": (
-                    self._messaging_delivery["success"] / max(msg_total, 1)
-                ),
+                "delivery_rate": (self._messaging_delivery["success"] / max(msg_total, 1)),
                 "success_count": self._messaging_delivery["success"],
                 "failure_count": self._messaging_delivery["failure"],
             },
@@ -130,11 +125,12 @@ class MetricsCollector:
         """Flush current metrics snapshot to MongoDB."""
         try:
             from core.database import db
+
             snapshot = {
                 "counters": dict(self._counters),
                 "gauges": dict(self._gauges),
                 "dashboard": self.get_dashboard_metrics(),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             }
             await db.observability_metrics.insert_one(snapshot)
             return 1

@@ -1,0 +1,31 @@
+appId: com.syroce.pms
+name: "Guest: Dijital anahtar görüntüleme (smoke)"
+tags:
+  - smoke
+  - guest
+env:
+  # Override at the CLI for a real guest_app account:
+  #   -e SMOKE_GUEST_EMAIL=... -e SMOKE_GUEST_PASSWORD=...
+  SMOKE_GUEST_EMAIL: info@syroce.com
+  SMOKE_GUEST_PASSWORD: Syroce2026
+---
+- runFlow:
+    file: login.yaml
+    env:
+      SMOKE_EMAIL: ${SMOKE_GUEST_EMAIL}
+      SMOKE_PASSWORD: ${SMOKE_GUEST_PASSWORD}
+
+# Deep-link straight to the guest digital key screen. The screen is
+# registered as href:null in (guest)/_layout.tsx (no tab bar entry), so
+# we use the expo scheme `syrocepms` defined in app.json. The screen
+# resolves the user's active booking on its own; if none exists we still
+# render the title + "Aktif rezervasyon bulunamadı" message and the
+# smoke test passes — the goal is to verify the screen mounts without
+# crashing.
+- openLink: "syrocepms:///(guest)/digitalKey"
+
+- assertVisible:
+    id: "smoke-digital-key"
+    timeout: 30000
+- assertVisible:
+    text: "Dijital Anahtar"

@@ -5,11 +5,12 @@ Production-grade alert rules engine with severity mapping, cooldown/dedupe,
 runbook hints, blast radius assessment, and route compatibility
 (Grafana/Alertmanager/PagerDuty/Slack).
 """
-import uuid
+
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional
+import uuid
+from datetime import UTC, datetime, timedelta
 from enum import Enum
+from typing import Any
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -40,7 +41,7 @@ class AlertCategory(str, Enum):
 
 # ── Alert Rule Definitions ───────────────────────────────────────────
 
-ALERT_RULES: List[Dict[str, Any]] = [
+ALERT_RULES: list[dict[str, Any]] = [
     # Night Audit
     {
         "rule_id": "night_audit_duration_breach",
@@ -253,15 +254,14 @@ class AlertEnrichmentEngine:
 
     def __init__(self):
         from core.database import db
-        self._db = db
-        self._cooldown_cache: Dict[str, datetime] = {}
 
-    async def evaluate_all_rules(
-        self, ctx: OperationContext, metrics: Dict[str, Any]
-    ) -> ServiceResult:
+        self._db = db
+        self._cooldown_cache: dict[str, datetime] = {}
+
+    async def evaluate_all_rules(self, ctx: OperationContext, metrics: dict[str, Any]) -> ServiceResult:
         """Evaluate all rules against provided metrics snapshot."""
         fired_alerts = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         for rule in ALERT_RULES:
             rule_id = rule["rule_id"]
@@ -293,16 +293,16 @@ class AlertEnrichmentEngine:
                 # Persist alert
                 await self._persist_alert(alert)
 
-        return ServiceResult.success({
-            "evaluated_rules": len(ALERT_RULES),
-            "alerts_fired": len(fired_alerts),
-            "alerts": fired_alerts,
-            "evaluated_at": now.isoformat(),
-        })
+        return ServiceResult.success(
+            {
+                "evaluated_rules": len(ALERT_RULES),
+                "alerts_fired": len(fired_alerts),
+                "alerts": fired_alerts,
+                "evaluated_at": now.isoformat(),
+            }
+        )
 
-    def _build_alert(
-        self, rule: Dict, metric_value: Any, ctx: OperationContext, now: datetime
-    ) -> Dict[str, Any]:
+    def _build_alert(self, rule: dict, metric_value: Any, ctx: OperationContext, now: datetime) -> dict[str, Any]:
         return {
             "id": str(uuid.uuid4()),
             "rule_id": rule["rule_id"],
@@ -327,31 +327,27 @@ class AlertEnrichmentEngine:
             "recommended_action": rule["runbook"],
         }
 
-    async def _persist_alert(self, alert: Dict):
+    async def _persist_alert(self, alert: dict):
         try:
             await self._db.alert_events.insert_one(alert.copy())
         except Exception as e:
             logger.warning("Failed to persist alert: %s", e)
 
-    async def get_active_alerts(
-        self, ctx: OperationContext, severity: Optional[str] = None, limit: int = 50
-    ) -> ServiceResult:
-        query: Dict[str, Any] = {"tenant_id": ctx.tenant_id, "resolved": False}
+    async def get_active_alerts(self, ctx: OperationContext, severity: str | None = None, limit: int = 50) -> ServiceResult:
+        query: dict[str, Any] = {"tenant_id": ctx.tenant_id, "resolved": False}
         if severity:
             query["severity"] = severity
-        alerts = await self._db.alert_events.find(
-            query, {"_id": 0}
-        ).sort("fired_at", -1).limit(limit).to_list(limit)
-        return ServiceResult.success({
-            "alerts": alerts,
-            "count": len(alerts),
-            "has_critical": any(a.get("severity") == "critical" for a in alerts),
-        })
+        alerts = await self._db.alert_events.find(query, {"_id": 0}).sort("fired_at", -1).limit(limit).to_list(limit)
+        return ServiceResult.success(
+            {
+                "alerts": alerts,
+                "count": len(alerts),
+                "has_critical": any(a.get("severity") == "critical" for a in alerts),
+            }
+        )
 
-    async def acknowledge_alert(
-        self, ctx: OperationContext, alert_id: str
-    ) -> ServiceResult:
-        now = datetime.now(timezone.utc)
+    async def acknowledge_alert(self, ctx: OperationContext, alert_id: str) -> ServiceResult:
+        now = datetime.now(UTC)
         result = await self._db.alert_events.update_one(
             {"id": alert_id, "tenant_id": ctx.tenant_id},
             {
@@ -370,16 +366,12 @@ class AlertEnrichmentEngine:
         if alert and alert.get("fired_at"):
             fired = datetime.fromisoformat(alert["fired_at"].replace("Z", "+00:00"))
             mtta = (now - fired).total_seconds()
-            await self._db.alert_events.update_one(
-                {"id": alert_id}, {"$set": {"mtta": round(mtta, 1)}}
-            )
+            await self._db.alert_events.update_one({"id": alert_id}, {"$set": {"mtta": round(mtta, 1)}})
 
         return ServiceResult.success({"message": "Alert acknowledged", "alert_id": alert_id})
 
-    async def resolve_alert(
-        self, ctx: OperationContext, alert_id: str, resolution_note: str = ""
-    ) -> ServiceResult:
-        now = datetime.now(timezone.utc)
+    async def resolve_alert(self, ctx: OperationContext, alert_id: str, resolution_note: str = "") -> ServiceResult:
+        now = datetime.now(UTC)
         result = await self._db.alert_events.update_one(
             {"id": alert_id, "tenant_id": ctx.tenant_id},
             {
@@ -400,16 +392,12 @@ class AlertEnrichmentEngine:
         if alert and alert.get("fired_at"):
             fired = datetime.fromisoformat(alert["fired_at"].replace("Z", "+00:00"))
             mttr = (now - fired).total_seconds()
-            await self._db.alert_events.update_one(
-                {"id": alert_id}, {"$set": {"mttr": round(mttr, 1)}}
-            )
+            await self._db.alert_events.update_one({"id": alert_id}, {"$set": {"mttr": round(mttr, 1)}})
 
         return ServiceResult.success({"message": "Alert resolved", "alert_id": alert_id})
 
-    async def get_alert_summary(
-        self, ctx: OperationContext, hours: int = 24
-    ) -> ServiceResult:
-        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    async def get_alert_summary(self, ctx: OperationContext, hours: int = 24) -> ServiceResult:
+        since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
         pipeline = [
             {"$match": {"tenant_id": ctx.tenant_id, "fired_at": {"$gte": since}}},
             {
@@ -434,15 +422,17 @@ class AlertEnrichmentEngine:
             by_severity[sev] = by_severity.get(sev, 0) + count
             by_category[cat] = by_category.get(cat, 0) + count
 
-        return ServiceResult.success({
-            "period_hours": hours,
-            "total_alerts": total,
-            "by_severity": by_severity,
-            "by_category": by_category,
-            "rules_count": len(ALERT_RULES),
-        })
+        return ServiceResult.success(
+            {
+                "period_hours": hours,
+                "total_alerts": total,
+                "by_severity": by_severity,
+                "by_category": by_category,
+                "rules_count": len(ALERT_RULES),
+            }
+        )
 
-    def get_rules(self) -> List[Dict[str, Any]]:
+    def get_rules(self) -> list[dict[str, Any]]:
         return [
             {
                 "rule_id": r["rule_id"],

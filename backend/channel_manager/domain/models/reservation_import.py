@@ -9,12 +9,13 @@ Indexes:
                        (tenant_id, ack_status)
                        (batch_id)
 """
-import uuid
+
 import hashlib
 import json
-from datetime import datetime, timezone
+import uuid
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Optional, Dict, Any
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -77,19 +78,19 @@ class ReservationImportBatch(BaseModel):
     ack_failed_count: int = 0
 
     # Pull metadata
-    pull_from: Optional[str] = None
-    pull_to: Optional[str] = None
+    pull_from: str | None = None
+    pull_to: str | None = None
     triggered_by: str = "system"
 
-    started_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    completed_at: Optional[str] = None
-    duration_ms: Optional[int] = None
+    started_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    completed_at: str | None = None
+    duration_ms: int | None = None
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         return self.model_dump()
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "ReservationImportBatch":
+    def from_doc(cls, doc: dict[str, Any]) -> "ReservationImportBatch":
         doc.pop("_id", None)
         return cls(**doc)
 
@@ -113,7 +114,7 @@ class ImportedReservation(BaseModel):
     import_status: ImportStatus = ImportStatus.PENDING
 
     # Linked PMS reservation
-    pms_booking_id: Optional[str] = None
+    pms_booking_id: str | None = None
 
     # Guest data
     guest_name: str = ""
@@ -125,8 +126,8 @@ class ImportedReservation(BaseModel):
     departure_date: str = ""
     room_type_external_id: str = ""
     rate_plan_external_id: str = ""
-    room_type_mapped_id: Optional[str] = None
-    rate_plan_mapped_id: Optional[str] = None
+    room_type_mapped_id: str | None = None
+    rate_plan_mapped_id: str | None = None
     adult_count: int = 1
     child_count: int = 0
     total_amount: float = 0.0
@@ -136,49 +137,49 @@ class ImportedReservation(BaseModel):
     cancellation_policy: str = ""
 
     # Raw provider data
-    raw_payload: Dict[str, Any] = Field(default_factory=dict)
+    raw_payload: dict[str, Any] = Field(default_factory=dict)
 
     # Modification tracking
     is_modification: bool = False
     is_cancellation: bool = False
-    previous_version_id: Optional[str] = None
+    previous_version_id: str | None = None
 
     # Review metadata (enhanced)
-    review_reason: Optional[str] = None
-    review_reason_code: Optional[str] = None
-    suggested_action: Optional[str] = None
-    conflict_reason: Optional[str] = None
-    reviewed_by: Optional[str] = None
-    reviewed_at: Optional[str] = None
+    review_reason: str | None = None
+    review_reason_code: str | None = None
+    suggested_action: str | None = None
+    conflict_reason: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: str | None = None
 
     # Manual review resolution
-    dismissed_by: Optional[str] = None
-    dismissed_at: Optional[str] = None
-    resolved_by: Optional[str] = None
-    resolved_at: Optional[str] = None
-    reprocessed_at: Optional[str] = None
+    dismissed_by: str | None = None
+    dismissed_at: str | None = None
+    resolved_by: str | None = None
+    resolved_at: str | None = None
+    reprocessed_at: str | None = None
 
     # Error
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
     # Acknowledgement tracking
     ack_status: AckStatus = AckStatus.NOT_REQUIRED
-    ack_sent_at: Optional[str] = None
-    ack_failed_reason: Optional[str] = None
+    ack_sent_at: str | None = None
+    ack_failed_reason: str | None = None
 
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    updated_at: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    updated_at: str | None = None
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         return self.model_dump()
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "ImportedReservation":
+    def from_doc(cls, doc: dict[str, Any]) -> "ImportedReservation":
         doc.pop("_id", None)
         return cls(**doc)
 
     @staticmethod
-    def compute_fingerprint(canonical_data: Dict[str, Any]) -> str:
+    def compute_fingerprint(canonical_data: dict[str, Any]) -> str:
         """Compute payload fingerprint for idempotency detection."""
         key_fields = {
             "arrival_date": canonical_data.get("arrival_date", ""),

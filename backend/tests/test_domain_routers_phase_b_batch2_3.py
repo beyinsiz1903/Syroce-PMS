@@ -13,10 +13,11 @@ Tests for 317 endpoints extracted from legacy_routes.py into 12 domain routers:
 import pytest
 import requests
 import os
+import uuid
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
 
-pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set")
 
 class TestAuth:
     """Authentication - required for all other tests"""
@@ -485,6 +486,271 @@ class TestFnBMobileEndpoints:
         """GET /api/fnb/mobile/daily-summary - returns F&B daily summary"""
         response = requests.get(f"{BASE_URL}/api/fnb/mobile/daily-summary", headers=auth_header)
         assert response.status_code == 200
+
+
+class TestCorporateContractApprovalWorkflow:
+    """Live API contract-tests for the corporate-contract approval state machine.
+
+    Locks in (against the real HTTP endpoint, with real auth/RBAC) that the
+    draft→pending→approved/rejected (+ rejected→draft) workflow cannot be
+    bypassed:
+      - legal transitions return 200 and PERSIST the new approval_status
+      - illegal skip (draft→approved) and terminal re-open (approved→pending)
+        return 409
+      - an unknown target status returns 400
+      - a caller missing `manage_sales` returns 403
+      - a contract id owned by another tenant returns 404 (tenant isolation)
+
+    These complement the unit tests on CONTRACT_APPROVAL_TRANSITIONS /
+    _assert_contract_unique and the stress spec; here the whole request path
+    (auth → require_op → tenant-scoped lookup → transition map) is exercised.
+    """
+
+    @pytest.fixture(scope="class")
+    def admin_headers(self):
+        response = requests.post(f"{BASE_URL}/api/auth/login", json={
+            "email": "demo@hotel.com", "password": "demo123"
+        })
+        assert response.status_code == 200, f"Admin login failed: {response.text}"
+        token = response.json().get("access_token")
+        return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+    def _create_draft_contract(self, headers):
+        """Create a fresh corporate contract (starts in `draft`) and return its id.
+
+        Uses a unique rate_code / contact_email per call so the tenant-scoped
+        duplicate guard (409) never trips between tests.
+        """
+        suffix = uuid.uuid4().hex[:12]
+        body = {
+            "company_name": f"TEST_Approval_{suffix}",
+            "contract_type": "negotiated",
+            "rate_code": f"TESTRC{suffix}",
+            "negotiated_rate": 1200.0,
+            "discount_percentage": 10,
+            "start_date": "2026-01-01",
+            "end_date": "2026-12-31",
+            "allotment": 5,
+            "contact_person": "Test Contact",
+            "contact_email": f"approval_{suffix}@example.invalid",
+            "contact_phone": "+90 555 000 0000",
+            "notes": "Created by approval-workflow integration test",
+        }
+        resp = requests.post(
+            f"{BASE_URL}/api/sales/corporate-contract", headers=headers, json=body)
+        assert resp.status_code == 200, f"Create contract failed: {resp.text}"
+        data = resp.json()
+        assert data.get("approval_status") == "draft"
+        contract_id = data.get("contract_id")
+        assert contract_id, f"No contract_id in response: {data}"
+        return contract_id
+
+    def _transition(self, headers, contract_id, to_status, reason=None):
+        return requests.post(
+            f"{BASE_URL}/api/sales/corporate-contract/{contract_id}/approval-transition",
+            headers=headers,
+            json={"to_status": to_status, "reason": reason},
+        )
+
+    def _persisted_approval_status(self, headers, contract_id):
+        resp = requests.get(
+            f"{BASE_URL}/api/sales/corporate-contracts", headers=headers)
+        assert resp.status_code == 200, resp.text
+        for c in resp.json().get("contracts", []):
+            if c.get("id") == contract_id:
+                return c.get("approval_status")
+        return None
+
+    def test_legal_transition_returns_200_and_persists(self, admin_headers):
+        """draft→pending→approved each return 200 and persist approval_status."""
+        contract_id = self._create_draft_contract(admin_headers)
+
+        r1 = self._transition(admin_headers, contract_id, "pending")
+        assert r1.status_code == 200, r1.text
+        assert r1.json().get("approval_status") == "pending"
+        assert self._persisted_approval_status(admin_headers, contract_id) == "pending"
+
+        r2 = self._transition(admin_headers, contract_id, "approved", reason="ok")
+        assert r2.status_code == 200, r2.text
+        assert r2.json().get("approval_status") == "approved"
+        assert self._persisted_approval_status(admin_headers, contract_id) == "approved"
+
+    def test_reject_then_resubmit_cycle_is_legal(self, admin_headers):
+        """pending→rejected→draft (resubmit) is a legal cycle (200 each)."""
+        contract_id = self._create_draft_contract(admin_headers)
+
+        assert self._transition(admin_headers, contract_id, "pending").status_code == 200
+        r_reject = self._transition(
+            admin_headers, contract_id, "rejected", reason="Rates out of policy")
+        assert r_reject.status_code == 200, r_reject.text
+        r_resubmit = self._transition(admin_headers, contract_id, "draft")
+        assert r_resubmit.status_code == 200, r_resubmit.text
+        assert self._persisted_approval_status(admin_headers, contract_id) == "draft"
+
+    def test_reject_without_reason_returns_400(self, admin_headers):
+        """rejected requires a mandatory reason → blank/missing reason is a 400.
+
+        The contract owner needs to know what to fix before resubmitting, so a
+        rejection with no explanation is refused server-side and the state
+        machine must NOT advance (stays pending).
+        """
+        contract_id = self._create_draft_contract(admin_headers)
+        assert self._transition(admin_headers, contract_id, "pending").status_code == 200
+
+        # No reason at all.
+        r_none = self._transition(admin_headers, contract_id, "rejected")
+        assert r_none.status_code == 400, r_none.text
+        assert self._persisted_approval_status(admin_headers, contract_id) == "pending"
+
+        # Whitespace-only reason is also blank.
+        r_blank = self._transition(
+            admin_headers, contract_id, "rejected", reason="   ")
+        assert r_blank.status_code == 400, r_blank.text
+        assert self._persisted_approval_status(admin_headers, contract_id) == "pending"
+
+        # A real reason now succeeds.
+        r_ok = self._transition(
+            admin_headers, contract_id, "rejected", reason="Margins below floor")
+        assert r_ok.status_code == 200, r_ok.text
+        assert self._persisted_approval_status(admin_headers, contract_id) == "rejected"
+
+    def test_illegal_skip_draft_to_approved_returns_409(self, admin_headers):
+        """draft→approved skips the pending review gate → 409 (and no persist)."""
+        contract_id = self._create_draft_contract(admin_headers)
+        resp = self._transition(admin_headers, contract_id, "approved")
+        assert resp.status_code == 409, resp.text
+        # State machine must NOT have advanced.
+        assert self._persisted_approval_status(admin_headers, contract_id) == "draft"
+
+    def test_terminal_reopen_approved_to_pending_returns_409(self, admin_headers):
+        """approved is terminal; approved→pending must be refused with 409."""
+        contract_id = self._create_draft_contract(admin_headers)
+        assert self._transition(admin_headers, contract_id, "pending").status_code == 200
+        assert self._transition(admin_headers, contract_id, "approved").status_code == 200
+
+        resp = self._transition(admin_headers, contract_id, "pending")
+        assert resp.status_code == 409, resp.text
+        assert self._persisted_approval_status(admin_headers, contract_id) == "approved"
+
+    def test_unknown_status_returns_400(self, admin_headers):
+        """An unrecognised target status is a client error → 400."""
+        contract_id = self._create_draft_contract(admin_headers)
+        resp = self._transition(admin_headers, contract_id, "totally-bogus")
+        assert resp.status_code == 400, resp.text
+        assert self._persisted_approval_status(admin_headers, contract_id) == "draft"
+
+    def test_missing_manage_sales_permission_returns_403(self, admin_headers):
+        """A housekeeping user lacks `manage_sales` → 403 before any state change."""
+        login = requests.post(f"{BASE_URL}/api/auth/login", json={
+            "email": "housekeeping@hotel.com", "password": "staff123"
+        })
+        if login.status_code != 200:
+            pytest.skip("housekeeping@hotel.com not provisioned in this environment")
+        hk_headers = {
+            "Authorization": f"Bearer {login.json().get('access_token')}",
+            "Content-Type": "application/json",
+        }
+
+        contract_id = self._create_draft_contract(admin_headers)
+        resp = self._transition(hk_headers, contract_id, "pending")
+        assert resp.status_code == 403, (
+            f"Expected 403 for missing manage_sales, got {resp.status_code}: {resp.text}")
+        # RBAC denial must not mutate the contract.
+        assert self._persisted_approval_status(admin_headers, contract_id) == "draft"
+
+    def test_cross_tenant_contract_id_returns_404(self, admin_headers):
+        """A contract owned by another tenant is invisible (404), not transitionable.
+
+        Seeds a real ``corporate_contracts`` row under a fabricated foreign
+        tenant_id directly in Mongo (mirrors test_cross_tenant_isolation_e2e),
+        then proves Tenant A's admin token gets 404 transitioning it and leaves
+        the foreign row untouched — so the 404 is tenant isolation, not merely a
+        non-existent id (which is covered separately below).
+        """
+        try:
+            from pymongo import MongoClient
+        except Exception:
+            pytest.skip("pymongo unavailable")
+
+        mongo_url = os.environ.get("MONGO_URL")
+        db_name = os.environ.get("DB_NAME")
+        if not mongo_url or not db_name:
+            pytest.skip("MONGO_URL/DB_NAME not configured for side-channel seed")
+
+        foreign_tenant_id = f"xtenant-{uuid.uuid4().hex}"
+        foreign_contract_id = str(uuid.uuid4())
+        client = MongoClient(mongo_url)
+        coll = client[db_name].corporate_contracts
+        try:
+            coll.insert_one({
+                "id": foreign_contract_id,
+                "tenant_id": foreign_tenant_id,
+                "company_name": "TEST_ForeignTenantContract",
+                "status": "active",
+                "approval_status": "draft",
+                "approval_history": [],
+            })
+
+            # Tenant A (demo admin) must NOT see or mutate the foreign contract.
+            cross = self._transition(admin_headers, foreign_contract_id, "pending")
+            assert cross.status_code == 404, (
+                f"Cross-tenant transition must 404, got "
+                f"{cross.status_code}: {cross.text}")
+
+            # Side-effect check: the foreign row is untouched (still draft, no
+            # history), proving the 404 is isolation rather than a silent edit.
+            after = coll.find_one({"id": foreign_contract_id})
+            assert after is not None
+            assert after.get("approval_status") == "draft"
+            assert after.get("approval_history") == []
+        finally:
+            coll.delete_one({"id": foreign_contract_id})
+            client.close()
+
+    def test_unknown_contract_id_returns_404(self, admin_headers):
+        """A non-existent contract id (within the caller's tenant) → 404."""
+        resp = self._transition(admin_headers, str(uuid.uuid4()), "pending")
+        assert resp.status_code == 404, resp.text
+
+    def _approval_history(self, headers, contract_id):
+        return requests.get(
+            f"{BASE_URL}/api/sales/corporate-contract/{contract_id}/approval-history",
+            headers=headers,
+        )
+
+    def test_approval_history_endpoint_records_who_and_transitions(self, admin_headers):
+        """GET .../approval-history returns the per-transition trail (who/from/to).
+
+        Walks a contract draft→pending→approved, then reads the dedicated
+        history endpoint and asserts each transition is recorded with the
+        acting user (`by`), the from/to status, and a timestamp — so finance
+        can audit who moved the contract through the workflow.
+        """
+        contract_id = self._create_draft_contract(admin_headers)
+        assert self._transition(admin_headers, contract_id, "pending").status_code == 200
+        assert self._transition(
+            admin_headers, contract_id, "approved", reason="budget ok").status_code == 200
+
+        resp = self._approval_history(admin_headers, contract_id)
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data.get("contract_id") == contract_id
+        assert data.get("approval_status") == "approved"
+        history = data.get("approval_history", [])
+        assert len(history) == 2, history
+        assert [h.get("from_status") for h in history] == ["draft", "pending"]
+        assert [h.get("to_status") for h in history] == ["pending", "approved"]
+        # Every entry records who acted and when.
+        for h in history:
+            assert h.get("by"), f"history entry missing actor: {h}"
+            assert h.get("at"), f"history entry missing timestamp: {h}"
+        # The reason supplied on the approving transition is preserved.
+        assert history[1].get("reason") == "budget ok"
+
+    def test_approval_history_unknown_contract_returns_404(self, admin_headers):
+        """Reading history for a non-existent contract id → 404 (tenant-scoped)."""
+        resp = self._approval_history(admin_headers, str(uuid.uuid4()))
+        assert resp.status_code == 404, resp.text
 
 
 if __name__ == "__main__":

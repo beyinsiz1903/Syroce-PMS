@@ -1,8 +1,9 @@
 import hashlib
 import json
+import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import HTTPException, Request, status
 
@@ -13,6 +14,7 @@ from shared_kernel.event_envelope import build_event_envelope
 from shared_kernel.idempotency import ensure_idempotent_request
 from shared_kernel.tenancy_context import build_property_context, build_tenant_context
 
+logger = logging.getLogger(__name__)
 
 DEFAULT_EMPTY_FIELDS = {
     "source_channel": "direct",
@@ -46,16 +48,16 @@ ALLOWED_FIELDS = {
 
 
 class UpdateReservationService:
-    def __init__(self, repository: Optional[ReservationsRepository] = None):
+    def __init__(self, repository: ReservationsRepository | None = None):
         self.repository = repository or ReservationsRepository()
 
     async def update(
         self,
         booking_id: str,
-        booking_data: Dict[str, Any],
+        booking_data: dict[str, Any],
         current_user,
         request: Request,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         tenant_context = build_tenant_context(current_user, request)
         property_context = build_property_context(current_user, request)
         self._enforce_property_scope(tenant_context.tenant_id, property_context.property_id)
@@ -107,40 +109,90 @@ class UpdateReservationService:
 
             room_changed = update_data.get("room_id") and update_data["room_id"] != existing_booking.get("room_id")
             effective_status = update_data.get("status", existing_booking.get("status"))
-
-            if room_changed and existing_booking.get("room_id"):
-                await self.repository.update_room_for_tenant(
-                    tenant_context.tenant_id,
-                    existing_booking["room_id"],
-                    {"status": "available", "current_booking_id": None},
-                )
-
-            if room_changed and effective_status == "checked_in":
-                await self.repository.update_room_for_tenant(
-                    tenant_context.tenant_id,
-                    update_data["room_id"],
-                    {"status": "occupied", "current_booking_id": booking_id},
-                )
-
-            # Auto-mark room as dirty on checkout
             old_status = existing_booking.get("status")
             new_status = update_data.get("status")
-            if new_status == "checked_out" and old_status != "checked_out":
-                room_id = existing_booking.get("room_id")
-                if room_id:
+
+            # ── If status is transitioning to checked_in → use atomic check-in ──
+            if new_status == "checked_in" and old_status != "checked_in":
+                from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
+
+                status_fields = {k: v for k, v in update_data.items() if k != "status"}
+                try:
+                    await check_in_booking_atomic(
+                        booking_id=booking_id,
+                        tenant_id=tenant_context.tenant_id,
+                        actor_id=str(getattr(current_user, "id", "system")),
+                        actor_name=str(getattr(current_user, "name", "system")),
+                        extra_fields={k: v for k, v in status_fields.items() if k not in ("room_id",)},
+                    )
+                except CheckInError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+                # Remove status/room keys from update_data so they aren't double-written
+                update_data.pop("status", None)
+                # Handle room change if also requested
+                if room_changed:
+                    update_data.pop("room_id", None)
+
+            # ── If status is transitioning to checked_out → use atomic check-out ──
+            elif new_status == "checked_out" and old_status != "checked_out":
+                from core.atomic_checkin_checkout import CheckOutError, check_out_booking_atomic
+
+                try:
+                    await check_out_booking_atomic(
+                        booking_id=booking_id,
+                        tenant_id=tenant_context.tenant_id,
+                        actor_id=str(getattr(current_user, "id", "system")),
+                        actor_name=str(getattr(current_user, "name", "system")),
+                        force=True,
+                    )
+                except CheckOutError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+                update_data.pop("status", None)
+
+            else:
+                # Non-check-in/check-out status changes: handle room updates manually
+                if room_changed and existing_booking.get("room_id"):
                     await self.repository.update_room_for_tenant(
                         tenant_context.tenant_id,
-                        room_id,
-                        {
-                            "status": "available",
-                            "current_booking_id": None,
-                            "housekeeping_status": "dirty",
-                            "housekeeping_updated_at": datetime.now(timezone.utc).isoformat(),
-                            "housekeeping_updated_by": "Sistem (Otomatik Cikis)",
-                        },
+                        existing_booking["room_id"],
+                        {"status": "available", "current_booking_id": None},
                     )
 
-            await self.repository.update_booking(tenant_context.tenant_id, booking_id, update_data)
+                if room_changed and effective_status == "checked_in":
+                    await self.repository.update_room_for_tenant(
+                        tenant_context.tenant_id,
+                        update_data["room_id"],
+                        {"status": "occupied", "current_booking_id": booking_id},
+                    )
+
+            # Release room-night locks when status transitions to cancelled/no_show (INV-6)
+            if new_status in ("cancelled", "no_show") and old_status not in ("cancelled", "no_show"):
+                try:
+                    from core.atomic_booking import release_booking_nights
+
+                    await release_booking_nights(
+                        tenant_context.tenant_id,
+                        booking_id,
+                        reason=f"{new_status}:update_service",
+                        correlation_id=correlation_id,
+                    )
+                except Exception:
+                    pass
+
+            # Apply remaining field updates with optimistic locking (INV-4)
+            if update_data:
+                expected_version = existing_booking.get("_version")
+                version_ok = await self.repository.update_booking(
+                    tenant_context.tenant_id,
+                    booking_id,
+                    update_data,
+                    expected_version=expected_version,
+                )
+                if not version_ok:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Concurrent modification detected. Please retry.",
+                    )
             updated_booking = await self.repository.get_booking_for_tenant(tenant_context.tenant_id, booking_id)
 
             if not updated_booking:
@@ -203,8 +255,110 @@ class UpdateReservationService:
                     },
                 )
 
+                # Af-sadakat marketplace integration: outbound olay (best-effort)
+                try:
+                    from core.afsadakat_outbound import (
+                        EV_RESERVATION_CANCELLED,
+                        EV_RESERVATION_UPDATED,
+                        emit_event,
+                    )
+
+                    _is_cancel = new_status in ("cancelled", "no_show") and old_status not in ("cancelled", "no_show")
+                    await emit_event(
+                        tenant_context.tenant_id,
+                        EV_RESERVATION_CANCELLED if _is_cancel else EV_RESERVATION_UPDATED,
+                        {
+                            "booking_id": booking_id,
+                            "guest_id": updated_booking.get("guest_id"),
+                            "room_id": updated_booking.get("room_id"),
+                            "check_in": updated_booking.get("check_in"),
+                            "check_out": updated_booking.get("check_out"),
+                            "status": updated_booking.get("status"),
+                            "changed_fields": list(changes.keys()),
+                            "changes": changes,
+                        },
+                    )
+                except Exception:
+                    pass
+
+                # CapX B2B Network: cancel/no_show transition push (best-effort)
+                if new_status in ("cancelled", "no_show") and old_status not in ("cancelled", "no_show"):
+                    try:
+                        from integrations.capx import (
+                            fire_and_forget,
+                            push_booking_lifecycle_event,
+                        )
+
+                        fire_and_forget(
+                            push_booking_lifecycle_event(
+                                booking_id=booking_id,
+                                status=new_status,
+                                tenant_id=tenant_context.tenant_id,
+                                guest_name=updated_booking.get("guest_name"),
+                                check_in=updated_booking.get("check_in", ""),
+                                check_out=updated_booking.get("check_out", ""),
+                                amount=updated_booking.get("total_amount"),
+                                currency=updated_booking.get("currency", "TRY"),
+                            )
+                        )
+                    except Exception:
+                        pass
+
+            # Channel availability auto-sync: müsaitlik güncelle ve kanallara push et
+            _avail_sync_fields = {"status", "room_id", "check_in", "check_out"}
+            if changes and _avail_sync_fields & set(changes.keys()):
+                try:
+                    import asyncio
+
+                    from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
+
+                    # Güncel booking tarihlerini sync et
+                    asyncio.create_task(
+                        sync_availability_after_booking(
+                            tenant_id=tenant_context.tenant_id,
+                            room_id=updated_booking.get("room_id", ""),
+                            check_in=updated_booking.get("check_in", ""),
+                            check_out=updated_booking.get("check_out", ""),
+                        )
+                    )
+                    # Oda veya tarih değiştiyse eski oda/tarih için de sync et
+                    old_room = existing_booking.get("room_id", "")
+                    old_ci = existing_booking.get("check_in", "")
+                    old_co = existing_booking.get("check_out", "")
+                    new_room = updated_booking.get("room_id", "")
+                    new_ci = updated_booking.get("check_in", "")
+                    new_co = updated_booking.get("check_out", "")
+                    if old_room != new_room or old_ci != new_ci or old_co != new_co:
+                        asyncio.create_task(
+                            sync_availability_after_booking(
+                                tenant_id=tenant_context.tenant_id,
+                                room_id=old_room,
+                                check_in=old_ci,
+                                check_out=old_co,
+                            )
+                        )
+                except Exception:
+                    pass
+
             response = dict(updated_booking)
             response.pop("_id", None)
+
+            # ── Messaging Automation: fire event on status change ──
+            if new_status and new_status != old_status:
+                try:
+                    from modules.messaging.automation import fire_booking_event
+
+                    event_map = {
+                        "confirmed": "booking_confirmed",
+                        "checked_in": "checked_in",
+                        "checked_out": "checked_out",
+                    }
+                    event_type = event_map.get(new_status)
+                    if event_type:
+                        await fire_booking_event(tenant_context.tenant_id, event_type, response)
+                except Exception as msg_err:
+                    logger.warning(f"Messaging automation fire failed: {msg_err}")
+
             await self.repository.complete_idempotency_lock(lock["lock_id"], booking_id, response)
             return response
         except HTTPException as exc:
@@ -221,10 +375,10 @@ class UpdateReservationService:
         self,
         tenant_id: str,
         booking_id: str,
-        existing_booking: Dict[str, Any],
-        booking_data: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        update_data: Dict[str, Any] = {}
+        existing_booking: dict[str, Any],
+        booking_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        update_data: dict[str, Any] = {}
 
         if "guest_id" in booking_data and booking_data["guest_id"] != existing_booking.get("guest_id"):
             guest = await self.repository.get_guest_for_tenant(tenant_id, booking_data["guest_id"])
@@ -247,13 +401,30 @@ class UpdateReservationService:
             update_data.pop("room_id", None)
             update_data.pop("room_number", None)
 
+        # Misafir sayisi tutarliligi: adults veya children degisince guests_count'u
+        # (ve varsa legacy n alanini) sunucu tarafinda yeniden tureterek istemci
+        # gonderiminden bagimsiz tek noktada garanti et.
+        if "adults" in update_data or "children" in update_data:
+            effective_adults = update_data.get("adults", existing_booking.get("adults") or 0) or 0
+            effective_children = update_data.get("children", existing_booking.get("children") or 0) or 0
+            derived_guests_count = max(1, effective_adults + effective_children)
+            if existing_booking.get("guests_count") != derived_guests_count:
+                update_data["guests_count"] = derived_guests_count
+            else:
+                # Istemci yanlis bir guests_count gondermisse, dogru degere geri al.
+                update_data.pop("guests_count", None)
+            # Legacy n alani yalnizca dokumanda zaten varsa senkron tutulur;
+            # boylece yeni dokumanlar bu legacy alanla kirletilmez.
+            if "n" in existing_booking and existing_booking.get("n") != derived_guests_count:
+                update_data["n"] = derived_guests_count
+
         if not update_data:
             return {}
 
         return update_data
 
-    def _normalize_payload(self, booking_data: Dict[str, Any]) -> Dict[str, Any]:
-        normalized: Dict[str, Any] = {}
+    def _normalize_payload(self, booking_data: dict[str, Any]) -> dict[str, Any]:
+        normalized: dict[str, Any] = {}
         for field in ALLOWED_FIELDS:
             if field not in booking_data:
                 continue
@@ -276,10 +447,10 @@ class UpdateReservationService:
             return raw_value
         parsed = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
+            parsed = parsed.replace(tzinfo=UTC)
         return parsed.isoformat()
 
-    def _build_request_hash(self, tenant_id: str, booking_id: str, payload: Dict[str, Any]) -> str:
+    def _build_request_hash(self, tenant_id: str, booking_id: str, payload: dict[str, Any]) -> str:
         serialized = json.dumps(
             {
                 "tenant_id": tenant_id,
@@ -291,7 +462,7 @@ class UpdateReservationService:
         )
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
-    def _enforce_property_scope(self, tenant_id: str, property_id: Optional[str]) -> None:
+    def _enforce_property_scope(self, tenant_id: str, property_id: str | None) -> None:
         if property_id and property_id != tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

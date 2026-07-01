@@ -1,0 +1,36 @@
+{
+  "ok": [],
+  "skipped": [
+    {
+      "file": "frontend/src/pages/GuestJourneyDashboard.jsx",
+      "status": "SKIP",
+      "reason": "no route entry references this page (lazyComp=GuestJourneyDashboard)",
+      "currentModule": "pms"
+    },
+    {
+      "file": "frontend/src/pages/PMSModule.jsx",
+      "status": "SKIP",
+      "reason": "no route entry references this page (lazyComp=PMSModule)",
+      "currentModule": "pms"
+    },
+    {
+      "file": "frontend/src/pages/RMSModule.jsx",
+      "status": "SKIP",
+      "reason": "no route entry references this page (lazyComp=RMSModule)",
+      "currentModule": "rms"
+    },
+    {
+      "file": "frontend/src/pages/Reports.jsx",
+      "status": "SKIP",
+      "reason": "no route entry references this page (lazyComp=Reports)",
+      "currentModule": "reports"
+    }
+  ],
+  "rejected": [
+    {
+      "file": "frontend/src/pages/ReservationCalendar.jsx",
+      "status": "REJECT",
+      "reason": "multiple distinct currentModule values: [\"reservation_calendar\",\"calendar\"]"
+    }
+  ]
+}

@@ -2,33 +2,54 @@
 MongoDB Production Validator — Connection pool monitoring, replica set detection,
 slow query metrics, index validation, schema drift detection, and collection health.
 """
+
 import logging
-from typing import Dict, Any
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("infra.mongo_production")
 
 
 # Collections that must exist with indexes
 CRITICAL_COLLECTIONS = [
-    "users", "tenants", "bookings", "rooms", "guests", "folios",
-    "invoices", "payments", "companies", "rates", "channel_connections",
-    "audit_logs", "loyalty_programs", "loyalty_transactions",
+    "users",
+    "tenants",
+    "bookings",
+    "rooms",
+    "guests",
+    "folios",
+    "invoices",
+    "payments",
+    "companies",
+    "rates",
+    "channel_connections",
+    "audit_logs",
+    "loyalty_programs",
+    "loyalty_transactions",
 ]
 
 SECONDARY_COLLECTIONS = [
-    "event_bus_log", "messaging_delivery_logs", "observability_traces",
-    "alert_history", "pipeline_runs", "analytics_export_history",
-    "notification_queue", "housekeeping_tasks", "maintenance_work_orders",
+    "event_bus_log",
+    "messaging_delivery_logs",
+    "observability_traces",
+    "alert_history",
+    "pipeline_runs",
+    "analytics_export_history",
+    "notification_queue",
+    "housekeeping_tasks",
+    "maintenance_work_orders",
 ]
 
 EXPECTED_INDEXES = {
-    "users": ["email_1", "tenant_id_1"],
-    "bookings": ["tenant_id_1", "status_1", "check_in_1"],
-    "rooms": ["tenant_id_1", "room_number_1"],
-    "guests": ["tenant_id_1", "email_1"],
-    "folios": ["tenant_id_1", "booking_id_1"],
-    "audit_logs": ["tenant_id_1", "created_at_-1"],
+    # Mayıs 2026: Atlas Performance Advisor önerisiyle eski tek alanlı /
+    # tenant'sız index'ler kaldırıldı. Validator artık modern tenant öncüllü
+    # bileşik index isimlerini bekliyor (bkz. d_perf.py + perf_indexes.py).
+    "users": ["idx_u_tid_email", "idx_u_tid_role", "tenant_username_unique"],
+    "bookings": ["idx_bookings_tenant_checkin_checkout", "idx_bookings_tenant_status_checkin", "idx_booking_overlap_check"],
+    "rooms": ["idx_rooms_tenant_number", "idx_rooms_tenant_status_type"],
+    "guests": ["idx_guests_tenant_email", "idx_guests_tenant_phone"],
+    "folios": ["idx_folios_tenant_booking", "idx_folios_tenant_status_created"],
+    "audit_logs": ["idx_audit_log_timestamp", "idx_audit_log_action"],
 }
 
 
@@ -44,7 +65,7 @@ class MongoProductionValidator:
         self._db = db
         self._client = client
 
-    async def get_connection_pool_info(self) -> Dict[str, Any]:
+    async def get_connection_pool_info(self) -> dict[str, Any]:
         """Get connection pool statistics."""
         if self._db is None:
             return {"status": "not_connected", "error": "Database not initialized"}
@@ -64,7 +85,7 @@ class MongoProductionValidator:
         except Exception as e:
             return {"status": "error", "error": str(e)}
 
-    async def detect_replica_set(self) -> Dict[str, Any]:
+    async def detect_replica_set(self) -> dict[str, Any]:
         """Detect if connected to a replica set and its health."""
         if self._db is None:
             return {"status": "not_connected", "is_replica_set": False}
@@ -73,13 +94,15 @@ class MongoProductionValidator:
             rs_status = await self._db.command("replSetGetStatus")
             members = []
             for m in rs_status.get("members", []):
-                members.append({
-                    "name": m.get("name"),
-                    "state_str": m.get("stateStr"),
-                    "health": m.get("health"),
-                    "uptime": m.get("uptime", 0),
-                    "optime_date": str(m.get("optimeDate", "")),
-                })
+                members.append(
+                    {
+                        "name": m.get("name"),
+                        "state_str": m.get("stateStr"),
+                        "health": m.get("health"),
+                        "uptime": m.get("uptime", 0),
+                        "optime_date": str(m.get("optimeDate", "")),
+                    }
+                )
             return {
                 "is_replica_set": True,
                 "set_name": rs_status.get("set", "unknown"),
@@ -90,7 +113,7 @@ class MongoProductionValidator:
         except Exception:
             return {"is_replica_set": False, "status": "standalone", "note": "Not a replica set member"}
 
-    async def get_slow_query_metrics(self, threshold_ms: int = 100) -> Dict[str, Any]:
+    async def get_slow_query_metrics(self, threshold_ms: int = 100) -> dict[str, Any]:
         """Get slow query statistics from profiling data."""
         if self._db is None:
             return {"status": "not_connected"}
@@ -101,17 +124,17 @@ class MongoProductionValidator:
 
             slow_queries = []
             if current_level > 0:
-                cursor = self._db["system.profile"].find(
-                    {"millis": {"$gte": threshold_ms}}
-                ).sort("millis", -1).limit(20)
+                cursor = self._db["system.profile"].find({"millis": {"$gte": threshold_ms}}).sort("millis", -1).limit(20)
                 async for doc in cursor:
-                    slow_queries.append({
-                        "operation": doc.get("op", "unknown"),
-                        "namespace": doc.get("ns", "unknown"),
-                        "millis": doc.get("millis", 0),
-                        "timestamp": str(doc.get("ts", "")),
-                        "query_shape": str(doc.get("command", {}))[:200],
-                    })
+                    slow_queries.append(
+                        {
+                            "operation": doc.get("op", "unknown"),
+                            "namespace": doc.get("ns", "unknown"),
+                            "millis": doc.get("millis", 0),
+                            "timestamp": str(doc.get("ts", "")),
+                            "query_shape": str(doc.get("command", {}))[:200],
+                        }
+                    )
 
             return {
                 "profiling_level": current_level,
@@ -123,7 +146,7 @@ class MongoProductionValidator:
         except Exception as e:
             return {"status": "error", "error": str(e)}
 
-    async def validate_indexes(self) -> Dict[str, Any]:
+    async def validate_indexes(self) -> dict[str, Any]:
         """Validate expected indexes exist on critical collections."""
         if self._db is None:
             return {"status": "not_connected"}
@@ -147,7 +170,7 @@ class MongoProductionValidator:
                 results[collection] = {"status": "error", "error": str(e)}
 
         return {
-            "validated_at": datetime.now(timezone.utc).isoformat(),
+            "validated_at": datetime.now(UTC).isoformat(),
             "collections_checked": len(results),
             "missing_index_count": len(missing_indexes),
             "missing_indexes": missing_indexes,
@@ -155,7 +178,7 @@ class MongoProductionValidator:
             "status": "valid" if not missing_indexes else "action_required",
         }
 
-    async def detect_schema_drift(self) -> Dict[str, Any]:
+    async def detect_schema_drift(self) -> dict[str, Any]:
         """Detect potential schema drift by sampling document structures."""
         if self._db is None:
             return {"status": "not_connected"}
@@ -163,9 +186,7 @@ class MongoProductionValidator:
         drift_report = {}
         for coll_name in CRITICAL_COLLECTIONS[:8]:
             try:
-                sample = await self._db[coll_name].find_one(
-                    {}, {"_id": 0}
-                )
+                sample = await self._db[coll_name].find_one({}, {"_id": 0})
                 if sample:
                     drift_report[coll_name] = {
                         "field_count": len(sample.keys()),
@@ -178,12 +199,12 @@ class MongoProductionValidator:
                 drift_report[coll_name] = {"status": "error", "error": str(e)}
 
         return {
-            "scanned_at": datetime.now(timezone.utc).isoformat(),
+            "scanned_at": datetime.now(UTC).isoformat(),
             "collections_scanned": len(drift_report),
             "details": drift_report,
         }
 
-    async def get_collection_health(self) -> Dict[str, Any]:
+    async def get_collection_health(self) -> dict[str, Any]:
         """Get health summary for all known collections."""
         if self._db is None:
             return {"status": "not_connected"}
@@ -203,14 +224,14 @@ class MongoProductionValidator:
             health[category][coll_name] = stats
 
         return {
-            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "checked_at": datetime.now(UTC).isoformat(),
             "total_documents": total_docs,
             "critical_collections": len(CRITICAL_COLLECTIONS),
             "secondary_collections": len(SECONDARY_COLLECTIONS),
             "health": health,
         }
 
-    async def get_full_report(self) -> Dict[str, Any]:
+    async def get_full_report(self) -> dict[str, Any]:
         """Comprehensive MongoDB production report."""
         pool = await self.get_connection_pool_info()
         replica = await self.detect_replica_set()

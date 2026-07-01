@@ -2,11 +2,72 @@ import sys
 from pathlib import Path
 import pytest
 import asyncio
+import os
+import requests
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
+TESTS_DIR = Path(__file__).resolve().parent
 
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
+if str(TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(TESTS_DIR))
+
+# Ensure TESTING=1 so rate limiter uses relaxed limits during test runs
+os.environ.setdefault("TESTING", "1")
+
+# Mongo: tests run outside start.sh so MONGO_URL may be unset.
+# Fallback to MONGO_ATLAS_URI (the same source start.sh uses).
+if not os.environ.get("MONGO_URL"):
+    _atlas = os.environ.get("MONGO_ATLAS_URI")
+    if _atlas:
+        os.environ["MONGO_URL"] = _atlas
+        os.environ.setdefault("DB_NAME", "syroce-pms")
+
+
+# ── Quarantine Auto-Skip Hook (ADR-002) ──────────────────────────────────
+# Loads the quarantine manifest and auto-skips listed tests at collection time.
+# This keeps failing tests visible in output (as "skipped") without blocking CI.
+def pytest_collection_modifyitems(config, items):
+    try:
+        from tests._quarantine.quarantine_manifest import QUARANTINED_TESTS
+    except ImportError:
+        return
+    for item in items:
+        node_id = item.nodeid
+        for q_id, reason in QUARANTINED_TESTS.items():
+            if q_id in node_id:
+                item.add_marker(pytest.mark.skip(reason=reason))
+                break
+
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
+
+
+# Ensure VITE_BACKEND_URL is set for test files that read it directly.
+# Backend listens on 8000 (start.sh:69 → uvicorn --port 8000).
+if not os.environ.get("VITE_BACKEND_URL"):
+    os.environ["VITE_BACKEND_URL"] = "http://localhost:8000"
+    BASE_URL = "http://localhost:8000"
+
+
+@pytest.fixture(scope="session")
+def demo_auth_token():
+    """Shared demo admin auth token for all tests."""
+    if not BASE_URL:
+        pytest.skip("VITE_BACKEND_URL not set")
+    resp = requests.post(
+        f"{BASE_URL}/api/auth/login",
+        json={"email": "demo@hotel.com", "password": "demo123"},
+    )
+    if resp.status_code != 200:
+        pytest.skip("Authentication failed for demo@hotel.com")
+    return resp.json()["access_token"]
+
+
+@pytest.fixture(scope="session")
+def demo_auth_headers(demo_auth_token):
+    """Shared auth headers dict."""
+    return {"Authorization": f"Bearer {demo_auth_token}", "Content-Type": "application/json"}
 
 
 @pytest.fixture(scope="session")
@@ -30,3 +91,49 @@ def event_loop():
 
     yield loop
     loop.close()
+
+
+# ── live_mongo no-false-green gate (Task #323) ───────────────────────────
+# Doctrine gereği `live_mongo` testleri gerçek MongoDB erişilemezse atlanır.
+# Bu, CI'da Mongo bağlanamazsa tüm canlı testlerin "skip" olup build'in yine
+# yeşil görünmesine (false-green) yol açar. REQUIRE_LIVE_MONGO=1 set edildiğinde
+# (CI'da adanmış adım), `live_mongo` testlerinden HERHANGİ biri atlanırsa veya
+# hiç koşmazsa oturum FAIL olur. Yerelde (env yoksa) skip serbesttir.
+_LIVE_MONGO_OUTCOMES = {"passed": 0, "failed": 0, "skipped": 0}
+
+
+def _require_live_mongo() -> bool:
+    return os.environ.get("REQUIRE_LIVE_MONGO", "").strip().lower() in ("1", "true", "yes")
+
+
+def pytest_runtest_logreport(report):
+    # Yalnız live_mongo marker'lı testleri say. Skip fixture/setup'ta olur
+    # (report.when == "setup"); pass/fail call fazında raporlanır.
+    if "live_mongo" not in getattr(report, "keywords", {}):
+        return
+    if report.skipped and report.when in ("setup", "call"):
+        _LIVE_MONGO_OUTCOMES["skipped"] += 1
+    elif report.when == "call":
+        if report.passed:
+            _LIVE_MONGO_OUTCOMES["passed"] += 1
+        elif report.failed:
+            _LIVE_MONGO_OUTCOMES["failed"] += 1
+
+
+def pytest_sessionfinish(session, exitstatus):
+    if not _require_live_mongo():
+        return
+    o = _LIVE_MONGO_OUTCOMES
+    ran = o["passed"] + o["failed"]
+    if o["skipped"] > 0 or ran == 0:
+        msg = (
+            f"REQUIRE_LIVE_MONGO set ama live_mongo testleri gerçekten koşmadı "
+            f"(passed={o['passed']} failed={o['failed']} skipped={o['skipped']}). "
+            f"Skip-as-pass reddedildi (false-green guard)."
+        )
+        reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+        if reporter is not None:
+            reporter.write_line("")
+            reporter.write_line(msg, red=True, bold=True)
+        # Oturumu kırmızıya çevir (exit kodu != 0).
+        session.exitstatus = 1

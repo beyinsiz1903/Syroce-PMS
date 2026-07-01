@@ -2,10 +2,12 @@
 Revenue Autopilot Service.
 Converts ML recommendations into auto-applied or queued pricing decisions.
 """
+
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
+
+from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +26,7 @@ class ApprovalStatus:
     ROLLED_BACK = "rolled_back"
 
 
-def new_autopilot_policy(tenant_id: str, property_id: Optional[str] = None) -> dict:
+def new_autopilot_policy(tenant_id: str, property_id: str | None = None) -> dict:
     return {
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
@@ -37,21 +39,21 @@ def new_autopilot_policy(tenant_id: str, property_id: Optional[str] = None) -> d
         "protected_room_types": [],
         "enabled": True,
         "daily_summary_enabled": True,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
 
 
 def new_approval_item(
     tenant_id: str,
-    property_id: Optional[str],
+    property_id: str | None,
     room_type: str,
     target_date: str,
     current_price: float,
     recommended_price: float,
     confidence: float,
     reason: str,
-    source_job_id: Optional[str] = None,
+    source_job_id: str | None = None,
 ) -> dict:
     return {
         "id": str(uuid.uuid4()),
@@ -71,8 +73,8 @@ def new_approval_item(
         "rejected_reason": None,
         "rollback_price": None,
         "channel_push_status": None,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
 
 
@@ -95,7 +97,7 @@ def new_apply_result(
         "channels_pushed": channels_pushed,
         "success": success,
         "error_message": None,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
 
@@ -105,7 +107,7 @@ class RevenueAutopilotService:
     def __init__(self, db):
         self.db = db
 
-    async def get_policy(self, tenant_id: str, property_id: Optional[str] = None) -> dict:
+    async def get_policy(self, tenant_id: str, property_id: str | None = None) -> dict:
         q = {"tenant_id": tenant_id}
         if property_id:
             q["property_id"] = property_id
@@ -117,11 +119,9 @@ class RevenueAutopilotService:
         return policy
 
     async def update_policy(self, tenant_id: str, updates: dict) -> dict:
-        allowed = ["mode", "confidence_threshold_auto", "confidence_threshold_queue",
-                    "max_price_change_pct", "blackout_dates", "protected_room_types",
-                    "enabled", "daily_summary_enabled"]
+        allowed = ["mode", "confidence_threshold_auto", "confidence_threshold_queue", "max_price_change_pct", "blackout_dates", "protected_room_types", "enabled", "daily_summary_enabled"]
         filtered = {k: v for k, v in updates.items() if k in allowed}
-        filtered["updated_at"] = datetime.now(timezone.utc).isoformat()
+        filtered["updated_at"] = datetime.now(UTC).isoformat()
         result = await self.db.revenue_autopilot_policies.update_one(
             {"tenant_id": tenant_id},
             {"$set": filtered},
@@ -155,8 +155,13 @@ class RevenueAutopilotService:
             change_pct = abs((recommended_price - current_price) / current_price * 100)
             if change_pct > policy.get("max_price_change_pct", 20):
                 item = new_approval_item(
-                    tenant_id, policy.get("property_id"), room_type, target_date,
-                    current_price, recommended_price, confidence,
+                    tenant_id,
+                    policy.get("property_id"),
+                    room_type,
+                    target_date,
+                    current_price,
+                    recommended_price,
+                    confidence,
                     f"Price change {change_pct:.1f}% exceeds limit",
                     recommendation.get("source_job_id"),
                 )
@@ -170,26 +175,55 @@ class RevenueAutopilotService:
         if mode == AutopilotMode.FULL_AUTO and confidence >= auto_threshold:
             # auto-apply
             result = await self._apply_price(tenant_id, room_type, target_date, current_price, recommended_price)
+            if result.get("success"):
+                item = new_approval_item(
+                    tenant_id,
+                    policy.get("property_id"),
+                    room_type,
+                    target_date,
+                    current_price,
+                    recommended_price,
+                    confidence,
+                    "Auto-applied (high confidence)",
+                    recommendation.get("source_job_id"),
+                )
+                item["status"] = ApprovalStatus.AUTO_APPLIED
+                item["applied_at"] = datetime.now(UTC).isoformat()
+                item["applied_by"] = "autopilot"
+                item["channel_push_status"] = "local_only"
+                await self.db.revenue_approval_queue.insert_one(item)
+
+                apply_doc = new_apply_result(tenant_id, item["id"], room_type, current_price, recommended_price, result.get("channels", []), True)
+                await self.db.revenue_apply_results.insert_one(apply_doc)
+                return {"action": "auto_applied", "item_id": item["id"], "result": result}
+
+            # Apply did not actually change a rate plan (no matching plan or DB
+            # error). Marking it AUTO_APPLIED would be a fake success, so queue
+            # it for manual review instead (doctrine: fail-closed / no fake-green).
+            reason = "error" if result.get("error") else "no matching rate plan"
             item = new_approval_item(
-                tenant_id, policy.get("property_id"), room_type, target_date,
-                current_price, recommended_price, confidence, "Auto-applied (high confidence)",
+                tenant_id,
+                policy.get("property_id"),
+                room_type,
+                target_date,
+                current_price,
+                recommended_price,
+                confidence,
+                f"Auto-apply failed ({reason}); queued for manual review",
                 recommendation.get("source_job_id"),
             )
-            item["status"] = ApprovalStatus.AUTO_APPLIED
-            item["applied_at"] = datetime.now(timezone.utc).isoformat()
-            item["applied_by"] = "autopilot"
-            item["channel_push_status"] = "pushed" if result.get("success") else "failed"
             await self.db.revenue_approval_queue.insert_one(item)
-
-            apply_doc = new_apply_result(tenant_id, item["id"], room_type, current_price, recommended_price,
-                                          result.get("channels", []), result.get("success", False))
-            await self.db.revenue_apply_results.insert_one(apply_doc)
-            return {"action": "auto_applied", "item_id": item["id"], "result": result}
+            return {"action": "queued", "reason": "auto_apply_failed", "item_id": item["id"], "result": result}
 
         elif confidence >= queue_threshold:
             item = new_approval_item(
-                tenant_id, policy.get("property_id"), room_type, target_date,
-                current_price, recommended_price, confidence,
+                tenant_id,
+                policy.get("property_id"),
+                room_type,
+                target_date,
+                current_price,
+                recommended_price,
+                confidence,
                 "Queued for approval" if mode != AutopilotMode.ADVISORY else "Advisory only",
                 recommendation.get("source_job_id"),
             )
@@ -199,107 +233,150 @@ class RevenueAutopilotService:
         else:
             return {"action": "rejected", "reason": f"Confidence {confidence} below threshold {queue_threshold}"}
 
-    async def _apply_price(self, tenant_id: str, room_type: str, target_date: str,
-                           old_price: float, new_price: float) -> dict:
-        """Apply the price change to rate plans and push to channels (simulated)."""
+    async def _apply_price(self, tenant_id: str, room_type: str, target_date: str, old_price: float, new_price: float) -> dict:
+        """Update the PMS-side rate plan base_price for the room type.
+
+        Distribution to OTA channels is handled by the channel manager's own
+        rate-push flow (unified rate manager), not here, so we report the local
+        rate update only and never claim a direct channel push that did not
+        happen (doctrine: no fake-green).
+        """
         try:
-            await self.db.rate_plans.update_many(
+            res = await self.db.rate_plans.update_many(
                 {"tenant_id": tenant_id, "room_type": room_type},
-                {"$set": {"base_price": new_price, "updated_at": datetime.now(timezone.utc).isoformat()}},
+                {"$set": {"base_price": new_price, "updated_at": datetime.now(UTC).isoformat()}},
             )
-            channels = ["booking_com", "expedia", "hotel_website"]
-            # audit
-            await self.db.audit_logs.insert_one({
-                "id": str(uuid.uuid4()),
-                "tenant_id": tenant_id,
-                "user_id": "autopilot",
-                "action": "revenue_autopilot_apply",
-                "entity_type": "rate_plan",
-                "entity_id": room_type,
-                "changes": {"old_price": old_price, "new_price": new_price, "target_date": target_date},
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
-            return {"success": True, "channels": channels}
+            # A price is only really "applied" when a rate plan for this room
+            # type actually exists and matched; matched_count==0 means nothing
+            # was changed, so we must NOT report success (doctrine: no fake-green).
+            applied = res.matched_count > 0
+            if applied:
+                # audit only an apply that actually matched a rate plan
+                await self.db.audit_logs.insert_one(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "tenant_id": tenant_id,
+                        "user_id": "autopilot",
+                        "action": "revenue_autopilot_apply",
+                        "entity_type": "rate_plan",
+                        "entity_id": room_type,
+                        "changes": {"old_price": old_price, "new_price": new_price, "target_date": target_date},
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
+                )
+            return {
+                "success": applied,
+                "channels": [],
+                "rate_plans_matched": res.matched_count,
+                "rate_plans_updated": res.modified_count,
+            }
         except Exception as e:
             logger.exception("Price apply error")
             return {"success": False, "error": str(e)[:200], "channels": []}
 
     async def approve_item(self, tenant_id: str, item_id: str, user_id: str) -> dict:
-        item = await self.db.revenue_approval_queue.find_one(
-            {"id": item_id, "tenant_id": tenant_id, "status": ApprovalStatus.PENDING}, {"_id": 0}
-        )
+        item = await self.db.revenue_approval_queue.find_one({"id": item_id, "tenant_id": tenant_id, "status": ApprovalStatus.PENDING}, {"_id": 0})
         if not item:
-            return {"success": False, "error": "Item not found or not pending"}
+            raise HTTPException(status_code=404, detail="Item not found or not pending")
 
         result = await self._apply_price(
-            tenant_id, item["room_type"], item["target_date"],
-            item["current_price"], item["recommended_price"],
+            tenant_id,
+            item["room_type"],
+            item["target_date"],
+            item["current_price"],
+            item["recommended_price"],
         )
+        if not result.get("success"):
+            # Nothing was actually applied (no matching rate plan or DB error).
+            # Do not mark the item APPROVED or return success — that would be a
+            # fake-green. Leave it PENDING so it stays visible and actionable.
+            if result.get("error"):
+                raise HTTPException(status_code=500, detail="Fiyat uygulanamadı (iç hata)")
+            raise HTTPException(
+                status_code=409,
+                detail="Eşleşen oda tipi fiyat planı bulunamadı; fiyat uygulanmadı",
+            )
+
         await self.db.revenue_approval_queue.update_one(
             {"id": item_id},
-            {"$set": {
-                "status": ApprovalStatus.APPROVED,
-                "applied_at": datetime.now(timezone.utc).isoformat(),
-                "applied_by": user_id,
-                "channel_push_status": "pushed" if result.get("success") else "failed",
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }},
+            {
+                "$set": {
+                    "status": ApprovalStatus.APPROVED,
+                    "applied_at": datetime.now(UTC).isoformat(),
+                    "applied_by": user_id,
+                    "channel_push_status": "local_only",
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            },
         )
-        apply_doc = new_apply_result(tenant_id, item_id, item["room_type"],
-                                      item["current_price"], item["recommended_price"],
-                                      result.get("channels", []), result.get("success", False))
+        apply_doc = new_apply_result(tenant_id, item_id, item["room_type"], item["current_price"], item["recommended_price"], result.get("channels", []), True)
         await self.db.revenue_apply_results.insert_one(apply_doc)
         return {"success": True, "result": result}
 
     async def reject_item(self, tenant_id: str, item_id: str, user_id: str, reason: str = "") -> dict:
         result = await self.db.revenue_approval_queue.update_one(
             {"id": item_id, "tenant_id": tenant_id, "status": ApprovalStatus.PENDING},
-            {"$set": {
-                "status": ApprovalStatus.REJECTED,
-                "applied_by": user_id,
-                "rejected_reason": reason,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }},
+            {
+                "$set": {
+                    "status": ApprovalStatus.REJECTED,
+                    "applied_by": user_id,
+                    "rejected_reason": reason,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            },
         )
         if result.matched_count == 0:
-            return {"success": False, "error": "Item not found or not pending"}
+            raise HTTPException(status_code=404, detail="Item not found or not pending")
         return {"success": True}
 
     async def rollback_item(self, tenant_id: str, item_id: str, user_id: str) -> dict:
         item = await self.db.revenue_approval_queue.find_one(
-            {"id": item_id, "tenant_id": tenant_id,
-             "status": {"$in": [ApprovalStatus.APPROVED, ApprovalStatus.AUTO_APPLIED]}},
+            {"id": item_id, "tenant_id": tenant_id, "status": {"$in": [ApprovalStatus.APPROVED, ApprovalStatus.AUTO_APPLIED]}},
             {"_id": 0},
         )
         if not item:
-            return {"success": False, "error": "Item not found or not applied"}
+            raise HTTPException(status_code=404, detail="Item not found or not applied")
 
-        await self._apply_price(
-            tenant_id, item["room_type"], item["target_date"],
-            item["recommended_price"], item["current_price"],
+        # Rollback restores the previous price by applying it back to the rate
+        # plan; if that apply did not actually match a rate plan (or errored),
+        # the rollback did NOT happen, so we must not mark it ROLLED_BACK or
+        # report success (doctrine: no fake-green terminal state / fail-closed).
+        result = await self._apply_price(
+            tenant_id,
+            item["room_type"],
+            item["target_date"],
+            item["recommended_price"],
+            item["current_price"],
         )
+        if not result.get("success"):
+            if result.get("error"):
+                raise HTTPException(status_code=500, detail="Fiyat geri alınamadı (iç hata)")
+            raise HTTPException(
+                status_code=409,
+                detail="Eşleşen oda tipi fiyat planı bulunamadı; geri alınamadı",
+            )
+
         await self.db.revenue_approval_queue.update_one(
             {"id": item_id},
-            {"$set": {
-                "status": ApprovalStatus.ROLLED_BACK,
-                "rollback_price": item["current_price"],
-                "applied_by": user_id,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }},
+            {
+                "$set": {
+                    "status": ApprovalStatus.ROLLED_BACK,
+                    "rollback_price": item["current_price"],
+                    "applied_by": user_id,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            },
         )
         return {"success": True, "rolled_back_to": item["current_price"]}
 
-    async def get_approval_queue(self, tenant_id: str, status_filter: Optional[str] = None,
-                                  limit: int = 50) -> list:
+    async def get_approval_queue(self, tenant_id: str, status_filter: str | None = None, limit: int = 50) -> list:
         q = {"tenant_id": tenant_id}
         if status_filter:
             q["status"] = status_filter
-        return await self.db.revenue_approval_queue.find(
-            q, {"_id": 0}
-        ).sort("created_at", -1).to_list(limit)
+        return await self.db.revenue_approval_queue.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
 
     async def get_daily_summary(self, tenant_id: str) -> dict:
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         cutoff = f"{today}T00:00:00"
         pipeline = [
             {"$match": {"tenant_id": tenant_id, "created_at": {"$gte": cutoff}}},
@@ -323,9 +400,7 @@ class RevenueAutopilotService:
         policy = await self.get_policy(tenant_id)
         queue = await self.get_approval_queue(tenant_id, ApprovalStatus.PENDING, 20)
         summary = await self.get_daily_summary(tenant_id)
-        recent_applied = await self.db.revenue_apply_results.find(
-            {"tenant_id": tenant_id}, {"_id": 0}
-        ).sort("created_at", -1).to_list(10)
+        recent_applied = await self.db.revenue_apply_results.find({"tenant_id": tenant_id}, {"_id": 0}).sort("created_at", -1).to_list(10)
         return {
             "policy": policy,
             "pending_queue": queue,

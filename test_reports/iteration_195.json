@@ -1,0 +1,56 @@
+{
+  "iteration": 195,
+  "date": "2026-04-08",
+  "summary": "Role-based delete permissions for room types and services on /agency-content page - ALL TESTS PASSED. Admin users see delete buttons with confirmation dialogs, staff users cannot see delete buttons at all.",
+  "features_tested": [
+    "Admin (demo@hotel.com) can see delete (trash) buttons on room types - PASSED",
+    "Admin (demo@hotel.com) can see delete (trash) buttons on services - PASSED",
+    "Admin clicking delete button shows AlertDialog with 'Oda Tipini Siliyorsunuz' title - PASSED",
+    "Admin clicking delete button shows 'Vazgec' and 'Evet, Sil' buttons - PASSED",
+    "Clicking 'Vazgec' closes dialog without deleting - PASSED",
+    "Clicking 'Evet, Sil' removes the room type from the list - PASSED",
+    "Service delete dialog shows 'Hizmeti Siliyorsunuz' title - PASSED",
+    "Staff user (frontdesk@hotel.com) CANNOT see delete buttons for room types - PASSED",
+    "Staff user (frontdesk@hotel.com) CANNOT see delete buttons for services - PASSED",
+    "Both admin and staff can see 'Oda Tipi Ekle' button - PASSED",
+    "Both admin and staff can see 'Hizmet Ekle' button - PASSED"
+  ],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "canDelete variable correctly checks for 'super_admin' or 'admin' roles at line 30",
+    "AlertDialog properly wraps delete buttons with confirmation flow",
+    "Delete buttons are conditionally rendered with {canDelete && ...} pattern",
+    "All data-testid attributes properly implemented for testing"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend only test)",
+    "frontend": "100% (11/11 tests passed)"
+  },
+  "test_credentials": {
+    "admin": {
+      "email": "demo@hotel.com",
+      "password": "demo123",
+      "role": "super_admin"
+    },
+    "staff": {
+      "email": "frontdesk@hotel.com",
+      "password": "staff123",
+      "role": "front_desk"
+    }
+  },
+  "seed_data_creation": "None - used existing data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Role-based delete permissions fully working on /agency-content page. Admin users (super_admin, admin roles) see delete buttons with confirmation dialogs. Staff users (front_desk role) cannot see delete buttons at all. Add buttons remain visible for all users. Implementation uses canDelete = ['super_admin', 'admin'].includes(user?.role) check."
+}

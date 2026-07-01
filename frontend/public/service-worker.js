@@ -3,24 +3,58 @@
  * Provides offline functionality and aggressive caching
  */
 
-const CACHE_VERSION = 'v1.0.0';
+// Bumped when caching topology değişiyor — eski client'lar otomatik yeni
+// CACHE_NAME'e geçer (activate handler eskileri siler).
+// v1.3.0: çevrimdışı oda-durumu + çıkış kuyrukları (roomStatusQueue/checkoutQueue)
+// eklendi + #3 finansal-detay cache sızıntısı kapatıldı (full-detail/folios/payments
+// NO_CACHE). Bump → eski client'lar yeni SW'ye geçer ve eski cache'i siler.
+const CACHE_VERSION = 'v1.3.0';
 const CACHE_NAME = `hotel-pms-${CACHE_VERSION}`;
-const OFFLINE_DB_NAME = 'RoomOpsOffline';
-const OFFLINE_DB_VERSION = 1;
+// Auth ayrımı: kullanıcı değişimi sonrası tüm cache'i drop edebilmek için
+// client'lar `postMessage({ type: 'AUTH_CHANGED' })` gönderir → SW siler.
+const OFFLINE_DB_NAME = 'SyroceOffline';
+// v3: roomStatusQueue + checkoutQueue store'ları eklendi (çevrimdışı kat
+// hizmetleri oda durumu + sıfır-bakiye çıkış). Frontend tarafı
+// (src/utils/offlineQueueDB.jsx) ile aynı versiyon olmalı.
+const OFFLINE_DB_VERSION = 3;
 const MEDIA_QUEUE_STORE = 'mediaQueue';
 const TASK_QUEUE_STORE = 'taskQueue';
 const NOTIFICATION_LOG_STORE = 'notificationLog';
+const CHECKIN_QUEUE_STORE = 'checkinQueue';
+const ROOM_STATUS_QUEUE_STORE = 'roomStatusQueue';
+const CHECKOUT_QUEUE_STORE = 'checkoutQueue';
 const MEDIA_SYNC_TAG = 'sync-media-uploads';
 const TASK_SYNC_TAG = 'sync-task-updates';
 const NOTIFICATION_SYNC_TAG = 'sync-notification-log';
+const CHECKIN_SYNC_TAG = 'sync-checkins';
+const ROOM_STATUS_SYNC_TAG = 'sync-room-status';
+const CHECKOUT_SYNC_TAG = 'sync-checkouts';
+// Çevrimdışı kuyruğun tekrar oynatılacağı tek idempotent uç.
+const CHECKIN_SYNC_ENDPOINT = '/api/frontdesk/v2/checkin';
+// Oda-durumu replay ucu (last-write-wins, idempotent PUT). {roomId} doldurulur.
+const ROOM_STATUS_SYNC_ENDPOINT = '/api/pms/housekeeping/rooms/{roomId}/status';
+// Çıkış replay ucu (idempotent POST; çift çıkış deterministik anahtar + backend
+// ALREADY_CHECKED_OUT guard ile önlenir). {bookingId} doldurulur.
+const CHECKOUT_SYNC_ENDPOINT = '/api/frontdesk/checkout/{bookingId}?auto_close_folios=true';
+// Geçici (401/5xx) hatalar bu sayıya ulaşınca sonsuza dek tekrar denenmez;
+// operatör müdahalesi için çakışmaya dönüştürülür. src/utils/offlineCheckin.js
+// içindeki MAX_CHECKIN_ATTEMPTS ile aynı tutulmalı.
+const MAX_CHECKIN_ATTEMPTS = 8;
+// Oda-durumu + çıkış kuyrukları için aynı tavan (src/utils/offlineRoomStatus.js
+// MAX_ROOM_STATUS_ATTEMPTS + src/utils/offlineCheckout.js MAX_CHECKOUT_ATTEMPTS).
+const MAX_ROOM_STATUS_ATTEMPTS = 8;
+const MAX_CHECKOUT_ATTEMPTS = 8;
 
-// Assets to cache immediately on install
+// Assets to cache immediately on install.
+// ÖNEMLİ: Bu liste yalnızca SUNUCUDA GERÇEKTEN VAR OLAN yolları içermeli.
+// Vite build'i `/static/...main.css|js` (CRA düzeni) ÜRETMEZ ve manifest.json
+// servis edilmez (404). Bunlar listede kalırsa cache.addAll() TEK 404'te bile
+// tüm install'ı reddeder → skipWaiting() çalışmaz → yeni SW asla aktive olmaz →
+// kullanıcı eski/bozuk SW'de takılı kalır (beyaz ekran). Listeyi gerçek
+// varlıklarla sınırlı tutuyoruz; install handler ayrıca hataya dayanıklıdır.
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
-  '/static/css/main.css',
-  '/static/js/main.js',
-  '/manifest.json',
 ];
 
 // Cache strategies
@@ -41,17 +75,55 @@ const CACHE_STRATEGIES = {
   STALE_WHILE_REVALIDATE: 'stale-while-revalidate',
 };
 
-// Route patterns and their strategies
+// SWR (stale-while-revalidate) tercih edilen rotalar — anlık UI yanıtı +
+// arka planda taze veri. UI tarafında React Query refetchOnWindowFocus zaten
+// senkronize ediyor; SW sadece "ilk paint hızlı" amacıyla cache servisliyor.
+const NO_CACHE_PATTERNS = [
+  /\/api\/auth\/(login|logout|refresh|2fa|verify|password)/i,
+  /\/api\/payments?\/(charge|refund|capture)/i,
+  /\/api\/cashier/i,
+  /\/api\/folios?\/(charge|payment|void|adjust)/i,
+  /\/api\/bookings?\/(create|cancel|check.?in|check.?out)/i,
+  /\/api\/night-audit/i,
+  /\/api\/admin/i,
+  /\/api\/quick-?id/i,
+  // #3 finansal-detay sızıntı kapaması: rezervasyon full-detail yanıtı folios/
+  // charges/payments embed eder → at-rest PII. Geniş /api/(pms|bookings)/
+  // networkFirst kuralından ÖNCE burada bloklanır (no-cache döngüsü ROUTE'tan
+  // önce çalışır). Çevrimdışı detay = sadece operasyonel alanlar (liste cache'i
+  // + allBookings client fallback), finansal sekmeler ASLA cache'lenmez.
+  /\/api\/.*\/full-detail/i,
+  /\/api\/.*\/(folios|charges|payments|deposits)(\/|\?|$)/i,
+];
+
 const ROUTE_STRATEGIES = [
   {
     pattern: /\/api\/optimization\/(health|cache\/stats|views\/stats)/,
     strategy: CACHE_STRATEGIES.NETWORK_FIRST,
     cacheDuration: 60 * 1000, // 1 minute
   },
+  // Read-heavy listeler: SWR — ilk paint cache'ten, arka planda taze çek
   {
-    pattern: /\/api\/(pms|bookings|rooms|guests)/,
+    pattern: /\/api\/(rooms|guests|room-types|rate-plans|amenities)\/?(\?|$)/,
+    strategy: CACHE_STRATEGIES.STALE_WHILE_REVALIDATE,
+    cacheDuration: 5 * 60 * 1000,
+  },
+  {
+    pattern: /\/api\/(pms|bookings)/,
     strategy: CACHE_STRATEGIES.NETWORK_FIRST,
-    cacheDuration: 5 * 60 * 1000, // 5 minutes
+    cacheDuration: 5 * 60 * 1000,
+  },
+  // Ön büro okuma listeleri (arrivals/departures/in-house/oda durumu): çevrimdışı
+  // okunabilirlik için son taze yanıtı cache'le, internet varken ağ-öncelikli.
+  {
+    pattern: /\/api\/(unified|housekeeping|frontdesk)\//,
+    strategy: CACHE_STRATEGIES.NETWORK_FIRST,
+    cacheDuration: 5 * 60 * 1000,
+  },
+  {
+    pattern: /\/api\/(dashboard|kpis|widgets)/,
+    strategy: CACHE_STRATEGIES.STALE_WHILE_REVALIDATE,
+    cacheDuration: 2 * 60 * 1000,
   },
   {
     pattern: /\/api\/reports/,
@@ -65,6 +137,27 @@ const ROUTE_STRATEGIES = [
   },
 ];
 
+// ─── Cache timestamp yan-channel ────────────────────────────────────────────
+// Body-moving + custom header desenini kaldırdık (race → "body already used").
+// Onun yerine SW global scope'ta in-memory bir timestamp haritası tutuyoruz.
+// SW yeniden başlarsa harita boşalır → ilgili URL için cache "stale" sayılır
+// ve networkFirst/SWR network'ten taze veri çeker (güvenli/fail-safe).
+const _cacheTimestamps = new Map();
+// Maksimum giriş sayısı (LRU yerine basit FIFO eviction — memory leak guard).
+const _CACHE_TS_MAX = 500;
+
+function recordCacheTimestamp(url, ts) {
+  if (_cacheTimestamps.size >= _CACHE_TS_MAX) {
+    const firstKey = _cacheTimestamps.keys().next().value;
+    if (firstKey !== undefined) _cacheTimestamps.delete(firstKey);
+  }
+  _cacheTimestamps.set(url, ts);
+}
+
+function getCacheTimestamp(url) {
+  return _cacheTimestamps.get(url);
+}
+
 // Install event - precache assets
 self.addEventListener('install', (event) => {
   console.log('[SW] Installing service worker...');
@@ -72,7 +165,19 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log('[SW] Precaching assets');
-      return cache.addAll(PRECACHE_ASSETS);
+      // cache.addAll() atomiktir: TEK bir varlık 404/başarısız olursa TÜM
+      // promise reddolur → install başarısız → skipWaiting() çalışmaz → YENİ SW
+      // hiç aktive olmaz ve kullanıcı eski SW'de takılı kalır (beyaz ekran).
+      // Bu yüzden her varlığı tek tek, hataya dayanıklı ekliyoruz: biri 404
+      // verse bile install tamamlanır ve skipWaiting() garanti çalışır.
+      return Promise.allSettled(
+        PRECACHE_ASSETS.map((asset) =>
+          cache.add(asset).catch((err) => {
+            console.warn('[SW] Precache atlandı:', asset, err && err.message);
+            return null;
+          })
+        )
+      );
     }).then(() => {
       console.log('[SW] Installation complete');
       return self.skipWaiting();
@@ -115,7 +220,16 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) {
     return;
   }
-  
+
+  // Güvenlik: hassas/auth-mutasyon rotalarında kesinlikle cache yok.
+  // (Auth-protected GET listesi bile olsa, kullanıcı değişimi sonrası
+  // AUTH_CHANGED message handler tüm cache'i drop ediyor.)
+  for (const noCache of NO_CACHE_PATTERNS) {
+    if (noCache.test(url.pathname)) {
+      return; // SW araya girmesin → varsayılan network
+    }
+  }
+
   // Find matching strategy
   let strategy = CACHE_STRATEGIES.NETWORK_FIRST; // Default
   let cacheDuration = 5 * 60 * 1000; // 5 minutes default
@@ -162,24 +276,19 @@ async function networkFirst(request, cacheDuration) {
   
   try {
     const networkResponse = await fetch(request);
-    
-    // Cache successful responses
+
+    // Cache successful responses.
+    // Önemli: body'yi clone'dan yeni Response'a "taşımak" (new Response(clone.body, ...))
+    // tarayıcı/Sentry instrumentation ile race'e girip "Failed to execute 'clone' on
+    // 'Response': Response body is already used" üretebiliyor. MDN standardı: clone'u
+    // doğrudan cache.put'a ver. Timestamp için yan-channel kullanıyoruz (timestampCache).
     if (networkResponse.ok) {
-      const responseToCache = networkResponse.clone();
-      
-      // Add expiry timestamp
-      const headers = new Headers(responseToCache.headers);
-      headers.append('sw-cached-at', Date.now().toString());
-      
-      const cachedResponse = new Response(responseToCache.body, {
-        status: responseToCache.status,
-        statusText: responseToCache.statusText,
-        headers: headers,
-      });
-      
-      cache.put(request, cachedResponse);
+      const clone = networkResponse.clone();
+      cache.put(request, clone).then(() => {
+        recordCacheTimestamp(request.url, Date.now());
+      }).catch(() => {});
     }
-    
+
     return networkResponse;
   } catch (error) {
     console.log('[SW] Network failed, falling back to cache:', request.url);
@@ -206,38 +315,25 @@ async function cacheFirst(request, cacheDuration) {
   const cachedResponse = await cache.match(request);
   
   if (cachedResponse) {
-    // Check if cache is expired
-    const cachedAt = cachedResponse.headers.get('sw-cached-at');
-    
-    if (cachedAt) {
-      const age = Date.now() - parseInt(cachedAt);
-      
-      if (age < cacheDuration) {
-        console.log('[SW] Serving from cache:', request.url);
-        return cachedResponse;
-      }
+    // Check if cache is expired (yan-channel timestamp; bkz networkFirst)
+    const cachedAt = getCacheTimestamp(request.url);
+    if (cachedAt && Date.now() - cachedAt < cacheDuration) {
+      console.log('[SW] Serving from cache:', request.url);
+      return cachedResponse;
     }
   }
-  
-  // Fetch from network
+
+  // Fetch from network — body-moving desenden kaçınıyoruz; clone doğrudan cache'e gider.
   try {
     const networkResponse = await fetch(request);
-    
+
     if (networkResponse.ok) {
-      const headers = new Headers(networkResponse.headers);
-      headers.append('sw-cached-at', Date.now().toString());
-      
-      const responseToCache = new Response(networkResponse.body, {
-        status: networkResponse.status,
-        statusText: networkResponse.statusText,
-        headers: headers,
-      });
-      
-      cache.put(request, responseToCache.clone());
-      
-      return responseToCache;
+      const clone = networkResponse.clone();
+      cache.put(request, clone).then(() => {
+        recordCacheTimestamp(request.url, Date.now());
+      }).catch(() => {});
     }
-    
+
     return networkResponse;
   } catch (error) {
     // Return cached response even if expired
@@ -252,35 +348,74 @@ async function cacheFirst(request, cacheDuration) {
 async function staleWhileRevalidate(request, cacheDuration) {
   const cache = await caches.open(CACHE_NAME);
   const cachedResponse = await cache.match(request);
-  
-  // Fetch from network in background
-  const fetchPromise = fetch(request).then((networkResponse) => {
-    if (networkResponse.ok) {
-      const headers = new Headers(networkResponse.headers);
-      headers.append('sw-cached-at', Date.now().toString());
-      
-      const responseToCache = new Response(networkResponse.body, {
-        status: networkResponse.status,
-        statusText: networkResponse.statusText,
-        headers: headers,
-      });
-      
-      cache.put(request, responseToCache);
-    }
-    
-    return networkResponse;
-  }).catch(() => {
-    // Ignore network errors
-  });
-  
-  // Return cached response immediately if available
+
+  // Cache TTL aşıldıysa "stale" sayma — fetch sonucunu bekle.
+  let cacheStillFresh = false;
   if (cachedResponse) {
+    const cachedAt = getCacheTimestamp(request.url);
+    if (cachedAt) {
+      cacheStillFresh = Date.now() - cachedAt < cacheDuration;
+    }
+  }
+
+  // Fetch from network in background — clone doğrudan cache.put'a; body-moving YOK.
+  const fetchPromise = fetch(request)
+    .then((networkResponse) => {
+      // Hatalı yanıtları ASLA cache'leme (401/403/5xx leak'ini engelle).
+      if (networkResponse && networkResponse.ok) {
+        // Cache-Control: no-store / private respect
+        const cc = (networkResponse.headers.get('Cache-Control') || '').toLowerCase();
+        if (!cc.includes('no-store') && !cc.includes('private')) {
+          const clone = networkResponse.clone();
+          cache.put(request, clone).then(() => {
+            recordCacheTimestamp(request.url, Date.now());
+          }).catch(() => {});
+        }
+      }
+      return networkResponse;
+    })
+    .catch(() => null);
+
+  // Taze cache varsa hemen dön (background'da revalidate sürer)
+  if (cacheStillFresh) {
     return cachedResponse;
   }
-  
-  // Otherwise wait for network
-  return fetchPromise;
+  // Stale cache varsa ve network başarısızsa fallback dön
+  const fresh = await fetchPromise;
+  if (fresh) return fresh;
+  if (cachedResponse) return cachedResponse;
+  return new Response('Offline - No cached data available', {
+    status: 503,
+    statusText: 'Service Unavailable',
+    headers: new Headers({ 'Content-Type': 'text/plain' }),
+  });
 }
+
+// Auth değişiminde tüm dynamic cache'i drop et — cross-user data leak guard.
+self.addEventListener('message', (event) => {
+  const data = event.data || {};
+  if (data.type === 'AUTH_CHANGED' || data.type === 'CLEAR_CACHE') {
+    event.waitUntil(
+      caches.keys().then((names) =>
+        Promise.all(names.filter((n) => n.startsWith('hotel-pms-')).map((n) => caches.delete(n)))
+      )
+    );
+  }
+  if (data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+  // Sayfa bağlamından tetiklenen yedek senkronizasyon (Background Sync API
+  // desteklenmeyen tarayıcılar / 'online' olayı için).
+  if (data.type === 'PROCESS_CHECKIN_QUEUE') {
+    event.waitUntil(processCheckinQueue());
+  }
+  if (data.type === 'PROCESS_ROOMSTATUS_QUEUE') {
+    event.waitUntil(processRoomStatusQueue());
+  }
+  if (data.type === 'PROCESS_CHECKOUT_QUEUE') {
+    event.waitUntil(processCheckoutQueue());
+  }
+});
 
 // Background sync for offline actions
 self.addEventListener('sync', (event) => {
@@ -290,6 +425,12 @@ self.addEventListener('sync', (event) => {
     event.waitUntil(processMediaQueue());
   } else if (event.tag === TASK_SYNC_TAG) {
     event.waitUntil(processTaskQueue());
+  } else if (event.tag === CHECKIN_SYNC_TAG) {
+    event.waitUntil(processCheckinQueue());
+  } else if (event.tag === ROOM_STATUS_SYNC_TAG) {
+    event.waitUntil(processRoomStatusQueue());
+  } else if (event.tag === CHECKOUT_SYNC_TAG) {
+    event.waitUntil(processCheckoutQueue());
   } else if (event.tag === NOTIFICATION_SYNC_TAG || event.tag === 'sync-offline-actions') {
     event.waitUntil(broadcastClientMessage({ type: 'SYNC_NOTIFICATION_LOG' }));
   }
@@ -315,7 +456,18 @@ async function openOfflineDB() {
     const request = indexedDB.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION);
 
     request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
+    // Sayfa bağlamı eski sürümde açık bir bağlantı tutuyorsa SW upgrade'i
+    // sonsuza dek bloklanmasın — fail-soft reject (çağıran try/catch yutar).
+    request.onblocked = () => reject(new Error('IndexedDB upgrade blocked'));
+    request.onsuccess = () => {
+      const db = request.result;
+      // Başka bağlam daha yeni sürüm açarsa bu bağlantıyı kapat (sonraki
+      // openOfflineDB çağrısı taze açar) — karşılıklı blok kilidini önler.
+      db.onversionchange = () => {
+        try { db.close(); } catch { /* zaten kapalı */ }
+      };
+      resolve(db);
+    };
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
 
@@ -329,6 +481,18 @@ async function openOfflineDB() {
       }
       if (!db.objectStoreNames.contains(NOTIFICATION_LOG_STORE)) {
         const store = db.createObjectStore(NOTIFICATION_LOG_STORE, { keyPath: 'id' });
+        store.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(CHECKIN_QUEUE_STORE)) {
+        const store = db.createObjectStore(CHECKIN_QUEUE_STORE, { keyPath: 'id' });
+        store.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(ROOM_STATUS_QUEUE_STORE)) {
+        const store = db.createObjectStore(ROOM_STATUS_QUEUE_STORE, { keyPath: 'id' });
+        store.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(CHECKOUT_QUEUE_STORE)) {
+        const store = db.createObjectStore(CHECKOUT_QUEUE_STORE, { keyPath: 'id' });
         store.createIndex('createdAt', 'createdAt', { unique: false });
       }
     };
@@ -520,6 +684,269 @@ async function processTaskQueue() {
     }
   } catch (error) {
     console.error('[SW] processTaskQueue error', error);
+  }
+}
+
+async function processCheckinQueue() {
+  try {
+    const items = await getAllFromStore(CHECKIN_QUEUE_STORE);
+    if (!items.length) {
+      return;
+    }
+
+    for (const item of items) {
+      // Operatör müdahalesi bekleyen çakışmaları tekrar denemeyiz.
+      if (item.status === 'conflict') {
+        continue;
+      }
+      if (!item.bookingId) {
+        await removeFromStore(CHECKIN_QUEUE_STORE, item.id);
+        continue;
+      }
+
+      const key = item.idempotencyKey || item.id;
+      try {
+        const response = await fetch(CHECKIN_SYNC_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': key,
+            ...buildAuthHeader(item.authToken)
+          },
+          body: JSON.stringify({ booking_id: item.bookingId, idempotency_key: key })
+        });
+
+        if (response.ok) {
+          await removeFromStore(CHECKIN_QUEUE_STORE, item.id);
+          await broadcastClientMessage({
+            type: 'CHECKIN_SYNCED',
+            payload: { id: item.id, bookingId: item.bookingId }
+          });
+        } else if (response.status === 401 || response.status >= 500) {
+          // 401: token tazelenmesi gerek (sayfa bağlamı axios silent-refresh ile
+          // halleder); 5xx: geçici. Kuyrukta bırak, sonraki sync denesin.
+          // Ancak deneme tavanına ulaşıldıysa sonsuz tekrarı durdur.
+          const attempts = (item.attempts || 0) + 1;
+          item.attempts = attempts;
+          item.updatedAt = Date.now();
+          if (attempts >= MAX_CHECKIN_ATTEMPTS) {
+            item.status = 'conflict';
+            item.error = { code: 'MAX_RETRIES_EXCEEDED', httpStatus: response.status };
+            item.httpStatus = response.status;
+            await updateStoreEntry(CHECKIN_QUEUE_STORE, item);
+            await broadcastClientMessage({
+              type: 'CHECKIN_CONFLICT',
+              payload: { id: item.id, bookingId: item.bookingId, status: response.status, detail: item.error }
+            });
+          } else {
+            await updateStoreEntry(CHECKIN_QUEUE_STORE, item);
+            console.warn('[SW] Check-in sync transient, will retry', response.status, attempts);
+          }
+        } else {
+          // Kalıcı 4xx (404 rezervasyon yok / oda dolu / geçersiz durum / yetki)
+          // → sonsuz tekrar denenmez, çakışma olarak yüzeye çıkar.
+          let detail = null;
+          try {
+            const data = await response.json();
+            detail = data?.detail ?? data;
+          } catch (err) {
+            detail = null;
+          }
+          item.status = 'conflict';
+          item.error = detail;
+          item.httpStatus = response.status;
+          item.attempts = (item.attempts || 0) + 1;
+          item.updatedAt = Date.now();
+          await updateStoreEntry(CHECKIN_QUEUE_STORE, item);
+          await broadcastClientMessage({
+            type: 'CHECKIN_CONFLICT',
+            payload: { id: item.id, bookingId: item.bookingId, status: response.status, detail }
+          });
+        }
+      } catch (err) {
+        // Ağ hatası → hâlâ çevrimdışı; döngüyü durdur, sonraki sync denesin.
+        console.warn('[SW] Check-in sync network error, still offline', err);
+        break;
+      }
+    }
+  } catch (error) {
+    console.error('[SW] processCheckinQueue error', error);
+  }
+}
+
+// Çevrimdışı oda-durumu kuyruğunu idempotent PUT'a replay eder (last-write-wins).
+// processCheckinQueue ile aynı çakışma/deneme-tavanı sözleşmesi.
+async function processRoomStatusQueue() {
+  try {
+    const items = await getAllFromStore(ROOM_STATUS_QUEUE_STORE);
+    if (!items.length) {
+      return;
+    }
+
+    for (const item of items) {
+      if (item.status === 'conflict') {
+        continue;
+      }
+      if (!item.roomId || !item.roomStatus) {
+        await removeFromStore(ROOM_STATUS_QUEUE_STORE, item.id);
+        continue;
+      }
+
+      const endpoint = ROOM_STATUS_SYNC_ENDPOINT.replace('{roomId}', encodeURIComponent(item.roomId));
+      try {
+        const response = await fetch(endpoint, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...buildAuthHeader(item.authToken)
+          },
+          body: JSON.stringify({ status: item.roomStatus })
+        });
+
+        if (response.ok) {
+          await removeFromStore(ROOM_STATUS_QUEUE_STORE, item.id);
+          await broadcastClientMessage({
+            type: 'ROOMSTATUS_SYNCED',
+            payload: { id: item.id, roomId: item.roomId }
+          });
+        } else if (response.status === 401 || response.status >= 500) {
+          const attempts = (item.attempts || 0) + 1;
+          item.attempts = attempts;
+          item.updatedAt = Date.now();
+          if (attempts >= MAX_ROOM_STATUS_ATTEMPTS) {
+            item.status = 'conflict';
+            item.error = { code: 'MAX_RETRIES_EXCEEDED', httpStatus: response.status };
+            item.httpStatus = response.status;
+            await updateStoreEntry(ROOM_STATUS_QUEUE_STORE, item);
+            await broadcastClientMessage({
+              type: 'ROOMSTATUS_CONFLICT',
+              payload: { id: item.id, roomId: item.roomId, status: response.status, detail: item.error }
+            });
+          } else {
+            await updateStoreEntry(ROOM_STATUS_QUEUE_STORE, item);
+            console.warn('[SW] Room-status sync transient, will retry', response.status, attempts);
+          }
+        } else {
+          // Kalıcı 4xx (404 oda yok / 403 yetki / 422 geçersiz durum) → çakışma.
+          let detail = null;
+          try {
+            const data = await response.json();
+            detail = data?.detail ?? data;
+          } catch (err) {
+            detail = null;
+          }
+          item.status = 'conflict';
+          item.error = detail;
+          item.httpStatus = response.status;
+          item.attempts = (item.attempts || 0) + 1;
+          item.updatedAt = Date.now();
+          await updateStoreEntry(ROOM_STATUS_QUEUE_STORE, item);
+          await broadcastClientMessage({
+            type: 'ROOMSTATUS_CONFLICT',
+            payload: { id: item.id, roomId: item.roomId, status: response.status, detail }
+          });
+        }
+      } catch (err) {
+        console.warn('[SW] Room-status sync network error, still offline', err);
+        break;
+      }
+    }
+  } catch (error) {
+    console.error('[SW] processRoomStatusQueue error', error);
+  }
+}
+
+// Çevrimdışı çıkış kuyruğunu idempotent POST'a replay eder. SADECE sıfır-bakiye
+// girişler kuyruğa alınmıştır; backend hâlâ yetkili sıfır-bakiye guard'ıdır
+// (402 OUTSTANDING_BALANCE → çakışma). "Zaten çıkış yapılmış" (400) idempotent
+// BAŞARI sayılır.
+async function processCheckoutQueue() {
+  try {
+    const items = await getAllFromStore(CHECKOUT_QUEUE_STORE);
+    if (!items.length) {
+      return;
+    }
+
+    for (const item of items) {
+      if (item.status === 'conflict') {
+        continue;
+      }
+      if (!item.bookingId) {
+        await removeFromStore(CHECKOUT_QUEUE_STORE, item.id);
+        continue;
+      }
+
+      const endpoint = CHECKOUT_SYNC_ENDPOINT.replace('{bookingId}', encodeURIComponent(item.bookingId));
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...buildAuthHeader(item.authToken)
+          }
+        });
+
+        if (response.ok) {
+          await removeFromStore(CHECKOUT_QUEUE_STORE, item.id);
+          await broadcastClientMessage({
+            type: 'CHECKOUT_SYNCED',
+            payload: { id: item.id, bookingId: item.bookingId }
+          });
+        } else if (response.status === 401 || response.status >= 500) {
+          const attempts = (item.attempts || 0) + 1;
+          item.attempts = attempts;
+          item.updatedAt = Date.now();
+          if (attempts >= MAX_CHECKOUT_ATTEMPTS) {
+            item.status = 'conflict';
+            item.error = { code: 'MAX_RETRIES_EXCEEDED', httpStatus: response.status };
+            item.httpStatus = response.status;
+            await updateStoreEntry(CHECKOUT_QUEUE_STORE, item);
+            await broadcastClientMessage({
+              type: 'CHECKOUT_CONFLICT',
+              payload: { id: item.id, bookingId: item.bookingId, status: response.status, detail: item.error }
+            });
+          } else {
+            await updateStoreEntry(CHECKOUT_QUEUE_STORE, item);
+            console.warn('[SW] Checkout sync transient, will retry', response.status, attempts);
+          }
+        } else {
+          // Kalıcı 4xx. "Zaten çıkış yapılmış" → idempotent başarı; 402 → açık
+          // bakiye çakışması; diğer 4xx → genel çakışma.
+          let detail = null;
+          let detailText = '';
+          try {
+            const data = await response.json();
+            detail = data?.detail ?? data;
+            detailText = typeof detail === 'string' ? detail : (detail?.message || '');
+          } catch (err) {
+            detail = null;
+          }
+          if (response.status === 400 && /already checked out/i.test(detailText)) {
+            await removeFromStore(CHECKOUT_QUEUE_STORE, item.id);
+            await broadcastClientMessage({
+              type: 'CHECKOUT_SYNCED',
+              payload: { id: item.id, bookingId: item.bookingId, idempotent: true }
+            });
+            continue;
+          }
+          item.status = 'conflict';
+          item.error = response.status === 402 ? { code: 'OUTSTANDING_BALANCE' } : detail;
+          item.httpStatus = response.status;
+          item.attempts = (item.attempts || 0) + 1;
+          item.updatedAt = Date.now();
+          await updateStoreEntry(CHECKOUT_QUEUE_STORE, item);
+          await broadcastClientMessage({
+            type: 'CHECKOUT_CONFLICT',
+            payload: { id: item.id, bookingId: item.bookingId, status: response.status, detail: item.error }
+          });
+        }
+      } catch (err) {
+        console.warn('[SW] Checkout sync network error, still offline', err);
+        break;
+      }
+    }
+  } catch (error) {
+    console.error('[SW] processCheckoutQueue error', error);
   }
 }
 

@@ -1,0 +1,44 @@
+appId: com.syroce.pms
+name: "Login (smoke)"
+tags:
+  - smoke
+  - auth
+env:
+  SMOKE_EMAIL: info@syroce.com
+  SMOKE_PASSWORD: Syroce2026
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    permissions:
+      all: allow
+
+# Login screen renders.
+- assertVisible:
+    text: "Giriş Yap"
+    timeout: 30000
+
+- tapOn:
+    id: "smoke-login-email"
+- inputText: ${SMOKE_EMAIL}
+
+- tapOn:
+    id: "smoke-login-password"
+- inputText: ${SMOKE_PASSWORD}
+- hideKeyboard
+
+- tapOn:
+    id: "smoke-login-submit"
+
+# Server-side auth must succeed.
+- assertNotVisible:
+    text: "E-posta veya şifre hatalı"
+    timeout: 15000
+- assertNotVisible:
+    text: "Sunucuya ulaşılamıyor, tekrar dene"
+    timeout: 15000
+
+# Login screen header must disappear (we're past the auth gate).
+- assertNotVisible:
+    id: "smoke-login-submit"
+    timeout: 30000

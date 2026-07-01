@@ -4,11 +4,12 @@ delivery monitoring, error classification, and fallback chain management.
 
 Supports: Twilio SMS, SendGrid Email, WhatsApp.
 """
-import os
+
 import logging
-from typing import Dict, Any
-from datetime import datetime, timezone
+import os
 from collections import defaultdict
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("infra.provider_activation")
 
@@ -25,15 +26,21 @@ class ProviderActivationManager:
     """Manages messaging provider activation, validation, and monitoring."""
 
     def __init__(self):
-        self._delivery_metrics = defaultdict(lambda: {
-            "total_sent": 0, "delivered": 0, "failed": 0,
-            "latency_sum_ms": 0, "last_error": None, "last_sent": None,
-            "error_types": defaultdict(int),
-        })
+        self._delivery_metrics = defaultdict(
+            lambda: {
+                "total_sent": 0,
+                "delivered": 0,
+                "failed": 0,
+                "latency_sum_ms": 0,
+                "last_error": None,
+                "last_sent": None,
+                "error_types": defaultdict(int),
+            }
+        )
         self._provider_configs = {}
         self._fallback_chain = ["twilio_sms", "sendgrid_email", "whatsapp"]
 
-    def _detect_provider_status(self, provider: str) -> Dict[str, Any]:
+    def _detect_provider_status(self, provider: str) -> dict[str, Any]:
         """Detect configuration status for a provider."""
         configs = {
             "twilio_sms": {
@@ -82,7 +89,7 @@ class ProviderActivationManager:
             "ready_for_production": not missing and not is_sandbox,
         }
 
-    async def validate_credential(self, provider: str) -> Dict[str, Any]:
+    async def validate_credential(self, provider: str) -> dict[str, Any]:
         """Validate provider credentials with a lightweight test call."""
         status = self._detect_provider_status(provider)
         if status["status"] == ProviderStatus.NOT_CONFIGURED:
@@ -90,7 +97,7 @@ class ProviderActivationManager:
 
         validation_result = {
             "provider": provider,
-            "validated_at": datetime.now(timezone.utc).isoformat(),
+            "validated_at": datetime.now(UTC).isoformat(),
         }
 
         if provider == "twilio_sms":
@@ -143,7 +150,7 @@ class ProviderActivationManager:
         """Record a delivery attempt for metrics."""
         m = self._delivery_metrics[provider]
         m["total_sent"] += 1
-        m["last_sent"] = datetime.now(timezone.utc).isoformat()
+        m["last_sent"] = datetime.now(UTC).isoformat()
         if success:
             m["delivered"] += 1
         else:
@@ -151,11 +158,12 @@ class ProviderActivationManager:
             m["last_error"] = error
             if error:
                 from modules.messaging.providers import BaseProvider
+
                 err_type = BaseProvider().classify_error(error)
                 m["error_types"][err_type] += 1
         m["latency_sum_ms"] += latency_ms
 
-    def get_delivery_metrics(self) -> Dict[str, Any]:
+    def get_delivery_metrics(self) -> dict[str, Any]:
         """Get delivery metrics for all providers."""
         result = {}
         for provider, m in self._delivery_metrics.items():
@@ -172,7 +180,7 @@ class ProviderActivationManager:
             }
         return result
 
-    def get_all_provider_status(self) -> Dict[str, Any]:
+    def get_all_provider_status(self) -> dict[str, Any]:
         """Get status for all providers."""
         providers = ["twilio_sms", "sendgrid_email", "whatsapp"]
         statuses = {}
@@ -184,7 +192,7 @@ class ProviderActivationManager:
                 active_count += 1
 
         return {
-            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "checked_at": datetime.now(UTC).isoformat(),
             "providers": statuses,
             "active_providers": active_count,
             "total_providers": len(providers),
@@ -192,7 +200,7 @@ class ProviderActivationManager:
             "delivery_metrics": self.get_delivery_metrics(),
         }
 
-    async def get_full_report(self) -> Dict[str, Any]:
+    async def get_full_report(self) -> dict[str, Any]:
         """Full provider activation report with validation."""
         providers = ["twilio_sms", "sendgrid_email", "whatsapp"]
         results = {}
@@ -201,14 +209,13 @@ class ProviderActivationManager:
 
         production_ready = sum(1 for r in results.values() if r.get("ready_for_production"))
         return {
-            "validated_at": datetime.now(timezone.utc).isoformat(),
+            "validated_at": datetime.now(UTC).isoformat(),
             "providers": results,
             "production_ready_count": production_ready,
             "total_providers": len(providers),
             "delivery_metrics": self.get_delivery_metrics(),
             "fallback_chain": self._fallback_chain,
-            "overall_status": "production" if production_ready == len(providers) else
-                              "partial" if production_ready > 0 else "not_configured",
+            "overall_status": "production" if production_ready == len(providers) else "partial" if production_ready > 0 else "not_configured",
         }
 
 

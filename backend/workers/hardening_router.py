@@ -4,12 +4,14 @@ Production runtime APIs for queue health, stuck tasks, failure archive,
 task replay, and retry summary.
 Thin router: delegates all business logic to WorkerRuntimeService.
 """
-from fastapi import APIRouter, HTTPException, Depends, Query
-from typing import Optional
 
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from cache_manager import cached
+from common.context import OperationContext
 from core.security import get_current_user
 from models.schemas import User
-from common.context import OperationContext
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 from workers.worker_runtime_service import worker_runtime_service
 
 router = APIRouter(prefix="/api/workers", tags=["Workers / Hardening"])
@@ -19,7 +21,9 @@ def _ctx(user: User) -> OperationContext:
     return OperationContext.from_user(user)
 
 
+# rbac-allow: cache-rbac — ops/devops queue health (admin/manager)
 @router.get("/queues/health", summary="Queue health summary")
+@cached(ttl=30, key_prefix="workers_queues_health")
 async def get_queue_health(current_user: User = Depends(get_current_user)):
     result = await worker_runtime_service.get_queue_health(_ctx(current_user))
     return result.data
@@ -35,6 +39,7 @@ async def get_stuck_tasks(current_user: User = Depends(get_current_user)):
 async def unstick_task(
     task_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     result = await worker_runtime_service.unstick_task(_ctx(current_user), task_id)
     if not result.ok:
@@ -44,13 +49,11 @@ async def unstick_task(
 
 @router.get("/tasks/failures", summary="Get failed tasks")
 async def get_task_failures(
-    tenant_id: Optional[str] = Query(None),
+    tenant_id: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
 ):
-    result = await worker_runtime_service.get_failure_summary(
-        _ctx(current_user), tenant_id=tenant_id, limit=limit
-    )
+    result = await worker_runtime_service.get_failure_summary(_ctx(current_user), tenant_id=tenant_id, limit=limit)
     return result.data
 
 
@@ -58,6 +61,7 @@ async def get_task_failures(
 async def replay_task(
     archive_id: str = Query(...),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
     result = await worker_runtime_service.replay_task(_ctx(current_user), archive_id)
     return result.data

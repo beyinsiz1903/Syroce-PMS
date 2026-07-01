@@ -7,21 +7,22 @@ Normalize into canonical structure for comparison.
 
 Uses real provider API clients with graceful error handling.
 """
+
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from domains.channel_manager.ingest.normalizer import (
-    normalize_hotelrunner, normalize_exely,
+    normalize_hotelrunner,
 )
 
 logger = logging.getLogger("reconciliation.snapshot_collectors")
 
 
 async def collect_hotelrunner_snapshot(
-    connection: Dict[str, Any],
+    connection: dict[str, Any],
     since_hours: int = 24,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Fetch HotelRunner reservations updated in the last N hours.
     Returns list of canonical reservation dicts.
@@ -35,20 +36,16 @@ async def collect_hotelrunner_snapshot(
     hr_id = credentials.get("hr_id") or credentials.get("hotel_id", "")
 
     if not token or not hr_id:
-        logger.warning(
-            f"HotelRunner snapshot: missing credentials for property={property_id}"
-        )
+        logger.warning(f"HotelRunner snapshot: missing credentials for property={property_id}")
         return []
 
-    provider = HotelRunnerProvider(token=token, hr_id=hr_id)
-    since = (datetime.now(timezone.utc) - timedelta(hours=since_hours)).strftime("%Y-%m-%d")
+    environment = connection.get("environment", "production")
+    provider = HotelRunnerProvider(token=token, hr_id=hr_id, environment=environment)
+    since = (datetime.now(UTC) - timedelta(hours=since_hours)).strftime("%Y-%m-%d")
 
-    logger.info(
-        f"HotelRunner snapshot: property={property_id}, "
-        f"window={since_hours}h, since={since}"
-    )
+    logger.info(f"HotelRunner snapshot: property={property_id}, window={since_hours}h, since={since}")
 
-    all_reservations: List[Dict[str, Any]] = []
+    all_reservations: list[dict[str, Any]] = []
     page = 1
     max_pages = 20
 
@@ -65,9 +62,7 @@ async def collect_hotelrunner_snapshot(
             break
 
         if not result.get("success"):
-            logger.error(
-                f"HotelRunner snapshot failed: {result.get('error', 'unknown')}"
-            )
+            logger.error(f"HotelRunner snapshot failed: {result.get('error', 'unknown')}")
             break
 
         data = result.get("data", {})
@@ -86,17 +81,14 @@ async def collect_hotelrunner_snapshot(
             break
         page += 1
 
-    logger.info(
-        f"HotelRunner snapshot complete: property={property_id}, "
-        f"reservations={len(all_reservations)}"
-    )
+    logger.info(f"HotelRunner snapshot complete: property={property_id}, reservations={len(all_reservations)}")
     return all_reservations
 
 
 async def collect_exely_snapshot(
-    connection: Dict[str, Any],
+    connection: dict[str, Any],
     since_hours: int = 24,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Fetch Exely reservations via OTA_ReadRQ updated in the last N hours.
     Returns list of canonical reservation dicts.
@@ -112,9 +104,7 @@ async def collect_exely_snapshot(
     endpoint_url = credentials.get("endpoint_url") or credentials.get("soap_url", "")
 
     if not username or not password or not hotel_code:
-        logger.warning(
-            f"Exely snapshot: missing credentials for property={property_id}"
-        )
+        logger.warning(f"Exely snapshot: missing credentials for property={property_id}")
         return []
 
     provider_kwargs = {"username": username, "password": password, "hotel_code": hotel_code}
@@ -122,14 +112,11 @@ async def collect_exely_snapshot(
         provider_kwargs["endpoint_url"] = endpoint_url
     provider = ExelyProvider(**provider_kwargs)
 
-    since = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+    since = datetime.now(UTC) - timedelta(hours=since_hours)
     from_date = since.strftime("%Y-%m-%d")
-    to_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    to_date = datetime.now(UTC).strftime("%Y-%m-%d")
 
-    logger.info(
-        f"Exely snapshot: property={property_id}, "
-        f"window={since_hours}h, range={from_date} -> {to_date}"
-    )
+    logger.info(f"Exely snapshot: property={property_id}, window={since_hours}h, range={from_date} -> {to_date}")
 
     try:
         result = await provider.legacy_pull_reservations(from_date=from_date, to_date=to_date)
@@ -142,7 +129,7 @@ async def collect_exely_snapshot(
         return []
 
     raw_reservations = result.get("reservations", [])
-    canonical_list: List[Dict[str, Any]] = []
+    canonical_list: list[dict[str, Any]] = []
 
     for raw in raw_reservations:
         try:
@@ -152,14 +139,11 @@ async def collect_exely_snapshot(
             ext_id = raw.get("reservation_id", "?")
             logger.warning(f"Normalize error for Exely reservation {ext_id}: {e}")
 
-    logger.info(
-        f"Exely snapshot complete: property={property_id}, "
-        f"reservations={len(canonical_list)}"
-    )
+    logger.info(f"Exely snapshot complete: property={property_id}, reservations={len(canonical_list)}")
     return canonical_list
 
 
-def _exely_parsed_to_canonical(parsed: Dict[str, Any]) -> Dict[str, Any]:
+def _exely_parsed_to_canonical(parsed: dict[str, Any]) -> dict[str, Any]:
     """
     Convert Exely response_parser output to the canonical format
     expected by the comparison engine.
@@ -215,9 +199,9 @@ SNAPSHOT_COLLECTORS = {
 
 async def collect_provider_snapshot(
     provider: str,
-    connection: Dict[str, Any],
+    connection: dict[str, Any],
     since_hours: int = 24,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Dispatch to the appropriate provider snapshot collector."""
     collector = SNAPSHOT_COLLECTORS.get(provider)
     if not collector:

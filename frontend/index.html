@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="theme-color" content="#000000" />
+        <!-- Tema FOUC engeli: ilk paint'ten ONCE localStorage tercihini
+             (next-themes storageKey="syroce-theme") okuyup .dark sinifini uygula.
+             'system' ise OS prefers-color-scheme izlenir. next-themes SPA'da
+             pre-paint enjekte edemez; bu inline script o boslugu kapatir. -->
+        <script>
+            (function () {
+                try {
+                    var pref = localStorage.getItem('syroce-theme') || 'light';
+                    var prefersDark =
+                        window.matchMedia &&
+                        window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    var useDark = pref === 'dark' || (pref === 'system' && prefersDark);
+                    if (useDark) document.documentElement.classList.add('dark');
+                } catch (e) {}
+            })();
+        </script>
+        <meta name="description" content="Syroce - Modern Otel Yönetim Sistemi. AI destekli, ultra hızlı ve kapsamlı hotel PMS çözümü." />
+        <meta name="robots" content="index, follow" />
+        <meta name="googlebot" content="index, follow" />
+        
+        <!-- Favicon & Icons -->
+        <!-- Tab favicon: clean icon-only mark (crisp at 16px). The circle PNG
+             carries baked-in "Syroce" text that turns into an illegible blob at
+             tab size, so it stays only as PNG fallback + apple-touch (large). -->
+        <link rel="icon" type="image/svg+xml" href="/syroce-icon.svg" />
+        <link rel="icon" type="image/png" href="/syroce-circle.png" />
+        <link rel="apple-touch-icon" href="/syroce-circle.png" />
+        
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <!-- Lighthouse: critical-path font CSS preload + async swap (FCP/LCP iyileştirmesi) -->
+        <link
+            rel="preload"
+            as="style"
+            href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap"
+            onload="this.onload=null;this.rel='stylesheet'"
+        />
+        <noscript>
+            <link
+                href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap"
+                rel="stylesheet"
+            />
+        </noscript>
+        <title>Syroce | Modern Otel Yönetim Sistemi</title>
+        <script>
+            // Suppress benign ResizeObserver loop error (triggered by Radix UI Select)
+            window.addEventListener('error', function(e) {
+                if (e.message && e.message.indexOf('ResizeObserver loop') !== -1) {
+                    e.stopImmediatePropagation();
+                    e.stopPropagation();
+                    e.preventDefault();
+                }
+            });
+
+            // Stale-chunk self-heal: after a new deploy, an already-open tab still
+            // holds the previous index.html in memory and requests hashed chunks
+            // that no longer exist. The server returns a clean 404 for those, so
+            // the dynamic import rejects with a chunk-load error and the app is
+            // stuck until a manual refresh. Reload ONCE to pull the fresh
+            // index.html + new chunk names. A one-shot latch (sessionStorage +
+            // in-memory + URL-marker fallback) prevents a reload loop if a deploy
+            // is genuinely broken — and lets the recurring error reach Sentry.
+            (function () {
+                var CHUNK_ERR = [
+                    'Importing a module script failed',
+                    'Failed to fetch dynamically imported module',
+                    'error loading dynamically imported module',
+                    'is not a valid JavaScript MIME type',
+                    'Unable to preload CSS',
+                    // Resolved-but-invalid module (no default export) normalized
+                    // by lazyWithPreload.js — keep in sync with INVALID_CHUNK_MODULE_MSG.
+                    'Dynamically imported module is invalid'
+                ];
+                function isChunkError(msg) {
+                    if (!msg) return false;
+                    for (var i = 0; i < CHUNK_ERR.length; i++) {
+                        if (msg.indexOf(CHUNK_ERR[i]) !== -1) return true;
+                    }
+                    return false;
+                }
+                // Truly one-shot per tab. If we ALREADY healed once in this tab and
+                // the same chunk error recurs after the reload, the deploy is
+                // genuinely broken — do NOT reload again (no loop) and let the error
+                // surface to Sentry (window.__syroceChunkHealing stays false).
+                function alreadyHealed() {
+                    if (window.__syroceChunkReloaded) return true;
+                    try { if (sessionStorage.getItem('syroce_chunk_reload_done') === '1') return true; } catch (_) {}
+                    // storage-denied fallback: a URL marker survives the reload.
+                    if (window.location.search.indexOf('_chunkreload=1') !== -1) return true;
+                    return false;
+                }
+                // Returns true if it initiated a heal reload, false if the latch
+                // is already spent (genuinely broken deploy → let it surface).
+                function reloadOnce() {
+                    if (alreadyHealed()) return false;
+                    window.__syroceChunkReloaded = true;   // in-memory latch (loop-safe even if storage denied)
+                    window.__syroceChunkHealing = true;    // tells Sentry beforeSend this incident is benign
+                    var stored = false;
+                    try { sessionStorage.setItem('syroce_chunk_reload_done', '1'); stored = true; } catch (_) {}
+                    if (stored) {
+                        // The HMR reload guard (vite.config.js hmrReloadGuard) overrides
+                        // location.reload() to a no-op unless the user interacted within
+                        // the last 3s. A stale-chunk failure on initial load happens with
+                        // NO user interaction, so a raw location.reload() here is silently
+                        // blocked while the one-shot latch above is already spent -> the
+                        // app stays stuck on a blank #root. Use the guard's own unguarded
+                        // escape hatch; fall back to location.replace() (NOT intercepted
+                        // by the guard) if the hatch is somehow absent.
+                        if (typeof window.__syroceReload === 'function') {
+                            window.__syroceReload();
+                        } else {
+                            window.location.replace(window.location.href);
+                        }
+                    } else {
+                        // No storage: pin the latch in the URL so the next load sees it.
+                        var u = new URL(window.location.href);
+                        u.searchParams.set('_chunkreload', '1');
+                        window.location.replace(u.toString());
+                    }
+                    return true;
+                }
+                window.addEventListener('vite:preloadError', function (e) {
+                    if (e && e.preventDefault) e.preventDefault();
+                    reloadOnce();
+                });
+                window.addEventListener('error', function (e) {
+                    if (isChunkError(e && e.message)) reloadOnce();
+                });
+                window.addEventListener('unhandledrejection', function (e) {
+                    var r = e && e.reason;
+                    var msg = r && (r.message || (typeof r === 'string' ? r : ''));
+                    if (isChunkError(msg)) reloadOnce();
+                });
+                // React render-path chunk errors (a React.lazy import that rejects
+                // DURING render) are caught by the in-app ErrorBoundary and never
+                // fire window 'error'/'unhandledrejection', so the listeners above
+                // can't see them. Expose the SAME one-shot latch + matcher for the
+                // ErrorBoundary to call, keeping a single shared "reload once" guarantee.
+                window.__syroceIsChunkError = isChunkError;
+                window.__syroceChunkReloadOnce = reloadOnce;
+            })();
+        </script>
+    </head>
+    <body>
+        <noscript>You need to enable JavaScript to run this app.</noscript>
+        <div id="root"></div>
+        <script type="module" src="/src/index.jsx"></script>
+    </body>
+</html>

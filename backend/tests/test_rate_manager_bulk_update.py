@@ -1,13 +1,19 @@
 """
-Test Rate Manager Bulk Update API (Toplu Güncellemeler)
+Test Rate Manager Bulk Update API (Toplu Guncellemeler)
 Tests the HotelRunner-style bulk update interface with day-of-week filtering
 """
 import os
 import pytest
 import requests
 from datetime import date, timedelta
+from test_helpers import skip_if_no_exely
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
+
+pytestmark = pytest.mark.skipif(
+    not BASE_URL,
+    reason="VITE_BACKEND_URL not set - integration tests require a running server"
+)
 
 
 class TestRateManagerBulkUpdate:
@@ -44,6 +50,8 @@ class TestRateManagerBulkUpdate:
             params={"start_date": today, "end_date": end}
         )
         
+        skip_if_no_exely(response)
+        
         assert response.status_code == 200
         data = response.json()
         
@@ -63,6 +71,8 @@ class TestRateManagerBulkUpdate:
             params={"start_date": today, "end_date": end}
         )
         
+        skip_if_no_exely(response)
+        
         assert response.status_code == 200
         data = response.json()
         
@@ -75,6 +85,8 @@ class TestRateManagerBulkUpdate:
     def test_get_room_types(self):
         """Test GET /api/channel-manager/rate-manager/room-types"""
         response = self.session.get(f"{BASE_URL}/api/channel-manager/rate-manager/room-types")
+        
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()
@@ -104,6 +116,8 @@ class TestRateManagerBulkUpdate:
             }
         )
         
+        skip_if_no_exely(response)
+        
         assert response.status_code == 200
         data = response.json()
         
@@ -131,6 +145,8 @@ class TestRateManagerBulkUpdate:
             }
         )
         
+        skip_if_no_exely(response)
+        
         assert response.status_code == 200
         data = response.json()
         
@@ -156,6 +172,8 @@ class TestRateManagerBulkUpdate:
                 "rate": 220.00
             }
         )
+        
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()
@@ -183,6 +201,8 @@ class TestRateManagerBulkUpdate:
             }
         )
         
+        skip_if_no_exely(response)
+        
         assert response.status_code == 200
         data = response.json()
         
@@ -208,6 +228,8 @@ class TestRateManagerBulkUpdate:
             }
         )
         
+        skip_if_no_exely(response)
+        
         assert response.status_code == 200
         data = response.json()
         assert data["saved"] >= 4
@@ -231,6 +253,8 @@ class TestRateManagerBulkUpdate:
             }
         )
         
+        skip_if_no_exely(response)
+        
         assert response.status_code == 200
         data = response.json()
         assert data["saved"] >= 3
@@ -251,6 +275,8 @@ class TestRateManagerBulkUpdate:
                 "rate": 100.00
             }
         )
+        
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()
@@ -282,6 +308,8 @@ class TestRateManagerBulkUpdate:
             }
         )
         
+        skip_if_no_exely(response)
+        
         assert response.status_code == 200
         data = response.json()
         assert data["saved"] >= 2
@@ -305,6 +333,8 @@ class TestRateManagerBulkUpdate:
                 "rate": 155.00
             }
         )
+        
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()
@@ -349,6 +379,8 @@ class TestRateManagerGridData:
             params={"start_date": today, "end_date": end}
         )
         
+        skip_if_no_exely(response)
+        
         assert response.status_code == 200
         data = response.json()
         
@@ -370,6 +402,8 @@ class TestRateManagerGridData:
             f"{BASE_URL}/api/channel-manager/rate-manager/grid",
             params={"start_date": today, "end_date": end}
         )
+        
+        skip_if_no_exely(response)
         
         assert response.status_code == 200
         data = response.json()

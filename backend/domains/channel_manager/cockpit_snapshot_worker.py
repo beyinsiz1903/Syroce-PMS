@@ -14,10 +14,10 @@ Streams only critical metrics every 3 seconds:
   - is_production_ready
   - last_verify_timestamp
 """
+
 import asyncio
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any
 
 logger = logging.getLogger("cockpit.snapshot_worker")
 
@@ -25,29 +25,27 @@ _running = False
 _task = None
 
 
-async def _compute_snapshot(tenant_id: str) -> Dict[str, Any]:
+async def _compute_snapshot(tenant_id: str) -> dict[str, Any]:
     """Compute a lightweight cockpit snapshot (critical metrics only)."""
-    from domains.channel_manager.ari.push_loop_worker import get_push_worker
-    from domains.channel_manager.ari.hard_fail_gate import get_hard_fail_stats
-    from domains.channel_manager.quarantine_service import get_quarantine_overview
     from core.database import db
+    from domains.channel_manager.ari.hard_fail_gate import get_hard_fail_stats
+    from domains.channel_manager.ari.push_loop_worker import get_push_worker
+    from domains.channel_manager.quarantine_service import get_quarantine_overview
 
     worker = get_push_worker()
     metrics = worker.metrics.to_dict()
     hf_stats = await get_hard_fail_stats(tenant_id)
     quarantine = await get_quarantine_overview(tenant_id)
 
-    drift_count = await db["channel_reconciliation_cases"].count_documents({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["open", "investigating"]},
-        "drift_type": {"$exists": True, "$ne": None},
-    })
-
-    is_ready = (
-        hf_stats["hard_fail_change_sets"] == 0
-        and hf_stats["open_hard_fail_incidents"] == 0
-        and quarantine["total_quarantined"] == 0
+    drift_count = await db["channel_reconciliation_cases"].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["open", "investigating"]},
+            "drift_type": {"$exists": True, "$ne": None},
+        }
     )
+
+    is_ready = hf_stats["hard_fail_change_sets"] == 0 and hf_stats["open_hard_fail_incidents"] == 0 and quarantine["total_quarantined"] == 0
 
     return {
         "verify_ratio": metrics["verify_success_ratio"],

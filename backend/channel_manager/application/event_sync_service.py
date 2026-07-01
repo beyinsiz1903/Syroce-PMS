@@ -10,11 +10,12 @@ Flow:
   event -> validate -> create sync job -> coalescing -> dispatch
   Failure -> audit log + optional reconciliation issue
 """
-import logging
-from typing import Dict, Any, Optional, List
 
+import logging
+from typing import Any
+
+from ..domain.models.audit import AuditAction, IntegrationAuditLog
 from ..domain.models.sync import SyncType
-from ..domain.models.audit import IntegrationAuditLog, AuditAction
 from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.event_sync_service")
@@ -24,6 +25,7 @@ SUPPORTED_EVENTS = {
     "booking_created",
     "booking_modified",
     "booking_cancelled",
+    "booking_no_show",
     "room_blocked",
     "room_unblocked",
     "rate_changed",
@@ -35,6 +37,7 @@ EVENT_SYNC_MAP = {
     "booking_created": SyncType.INVENTORY,
     "booking_modified": SyncType.INVENTORY,
     "booking_cancelled": SyncType.INVENTORY,
+    "booking_no_show": SyncType.INVENTORY,
     "room_blocked": SyncType.INVENTORY,
     "room_unblocked": SyncType.INVENTORY,
     "rate_changed": SyncType.RATES,
@@ -45,15 +48,15 @@ EVENT_SYNC_MAP = {
 class EventSyncService:
     """Handles domain events and triggers appropriate sync operations."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     async def handle_event(
         self,
         tenant_id: str,
         event_type: str,
-        event_payload: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        event_payload: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Process a domain event and trigger sync if applicable.
 
@@ -87,6 +90,7 @@ class EventSyncService:
 
             # Create sync job via inventory sync service
             from ..application.inventory_sync_service import InventorySyncService
+
             sync_svc = InventorySyncService(self._repo)
 
             try:
@@ -110,24 +114,33 @@ class EventSyncService:
                         trigger_reason=f"Domain event: {event_type}",
                         actor_id=f"event:{event_type}",
                     )
-                jobs_created.append({
-                    "connector_id": connector_id,
-                    "job_id": result.get("job_id", ""),
-                    "status": result.get("status", ""),
-                })
+                jobs_created.append(
+                    {
+                        "connector_id": connector_id,
+                        "job_id": result.get("job_id", ""),
+                        "status": result.get("status", ""),
+                    }
+                )
             except Exception as e:
                 logger.error(
-                    "Event sync failed for connector %s: %s", connector_id, e,
+                    "Event sync failed for connector %s: %s",
+                    connector_id,
+                    e,
                 )
-                jobs_created.append({
-                    "connector_id": connector_id,
-                    "error": str(e)[:200],
-                })
+                jobs_created.append(
+                    {
+                        "connector_id": connector_id,
+                        "error": str(e)[:200],
+                    }
+                )
 
                 # Audit failure
                 await self._audit(
-                    tenant_id, property_id, connector_id,
-                    AuditAction.EVENT_SYNC_FAILED, metadata={
+                    tenant_id,
+                    property_id,
+                    connector_id,
+                    AuditAction.EVENT_SYNC_FAILED,
+                    metadata={
                         "event_type": event_type,
                         "error": str(e)[:200],
                         "success": False,
@@ -136,6 +149,7 @@ class EventSyncService:
 
                 # Create reconciliation issue for persistent event sync failures
                 from ..application.reconciliation_service import ReconciliationService
+
                 recon = ReconciliationService(self._repo)
                 await recon.create_issue(
                     tenant_id=tenant_id,
@@ -154,8 +168,11 @@ class EventSyncService:
 
             # Audit success
             await self._audit(
-                tenant_id, property_id, connector_id,
-                AuditAction.EVENT_SYNC_TRIGGERED, metadata={
+                tenant_id,
+                property_id,
+                connector_id,
+                AuditAction.EVENT_SYNC_TRIGGERED,
+                metadata={
                     "event_type": event_type,
                     "sync_type": sync_type.value,
                     "date_range": f"{date_start} -> {date_end}",
@@ -173,8 +190,8 @@ class EventSyncService:
     async def handle_batch_events(
         self,
         tenant_id: str,
-        events: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        events: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Process multiple domain events with deduplication."""
         results = []
         for evt in events:
@@ -193,9 +210,9 @@ class EventSyncService:
     # ------------------------------------------------------------------ #
 
     @staticmethod
-    def _extract_date_range(event_type: str, payload: Dict[str, Any]) -> tuple:
+    def _extract_date_range(event_type: str, payload: dict[str, Any]) -> tuple:
         """Extract affected date range from event payload."""
-        if event_type in ("booking_created", "booking_modified", "booking_cancelled"):
+        if event_type in ("booking_created", "booking_modified", "booking_cancelled", "booking_no_show"):
             check_in = payload.get("check_in", payload.get("date_start", ""))
             check_out = payload.get("check_out", payload.get("date_end", ""))
             return check_in, check_out
@@ -212,7 +229,7 @@ class EventSyncService:
         return ("", "")
 
     @staticmethod
-    def _extract_room_types(event_type: str, payload: Dict[str, Any]) -> Optional[List[str]]:
+    def _extract_room_types(event_type: str, payload: dict[str, Any]) -> list[str] | None:
         """Extract affected room types from event payload."""
         rt = payload.get("room_type_id", payload.get("room_type", ""))
         if rt:
@@ -228,7 +245,11 @@ class EventSyncService:
 
     async def _audit(self, tenant_id, property_id, connector_id, action, actor_id=None, metadata=None):
         log = IntegrationAuditLog(
-            tenant_id=tenant_id, property_id=property_id, connector_id=connector_id,
-            action=action, actor_id=actor_id, metadata=metadata or {},
+            tenant_id=tenant_id,
+            property_id=property_id,
+            connector_id=connector_id,
+            action=action,
+            actor_id=actor_id,
+            metadata=metadata or {},
         )
         await self._repo.create_audit_log(log.to_doc())

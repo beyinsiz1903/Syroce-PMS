@@ -8,10 +8,11 @@ Indexes:
   - (tenant_id, status)
   - (tenant_id, connector_id, validation_status)
 """
+
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Optional, Dict, Any, List
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -44,6 +45,7 @@ class MappingEntityType(str, Enum):
     TAX_MODE = "tax_mode"
     OCCUPANCY = "occupancy"
 
+
 # Required mapping types for sync readiness
 REQUIRED_MAPPING_TYPES = [
     MappingEntityType.ROOM_TYPE,
@@ -73,33 +75,33 @@ class MappingRule(BaseModel):
     # PMS side
     pms_entity_id: str
     pms_entity_name: str = ""
-    pms_entity_meta: Dict[str, Any] = Field(default_factory=dict)
+    pms_entity_meta: dict[str, Any] = Field(default_factory=dict)
 
     # External/Provider side
     external_entity_id: str
     external_entity_name: str = ""
-    external_entity_meta: Dict[str, Any] = Field(default_factory=dict)
+    external_entity_meta: dict[str, Any] = Field(default_factory=dict)
 
     # Transformation rules
     occupancy_offset: int = 0  # e.g., PMS max_occ=3 but OTA expects 2
-    rate_modifier: Optional[float] = None  # multiply rate by this before push
-    rate_offset: Optional[float] = None  # add this to rate before push
+    rate_modifier: float | None = None  # multiply rate by this before push
+    rate_offset: float | None = None  # add this to rate before push
 
     # Validation
     validation_status: ValidationStatus = ValidationStatus.PENDING
-    last_validated_at: Optional[str] = None
-    validation_errors: List[str] = Field(default_factory=list)
-    invalid_reason: Optional[str] = None
+    last_validated_at: str | None = None
+    validation_errors: list[str] = Field(default_factory=list)
+    invalid_reason: str | None = None
 
     # Audit
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    created_by: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    created_by: str | None = None
+    updated_at: str | None = None
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         return self.model_dump()
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "MappingRule":
+    def from_doc(cls, doc: dict[str, Any]) -> "MappingRule":
         doc.pop("_id", None)
         return cls(**doc)

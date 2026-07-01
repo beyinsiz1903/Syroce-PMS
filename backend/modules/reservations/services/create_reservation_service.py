@@ -9,10 +9,8 @@ from fastapi import HTTPException, Request, status
 from core.utils import generate_folio_number, generate_qr_code, generate_time_based_qr_token
 from models.enums import FolioType
 from models.schemas import BookingCreate, Folio, RateOverrideLog
-from modules.reservations.events import RESERVATION_CREATED_EVENT
 from modules.reservations.repository import ReservationsRepository
 from shared_kernel.audit_helper import audit_log
-from shared_kernel.event_envelope import build_event_envelope
 from shared_kernel.idempotency import ensure_idempotent_request
 from shared_kernel.tenancy_context import build_property_context, build_tenant_context
 
@@ -61,21 +59,34 @@ class CreateReservationService:
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
 
-            check_in_dt = datetime.fromisoformat(booking_data.check_in.replace('Z', '+00:00'))
-            check_out_dt = datetime.fromisoformat(booking_data.check_out.replace('Z', '+00:00'))
-            
-            # Validate that check-in date is not in the past
-            today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-            check_in_date_only = check_in_dt.replace(hour=0, minute=0, second=0, microsecond=0)
-            if check_in_date_only.tzinfo is None:
-                check_in_date_only = check_in_date_only.replace(tzinfo=timezone.utc)
-            
-            if check_in_date_only < today:
+            try:
+                check_in_dt = datetime.fromisoformat(booking_data.check_in.replace('Z', '+00:00'))
+                check_out_dt = datetime.fromisoformat(booking_data.check_out.replace('Z', '+00:00'))
+            except (ValueError, AttributeError, TypeError) as _e:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Gecmis tarih icin rezervasyon olusturulamaz"
+                    detail=f"Gecersiz tarih formati: {_e}",
                 )
-            
+
+            # Geçmiş tarih kontrolü — bugün veya business_date'den hangisi ilerdeyse onu kullan
+            from core.database import db as _db
+            tenant_settings = await _db.tenant_settings.find_one(
+                {"tenant_id": tenant_context.tenant_id}, {"_id": 0}
+            )
+            business_date_str = (tenant_settings or {}).get(
+                "business_date", datetime.now(timezone.utc).date().isoformat()
+            )
+            today_str = datetime.now(timezone.utc).date().isoformat()
+            # Gun sonu yapilmadiysa PMS hala dunde; gece gec gelen misafir
+            # dun girisli rezervasyon yapabilmeli. Bu nedenle alt sinir =
+            # min(business_date, today) — yani PMS'in bulundugu gun.
+            effective_min_date = min(business_date_str, today_str)
+            effective_min_dt = datetime.fromisoformat(effective_min_date + "T00:00:00+00:00")
+            if check_in_dt.replace(tzinfo=timezone.utc) < effective_min_dt:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Gecmis tarihe rezervasyon yapilamaz (minimum: {effective_min_date})"
+                )
             booking_id = str(uuid.uuid4())
             now_ts = datetime.now(timezone.utc)
 
@@ -114,6 +125,7 @@ class CreateReservationService:
                 'ota_reference_id': booking_data.ota_reference_id,
                 'commission_pct': booking_data.commission_pct,
                 'created_at': now_ts.isoformat(),
+                '_version': 1,
             }
 
             if booking_data.base_rate and booking_data.base_rate != booking_data.total_amount and booking_data.override_reason:
@@ -149,48 +161,73 @@ class CreateReservationService:
             folio_dict['created_at'] = folio_dict['created_at'].isoformat()
             await self.repository.insert_folio(folio_dict)
 
-            try:
-                from server import cm_push_event as _cm_push
+            # OTA-002: Enqueue outbox event for guaranteed delivery
+            # No more fire-and-forget cm_push_event — the outbox worker handles dispatch
+            from core.outbox_service import enqueue_outbox_event, BOOKING_CREATED
+            from core.database import db as _outbox_db
 
-                await _cm_push({
-                    "type": "booking.created",
-                    "tenant_id": tenant_context.tenant_id,
-                    "booking_id": booking_id,
-                    "room_id": booking_data.room_id,
-                    "check_in": booking_data.check_in,
-                    "check_out": booking_data.check_out,
-                    "status": booking_dict.get('status', 'confirmed'),
-                    "source_channel": booking_data.source_channel or "direct",
-                    "origin": booking_data.origin or "ui",
-                    "hold_status": booking_data.hold_status or "none",
-                    "allocation_source": booking_data.allocation_source or "manual",
-                    "created_at": booking_dict['created_at'],
-                })
-            except Exception:
-                pass
-
-            event_envelope = build_event_envelope(
-                event_type=RESERVATION_CREATED_EVENT,
+            await enqueue_outbox_event(
+                _outbox_db,
                 tenant_id=tenant_context.tenant_id,
+                event_type=BOOKING_CREATED,
+                entity_type="booking",
+                entity_id=booking_id,
+                property_id=property_context.property_id or tenant_context.tenant_id,
                 correlation_id=correlation_id,
                 payload={
-                    "reservation_id": booking_id,
+                    "booking_id": booking_id,
                     "guest_id": booking_data.guest_id,
                     "room_id": booking_data.room_id,
                     "check_in": booking_dict['check_in'],
                     "check_out": booking_dict['check_out'],
-                    "status": booking_dict['status'],
-                    "source": "semantic_reservations_service",
+                    "status": booking_dict.get('status', 'confirmed'),
+                    "property_id": property_context.property_id or tenant_context.tenant_id,
+                    "source_channel": booking_data.source_channel or "direct",
+                    "origin": booking_data.origin or "ui",
                 },
-            ).model_dump()
-            outbox_doc = {
-                **event_envelope,
-                "property_id": property_context.property_id or tenant_context.tenant_id,
-                "reservation_id": booking_id,
-                "status": "pending",
-                "created_at": event_envelope["timestamp"],
-            }
-            await self.repository.insert_outbox_event(outbox_doc)
+            )
+
+            # Af-sadakat marketplace integration: outbound olay (best-effort)
+            try:
+                from core.afsadakat_outbound import (
+                    EV_RESERVATION_CREATED,
+                    emit_event,
+                )
+                await emit_event(
+                    tenant_context.tenant_id,
+                    EV_RESERVATION_CREATED,
+                    {
+                        "booking_id": booking_id,
+                        "guest_id": booking_data.guest_id,
+                        "room_id": booking_data.room_id,
+                        "check_in": booking_dict["check_in"],
+                        "check_out": booking_dict["check_out"],
+                        "status": booking_dict.get("status", "confirmed"),
+                        "total_amount": booking_dict.get("total_amount"),
+                        "source_channel": booking_data.source_channel or "direct",
+                    },
+                )
+            except Exception:
+                pass
+
+            # CapX B2B Network: outbound booking event (best-effort, fire-and-forget)
+            try:
+                from integrations.capx import (
+                    fire_and_forget,
+                    push_booking_lifecycle_event,
+                )
+                fire_and_forget(push_booking_lifecycle_event(
+                    booking_id=booking_id,
+                    status=booking_dict.get("status", "confirmed"),
+                    tenant_id=tenant_context.tenant_id,
+                    guest_name=booking_dict.get("guest_name"),
+                    check_in=booking_dict.get("check_in", ""),
+                    check_out=booking_dict.get("check_out", ""),
+                    amount=booking_dict.get("total_amount"),
+                    currency=booking_dict.get("currency", "TRY"),
+                ))
+            except Exception:
+                pass
 
             await audit_log(
                 actor_id=current_user.id,
@@ -208,6 +245,26 @@ class CreateReservationService:
                 },
             )
 
+            # Usage metering
+            try:
+                from core.metering import record_usage, UsageEventType
+                await record_usage(tenant_context.tenant_id, UsageEventType.RESERVATION_CREATED)
+            except Exception:
+                pass
+
+            # Channel availability auto-sync: arka planda müsaitlik güncelle ve kanallara push et
+            try:
+                from domains.channel_manager.availability_auto_sync import sync_availability_after_booking
+                import asyncio
+                asyncio.create_task(sync_availability_after_booking(
+                    tenant_id=tenant_context.tenant_id,
+                    room_id=booking_data.room_id,
+                    check_in=booking_dict['check_in'],
+                    check_out=booking_dict['check_out'],
+                ))
+            except Exception:
+                pass
+
             response_body = dict(booking_dict)
             response_body.pop('_id', None)
             await self.repository.complete_idempotency_lock(lock["lock_id"], booking_id, response_body)
@@ -216,6 +273,26 @@ class CreateReservationService:
             await self.repository.fail_idempotency_lock(lock["lock_id"], exc.detail if isinstance(exc.detail, str) else str(exc.detail))
             raise
         except Exception as exc:
+            from core.atomic_booking import BookingConflictError
+            if isinstance(exc, BookingConflictError):
+                await self.repository.fail_idempotency_lock(lock["lock_id"], str(exc))
+                # F8N — Structured 409: client gets actionable conflict info.
+                # Backward compatible: existing clients reading `detail` as a
+                # string keep working because FastAPI serialises dict detail
+                # and the message is preserved under `detail.message`.
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "message": str(exc),
+                        "conflicting_booking_id": getattr(exc, "conflicting_booking_id", None),
+                        "conflict_type": getattr(exc, "conflict_type", "booking"),
+                        "conflict_window": {
+                            "room_id": booking_data.room_id,
+                            "check_in": booking_data.check_in,
+                            "check_out": booking_data.check_out,
+                        },
+                    },
+                )
             await self.repository.fail_idempotency_lock(lock["lock_id"], str(exc))
             raise
 

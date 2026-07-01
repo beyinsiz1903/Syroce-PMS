@@ -1,0 +1,56 @@
+# worker-runtime.txt — Phase 5 (Pragmatic case) production worker image
+#
+# Composition: -r worker.txt + -r ml.txt + -r reports.txt + -r integrations.txt
+#              + fastapi/starlette.
+# (ml + reports re-added for the 'ml' queue and scheduled PDF rendering;
+#  integrations re-added for the 'messaging'/'backup'/'analytics' queues; see
+#  the inline notes above those includes below.)
+#
+# Per docs/backend_refactors/requirements-split-plan.md §4.4 and the Phase 4.6
+# AST scan run (docs/backend_refactors/requirements-split.run.md), the Celery
+# worker process imports exactly 14 third-party top-level modules, of which
+# 13 are covered by base.txt (transitively via worker.txt). The lone gap is
+# `fastapi`, pulled in via:
+#
+#   celery_tasks.py L17  →  from integrations.booking import BookingAPIClient...
+#                            (try/except ImportError-wrapped)
+#   integrations/booking.py:5  →  from fastapi import APIRouter, Depends, ...
+#
+# integrations/booking.py is implemented as a hybrid FastAPI router + worker
+# helper class. To keep the Booking.com push/pull tasks live (rather than
+# silently no-op'ing to BookingAPIClient = None), the worker image must carry
+# fastapi + starlette.
+#
+# This file deliberately keeps `worker.txt` clean (celery + scheduler + flower
+# core only) and adds web-stack symbols here at the production-image layer.
+# If a future refactor splits booking.py into a router module + a pure-Python
+# client, this file can shrink to `-r worker.txt`.
+
+-r worker.txt
+
+# Production worker queues need ML + PDF rendering (see worker.txt note):
+#  - ml.txt:      'ml' queue -> ml_service/ml_trainers (importlib dispatch)
+#  - reports.txt: scheduled PDF reports rendered IN-worker via WeasyPrint
+#                 (report_scheduler._payload_to_pdf, flash_email)
+# No version conflicts vs base/worker (mirrors all.txt's tested ml+reports
+# set). Native WeasyPrint .so libs + libgomp1 are installed in the
+# worker/Dockerfile runtime stage.
+-r ml.txt
+-r reports.txt
+
+# Production worker also serves the 'messaging'/'backup'/'analytics' queues,
+# which dispatch to integration SDKs:
+#  - boto3/botocore/s3transfer/s5cmd: 'backup' queue (S3 backup) + AWS KMS/
+#    secrets/SES (core/secrets, core/crypto, core/email, infra/secrets_manager)
+#  - resend: transactional e-mail; stripe/iyzipay: payment SDKs
+#  - openai/litellm/google-*: AI provider calls used by 'analytics' tasks
+# NOTE (litellm): integrations.txt pins litellm==1.80.0 ONLY for an openai-1.x
+# compatible dep tree; it is overridden --no-deps to litellm>=1.84.0 in
+# worker/Dockerfile (IDENTICAL to backend/Dockerfile) to clear CVE-2026-49468.
+# NOTE (Twilio): SMS/WhatsApp transport (twilio) is NOT pinned anywhere in the
+# repo and has no live transport yet (fail-closed 503); not packaged here.
+# No version conflicts vs base/worker/ml/reports (mirrors all.txt's tested set).
+-r integrations.txt
+
+fastapi==0.135.1
+starlette==1.3.1

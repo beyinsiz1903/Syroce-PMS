@@ -1,4 +1,3 @@
-from .service import CreateRoomBlockService
-from .service import AvailabilityReadService
+from .service import AvailabilityReadService, CreateRoomBlockService
 
 __all__ = ["AvailabilityReadService", "CreateRoomBlockService"]

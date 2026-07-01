@@ -2,9 +2,11 @@
 Admin Domain — Schemas
 Request/response models extracted from admin/router.py.
 """
-from pydantic import BaseModel, Field, EmailStr, conint
-from typing import Optional, Dict
+
 from enum import Enum
+from typing import Literal
+
+from pydantic import BaseModel, EmailStr, Field, conint
 
 
 class PermissionCheckRequest(BaseModel):
@@ -12,13 +14,17 @@ class PermissionCheckRequest(BaseModel):
 
 
 class TenantModulesUpdate(BaseModel):
-    modules: Dict[str, bool]
+    modules: dict[str, bool]
+    # Per-tenant kanal yoneticisi altyapisi secimi (super_admin). Yalnizca
+    # explicit gonderildiginde yazilir; None gonderilirse secim temizlenir
+    # (otomatik tespite doner). Gecersiz deger -> 422.
+    channel_manager_provider: Literal["exely", "hotelrunner"] | None = None
 
 
 class SubscriptionUpdateRequest(BaseModel):
-    subscription_days: Optional[int] = None
-    subscription_start_date: Optional[str] = None
-    subscription_end_date: Optional[str] = None
+    subscription_days: int | None = None
+    subscription_start_date: str | None = None
+    subscription_end_date: str | None = None
 
 
 class ChangePlanRequest(BaseModel):
@@ -27,19 +33,19 @@ class ChangePlanRequest(BaseModel):
 
 
 class UpdateHotelInfoRequest(BaseModel):
-    property_name: Optional[str] = None
-    phone: Optional[str] = None
-    email: Optional[str] = None
-    address: Optional[str] = None
-    location: Optional[str] = None
-    description: Optional[str] = None
-    total_rooms: Optional[int] = None
+    property_name: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    address: str | None = None
+    location: str | None = None
+    description: str | None = None
+    total_rooms: int | None = None
 
 
 class CreateTeamMemberRequest(BaseModel):
     email: EmailStr
     name: str
-    phone: Optional[str] = None
+    phone: str | None = None
     role: str = "front_desk"
     password: str
 
@@ -59,8 +65,8 @@ class DemoRequest(BaseModel):
     name: str
     email: str
     phone: str
-    hotel_name: str = Field(..., alias='hotelName')
-    room_count: str = Field(..., alias='roomCount')
+    hotel_name: str = Field(..., alias="hotelName")
+    room_count: str = Field(..., alias="roomCount")
 
 
 class PmsLiteLeadStatus(str, Enum):
@@ -72,25 +78,54 @@ class PmsLiteLeadStatus(str, Enum):
 
 
 class PmsLiteLeadAdminUpdateRequest(BaseModel):
-    status: Optional[PmsLiteLeadStatus] = None
-    note: Optional[str] = None
+    status: PmsLiteLeadStatus | None = None
+    note: str | None = None
+
+
+class AdminUpdateTenantInfoRequest(BaseModel):
+    property_name: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    address: str | None = None
+    location: str | None = None
+    description: str | None = None
+    total_rooms: int | None = None
+
+
+class UpdateGrantedPermissionsRequest(BaseModel):
+    """Task #28: Kullanıcıya tek tek verilen operasyon-seviyesi izinler.
+
+    Şu an yalnızca `send_urgent_message` yönetiliyor; ileride başka
+    operasyonlar bu listeye eklenebilir. Whitelist dışı bir izin
+    gönderilirse endpoint 400 ile reddeder.
+    """
+
+    permissions: list[str] = Field(default_factory=list)
+
+
+class AdminCreateTeamMemberRequest(BaseModel):
+    email: EmailStr
+    name: str
+    phone: str | None = None
+    role: str = "front_desk"
+    password: str
 
 
 class PmsLiteLeadContact(BaseModel):
     full_name: str
     phone: str
-    email: Optional[EmailStr] = None
+    email: EmailStr | None = None
 
 
 class PmsLiteLeadHotel(BaseModel):
     property_name: str
-    location: Optional[str] = None
+    location: str | None = None
     rooms_count: conint(ge=1, le=200)
 
 
 class PmsLiteLeadMetadata(BaseModel):
-    utm_source: Optional[str] = None
-    utm_medium: Optional[str] = None
-    utm_campaign: Optional[str] = None
-    user_agent: Optional[str] = None
-    ip: Optional[str] = None
+    utm_source: str | None = None
+    utm_medium: str | None = None
+    utm_campaign: str | None = None
+    user_agent: str | None = None
+    ip: str | None = None

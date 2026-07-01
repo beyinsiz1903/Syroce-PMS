@@ -1,15 +1,16 @@
 """Scheduled import job management, safety-net sync, and environment config endpoints."""
-import logging
-from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+import logging
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v95 DW
 
 from ...application.scheduled_import_service import ScheduledImportService
-from ...connectors.hotelrunner.environment_config import get_environment_config, get_all_environments
+from ...connectors.hotelrunner_v2.environment_config import get_all_environments, get_environment_config
 
 logger = logging.getLogger("channel_manager.routers.scheduler")
 
@@ -22,14 +23,18 @@ class UpdatePollingRequest(BaseModel):
 
 # ─── Scheduled Import Jobs ───────────────────────────────────────
 
+
 @router.post("/import-jobs/run/{connector_id}")
 async def run_scheduled_import(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = ScheduledImportService()
     result = await svc.run_scheduled_import(
-        current_user.tenant_id, connector_id, current_user.id,
+        current_user.tenant_id,
+        connector_id,
+        current_user.id,
     )
     return result
 
@@ -37,6 +42,7 @@ async def run_scheduled_import(
 @router.post("/import-jobs/run-all")
 async def run_all_scheduled_imports(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = ScheduledImportService()
     return await svc.run_all_connectors(current_user.tenant_id)
@@ -44,14 +50,17 @@ async def run_all_scheduled_imports(
 
 @router.get("/import-jobs")
 async def list_import_jobs(
-    connector_id: Optional[str] = None,
-    status: Optional[str] = None,
+    connector_id: str | None = None,
+    status: str | None = None,
     limit: int = Query(50, le=200),
     current_user: User = Depends(get_current_user),
 ):
     svc = ScheduledImportService()
     jobs = await svc.get_import_jobs(
-        current_user.tenant_id, connector_id, status, limit,
+        current_user.tenant_id,
+        connector_id,
+        status,
+        limit,
     )
     return {"jobs": jobs, "count": len(jobs)}
 
@@ -72,16 +81,20 @@ async def get_import_job_detail(
 async def retry_failed_import_job(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     svc = ScheduledImportService()
     return await svc.retry_failed_job(
-        current_user.tenant_id, job_id, current_user.id,
+        current_user.tenant_id,
+        job_id,
+        current_user.id,
     )
 
 
 @router.post("/safety-net/inventory-sync")
 async def run_safety_net_sync(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v98 DW
 ):
     svc = ScheduledImportService()
     return await svc.run_safety_net_inventory_sync(current_user.tenant_id)
@@ -89,12 +102,14 @@ async def run_safety_net_sync(
 
 # ─── Polling Configuration ───────────────────────────────────────
 
+
 @router.get("/connectors/{connector_id}/polling-config")
 async def get_polling_config(
     connector_id: str,
     current_user: User = Depends(get_current_user),
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     connector = await repo.get_connector(current_user.tenant_id, connector_id)
     if not connector:
@@ -105,10 +120,12 @@ async def get_polling_config(
         "connector_id": connector_id,
         "environment": env,
         "reservation_polling_interval": connector.get(
-            "reservation_polling_interval", env_config.reservation_polling_interval_seconds,
+            "reservation_polling_interval",
+            env_config.reservation_polling_interval_seconds,
         ),
         "sync_polling_interval": connector.get(
-            "sync_polling_interval", env_config.sync_polling_interval_seconds,
+            "sync_polling_interval",
+            env_config.sync_polling_interval_seconds,
         ),
         "default_reservation_interval": env_config.reservation_polling_interval_seconds,
         "default_sync_interval": env_config.sync_polling_interval_seconds,
@@ -120,8 +137,10 @@ async def update_polling_config(
     connector_id: str,
     req: UpdatePollingRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     connector = await repo.get_connector(current_user.tenant_id, connector_id)
     if not connector:
@@ -134,6 +153,7 @@ async def update_polling_config(
 
 
 # ─── Environment Configuration ───────────────────────────────────
+
 
 @router.get("/environments")
 async def list_environments(
@@ -156,8 +176,10 @@ async def set_connector_environment(
     connector_id: str,
     environment: str = Body(..., embed=True),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v95 DW
 ):
     from ...infrastructure.repository import ChannelManagerRepository
+
     repo = ChannelManagerRepository()
     connector = await repo.get_connector(current_user.tenant_id, connector_id)
     if not connector:

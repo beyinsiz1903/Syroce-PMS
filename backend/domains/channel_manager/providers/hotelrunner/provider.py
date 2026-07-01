@@ -15,41 +15,46 @@ Public methods:
 - push_date_range_inventory()
 - confirm_delivery()
 """
+
 import logging
 import time
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any
+
+from domains.channel_manager.provider_failover import provider_failover
 
 from . import endpoints as ep
+from . import observability as obs
 from .auth import extract_credentials, validate_credentials
 from .client import HotelRunnerHttpClient
-from .retry import HotelRunnerRetryPolicy
+from .errors import (
+    HotelRunnerError,
+)
+from .mapper import (
+    map_ari_delta_to_daily_payload,
+    map_ari_delta_to_daterange_payload,
+    map_raw_payload_to_canonical,
+)
 from .paginator import HotelRunnerPaginator
 from .parser import (
-    parse_rooms_response,
     parse_channels_response,
     parse_connected_channels_response,
     parse_reservations_response,
+    parse_rooms_response,
 )
-from .mapper import (
-    map_reservation_to_canonical,
-    map_raw_payload_to_canonical,
-    map_ari_delta_to_daily_payload,
-    map_ari_delta_to_daterange_payload,
-)
+from .retry import HotelRunnerRetryPolicy
+from .schemas import ProviderResult
 from .validators import (
-    validate_connection_credentials,
     validate_inventory_payload,
 )
-from .schemas import ProviderResult
-from .errors import (
-    HotelRunnerError,
-    HotelRunnerAuthError,
-    HotelRunnerMappingError,
-)
-from . import observability as obs
 
 logger = logging.getLogger("hotelrunner.provider")
+
+
+def _hr_circuit_key(connection_id: str) -> str:
+    """Per-connection breaker key. One bad tenant must not trip the circuit
+    for other tenants. Falls back to a shared key when connection_id is empty
+    (anonymous/test usage)."""
+    return f"hotelrunner:{connection_id or '_default'}"
 
 
 class HotelRunnerProvider:
@@ -63,14 +68,22 @@ class HotelRunnerProvider:
         reservations = await provider.fetch_reservations()
     """
 
+    # Environment-specific base URLs
+    ENV_URLS = {
+        "mock": "http://localhost:9999",
+        "sandbox": "https://sandbox.hotelrunner.com",
+        "production": "https://app.hotelrunner.com",
+    }
+
     def __init__(
         self,
         token: str = "",
         hr_id: str = "",
         *,
-        credentials: Optional[Dict[str, str]] = None,
+        credentials: dict[str, str] | None = None,
         connection_id: str = "",
-        base_url: str = ep.BASE_URL,
+        base_url: str = "",
+        environment: str = "",
         max_retries: int = 3,
         max_pages: int = 50,
     ):
@@ -82,7 +95,8 @@ class HotelRunnerProvider:
             hr_id: HotelRunner Hotel ID
             credentials: Alternative — dict with token/hr_id keys
             connection_id: For logging/tracking
-            base_url: Override API base URL (for sandbox/mock)
+            base_url: Override API base URL (explicit)
+            environment: "mock" | "sandbox" | "production" — resolves base_url
             max_retries: Retry attempts for transient errors
             max_pages: Max pages for paginated endpoints
         """
@@ -93,7 +107,18 @@ class HotelRunnerProvider:
         self._token = token
         self._hr_id = hr_id
         self._connection_id = connection_id
-        self._client = HotelRunnerHttpClient(token, hr_id, base_url)
+        self._environment = environment or "production"
+
+        # Resolve base URL: explicit > environment > default
+        if base_url:
+            resolved_url = base_url
+        elif environment:
+            resolved_url = self.ENV_URLS.get(environment, ep.BASE_URL)
+        else:
+            resolved_url = ep.BASE_URL
+
+        self._base_url = resolved_url
+        self._client = HotelRunnerHttpClient(token, hr_id, resolved_url)
         self._retry = HotelRunnerRetryPolicy(max_retries=max_retries)
         self._paginator = HotelRunnerPaginator(max_pages=max_pages)
 
@@ -106,6 +131,7 @@ class HotelRunnerProvider:
         """
         start = time.time()
         try:
+
             async def _call():
                 return await self._client.get(ep.CHANNELS)
 
@@ -113,9 +139,11 @@ class HotelRunnerProvider:
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                path=ep.CHANNELS, method="GET",
+                path=ep.CHANNELS,
+                method="GET",
                 status_code=result.status_code,
-                duration_ms=duration_ms, success=result.success,
+                duration_ms=duration_ms,
+                success=result.success,
                 connection_id=self._connection_id,
             )
 
@@ -152,6 +180,7 @@ class HotelRunnerProvider:
         """Fetch all rooms/rates from HotelRunner."""
         start = time.time()
         try:
+
             async def _call():
                 return await self._client.get(ep.ROOMS)
 
@@ -159,9 +188,11 @@ class HotelRunnerProvider:
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                path=ep.ROOMS, method="GET",
+                path=ep.ROOMS,
+                method="GET",
                 status_code=result.status_code,
-                duration_ms=duration_ms, success=result.success,
+                duration_ms=duration_ms,
+                success=result.success,
                 connection_id=self._connection_id,
             )
 
@@ -182,6 +213,7 @@ class HotelRunnerProvider:
         """Fetch all available channels."""
         start = time.time()
         try:
+
             async def _call():
                 return await self._client.get(ep.CHANNELS)
 
@@ -189,9 +221,11 @@ class HotelRunnerProvider:
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                path=ep.CHANNELS, method="GET",
+                path=ep.CHANNELS,
+                method="GET",
                 status_code=result.status_code,
-                duration_ms=duration_ms, success=result.success,
+                duration_ms=duration_ms,
+                success=result.success,
                 connection_id=self._connection_id,
             )
 
@@ -210,6 +244,7 @@ class HotelRunnerProvider:
         """Fetch connected channels with process stats."""
         start = time.time()
         try:
+
             async def _call():
                 return await self._client.get(ep.CONNECTED_CHANNELS)
 
@@ -217,9 +252,11 @@ class HotelRunnerProvider:
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                path=ep.CONNECTED_CHANNELS, method="GET",
+                path=ep.CONNECTED_CHANNELS,
+                method="GET",
                 status_code=result.status_code,
-                duration_ms=duration_ms, success=result.success,
+                duration_ms=duration_ms,
+                success=result.success,
                 connection_id=self._connection_id,
             )
 
@@ -240,10 +277,10 @@ class HotelRunnerProvider:
         self,
         *,
         undelivered: bool = True,
-        from_date: Optional[str] = None,
-        from_last_update_date: Optional[str] = None,
+        from_date: str | None = None,
+        from_last_update_date: str | None = None,
         per_page: int = 50,
-        page: Optional[int] = None,
+        page: int | None = None,
         modified: bool = False,
         booked: bool = False,
     ) -> ProviderResult:
@@ -281,14 +318,25 @@ class HotelRunnerProvider:
             return self._handle_error(e, start, ep.RESERVATIONS)
 
     async def _fetch_reservations_page(
-        self, *, undelivered, from_date, from_last_update_date,
-        per_page, page, modified, booked, start_time,
+        self,
+        *,
+        undelivered,
+        from_date,
+        from_last_update_date,
+        per_page,
+        page,
+        modified,
+        booked,
+        start_time,
     ) -> ProviderResult:
         params = self._build_reservation_params(
-            undelivered=undelivered, from_date=from_date,
+            undelivered=undelivered,
+            from_date=from_date,
             from_last_update_date=from_last_update_date,
-            per_page=per_page, page=page,
-            modified=modified, booked=booked,
+            per_page=per_page,
+            page=page,
+            modified=modified,
+            booked=booked,
         )
 
         async def _call():
@@ -298,9 +346,11 @@ class HotelRunnerProvider:
         duration_ms = int((time.time() - start_time) * 1000)
 
         obs.record_provider_call(
-            path=ep.RESERVATIONS, method="GET",
+            path=ep.RESERVATIONS,
+            method="GET",
             status_code=result.status_code,
-            duration_ms=duration_ms, success=result.success,
+            duration_ms=duration_ms,
+            success=result.success,
             connection_id=self._connection_id,
         )
 
@@ -320,15 +370,24 @@ class HotelRunnerProvider:
         return ProviderResult(success=False, error=result.error, duration_ms=duration_ms)
 
     async def _fetch_all_reservations(
-        self, *, from_date, from_last_update_date,
-        per_page, modified, booked, start_time,
+        self,
+        *,
+        from_date,
+        from_last_update_date,
+        per_page,
+        modified,
+        booked,
+        start_time,
     ) -> ProviderResult:
-        async def _fetch_page(page_num: int) -> Dict[str, Any]:
+        async def _fetch_page(page_num: int) -> dict[str, Any]:
             params = self._build_reservation_params(
-                undelivered=False, from_date=from_date,
+                undelivered=False,
+                from_date=from_date,
                 from_last_update_date=from_last_update_date,
-                per_page=per_page, page=page_num,
-                modified=modified, booked=booked,
+                per_page=per_page,
+                page=page_num,
+                modified=modified,
+                booked=booked,
             )
 
             async def _call():
@@ -343,9 +402,11 @@ class HotelRunnerProvider:
         duration_ms = int((time.time() - start_time) * 1000)
 
         obs.record_provider_call(
-            path=ep.RESERVATIONS, method="GET",
+            path=ep.RESERVATIONS,
+            method="GET",
             status_code=200,
-            duration_ms=duration_ms, success=True,
+            duration_ms=duration_ms,
+            success=True,
             connection_id=self._connection_id,
         )
 
@@ -361,10 +422,16 @@ class HotelRunnerProvider:
 
     @staticmethod
     def _build_reservation_params(
-        *, undelivered, from_date, from_last_update_date,
-        per_page, page, modified, booked,
-    ) -> Dict[str, str]:
-        params: Dict[str, str] = {
+        *,
+        undelivered,
+        from_date,
+        from_last_update_date,
+        per_page,
+        page,
+        modified,
+        booked,
+    ) -> dict[str, str]:
+        params: dict[str, str] = {
             "undelivered": str(undelivered).lower(),
             "per_page": str(per_page),
             "page": str(page),
@@ -383,31 +450,52 @@ class HotelRunnerProvider:
 
     async def push_daily_inventory(
         self,
-        payload: Dict[str, Any],
-        room_mapping: Optional[Dict[str, Any]] = None,
+        payload: dict[str, Any],
+        room_mapping: dict[str, Any] | None = None,
     ) -> ProviderResult:
-        """Push daily inventory update via PUT /rooms/daily."""
+        """Push daily inventory update via PUT /rooms/daily.
+
+        HotelRunner v2 REST API expects parameters as query params.
+        Wrapped in a per-connection circuit breaker — when the breaker
+        is OPEN, the HTTP call is short-circuited and a fail-fast
+        ProviderResult is returned (metadata.circuit_open=True).
+        """
         start = time.time()
+        breaker = provider_failover.get_breaker(_hr_circuit_key(self._connection_id))
+        if not await breaker.try_acquire():
+            return ProviderResult(
+                success=False,
+                error=f"circuit_open: HotelRunner breaker is OPEN for connection {self._connection_id or '_default'}",
+                error_type="CircuitOpen",
+                duration_ms=int((time.time() - start) * 1000),
+                metadata={"circuit_open": True, "circuit_state": breaker.get_status()},
+            )
         try:
             if room_mapping:
-                form_data = map_ari_delta_to_daily_payload(payload, room_mapping)
+                query_params = map_ari_delta_to_daily_payload(payload, room_mapping)
             else:
-                form_data = payload
+                query_params = payload
 
-            validate_inventory_payload(form_data)
+            validate_inventory_payload(query_params)
 
             async def _call():
-                return await self._client.put(ep.ROOMS_DAILY, form_data=form_data)
+                return await self._client.put(ep.ROOMS_DAILY, params=query_params)
 
             result = await self._retry.execute(_call)
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                path=ep.ROOMS_DAILY, method="PUT",
+                path=ep.ROOMS_DAILY,
+                method="PUT",
                 status_code=result.status_code,
-                duration_ms=duration_ms, success=result.success,
+                duration_ms=duration_ms,
+                success=result.success,
                 connection_id=self._connection_id,
             )
+            if result.success:
+                await breaker.record_success()
+            else:
+                await breaker.record_failure()
             return ProviderResult(
                 success=result.success,
                 data=result.data,
@@ -415,35 +503,55 @@ class HotelRunnerProvider:
                 duration_ms=duration_ms,
             )
         except HotelRunnerError as e:
+            await breaker.record_failure()
             return self._handle_error(e, start, ep.ROOMS_DAILY)
 
     async def push_date_range_inventory(
         self,
-        payload: Dict[str, Any],
-        room_mapping: Optional[Dict[str, Any]] = None,
+        payload: dict[str, Any],
+        room_mapping: dict[str, Any] | None = None,
     ) -> ProviderResult:
-        """Push date range inventory update via PUT /rooms/~."""
+        """Push date range inventory update via PUT /rooms/~.
+
+        HotelRunner v2 REST API expects parameters as query params.
+        Wrapped in the same per-connection breaker as push_daily_inventory.
+        """
         start = time.time()
+        breaker = provider_failover.get_breaker(_hr_circuit_key(self._connection_id))
+        if not await breaker.try_acquire():
+            return ProviderResult(
+                success=False,
+                error=f"circuit_open: HotelRunner breaker is OPEN for connection {self._connection_id or '_default'}",
+                error_type="CircuitOpen",
+                duration_ms=int((time.time() - start) * 1000),
+                metadata={"circuit_open": True, "circuit_state": breaker.get_status()},
+            )
         try:
             if room_mapping:
-                form_data = map_ari_delta_to_daterange_payload(payload, room_mapping)
+                query_params = map_ari_delta_to_daterange_payload(payload, room_mapping)
             else:
-                form_data = payload
+                query_params = payload
 
-            validate_inventory_payload(form_data)
+            validate_inventory_payload(query_params)
 
             async def _call():
-                return await self._client.put(ep.ROOMS_DATERANGE, form_data=form_data)
+                return await self._client.put(ep.ROOMS_DATERANGE, params=query_params)
 
             result = await self._retry.execute(_call)
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                path=ep.ROOMS_DATERANGE, method="PUT",
+                path=ep.ROOMS_DATERANGE,
+                method="PUT",
                 status_code=result.status_code,
-                duration_ms=duration_ms, success=result.success,
+                duration_ms=duration_ms,
+                success=result.success,
                 connection_id=self._connection_id,
             )
+            if result.success:
+                await breaker.record_success()
+            else:
+                await breaker.record_failure()
             return ProviderResult(
                 success=result.success,
                 data=result.data,
@@ -451,6 +559,7 @@ class HotelRunnerProvider:
                 duration_ms=duration_ms,
             )
         except HotelRunnerError as e:
+            await breaker.record_failure()
             return self._handle_error(e, start, ep.ROOMS_DATERANGE)
 
     # ── Reservation Delivery Confirmation ─────────────────────────────
@@ -458,25 +567,27 @@ class HotelRunnerProvider:
     async def confirm_delivery(
         self,
         message_uid: str,
-        pms_number: Optional[str] = None,
+        pms_number: str | None = None,
     ) -> ProviderResult:
-        """Confirm reservation delivery to HotelRunner."""
+        """Confirm reservation delivery to HotelRunner via /reservations/fire."""
         start = time.time()
         try:
-            params: Dict[str, str] = {"message_uid": message_uid}
+            params: dict[str, str] = {"message_uid": message_uid}
             if pms_number:
                 params["pms_number"] = pms_number
 
             async def _call():
-                return await self._client.put(ep.RESERVATIONS_ACK, params=params)
+                return await self._client.put(ep.RESERVATIONS_FIRE, params=params)
 
             result = await self._retry.execute(_call)
             duration_ms = int((time.time() - start) * 1000)
 
             obs.record_provider_call(
-                path=ep.RESERVATIONS_ACK, method="PUT",
+                path=ep.RESERVATIONS_ACK,
+                method="PUT",
                 status_code=result.status_code,
-                duration_ms=duration_ms, success=result.success,
+                duration_ms=duration_ms,
+                success=result.success,
                 connection_id=self._connection_id,
             )
             return ProviderResult(
@@ -490,7 +601,7 @@ class HotelRunnerProvider:
 
     # ── Canonical helpers (for snapshot collectors & ingest) ───────────
 
-    def map_reservation_to_canonical(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+    def map_reservation_to_canonical_format(self, raw: dict[str, Any]) -> dict[str, Any]:
         """Map a raw HR reservation to canonical format."""
         return map_raw_payload_to_canonical(raw)
 
@@ -498,21 +609,21 @@ class HotelRunnerProvider:
     # These match the old HotelRunnerProvider interface so existing callers
     # can migrate without breaking.
 
-    async def get_rooms(self) -> Dict[str, Any]:
+    async def get_rooms(self) -> dict[str, Any]:
         """Legacy: returns dict like the old provider."""
         result = await self.fetch_rooms()
         if result.success:
             return {"success": True, "data": {"rooms": [r.get("raw", r) for r in result.data.get("rooms", [])]}}
         return {"success": False, "error": result.error}
 
-    async def get_channels(self) -> Dict[str, Any]:
+    async def get_channels(self) -> dict[str, Any]:
         """Legacy: returns dict like the old provider."""
         result = await self.fetch_channels()
         if result.success:
             return {"success": True, "data": result.data}
         return {"success": False, "error": result.error}
 
-    async def get_connected_channels(self) -> Dict[str, Any]:
+    async def get_connected_channels(self) -> dict[str, Any]:
         """Legacy: returns dict like the old provider."""
         result = await self.fetch_connected_channels()
         if result.success:
@@ -522,14 +633,14 @@ class HotelRunnerProvider:
     async def get_reservations(
         self,
         undelivered: bool = True,
-        from_date: Optional[str] = None,
-        from_last_update_date: Optional[str] = None,
+        from_date: str | None = None,
+        from_last_update_date: str | None = None,
         per_page: int = 10,
         page: int = 1,
-        reservation_number: Optional[str] = None,
+        reservation_number: str | None = None,
         modified: bool = False,
         booked: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Legacy: returns dict like the old provider."""
         result = await self.fetch_reservations(
             undelivered=undelivered,
@@ -551,7 +662,7 @@ class HotelRunnerProvider:
             }
         return {"success": False, "error": result.error, "duration_ms": result.duration_ms}
 
-    async def sync_reservations(self) -> Dict[str, Any]:
+    async def sync_reservations(self) -> dict[str, Any]:
         """Legacy: Pull all undelivered reservations."""
         all_reservations: list = []
         page = 1
@@ -567,26 +678,109 @@ class HotelRunnerProvider:
             page += 1
         return {"success": True, "count": len(all_reservations), "reservations": all_reservations}
 
-    async def update_room(self, **kwargs) -> Dict[str, Any]:
-        """Legacy: ARI push via PUT /rooms/~."""
-        form_data = {}
-        for key in ("inv_code", "start_date", "end_date"):
-            if key in kwargs:
-                form_data[key] = str(kwargs[key])
-        for key in ("availability", "price", "stop_sale", "min_stay", "cta", "ctd"):
-            if key in kwargs and kwargs[key] is not None:
-                form_data[key] = str(kwargs[key])
-        if "days" in kwargs and kwargs["days"] is not None:
-            form_data["days[]"] = [str(d) for d in kwargs["days"]]
-        if "channel_codes" in kwargs and kwargs["channel_codes"] is not None:
-            form_data["channel_codes[]"] = kwargs["channel_codes"]
+    async def update_room(self, **kwargs) -> dict[str, Any]:
+        """Legacy: ARI push via PUT /rooms/~.
 
-        result = await self._client.put(ep.ROOMS_DATERANGE, form_data=form_data)
-        if result.success:
-            return {"success": True, "data": result.data, "duration_ms": result.duration_ms}
-        return {"success": False, "error": result.error, "duration_ms": result.duration_ms}
+        HotelRunner v2 REST API expects ALL parameters as query params,
+        not form/body data.
 
-    def get_usage_stats(self) -> Dict[str, Any]:
+        Supports optional days[] param for day-of-week filtering:
+        0=Sunday, 1=Monday, ..., 6=Saturday.
+        When days is provided, the update only applies to those weekdays
+        within the start_date→end_date range (single API call instead of
+        one call per non-consecutive date).
+
+        Routed through retry policy + observability recorder so it has the
+        same operational guarantees as push_daily_inventory / fetch_*.
+        """
+        start = time.time()
+        try:
+            query_params: dict[str, Any] = {}
+            for key in ("inv_code", "start_date", "end_date"):
+                if key in kwargs:
+                    query_params[key] = str(kwargs[key])
+            for key in ("availability", "price", "stop_sale", "min_stay", "cta", "ctd"):
+                if key in kwargs and kwargs[key] is not None:
+                    query_params[key] = str(kwargs[key])
+
+            # days[] — day-of-week filter (list of ints: 0=Sun..6=Sat)
+            days = kwargs.get("days")
+            if days is not None and len(days) < 7:
+                # httpx handles list values as repeated params: days[]=0&days[]=6
+                query_params["days[]"] = [str(d) for d in days]
+
+            async def _call():
+                return await self._client.put(ep.ROOMS_DATERANGE, params=query_params)
+
+            result = await self._retry.execute(_call)
+            duration_ms = int((time.time() - start) * 1000)
+
+            obs.record_provider_call(
+                path=ep.ROOMS_DATERANGE,
+                method="PUT",
+                status_code=result.status_code,
+                duration_ms=duration_ms,
+                success=result.success,
+                connection_id=self._connection_id,
+            )
+            if result.success:
+                return {"success": True, "data": result.data, "duration_ms": duration_ms}
+            return {"success": False, "error": result.error, "duration_ms": duration_ms}
+        except HotelRunnerError as e:
+            pr = self._handle_error(e, start, ep.ROOMS_DATERANGE)
+            return {"success": pr.success, "data": pr.data, "error": pr.error, "duration_ms": pr.duration_ms}
+
+    async def push_ari_bulk(self, updates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Bulk ARI push: invoke update_room for each item, preserving order.
+
+        Each input dict carries the same kwargs as update_room (inv_code,
+        start_date, end_date, availability, price, stop_sale, min_stay,
+        cta, ctd, days). Returns a list of update_room result dicts so the
+        caller can compute success/fail counts and surface per-row errors.
+
+        Sequential by design — bulk inventory pushes share rate-limit
+        budget with single pushes; parallelizing here would amplify 429s.
+        """
+        results: list[dict[str, Any]] = []
+        for upd in updates:
+            results.append(await self.update_room(**upd))
+        return results
+
+    async def get_transaction_details(self, transaction_id: str) -> dict[str, Any]:
+        """Fetch HotelRunner transaction status via GET /infos/transaction_details.
+
+        Used by the /transactions/{transaction_id} endpoint to surface
+        push delivery status to the UI. Routed through retry +
+        observability like other GET calls.
+        """
+        start = time.time()
+        try:
+
+            async def _call():
+                return await self._client.get(
+                    ep.TRANSACTION_DETAILS,
+                    params={"transaction_id": transaction_id},
+                )
+
+            result = await self._retry.execute(_call)
+            duration_ms = int((time.time() - start) * 1000)
+
+            obs.record_provider_call(
+                path=ep.TRANSACTION_DETAILS,
+                method="GET",
+                status_code=result.status_code,
+                duration_ms=duration_ms,
+                success=result.success,
+                connection_id=self._connection_id,
+            )
+            if result.success:
+                return {"success": True, "data": result.data, "duration_ms": duration_ms}
+            return {"success": False, "error": result.error, "duration_ms": duration_ms}
+        except HotelRunnerError as e:
+            pr = self._handle_error(e, start, ep.TRANSACTION_DETAILS)
+            return {"success": pr.success, "data": pr.data, "error": pr.error, "duration_ms": pr.duration_ms}
+
+    def get_usage_stats(self) -> dict[str, Any]:
         """Legacy: Get API usage statistics."""
         health = obs.get_provider_health()
         return {

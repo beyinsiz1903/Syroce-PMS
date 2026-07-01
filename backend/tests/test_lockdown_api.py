@@ -17,7 +17,12 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
+
+pytestmark = pytest.mark.skipif(
+    not BASE_URL,
+    reason="VITE_BACKEND_URL not set - integration tests require a running server"
+)
 
 # ── Auth Fixtures ──────────────────────────────────────────────────
 

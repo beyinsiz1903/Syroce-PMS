@@ -1,4 +1,4 @@
-name: RoomOps PMS CI/CD Pipeline  # v2.0 - Updated 2026-02-24 15:20 UTC
+name: Syroce PMS CI/CD Pipeline
 
 on:
   push:
@@ -8,16 +8,29 @@ on:
 
 env:
   PYTHON_VERSION: '3.11'
-  NODE_VERSION: '20'
+  NODE_VERSION: '22'
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   MONGO_URL: mongodb://localhost:27017/hotel_pms_test
+  DB_NAME: hotel_pms_test
   JWT_SECRET: ci-test-secret-key-do-not-use-in-production
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/syroce
 
 jobs:
-  # ============ BACKEND LINTING ============
+  # ============ LOCKFILE HOST GUARD (HARD GATE) ============
+  lockfile-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Reject DigitalOcean package-firewall URLs in lockfiles
+        run: bash scripts/check-lockfile-hosts.sh
+
+  # ============ BACKEND LINTING (HARD GATE) ============
   backend-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -28,13 +41,77 @@ jobs:
       - name: Install ruff
         run: pip install ruff
 
-      - name: Run Python linting
+      - name: Run ruff (pyproject.toml config)
         run: |
           cd backend
-          ruff check models/ core/ auto_seed.py health_check.py ai_service.py email_service.py --select E9,F63,F7,F82 --target-version py311 --output-format=github
-          echo "Note: server.py and routers/ excluded from strict linting due to legacy code patterns"
+          ruff check .
 
-  # ============ BACKEND TESTS ============
+      - name: Orphan-file regression guard
+        run: python backend/scripts/check_orphan_files.py
+
+      - name: Import boundary guard
+        run: python backend/scripts/check_import_boundaries.py
+        
+      # ---- Requirements split guards (Phase 7 of requirements split) ----
+      # Both scripts are pure-stdlib (no pip install needed) and run in <1s.
+      # See docs/backend_refactors/requirements-split-plan.md and run.md.
+      - name: Requirements split parity guard
+        # Phase 8.2 (May 2026): legacy aggregate `backend/requirements.txt`
+        # was removed; the script's parity-vs-aggregate invariant was
+        # retired. The remaining duplicate-check half (Phase 4.5) still
+        # runs here: fails if any package name appears as a direct
+        # top-level entry in two or more canonical subset files
+        # (base/api/worker/ml/reports/integrations/dev). The CI step name
+        # is preserved to avoid breaking dashboards; the script filename
+        # is preserved to avoid an OAuth-scoped workflow patch.
+        # See docs/backend_refactors/requirements-split.run.md Phase 8.2.
+        run: python backend/scripts/check_requirements_split_parity.py
+
+      - name: Worker import closure check
+        # AST scan of celery_app + celery_tasks recursive import graph,
+        # validated against backend/requirements/worker-runtime.txt
+        # (Pragmatic case from Phase 4.6 / 5). Fails if any third-party
+        # module reachable from worker entry points is NOT covered by
+        # the production worker subset. CAVEAT: this is static-only —
+        # CI Docker build of worker/Dockerfile remains the authoritative
+        # boot smoke (see Phase 5 run.md).
+        run: python backend/scripts/check_worker_import_closure.py --target worker-runtime
+
+      - name: API import closure check
+        # AST scan of backend/server.py recursive import graph (visits
+        # 391 internal files including all routers / bootstrap / domains),
+        # validated against backend/requirements/api-runtime.txt
+        # (Pragmatic case from Phase 6.0 / 6.1). Fails if any third-party
+        # module reachable from server.py is NOT covered by the
+        # production backend API subset. CAVEAT: this is static-only —
+        # CI Docker build of backend/Dockerfile remains the authoritative
+        # boot smoke (see Phase 6.1 run.md).
+        run: python backend/scripts/check_api_import_closure.py --target api-runtime
+
+  # ============ FRONTEND LINTING (HARD GATE) ============
+  frontend-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          yarn install --ignore-engines
+
+      - name: Run ESLint (hard gate)
+        run: |
+          cd frontend
+          npx eslint src/ --quiet
+
+  # ============ BACKEND TESTS (HARD GATE) ============
   backend-test:
     runs-on: ubuntu-latest
     needs: backend-lint
@@ -48,9 +125,18 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -61,55 +147,207 @@ jobs:
       - name: Install backend dependencies
         run: |
           cd backend
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx pytest-cov
+          pip install -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+          bash scripts/post_install.sh
+          pip install pytest pytest-asyncio httpx pytest-cov pytest-timeout
 
-      - name: Seed test database
+      - name: Seed test database (hard gate)
         run: |
           cd backend
-          python create_test_user.py || python create_demo_users.py || echo "Seed script not found - will create user in test"
+          python scripts/create_test_user.py || python create_demo_users.py || { echo "::error::No seed script found — tests require a seeded database"; exit 1; }
         env:
           MONGO_URL: ${{ env.MONGO_URL }}
+          DB_NAME: ${{ env.DB_NAME }}
 
       - name: Start backend server
         run: |
           cd backend
           uvicorn server:app --host 0.0.0.0 --port 8001 &
-          echo "Waiting for server..."
           for i in $(seq 1 30); do
             if curl -s http://localhost:8001/api/docs > /dev/null 2>&1; then
-              echo "Server ready!"
+              echo "Server ready"
               break
             fi
             sleep 2
           done
         env:
           MONGO_URL: ${{ env.MONGO_URL }}
+          DB_NAME: ${{ env.DB_NAME }}
+          REDIS_URL: redis://localhost:6379/0
           JWT_SECRET: ${{ env.JWT_SECRET }}
+          TESTING: "1"
 
-      - name: Run comprehensive tests
+      - name: Run curated CI test suite (hard gate)
         run: |
           cd backend
-          python -m pytest tests/ -v --tb=short -q --junitxml=test-results.xml 2>&1 || true
+          python -m pytest \
+            tests/test_hardening_comprehensive.py \
+            tests/resilience/ \
+            tests/test_controlplane.py \
+            tests/test_crypto_engine.py \
+            tests/test_outbox_pattern.py \
+            tests/test_import_bridge.py \
+            tests/test_helpers.py \
+            tests/test_core_lockdown.py \
+            tests/test_audit_service_wiring.py \
+            tests/test_hardening_multi_phase.py \
+            tests/test_atomic_booking.py \
+            tests/battle/test_booking_integrity.py \
+            tests/battle/test_sprint2_hold_ooo.py \
+            tests/battle/test_regression_guards.py \
+            tests/battle/test_room_type_inventory.py \
+            tests/test_safety_rebinding.py \
+            tests/test_egress_ci_guard.py \
+            tests/test_production_blockers.py \
+            tests/test_route_shadowing.py \
+            tests/test_hr_shifts_overnight.py \
+            tests/integration/test_academy_cert_race_live.py \
+            -v --tb=short -q --timeout=30 --junitxml=test-results.xml
         env:
           MONGO_URL: ${{ env.MONGO_URL }}
+          DB_NAME: ${{ env.DB_NAME }}
+          REDIS_URL: redis://localhost:6379/0
           JWT_SECRET: ${{ env.JWT_SECRET }}
+          # Task #261: live-HTTP integration tests (e.g. test_hr_shifts_overnight)
+          # read VITE_BACKEND_URL to target the running backend. CI uvicorn binds
+          # to :8001 (see "Start backend server" step above), not the conftest
+          # default of :8000.
+          VITE_BACKEND_URL: http://localhost:8001
+
+      # Task #323: live_mongo testleri gerçek MongoDB gerektirir; Mongo erişilemezse
+      # doctrine gereği atlanır. REQUIRE_LIVE_MONGO=1 ile bu adım, testler GERÇEKTEN
+      # koşmadıkça (hepsi skip / hiç koşmama) FAIL olur — skip-as-pass false-green
+      # engellenir. Mongo service zaten yukarıda ayağa kalkıyor, bu yüzden CI'da
+      # bu testlerin koşması beklenir.
+      - name: Run live Mongo feedback tests (no-false-green gate)
+        run: |
+          cd backend
+          python -m pytest \
+            tests/test_feedback_reporting_unified_live.py \
+            -m live_mongo --strict-markers -v --tb=short -q --timeout=60 \
+            --junitxml=test-results-live-mongo.xml
+        env:
+          MONGO_URL: ${{ env.MONGO_URL }}
+          DB_NAME: ${{ env.DB_NAME }}
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET: ${{ env.JWT_SECRET }}
+          REQUIRE_LIVE_MONGO: "1"
 
       - name: Upload test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         if: always()
         with:
           name: backend-test-results
-          path: backend/test-results.xml
+          path: |
+            backend/test-results.xml
+            backend/test-results-live-mongo.xml
 
-  # ============ FRONTEND LINT & BUILD ============
+  # ============ LOAD TESTS (HARD GATE) ============
+  load-test:
+    runs-on: ubuntu-latest
+    needs: backend-lint
+    timeout-minutes: 10
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ping:1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+          bash scripts/post_install.sh
+          pip install pytest pytest-asyncio httpx pytest-timeout
+
+      - name: Seed test database
+        run: |
+          cd backend
+          python scripts/create_test_user.py || python create_demo_users.py || { echo "::error::No seed script found"; exit 1; }
+        env:
+          MONGO_URL: ${{ env.MONGO_URL }}
+          DB_NAME: ${{ env.DB_NAME }}
+
+      - name: Start backend server
+        run: |
+          cd backend
+          uvicorn server:app --host 0.0.0.0 --port 8001 &
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:8001/api/docs > /dev/null 2>&1; then
+              echo "Server ready"
+              break
+            fi
+            sleep 2
+          done
+        env:
+          MONGO_URL: ${{ env.MONGO_URL }}
+          DB_NAME: ${{ env.DB_NAME }}
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET: ${{ env.JWT_SECRET }}
+          TESTING: "1"
+
+      - name: Run CI load tests (hard gate)
+        run: |
+          cd backend
+          python -m pytest load_tests/ \
+            -m ci_load \
+            -v --tb=short -q \
+            --timeout=60 \
+            --junitxml=load-test-results.xml \
+            2>&1 | tee load-test-output.log
+          # Parse result summary for GitHub Step Summary
+          echo "## Load Test Results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -20 load-test-output.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        env:
+          MONGO_URL: ${{ env.MONGO_URL }}
+          DB_NAME: ${{ env.DB_NAME }}
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET: ${{ env.JWT_SECRET }}
+          LOAD_TEST_API_URL: http://localhost:8001
+
+      - name: Upload load test results
+        uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: load-test-results
+          path: |
+            backend/load-test-results.xml
+            backend/load-test-output.log
+
+  # ============ FRONTEND BUILD (HARD GATE) ============
   frontend-build:
     runs-on: ubuntu-latest
+    needs: frontend-lint
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'yarn'
@@ -120,131 +358,571 @@ jobs:
           cd frontend
           yarn install --ignore-engines
 
-      - name: Run ESLint
-        run: |
-          cd frontend
-          yarn lint 2>&1 || true
-
-      - name: Build production bundle
+      - name: Build production bundle (hard gate)
         run: |
           cd frontend
           yarn build
         env:
           CI: false
-          REACT_APP_BACKEND_URL: http://localhost:8001
+          VITE_BACKEND_URL: http://localhost:8001
+          VITE_ENABLE_VISUAL_EDITS: false
 
       - name: Check bundle size
         run: |
           cd frontend
           du -sh build/
           echo "--- JS Bundle Sizes ---"
-          find build/static/js -name "*.js" -exec du -sh {} \; | sort -rh | head -10
+          find build/ -name "*.js" -exec du -sh {} \; | sort -rh | head -10
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: frontend-build
           path: frontend/build/
 
-  # ============ SECURITY SCAN ============
+  # ============ SECURITY SCAN (HARD GATE) ============
   security-scan:
     runs-on: ubuntu-latest
-    needs: [backend-lint]
+    needs: [backend-lint, frontend-lint]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Python dependency security audit
-        run: |
-          pip install pip-audit
-          cd backend
-          pip-audit -r requirements.txt --desc --output=security-report.txt 2>&1 || true
-          cat security-report.txt || echo "No security report generated"
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
 
-      - name: Node.js dependency security audit
+      - name: Install frontend dependencies
         run: |
           cd frontend
-          yarn audit --level high 2>&1 || true
+          yarn install --ignore-engines
 
-      - name: Check for hardcoded secrets
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+          bash scripts/post_install.sh
+
+      - name: Python dependency security audit (CRITICAL — hard gate)
+        run: |
+          # CVE-2026-6357 fix: pip prior to 26.1 had a self-update timing issue.
+          # Upgrade pip itself before running the audit so pip is reported as patched.
+          python -m pip install --upgrade 'pip>=26.1'
+          pip install pip-audit
+          cd backend
+          pip-audit --desc \
+            2>&1 | tee security-report.txt
+          echo "--- Checking for CRITICAL/HIGH vulnerabilities ---"
+          pip-audit \
+            --ignore-vuln PYSEC-2024-62920 \
+            --ignore-vuln PYSEC-2024-113 \
+            --ignore-vuln CVE-2024-23342 \
+            --ignore-vuln GHSA-rf74-v2fm-23pw \
+            --ignore-vuln CVE-2026-33230 \
+            --ignore-vuln CVE-2026-33231 \
+            --ignore-vuln CVE-2026-4539 \
+            --ignore-vuln CVE-2026-3219 \
+            --ignore-vuln PYSEC-2024-271 \
+            --ignore-vuln PYSEC-2024-277 \
+            --ignore-vuln PYSEC-2026-97 \
+            --ignore-vuln PYSEC-2025-183 \
+            --ignore-vuln PYSEC-2025-185 \
+            || { echo "::error::CRITICAL vulnerabilities found — see security-report.txt"; exit 1; }
+          # CVE-2026-3219: pip itself (installer tool, not an app runtime dependency).
+          # No fix version published yet; pip's concatenated tar/zip handling is not
+          # exercised by our deploy pipeline (we install from pinned requirements only).
+
+      - name: Node.js dependency security audit (high — hard gate)
+        run: |
+          cd frontend
+          AUDIT_EXIT=0
+          yarn audit --level high || AUDIT_EXIT=$?
+          if [ $((AUDIT_EXIT & 24)) -ne 0 ]; then
+            echo "::error::High or critical Node.js vulnerabilities found"
+            exit 1
+          fi
+          echo "No high/critical vulnerabilities (exit code: $AUDIT_EXIT)"
+
+      - name: Check for hardcoded secrets (hard gate)
         run: |
           echo "Scanning for potential secrets..."
-          # Check for common secret patterns (exclude test files and .env)
-          grep -rn "password\s*=\s*['\"]" backend/ --include="*.py" \
+          FOUND=0
+          # NOTE: || true is REQUIRED here — grep returns exit 1 when no match
+          # is found, which is the SUCCESS case. The FOUND flag handles the gate.
+          grep -rn "password\s*=\s*['\"][^'\"]\{8,\}" backend/ --include="*.py" \
             --exclude="*test*" --exclude="*demo*" --exclude="*seed*" \
-            --exclude="*create_*" --exclude="requirements.txt" || echo "No hardcoded passwords found"
-          grep -rn "secret\s*=\s*['\"]sk-\|api_key\s*=\s*['\"]" backend/ --include="*.py" \
-            --exclude="*test*" --exclude="*.env" || echo "No hardcoded API keys found"
+            --exclude="*create_*"\
+            --exclude="*conftest*" && FOUND=1 || true
+          grep -rn "api_key\s*=\s*['\"]sk-" backend/ --include="*.py" \
+            --exclude="*test*" --exclude="*.env" && FOUND=1 || true
+          grep -rn "JWT_SECRET\s*=\s*['\"]" backend/ --include="*.py" \
+            --exclude="*test*" --exclude="*.env" && FOUND=1 || true
+          grep -rn "AKIA[A-Z0-9]\{16\}" backend/ --include="*.py" && FOUND=1 || true
+          if [ "$FOUND" -eq 1 ]; then
+            echo "::error::Hardcoded secrets detected — fix before merge"
+            exit 1
+          else
+            echo "No hardcoded secrets found"
+          fi
+
+      - name: Trivy filesystem scan (CRITICAL — hard gate)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL
+          exit-code: 1
+
+      - name: Trivy HIGH severity (warning only)
+        if: always()
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH
+          exit-code: 0
 
       - name: Upload security report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         if: always()
         with:
           name: security-report
           path: backend/security-report.txt
 
-  # ============ DOCKER BUILD ============
+  # ============ DOCKER BUILD & PUSH ============
   docker-build:
     runs-on: ubuntu-latest
-    needs: [backend-test, frontend-build]
+    needs: [backend-test, load-test, frontend-build, security-scan]
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging'
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Login to Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
-      - name: Build backend image
-        run: |
-          echo "Building backend Docker image..."
-          # docker build -t roomops-backend:${{ github.sha }} ./backend
-          echo "Backend image built successfully (dry run)"
+      - name: Build & Push Backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max,ignore-error=true
 
-      - name: Build frontend image
-        run: |
-          echo "Building frontend Docker image..."
-          # docker build -t roomops-frontend:${{ github.sha }} ./frontend
-          echo "Frontend image built successfully (dry run)"
+      - name: Build & Push Frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          build-args: |
+            VITE_BACKEND_URL=${{ secrets.VITE_BACKEND_URL }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max,ignore-error=true
+
+      - name: Build & Push Worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./worker/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-worker:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-worker:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max,ignore-error=true
 
   # ============ DEPLOY STAGING ============
   deploy-staging:
     runs-on: ubuntu-latest
-    needs: [docker-build, security-scan]
+    needs: [docker-build]
     if: github.ref == 'refs/heads/staging'
     environment: staging
     steps:
-      - name: Deploy to staging
-        run: |
-          echo "Deploying to staging environment..."
-          echo "SHA: ${{ github.sha }}"
-          # kubectl set image deployment/roomops-backend roomops-backend=roomops-backend:${{ github.sha }}
-          # kubectl set image deployment/roomops-frontend roomops-frontend=roomops-frontend:${{ github.sha }}
-          echo "Staging deployment complete (dry run)"
+      - uses: actions/checkout@v5
 
-  # ============ DEPLOY PRODUCTION ============
+      - name: Pre-deploy — Record current revision
+        id: pre_deploy
+        run: |
+          if [ -z "${{ secrets.KUBECONFIG }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Staging deployment skipped — KUBECONFIG not configured"
+            exit 0
+          fi
+          echo "${{ secrets.KUBECONFIG }}" > /tmp/kubeconfig
+          export KUBECONFIG=/tmp/kubeconfig
+          BACKEND_REV=$(kubectl -n syroce rollout history deployment/syroce-backend --revision=0 2>/dev/null | tail -1 || echo "none")
+          FRONTEND_REV=$(kubectl -n syroce rollout history deployment/syroce-frontend --revision=0 2>/dev/null | tail -1 || echo "none")
+          echo "backend_rev=$BACKEND_REV" >> "$GITHUB_OUTPUT"
+          echo "frontend_rev=$FRONTEND_REV" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to staging
+        if: steps.pre_deploy.outputs.skip != 'true'
+        run: |
+          echo "${{ secrets.KUBECONFIG }}" > /tmp/kubeconfig
+          export KUBECONFIG=/tmp/kubeconfig
+          echo "Deploying SHA ${{ github.sha }} to staging..."
+          kubectl -n syroce set image deployment/syroce-backend backend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}
+          kubectl -n syroce set image deployment/syroce-frontend frontend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
+          kubectl -n syroce set image deployment/syroce-worker worker=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-worker:${{ github.sha }}
+          echo "Waiting for backend rollout..."
+          kubectl -n syroce rollout status deployment/syroce-backend --timeout=300s
+          echo "Waiting for frontend rollout..."
+          kubectl -n syroce rollout status deployment/syroce-frontend --timeout=300s
+          echo "Waiting for worker rollout..."
+          kubectl -n syroce rollout status deployment/syroce-worker --timeout=300s
+
+      - name: Post-deploy — Smoke test
+        if: steps.pre_deploy.outputs.skip != 'true'
+        id: smoke_test
+        run: |
+          if [ -z "${{ secrets.STAGING_URL }}" ]; then
+            echo "::warning::Smoke test skipped — STAGING_URL not configured"
+            exit 0
+          fi
+
+          echo "## Smoke Test — Staging" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Endpoint | Status | Latency | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|:---------|:-------|:--------|:-------|" >> $GITHUB_STEP_SUMMARY
+
+          FAIL=0
+          SMOKE_JSON='{"endpoints":['
+          FIRST=true
+
+          smoke_check() {
+            local NAME="$1" EP="$2"
+            local URL="${{ secrets.STAGING_URL }}${EP}"
+            local T0=$(date +%s%N)
+            local CODE=$(curl -sf "$URL" -o /dev/null -w "%{http_code}" --max-time 15 2>/dev/null) || CODE="000"
+            local T1=$(date +%s%N)
+            local MS=$(( (T1 - T0) / 1000000 ))
+            local RES=$( [ "$CODE" = "200" ] && echo "OK" || echo "FAIL" )
+            echo "| \`${EP}\` | ${CODE} | ${MS}ms | ${RES} |" >> $GITHUB_STEP_SUMMARY
+            if [ "$FIRST" = "true" ]; then FIRST=false; else SMOKE_JSON="${SMOKE_JSON},"; fi
+            SMOKE_JSON="${SMOKE_JSON}{\"name\":\"${NAME}\",\"path\":\"${EP}\",\"status\":${CODE},\"latency_ms\":${MS},\"result\":\"${RES}\"}"
+            [ "$CODE" = "200" ] && return 0 || return 1
+          }
+
+          smoke_check "Health API" "/api/health/" || FAIL=1
+          smoke_check "Frontend" "/" || FAIL=1
+          smoke_check "API Docs" "/api/docs" || echo "::warning::Docs endpoint not reachable (non-critical)"
+          smoke_check "Channel Health" "/api/ops/dashboard/channel-health" || FAIL=1
+
+          SMOKE_JSON="${SMOKE_JSON}]}"
+          echo "$SMOKE_JSON" > /tmp/smoke_results.json
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "$FAIL" -eq 0 ]; then
+            echo "> All critical smoke tests passed" >> $GITHUB_STEP_SUMMARY
+            echo "smoke_ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "> **CRITICAL: Smoke test failed**" >> $GITHUB_STEP_SUMMARY
+            echo "smoke_ok=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Rollback on failure
+        if: failure() && steps.pre_deploy.outputs.skip != 'true'
+        run: |
+          echo "::error::Staging deploy failed — initiating rollback"
+          echo "${{ secrets.KUBECONFIG }}" > /tmp/kubeconfig
+          export KUBECONFIG=/tmp/kubeconfig
+          kubectl -n syroce rollout undo deployment/syroce-backend
+          kubectl -n syroce rollout undo deployment/syroce-frontend
+          kubectl -n syroce rollout undo deployment/syroce-worker
+          echo "Waiting for rollback to stabilize..."
+          kubectl -n syroce rollout status deployment/syroce-backend --timeout=180s
+          kubectl -n syroce rollout status deployment/syroce-frontend --timeout=180s
+          echo "Rollback complete"
+
+          echo "## Rollback Executed — Staging" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|:-------|:------|" >> $GITHUB_STEP_SUMMARY
+          echo "| SHA | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Trigger | Deploy failure |" >> $GITHUB_STEP_SUMMARY
+          echo "| Action | \`kubectl rollout undo\` (backend + frontend + worker) |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Record deploy event in Control Plane
+        if: always() && steps.pre_deploy.outputs.skip != 'true'
+        run: |
+          if [ -z "${{ secrets.BACKEND_API_URL }}" ]; then
+            echo "::notice title=Deploy Event::Deploy event recording skipped — BACKEND_API_URL not configured"
+            echo "Deploy event (local): sha=${{ github.sha }} env=staging status=${{ job.status }} actor=${{ github.actor }}"
+            exit 0
+          fi
+          SMOKE=$(cat /tmp/smoke_results.json 2>/dev/null || echo '{}')
+          IS_ROLLBACK=$( [ "${{ job.status }}" != "success" ] && echo "true" || echo "false" )
+          curl -sf -X POST "${{ secrets.BACKEND_API_URL }}/api/ops/deploys" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"sha\": \"${{ github.sha }}\",
+              \"environment\": \"staging\",
+              \"status\": \"${{ job.status }}\",
+              \"actor\": \"${{ github.actor }}\",
+              \"branch\": \"${{ github.ref_name }}\",
+              \"smoke_test\": $SMOKE,
+              \"rollback\": $IS_ROLLBACK
+            }" || echo "::warning::Failed to record deploy event in Control Plane"
+            # NOTE: || echo is intentional — observability recording failure must not block a successful deploy
+
+      - name: Cleanup kubeconfig
+        if: always()
+        run: rm -f /tmp/kubeconfig
+
+      - name: Notify — Staging deploy result
+        if: always() && steps.pre_deploy.outputs.skip != 'true'
+        run: |
+          STATUS="${{ job.status }}"
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:8}"
+          ACTOR="${{ github.actor }}"
+          BRANCH="${{ github.ref_name }}"
+
+          # Always write structured summary to GitHub Actions
+          echo "## Deploy Result — Staging" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|:------|:------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | **${STATUS}** |" >> $GITHUB_STEP_SUMMARY
+          echo "| SHA | \`${SHORT_SHA}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | \`${BRANCH}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Actor | ${ACTOR} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | staging |" >> $GITHUB_STEP_SUMMARY
+
+          # GitHub annotations for visibility
+          if [ "$STATUS" = "success" ]; then
+            echo "::notice title=Staging Deploy Basarili::${SHORT_SHA} → staging by ${ACTOR}"
+          else
+            echo "::error title=Staging Deploy Basarisiz::${SHORT_SHA} → staging by ${ACTOR} — rollback initiated"
+          fi
+
+          # Slack webhook (if configured)
+          if [ -z "${{ secrets.SLACK_DEPLOY_WEBHOOK }}" ]; then
+            echo "::notice title=Slack Bildirimi::Slack bildirimi atlanıyor — SLACK_DEPLOY_WEBHOOK yapılandırılmamış. GitHub Actions Summary'de sonuçlar mevcut."
+            exit 0
+          fi
+          if [ "$STATUS" = "success" ]; then
+            COLOR="#36a64f"
+            TITLE="Staging Deploy Basarili"
+          else
+            COLOR="#ff0000"
+            TITLE="Staging Deploy Basarisiz — Rollback Yapildi"
+          fi
+          curl -sf -X POST "${{ secrets.SLACK_DEPLOY_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"attachments\":[{\"color\":\"$COLOR\",\"title\":\"$TITLE\",\"fields\":[{\"title\":\"SHA\",\"value\":\"$SHORT_SHA\",\"short\":true},{\"title\":\"Actor\",\"value\":\"$ACTOR\",\"short\":true},{\"title\":\"Branch\",\"value\":\"$BRANCH\",\"short\":true},{\"title\":\"Environment\",\"value\":\"staging\",\"short\":true}]}]}" || true
+          # NOTE: || true is intentional — Slack notification failure must not block a successful deploy
   deploy-production:
     runs-on: ubuntu-latest
-    needs: [docker-build, security-scan]
+    needs: [docker-build]
     if: github.ref == 'refs/heads/main'
     environment: production
     steps:
+      - uses: actions/checkout@v5
+
+      - name: Pre-deploy — DB backup
+        id: backup
+        run: |
+          if [ -z "${{ secrets.MONGO_BACKUP_URI }}" ]; then
+            echo "::warning::DB backup skipped — MONGO_BACKUP_URI not configured"
+            exit 0
+          fi
+          echo "Creating pre-deploy backup..."
+          mongodump --uri="${{ secrets.MONGO_BACKUP_URI }}" --archive=/tmp/pre-deploy-${{ github.sha }}.gz --gzip
+          echo "Backup created: pre-deploy-${{ github.sha }}.gz"
+
+      - name: Pre-deploy — Record current revision
+        id: pre_deploy
+        run: |
+          if [ -z "${{ secrets.KUBECONFIG }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Production deployment skipped — KUBECONFIG not configured"
+            exit 0
+          fi
+          echo "${{ secrets.KUBECONFIG }}" > /tmp/kubeconfig
+          export KUBECONFIG=/tmp/kubeconfig
+          BACKEND_REV=$(kubectl -n syroce get deployment syroce-backend -o jsonpath='{.metadata.generation}' 2>/dev/null || echo "0")
+          echo "backend_gen=$BACKEND_REV" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
       - name: Deploy to production
+        if: steps.pre_deploy.outputs.skip != 'true'
         run: |
-          echo "Deploying to production environment..."
-          echo "SHA: ${{ github.sha }}"
-          # kubectl set image deployment/roomops-backend roomops-backend=roomops-backend:${{ github.sha }}
-          # kubectl set image deployment/roomops-frontend roomops-frontend=roomops-frontend:${{ github.sha }}
-          echo "Production deployment complete (dry run)"
+          echo "${{ secrets.KUBECONFIG }}" > /tmp/kubeconfig
+          export KUBECONFIG=/tmp/kubeconfig
+          echo "Deploying SHA ${{ github.sha }} to production..."
+          kubectl -n syroce set image deployment/syroce-backend backend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}
+          kubectl -n syroce set image deployment/syroce-frontend frontend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
+          kubectl -n syroce set image deployment/syroce-worker worker=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-worker:${{ github.sha }}
+          echo "Waiting for backend rollout..."
+          kubectl -n syroce rollout status deployment/syroce-backend --timeout=600s
+          echo "Waiting for frontend rollout..."
+          kubectl -n syroce rollout status deployment/syroce-frontend --timeout=300s
+          echo "Waiting for worker rollout..."
+          kubectl -n syroce rollout status deployment/syroce-worker --timeout=300s
 
-      - name: Notify deployment
+      - name: Post-deploy — Smoke test
+        if: steps.pre_deploy.outputs.skip != 'true'
+        id: smoke_test
         run: |
-          echo "✅ Production deployment notification sent"
-          echo "Version: ${{ github.sha }}"
-          echo "Branch: ${{ github.ref_name }}"
-          echo "Actor: ${{ github.actor }}"
+          if [ -z "${{ secrets.PRODUCTION_URL }}" ]; then
+            echo "::warning::Smoke test skipped — PRODUCTION_URL not configured"
+            exit 0
+          fi
 
-# CI/CD v2.1 - Fixed emergentintegrations and litellm filtering for GitHub Actions
+          echo "## Smoke Test — Production" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Endpoint | Status | Latency | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|:---------|:-------|:--------|:-------|" >> $GITHUB_STEP_SUMMARY
+
+          FAIL=0
+          SMOKE_JSON='{"endpoints":['
+          FIRST=true
+
+          smoke_check() {
+            local NAME="$1" EP="$2"
+            local URL="${{ secrets.PRODUCTION_URL }}${EP}"
+            local T0=$(date +%s%N)
+            local CODE=$(curl -sf "$URL" -o /dev/null -w "%{http_code}" --max-time 15 2>/dev/null) || CODE="000"
+            local T1=$(date +%s%N)
+            local MS=$(( (T1 - T0) / 1000000 ))
+            local RES=$( [ "$CODE" = "200" ] && echo "OK" || echo "FAIL" )
+            echo "| \`${EP}\` | ${CODE} | ${MS}ms | ${RES} |" >> $GITHUB_STEP_SUMMARY
+            if [ "$FIRST" = "true" ]; then FIRST=false; else SMOKE_JSON="${SMOKE_JSON},"; fi
+            SMOKE_JSON="${SMOKE_JSON}{\"name\":\"${NAME}\",\"path\":\"${EP}\",\"status\":${CODE},\"latency_ms\":${MS},\"result\":\"${RES}\"}"
+            [ "$CODE" = "200" ] && return 0 || return 1
+          }
+
+          smoke_check "Health API" "/api/health/" || FAIL=1
+          smoke_check "Frontend" "/" || FAIL=1
+          smoke_check "Channel Health" "/api/ops/dashboard/channel-health" || FAIL=1
+
+          SMOKE_JSON="${SMOKE_JSON}]}"
+          echo "$SMOKE_JSON" > /tmp/smoke_results.json
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "$FAIL" -eq 0 ]; then
+            echo "> All production smoke tests passed" >> $GITHUB_STEP_SUMMARY
+            echo "smoke_ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "> **CRITICAL: Production smoke test failed**" >> $GITHUB_STEP_SUMMARY
+            echo "smoke_ok=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Rollback on failure
+        if: failure() && steps.pre_deploy.outputs.skip != 'true'
+        run: |
+          echo "::error::Production deploy failed — initiating rollback"
+          echo "${{ secrets.KUBECONFIG }}" > /tmp/kubeconfig
+          export KUBECONFIG=/tmp/kubeconfig
+          kubectl -n syroce rollout undo deployment/syroce-backend
+          kubectl -n syroce rollout undo deployment/syroce-frontend
+          kubectl -n syroce rollout undo deployment/syroce-worker
+          echo "Waiting for rollback to stabilize..."
+          kubectl -n syroce rollout status deployment/syroce-backend --timeout=300s
+          kubectl -n syroce rollout status deployment/syroce-frontend --timeout=300s
+          echo "Rollback complete"
+
+          echo "## Rollback Executed — Production" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|:-------|:------|" >> $GITHUB_STEP_SUMMARY
+          echo "| SHA | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Trigger | Deploy failure |" >> $GITHUB_STEP_SUMMARY
+          echo "| Action | \`kubectl rollout undo\` (backend + frontend + worker) |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Record deploy event in Control Plane
+        if: always() && steps.pre_deploy.outputs.skip != 'true'
+        run: |
+          if [ -z "${{ secrets.BACKEND_API_URL }}" ]; then
+            echo "::notice title=Deploy Event::Deploy event recording skipped — BACKEND_API_URL not configured"
+            echo "Deploy event (local): sha=${{ github.sha }} env=production status=${{ job.status }} actor=${{ github.actor }}"
+            exit 0
+          fi
+          SMOKE=$(cat /tmp/smoke_results.json 2>/dev/null || echo '{}')
+          IS_ROLLBACK=$( [ "${{ job.status }}" != "success" ] && echo "true" || echo "false" )
+          curl -sf -X POST "${{ secrets.BACKEND_API_URL }}/api/ops/deploys" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"sha\": \"${{ github.sha }}\",
+              \"environment\": \"production\",
+              \"status\": \"${{ job.status }}\",
+              \"actor\": \"${{ github.actor }}\",
+              \"branch\": \"${{ github.ref_name }}\",
+              \"smoke_test\": $SMOKE,
+              \"rollback\": $IS_ROLLBACK
+            }" || echo "::warning::Failed to record deploy event in Control Plane"
+            # NOTE: || echo is intentional — observability recording failure must not block a successful deploy
+
+      - name: Cleanup kubeconfig
+        if: always()
+        run: rm -f /tmp/kubeconfig
+
+      - name: Notify — Production deploy result
+        if: always() && steps.pre_deploy.outputs.skip != 'true'
+        run: |
+          STATUS="${{ job.status }}"
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:8}"
+          ACTOR="${{ github.actor }}"
+          BRANCH="${{ github.ref_name }}"
+
+          # Always write structured summary to GitHub Actions
+          echo "## Deploy Result — Production" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|:------|:------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | **${STATUS}** |" >> $GITHUB_STEP_SUMMARY
+          echo "| SHA | \`${SHORT_SHA}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | \`${BRANCH}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Actor | ${ACTOR} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | **production** |" >> $GITHUB_STEP_SUMMARY
+
+          # GitHub annotations
+          if [ "$STATUS" = "success" ]; then
+            echo "::notice title=PROD Deploy Basarili::${SHORT_SHA} → production by ${ACTOR}"
+          else
+            echo "::error title=PROD Deploy BASARISIZ::${SHORT_SHA} → production by ${ACTOR} — rollback initiated"
+          fi
+
+          # Slack webhook (if configured)
+          if [ -z "${{ secrets.SLACK_DEPLOY_WEBHOOK }}" ]; then
+            echo "::notice title=Slack Bildirimi::Slack bildirimi atlanıyor — SLACK_DEPLOY_WEBHOOK yapılandırılmamış. GitHub Actions Summary'de sonuçlar mevcut."
+            exit 0
+          fi
+          if [ "$STATUS" = "success" ]; then
+            COLOR="#36a64f"
+            TITLE="PROD Deploy Basarili"
+          else
+            COLOR="#ff0000"
+            TITLE="PROD Deploy BASARISIZ — Rollback Yapildi"
+          fi
+          curl -sf -X POST "${{ secrets.SLACK_DEPLOY_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"attachments\":[{\"color\":\"$COLOR\",\"title\":\"$TITLE\",\"fields\":[{\"title\":\"SHA\",\"value\":\"$SHORT_SHA\",\"short\":true},{\"title\":\"Actor\",\"value\":\"$ACTOR\",\"short\":true},{\"title\":\"Branch\",\"value\":\"$BRANCH\",\"short\":true},{\"title\":\"Environment\",\"value\":\"production\",\"short\":true}]}]}" || true
+          # NOTE: || true is intentional — Slack notification failure must not block a successful deploy

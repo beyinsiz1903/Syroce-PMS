@@ -1,188 +1,366 @@
 # Syroce PMS - Product Requirements Document
 
-## Problem Statement
-Turkish hotel Property Management System (PMS) for managing reservations, rooms, guests, folios, and financial operations. Full-stack application with React frontend and FastAPI backend.
+## Original Problem Statement
+Multi-tenant SaaS PMS with unified channel manager. Build a unified Rate & Availability Manager that handles both HotelRunner and Exely. Syroce B2B API infrastructure for agency automation system integration — agencies can authenticate via API key and access hotel content, availability, rates, create/manage reservations through the same channel manager architecture.
 
-## Core Features
-- Reservation Calendar with drag/drop, booking bars, room assignment
-- Reservation Detail Modal (10 tabs) - opened via double-click on booking bar
-- Folio Management: Payments, Cari transfers, Agency payments, Reconciliation
-- Room Management: Room change, availability tracking
-- Guest Management: CRUD, VIP status, communication logs
-- Group Booking Management
-- Deposit Tracking
-- Channel Manager (Exely) integration
-- Night Audit Dashboard
-- Housekeeping Status Management
-- Wake-up Call Management
-- Lost & Found Module
+## User Language
+Turkish (All responses must be in Turkish)
 
-## Architecture
-- Frontend: React + TailwindCSS + Shadcn/UI
+## Core Architecture
+- Frontend: React (Vite) + Shadcn UI
 - Backend: FastAPI + MongoDB
-- Authentication: JWT-based
-- Routing: /api prefix for all backend routes
-
-### Calendar Architecture (Refactored)
-```
-/app/frontend/src/pages/
-  ReservationCalendar.js       (~800 lines - main orchestrator)
-  calendar/
-    CalendarHeader.js          (header, navigation, buttons)
-    CalendarGrid.js            (room grid, booking bars, drag/drop)
-    CalendarOccupancy.js       (occupancy chart SVG)
-    CalendarDialogs.js         (NewBooking, Details, MoveReason, FindRoom)
-    calendarHelpers.js         (pure utility functions)
-    index.js                   (barrel exports)
-```
-
-### Calendar UX - Direct Room Booking (Session Latest)
-- When clicking a room cell in the calendar grid, the booking dialog shows the selected room info directly without room type/room selection dropdowns
-- When clicking "Rezervasyon ekle" button in the header, the full room selection is shown
-- Drag-and-drop for room/date changes is already implemented
+- Channel Integrations: HotelRunner v2 API, Exely SOAP API, Syroce B2B API
+- Encryption: AES-256-GCM for credentials
+- B2B Auth: API Key (SHA256 hashed, X-API-Key header)
+- Tenant Isolation: TenantAwareDBProxy with STRICT_TENANT_MODE=true
 
 ## What's Been Implemented
 
-### Session 1-3 (Previous)
-- [x] Full calendar view with booking bars
-- [x] Room CRUD and management
-- [x] Guest management
-- [x] Booking CRUD with Idempotency-Key
-- [x] Basic folio/charges/payments
-- [x] Exely channel manager integration
-- [x] Rate plan management
-- [x] Dashboard
+### Unified Rate Manager (DONE)
+### Role-Based Delete Protection on Content Distribution (DONE - 2026-04-08)
+### Syroce B2B API (DONE - 2026-04-08)
+### B2B API Documentation Page (DONE - 2026-04-08)
+### Webhook System (DONE - 2026-04-08)
+### Deployment Fixes (DONE - 2026-04-08)
+### CI Test Fixes — TenantViolationError (DONE - 2026-04-09)
+### RMS Module — Backend Endpoint Fixes (DONE - 2026-04-08)
+### Advanced Menu Icon Fix (DONE - 2026-04-08)
+### Advanced Module Consolidation (DONE - 2026-04-08)
 
-### Session 4 (Previous)
-- [x] Reservation Detail Modal (10 tabs)
-- [x] Room Change UI tab
-- [x] Group Reservation Management page
-- [x] Guest Communication History tab
-- [x] Deposit Tracking page and tab
-- [x] ReservationCalendar.js initial refactoring
+### RMS Module — Complete Rewrite to Internal-Data-Driven System (DONE - 2026-04-08)
+- **Motivation**: User decided not to rely on competitor pricing (web scraping is fragile, OTA rate shopping services cost $75-400/mo). RMS now uses only internal hotel data.
+- **7-Factor Pricing Algorithm**:
+  1. Doluluk Orani (Occupancy) — 25% weight
+  2. Rezervasyon Hizi / Pickup — 20% weight
+  3. Lead Time (Days to arrival) — 15% weight
+  4. Haftanin Gunu & Mevsimsellik — 15% weight
+  5. Iptal Orani (Cancellation Rate) — 10% weight
+  6. Kanal Bazli Performans (Channel Performance) — 10% weight
+  7. Gecmis Yil Karsilastirma (YoY) — 5% weight
+- **New Backend Endpoints**:
+  - `GET /api/rms/dashboard-kpis` — Comprehensive KPIs (doluluk, ADR, RevPAR, pickup, cancel rate, channels, daily trend)
+  - `POST /api/rms/generate-pricing` — New 7-factor pricing engine
+  - `GET/POST/PUT/DELETE /api/rms/yield-rules` — Yield rules CRUD
+  - `GET/POST/PUT/DELETE /api/rms/seasonal-calendar` — Seasonal calendar CRUD
+  - `GET /api/rms/channel-performance` — Monthly channel breakdown
+- **New Frontend Components**:
+  - `RMSModule.jsx` — Complete rewrite: KPI cards (TRY), doluluk trendi chart, kanal dagilimi doughnut, oda tipi performansi bar chart, fiyat onerileri table, kanal detay tablosu
+  - `YieldRulesPanel.jsx` — Yield rules CRUD UI with priority, conditions, actions
+  - `SeasonCalendarPanel.jsx` — Seasonal calendar with visual timeline + CRUD
+  - `GelirYonetimiPage.jsx` — 4 tabs: Dashboard, Yield Kurallari, Sezon Takvimi, Autopilot
+- **Seed Data**: auto_seed.py updated with:
+  - TRY prices (Standard: 4500, Deluxe: 6800, Superior: 9200, Suite: 14000)
+  - 265 bookings (6 months history with channel distribution)
+  - 6 room types, 5 yield rules, 6 seasonal calendar entries
+- **Test Result**: Backend 16/16, Frontend 100% — iteration_200.json
 
-### Session 5
-- [x] Fixed balance calculation (now includes total_amount in folio balance)
-- [x] Added Check-in/Check-out buttons to modal sidebar
-- [x] Added "Acenteye Aktar" and "Mahsuplastir" buttons to Folyolar tab
-- [x] Added "room_service/Oda Servisi" category to extra charges
-- [x] New APIs: reconcile, transfer-to-agency
-- [x] All tested: 17/17 backend tests passed
+### Messaging Dashboard Layout Fix (DONE - 2026-04-08)
+- Fixed missing Layout wrapper on MessagingDashboard — top navigation was disappearing when navigating to `/messaging-dashboard`
+- Wrapped component in `<Layout>` to match other consolidated page patterns
 
-### Session 6 (P2 Features)
-- [x] Housekeeping Status Management
-- [x] Wake-up Call Management
-- [x] Lost & Found Module
-- [x] Hotel Settings for Invoice
-- [x] PDF Invoice from Folio
-- [x] Group Folio Merging
-- [x] Auto-Dirty on Checkout
+### Messaging Center — Email (SMTP) & WhatsApp (Meta Business API) Integration (DONE - 2026-04-08)
+- **No third-party intermediaries** — Direct SMTP for email, Meta WhatsApp Business Cloud API for WhatsApp
+- **Backend**: SMTPEmailProvider + WhatsAppProvider with sandbox/live modes, settings API, template CRUD, send, delivery logs, metrics
+- **9 Pre-built Templates**: 5 WhatsApp (Hos Geldiniz, Yol Tarifi, Tesis Bilgileri, Puan/Degerlendirme, Iletisim) + 4 Email (Rezervasyon Onay, Fatura, Kampanya, Check-out Tesekkur)
+- **Frontend**: 6-tab dashboard (Mesaj Gonder, Sablonlar, Otomasyon, Loglar, Metrikler, Ayarlar)
+- **Settings Panel**: SMTP (host, port, user, pass, from_email, TLS) + WhatsApp (access_token, phone_number_id) configuration
+- **Sandbox Mode**: Demo providers auto-seeded, simulated send — ready for real credentials
+- **New Endpoints**: `/api/messaging-center/settings`, `/api/messaging-center/settings/email`, `/api/messaging-center/settings/whatsapp`, `/api/messaging-center/send`, `/api/messaging-center/seed-demo`
 
-### Session 7 (Mar 18, 2026)
-- [x] **Night Audit Dashboard** - New `/night-audit` page
-- [x] **ReservationCalendar.js Refactoring** - Reduced from 2936 to ~800 lines
-- [x] **Code Cleanup** - Removed .backup files
-- [x] All tested: Frontend 100% (iteration_90.json)
+### Messaging Automation — Event-Triggered Messaging (DONE - 2026-04-08)
+- **Booking event hooks**: check-in/check-out/confirm status changes trigger automatic messages to guests
+- **5 Default Rules**: Rez Onay (email), Check-in Oncesi Yol Tarifi (WhatsApp), Hos Geldiniz (WhatsApp), Check-out Tesekkur (email), Degerlendirme Linki (WhatsApp)
+- **Automation Engine**: `fire_booking_event()` hooked into `UpdateReservationService` and `approve_booking`
+- **Frontend**: Otomasyon tab with rule CRUD, enable/disable toggle, test trigger, summary cards, "Nasil Calisir?" guide
+- **New Endpoints**: `/api/messaging-center/automation/triggers`, `/api/messaging-center/automation/rules` (CRUD), `/api/messaging-center/automation/test/{id}`
+- **Test Result**: Backend 12/13 (1 skipped - no pending bookings), Frontend 100% — iteration_202.json
 
-### Session 8 (Mar 18, 2026)
-- [x] **Night Audit Automatic Scheduling** - Full EOD automation with background scheduler
-- [x] All tested: Backend 13/13 + Frontend 100% (iteration_91.json)
+### Pre-Arrival Daily Scheduler (DONE - 2026-04-08)
+- **Background Worker**: `PreArrivalScheduler` runs every 6h (configurable), scans confirmed bookings with tomorrow's check-in date
+- **Deduplication**: Checks `delivery_logs` to avoid re-sending `pre_arrival` messages for same booking
+- **In-App Notifications**: Creates notifications on successful/failed automation sends (visible in NotificationBell)
+- **Frontend**: Scheduler card at bottom of Otomasyon tab with Start/Stop/Simdi Tara controls and metrics
+- **New Endpoints**: `/api/messaging-center/scheduler/status`, `/scheduler/start`, `/scheduler/stop`, `/scheduler/run-now`
+- **Test Result**: Backend 13/13, Frontend 100% — iteration_203.json
 
-### Session 9 (Mar 18, 2026)
-- [x] **Financial Module Hardening** - Comprehensive financial reporting and integrity system
-- [x] All tested: Backend 31/31 + Frontend 100% (iteration_92.json)
+### Real-time Messaging Activity Feed (DONE - 2026-04-08)
+- **Unified Activity Feed**: Combines automation notifications + delivery logs into single timeline
+- **Auto-Refresh**: Frontend polls every 10 seconds for near-real-time updates
+- **7-Tab Dashboard**: Added "Aktivite" tab showing color-coded delivery statuses
+- **Automation Notifications**: Every automation trigger (success/failure) creates in-app notification
+- **New Endpoint**: `/api/messaging-center/activity?limit=N`
+- **Test Result**: Backend 13/13, Frontend 100% — iteration_203.json
 
-### Session 10 (Mar 19, 2026)
-- [x] **Top Navigation Simplification** - Major UX overhaul of the top menu bar
-- [x] All tested: Frontend 100% (iteration_93.json, iteration_94.json)
+### i18n (Internationalization) Fix — Dashboard & Navigation (DONE - 2026-04-09)
+- **Problem**: Selecting any language other than Turkish still showed Turkish text everywhere
+- **Root Causes Fixed**:
+  1. `navGroups` translations were completely missing from all locale files — navigation groups fell back to hardcoded Turkish labels
+  2. Many `navKeys` were missing from en.json/tr.json — 30+ keys added
+  3. `CommandCenter.jsx` had all text hardcoded in Turkish — converted to use `useTranslation()` with 15+ translation keys
+  4. `PushSubscriptionManager.jsx` had hardcoded Turkish status labels and toast messages — converted to i18n
+  5. `Dashboard.jsx` Migration Observability card had hardcoded Turkish — converted to `t()` calls
+  6. AI Briefing endpoint (`/ai/dashboard/briefing`) always generated Turkish content — added `lang` query parameter, updated AI service prompts and fallback text to be language-aware
+- **Files Modified**: CommandCenter.jsx, PushSubscriptionManager.jsx, Dashboard.jsx, navItems.jsx (labels used as fallback), endpoints.py, service.py, all 10 locale JSON files
+- **Test Result**: Frontend 100% — iteration_204.json
 
-### Session 11 (Mar 19, 2026)
-- [x] **GroupFolioPage.js Full Implementation** - Enhanced from basic to fully functional
-  - Summary stats cards (total groups, bookings, balance, merge operations)
-  - Search/filter for groups
-  - Expandable booking rows with folio line item details
-  - Payment recording dialog (amount, method, reference)
-  - Merge dialog with accessibility fix
-  - Group total balance display
-  - Merge history log
-  - Backend: 3 new endpoints (group-folio-summary, group-folio/{id}/booking/{bid}, group-folio/payment)
-- [x] **Deprecated Code Cleanup**
-  - Deleted 5 unused frontend pages: GMDashboardOptimized, MarketplaceInventory, PMSModuleOptimized, PerformanceMonitorDashboard, TestLogin
-  - Removed unused lazy imports from App.js: EnhancedGMDashboard, RevenueManagementMobile
-  - Deleted deprecated backend files: server_pms_complete.py (788 lines), legacy_routes.py, scripts/ directory
-  - Updated pyproject.toml and server.py docstring
-- [x] **Dialog Accessibility Fix** - Auto-injected sr-only DialogDescription in Shadcn Dialog component to fix console warnings across all 29+ dialogs
-- [x] All tested: Backend 7/7 + Frontend 100% (iteration_95.json)
 
-### Session 11b (Mar 19, 2026)
-- [x] **Toplu Odeme (Bulk Payment)** - Group-level bulk payment distribution
-  - Backend: POST /api/pms/group-folio/bulk-payment with 3 distribution methods (proportional, equal, balance_only)
-  - Frontend: "Toplu Odeme" button in group detail, dialog with amount, distribution preview, payment method
-  - "Bakiye tutarini doldur" quick-fill button, real-time distribution preview per booking
-- [x] All tested: Backend 100% (3/3) + Frontend 100% (iteration_96.json)
+### Comprehensive Report Center (DONE - 2026-04-09)
+- **Motivation**: User requested 5-star hotel quality reporting center with easy navigation and access to every possible report
+- **Complete redesign of BasicReports.jsx** as professional Report Center with categorized sidebar
+- **19 report sections across 11 categories**:
+  1. Genel Bakış (Executive Overview) — KPI summary, daily movement, mini charts, period comparison
+  2. Gelir Raporu — Revenue trend (30 days), room type revenue, daily/weekly/monthly KPIs
+  3. ADR & RevPAR Analizi — ADR/RevPAR detail cards, 14-day performance chart
+  4. Dönem Karşılaştırma — Period cards (7d/30d/prev30d/YoY), revenue change metrics
+  5. Doluluk Raporu — Occupancy trend with dual-axis chart (% + rooms)
+  6. Oda Tipi Analizi — Room type distribution pie, occupancy bar chart, detail table
+  7. Misafir Listesi — Full guest list with search functionality
+  8. Milliyet Dağılımı — Nationality pie chart + country details list
+  9. Giriş / Çıkış — Today's arrivals/departures tables, in-house guest count
+  10. No-Show & İptaller — No-show and cancellation lists with KPIs
+  11. Oda Durumu — Live room status pie chart with colored stat boxes
+  12. Housekeeping — HK performance bars (completed/pending/in-progress)
+  13. Kanal Dağılımı — Channel source pie + revenue bar + detail table
+  14. Kaynak Analizi — Source comparison cards and chart
+  15. Ödemeler — Payment method pie chart + payment details
+  16. Maliye Listesi — Official guest list with TC/Passport column
+  17. Polis Bildirimi — Police report list with ID details
+  18. Departman Özeti — Multi-department summary (Front Office, HK, Technical, Finance)
+  19. F&B Raporu — Food & Beverage revenue and share metrics
+- **New shared component library**: `/app/frontend/src/pages/reports/ReportHelpers.jsx`
+  - KPICard, StatBox, SectionHeader, EmptyState, CustomTooltip components
+  - formatCurrency, formatNumber, formatPercent, calcChange utilities
+- **Professional sidebar navigation** with category headers, active state highlighting, mobile dropdown fallback
+- **Test Result**: Frontend 95% pass — iteration_205.json (all 19 sections navigable and functional)
 
-### Session 12 (Mar 19, 2026)
-- [x] **11 Calendar & Reservation Improvements**
-  1. Calendar "Rezervasyonlar" button active - navigates to /pms?tab=bookings
-  2. "Rezervasyon ekle" dialog - room type dropdown + room selection working
-  3. "Tarihe Git" - functional date picker popup with "Bugun" shortcut
-  4. Calendar nav arrows - overlapping scroll (SCROLL_DAYS = daysToShow/3) instead of full page jump
-  5. Genel Bakis (FindRoom) - check-out auto-sets from check-in date
-  6. Calendar colors simplified: green (checked_in), red (checked_out/past), gray (future). Agency names/colors removed
-  7. Room change dialog - shows room types with availability count, available rooms per type, upgrade pricing options (current/upgrade/custom)
-  8. Voucher tab - generates professional HTML voucher, print/PDF support
-  9. Cancel tab - reason selection, cancel types, no-show option with charge (per night/full stay/custom)
-  10. Invoice tab - billing info fields, selectable charge items, professional HTML invoice, print/PDF
-  11. Cari transfer - "Yeni Cari Olustur" button with full account creation form
-- [x] **New Backend Endpoints**:
-  - POST /api/pms/reservations/{id}/cancel
-  - GET /api/pms/reservations/{id}/voucher
-  - GET /api/pms/reservations/{id}/invoice-charges
-  - POST /api/pms/reservations/{id}/generate-invoice
-  - GET /api/pms/available-rooms-by-type
-  - POST /api/pms/cari-accounts/create
-- [x] All tested: Backend 15/15 + Frontend 100% (iteration_97.json)
+### Reports Navigation Cleanup & Maliye Raporu Consolidation (DONE - 2026-04-09)
+- **Problem**: Reports dropdown had 3 confusing tabs (Reports, Advanced Reports, Report Builder) with duplicate Maliye Raporu appearing in both BasicReports sidebar and the Excel download page (Reports.jsx)
+- **Solution**: 
+  1. Removed "Advanced Reports" (Reports.jsx) from navigation — it was a redundant Excel download page with confusing naming
+  2. Simplified navigation to just 2 items: "Raporlar" (BasicReports) + "Rapor Oluşturucu" (ReportBuilder)
+  3. Old /app/gelismis-raporlar URL now redirects to BasicReports
+- **Files Modified**: navItems.jsx, BasicReports.jsx (renderOfficial), routeDefinitions.jsx
+- **Test Result**: Frontend 8/8 tests passed (100%) — iteration_206.json
+
+### Maliye Listesi Inline Entegrasyon (DONE - 2026-04-09)
+- **Problem**: Maliye Listesi bölümü ayrı bir sayfaya yönlendiriyordu. Kullanıcı tüm işlevselliğin aynı rapor sayfasında inline olarak görünmesini istedi.
+- **Solution**: 
+  1. `renderOfficial()` fonksiyonu tamamen yeniden yazıldı — artık tarih seçimi, veri çekme, filtreleme, CSV indirme, yazdırma ve tam tablo doğrudan inline olarak gösteriliyor
+  2. Özet kartları (Toplam Kayıt, Toplam Kişi, Toplam Tutar, Seçili Tarih) veri yüklendikten sonra görünüyor
+  3. Ayrı sayfa yönlendirmesi kaldırıldı, OfficialGuestList.jsx'deki tüm işlevsellik BasicReports.jsx içine taşındı
+- **Files Modified**: BasicReports.jsx (renderOfficial, state variables, fetch/export/print functions)
+- **Test Result**: Frontend 8/8 tests passed (100%) — iteration_207.json
+
+## Pending / Known Issues
+- litellm CVE-2026-35030: Suppressed in `.trivyignore`. Upgrade to >=1.83.0 blocked by emergentintegrations dependency chain.
+
+### Guest Search Input Visibility Fix (DONE - 2026-04-09)
+- Fixed search input in Misafir Listesi (Guest List) section of Reports module - added `bg-white`, `border-gray-300`, `text-gray-900` for clear visibility
+- Resolved duplicate `data-testid` issue caused by dual mobile/desktop rendering - added `data-testid="reports-mobile-content"` and `data-testid="reports-desktop-content"` wrappers
+- Search filtering verified working (tested with "Deniz" query, correctly returned 6 filtered results)
+
+### Infrastructure Tab Audit & Consolidation (DONE - 2026-04-09)
+- **Audit**: All 11 Infrastructure tabs analyzed — live data connectivity, completeness, API status, functional overlap
+- **Bug Fix 1**: Security Hardening backend HTTP 500 — `tenant_scoped_queries.py` used tenant-proxied `db` for admin isolation check → `TenantViolationError`. Fixed with `_raw_db`.
+- **Bug Fix 2**: PII Strict Mode frontend URL bug — missing `/api` prefix and base URL in axios calls. Fixed.
+- **Consolidation**: Removed 3 overlapping tabs from nav:
+  - `Observability` → System Health already covers it
+  - `PII Strict Mode` → Merged as "PII Koruma" tab in Security Hardening
+  - `Infrastructure Hardening` → Merged as "Altyapı" tab in Security Hardening
+- **Result**: Infrastructure dropdown: 11 → 8 items. Direct URLs still work standalone.
+- **Test Result**: Backend 7/7, Frontend 100% — iteration_208.json
+
+### Enterprise Live & Platform Scaling Overlap Resolution (DONE - 2026-04-09)
+- **Problem 1**: Enterprise Live had a "Mesajlasma" tab (simple provider health + quick send) that overlapped with the full MessagingDashboard (7 tabs: send, templates, automation, activity, logs, metrics, settings).
+- **Solution 1**: Removed MessagingPanel and messaging tab from EnterpriseLiveDashboard.jsx. Enterprise Live now has 3 tabs: Canli Operasyon, Oto-Fiyatlama, Entegrasyonlar.
+- **Problem 2**: Platform Scaling had a "Revenue ML" tab (demand forecast, price optimization, conversion rates, at-risk bookings) that overlapped with Analitik & Raporlar (ML scheduler + report export).
+- **Solution 2**: Extracted RevenueMLPanel into standalone component (RevenueMLPanel.jsx). Added as 1st tab in AnalitikRaporlarPage. Removed Revenue ML tab from PlatformScalingDashboard. Platform Scaling now has 4 tabs: Genel Bakis, Event Mimari, Multi-Property, CompSet Analiz. Analitik & Raporlar now has 3 tabs: Revenue ML, Rapor Disa Aktarma, ML Zamanlayici.
+- **Files Modified**: EnterpriseLiveDashboard.jsx, PlatformScalingDashboard.jsx, AnalitikRaporlarPage.jsx, RevenueMLPanel.jsx (new)
+- **Test Result**: Frontend 7/7 (100%) — iteration_209.json
+
+### Operational Reliability — Webhook Retry + Ops Telemetry + Channel Ops Dashboard (DONE - 2026-04-09)
+- **Program 1: Delivery Reliability**
+  - **Webhook Automatic Retry**: Replaced fire-and-forget `_deliver_webhook` with exponential backoff retry (max 5 attempts: 2s, 4s, 8s, 16s, 32s)
+  - **DLQ (Dead Letter Queue)**: Terminal failures → `webhook_dlq` collection for manual retry
+  - **Delivery Tracking**: Each delivery records `attempt_count`, `next_retry_at`, `last_error`, `idempotency_key`, full attempt history
+  - **Idempotency Key**: SHA256-based deduplication per webhook+event+delivery
+  - **New Service**: `webhook_retry_service.py` — `deliver_webhook_with_retry()`, `fire_webhooks_with_retry()`, `retry_dlq_item()`
+- **Program 2: Operational Observability**
+  - **Ops Event Model**: `ops_events` collection stores all operational lifecycle events
+  - **Event Types**: `webhook.delivery.started/succeeded/retrying/terminal_failure/dlq`, `push.started/queued/throttled/succeeded/failed_terminal`, `rate_limit.active/cooldown`, `import.started/completed/failed`, `channel.health_changed`
+  - **In-App Notifications**: Critical/warning ops events auto-create notifications (appear in NotificationBell)
+  - **HotelRunner 429 Visibility**: Rate limit status endpoint exposes throttle state, events count, last 429 timestamp, impacted pushes
+  - **Channel Health**: Per-connector health calculation (healthy/degraded/critical) based on push success rate and import failures
+- **Thin Channel Ops Dashboard v1** — 4-tab frontend (`/channel-ops`):
+  - **Genel Bakış**: KPI cards (total/succeeded/failed/retrying/DLQ/throttle), channel status grid, recent failures, last successful pushes, recent imports
+  - **Webhook Teslimat**: DLQ with manual retry buttons, full delivery history table
+  - **Kanal Sağlığı**: HotelRunner rate limit status panel, per-connector health detail cards
+  - **Olay Akışı**: Operational event timeline with severity badges, expandable details, correlation IDs
+  - Auto-refresh every 15 seconds
+- **New Backend Files**: `ops_event_emitter.py`, `webhook_retry_service.py`, `ops_events_router.py`
+- **Modified**: `b2b_api.py` (webhook delivery replaced with retry service), `server.py` (router registration), `NotificationBell.jsx` (ops_event icon), `navItems.jsx`, `routeDefinitions.jsx`, locale files
+- **New Endpoints**:
+  - `GET /api/ops-events/list` — Query ops events with severity/type/channel filters
+  - `GET /api/ops-events/webhook-deliveries` — Delivery status with summary stats
+  - `GET /api/ops-events/webhook-dlq` — DLQ items with counts
+  - `POST /api/ops-events/webhook-dlq/{id}/retry` — Manual DLQ retry
+  - `GET /api/ops-events/rate-limit-status` — HotelRunner rate limit info
+  - `GET /api/ops-events/channel-health` — Per-connector health summary
+  - `GET /api/ops-events/dashboard-summary` — Full dashboard data in single call
+- **Test Result**: Backend 8/8 (100%)
+
+### Sprint 2: Operational Control + Root Cause Clarity (DONE - 2026-04-09)
+
+#### P0: Correlation Timeline + Drilldown (DONE)
+- **Correlation Chain**: `correlation_id` tracked across webhook → import → push → retry → DLQ/success lifecycle
+- **Timeline Endpoint**: `GET /api/ops-events/timeline/{correlation_id}` — Full event chain with summary
+- **Incident Summary**: `GET /api/ops-events/incident/{event_id}/summary` — Quick incident overview with impact analysis
+- **Drilldown Drawer**: Frontend `IncidentDrilldownDrawer.jsx` — Side panel shows timeline visualization, retry attempts, DLQ status, affected entities
+- Root cause visible in 15 seconds via single click
+
+#### P1: Dashboard v2 — Health Scoring + Prioritized Feed (DONE)
+- **Health Score**: 0-100 score per connector based on failure rate, DLQ count, throttle state, retry backlog, staleness
+- **Prioritized Incident Feed**: `GET /api/ops-events/incidents/prioritized` — Sorted by priority (DLQ > throttle > terminal > warning > resolved)
+- **Dashboard v2 Features**:
+  - Priority-based incident cards with action buttons (Retry, View Timeline)
+  - Filter by severity (Tümü, Kritik, Uyarı, Çözülen)
+  - Connector health badges with score visualization
+  - Quick actions from incident cards
+
+#### P1: Unified Connector Health Contract (DONE)
+- **Standard Schema**: `{provider, status, health_score, last_success_at, last_failure_at, failure_rate_1h, retry_backlog, dlq_count, throttle_active, next_available_at, metrics_1h}`
+- **Endpoint**: `GET /api/ops-events/connectors/health` — All connectors with standardized health data
+- **Impact Analysis**: `GET /api/ops-events/impact-analysis` — Channels impacted by severity over time window
+
+#### P1.5: Auto-Remediation Rules v1 (DONE)
+- **Engine**: `auto_remediation_engine.py` — Background rule evaluator (60s cycle)
+- **Rules**:
+  1. **Connector Degradation**: 3+ failures in 10min → auto-degrade connector status
+  2. **Alert Escalation**: 5+ terminal failures in 10min → escalate severity to critical
+  3. **Rate Limit Queueing**: On active throttle → enable controlled queueing
+  4. **Recovery Drain**: On rate limit cleared → start backlog drain
+  5. **DLQ Auto-Resolve**: On successful DLQ retry → emit incident.auto_resolved event
+- **Control Endpoints**:
+  - `GET /api/ops-events/remediation/status` — Engine status and rule config
+  - `POST /api/ops-events/remediation/start` — Start engine
+  - `POST /api/ops-events/remediation/stop` — Stop engine
+  - `POST /api/ops-events/connectors/{id}/recover` — Manual recover
+  - `POST /api/ops-events/connectors/{id}/degrade` — Manual degrade
+
+- **New Backend Files**: `ops_timeline_router.py`, `auto_remediation_engine.py`
+- **Modified Frontend**: `ChannelOpsPage.jsx` (Dashboard v2 with drilldown, health scoring, prioritized feed), `IncidentDrilldownDrawer.jsx` (new component)
+- **Test Result**: Backend 21/21 (100%), Frontend 100%
+
+### Sprint 3: Security Operations + Key Lifecycle (DONE - 2026-04-09)
+
+#### Key Registry (DONE)
+- **Centralized Key Management**: `encryption_keys` collection with full metadata tracking
+- **Key Types**: master, connector, webhook, api, pii
+- **Registration**: `POST /api/ops/encryption/keys/register` — Register new keys with rotation policy
+- **Query**: `GET /api/ops/encryption/keys`, `GET /api/ops/encryption/keys/{key_id}`, `GET /api/ops/encryption/keys/active/{key_type}`
+- **Safe Summary**: `GET /api/ops/encryption/keys/{key_id}/summary` — No sensitive details exposed
+
+#### Key State Management (DONE)
+- **State Machine**: active → pending_rotation → retired / revoked (terminal)
+- **Initiate Rotation**: `POST /api/ops/encryption/keys/rotation/initiate` — Move to pending_rotation
+- **Complete Rotation**: `POST /api/ops/encryption/keys/rotation/complete` — Move to retired
+- **Cancel Rotation**: `POST /api/ops/encryption/keys/rotation/cancel` — Return to active
+- **Emergency Revoke**: `POST /api/ops/encryption/keys/emergency-revoke` — Immediate revocation (requires detailed reason)
+
+#### Re-encryption Worker (DONE)
+- **Background Jobs**: Batch re-encryption with progress tracking and checkpointing
+- **Job States**: pending → running → paused → completed/failed/cancelled
+- **Endpoints**:
+  - `POST /api/ops/encryption/reencryption/create` — Create new job
+  - `POST /api/ops/encryption/reencryption/start` — Start/resume job
+  - `POST /api/ops/encryption/reencryption/pause` — Pause running job
+  - `POST /api/ops/encryption/reencryption/cancel` — Cancel job
+  - `GET /api/ops/encryption/reencryption/jobs` — List jobs
+  - `GET /api/ops/encryption/reencryption/jobs/{job_id}` — Job status
+
+#### Dashboard & Audit (DONE)
+- **Main Dashboard**: `GET /api/ops/encryption/dashboard` — Combined keys + jobs view
+- **Keys Dashboard**: `GET /api/ops/encryption/dashboard/keys` — Overdue rotations, warnings, summary
+- **Jobs Dashboard**: `GET /api/ops/encryption/dashboard/jobs` — Running jobs, statistics
+- **Key Audit**: `GET /api/ops/encryption/audit/keys` — All key operations
+- **Job Audit**: `GET /api/ops/encryption/audit/jobs` — All job operations
+- **Index Setup**: `POST /api/ops/encryption/setup-indexes` — Create MongoDB indexes
+
+#### Frontend Admin Panel (DONE)
+- **Route**: `/encryption-management`
+- **Navigation**: Infrastructure → Sifreleme Yonetimi
+- **4 Tabs**:
+  1. **Genel Bakis**: Summary cards (aktif, rotasyonda, emekli, iptal, geciken, isler), Aktif Anahtarlar, Aktif Isler
+  2. **Anahtarlar**: Full key list with state badges, rotation days, action buttons (Rotasyon, Tamamla, Iptal, Acil Iptal)
+  3. **Yeniden Sifreleme**: Job list with progress bars, Baslat/Durdur/Iptal buttons
+  4. **Denetim Gunlugu**: Key audit log + Job audit log timelines
+- **Dialogs**: Register Key, Emergency Revoke, Create Re-encryption Job
+
+- **New Backend Files**: `key_registry.py`, `reencryption_worker.py`, `encryption_management_router.py`
+- **New Frontend**: `EncryptionManagementPage.jsx`
+- **Test Result**: Backend 36/36 (100%), Frontend 100% — iteration_211.json
+
+## Future / Backlog (P2+)
+- ~~Automatic retry mechanism with exponential backoff for failed webhook deliveries~~ → DONE (2026-04-09)
+- ~~Correlation timeline + drilldown for root cause analysis~~ → DONE (Sprint 2, 2026-04-09)
+- ~~Unified connector health contract~~ → DONE (Sprint 2, 2026-04-09)
+- ~~Auto-remediation rules v1~~ → DONE (Sprint 2, 2026-04-09)
+- ~~Encryption Management Backend (key registry, rotation, re-encryption)~~ → DONE (Sprint 3, 2026-04-09)
+- ~~Encryption Admin Panel v1~~ → DONE (Sprint 3, 2026-04-09)
+- Predictive Alerting / Early Warning v1 (trend-based degradation detection) — Sprint 4 candidate
+- B2B Analytics Dashboard (agency API key usage, booking rates, top queries)
+- ~~Channel Manager Dashboard (reservations, failed imports, push queue, health)~~ → DONE (2026-04-09)
+- Make unassigned reservations more prominent in calendar
+- Improve Auto Room Mapping (capacity + base price matching)
+- ~~Refactor: BasicReports.jsx (>1200 lines)~~ → DONE — file already trimmed to 342 lines (audited 2026-04-25)
+- ~~Refactor: hotelrunner_sync.py (~1000 lines)~~ → DONE — file already trimmed to 222 lines / 5 functions (audited 2026-04-25)
+- Refactor: DisplacementAnalysis.jsx (~710 lines) — split 4 tabs into `frontend/src/pages/displacement/{MarketOverviewTab,AnalysisTab,CompareTab,HistoryTab}.jsx` + shared helpers (P2 teknik borç)
+- ~~Refactor: hotelrunner_router.py (~726 lines) — split route handlers by domain (push, pull, settings, debug)~~ → DONE (2026-04-25) — 5-phase refactor: parent aggregator now 55 lines, 22 endpoints split across 4 concern-focused sub-routers under `backend/domains/channel_manager/providers/hotelrunner/` (router_mappings.py 142 / router_internal.py 101 / router_connection.py 204 / router_sync.py 245) plus 3 helper modules (router_schemas.py 56 / sync_log.py 35 / factory.py 83). Route surface preserved: 33/33 scoped paths, operation-level diff = 0 vs pre-refactor baseline, [HR-OBS]/[PULL] live tags intact, no new error class. Post-refactor cleanup: 4 lazy callers (availability_auto_sync, availability_reconciliation_worker, hr_rate_manager_router, unified_rate_manager_router) migrated to canonical `hotelrunner.factory` import path; back-compat shims removed after repo-wide scan + 6-endpoint live smoke (HTTP 403 = endpoint resolved, auth gate active). T005 architect re-review (2026-04-25 evening) caught 3 pre-existing provider bugs surfaced by the audit and fixed in `hotelrunner/provider.py`: (a) `update_room` migrated from direct `self._client.put(...)` into the standard retry+observability wrapper used by `push_daily_inventory`; (b) `push_ari_bulk(updates: list[dict])` added (sequential update_room loop preserves rate-limit budget) — required by `router_sync.bulk_update_ari` (`POST /rooms/bulk-update`); (c) `get_transaction_details(transaction_id)` added (GET `ep.TRANSACTION_DETAILS` with retry+observability) — required by `router_connection.get_transaction_details` (`GET /transactions/{id}`). Both endpoints would previously have raised AttributeError on first call. Minor deviation acknowledged: `/usage` handler now uses an in-process TTL cache (introduced in an earlier commit), so the "byte-for-byte" claim applies to route surface and HTTP semantics, not to internal handler caching layer.
+- Refactor: Evaluate deprecation of legacy hr_rate_manager_router.py and rate_manager_router.py
+- Real competitor price integration via SerpApi or OTA Insight (when budget allows)
+- Automated Email Scheduler for Reports (daily/weekly report dispatch)
+- Similar audit/consolidation for Operations, Channels Admin navigation groups
+
+## Key DB Collections
+- `cm_connectors` — Encrypted channel credentials
+- `hotel_content` — Agency data and rates mapping
+- `users` — User accounts with roles
+- `agency_api_keys` — B2B API keys (SHA256 hashed)
+- `agency_rate_calendar` — Agency-specific rate data
+- `room_types` — Room type definitions with TRY base/min/max rates
+- `yield_rules` — Automatic pricing rules (condition-action pairs)
+- `seasonal_calendar` — Season definitions with rate multipliers
+- `rms_pricing_recommendations` — Generated pricing recommendations
+- `bookings` — Reservations with channel, room_type, base_rate fields
+- `ops_events` — Operational telemetry events (webhook lifecycle, push status, rate limits)
+- `webhook_deliveries` — Webhook delivery records with retry state and attempt history
+- `webhook_dlq` — Dead letter queue for terminal webhook delivery failures
 
 ## Key API Endpoints
-- POST /api/auth/login
-- GET/POST /api/pms/bookings
-- PUT /api/pms/bookings/{id}
-- GET /api/pms/reservations/{id}/full-detail
-- POST /api/pms/reservations/{id}/record-payment
-- POST /api/pms/reservations/{id}/transfer-to-cari
-- POST /api/pms/reservations/{id}/record-agency-payment
-- POST /api/pms/reservations/{id}/add-extra-charge
-- POST /api/pms/reservations/{id}/split-charge
-- POST /api/pms/reservations/{id}/room-change
-- POST /api/pms/cari-accounts/{id}/reconcile
-- POST /api/pms/cari-accounts/{id}/transfer-to-agency
-- GET /api/night-audit/business-date
-- POST /api/night-audit/run
-- GET /api/night-audit/history
-- GET /api/night-audit/exceptions/{audit_id}
-- GET /api/night-audit/schedule
-- PUT /api/night-audit/schedule
-- GET /api/night-audit/schedule/status
-- GET /api/night-audit/financial-summary
-- GET /api/night-audit/payment-reconciliation
-- GET /api/night-audit/financial-report
-- GET /api/night-audit/integrity-check
-- GET /api/pms/group-folio-summary
-- GET /api/pms/group-folio/{group_id}
-- GET /api/pms/group-folio/{group_id}/booking/{booking_id}
-- POST /api/pms/group-folio/payment
-- POST /api/pms/group-folio/merge
-- POST /api/pms/group-folio/bulk-payment
-- POST /api/pms/reservations/{id}/cancel
-- GET /api/pms/reservations/{id}/voucher
-- GET /api/pms/reservations/{id}/invoice-charges
-- POST /api/pms/reservations/{id}/generate-invoice
-- GET /api/pms/available-rooms-by-type
-- POST /api/pms/cari-accounts/create
-
-## Credentials
-- Demo Admin: demo@hotel.com / demo123
-
-## Backlog (Future Tasks)
-- [ ] P1: Tenant Management page improvements (detail view, data summary, access logs)
-- [ ] P5: Advanced Auto-Heal patterns (remaining)
+- `GET /api/channel-manager/unified-rate-manager/grid`
+- `GET /api/channel-manager/unified-rate-manager/push-providers`
+- `POST /api/b2b/api-keys` / `GET /api/b2b/api-keys/{agency_id}`
+- `GET /api/b2b/content` / `GET /api/b2b/availability` / `GET /api/b2b/rates`
+- `POST /api/b2b/reservations` / `GET /api/b2b/reservations`
+- `POST /api/b2b/webhooks` / `GET /api/b2b/webhooks` / `DELETE /api/b2b/webhooks/{id}`
+- `GET /api/rms/dashboard-kpis` / `GET /api/rms/channel-performance`
+- `POST /api/rms/generate-pricing` / `POST /api/rms/apply-recommendations`
+- `GET/POST/PUT/DELETE /api/rms/yield-rules`
+- `GET/POST/PUT/DELETE /api/rms/seasonal-calendar`
+- `GET /api/messaging-center/settings` / `POST .../settings/email` / `POST .../settings/whatsapp`
+- `GET/POST/PUT/DELETE /api/messaging-center/templates`
+- `POST /api/messaging-center/send` / `GET /api/messaging-center/delivery-logs`
+- `GET /api/messaging-center/metrics` / `POST /api/messaging-center/seed-demo`
+- `GET/POST /api/messaging-center/scheduler/status` / `/scheduler/start` / `/scheduler/stop` / `/scheduler/run-now`
+- `GET /api/messaging-center/activity`
+- `GET /api/ops-events/list` / `GET .../webhook-deliveries` / `GET .../webhook-dlq`
+- `POST /api/ops-events/webhook-dlq/{id}/retry`
+- `GET /api/ops-events/rate-limit-status` / `GET .../channel-health` / `GET .../dashboard-summary`
+- `GET /api/ops-events/timeline/{correlation_id}` — Full event chain timeline
+- `GET /api/ops-events/incident/{event_id}/summary` — Incident summary with impact
+- `GET /api/ops-events/incidents/prioritized` — Priority-sorted incident feed
+- `GET /api/ops-events/connectors/health` — Unified health contract for all connectors
+- `GET /api/ops-events/impact-analysis` — Impact analysis by channel
+- `GET /api/ops-events/remediation/status` — Auto-remediation engine status
+- `POST /api/ops-events/remediation/start` / `.../stop` — Engine control
+- `POST /api/ops-events/connectors/{id}/recover` / `.../degrade` — Manual connector control

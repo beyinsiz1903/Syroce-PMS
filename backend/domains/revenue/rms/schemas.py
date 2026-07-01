@@ -2,8 +2,8 @@
 Revenue / RMS Domain — Pydantic Schemas
 Extracted from rms_router.py inline models.
 """
+
 from pydantic import BaseModel
-from typing import List, Optional
 
 
 class GroupBookingCreate(BaseModel):
@@ -17,24 +17,24 @@ class GroupBookingCreate(BaseModel):
     contact_person: str
     contact_email: str
     contact_phone: str
-    special_requirements: Optional[str] = None
-    notes: Optional[str] = None
+    special_requirements: str | None = None
+    notes: str | None = None
 
 
 class CorporateContractCreate(BaseModel):
     company_name: str
     contract_type: str
     rate_code: str
-    negotiated_rate: Optional[float] = None
-    discount_percentage: Optional[float] = 0
+    negotiated_rate: float | None = None
+    discount_percentage: float | None = 0
     start_date: str
     end_date: str
-    allotment: Optional[int] = 0
-    blackout_dates: Optional[List[str]] = []
+    allotment: int | None = 0
+    blackout_dates: list[str] | None = []
     contact_person: str
     contact_email: str
     contact_phone: str
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class OTAPromotionCreate(BaseModel):
@@ -44,10 +44,10 @@ class OTAPromotionCreate(BaseModel):
     discount_value: float
     start_date: str
     end_date: str
-    applicable_room_types: List[str] = []
-    min_stay: Optional[int] = None
-    booking_window_start: Optional[str] = None
-    booking_window_end: Optional[str] = None
+    applicable_room_types: list[str] = []
+    min_stay: int | None = None
+    booking_window_start: str | None = None
+    booking_window_end: str | None = None
 
 
 class InventoryItemCreate(BaseModel):
@@ -58,13 +58,13 @@ class InventoryItemCreate(BaseModel):
     minimum_quantity: int = 10
     unit_price: float = 0.0
     unit_of_measure: str = "pcs"
-    supplier: Optional[str] = None
-    location: Optional[str] = None
+    supplier: str | None = None
+    location: str | None = None
 
 
 class InventoryUsage(BaseModel):
     item_id: str
     quantity: int
     usage_type: str
-    department: Optional[str] = None
-    notes: Optional[str] = None
+    department: str | None = None
+    notes: str | None = None

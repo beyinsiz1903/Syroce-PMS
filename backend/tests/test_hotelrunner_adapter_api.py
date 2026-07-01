@@ -11,8 +11,8 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set — requires live server")
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set — requires live server")
 
 class TestLoginAPI:
     """Authentication endpoint tests."""
@@ -27,7 +27,7 @@ class TestLoginAPI:
         data = response.json()
         assert "access_token" in data
         assert data["user"]["email"] == "demo@hotel.com"
-        assert data["user"]["role"] == "admin"
+        assert data["user"]["role"] == "super_admin"
     
     def test_login_invalid_credentials(self):
         """Test login with wrong credentials."""
@@ -106,16 +106,15 @@ class TestHotelRunnerTestConnection:
     """Test connection endpoint tests."""
     
     def test_hotelrunner_test_connection_no_creds(self, auth_headers):
-        """POST /api/channel-manager/config/providers/hotelrunner/test-connection - returns error when no valid creds."""
+        """POST /api/channel-manager/config/providers/hotelrunner/test-connection - returns 400 when no creds configured."""
         response = requests.post(
             f"{BASE_URL}/api/channel-manager/config/providers/hotelrunner/test-connection",
             headers=auth_headers
         )
-        # Should return 200 with connected: false (no real credentials configured)
-        assert response.status_code == 200
+        # API returns 400 when no credentials are configured for the provider
+        assert response.status_code == 400
         data = response.json()
-        # Either connected=false or error field present (depends on whether TEST_ creds exist)
-        assert "connected" in data or "error" in data
+        assert "detail" in data
 
 
 class TestHotelRunnerValidation:

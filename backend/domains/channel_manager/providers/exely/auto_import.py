@@ -3,17 +3,18 @@ Exely Auto-Import Service
 Automatically converts exely_reservations → PMS bookings + guests + room assignments.
 Called after each successful pull.
 """
+
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
 logger = logging.getLogger(__name__)
 
 
-async def auto_import_reservation(tenant_id: str, channel_res: Dict[str, Any]) -> Dict[str, Any]:
+async def auto_import_reservation(tenant_id: str, channel_res: dict[str, Any]) -> dict[str, Any]:
     """
     Convert a single exely_reservation into a PMS booking, or update an existing one.
     Returns {"success": True/False, "pms_booking_id": ...}
@@ -40,16 +41,74 @@ async def auto_import_reservation(tenant_id: str, channel_res: Dict[str, Any]) -
     exely_room_code = first_room.get("room_type_code", "")
 
     pms_room_type = None
+    mapping_resolved = False
     if exely_room_code:
         mapping = await db.exely_room_mappings.find_one(
             {"tenant_id": tenant_id, "exely_room_code": exely_room_code},
             {"_id": 0},
         )
-        if mapping:
+        if mapping and mapping.get("pms_room_type"):
             pms_room_type = mapping.get("pms_room_type")
+            mapping_resolved = True
+
+    # HARD-FAIL korunur: eslestirilemeyen rezervasyonu "Standard" olarak
+    # sessizce iceri ALMAYIZ. Tutma (hold) + ACIL alarm olusturulur,
+    # rezervasyon action-needed kalir; teslimat (delivery) ONAYLANMAZ.
+    if channel_res.get("pms_status") == "pending_mapping" and exely_room_code and not mapping_resolved:
+        from domains.channel_manager.providers.unmatched_hold import (
+            create_unmatched_reservation_hold,
+        )
+
+        try:
+            hold = await create_unmatched_reservation_hold(
+                provider="exely",
+                tenant_id=tenant_id,
+                external_id=external_id,
+                check_in=channel_res.get("checkin_date", ""),
+                check_out=channel_res.get("checkout_date", ""),
+                guest_name=channel_res.get("guest_name", ""),
+                room_type_code=exely_room_code,
+                rate_plan_code=first_room.get("rate_plan_code", ""),
+                total_amount=float(channel_res.get("total", 0) or 0),
+                currency=channel_res.get("currency", "TRY"),
+                adults=first_room.get("adults", 1) or 1,
+                children=first_room.get("children", 0) or 0,
+                channel=channel_res.get("channel", "exely"),
+                property_id=tenant_id,
+            )
+            if hold.get("booking_id"):
+                await db.exely_reservations.update_one(
+                    {"tenant_id": tenant_id, "external_id": external_id},
+                    {
+                        "$set": {
+                            "pms_booking_id": hold["booking_id"],
+                            "pms_status": "pending_mapping",
+                        }
+                    },
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.exception(f"[EXELY-IMPORT] unmatched hold olusturma hatasi {external_id}: {e}")
+        return {"success": False, "reason": "pending_mapping"}
 
     if not pms_room_type:
         pms_room_type = "Standard"
+
+    # Eslestirme cozuldu -> varsa onceki tutmayi rebind ile serbest birak
+    # (sentinel kilitler + tutma kaydi silinir) ki cift sayim olmasin.
+    if mapping_resolved:
+        from domains.channel_manager.providers.unmatched_hold import (
+            release_unmatched_reservation_hold,
+        )
+
+        try:
+            await release_unmatched_reservation_hold(
+                tenant_id=tenant_id,
+                external_id=external_id,
+                reason="mapping_resolved",
+                delete_hold=True,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.exception(f"[EXELY-IMPORT] unmatched hold rebind hatasi {external_id}: {e}")
 
     # Find or create guest
     guest_name = channel_res.get("guest_name", "")
@@ -58,8 +117,10 @@ async def auto_import_reservation(tenant_id: str, channel_res: Dict[str, Any]) -
     guest_email = channel_res.get("guest_email", "") or f"exely-{external_id}@channel.import"
     guest_phone = channel_res.get("guest_phone", "")
 
+    from security.encrypted_lookup import build_guest_pii_query
+
     guest = await db.guests.find_one(
-        {"tenant_id": tenant_id, "email": guest_email},
+        {"tenant_id": tenant_id, **build_guest_pii_query("email", guest_email)},
         {"_id": 0},
     )
     if not guest:
@@ -77,9 +138,11 @@ async def auto_import_reservation(tenant_id: str, channel_res: Dict[str, Any]) -
             "loyalty_tier": "none",
             "total_stays": 0,
             "notes": f"Exely kanal rezervasyonu ({external_id})",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
-        await db.guests.insert_one({**guest})
+        from security.guest_write import encrypt_guest_insert
+
+        await db.guests.insert_one(encrypt_guest_insert({**guest}))
         guest.pop("_id", None)
 
     # Build PMS booking (room_id intentionally omitted – user assigns rooms via drag-and-drop)
@@ -92,7 +155,7 @@ async def auto_import_reservation(tenant_id: str, channel_res: Dict[str, Any]) -
     base_rate = total_amount / nights if nights > 0 else total_amount
 
     booking_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     booking = {
         "id": booking_id,
@@ -127,16 +190,29 @@ async def auto_import_reservation(tenant_id: str, channel_res: Dict[str, Any]) -
         "created_at": now,
     }
 
-    await db.bookings.insert_one({**booking})
+    from core.atomic_booking import BookingConflictError, assert_pending_assignment, create_booking_atomic
+
+    try:
+        await create_booking_atomic({**booking})
+    except BookingConflictError:
+        logger.warning("OTA import conflict for %s room=%s, creating as unassigned", external_id, booking.get("room_id"))
+        booking["room_id"] = None
+        booking["status"] = "confirmed"
+        booking["allocation_source"] = "pending_assignment"
+        assert_pending_assignment(booking)
+        await db.bookings.insert_one({**booking})
+        booking.pop("_id", None)
 
     # Update channel reservation
     await db.exely_reservations.update_one(
         {"tenant_id": tenant_id, "external_id": external_id},
-        {"$set": {
-            "pms_status": "imported",
-            "pms_booking_id": booking_id,
-            "imported_at": now,
-        }},
+        {
+            "$set": {
+                "pms_status": "imported",
+                "pms_booking_id": booking_id,
+                "imported_at": now,
+            }
+        },
     )
 
     # Create notification for the new booking
@@ -158,10 +234,7 @@ async def auto_import_reservation(tenant_id: str, channel_res: Dict[str, Any]) -
     except Exception as e:
         logger.warning(f"[EXELY-IMPORT] Notification creation failed: {e}")
 
-    logger.info(
-        f"[EXELY-IMPORT] {external_id} -> booking {booking_id}, "
-        f"type {pms_room_type} (unassigned), guest {guest_name}"
-    )
+    logger.info(f"[EXELY-IMPORT] {external_id} -> booking {booking_id}, type {pms_room_type} (unassigned), guest {guest_name}")
 
     return {
         "success": True,
@@ -172,14 +245,14 @@ async def auto_import_reservation(tenant_id: str, channel_res: Dict[str, Any]) -
     }
 
 
-async def _update_existing_booking(tenant_id: str, channel_res: Dict[str, Any]) -> Dict[str, Any]:
+async def _update_existing_booking(tenant_id: str, channel_res: dict[str, Any]) -> dict[str, Any]:
     """
     Update an existing PMS booking when the Exely reservation has been modified
     (guest name change, date change, room type change, etc.).
     """
     external_id = channel_res.get("external_id", "")
     pms_booking_id = channel_res.get("pms_booking_id")
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     # Get existing PMS booking
     existing_booking = await db.bookings.find_one(
@@ -262,13 +335,17 @@ async def _update_existing_booking(tenant_id: str, channel_res: Dict[str, Any]) 
     guest_id = existing_booking.get("guest_id")
     if guest_id and new_guest_name and new_guest_name != old_name:
         name_parts = new_guest_name.split()
+        from security.search_normalize import normalized_set_for_update
+
+        _guest_set = {
+            "name": new_guest_name,
+            "first_name": name_parts[0] if name_parts else "",
+            "last_name": " ".join(name_parts[1:]) if len(name_parts) > 1 else "",
+        }
+        _guest_set.update(normalized_set_for_update(_guest_set, collection="guests"))
         await db.guests.update_one(
             {"id": guest_id, "tenant_id": tenant_id},
-            {"$set": {
-                "name": new_guest_name,
-                "first_name": name_parts[0] if name_parts else "",
-                "last_name": " ".join(name_parts[1:]) if len(name_parts) > 1 else "",
-            }},
+            {"$set": _guest_set},
         )
 
     # Mark exely_reservation as imported again
@@ -281,25 +358,24 @@ async def _update_existing_booking(tenant_id: str, channel_res: Dict[str, Any]) 
     if changes:
         change_text = ", ".join(changes)
         try:
-            await db.notifications.insert_one({
-                "id": str(uuid.uuid4()),
-                "tenant_id": tenant_id,
-                "type": "reservation_modified",
-                "severity": "info",
-                "title": f"Rezervasyon Güncellendi - {new_guest_name or old_name}",
-                "message": f"OTA değişiklik: {change_text}",
-                "related_entity": "reservation",
-                "related_id": pms_booking_id,
-                "read": False,
-                "created_at": now,
-            })
+            await db.notifications.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "type": "reservation_modified",
+                    "severity": "info",
+                    "title": f"Rezervasyon Güncellendi - {new_guest_name or old_name}",
+                    "message": f"OTA değişiklik: {change_text}",
+                    "related_entity": "reservation",
+                    "related_id": pms_booking_id,
+                    "read": False,
+                    "created_at": now,
+                }
+            )
         except Exception as e:
             logger.warning(f"[EXELY-IMPORT] Modification notification failed: {e}")
 
-    logger.info(
-        f"[EXELY-IMPORT] Updated PMS booking {pms_booking_id} for {external_id}: "
-        f"{', '.join(changes) if changes else 'minor update'}"
-    )
+    logger.info(f"[EXELY-IMPORT] Updated PMS booking {pms_booking_id} for {external_id}: {', '.join(changes) if changes else 'minor update'}")
 
     return {
         "success": True,
@@ -309,10 +385,11 @@ async def _update_existing_booking(tenant_id: str, channel_res: Dict[str, Any]) 
     }
 
 
-async def auto_import_pending(tenant_id: str) -> Dict[str, Any]:
-    """Import all pending exely_reservations for a tenant."""
+async def auto_import_pending(tenant_id: str, provider=None) -> dict[str, Any]:
+    """Import all pending exely_reservations for a tenant.
+    If provider is given, also confirm delivery to Exely after each successful import."""
     pending = await db.exely_reservations.find(
-        {"tenant_id": tenant_id, "pms_status": {"$in": ["pending", "updated"]}, "state": {"$ne": "cancelled"}},
+        {"tenant_id": tenant_id, "pms_status": {"$in": ["pending", "updated", "pending_mapping"]}, "state": {"$ne": "cancelled"}},
         {"_id": 0},
     ).to_list(100)
 
@@ -326,6 +403,31 @@ async def auto_import_pending(tenant_id: str) -> Dict[str, Any]:
                 updated += 1
             else:
                 imported += 1
+
+            # Confirm delivery to Exely so it marks the reservation as delivered
+            if provider and result.get("pms_booking_id"):
+                try:
+                    external_id = res.get("external_id", "")
+                    pms_booking_id = result["pms_booking_id"]
+                    create_dt = res.get("provider_last_modified_at") or res.get("created_at")
+                    modify_dt = res.get("provider_last_modified_at")
+                    confirm_result = await provider.confirm_delivery(
+                        external_id,
+                        pms_booking_id,
+                        create_datetime=create_dt,
+                        last_modify_datetime=modify_dt,
+                        res_status="Reserved",
+                    )
+                    if confirm_result.success:
+                        await db.exely_reservations.update_one(
+                            {"tenant_id": tenant_id, "external_id": external_id},
+                            {"$set": {"delivery_confirmed": True, "delivery_confirmed_at": datetime.now(UTC).isoformat()}},
+                        )
+                        logger.info(f"[EXELY-IMPORT] Delivery confirmed for {external_id} -> PMS {pms_booking_id}")
+                    else:
+                        logger.warning(f"[EXELY-IMPORT] Delivery confirm failed for {external_id}: {confirm_result.error}")
+                except Exception as e:
+                    logger.warning(f"[EXELY-IMPORT] Delivery confirm error for {res.get('external_id')}: {e}")
         else:
             errors.append({"external_id": res.get("external_id"), "reason": result.get("reason")})
 
@@ -347,12 +449,28 @@ async def process_pending_cancellations(tenant_id: str) -> int:
     ).to_list(100)
 
     count = 0
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
+
+    from domains.channel_manager.providers.unmatched_hold import (
+        release_unmatched_reservation_hold,
+    )
 
     for res in pending_cancels:
         pms_booking_id = res.get("pms_booking_id")
         if not pms_booking_id:
             continue
+
+        # Iptal: varsa eslesmeyen-tutmanin sentinel kilitlerini serbest birak
+        # (tutma kaydi cancelled olarak isaretlenir). Tutma degilse no-op.
+        try:
+            await release_unmatched_reservation_hold(
+                tenant_id=tenant_id,
+                external_id=res["external_id"],
+                reason="ota_cancelled",
+                delete_hold=False,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[EXELY-IMPORT] unmatched hold iptal release hatasi {res.get('external_id')}: {e}")
 
         # Get the PMS booking before cancelling
         booking = await db.bookings.find_one(
@@ -370,11 +488,13 @@ async def process_pending_cancellations(tenant_id: str) -> int:
         # Cancel the PMS booking
         await db.bookings.update_one(
             {"id": pms_booking_id, "tenant_id": tenant_id},
-            {"$set": {
-                "status": "cancelled",
-                "cancelled_at": now,
-                "cancelled_by": "channel_manager",
-            }},
+            {
+                "$set": {
+                    "status": "cancelled",
+                    "cancelled_at": now,
+                    "cancelled_by": "channel_manager",
+                }
+            },
         )
 
         # Free the room if assigned
@@ -387,18 +507,20 @@ async def process_pending_cancellations(tenant_id: str) -> int:
         check_in = (booking.get("check_in", "") or "")[:10]
         check_out = (booking.get("check_out", "") or "")[:10]
         try:
-            await db.notifications.insert_one({
-                "id": str(uuid.uuid4()),
-                "tenant_id": tenant_id,
-                "type": "reservation_cancelled",
-                "severity": "warning",
-                "title": f"OTA İptali - {guest_name}",
-                "message": f"{guest_name} adlı misafirin {check_in} - {check_out} tarihli OTA rezervasyonu kanal tarafından iptal edildi.",
-                "related_entity": "reservation",
-                "related_id": pms_booking_id,
-                "read": False,
-                "created_at": now,
-            })
+            await db.notifications.insert_one(
+                {
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "type": "reservation_cancelled",
+                    "severity": "warning",
+                    "title": f"OTA İptali - {guest_name}",
+                    "message": f"{guest_name} adlı misafirin {check_in} - {check_out} tarihli OTA rezervasyonu kanal tarafından iptal edildi.",
+                    "related_entity": "reservation",
+                    "related_id": pms_booking_id,
+                    "read": False,
+                    "created_at": now,
+                }
+            )
         except Exception:
             pass
 

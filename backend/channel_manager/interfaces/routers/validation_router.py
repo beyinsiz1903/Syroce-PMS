@@ -2,17 +2,20 @@
 Enhanced Sandbox Validation Router + Mapping Completeness + Rate Push Tracking +
 Health Trend Analytics + WebSocket endpoints.
 """
+
 import logging
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 
 from core.security import get_current_user
 from models.schemas import User
-from ...application.sandbox_validation_service import SandboxValidationService
+from modules.pms_core.role_permission_service import require_op  # v101 DW
+
+from ...application.health_trend_service import HealthTrendService
 from ...application.mapping_completeness_service import MappingCompletenessService
 from ...application.rate_push_tracking_service import RatePushTrackingService
-from ...application.health_trend_service import HealthTrendService
 from ...application.realtime_service import ws_manager
+from ...application.sandbox_validation_service import SandboxValidationService
 
 logger = logging.getLogger("channel_manager.routers.validation")
 
@@ -21,19 +24,24 @@ router = APIRouter(tags=["CM Validation & Analytics"])
 
 # ─── Enhanced Sandbox Validation ──────────────────────────────────────
 
+
 @router.post("/validation/sandbox/{connector_id}")
 async def run_sandbox_validation(
     connector_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Run full HotelRunner sandbox validation and produce integration readiness report."""
     svc = SandboxValidationService()
     return await svc.run_validation(
-        current_user.tenant_id, connector_id, actor_id=current_user.id,
+        current_user.tenant_id,
+        connector_id,
+        actor_id=current_user.id,
     )
 
 
 # ─── Mapping Completeness ────────────────────────────────────────────
+
 
 @router.get("/mapping-completeness/{connector_id}")
 async def get_mapping_completeness(
@@ -67,6 +75,7 @@ async def check_import_gate(
 
 # ─── Rate Push Tracking ─────────────────────────────────────────────
 
+
 @router.get("/rate-push-metrics/{connector_id}")
 async def get_rate_push_metrics(
     connector_id: str,
@@ -79,6 +88,7 @@ async def get_rate_push_metrics(
 
 
 # ─── Health Trend Analytics ──────────────────────────────────────────
+
 
 @router.get("/health-trend/{connector_id}/daily")
 async def get_daily_health_trend(
@@ -113,6 +123,7 @@ async def get_health_trend_summary(
 
 
 # ─── WebSocket Endpoint ─────────────────────────────────────────────
+
 
 @router.websocket("/ws/admin-updates")
 async def websocket_admin_updates(websocket: WebSocket):

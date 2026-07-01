@@ -7,26 +7,31 @@ and injecting test events.
 
 Prefix: /api/channel-manager/ingest/
 """
-import logging
-import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+import logging
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.security import get_current_user
-from models.schemas import User
-
 from domains.channel_manager import unified_repository as repo
 from domains.channel_manager.data_model import (
-    ConnectorProvider, RawChannelEvent, RawEventSource, ProcessingStatus,
+    ConnectorProvider,
+    ProcessingStatus,
+    RawChannelEvent,
+    RawEventSource,
 )
 from domains.channel_manager.ingest.normalizer import extract_identity
 from domains.channel_manager.ingest.pipeline import process_event
 from domains.channel_manager.ingest.workers import (
-    get_worker_states, trigger_ingest_now, trigger_replay_now, trigger_pull,
+    get_worker_states,
+    trigger_ingest_now,
+    trigger_pull,
+    trigger_replay_now,
 )
+from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 logger = logging.getLogger("ingest.router")
 
@@ -38,15 +43,17 @@ router = APIRouter(
 
 # ── Request Models ────────────────────────────────────────────────────
 
+
 class InjectEventRequest(BaseModel):
     provider: str  # hotelrunner | exely
     property_id: str
     event_type: str = "reservation_create"
-    payload: Dict[str, Any] = Field(default_factory=dict)
+    payload: dict[str, Any] = Field(default_factory=dict)
     received_via: str = "manual"  # webhook | pull | replay | manual
 
 
 # ── Pipeline Status ───────────────────────────────────────────────────
+
 
 @router.get("/status")
 async def get_ingest_status(
@@ -71,10 +78,12 @@ async def get_ingest_status(
 
 # ── Event Injection (for testing and manual ingestion) ────────────────
 
+
 @router.post("/inject")
 async def inject_event(
     req: InjectEventRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """
     Inject a raw event into the pipeline for testing or manual ingestion.
@@ -130,6 +139,7 @@ async def inject_event(
 async def inject_and_process(
     req: InjectEventRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Inject an event and process it immediately through the pipeline."""
     try:
@@ -179,9 +189,11 @@ async def inject_and_process(
 
 # ── Worker Controls ───────────────────────────────────────────────────
 
+
 @router.post("/workers/process")
 async def trigger_process(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Manually trigger the ingest processor to process pending events."""
     result = await trigger_ingest_now()
@@ -191,6 +203,7 @@ async def trigger_process(
 @router.post("/workers/replay")
 async def trigger_replay(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Manually trigger the replay worker to retry failed events."""
     result = await trigger_replay_now()
@@ -201,6 +214,7 @@ async def trigger_replay(
 async def trigger_pull_worker(
     provider: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Manually trigger a pull worker for a specific provider."""
     try:
@@ -221,17 +235,22 @@ async def get_workers_status(
 
 # ── Raw Events Query ──────────────────────────────────────────────────
 
+
 @router.get("/events")
 async def list_ingest_events(
     property_id: str = Query("prop-001"),
-    provider: Optional[str] = None,
-    status: Optional[str] = None,
+    provider: str | None = None,
+    status: str | None = None,
     limit: int = Query(50, le=200),
     current_user: User = Depends(get_current_user),
 ):
     """List raw channel events with optional filters."""
     events = await repo.get_raw_events(
-        current_user.tenant_id, property_id, provider, status, limit,
+        current_user.tenant_id,
+        property_id,
+        provider,
+        status,
+        limit,
     )
     return {"events": events, "count": len(events)}
 

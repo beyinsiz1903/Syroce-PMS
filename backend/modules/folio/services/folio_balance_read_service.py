@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import HTTPException
 
@@ -6,10 +6,10 @@ from modules.folio.repository import FolioRepository
 
 
 class FolioBalanceReadService:
-    def __init__(self, repository: Optional[FolioRepository] = None):
+    def __init__(self, repository: FolioRepository | None = None):
         self.repository = repository or FolioRepository()
 
-    async def get_folio_details(self, tenant_id: str, folio_id: str) -> Dict[str, Any]:
+    async def get_folio_details(self, tenant_id: str, folio_id: str) -> dict[str, Any]:
         folio = await self.repository.get_folio(tenant_id, folio_id)
         if not folio:
             raise HTTPException(status_code=404, detail="Folio not found")

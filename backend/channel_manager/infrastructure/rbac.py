@@ -13,18 +13,18 @@ Restricted roles (read-only or no access):
 
 Unauthorized attempts are logged via audit trail.
 """
+
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import HTTPException
 
-from ..domain.models.audit import IntegrationAuditLog, AuditAction
+from ..domain.models.audit import AuditAction, IntegrationAuditLog
 from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.infrastructure.rbac")
 
-CREDENTIAL_ADMIN_ROLES = {"tenant_owner", "system_admin", "integration_admin", "admin"}
+CREDENTIAL_ADMIN_ROLES = {"tenant_owner", "system_admin", "integration_admin", "admin", "super_admin"}
 CREDENTIAL_VIEW_ROLES = CREDENTIAL_ADMIN_ROLES | {"operator"}
 RESTRICTED_ROLES = {"staff", "viewer"}
 
@@ -33,7 +33,7 @@ async def enforce_credential_access(
     user,
     action: str,
     connector_id: str = "",
-    repo: Optional[ChannelManagerRepository] = None,
+    repo: ChannelManagerRepository | None = None,
     require_write: bool = True,
 ) -> None:
     """
@@ -50,7 +50,10 @@ async def enforce_credential_access(
     if user_role not in allowed_roles:
         logger.warning(
             "RBAC denied: user=%s role=%s action=%s connector=%s",
-            user_id, user_role, action, connector_id,
+            user_id,
+            user_role,
+            action,
+            connector_id,
         )
         # Audit unauthorized attempt
         if repo:
@@ -63,7 +66,7 @@ async def enforce_credential_access(
                     "attempted_action": action,
                     "user_role": user_role,
                     "required_roles": list(allowed_roles),
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
             )
             await repo.create_audit_log(log.to_doc())
@@ -75,5 +78,7 @@ async def enforce_credential_access(
 
     logger.debug(
         "RBAC allowed: user=%s role=%s action=%s",
-        user_id, user_role, action,
+        user_id,
+        user_role,
+        action,
     )

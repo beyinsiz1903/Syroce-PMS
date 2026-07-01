@@ -331,7 +331,7 @@ class TestProviderErrorParsing:
     """Tests for typed XML parsing errors and provider error classification."""
 
     def test_parse_multiple_errors(self):
-        from channel_manager.connectors.hotelrunner.xml_parser import parse_response_status
+        from channel_manager.connectors.hotelrunner_v2.xml_parser import parse_response_status
         xml = '''<?xml version="1.0"?>
         <OTA_HotelAvailNotifRS>
             <Errors>
@@ -346,14 +346,14 @@ class TestProviderErrorParsing:
         assert result["errors"][1]["code"] == "200"
 
     def test_parse_success_with_warnings(self):
-        from channel_manager.connectors.hotelrunner.xml_parser import parse_response_status
+        from channel_manager.connectors.hotelrunner_v2.xml_parser import parse_response_status
         xml = '<?xml version="1.0"?><OTA_HotelAvailNotifRS><Success/><Warnings><Warning Code="W1">Low inventory</Warning></Warnings></OTA_HotelAvailNotifRS>'
         result = parse_response_status(xml)
         assert result["success"] is True
 
     def test_parse_empty_error_element(self):
         """Empty Errors tag may still indicate no specific error details."""
-        from channel_manager.connectors.hotelrunner.xml_parser import parse_response_status
+        from channel_manager.connectors.hotelrunner_v2.xml_parser import parse_response_status
         xml = '<?xml version="1.0"?><OTA_HotelAvailNotifRS><Errors></Errors></OTA_HotelAvailNotifRS>'
         result = parse_response_status(xml)
         # Empty Errors with no Error children - parser behavior may vary

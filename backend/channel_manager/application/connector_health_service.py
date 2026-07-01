@@ -19,11 +19,14 @@ Classifications:
   - DEGRADED (score >= 60)
   - CRITICAL (score < 60)
 """
+
+import asyncio
 import logging
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
+
 from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.connector_health")
@@ -34,10 +37,10 @@ _NO_ID = {"_id": 0}
 class ConnectorHealthService:
     """Computes health dashboard data for all connectors."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
-    async def get_connector_health(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+    async def get_connector_health(self, tenant_id: str, connector_id: str) -> dict[str, Any]:
         """Get detailed health metrics for a single connector."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
         if not connector:
@@ -58,15 +61,9 @@ class ConnectorHealthService:
                 break
 
         # Import metrics
-        import_total = await db.cm_imported_reservations.count_documents(
-            {"tenant_id": tenant_id, "connector_id": connector_id}
-        )
-        import_failed = await db.cm_imported_reservations.count_documents(
-            {"tenant_id": tenant_id, "connector_id": connector_id, "import_status": "failed"}
-        )
-        import_success_rate = round(
-            (import_total - import_failed) / max(import_total, 1) * 100, 1
-        )
+        import_total = await db.cm_imported_reservations.count_documents({"tenant_id": tenant_id, "connector_id": connector_id})
+        import_failed = await db.cm_imported_reservations.count_documents({"tenant_id": tenant_id, "connector_id": connector_id, "import_status": "failed"})
+        import_success_rate = round((import_total - import_failed) / max(import_total, 1) * 100, 1)
 
         # Last successful import
         last_import_doc = await db.cm_imported_reservations.find_one(
@@ -80,23 +77,35 @@ class ConnectorHealthService:
         uptime = self._calc_uptime(connector, sync_jobs)
 
         # Active alerts
-        active_alerts = await db.cm_alerts.count_documents({
-            "tenant_id": tenant_id, "connector_id": connector_id,
-            "status": {"$in": ["active", "acknowledged"]},
-        })
-        critical_alerts = await db.cm_alerts.count_documents({
-            "tenant_id": tenant_id, "connector_id": connector_id,
-            "status": "active", "severity": "critical",
-        })
+        active_alerts = await db.cm_alerts.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "connector_id": connector_id,
+                "status": {"$in": ["active", "acknowledged"]},
+            }
+        )
+        critical_alerts = await db.cm_alerts.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "connector_id": connector_id,
+                "status": "active",
+                "severity": "critical",
+            }
+        )
 
         # Retry count
         retry_count = sum(j.get("retry_count", 0) for j in sync_jobs)
 
         # Import job metrics
-        import_jobs = await db.cm_import_jobs.find(
-            {"tenant_id": tenant_id, "connector_id": connector_id},
-            _NO_ID,
-        ).sort("created_at", -1).limit(50).to_list(50)
+        import_jobs = (
+            await db.cm_import_jobs.find(
+                {"tenant_id": tenant_id, "connector_id": connector_id},
+                _NO_ID,
+            )
+            .sort("created_at", -1)
+            .limit(50)
+            .to_list(50)
+        )
         import_job_total = len(import_jobs)
         import_job_failed = sum(1 for j in import_jobs if j.get("status") == "failed")
 
@@ -104,16 +113,22 @@ class ConnectorHealthService:
         rate_push_success_rate = 100.0
         try:
             from .rate_push_tracking_service import RatePushTrackingService
+
             rpt_svc = RatePushTrackingService(repo=self._repo)
             rp_metrics = await rpt_svc.get_metrics(tenant_id, connector_id)
             rate_push_success_rate = rp_metrics.get("rate_push_success_rate", 100.0)
         except Exception:
-            pass
+            logger.warning("connector_health: rate-push metrics fetch failed", exc_info=True)
 
         # Health score
         health_score = self._calc_health_score(
-            sync_success_rate, import_success_rate, uptime,
-            active_alerts, critical_alerts, retry_count, total_syncs,
+            sync_success_rate,
+            import_success_rate,
+            uptime,
+            active_alerts,
+            critical_alerts,
+            retry_count,
+            total_syncs,
             rate_push_success_rate=rate_push_success_rate,
         )
         classification = self._classify(health_score)
@@ -121,9 +136,11 @@ class ConnectorHealthService:
         # Record trend snapshot (fire-and-forget)
         try:
             from .health_trend_service import HealthTrendService
+
             trend_svc = HealthTrendService(repo=self._repo)
             await trend_svc.record_health_snapshot(
-                tenant_id, connector_id,
+                tenant_id,
+                connector_id,
                 health_score=health_score,
                 sync_success_rate=sync_success_rate,
                 import_success_rate=import_success_rate,
@@ -132,7 +149,7 @@ class ConnectorHealthService:
                 rate_push_success_rate=rate_push_success_rate,
             )
         except Exception:
-            pass
+            logger.warning("connector_health: trend snapshot record failed", exc_info=True)
 
         return {
             "connector_id": connector_id,
@@ -155,16 +172,25 @@ class ConnectorHealthService:
             "import_jobs_total": import_job_total,
             "import_jobs_failed": import_job_failed,
             "rate_push_success_rate": rate_push_success_rate,
-            "calculated_at": datetime.now(timezone.utc).isoformat(),
+            "calculated_at": datetime.now(UTC).isoformat(),
         }
 
-    async def get_all_health(self, tenant_id: str) -> Dict[str, Any]:
-        """Get health metrics for all connectors of a tenant."""
+    async def get_all_health(self, tenant_id: str) -> dict[str, Any]:
+        """Get health metrics for all connectors of a tenant.
+
+        Perf: N-connector seri await yerine asyncio.gather ile paralel
+        topla. Her get_connector_health çağrısı ~7 DB query yapıyor;
+        seri toplam = N × ~700ms, paralelde ≈ tek connector süresi.
+        """
         connectors = await self._repo.get_connectors_by_tenant(tenant_id)
-        results = []
-        for c in connectors:
-            h = await self.get_connector_health(tenant_id, c["id"])
-            results.append(h)
+        results = (
+            await asyncio.gather(
+                *[self.get_connector_health(tenant_id, c["id"]) for c in connectors],
+                return_exceptions=False,
+            )
+            if connectors
+            else []
+        )
 
         total = len(results)
         healthy = sum(1 for r in results if r.get("classification") == "HEALTHY")
@@ -181,20 +207,24 @@ class ConnectorHealthService:
             "average_health_score": avg_score,
         }
 
-    async def get_health_by_property(self, tenant_id: str, property_id: str) -> Dict[str, Any]:
+    async def get_health_by_property(self, tenant_id: str, property_id: str) -> dict[str, Any]:
         """Get health for connectors of a specific property."""
         connectors = await self._repo.get_connectors_by_tenant(tenant_id)
         prop_connectors = [c for c in connectors if c.get("property_id") == property_id]
-        results = []
-        for c in prop_connectors:
-            h = await self.get_connector_health(tenant_id, c["id"])
-            results.append(h)
+        results = (
+            await asyncio.gather(
+                *[self.get_connector_health(tenant_id, c["id"]) for c in prop_connectors],
+                return_exceptions=False,
+            )
+            if prop_connectors
+            else []
+        )
         return {"connectors": results, "property_id": property_id, "count": len(results)}
 
     # ─── Calculations ─────────────────────────────────────────────────
 
     @staticmethod
-    def _calc_uptime(connector: Dict, jobs: List[Dict]) -> float:
+    def _calc_uptime(connector: dict, jobs: list[dict]) -> float:
         if not jobs:
             return 100.0 if connector.get("status") == "active" else 0.0
         total = len(jobs)
@@ -203,9 +233,13 @@ class ConnectorHealthService:
 
     @staticmethod
     def _calc_health_score(
-        sync_rate: float, import_rate: float, uptime: float,
-        active_alerts: int, critical_alerts: int,
-        retry_count: int, total_syncs: int,
+        sync_rate: float,
+        import_rate: float,
+        uptime: float,
+        active_alerts: int,
+        critical_alerts: int,
+        retry_count: int,
+        total_syncs: int,
         rate_push_success_rate: float = 100.0,
     ) -> float:
         # Base components (adjusted weights to include rate push)

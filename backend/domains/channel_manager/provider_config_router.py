@@ -9,22 +9,28 @@ Endpoints for:
 
 Prefix: /api/channel-manager/config/
 """
-import logging
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+import logging
+from datetime import UTC, datetime
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v101 DW
 
 from . import credential_vault as vault
 from . import unified_repository as repo
 from .data_model import (
-    COLL_PROVIDER_CONNECTIONS, COLL_ROOM_MAPPINGS, COLL_RATE_PLAN_MAPPINGS,
-    ConnectorProvider, ConnectionStatus, ProviderConnection,
+    COLL_PROVIDER_CONNECTIONS,
+    COLL_RATE_PLAN_MAPPINGS,
+    COLL_ROOM_MAPPINGS,
+    ConnectionStatus,
+    ConnectorProvider,
+    ProviderConnection,
 )
 
 logger = logging.getLogger("channel_manager.provider_config_router")
@@ -61,18 +67,24 @@ PROVIDER_FIELDS = {
 
 VALIDATION_CHECKS = {
     "hotelrunner": [
-        "connection_test", "room_list", "rate_plan_list", "reservation_pull",
+        "connection_test",
+        "room_list",
+        "rate_plan_list",
+        "reservation_pull",
     ],
     "exely": [
-        "connection_test", "room_discovery", "reservation_pull",
+        "connection_test",
+        "room_discovery",
+        "reservation_pull",
     ],
 }
 
 
 # ── Request/Response Models ───────────────────────────────────────────
 
+
 class SaveCredentialsRequest(BaseModel):
-    credentials: Dict[str, str]
+    credentials: dict[str, str]
     property_id: str = ""
 
 
@@ -81,10 +93,11 @@ class ValidationResult(BaseModel):
     status: str  # passed, failed, skipped
     message: str
     duration_ms: int = 0
-    data: Optional[Dict[str, Any]] = None
+    data: dict[str, Any] | None = None
 
 
 # ── Provider Overview ─────────────────────────────────────────────────
+
 
 @router.get("/providers")
 async def get_providers_overview(
@@ -97,6 +110,8 @@ async def get_providers_overview(
     for provider_key, provider_def in PROVIDER_FIELDS.items():
         # Check if credentials exist
         masked = await vault.get_masked_credentials(tenant_id, provider_key, "")
+        if not masked:
+            masked = await vault.get_masked_credentials(tenant_id, provider_key, "default")
         has_credentials = masked is not None
 
         # Get connection
@@ -113,37 +128,41 @@ async def get_providers_overview(
             {"tenant_id": tenant_id, "provider": provider_key},
         )
 
-        providers_out.append({
-            "provider": provider_key,
-            "display_name": provider_def["display_name"],
-            "docs_url": provider_def["docs_url"],
-            "fields": provider_def["fields"],
-            "has_credentials": has_credentials,
-            "credentials": masked,
-            "connection": {
-                "id": conn.get("id", "") if conn else "",
-                "status": conn.get("status", "not_configured") if conn else "not_configured",
-                "last_successful_sync": conn.get("last_successful_sync") if conn else None,
-                "last_error": conn.get("last_error") if conn else None,
-                "consecutive_failures": conn.get("consecutive_failures", 0) if conn else 0,
-            },
-            "mappings": {
-                "rooms": room_count,
-                "rate_plans": rate_count,
-            },
-            "validation_checks": VALIDATION_CHECKS.get(provider_key, []),
-        })
+        providers_out.append(
+            {
+                "provider": provider_key,
+                "display_name": provider_def["display_name"],
+                "docs_url": provider_def["docs_url"],
+                "fields": provider_def["fields"],
+                "has_credentials": has_credentials,
+                "credentials": masked,
+                "connection": {
+                    "id": conn.get("id", "") if conn else "",
+                    "status": conn.get("status", "not_configured") if conn else "not_configured",
+                    "last_successful_sync": conn.get("last_successful_sync") if conn else None,
+                    "last_error": conn.get("last_error") if conn else None,
+                    "consecutive_failures": conn.get("consecutive_failures", 0) if conn else 0,
+                },
+                "mappings": {
+                    "rooms": room_count,
+                    "rate_plans": rate_count,
+                },
+                "validation_checks": VALIDATION_CHECKS.get(provider_key, []),
+            }
+        )
 
     return {"providers": providers_out}
 
 
 # ── Credential Management ─────────────────────────────────────────────
 
+
 @router.post("/providers/{provider}/credentials")
 async def save_credentials(
     provider: str,
     req: SaveCredentialsRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Save encrypted provider credentials and create/update connection."""
     if provider not in PROVIDER_FIELDS:
@@ -186,11 +205,13 @@ async def save_credentials(
         # Update credentials on connection + set credentials_ref
         await db[COLL_PROVIDER_CONNECTIONS].update_one(
             {"tenant_id": tenant_id, "provider": provider, "property_id": property_id},
-            {"$set": {
-                "credentials": req.credentials,
-                "credentials_ref": secret_id,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }},
+            {
+                "$set": {
+                    "credentials": req.credentials,
+                    "credentials_ref": secret_id,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+            },
         )
 
     return {
@@ -220,6 +241,7 @@ async def get_credentials(
 async def delete_credentials(
     provider: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Delete stored credentials."""
     if provider not in PROVIDER_FIELDS:
@@ -233,17 +255,19 @@ async def delete_credentials(
 
 # ── Validation Endpoints ──────────────────────────────────────────────
 
+
 @router.post("/providers/{provider}/validate")
 async def run_full_validation(
     provider: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Run the complete automated validation checklist for a provider."""
     if provider not in PROVIDER_FIELDS:
         raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
 
     tenant_id = current_user.tenant_id
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
 
     # Get credentials
     creds = await vault.get_decrypted_credentials(tenant_id, provider, "default")
@@ -252,7 +276,8 @@ async def run_full_validation(
     if not creds:
         # Try from connection directly
         conn = await db[COLL_PROVIDER_CONNECTIONS].find_one(
-            {"tenant_id": tenant_id, "provider": provider}, _NO_ID,
+            {"tenant_id": tenant_id, "provider": provider},
+            _NO_ID,
         )
         if conn:
             creds = conn.get("credentials", {})
@@ -261,12 +286,14 @@ async def run_full_validation(
         return {
             "provider": provider,
             "overall_status": "no_credentials",
-            "results": [{
-                "check": "credentials",
-                "status": "failed",
-                "message": "No credentials configured. Please save credentials first.",
-                "duration_ms": 0,
-            }],
+            "results": [
+                {
+                    "check": "credentials",
+                    "status": "failed",
+                    "message": "No credentials configured. Please save credentials first.",
+                    "duration_ms": 0,
+                }
+            ],
             "readiness": _compute_readiness([], provider, tenant_id),
         }
 
@@ -283,11 +310,13 @@ async def run_full_validation(
     new_status = "active" if overall == "passed" else ("error" if overall == "failed" else "draft")
     await db[COLL_PROVIDER_CONNECTIONS].update_one(
         {"tenant_id": tenant_id, "provider": provider},
-        {"$set": {
-            "status": new_status,
-            "last_validation_at": datetime.now(timezone.utc).isoformat(),
-            "validation_results": results,
-        }},
+        {
+            "$set": {
+                "status": new_status,
+                "last_validation_at": datetime.now(UTC).isoformat(),
+                "validation_results": results,
+            }
+        },
     )
 
     # Get readiness
@@ -307,6 +336,7 @@ async def run_full_validation(
 async def test_connection(
     provider: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Quick connection test for a provider."""
     tenant_id = current_user.tenant_id
@@ -316,7 +346,8 @@ async def test_connection(
         creds = await vault.get_decrypted_credentials(tenant_id, provider, "")
     if not creds:
         conn = await db[COLL_PROVIDER_CONNECTIONS].find_one(
-            {"tenant_id": tenant_id, "provider": provider}, _NO_ID,
+            {"tenant_id": tenant_id, "provider": provider},
+            _NO_ID,
         )
         if conn:
             creds = conn.get("credentials", {})
@@ -335,20 +366,24 @@ async def test_connection(
     if result.get("connected"):
         await db[COLL_PROVIDER_CONNECTIONS].update_one(
             {"tenant_id": tenant_id, "provider": provider},
-            {"$set": {
-                "last_successful_sync": datetime.now(timezone.utc).isoformat(),
-                "consecutive_failures": 0,
-                "last_error": None,
-            }},
+            {
+                "$set": {
+                    "last_successful_sync": datetime.now(UTC).isoformat(),
+                    "consecutive_failures": 0,
+                    "last_error": None,
+                }
+            },
         )
     else:
         await db[COLL_PROVIDER_CONNECTIONS].update_one(
             {"tenant_id": tenant_id, "provider": provider},
-            {"$set": {
-                "last_error": result.get("error", "Connection failed"),
-                "last_error_at": datetime.now(timezone.utc).isoformat(),
+            {
+                "$set": {
+                    "last_error": result.get("error", "Connection failed"),
+                    "last_error_at": datetime.now(UTC).isoformat(),
+                },
+                "$inc": {"consecutive_failures": 1},
             },
-            "$inc": {"consecutive_failures": 1}},
         )
 
     return result
@@ -367,7 +402,8 @@ async def get_readiness(
 
     # Get last validation results
     conn = await db[COLL_PROVIDER_CONNECTIONS].find_one(
-        {"tenant_id": tenant_id, "provider": provider}, _NO_ID,
+        {"tenant_id": tenant_id, "provider": provider},
+        _NO_ID,
     )
     results = conn.get("validation_results", []) if conn else []
 
@@ -377,8 +413,10 @@ async def get_readiness(
 
 # ── HotelRunner Validation ────────────────────────────────────────────
 
-async def _test_hotelrunner_connection(creds: Dict[str, str]) -> Dict[str, Any]:
+
+async def _test_hotelrunner_connection(creds: dict[str, str]) -> dict[str, Any]:
     from .providers.hotelrunner import HotelRunnerProvider
+
     token = creds.get("token") or creds.get("api_key", "")
     hr_id = creds.get("hr_id") or creds.get("hotel_id", "")
     if not token or not hr_id:
@@ -390,8 +428,9 @@ async def _test_hotelrunner_connection(creds: Dict[str, str]) -> Dict[str, Any]:
     return {"connected": False, "error": result.error}
 
 
-async def _validate_hotelrunner(creds: Dict[str, str], tenant_id: str) -> List[Dict[str, Any]]:
+async def _validate_hotelrunner(creds: dict[str, str], tenant_id: str) -> list[dict[str, Any]]:
     import time
+
     from .providers.hotelrunner import HotelRunnerProvider
 
     token = creds.get("token") or creds.get("api_key", "")
@@ -410,20 +449,24 @@ async def _validate_hotelrunner(creds: Dict[str, str], tenant_id: str) -> List[D
         ms = int((time.time() - t0) * 1000)
         if conn_result.success:
             data = conn_result.data or {}
-            results.append({
-                "check": "connection_test",
-                "status": "passed",
-                "message": f"Connected successfully ({ms}ms latency)",
-                "duration_ms": ms,
-                "data": {"channels": data.get("channel_count", 0)},
-            })
+            results.append(
+                {
+                    "check": "connection_test",
+                    "status": "passed",
+                    "message": f"Connected successfully ({ms}ms latency)",
+                    "duration_ms": ms,
+                    "data": {"channels": data.get("channel_count", 0)},
+                }
+            )
         else:
-            results.append({
-                "check": "connection_test",
-                "status": "failed",
-                "message": conn_result.error or "Connection failed",
-                "duration_ms": ms,
-            })
+            results.append(
+                {
+                    "check": "connection_test",
+                    "status": "failed",
+                    "message": conn_result.error or "Connection failed",
+                    "duration_ms": ms,
+                }
+            )
             return results  # No point continuing if connection fails
     except Exception as e:
         results.append({"check": "connection_test", "status": "failed", "message": str(e), "duration_ms": int((time.time() - t0) * 1000)})
@@ -437,13 +480,15 @@ async def _validate_hotelrunner(creds: Dict[str, str], tenant_id: str) -> List[D
         if rooms_result.get("success"):
             rooms_data = rooms_result.get("data", {})
             room_list = rooms_data.get("rooms", [])
-            results.append({
-                "check": "room_list",
-                "status": "passed",
-                "message": f"Found {len(room_list)} rooms",
-                "duration_ms": ms,
-                "data": {"room_count": len(room_list), "rooms": [{"code": r.get("inv_code", ""), "name": r.get("name", "")} for r in room_list[:10]]},
-            })
+            results.append(
+                {
+                    "check": "room_list",
+                    "status": "passed",
+                    "message": f"Found {len(room_list)} rooms",
+                    "duration_ms": ms,
+                    "data": {"room_count": len(room_list), "rooms": [{"code": r.get("inv_code", ""), "name": r.get("name", "")} for r in room_list[:10]]},
+                }
+            )
         else:
             results.append({"check": "room_list", "status": "failed", "message": rooms_result.get("error", "Failed to fetch rooms"), "duration_ms": ms})
     except Exception as e:
@@ -461,13 +506,15 @@ async def _validate_hotelrunner(creds: Dict[str, str], tenant_id: str) -> List[D
                 for rp in room.get("rate_plans", []):
                     rate_plans.add(rp.get("code") or rp.get("id", ""))
             ms = int((time.time() - t0) * 1000)
-            results.append({
-                "check": "rate_plan_list",
-                "status": "passed",
-                "message": f"Found {len(rate_plans)} rate plans",
-                "duration_ms": ms,
-                "data": {"rate_plan_count": len(rate_plans)},
-            })
+            results.append(
+                {
+                    "check": "rate_plan_list",
+                    "status": "passed",
+                    "message": f"Found {len(rate_plans)} rate plans",
+                    "duration_ms": ms,
+                    "data": {"rate_plan_count": len(rate_plans)},
+                }
+            )
         else:
             results.append({"check": "rate_plan_list", "status": "skipped", "message": "Skipped — room list failed", "duration_ms": 0})
     except Exception as e:
@@ -482,13 +529,15 @@ async def _validate_hotelrunner(creds: Dict[str, str], tenant_id: str) -> List[D
             data = res_result.get("data", {})
             res_count = len(data.get("reservations", []))
             total_pages = data.get("pages", 0)
-            results.append({
-                "check": "reservation_pull",
-                "status": "passed",
-                "message": f"Pull OK — {res_count} reservations (page 1 of {total_pages})",
-                "duration_ms": ms,
-                "data": {"sample_count": res_count, "total_pages": total_pages},
-            })
+            results.append(
+                {
+                    "check": "reservation_pull",
+                    "status": "passed",
+                    "message": f"Pull OK — {res_count} reservations (page 1 of {total_pages})",
+                    "duration_ms": ms,
+                    "data": {"sample_count": res_count, "total_pages": total_pages},
+                }
+            )
         else:
             results.append({"check": "reservation_pull", "status": "failed", "message": res_result.get("error", "Failed"), "duration_ms": ms})
     except Exception as e:
@@ -499,8 +548,10 @@ async def _validate_hotelrunner(creds: Dict[str, str], tenant_id: str) -> List[D
 
 # ── Exely Validation ──────────────────────────────────────────────────
 
-async def _test_exely_connection(creds: Dict[str, str]) -> Dict[str, Any]:
+
+async def _test_exely_connection(creds: dict[str, str]) -> dict[str, Any]:
     from .providers.exely import ExelyProvider
+
     username = creds.get("username", "")
     password = creds.get("password", "")
     hotel_code = creds.get("hotel_code") or creds.get("hotel_id", "")
@@ -514,8 +565,9 @@ async def _test_exely_connection(creds: Dict[str, str]) -> Dict[str, Any]:
     return await provider.legacy_test_connection()
 
 
-async def _validate_exely(creds: Dict[str, str], tenant_id: str) -> List[Dict[str, Any]]:
+async def _validate_exely(creds: dict[str, str], tenant_id: str) -> list[dict[str, Any]]:
     import time
+
     from .providers.exely import ExelyProvider
 
     username = creds.get("username", "")
@@ -540,20 +592,24 @@ async def _validate_exely(creds: Dict[str, str], tenant_id: str) -> List[Dict[st
         if conn_result.get("connected"):
             room_types = conn_result.get("room_types", [])
             rate_plans = conn_result.get("rate_plans", [])
-            results.append({
-                "check": "connection_test",
-                "status": "passed",
-                "message": f"WSSE auth OK, SOAP connected ({ms}ms)",
-                "duration_ms": ms,
-                "data": {"room_types": len(room_types), "rate_plans": len(rate_plans)},
-            })
+            results.append(
+                {
+                    "check": "connection_test",
+                    "status": "passed",
+                    "message": f"WSSE auth OK, SOAP connected ({ms}ms)",
+                    "duration_ms": ms,
+                    "data": {"room_types": len(room_types), "rate_plans": len(rate_plans)},
+                }
+            )
         else:
-            results.append({
-                "check": "connection_test",
-                "status": "failed",
-                "message": conn_result.get("error", "SOAP connection failed"),
-                "duration_ms": ms,
-            })
+            results.append(
+                {
+                    "check": "connection_test",
+                    "status": "failed",
+                    "message": conn_result.get("error", "SOAP connection failed"),
+                    "duration_ms": ms,
+                }
+            )
             return results
     except Exception as e:
         results.append({"check": "connection_test", "status": "failed", "message": str(e), "duration_ms": int((time.time() - t0) * 1000)})
@@ -562,7 +618,9 @@ async def _validate_exely(creds: Dict[str, str], tenant_id: str) -> List[Dict[st
     # 2. Room discovery (OTA_HotelAvailRQ)
     t0 = time.time()
     try:
-        from datetime import datetime as dt, timedelta
+        from datetime import datetime as dt
+        from datetime import timedelta
+
         checkin = dt.now().strftime("%Y-%m-%d")
         checkout = (dt.now() + timedelta(days=1)).strftime("%Y-%m-%d")
         discover_result = await provider.legacy_discover_rooms(checkin, checkout)
@@ -570,13 +628,15 @@ async def _validate_exely(creds: Dict[str, str], tenant_id: str) -> List[Dict[st
         if discover_result.get("success"):
             room_types = discover_result.get("room_types", [])
             rate_plans = discover_result.get("rate_plans", [])
-            results.append({
-                "check": "room_discovery",
-                "status": "passed",
-                "message": f"OTA_HotelAvailRQ OK — {len(room_types)} rooms, {len(rate_plans)} rates",
-                "duration_ms": ms,
-                "data": {"room_types": room_types[:10], "rate_plans": rate_plans[:10]},
-            })
+            results.append(
+                {
+                    "check": "room_discovery",
+                    "status": "passed",
+                    "message": f"OTA_HotelAvailRQ OK — {len(room_types)} rooms, {len(rate_plans)} rates",
+                    "duration_ms": ms,
+                    "data": {"room_types": room_types[:10], "rate_plans": rate_plans[:10]},
+                }
+            )
         else:
             results.append({"check": "room_discovery", "status": "failed", "message": discover_result.get("error", "Discovery failed"), "duration_ms": ms})
     except Exception as e:
@@ -585,20 +645,24 @@ async def _validate_exely(creds: Dict[str, str], tenant_id: str) -> List[Dict[st
     # 3. Reservation pull (OTA_ReadRQ)
     t0 = time.time()
     try:
-        from datetime import datetime as dt, timedelta
+        from datetime import datetime as dt
+        from datetime import timedelta
+
         from_date = (dt.now() - timedelta(days=7)).strftime("%Y-%m-%d")
         to_date = dt.now().strftime("%Y-%m-%d")
         pull_result = await provider.legacy_pull_reservations(from_date=from_date, to_date=to_date)
         ms = int((time.time() - t0) * 1000)
         if pull_result.get("success"):
             reservations = pull_result.get("reservations", [])
-            results.append({
-                "check": "reservation_pull",
-                "status": "passed",
-                "message": f"OTA_ReadRQ OK — {len(reservations)} reservations (last 7 days)",
-                "duration_ms": ms,
-                "data": {"reservation_count": len(reservations)},
-            })
+            results.append(
+                {
+                    "check": "reservation_pull",
+                    "status": "passed",
+                    "message": f"OTA_ReadRQ OK — {len(reservations)} reservations (last 7 days)",
+                    "duration_ms": ms,
+                    "data": {"reservation_count": len(reservations)},
+                }
+            )
         else:
             results.append({"check": "reservation_pull", "status": "failed", "message": pull_result.get("error", "Pull failed"), "duration_ms": ms})
     except Exception as e:
@@ -608,6 +672,7 @@ async def _validate_exely(creds: Dict[str, str], tenant_id: str) -> List[Dict[st
 
 
 # ── Readiness Calculator ──────────────────────────────────────────────
+
 
 def _compute_readiness(results, provider, tenant_id):
     """Sync readiness — used when we don't need async db calls."""

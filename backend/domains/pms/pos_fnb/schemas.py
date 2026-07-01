@@ -2,11 +2,12 @@
 POS & F&B Domain — Pydantic Schemas
 Extracted from pos_fnb_router.py inline models.
 """
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
-from datetime import datetime, timezone
-from enum import Enum
+
 import uuid
+from datetime import UTC, datetime
+from enum import Enum
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class POSCategory(str, Enum):
@@ -43,24 +44,24 @@ class POSOrderItemRequest(BaseModel):
 
 
 class POSOrderCreateRequest(BaseModel):
-    booking_id: Optional[str] = None
-    folio_id: Optional[str] = None
-    order_items: List[POSOrderItemRequest]
+    booking_id: str | None = None
+    folio_id: str | None = None
+    order_items: list[POSOrderItemRequest]
 
 
 class POSOrder(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
-    booking_id: Optional[str] = None
-    guest_id: Optional[str] = None
-    folio_id: Optional[str] = None
-    order_items: List[POSOrderItem]
+    booking_id: str | None = None
+    guest_id: str | None = None
+    folio_id: str | None = None
+    order_items: list[POSOrderItem]
     subtotal: float
     tax_amount: float
     total_amount: float
     status: str = "pending"
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class StockAdjustRequest(BaseModel):
@@ -68,12 +69,12 @@ class StockAdjustRequest(BaseModel):
     adjustment_type: str
     quantity: int
     reason: str
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class UpdateOrderStatusRequest(BaseModel):
     status: str
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class TableLayout(BaseModel):
@@ -89,8 +90,8 @@ class TableLayout(BaseModel):
     width: float = 100
     height: float = 100
     status: str = "available"
-    current_transaction_id: Optional[str] = None
-    server_assigned: Optional[str] = None
+    current_transaction_id: str | None = None
+    server_assigned: str | None = None
 
 
 class KitchenOrderItem(BaseModel):
@@ -101,13 +102,13 @@ class KitchenOrderItem(BaseModel):
     table_number: str
     item_name: str
     quantity: int
-    special_instructions: Optional[str] = None
+    special_instructions: str | None = None
     station: str
     status: str = "pending"
     priority: str = "normal"
-    ordered_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    ready_at: Optional[datetime] = None
-    served_at: Optional[datetime] = None
+    ordered_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    ready_at: datetime | None = None
+    served_at: datetime | None = None
 
 
 class Alert(BaseModel):
@@ -119,9 +120,9 @@ class Alert(BaseModel):
     title: str
     description: str
     source_module: str
-    source_id: Optional[str] = None
-    assigned_to: Optional[str] = None
+    source_id: str | None = None
+    assigned_to: str | None = None
     status: str = "unread"
-    action_url: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    read_at: Optional[datetime] = None
+    action_url: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    read_at: datetime | None = None

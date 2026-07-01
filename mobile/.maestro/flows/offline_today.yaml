@@ -1,0 +1,51 @@
+appId: com.syroce.pms
+name: "Bugün: çevrimdışı render (smoke)"
+tags:
+  - smoke
+  - offline
+env:
+  SMOKE_EMAIL: info@syroce.com
+  SMOKE_PASSWORD: Syroce2026
+---
+# NOTE: Android-only — the network-toggle scripts shell out to `adb`.
+# See README → "Offline flow prerequisites" for the iOS workaround.
+- runFlow:
+    file: login.yaml
+    env:
+      SMOKE_EMAIL: ${SMOKE_EMAIL}
+      SMOKE_PASSWORD: ${SMOKE_PASSWORD}
+
+# Let Today fully settle so React Query persists arrivals + departures
+# into the offline cache (MMKV in EAS builds, AsyncStorage fallback).
+- assertVisible:
+    text: "Bugün Giriş"
+    timeout: 30000
+- assertVisible:
+    text: "Bugün Çıkış"
+
+# Drop the device offline. NetInfo flips onlineManager to false; the
+# next refetch will throw ApiError(0) which OfflineBanner reacts to.
+- runScript: ../scripts/disable_network.js
+
+# Pull-to-refresh forces a manual refetch — `networkMode: 'offlineFirst'`
+# wouldn't otherwise schedule a fetch when offline. The refetch fails
+# fast with status 0 → isOffline(error) → OfflineBanner.visible.
+- swipe:
+    start: "50%, 25%"
+    end: "50%, 80%"
+    duration: 600
+
+# Cached arrivals row must still render even though the network call
+# failed — that's the entire point of the offline cache.
+- assertVisible:
+    text: "Bugün Giriş"
+    timeout: 15000
+
+# OfflineBanner surfaces the canonical tr.app.offline string.
+- assertVisible:
+    text: "Bağlantı kurulamadı, tekrar dene"
+    timeout: 15000
+
+# Cleanup — restore network so subsequent flows in the same suite run
+# online. Best-effort; failures here are logged but ignored.
+- runScript: ../scripts/enable_network.js

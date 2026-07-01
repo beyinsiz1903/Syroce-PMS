@@ -14,9 +14,9 @@ import os
 import uuid
 from datetime import datetime, timedelta
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '')
 
-pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set")
 if BASE_URL.endswith('/'):
     BASE_URL = BASE_URL.rstrip('/')
 
@@ -169,37 +169,9 @@ class TestMarketingRouter:
         print(f"✓ GET /api/marketing/segments - returned {len(data['segments'])} segments")
 
 
-class TestEventsRouter:
-    """Events domain router tests - /api/events/*"""
-    
-    def test_create_event_booking(self, auth_headers):
-        """POST /api/events/bookings should create event"""
-        event_data = {
-            "event_name": f"TEST_Event_{uuid.uuid4().hex[:8]}",
-            "event_type": "meeting",
-            "venue": "Conference Room A",
-            "date": (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d"),
-            "attendees": 25
-        }
-        response = requests.post(
-            f"{BASE_URL}/api/events/bookings",
-            json=event_data,
-            headers=auth_headers
-        )
-        assert response.status_code == 200, f"Failed: {response.text}"
-        data = response.json()
-        assert data.get("success") == True
-        assert "event_id" in data
-        print(f"✓ POST /api/events/bookings - created event {data['event_id']}")
-    
-    def test_get_event_bookings(self, auth_headers):
-        """GET /api/events/bookings should return events"""
-        response = requests.get(f"{BASE_URL}/api/events/bookings", headers=auth_headers)
-        assert response.status_code == 200, f"Failed: {response.text}"
-        data = response.json()
-        assert "events" in data, "Missing 'events' in response"
-        assert "total" in data, "Missing 'total' in response"
-        print(f"✓ GET /api/events/bookings - returned {data['total']} events")
+# NOT: TestEventsRouter kaldırıldı.
+# /api/events/bookings uçları silindi; MICE etkinlikleri /api/mice/events*
+# (backend/routers/mice.py) üzerinden yönetiliyor.
 
 
 class TestSpaRouter:

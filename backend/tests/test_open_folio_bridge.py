@@ -1,28 +1,39 @@
+"""
+Open Folio Bridge Tests
+Restored from quarantine: stale_room_locks — replaced async db.delegate with sync pymongo,
+added lock cleanup before bookings, increased date offsets.
+"""
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
+import random
 
 import pytest
 import requests
 
-import os
-import pytest
 if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
     pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
 
-from core.database import db
+from pymongo import MongoClient
+
+MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
+DB_NAME = os.environ.get("DB_NAME", "hotel_pms")
+
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
+
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set")
 
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-
-pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
+def _get_sync_db():
+    client = MongoClient(MONGO_URL)
+    return client, client[DB_NAME]
 
 
 class TestOpenFolioBridge:
     @pytest.fixture(autouse=True)
     def setup(self):
         if not BASE_URL:
-            pytest.skip('REACT_APP_BACKEND_URL missing')
+            pytest.skip('VITE_BACKEND_URL missing')
 
         self.session = requests.Session()
         self.session.headers.update({'Content-Type': 'application/json'})
@@ -38,17 +49,22 @@ class TestOpenFolioBridge:
         yield
 
     def _find_one(self, collection_name: str, query: dict):
-        return db.delegate[collection_name].find_one(query, {'_id': 0})
+        client, db = _get_sync_db()
+        result = db[collection_name].find_one(query, {'_id': 0})
+        client.close()
+        return result
 
     def _insert_company(self):
         company_id = str(uuid.uuid4())
-        db.delegate['companies'].insert_one({
+        client, db = _get_sync_db()
+        db['companies'].insert_one({
             'id': company_id,
             'tenant_id': self.tenant_id,
             'name': f'Semantic Company {uuid.uuid4().hex[:6]}',
             'status': 'active',
-            'created_at': datetime.utcnow().isoformat(),
+            'created_at': datetime.now(timezone.utc).isoformat(),
         })
+        client.close()
         return company_id
 
     def _get_guest_and_room(self):
@@ -60,8 +76,20 @@ class TestOpenFolioBridge:
 
     def _create_booking(self, company_id: str):
         guest_id, room_id = self._get_guest_and_room()
-        check_in = (datetime.utcnow().date() + timedelta(days=55)).isoformat() + 'T14:00:00Z'
-        check_out = (datetime.utcnow().date() + timedelta(days=58)).isoformat() + 'T12:00:00Z'
+        offset = 3000 + random.randint(0, 3000)
+        check_in = (datetime.now(timezone.utc).date() + timedelta(days=offset)).isoformat() + 'T14:00:00Z'
+        check_out = (datetime.now(timezone.utc).date() + timedelta(days=offset + 3)).isoformat() + 'T12:00:00Z'
+
+        # Clean stale locks
+        ci_date = check_in.split('T')[0]
+        co_date = check_out.split('T')[0]
+        client, db = _get_sync_db()
+        db.room_night_locks.delete_many({
+            "room_id": room_id,
+            "night_date": {"$gte": ci_date, "$lte": co_date},
+        })
+        client.close()
+
         payload = {
             'guest_id': guest_id,
             'room_id': room_id,

@@ -1,0 +1,16 @@
+{
+  "name": "eas-webhook-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tiny relay that converts an Expo EAS BUILD webhook into a GitHub Actions repository_dispatch (eas-build-finished) so .github/workflows/mobile-smoke.yml runs automatically when an EAS build finishes.",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test"
+  },
+  "license": "UNLICENSED"
+}

@@ -1,0 +1,668 @@
+{
+  "version": 1,
+  "note": "GLOBAL varsayilan mufredat (sistem sahipli). Bu dosya pilot/tenant verisine yazilmaz. Sorularin dogru cevaplari (answer_index) yalnizca sunucuda tutulur ve istemciye ASLA gonderilmez.",
+  "courses": [
+    {
+      "id": "reception-temelleri",
+      "title": "Resepsiyon Temelleri",
+      "department": "front_desk",
+      "department_label": "Resepsiyon",
+      "roles": ["front_desk", "supervisor"],
+      "summary": "Misafir karsilama, check-in/check-out akisi ve folio temellerini kapsayan giris egitimi.",
+      "draft": true,
+      "pass_threshold": 70,
+      "estimated_minutes": 25,
+      "lessons": [
+        { "id": "karsilama", "title": "Misafir Karsilama Standartlari", "slug": "reception-karsilama" },
+        { "id": "check-in", "title": "Check-in Akisi", "slug": "reception-check-in" },
+        { "id": "check-out", "title": "Check-out ve Folio", "slug": "reception-check-out" }
+      ],
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "KBS bildirimi icin check-in sirasinda hangi bilgi zorunludur?",
+          "options": ["Misafirin e-posta adresi", "T.C. Kimlik No / Pasaport No", "Arac plakasi", "Sadik musteri kart numarasi"],
+          "answer_index": 1
+        },
+        {
+          "id": "q2",
+          "prompt": "Oda hazir degilse hangi ekran uyari gosterir?",
+          "options": ["Muhasebe ekrani", "Housekeeping ekrani", "Kanal yoneticisi", "Raporlar ekrani"],
+          "answer_index": 1
+        },
+        {
+          "id": "q3",
+          "prompt": "Check-out sonrasi sistem oda durumunu hangi degere ceker?",
+          "options": ["Temiz / Hazir", "Bakim", "Temizleme bekliyor", "Satisa kapali"],
+          "answer_index": 2
+        },
+        {
+          "id": "q4",
+          "prompt": "Online check-in yapan misafir icin resepsiyonda ne yapilir?",
+          "options": ["Tum kayit bastan alinir", "Yalnizca kimlik dogrulamasi ve oda anahtari verilir", "Hicbir islem gerekmez", "Odeme reddedilir"],
+          "answer_index": 1
+        },
+        {
+          "id": "q5",
+          "prompt": "Konaklama vergisi nasil hesaplanir?",
+          "options": ["Misafir tarafindan manuel girilir", "Hic hesaplanmaz", "Yapilandirmaya bagli olarak otomatik hesaplanir", "Sadece nakit odemede eklenir"],
+          "answer_index": 2
+        }
+      ]
+    },
+    {
+      "id": "housekeeping-temelleri",
+      "title": "Kat Hizmetleri Temelleri",
+      "department": "housekeeping",
+      "department_label": "Kat Hizmetleri",
+      "roles": ["housekeeping", "supervisor"],
+      "summary": "Oda durumlari, gorev atama, kontrol listesi ve mini bar sureclerini kapsayan giris egitimi.",
+      "draft": true,
+      "pass_threshold": 70,
+      "estimated_minutes": 20,
+      "lessons": [
+        { "id": "oda-durumlari", "title": "Oda Durumlari", "slug": "housekeeping-oda-durumlari" },
+        { "id": "gorev-akisi", "title": "Gorev Atama ve Kontrol Listesi", "slug": "housekeeping-gorev-akisi" }
+      ],
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "Misafir cikmis, temizlik bekleyen odanin durumu nedir?",
+          "options": ["Temiz / Hazir", "Kirli", "Temizlikte", "Bakim"],
+          "answer_index": 1
+        },
+        {
+          "id": "q2",
+          "prompt": "Temizlik bitti, supervisor onayi gereken oda hangi durumdadir?",
+          "options": ["Denetim Bekliyor", "OOO", "Temiz / Hazir", "Kirli"],
+          "answer_index": 0
+        },
+        {
+          "id": "q3",
+          "prompt": "Mini bar sayiminda eksik urunler ne yapilir?",
+          "options": ["Bir sonraki gune ertelenir", "Otomatik olarak misafir folio'suna adisyon eklenir", "Ucretsiz sayilir", "Sadece supervisora bildirilir"],
+          "answer_index": 1
+        },
+        {
+          "id": "q4",
+          "prompt": "Temizlik sirasinda bulunan esyalar nereye kaydedilir?",
+          "options": ["Folio modulu", "Kayip Esya modulu", "Bakim is emirleri", "Kanal yoneticisi"],
+          "answer_index": 1
+        },
+        {
+          "id": "q5",
+          "prompt": "Asagidakilerden hangisi housekeeping performans metriklerinden biridir?",
+          "options": ["Ortalama temizlik suresi", "OTA komisyon orani", "Doluluk tahmini", "Kur farki"],
+          "answer_index": 0
+        }
+      ]
+    },
+    {
+      "id": "kasa-finans",
+      "title": "Kasa & Finans Temelleri",
+      "department": "finance",
+      "department_label": "Finans",
+      "roles": ["finance", "night_audit", "supervisor"],
+      "summary": "Kasa acilis/kapanis, folio sarj-odeme ve fatura/konaklama vergisi temellerini kapsayan egitim.",
+      "draft": true,
+      "pass_threshold": 70,
+      "estimated_minutes": 25,
+      "lessons": [
+        { "id": "kasa", "title": "Kasa Acilis ve Kapanis", "slug": "kasa-acilis-kapanis" },
+        { "id": "folio", "title": "Folio Sarj ve Odeme Satirlari", "slug": "folio-sarj-odeme" },
+        { "id": "fatura", "title": "Fatura, E-Arsiv ve Konaklama Vergisi", "slug": "fatura-konaklama-vergisi" }
+      ],
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "Kasa vardiyasi nasil baslar?",
+          "options": ["Hicbir islem gerekmez", "Acilis bakiyesi (devir) girilerek", "Sadece gun sonu ile", "Sadece kart hareketiyle"],
+          "answer_index": 1
+        },
+        {
+          "id": "q2",
+          "prompt": "Folio bakiyesi nasil hesaplanir?",
+          "options": ["Odeme toplami - sarj toplami", "Sadece oda ucreti", "Sarj toplami - odeme toplami", "Sarj toplami + odeme toplami"],
+          "answer_index": 2
+        },
+        {
+          "id": "q3",
+          "prompt": "Kapali (checkout edilmis) bir folio'ya ne yapilabilir?",
+          "options": ["Istenen her sarj eklenir", "Yeni sarj/iade eklenemez (fail-closed)", "Sadece misafir ekleyebilir", "Otomatik silinir"],
+          "answer_index": 1
+        },
+        {
+          "id": "q4",
+          "prompt": "Konaklama vergisi nasil belirlenir?",
+          "options": ["Resepsiyon manuel girer", "Hic alinmaz", "Yapilandirmaya bagli olarak otomatik hesaplanir", "Sadece firma faturasinda"],
+          "answer_index": 2
+        },
+        {
+          "id": "q5",
+          "prompt": "Vardiya kapanisinda sayim farki cikarsa ne yapilir?",
+          "options": ["Gormezden gelinir", "Not dusulup kasa acigi/fazlasi olarak kaydedilir", "Otomatik ertesi gune devreder", "Misafire yansitilir"],
+          "answer_index": 1
+        }
+      ]
+    },
+    {
+      "id": "satis-crm",
+      "title": "Satis & Kurumsal CRM",
+      "department": "sales",
+      "department_label": "Satis",
+      "roles": ["sales", "supervisor"],
+      "summary": "Lead/pipeline, kurumsal hesap-sozlesme ve grup/MICE sureclerini kapsayan egitim.",
+      "draft": true,
+      "pass_threshold": 70,
+      "estimated_minutes": 25,
+      "lessons": [
+        { "id": "lead", "title": "Lead ve Satis Pipeline", "slug": "lead-pipeline" },
+        { "id": "sozlesme", "title": "Kurumsal Hesap ve Sozlesmeler", "slug": "kurumsal-sozlesme" },
+        { "id": "grup", "title": "Grup Rezervasyon ve MICE", "slug": "grup-mice" }
+      ],
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "Lead kartinda hangi alan raporlamada hangi kanalin is getirdigini gosterir?",
+          "options": ["Oda numarasi", "Kaynak (source)", "Fatura numarasi", "Kapi kodu"],
+          "answer_index": 1
+        },
+        {
+          "id": "q2",
+          "prompt": "Ayni VKN/e-posta icin kurumsal hesap kurali nedir?",
+          "options": ["Her rezervasyon icin yeni hesap", "Tek hesap; mukerrer engellenir", "Sinirsiz kopya tutulur", "Sadece acente icin tek"],
+          "answer_index": 1
+        },
+        {
+          "id": "q3",
+          "prompt": "Onaylanmamis bir sozlesme ne olur?",
+          "options": ["Otomatik uygulanir", "Uygulanmaz", "Misafire fatura edilir", "Silinir"],
+          "answer_index": 1
+        },
+        {
+          "id": "q4",
+          "prompt": "Salon/tarih cakismasinda MICE sistemi ne yapar?",
+          "options": ["Ikisini birden onaylar", "Uyarir ve ikinci etkinligi bloklar", "Fiyati dusurur", "Hicbir sey yapmaz"],
+          "answer_index": 1
+        },
+        {
+          "id": "q5",
+          "prompt": "Sozlesmesi olmayan veya suresi dolmus firmaya hangi fiyat uygulanir?",
+          "options": ["Anlasmali fiyat", "Standart fiyat", "Ucretsiz", "En dusuk OTA fiyati"],
+          "answer_index": 1
+        }
+      ]
+    },
+    {
+      "id": "satinalma-stok",
+      "title": "Satinalma & Stok Yonetimi",
+      "department": "procurement",
+      "department_label": "Satinalma",
+      "roles": ["procurement", "supervisor"],
+      "summary": "Tedarikci, satinalma siparisi (PO) ve mal kabul/stok girisi sureclerini kapsayan egitim.",
+      "draft": true,
+      "pass_threshold": 70,
+      "estimated_minutes": 20,
+      "lessons": [
+        { "id": "tedarikci", "title": "Tedarikci ve Satinalma Siparisi", "slug": "tedarikci-siparis" },
+        { "id": "mal-kabul", "title": "Mal Kabul ve Stok Girisi", "slug": "mal-kabul" }
+      ],
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "Onaylanmamis bir satinalma siparisi ne olur?",
+          "options": ["Otomatik gonderilir", "Tedarikciye gonderilmez", "Iki kez gonderilir", "Dogrudan stoga girer"],
+          "answer_index": 1
+        },
+        {
+          "id": "q2",
+          "prompt": "Siparisi olmayan bir teslimat nasil ele alinir?",
+          "options": ["Dogrudan kabul edilir", "Dogrudan kabul edilmez; once siparis/istisna kaydi olusturulur", "Cope atilir", "Misafire verilir"],
+          "answer_index": 1
+        },
+        {
+          "id": "q3",
+          "prompt": "Kabul edilen miktarin stoga etkisi nedir?",
+          "options": ["Stok degismez", "Stok girisine donusur, depo bakiyesi artar", "Bakiye azalir", "Sadece maliyet artar"],
+          "answer_index": 1
+        },
+        {
+          "id": "q4",
+          "prompt": "Kismi teslimatta siparis durumu ne olur?",
+          "options": ["Kapanir", "Acik kalir, kalan miktar beklenir", "Iptal olur", "Yeni siparis acilir"],
+          "answer_index": 1
+        },
+        {
+          "id": "q5",
+          "prompt": "Pasif tedarikciye yeni siparis acilabilir mi?",
+          "options": ["Acilabilir", "Acilamaz", "Sadece onayla acilir", "Otomatik acilir"],
+          "answer_index": 1
+        }
+      ]
+    },
+    {
+      "id": "pos-restoran",
+      "title": "Restoran & Bar (POS)",
+      "department": "pos",
+      "department_label": "POS / F&B",
+      "roles": ["staff", "front_desk", "supervisor"],
+      "summary": "Adisyon acma/siparis ve kapanis/folio aktarimi sureclerini kapsayan POS egitimi.",
+      "draft": true,
+      "pass_threshold": 70,
+      "estimated_minutes": 20,
+      "lessons": [
+        { "id": "acilis", "title": "Adisyon Acma ve Siparis", "slug": "adisyon-acilis" },
+        { "id": "kapanis", "title": "Adisyon Kapanis ve Folio Aktarimi", "slug": "adisyon-kapanis-folio" }
+      ],
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "Masa transferi hangi adisyonlarda yapilir?",
+          "options": ["Kapali adisyonlarda", "Acik (open) adisyonlarda", "Sadece nakit adisyonda", "Hicbir zaman"],
+          "answer_index": 1
+        },
+        {
+          "id": "q2",
+          "prompt": "Adisyon kapanisi stoga ne yapar?",
+          "options": ["Otomatik dusurur", "Otomatik dusurmez", "Iki katina cikarir", "Sifirlar"],
+          "answer_index": 1
+        },
+        {
+          "id": "q3",
+          "prompt": "Oda folio'suna aktarim icin ne gerekir?",
+          "options": ["Kapali folio", "Gecerli ve acik bir konaklama/folio", "Sadece misafir adi", "Hicbir sey"],
+          "answer_index": 1
+        },
+        {
+          "id": "q4",
+          "prompt": "Ayni siparis anahtari tekrar gonderilirse ne olur?",
+          "options": ["Kalem iki kez islenir", "Kalem mukerrer islenmez (idempotent)", "Adisyon silinir", "Hata verip kapanir"],
+          "answer_index": 1
+        },
+        {
+          "id": "q5",
+          "prompt": "Kapali bir adisyona kalem eklenebilir mi?",
+          "options": ["Eklenir", "Eklenemez", "Sadece ikram eklenir", "Supervisor ekleyebilir"],
+          "answer_index": 1
+        }
+      ]
+    },
+    {
+      "id": "kanal-yonetimi",
+      "title": "Kanal Yonetimi & OTA",
+      "department": "channel_manager",
+      "department_label": "Kanal Yonetimi",
+      "roles": ["front_desk", "sales", "revenue", "supervisor"],
+      "summary": "OTA baglantilari/senkron ve fiyat/musaitlik-rate parity konularini kapsayan egitim.",
+      "draft": true,
+      "pass_threshold": 70,
+      "estimated_minutes": 20,
+      "lessons": [
+        { "id": "baglanti", "title": "OTA Baglantilari ve Senkron", "slug": "kanal-baglanti" },
+        { "id": "parite", "title": "Fiyat/Musaitlik ve Rate Parity", "slug": "fiyat-musaitlik-parite" }
+      ],
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "Bir tesis icin kac channel manager saglayicisi tanimlidir?",
+          "options": ["Sinirsiz", "Tek (sabit, fail-closed)", "En az uc", "Misafir secer"],
+          "answer_index": 1
+        },
+        {
+          "id": "q2",
+          "prompt": "Eslesmeyen bir OTA rezervasyonu ne olur?",
+          "options": ["Otomatik silinir", "Bekletme (hold) olarak isaretlenir ve operator uyarilir", "Iki kez olusturulur", "Misafire fatura edilir"],
+          "answer_index": 1
+        },
+        {
+          "id": "q3",
+          "prompt": "Rate parity hangi bazda degerlendirilir?",
+          "options": ["Tum odalar tek fiyat", "Oda tipi bazinda", "Sadece toplam ciro", "Kanal sayisina gore"],
+          "answer_index": 1
+        },
+        {
+          "id": "q4",
+          "prompt": "Gercek OTA fiyat/musaitlik push'u nereden yapilir?",
+          "options": ["Eski analitik ekrani", "Birlesik (unified) rate manager", "Misafir portali", "KBS"],
+          "answer_index": 1
+        },
+        {
+          "id": "q5",
+          "prompt": "Senkron hatasi nasil ele alinir?",
+          "options": ["Sessizce yok sayilir", "Cakisma kuyrugunda toplanir, sessizce yok sayilmaz", "Otel kapatilir", "Fiyat sifirlanir"],
+          "answer_index": 1
+        }
+      ]
+    },
+    {
+      "id": "gelir-yonetimi",
+      "title": "Gelir Yonetimi & Fiyatlandirma",
+      "department": "revenue",
+      "department_label": "Gelir Yonetimi",
+      "roles": ["revenue", "supervisor"],
+      "summary": "Fiyat planlari/rate management ve dinamik fiyat/tahmin/oneriler konularini kapsayan egitim.",
+      "draft": true,
+      "pass_threshold": 70,
+      "estimated_minutes": 20,
+      "lessons": [
+        { "id": "plan", "title": "Fiyat Planlari ve Rate Management", "slug": "fiyat-plani" },
+        { "id": "dinamik", "title": "Dinamik Fiyat, Tahmin ve Oneriler", "slug": "dinamik-fiyat-tahmin" }
+      ],
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "Tahmin edilen doluluk hangi birimde tutulur?",
+          "options": ["Oran 0-1", "Yuzde (0-100)", "Oda sayisi", "TL"],
+          "answer_index": 1
+        },
+        {
+          "id": "q2",
+          "prompt": "RMS fiyat onerisi kanallara ne zaman gider?",
+          "options": ["Hemen otomatik", "Onaylandiktan sonra", "Hic gitmez", "Gece otomatik"],
+          "answer_index": 1
+        },
+        {
+          "id": "q3",
+          "prompt": "Revenue Autopilot eslesen plan yoksa ne yapar?",
+          "options": ["Yine de uygular", "Uygulandi isareti koymaz; oneri beklemede kalir", "Tum planlari siler", "Fiyati sifirlar"],
+          "answer_index": 1
+        },
+        {
+          "id": "q4",
+          "prompt": "Gecmis tarihli fiyat degisikligi mevcut rezervasyonlara nasil etki eder?",
+          "options": ["Geriye donuk uygulanir", "Geriye donuk uygulanmaz", "Hepsini iptal eder", "Iki katina cikarir"],
+          "answer_index": 1
+        },
+        {
+          "id": "q5",
+          "prompt": "Veri yetersizse sistem ne yapar?",
+          "options": ["Rastgele deger uretir", "Deger uydurmaz; fail-closed davranir", "Varsayilan yuzde 100 kullanir", "Gecen yili kopyalar"],
+          "answer_index": 1
+        }
+      ]
+    },
+    {
+      "id": "misafir-deneyimi",
+      "title": "Misafir Deneyimi & Sadakat",
+      "department": "guest_experience",
+      "department_label": "Misafir Deneyimi",
+      "roles": ["front_desk", "supervisor"],
+      "summary": "Misafir profili/VIP/tercihler ve yorum-NPS/QR talepleri/sadakat konularini kapsayan egitim.",
+      "draft": true,
+      "pass_threshold": 70,
+      "estimated_minutes": 20,
+      "lessons": [
+        { "id": "profil", "title": "Misafir Profili, VIP ve Tercihler", "slug": "misafir-profil-vip" },
+        { "id": "deneyim", "title": "Yorum/NPS, QR Talepleri ve Sadakat", "slug": "yorum-nps-qr" }
+      ],
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "Misafir kisisel verisi nasil saklanir?",
+          "options": ["Acik metin olarak", "Sifreli (at-rest), yalnizca yetkili erisim", "Sadece kagitta", "Herkese acik"],
+          "answer_index": 1
+        },
+        {
+          "id": "q2",
+          "prompt": "Sifreli alanlarda arama nasil yapilir?",
+          "options": ["Ham deger ekrana acilarak", "Blind-index (hash) ile", "Mumkun degil", "Disaridan arama motoruyla"],
+          "answer_index": 1
+        },
+        {
+          "id": "q3",
+          "prompt": "Oda QR talebi nereye gider?",
+          "options": ["Misafirin e-postasina", "Ilgili departmana; durumu takip edilir", "Silinir", "OTA'ya"],
+          "answer_index": 1
+        },
+        {
+          "id": "q4",
+          "prompt": "Itibar ekranindaki yorumlar neye dayanir?",
+          "options": ["Uretilmis ornek icerige", "Gercek veriye", "Rastgele", "Sadece 5 yildiza"],
+          "answer_index": 1
+        },
+        {
+          "id": "q5",
+          "prompt": "Misafire acik sayfalardaki butonlar hangi rengi kullanir?",
+          "options": ["Sprint A siyah CTA", "Otel marka rengi (accent) - bilincli tercih", "Kirmizi uyari", "Rastgele"],
+          "answer_index": 1
+        }
+      ]
+    },
+    {
+      "id": "guvenlik-uyum",
+      "title": "Guvenlik & Uyumluluk (KVKK/KBS/2FA)",
+      "department": "compliance",
+      "department_label": "Guvenlik & Uyumluluk",
+      "roles": ["front_desk", "housekeeping", "finance", "sales", "procurement", "staff", "night_audit", "revenue", "supervisor"],
+      "summary": "KVKK/GDPR veri koruma, KBS bildirimi/Quick-ID ve hesap guvenligi/2FA konularini kapsayan tum personel egitimi.",
+      "draft": true,
+      "pass_threshold": 70,
+      "estimated_minutes": 30,
+      "lessons": [
+        { "id": "kvkk", "title": "KVKK/GDPR ve Veri Koruma", "slug": "kvkk-veri" },
+        { "id": "kbs", "title": "KBS Polis Bildirimi ve Quick-ID", "slug": "kbs-quickid" },
+        { "id": "2fa", "title": "Hesap Guvenligi ve 2FA", "slug": "hesap-guvenligi-2fa" }
+      ],
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "KVKK'da amacla sinirlilik ilkesi ne demektir?",
+          "options": ["Veri sinirsiz kullanilir", "Veri yalnizca konaklama/hizmet amaciyla islenir", "Veri satilabilir", "Veri herkese aciktir"],
+          "answer_index": 1
+        },
+        {
+          "id": "q2",
+          "prompt": "KBS bildirimi nereden gonderilir?",
+          "options": ["Herhangi bir IP'den", "Otel IP'sinden; bulut/dis IP reddedilir", "Misafir telefonundan", "OTA uzerinden"],
+          "answer_index": 1
+        },
+        {
+          "id": "q3",
+          "prompt": "Check-in sirasinda KBS icin zorunlu bilgi nedir?",
+          "options": ["E-posta", "T.C. Kimlik No / Pasaport No", "Arac plakasi", "Kart numarasi"],
+          "answer_index": 1
+        },
+        {
+          "id": "q4",
+          "prompt": "Iki adimli dogrulama (2FA) nedir?",
+          "options": ["Ikinci bir parola", "Paroladan sonra istenen tek-kullanimlik ek kod (TOTP)", "Yedek e-posta", "CAPTCHA"],
+          "answer_index": 1
+        },
+        {
+          "id": "q5",
+          "prompt": "Yapilandirilmamis bir KBS profilinin riski nedir?",
+          "options": ["Sorun olmaz", "Test moduna dusebilir; gercek bildirim yerine gecmez", "Otomatik duzelir", "Daha hizli bildirir"],
+          "answer_index": 1
+        }
+      ]
+    },
+    {
+      "id": "gece-denetimi",
+      "title": "Gece Denetimi (Night Audit)",
+      "department": "night_audit",
+      "department_label": "Gece Denetimi",
+      "roles": ["night_audit", "finance", "supervisor"],
+      "summary": "Gun sonu (night audit) akisi ve audit izi/gunluk flash konularini kapsayan egitim.",
+      "draft": true,
+      "pass_threshold": 70,
+      "estimated_minutes": 20,
+      "lessons": [
+        { "id": "akis", "title": "Gun Sonu (Night Audit) Akisi", "slug": "gun-sonu-akisi" },
+        { "id": "audit", "title": "Audit Izi ve Gunluk Flash", "slug": "denetim-izi-flash" }
+      ],
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "Gun sonunda acik folio'lara ne islenir?",
+          "options": ["Iade", "Konaklama (oda) ucreti", "Sadece KDV", "Hicbir sey"],
+          "answer_index": 1
+        },
+        {
+          "id": "q2",
+          "prompt": "Gun sonu ayni gun icin kac kez kosmalidir?",
+          "options": ["Istenildigi kadar", "Bir kez (kilit ile korunur)", "En az iki", "Hic"],
+          "answer_index": 1
+        },
+        {
+          "id": "q3",
+          "prompt": "No-show isleminde ne korunur?",
+          "options": ["Folio silinir", "Terminal durum korunur + envanter kilidi serbest birakilir", "Oda kalici satisa kapanir", "Misafir banlanir"],
+          "answer_index": 1
+        },
+        {
+          "id": "q4",
+          "prompt": "Gunluk Flash raporu neye dayanir?",
+          "options": ["Tahmine", "Gun sonu kapanisina", "OTA verisine", "Rastgele"],
+          "answer_index": 1
+        },
+        {
+          "id": "q5",
+          "prompt": "Audit kayitlari icin asagidakilerden hangisi dogrudur?",
+          "options": ["Serbestce silinir", "Degistirilemez; uyumluluk icin saklanir", "Sadece 1 gun tutulur", "Gizlenebilir"],
+          "answer_index": 1
+        }
+      ]
+    },
+    {
+      "id": "bakim-teknik",
+      "title": "Bakim & Teknik Servis",
+      "department": "maintenance",
+      "department_label": "Bakim / Teknik",
+      "roles": ["housekeeping", "staff", "supervisor"],
+      "summary": "Ariza bildirimi/is emri ve planli bakim/OOO oda yonetimini kapsayan egitim.",
+      "draft": true,
+      "pass_threshold": 70,
+      "estimated_minutes": 20,
+      "lessons": [
+        { "id": "is-emri", "title": "Ariza Bildirimi ve Is Emri", "slug": "ariza-is-emri" },
+        { "id": "planli", "title": "Planli Bakim ve OOO Odalar", "slug": "planli-bakim-ooo" }
+      ],
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "Kullanilamaz bir oda nasil isaretlenir?",
+          "options": ["Temiz / Hazir", "OOO (out of order) - satisa kapali", "VIP", "Bos"],
+          "answer_index": 1
+        },
+        {
+          "id": "q2",
+          "prompt": "Bir ariza hangi yollarla bildirilebilir?",
+          "options": ["Sadece e-posta", "Resepsiyon, kat hizmetleri veya misafir QR talebi", "Sadece telefon", "Bildirilemez"],
+          "answer_index": 1
+        },
+        {
+          "id": "q3",
+          "prompt": "OOO odanin musaitlige etkisi nedir?",
+          "options": ["Etkilemez", "Musaitlikten dusulur", "Iki kat sayilir", "OTA'da indirimli satilir"],
+          "answer_index": 1
+        },
+        {
+          "id": "q4",
+          "prompt": "Planli bakim ne saglar?",
+          "options": ["Sadece kayit", "Periyodik kontrol; ariza ve gelir kaybini azaltir", "Oda fiyatini artirir", "Misafir puani"],
+          "answer_index": 1
+        },
+        {
+          "id": "q5",
+          "prompt": "Bakim bitince oda ne yapilir?",
+          "options": ["Hemen kontrolsuz satilir", "Housekeeping kontrolunden gecip satisa acilir", "Kalici kapali tutulur", "Silinir"],
+          "answer_index": 1
+        }
+      ]
+    },
+    {
+      "id": "yonetim-raporlama",
+      "title": "Yonetim & Raporlama",
+      "department": "management",
+      "department_label": "Yonetim",
+      "roles": ["supervisor", "gm", "manager", "owner"],
+      "summary": "GM dashboard/KPI'lar ve raporlar/karar alma konularini kapsayan yonetim egitimi.",
+      "draft": true,
+      "pass_threshold": 70,
+      "estimated_minutes": 20,
+      "lessons": [
+        { "id": "dashboard", "title": "GM Dashboard ve KPI'lar", "slug": "gm-dashboard-kpi" },
+        { "id": "rapor", "title": "Raporlar ve Karar Alma", "slug": "rapor-karar" }
+      ],
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "RevPAR neyi ifade eder?",
+          "options": ["Ortalama oda fiyati", "Oda basina gelir (ADR x doluluk)", "Toplam gider", "Doluluk yuzdesi"],
+          "answer_index": 1
+        },
+        {
+          "id": "q2",
+          "prompt": "GM panelindeki onceki donem karsilastirmalari neye dayanir?",
+          "options": ["Sabit/uydurma farka", "Gercek gecmis veriye", "Tahmine", "OTA reklamina"],
+          "answer_index": 1
+        },
+        {
+          "id": "q3",
+          "prompt": "Rapor gelirleri hangi kayitlari dislar?",
+          "options": ["Hicbirini", "Iptal ve no-show kayitlarini", "Nakit odemeleri", "Firma faturalarini"],
+          "answer_index": 1
+        },
+        {
+          "id": "q4",
+          "prompt": "Bekleyen gorev snapshot'i yoksa fark nasil gosterilir?",
+          "options": ["Rastgele deger", "Sifir (yaniltici deger uretilmez)", "Gecen yil verisi", "Tahmini"],
+          "answer_index": 1
+        },
+        {
+          "id": "q5",
+          "prompt": "Kanal dagilimi raporu hangi karari destekler?",
+          "options": ["Temizlik plani", "Komisyon-gelir dengesi / kanal stratejisi", "Bakim takvimi", "2FA kurulumu"],
+          "answer_index": 1
+        }
+      ]
+    },
+    {
+      "id": "sistem-oryantasyon",
+      "title": "Sistem Temelleri & Oryantasyon",
+      "department": "general",
+      "department_label": "Genel / Oryantasyon",
+      "roles": ["front_desk", "housekeeping", "sales", "finance", "procurement", "staff", "night_audit", "revenue", "supervisor", "gm", "manager"],
+      "summary": "Giris/roller/gezinme ve gorevler/iletisim/yardim merkezi konularini kapsayan tum personel oryantasyonu.",
+      "draft": true,
+      "pass_threshold": 70,
+      "estimated_minutes": 15,
+      "lessons": [
+        { "id": "giris", "title": "Giris, Roller ve Gezinme", "slug": "giris-gezinme" },
+        { "id": "gorev", "title": "Gorevler, Iletisim ve Yardim Merkezi", "slug": "gorev-iletisim-yardim" }
+      ],
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "Menude bazi ekranlari neden gormezsiniz?",
+          "options": ["Sistem hatasi", "Rol yetkiniz yoktur ya da modul kapalidir", "Internet yoktur", "Herkes her seyi gorur"],
+          "answer_index": 1
+        },
+        {
+          "id": "q2",
+          "prompt": "Yetki disi bir islem denendiginde ne olur?",
+          "options": ["Sistem coker", "Sistem reddeder (guvenlik kurali)", "Yoneticiye otomatik mail gider", "Sifre sifirlanir"],
+          "answer_index": 1
+        },
+        {
+          "id": "q3",
+          "prompt": "Oturum bilgisi icin dogru olan nedir?",
+          "options": ["Paylasilabilir", "Kisiseldir; ortak cihazda is bitince cikis yapilir", "Suresizdir", "Herkese aciktir"],
+          "answer_index": 1
+        },
+        {
+          "id": "q4",
+          "prompt": "Vardiya devrinde (shift handover) ne aktarilir?",
+          "options": ["Hicbir sey", "Acik gorevler ve onemli notlar", "Sadece kasa", "Misafir parolalari"],
+          "answer_index": 1
+        },
+        {
+          "id": "q5",
+          "prompt": "Bir konuda takildiginizda ilk basvuru nereye olmalidir?",
+          "options": ["OTA cagri merkezi", "Uygulama ici yardim merkezi, sonra yonetici", "Misafir", "Sosyal medya"],
+          "answer_index": 1
+        }
+      ]
+    }
+  ]
+}

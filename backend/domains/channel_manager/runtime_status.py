@@ -2,9 +2,10 @@
 Channel Manager — Runtime Status
 Aggregates health and operational status across all CM subsystems.
 """
+
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 from domains.channel_manager.provider_failover import provider_failover
@@ -16,45 +17,57 @@ class CMRuntimeStatus:
     """Aggregates channel manager runtime health across all subsystems."""
 
     @staticmethod
-    async def get_status(tenant_id: str) -> Dict[str, Any]:
+    async def get_status(tenant_id: str) -> dict[str, Any]:
         """Full runtime status for the channel manager."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Active connections
-        connections = await db.channel_connections.find(
-            {"tenant_id": tenant_id, "status": "active"}, {"_id": 0}
-        ).to_list(100)
+        connections = await db.channel_connections.find({"tenant_id": tenant_id, "status": "active"}, {"_id": 0}).to_list(100)
 
         # Recent sync logs (last hour)
         one_hour_ago = (now - timedelta(hours=1)).isoformat()
-        recent_syncs = await db.channel_sync_logs.count_documents({
-            "tenant_id": tenant_id,
-            "timestamp": {"$gte": one_hour_ago},
-        })
-        failed_syncs = await db.channel_sync_logs.count_documents({
-            "tenant_id": tenant_id,
-            "timestamp": {"$gte": one_hour_ago},
-            "status": "error",
-        })
+        recent_syncs = await db.channel_sync_logs.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "timestamp": {"$gte": one_hour_ago},
+            }
+        )
+        failed_syncs = await db.channel_sync_logs.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "timestamp": {"$gte": one_hour_ago},
+                "status": "error",
+            }
+        )
 
         # Recent drift scans
-        recent_drifts = await db.drift_scan_results.find(
-            {"tenant_id": tenant_id},
-            {"_id": 0, "drifts_found": 1, "critical_drifts": 1, "scanned_at": 1},
-        ).sort("timestamp", -1).limit(1).to_list(1)
+        recent_drifts = (
+            await db.drift_scan_results.find(
+                {"tenant_id": tenant_id},
+                {"_id": 0, "drifts_found": 1, "critical_drifts": 1, "scanned_at": 1},
+            )
+            .sort("timestamp", -1)
+            .limit(1)
+            .to_list(1)
+        )
 
         last_drift = recent_drifts[0] if recent_drifts else None
 
         # Recent reconciliations
-        recent_recon = await db.reconciliation_results.find(
-            {"tenant_id": tenant_id},
-            {"_id": 0, "status": 1, "auto_fixed": 1, "manual_review": 1, "reconciled_at": 1},
-        ).sort("timestamp", -1).limit(1).to_list(1)
+        recent_recon = (
+            await db.reconciliation_results.find(
+                {"tenant_id": tenant_id},
+                {"_id": 0, "status": 1, "auto_fixed": 1, "manual_review": 1, "reconciled_at": 1},
+            )
+            .sort("timestamp", -1)
+            .limit(1)
+            .to_list(1)
+        )
 
         last_recon = recent_recon[0] if recent_recon else None
 
-        # Provider circuit breaker status
-        provider_statuses = provider_failover.get_all_status()
+        # Provider circuit breaker status (fleet-wide shared view)
+        provider_statuses = await provider_failover.get_all_status_shared()
 
         # Overall health
         health = "healthy"
@@ -91,29 +104,29 @@ class CMRuntimeStatus:
         }
 
     @staticmethod
-    async def get_provider_health(tenant_id: str) -> List[Dict[str, Any]]:
+    async def get_provider_health(tenant_id: str) -> list[dict[str, Any]]:
         """Get health status per OTA provider."""
-        connections = await db.channel_connections.find(
-            {"tenant_id": tenant_id}, {"_id": 0}
-        ).to_list(100)
+        connections = await db.channel_connections.find({"tenant_id": tenant_id}, {"_id": 0}).to_list(100)
 
         results = []
         for conn in connections:
             channel = conn.get("channel", "unknown")
-            breaker = provider_failover.get_breaker(channel)
+            circuit_state = await provider_failover.get_status_shared(channel)
             last_sync_log = await db.channel_sync_logs.find_one(
                 {"tenant_id": tenant_id, "connection_id": conn.get("id")},
                 {"_id": 0},
                 sort=[("timestamp", -1)],
             )
-            results.append({
-                "provider": channel,
-                "connection_id": conn.get("id"),
-                "status": conn.get("status"),
-                "circuit_state": breaker.get_status(),
-                "last_sync": last_sync_log.get("timestamp") if last_sync_log else None,
-                "last_sync_status": last_sync_log.get("status") if last_sync_log else None,
-            })
+            results.append(
+                {
+                    "provider": channel,
+                    "connection_id": conn.get("id"),
+                    "status": conn.get("status"),
+                    "circuit_state": circuit_state,
+                    "last_sync": last_sync_log.get("timestamp") if last_sync_log else None,
+                    "last_sync_status": last_sync_log.get("status") if last_sync_log else None,
+                }
+            )
         return results
 
 

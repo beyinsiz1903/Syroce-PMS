@@ -31,9 +31,10 @@ Phase Gates:
     - all drift explainable
     - all incidents actionable
 """
+
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -88,30 +89,33 @@ PHASE_CONFIG = {
 }
 
 
-async def get_rollout_state(tenant_id: str) -> Dict[str, Any]:
+async def get_rollout_state(tenant_id: str) -> dict[str, Any]:
     """Get current rollout state for a tenant."""
     state = await db[COLL_ROLLOUT_STATE].find_one(
-        {"tenant_id": tenant_id}, _NO_ID,
+        {"tenant_id": tenant_id},
+        _NO_ID,
     )
     if not state:
         return _default_state(tenant_id)
     return state
 
 
-async def initialize_rollout(tenant_id: str, operator_id: str = "system") -> Dict[str, Any]:
+async def initialize_rollout(tenant_id: str, operator_id: str = "system") -> dict[str, Any]:
     """Initialize rollout for a tenant at INTERNAL phase."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     state = {
         "tenant_id": tenant_id,
         "current_phase": RolloutPhase.INTERNAL,
         "phase_started_at": now,
         "rollout_started_at": now,
         "initialized_by": operator_id,
-        "phase_history": [{
-            "phase": RolloutPhase.INTERNAL,
-            "started_at": now,
-            "gate_results": [],
-        }],
+        "phase_history": [
+            {
+                "phase": RolloutPhase.INTERNAL,
+                "started_at": now,
+                "gate_results": [],
+            }
+        ],
         "is_active": True,
         "updated_at": now,
     }
@@ -126,7 +130,7 @@ async def initialize_rollout(tenant_id: str, operator_id: str = "system") -> Dic
     return state
 
 
-async def evaluate_phase_gate(tenant_id: str) -> Dict[str, Any]:
+async def evaluate_phase_gate(tenant_id: str) -> dict[str, Any]:
     """
     Evaluate whether the current phase gate is met.
     Returns gate results and whether transition is possible.
@@ -163,7 +167,7 @@ async def evaluate_phase_gate(tenant_id: str) -> Dict[str, Any]:
     }
 
 
-async def attempt_phase_transition(tenant_id: str, operator_id: str = "system") -> Dict[str, Any]:
+async def attempt_phase_transition(tenant_id: str, operator_id: str = "system") -> dict[str, Any]:
     """
     Attempt to transition to next phase.
     ONLY succeeds if ALL gate checks pass. No manual override.
@@ -177,7 +181,7 @@ async def attempt_phase_transition(tenant_id: str, operator_id: str = "system") 
             "current_phase": gate_result["current_phase"],
             "reason": "Gate kontrolleri gecmedi",
             "failed_checks": failed,
-            "message": f"Gecis engellendi: {len(failed)} kontrol basarisiz",
+            "message": f"Geçiş engellendi: {len(failed)} kontrol başarısız",
         }
 
     if gate_result["next_phase"] is None:
@@ -188,7 +192,7 @@ async def attempt_phase_transition(tenant_id: str, operator_id: str = "system") 
             "message": "Production fazindasiniz",
         }
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     new_phase = gate_result["next_phase"]
 
     # Execute transition
@@ -211,9 +215,7 @@ async def attempt_phase_transition(tenant_id: str, operator_id: str = "system") 
         },
     )
 
-    await _log_history(tenant_id, "phase_transition",
-                       new_phase, operator_id,
-                       {"from": gate_result["current_phase"], "gate_checks": len(gate_result["checks"])})
+    await _log_history(tenant_id, "phase_transition", new_phase, operator_id, {"from": gate_result["current_phase"], "gate_checks": len(gate_result["checks"])})
 
     logger.info(f"Rollout transition: {gate_result['current_phase']} -> {new_phase} tenant={tenant_id}")
 
@@ -226,7 +228,7 @@ async def attempt_phase_transition(tenant_id: str, operator_id: str = "system") 
     }
 
 
-async def get_rollout_dashboard(tenant_id: str) -> Dict[str, Any]:
+async def get_rollout_dashboard(tenant_id: str) -> dict[str, Any]:
     """Full rollout dashboard data."""
     state = await get_rollout_state(tenant_id)
     gate = await evaluate_phase_gate(tenant_id)
@@ -236,14 +238,14 @@ async def get_rollout_dashboard(tenant_id: str) -> Dict[str, Any]:
     rollout_started = state.get("rollout_started_at", "")
 
     # Duration calculation
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     phase_duration_h = 0
     total_duration_h = 0
     if phase_started:
         try:
             ps = datetime.fromisoformat(phase_started.replace("Z", "+00:00"))
             if ps.tzinfo is None:
-                ps = ps.replace(tzinfo=timezone.utc)
+                ps = ps.replace(tzinfo=UTC)
             phase_duration_h = round((now - ps).total_seconds() / 3600, 1)
         except (ValueError, TypeError):
             pass
@@ -251,7 +253,7 @@ async def get_rollout_dashboard(tenant_id: str) -> Dict[str, Any]:
         try:
             rs = datetime.fromisoformat(rollout_started.replace("Z", "+00:00"))
             if rs.tzinfo is None:
-                rs = rs.replace(tzinfo=timezone.utc)
+                rs = rs.replace(tzinfo=UTC)
             total_duration_h = round((now - rs).total_seconds() / 3600, 1)
         except (ValueError, TypeError):
             pass
@@ -265,11 +267,13 @@ async def get_rollout_dashboard(tenant_id: str) -> Dict[str, Any]:
     phase_progress = []
     for i, p in enumerate(phases):
         cfg = PHASE_CONFIG.get(p, {})
-        phase_progress.append({
-            "phase": p,
-            "label": cfg.get("label", p),
-            "status": "completed" if i < current_idx else ("active" if i == current_idx else "pending"),
-        })
+        phase_progress.append(
+            {
+                "phase": p,
+                "label": cfg.get("label", p),
+                "status": "completed" if i < current_idx else ("active" if i == current_idx else "pending"),
+            }
+        )
 
     return {
         "tenant_id": tenant_id,
@@ -291,11 +295,11 @@ async def _evaluate_gate(
     current_phase: str,
     next_phase: str,
     phase_started_at: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Evaluate all gate checks for a phase transition."""
     from domains.channel_manager.ari.hard_fail_gate import get_hard_fail_stats
-    from domains.channel_manager.auto_heal_service import get_auto_heal_stats
     from domains.channel_manager.ari.push_loop_worker import get_push_worker
+    from domains.channel_manager.auto_heal_service import get_auto_heal_stats
     from domains.channel_manager.quarantine_service import get_quarantine_overview
 
     checks = []
@@ -314,23 +318,27 @@ async def _evaluate_gate(
         try:
             ps = datetime.fromisoformat(phase_started_at.replace("Z", "+00:00"))
             if ps.tzinfo is None:
-                ps = ps.replace(tzinfo=timezone.utc)
-            elapsed_h = (datetime.now(timezone.utc) - ps).total_seconds() / 3600
-            checks.append({
-                "name": "min_phase_duration",
-                "label": f"Minimum sure ({min_hours}h)",
-                "passed": elapsed_h >= min_hours,
-                "value": f"{round(elapsed_h, 1)}h / {min_hours}h",
-                "required": f">= {min_hours}h",
-            })
+                ps = ps.replace(tzinfo=UTC)
+            elapsed_h = (datetime.now(UTC) - ps).total_seconds() / 3600
+            checks.append(
+                {
+                    "name": "min_phase_duration",
+                    "label": f"Minimum sure ({min_hours}h)",
+                    "passed": elapsed_h >= min_hours,
+                    "value": f"{round(elapsed_h, 1)}h / {min_hours}h",
+                    "required": f">= {min_hours}h",
+                }
+            )
         except (ValueError, TypeError):
-            checks.append({
-                "name": "min_phase_duration",
-                "label": f"Minimum sure ({min_hours}h)",
-                "passed": False,
-                "value": "Hesaplanamadi",
-                "required": f">= {min_hours}h",
-            })
+            checks.append(
+                {
+                    "name": "min_phase_duration",
+                    "label": f"Minimum sure ({min_hours}h)",
+                    "passed": False,
+                    "value": "Hesaplanamadi",
+                    "required": f">= {min_hours}h",
+                }
+            )
 
     # Gate-specific checks
     if next_phase == RolloutPhase.DUAL_PROVIDER:
@@ -343,18 +351,22 @@ async def _evaluate_gate(
         checks.extend(await _gate_proof_to_production(tenant_id, hf_stats, metrics, quarantine))
 
     # Universal: no BLOCKER incidents
-    blocker_count = await db["channel_reconciliation_cases"].count_documents({
-        "tenant_id": tenant_id,
-        "status": "open",
-        "severity": "critical",
-    })
-    checks.append({
-        "name": "no_blocker_incidents",
-        "label": "Blocker incident yok",
-        "passed": blocker_count == 0,
-        "value": str(blocker_count),
-        "required": "0",
-    })
+    blocker_count = await db["channel_reconciliation_cases"].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "open",
+            "severity": "critical",
+        }
+    )
+    checks.append(
+        {
+            "name": "no_blocker_incidents",
+            "label": "Blocker incident yok",
+            "passed": blocker_count == 0,
+            "value": str(blocker_count),
+            "required": "0",
+        }
+    )
 
     return checks
 
@@ -420,22 +432,26 @@ def _gate_dual_to_pilot(hf_stats, ah_stats, metrics):
 
 async def _gate_pilot_to_proof(tenant_id, hf_stats, metrics):
     """REAL_PILOT -> 7DAY_PROOF gates."""
-    since_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    since_24h = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
 
     # Silent failures in last 24h
-    silent_fails = await db["channel_reconciliation_cases"].count_documents({
-        "tenant_id": tenant_id,
-        "status": "open",
-        "created_at": {"$gte": since_24h},
-    })
+    silent_fails = await db["channel_reconciliation_cases"].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "open",
+            "created_at": {"$gte": since_24h},
+        }
+    )
 
     # Unexplained drifts
-    unexplained = await db["channel_reconciliation_cases"].count_documents({
-        "tenant_id": tenant_id,
-        "status": "open",
-        "drift_type": {"$exists": True, "$ne": None},
-        "resolution": {"$exists": False},
-    })
+    unexplained = await db["channel_reconciliation_cases"].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "open",
+            "drift_type": {"$exists": True, "$ne": None},
+            "resolution": {"$exists": False},
+        }
+    )
 
     verify_ratio = metrics.get("verify_success_ratio", 0)
 
@@ -466,19 +482,23 @@ async def _gate_pilot_to_proof(tenant_id, hf_stats, metrics):
 
 async def _gate_proof_to_production(tenant_id, hf_stats, metrics, quarantine):
     """7DAY_PROOF -> PRODUCTION gates — strictest."""
-    since_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    since_7d = (datetime.now(UTC) - timedelta(days=7)).isoformat()
 
-    data_loss = await db["channel_reconciliation_cases"].count_documents({
-        "tenant_id": tenant_id,
-        "case_type": {"$in": ["missing_locally", "missing_remotely"]},
-        "created_at": {"$gte": since_7d},
-    })
+    data_loss = await db["channel_reconciliation_cases"].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "case_type": {"$in": ["missing_locally", "missing_remotely"]},
+            "created_at": {"$gte": since_7d},
+        }
+    )
 
-    silent_fails = await db["channel_reconciliation_cases"].count_documents({
-        "tenant_id": tenant_id,
-        "status": "open",
-        "created_at": {"$gte": since_7d},
-    })
+    silent_fails = await db["channel_reconciliation_cases"].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "open",
+            "created_at": {"$gte": since_7d},
+        }
+    )
 
     verify_ratio = metrics.get("verify_success_ratio", 0)
 
@@ -521,7 +541,7 @@ async def _gate_proof_to_production(tenant_id, hf_stats, metrics, quarantine):
     ]
 
 
-def _default_state(tenant_id: str) -> Dict[str, Any]:
+def _default_state(tenant_id: str) -> dict[str, Any]:
     return {
         "tenant_id": tenant_id,
         "current_phase": RolloutPhase.INTERNAL,
@@ -533,14 +553,19 @@ def _default_state(tenant_id: str) -> Dict[str, Any]:
 
 
 async def _log_history(
-    tenant_id: str, event_type: str, phase: str,
-    operator_id: str, details: Dict = None,
+    tenant_id: str,
+    event_type: str,
+    phase: str,
+    operator_id: str,
+    details: dict = None,
 ) -> None:
-    await db[COLL_ROLLOUT_HISTORY].insert_one({
-        "tenant_id": tenant_id,
-        "event_type": event_type,
-        "phase": phase,
-        "operator_id": operator_id,
-        "details": details or {},
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    })
+    await db[COLL_ROLLOUT_HISTORY].insert_one(
+        {
+            "tenant_id": tenant_id,
+            "event_type": event_type,
+            "phase": phase,
+            "operator_id": operator_id,
+            "details": details or {},
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    )

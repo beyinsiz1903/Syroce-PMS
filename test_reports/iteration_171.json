@@ -1,0 +1,77 @@
+{
+  "iteration": 171,
+  "date": "2026-04-01",
+  "summary": "Tested No-Show Analytics feature and No-Show Reason selection. All 12 backend API tests passed. Frontend UI verified - analytics page renders correctly with all components. Navigation from sidebar works.",
+  "features_tested": [
+    "GET /api/pms/no-show-analytics returns analytics data with daily, by_room_type, by_channel, by_reason fields",
+    "GET /api/pms/no-show-analytics?days=7/30/90/365 period selector works",
+    "POST /api/pms/bookings/no-show-virtual accepts no_show_reason field (misafir_gelmedi, iptal_gec_islendi, overbooking)",
+    "No-Show Analytics page (/no-show-analytics) renders with summary cards (total no-shows, revenue loss, daily avg, per no-show avg)",
+    "No-Show Analytics page shows reason breakdown, room type breakdown, channel breakdown charts",
+    "No-Show Analytics page shows daily trend chart and recent records table",
+    "Navigation to No-Show Analytics works from sidebar under Reservations group (Rezervasyon > No-Show Analitik)"
+  ],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Auth page",
+        "issues": ["i18n translation keys showing as raw text (common.welcome, auth.signIn, etc.) - pre-existing issue from iteration 170"]
+      }
+    ]
+  },
+  "test_results": {
+    "test_get_no_show_analytics_default_30_days": "PASSED - Returns 25 no-shows, 7500 TL loss",
+    "test_get_no_show_analytics_7_days": "PASSED - Period filter works",
+    "test_get_no_show_analytics_90_days": "PASSED - Period filter works",
+    "test_get_no_show_analytics_365_days": "PASSED - Period filter works",
+    "test_no_show_analytics_by_reason_structure": "PASSED - reason, label, count fields present",
+    "test_no_show_analytics_by_room_type_structure": "PASSED - room_type, count, revenue_loss fields present",
+    "test_no_show_analytics_by_channel_structure": "PASSED - channel, count, revenue_loss fields present",
+    "test_no_show_analytics_recent_structure": "PASSED - All required fields present",
+    "test_no_show_virtual_endpoint_exists": "PASSED - Returns 404 for invalid booking",
+    "test_no_show_virtual_accepts_reason_field": "PASSED - no_show_reason field accepted",
+    "test_no_show_virtual_all_reason_values": "PASSED - All 3 reason values accepted",
+    "test_find_confirmed_booking_for_noshow": "PASSED - Bookings query works"
+  },
+  "frontend_test_results": {
+    "noshow_analytics_page_loads": "PASSED - Page renders with all components",
+    "summary_cards_display": "PASSED - 4 summary cards visible (total, revenue loss, daily avg, per no-show avg)",
+    "period_selector_present": "PASSED - Dropdown with 7/30/90/365 day options",
+    "breakdown_charts_display": "PASSED - Reason, room type, channel, daily trend charts visible",
+    "recent_records_table": "PASSED - Table shows guest name, room type, channel, reason, amount",
+    "navigation_from_sidebar": "PASSED - Rezervasyon > No-Show Analitik navigates correctly"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_noshow_analytics_api.py",
+    "/app/test_reports/pytest/pytest_noshow_analytics.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "All existing no-shows have no_show_reason as null/belirtilmemis since this field was just added - this is expected behavior",
+    "No-Show reason dialog in calendar only appears when there are unassigned bookings (currently 0 unassigned bookings in system)"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_noshow_analytics_api.py - Created new test file for no-show analytics"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "100%"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123"
+  },
+  "seed_data_creation": "None - used existing 25 no-show records in database",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "No-Show Analytics feature is fully functional. 25 no-shows exist in DB with total 7,500 TL revenue loss. All existing no-shows have no_show_reason as 'belirtilmemis' (not specified) since the reason field was just added. The No-Show reason dialog in calendar only appears when clicking No-Show button on unassigned bookings - currently there are 0 unassigned bookings in the system. Navigation: Rezervasyon dropdown > No-Show Analitik.",
+  "notes": {
+    "no_show_reason_dialog_not_tested": "Could not test the No-Show reason dialog UI because there are currently 0 unassigned bookings in the system. The dialog code exists in ReservationCalendar.jsx (lines 1013-1055) with data-testid='noshow-reason-dialog' and 'noshow-reason-select'. The backend endpoint correctly accepts all 3 reason values."
+  }
+}

@@ -3,12 +3,13 @@ Common — Audit Hook Decorator
 Service-level audit decorator for consistent audit trail generation.
 Wraps service methods to automatically log audit events.
 """
+
 import functools
+import logging
 import time
 import uuid
-import logging
-from datetime import datetime, timezone
-from typing import Optional, Callable
+from datetime import UTC, datetime
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +20,12 @@ SEVERITY_CRITICAL = "critical"
 
 
 async def _write_audit(db, entry: dict):
-    """Persist audit entry. Silently log on failure — never break the caller."""
+    """Persist audit entry (tamper-evident chain). Silently log on failure —
+    never break the caller."""
     try:
-        await db.audit_logs.insert_one(entry)
+        from core.audit_chain import append_audit_log
+
+        await append_audit_log(db, entry)
     except Exception as exc:
         logger.warning("audit_hook: write failed — %s", exc)
 
@@ -111,7 +115,9 @@ def audited(
                 "override_reason": kwargs.get("reason"),
                 "correlation_id": correlation_id,
                 "duration_ms": duration_ms,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "ip_address": getattr(ctx, "ip_address", None),
+                "user_agent": getattr(ctx, "user_agent", None),
+                "timestamp": datetime.now(UTC).isoformat(),
             }
 
             # Write audit asynchronously (fire-and-forget style)
@@ -125,7 +131,7 @@ def audited(
     return decorator
 
 
-def _collection_for(target_type: str) -> Optional[str]:
+def _collection_for(target_type: str) -> str | None:
     """Map target_type to MongoDB collection name for before-snapshots."""
     mapping = {
         "booking": "bookings",

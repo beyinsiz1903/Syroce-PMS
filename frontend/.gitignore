@@ -9,7 +9,11 @@
 /coverage
 
 # production
-/build
+# NOTE: frontend/build is intentionally NOT ignored. The Cloud autoscale
+# deploy packaging ("Repl layer") excludes gitignored paths, so the build
+# produced during the deploy build step would be dropped before runtime,
+# leaving the backend to serve only the health JSON instead of the SPA.
+# Tracking the build output ensures it ships in the deployment image.
 
 # misc
 .DS_Store
@@ -21,3 +25,7 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Playwright auto-generated reports (regenerated each run)
+playwright-business-report/
+test-results-business/

@@ -1,4 +1,4 @@
-name: Deploy Pipeline
+name: Deploy Pipeline (Manual)
 
 on:
   workflow_dispatch:
@@ -11,10 +11,19 @@ on:
         options:
           - staging
           - production
+      skip_backup:
+        description: "Skip pre-deploy DB backup (prod only)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ${{ github.repository_owner }}/syroce
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ── Build & Push Images ────────────────────────────────────────
@@ -24,37 +33,44 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Login to Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
       - name: Build & Push Backend
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./backend
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max,ignore-error=true
 
       - name: Build & Push Frontend
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./frontend
           push: true
           build-args: |
-            REACT_APP_BACKEND_URL=${{ secrets.REACT_APP_BACKEND_URL }}
+            VITE_BACKEND_URL=${{ secrets.VITE_BACKEND_URL }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max,ignore-error=true
 
       - name: Build & Push Worker
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./worker/Dockerfile
@@ -62,6 +78,8 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-worker:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-worker:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max,ignore-error=true
 
   # ── Deploy to Staging ──────────────────────────────────────────
   deploy-staging:
@@ -70,20 +88,154 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Pre-deploy check
+        id: pre_deploy
+        run: |
+          if [ -z "${{ secrets.KUBECONFIG }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Staging deployment skipped — KUBECONFIG not configured"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Deploy to Staging
+        if: steps.pre_deploy.outputs.skip != 'true'
         run: |
-          echo "Deploying to staging..."
-          echo "Image tag: ${{ github.sha }}"
-          # kubectl set image deployment/backend backend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}
-          # kubectl set image deployment/frontend frontend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
-          # kubectl set image deployment/worker worker=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-worker:${{ github.sha }}
+          echo "${{ secrets.KUBECONFIG }}" > /tmp/kubeconfig
+          export KUBECONFIG=/tmp/kubeconfig
+          echo "Deploying SHA ${{ github.sha }} to staging..."
+          kubectl -n syroce set image deployment/syroce-backend backend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}
+          kubectl -n syroce set image deployment/syroce-frontend frontend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
+          kubectl -n syroce set image deployment/syroce-worker worker=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-worker:${{ github.sha }}
+          kubectl -n syroce rollout status deployment/syroce-backend --timeout=300s
+          kubectl -n syroce rollout status deployment/syroce-frontend --timeout=300s
+          kubectl -n syroce rollout status deployment/syroce-worker --timeout=300s
 
-      - name: Verify Staging
+      - name: Smoke test
+        if: steps.pre_deploy.outputs.skip != 'true'
+        id: smoke_test
         run: |
-          echo "Running health checks on staging..."
-          # curl -f https://staging.syroce.com/api/health/
+          if [ -z "${{ secrets.STAGING_URL }}" ]; then
+            echo "::warning::Staging smoke test skipped — STAGING_URL not configured"
+            exit 0
+          fi
+
+          echo "## Smoke Test — Staging (Manual Deploy)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Endpoint | Status | Latency | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|:---------|:-------|:--------|:-------|" >> $GITHUB_STEP_SUMMARY
+
+          FAIL=0
+          SMOKE_JSON='{"endpoints":['
+          FIRST=true
+
+          smoke_check() {
+            local NAME="$1" EP="$2"
+            local URL="${{ secrets.STAGING_URL }}${EP}"
+            local T0=$(date +%s%N)
+            local CODE=$(curl -sf "$URL" -o /dev/null -w "%{http_code}" --max-time 15 2>/dev/null) || CODE="000"
+            local T1=$(date +%s%N)
+            local MS=$(( (T1 - T0) / 1000000 ))
+            local RES=$( [ "$CODE" = "200" ] && echo "OK" || echo "FAIL" )
+            echo "| \`${EP}\` | ${CODE} | ${MS}ms | ${RES} |" >> $GITHUB_STEP_SUMMARY
+            if [ "$FIRST" = "true" ]; then FIRST=false; else SMOKE_JSON="${SMOKE_JSON},"; fi
+            SMOKE_JSON="${SMOKE_JSON}{\"name\":\"${NAME}\",\"path\":\"${EP}\",\"status\":${CODE},\"latency_ms\":${MS},\"result\":\"${RES}\"}"
+            [ "$CODE" = "200" ] && return 0 || return 1
+          }
+
+          smoke_check "Health API" "/api/health/" || FAIL=1
+          smoke_check "Frontend" "/" || FAIL=1
+          smoke_check "API Docs" "/api/docs" || echo "::warning::Docs endpoint not reachable"
+          smoke_check "Channel Health" "/api/ops/dashboard/channel-health" || echo "::warning::Channel Health not reachable"
+
+          SMOKE_JSON="${SMOKE_JSON}]}"
+          echo "$SMOKE_JSON" > /tmp/smoke_results.json
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "$FAIL" -eq 0 ]; then
+            echo "> All smoke tests passed" >> $GITHUB_STEP_SUMMARY
+            echo "smoke_ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "> **CRITICAL: Smoke test failed**" >> $GITHUB_STEP_SUMMARY
+            echo "smoke_ok=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Rollback on failure
+        if: failure() && steps.pre_deploy.outputs.skip != 'true'
+        run: |
+          echo "::error::Staging deploy failed — rolling back"
+          echo "${{ secrets.KUBECONFIG }}" > /tmp/kubeconfig
+          export KUBECONFIG=/tmp/kubeconfig
+          kubectl -n syroce rollout undo deployment/syroce-backend
+          kubectl -n syroce rollout undo deployment/syroce-frontend
+          kubectl -n syroce rollout undo deployment/syroce-worker
+          kubectl -n syroce rollout status deployment/syroce-backend --timeout=180s
+
+          echo "## Rollback — Staging" >> $GITHUB_STEP_SUMMARY
+          echo "All deployments rolled back due to failure." >> $GITHUB_STEP_SUMMARY
+
+      - name: Record deploy event
+        if: always() && steps.pre_deploy.outputs.skip != 'true'
+        run: |
+          if [ -z "${{ secrets.BACKEND_API_URL }}" ]; then
+            echo "::notice title=Deploy Event::Recording skipped — BACKEND_API_URL not configured"
+            exit 0
+          fi
+          SMOKE=$(cat /tmp/smoke_results.json 2>/dev/null || echo '{}')
+          IS_ROLLBACK=$( [ "${{ job.status }}" != "success" ] && echo "true" || echo "false" )
+          curl -sf -X POST "${{ secrets.BACKEND_API_URL }}/api/ops/deploys" \
+            -H "Content-Type: application/json" \
+            -d "{\"sha\":\"${{ github.sha }}\",\"environment\":\"staging\",\"status\":\"${{ job.status }}\",\"actor\":\"${{ github.actor }}\",\"branch\":\"${{ github.ref_name }}\",\"smoke_test\":$SMOKE,\"rollback\":$IS_ROLLBACK}" || true
+
+      - name: Cleanup
+        if: always()
+        run: rm -f /tmp/kubeconfig
+
+      - name: Notify
+        if: always() && steps.pre_deploy.outputs.skip != 'true'
+        run: |
+          STATUS="${{ job.status }}"
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:8}"
+          ACTOR="${{ github.actor }}"
+          BRANCH="${{ github.ref_name }}"
+
+          # Always write structured summary to GitHub Actions
+          echo "## Deploy Result — Staging (Manual)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|:------|:------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | **${STATUS}** |" >> $GITHUB_STEP_SUMMARY
+          echo "| SHA | \`${SHORT_SHA}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | \`${BRANCH}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Actor | ${ACTOR} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | staging |" >> $GITHUB_STEP_SUMMARY
+
+          # GitHub annotations for visibility
+          if [ "$STATUS" = "success" ]; then
+            echo "::notice title=Staging Deploy Basarili::${SHORT_SHA} → staging by ${ACTOR} (manual)"
+          else
+            echo "::error title=Staging Deploy Basarisiz::${SHORT_SHA} → staging by ${ACTOR} — rollback initiated (manual)"
+          fi
+
+          # Slack webhook (if configured)
+          if [ -z "${{ secrets.SLACK_DEPLOY_WEBHOOK }}" ]; then
+            echo "::notice title=Slack Bildirimi::Slack bildirimi atlanıyor — SLACK_DEPLOY_WEBHOOK yapılandırılmamış. GitHub Actions Summary'de sonuçlar mevcut."
+            exit 0
+          fi
+          if [ "$STATUS" = "success" ]; then
+            COLOR="#36a64f"
+            TITLE="Staging Deploy Basarili (Manual)"
+          else
+            COLOR="#ff0000"
+            TITLE="Staging Deploy Basarisiz — Rollback Yapildi (Manual)"
+          fi
+          curl -sf -X POST "${{ secrets.SLACK_DEPLOY_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"attachments\":[{\"color\":\"$COLOR\",\"title\":\"$TITLE\",\"fields\":[{\"title\":\"SHA\",\"value\":\"$SHORT_SHA\",\"short\":true},{\"title\":\"Actor\",\"value\":\"$ACTOR\",\"short\":true},{\"title\":\"Branch\",\"value\":\"$BRANCH\",\"short\":true},{\"title\":\"Environment\",\"value\":\"staging\",\"short\":true}]}]}" || true
 
   # ── Deploy to Production ───────────────────────────────────────
   deploy-production:
@@ -92,21 +244,161 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Create DB Backup
-        run: echo "Triggering pre-deploy backup..."
+      - name: Pre-deploy check
+        id: pre_deploy
+        run: |
+          if [ -z "${{ secrets.KUBECONFIG }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Production deployment skipped — KUBECONFIG not configured"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: DB Backup
+        if: steps.pre_deploy.outputs.skip != 'true' && github.event.inputs.skip_backup != 'true'
+        run: |
+          if [ -z "${{ secrets.MONGO_BACKUP_URI }}" ]; then
+            echo "::warning::DB backup skipped — MONGO_BACKUP_URI not configured"
+            exit 0
+          fi
+          echo "Creating pre-deploy backup..."
+          mongodump --uri="${{ secrets.MONGO_BACKUP_URI }}" --archive=/tmp/pre-deploy-${{ github.sha }}.gz --gzip
+          echo "Backup created: pre-deploy-${{ github.sha }}.gz"
 
       - name: Deploy to Production
+        if: steps.pre_deploy.outputs.skip != 'true'
         run: |
-          echo "Deploying to production..."
-          echo "Image tag: ${{ github.sha }}"
+          echo "${{ secrets.KUBECONFIG }}" > /tmp/kubeconfig
+          export KUBECONFIG=/tmp/kubeconfig
+          echo "Deploying SHA ${{ github.sha }} to production..."
+          kubectl -n syroce set image deployment/syroce-backend backend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}
+          kubectl -n syroce set image deployment/syroce-frontend frontend=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
+          kubectl -n syroce set image deployment/syroce-worker worker=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-worker:${{ github.sha }}
+          kubectl -n syroce rollout status deployment/syroce-backend --timeout=600s
+          kubectl -n syroce rollout status deployment/syroce-frontend --timeout=300s
+          kubectl -n syroce rollout status deployment/syroce-worker --timeout=300s
 
-      - name: Verify Production
+      - name: Smoke test
+        if: steps.pre_deploy.outputs.skip != 'true'
+        id: smoke_test
         run: |
-          echo "Running production health checks..."
+          if [ -z "${{ secrets.PRODUCTION_URL }}" ]; then
+            echo "::warning::Production smoke test skipped — PRODUCTION_URL not configured"
+            exit 0
+          fi
+
+          echo "## Smoke Test — Production (Manual Deploy)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Endpoint | Status | Latency | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|:---------|:-------|:--------|:-------|" >> $GITHUB_STEP_SUMMARY
+
+          FAIL=0
+          SMOKE_JSON='{"endpoints":['
+          FIRST=true
+
+          smoke_check() {
+            local NAME="$1" EP="$2"
+            local URL="${{ secrets.PRODUCTION_URL }}${EP}"
+            local T0=$(date +%s%N)
+            local CODE=$(curl -sf "$URL" -o /dev/null -w "%{http_code}" --max-time 15 2>/dev/null) || CODE="000"
+            local T1=$(date +%s%N)
+            local MS=$(( (T1 - T0) / 1000000 ))
+            local RES=$( [ "$CODE" = "200" ] && echo "OK" || echo "FAIL" )
+            echo "| \`${EP}\` | ${CODE} | ${MS}ms | ${RES} |" >> $GITHUB_STEP_SUMMARY
+            if [ "$FIRST" = "true" ]; then FIRST=false; else SMOKE_JSON="${SMOKE_JSON},"; fi
+            SMOKE_JSON="${SMOKE_JSON}{\"name\":\"${NAME}\",\"path\":\"${EP}\",\"status\":${CODE},\"latency_ms\":${MS},\"result\":\"${RES}\"}"
+            [ "$CODE" = "200" ] && return 0 || return 1
+          }
+
+          smoke_check "Health API" "/api/health/" || FAIL=1
+          smoke_check "Frontend" "/" || FAIL=1
+          smoke_check "Channel Health" "/api/ops/dashboard/channel-health" || echo "::warning::Channel Health not reachable"
+
+          SMOKE_JSON="${SMOKE_JSON}]}"
+          echo "$SMOKE_JSON" > /tmp/smoke_results.json
+
+          if [ "$FAIL" -eq 0 ]; then
+            echo "> All production smoke tests passed" >> $GITHUB_STEP_SUMMARY
+            echo "smoke_ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "> **CRITICAL: Production smoke test failed**" >> $GITHUB_STEP_SUMMARY
+            echo "smoke_ok=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Rollback on failure
+        if: failure() && steps.pre_deploy.outputs.skip != 'true'
+        run: |
+          echo "::error::Production deploy FAILED — initiating rollback"
+          echo "${{ secrets.KUBECONFIG }}" > /tmp/kubeconfig
+          export KUBECONFIG=/tmp/kubeconfig
+          kubectl -n syroce rollout undo deployment/syroce-backend
+          kubectl -n syroce rollout undo deployment/syroce-frontend
+          kubectl -n syroce rollout undo deployment/syroce-worker
+          kubectl -n syroce rollout status deployment/syroce-backend --timeout=300s
+          echo "Rollback complete"
+
+          echo "## Rollback — Production" >> $GITHUB_STEP_SUMMARY
+          echo "All deployments rolled back due to failure." >> $GITHUB_STEP_SUMMARY
+
+      - name: Record deploy event
+        if: always() && steps.pre_deploy.outputs.skip != 'true'
+        run: |
+          if [ -z "${{ secrets.BACKEND_API_URL }}" ]; then
+            echo "::notice title=Deploy Event::Recording skipped — BACKEND_API_URL not configured"
+            exit 0
+          fi
+          SMOKE=$(cat /tmp/smoke_results.json 2>/dev/null || echo '{}')
+          IS_ROLLBACK=$( [ "${{ job.status }}" != "success" ] && echo "true" || echo "false" )
+          curl -sf -X POST "${{ secrets.BACKEND_API_URL }}/api/ops/deploys" \
+            -H "Content-Type: application/json" \
+            -d "{\"sha\":\"${{ github.sha }}\",\"environment\":\"production\",\"status\":\"${{ job.status }}\",\"actor\":\"${{ github.actor }}\",\"branch\":\"${{ github.ref_name }}\",\"smoke_test\":$SMOKE,\"rollback\":$IS_ROLLBACK}" || true
+
+      - name: Cleanup
+        if: always()
+        run: rm -f /tmp/kubeconfig
 
       - name: Notify
-        if: always()
+        if: always() && steps.pre_deploy.outputs.skip != 'true'
         run: |
-          echo "Deploy status: ${{ job.status }}"
+          STATUS="${{ job.status }}"
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:8}"
+          ACTOR="${{ github.actor }}"
+          BRANCH="${{ github.ref_name }}"
+
+          # Always write structured summary to GitHub Actions
+          echo "## Deploy Result — Production (Manual)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|:------|:------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | **${STATUS}** |" >> $GITHUB_STEP_SUMMARY
+          echo "| SHA | \`${SHORT_SHA}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | \`${BRANCH}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Actor | ${ACTOR} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | **production** |" >> $GITHUB_STEP_SUMMARY
+
+          # GitHub annotations
+          if [ "$STATUS" = "success" ]; then
+            echo "::notice title=PROD Deploy Basarili::${SHORT_SHA} → production by ${ACTOR} (manual)"
+          else
+            echo "::error title=PROD Deploy BASARISIZ::${SHORT_SHA} → production by ${ACTOR} — rollback initiated (manual)"
+          fi
+
+          # Slack webhook (if configured)
+          if [ -z "${{ secrets.SLACK_DEPLOY_WEBHOOK }}" ]; then
+            echo "::notice title=Slack Bildirimi::Slack bildirimi atlanıyor — SLACK_DEPLOY_WEBHOOK yapılandırılmamış. GitHub Actions Summary'de sonuçlar mevcut."
+            exit 0
+          fi
+          if [ "$STATUS" = "success" ]; then
+            COLOR="#36a64f"
+            TITLE="PROD Deploy Basarili (Manual)"
+          else
+            COLOR="#ff0000"
+            TITLE="PROD Deploy BASARISIZ — Rollback Yapildi (Manual)"
+          fi
+          curl -sf -X POST "${{ secrets.SLACK_DEPLOY_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"attachments\":[{\"color\":\"$COLOR\",\"title\":\"$TITLE\",\"fields\":[{\"title\":\"SHA\",\"value\":\"$SHORT_SHA\",\"short\":true},{\"title\":\"Actor\",\"value\":\"$ACTOR\",\"short\":true},{\"title\":\"Branch\",\"value\":\"$BRANCH\",\"short\":true},{\"title\":\"Environment\",\"value\":\"production\",\"short\":true}]}]}" || true

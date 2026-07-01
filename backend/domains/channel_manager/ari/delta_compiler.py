@@ -4,8 +4,8 @@ ARI Delta Compiler.
 Transforms compacted change sets into provider-specific minimal deltas.
 Each provider has its own compilation strategy (HotelRunner = REST params, Exely = SOAP period).
 """
+
 import logging
-from typing import Dict, List
 
 from .events import ARIDelta
 from .repositories import compute_outbound_delta_hash

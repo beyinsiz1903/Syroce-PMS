@@ -1,0 +1,120 @@
+{
+  "iteration": 174,
+  "date": "2026-04-01",
+  "summary": "Tested P2 features: Auto-Map (Otomatik Esle) for Exely and HotelRunner, Wire Failure Tracking Dashboard, and Enhanced Mapping Tables. All 16 backend API tests passed. All frontend UI elements verified working correctly.",
+  "features_tested": [
+    "POST /api/channel-manager/auto-map/suggest with provider='exely' - Returns suggestions, unmapped types",
+    "POST /api/channel-manager/auto-map/suggest with provider='hotelrunner' - Returns suggestions, unmapped types",
+    "POST /api/channel-manager/auto-map/apply - Applies selected mappings",
+    "GET /api/channel-manager/auto-map/status/exely - Returns mapping completion stats (3/6 = 50%)",
+    "GET /api/channel-manager/auto-map/status/hotelrunner - Returns mapping completion stats (4/6 = 66.7%)",
+    "GET /api/channel-manager/wire-failures/summary?days=30 - Returns total failures (5647), breakdown, health status (critical)",
+    "GET /api/channel-manager/wire-failures/recent?limit=10 - Returns recent failures with provider filter",
+    "GET /api/channel-manager/wire-failures/trend?days=30 - Returns daily failure trend data",
+    "Exely Integration page (/exely) - Eslemeler tab with mapping status bar (50%), Otomatik Esle button, mappings table with delete",
+    "HotelRunner Integration page (/hotelrunner) - Eslemeler tab with mapping status bar (66.7%), Otomatik Esle button, mappings table",
+    "Wire Failure Dashboard page (/wire-failures) - Health status cards, failure breakdown, trend chart, recent failures list with filters",
+    "Navigation sidebar - Kanallar dropdown contains Wire Failure Takibi link"
+  ],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Auth page",
+        "issues": ["i18n translation keys showing as raw text (common.welcome, auth.signIn, etc.) - pre-existing issue from previous iterations"]
+      }
+    ]
+  },
+  "test_results": {
+    "backend": {
+      "test_auto_map_suggest_exely_returns_200_or_404": "PASSED",
+      "test_auto_map_suggest_hotelrunner_returns_200_or_404": "PASSED",
+      "test_auto_map_suggest_invalid_provider_returns_400": "PASSED",
+      "test_auto_map_apply_empty_mappings_returns_success": "PASSED",
+      "test_auto_map_apply_invalid_provider_returns_400": "PASSED",
+      "test_auto_map_status_exely_returns_200_or_404": "PASSED",
+      "test_auto_map_status_hotelrunner_returns_200_or_404": "PASSED",
+      "test_auto_map_status_invalid_provider_returns_400": "PASSED",
+      "test_wire_failure_summary_returns_200": "PASSED",
+      "test_wire_failure_summary_with_custom_days": "PASSED",
+      "test_wire_failure_recent_returns_200": "PASSED",
+      "test_wire_failure_recent_with_provider_filter": "PASSED",
+      "test_wire_failure_trend_returns_200": "PASSED",
+      "test_wire_failure_trend_with_custom_days": "PASSED",
+      "test_auto_map_full_workflow_exely": "PASSED",
+      "test_wire_failure_summary_and_recent_consistency": "PASSED"
+    },
+    "frontend": {
+      "wire_failure_dashboard_loads": "PASSED - Title: Wire Failure Takibi",
+      "wire_failure_health_cards": "PASSED - GENEL DURUM: Kritik, TOPLAM HATA: 5647, ARI HARD FAIL: 215, ACIK RECON SORUNU: 1179",
+      "wire_failure_breakdown_stats": "PASSED - ARI HARD FAILS: 215, EXELY SYNC FAILS: 5432, DLQ ITEMS: 0, CONTROL PLANE FAILS: 0, RECONCILIATION ISSUES: 1179, OBSERVABILITY ERRORS: 756",
+      "wire_failure_trend_chart": "PASSED - Shows daily failure trend for last 14 days",
+      "wire_failure_recent_tab": "PASSED - Filter buttons (Tumu, ARI, EXELY, DLQ, CONTROL PLANE) and failures list",
+      "exely_integration_page_loads": "PASSED - Title: Exely Entegrasyonu, Connection: Bagli",
+      "exely_mapping_status_bar": "PASSED - Esleme Durumu: 3/6 PMS oda tipi (50%)",
+      "exely_auto_map_button": "PASSED - Otomatik Esle button visible",
+      "exely_mappings_table": "PASSED - Shows PMS Oda Tipi, Exely Oda Kodu, Rate Plan, Sync badges, delete buttons",
+      "exely_unmapped_warning": "PASSED - Shows Family (3 oda), Junior Suite (3 oda), Superior (7 oda)",
+      "exely_auto_map_dialog": "PASSED - Opens with suggestions or 'no new types' message",
+      "hotelrunner_integration_page_loads": "PASSED - Title: HotelRunner Entegrasyonu, Connection: Bagli",
+      "hotelrunner_mapping_status_bar": "PASSED - Esleme Durumu: 4/6 PMS oda tipi (66.7%)",
+      "hotelrunner_auto_map_button": "PASSED - Otomatik Esle button visible",
+      "hotelrunner_mappings_table": "PASSED - Shows HR Oda Adi, Inv/Rate Code, PMS Oda Tipi dropdown, toggles, Eslendi badges",
+      "hotelrunner_auto_map_dialog": "PASSED - Opens with unmapped PMS types: Family (3 oda), Suite (5 oda)",
+      "navigation_kanallar_dropdown": "PASSED - Contains Wire Failure Takibi link",
+      "navigation_wire_failure_link": "PASSED - Navigates to /wire-failures"
+    }
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_p2_auto_map_wire_failures.py",
+    "/app/test_reports/pytest/pytest_p2_auto_map_wire_failures.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Auto-Map feature uses name similarity algorithm with 0.4 threshold for matching PMS room types to provider room types",
+    "Wire Failure Dashboard aggregates data from multiple collections: ari_hard_fail_log, exely_sync_logs, connector_outbox, cp_failures, cm_reconciliation_issues, observability_errors",
+    "Exely mapping status shows 3/6 (50%) mapped, HotelRunner shows 4/6 (66.7%) mapped",
+    "Wire Failure health status is 'critical' with 5647 total failures in last 30 days",
+    "All UI labels are correctly in Turkish as expected",
+    "Navigation properly includes Wire Failure Takibi under Kanallar dropdown menu"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_p2_auto_map_wire_failures.py - Created comprehensive test file for P2 features"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16 tests passed)",
+    "frontend": "100% (all UI elements verified)"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123"
+  },
+  "seed_data_creation": "None - used existing data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "P2 features (Auto-Map, Wire Failure Tracking, Enhanced Mappings) are fully functional. Auto-Map uses similarity matching to suggest room type mappings. Wire Failure Dashboard shows aggregated failure data from multiple sources. Exely has 3/6 mappings (50%), HotelRunner has 4/6 mappings (66.7%). Wire Failure status is 'critical' with 5647 total failures. Navigation includes Wire Failure Takibi under Kanallar dropdown.",
+  "data_summary": {
+    "auto_map": {
+      "exely_mapping_status": "3/6 PMS types mapped (50%)",
+      "hotelrunner_mapping_status": "4/6 PMS types mapped (66.7%)",
+      "unmapped_pms_types": ["Family", "Junior Suite", "Superior", "Suite"]
+    },
+    "wire_failures": {
+      "total_failures": 5647,
+      "health_status": "critical",
+      "breakdown": {
+        "ari_hard_fails": 215,
+        "exely_sync_fails": 5432,
+        "dlq_items": 0,
+        "control_plane_fails": 0,
+        "reconciliation_issues": 1179,
+        "observability_errors": 756
+      }
+    }
+  }
+}

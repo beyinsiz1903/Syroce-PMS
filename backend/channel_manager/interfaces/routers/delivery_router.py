@@ -1,12 +1,14 @@
 """Alert Delivery Router — Channel configuration, delivery, and logs."""
+
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v101 DW
+
 from ...application.alert_delivery_service import AlertDeliveryService
 
 logger = logging.getLogger("channel_manager.routers.delivery")
@@ -15,7 +17,7 @@ router = APIRouter(tags=["CM Alert Delivery"])
 
 
 class DeliveryChannelRequest(BaseModel):
-    id: Optional[str] = None
+    id: str | None = None
     connector_id: str = "*"
     channel_type: str  # email, webhook, slack, teams
     name: str = ""
@@ -27,7 +29,7 @@ class DeliveryChannelRequest(BaseModel):
 
 @router.get("/delivery/channels")
 async def list_delivery_channels(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """List configured delivery channels."""
@@ -40,6 +42,7 @@ async def list_delivery_channels(
 async def upsert_delivery_channel(
     req: DeliveryChannelRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Create or update a delivery channel configuration."""
     svc = AlertDeliveryService()
@@ -51,6 +54,7 @@ async def upsert_delivery_channel(
 async def delete_delivery_channel(
     channel_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Delete a delivery channel."""
     svc = AlertDeliveryService()
@@ -64,6 +68,7 @@ async def delete_delivery_channel(
 async def test_delivery_channel(
     channel_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Send a test alert through a specific delivery channel."""
     svc = AlertDeliveryService()
@@ -87,7 +92,7 @@ async def test_delivery_channel(
 
 @router.get("/delivery/log")
 async def get_delivery_log(
-    alert_id: Optional[str] = None,
+    alert_id: str | None = None,
     limit: int = Query(50, le=200),
     current_user: User = Depends(get_current_user),
 ):

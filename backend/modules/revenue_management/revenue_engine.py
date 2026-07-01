@@ -2,9 +2,11 @@
 Revenue Management Engine - Demand Analysis, Rate Optimization, Yield Rules, Channel Strategy.
 Enterprise-grade dynamic pricing and revenue optimization for hospitality.
 """
+
 import uuid
-from datetime import datetime, timezone, timedelta, date
-from typing import Dict, Any
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
+
 from core.database import db
 
 
@@ -13,30 +15,34 @@ class RevenueManagementEngine:
 
     # ── DEMAND ANALYSIS ──
 
-    async def get_booking_pace(self, tenant_id: str, target_date: str, lookback_days: int = 30) -> Dict[str, Any]:
+    async def get_booking_pace(self, tenant_id: str, target_date: str, lookback_days: int = 30) -> dict[str, Any]:
         """Analyze booking pace for a target date comparing to historical average."""
         target = date.fromisoformat(target_date)
         today = date.today()
         days_out = (target - today).days
 
         # Current bookings for target date
-        current_bookings = await db.bookings.count_documents({
-            "tenant_id": tenant_id,
-            "check_in": {"$lte": target_date},
-            "check_out": {"$gt": target_date},
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-        })
+        current_bookings = await db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "check_in": {"$lte": target_date},
+                "check_out": {"$gt": target_date},
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
+            }
+        )
 
         # Historical average for same day-of-week
         historical_counts = []
         for w in range(1, 5):
             hist_date = (target - timedelta(weeks=w)).isoformat()
-            count = await db.bookings.count_documents({
-                "tenant_id": tenant_id,
-                "check_in": {"$lte": hist_date},
-                "check_out": {"$gt": hist_date},
-                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
-            })
+            count = await db.bookings.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "check_in": {"$lte": hist_date},
+                    "check_out": {"$gt": hist_date},
+                    "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
+                }
+            )
             historical_counts.append(count)
 
         hist_avg = sum(historical_counts) / len(historical_counts) if historical_counts else 0
@@ -51,7 +57,7 @@ class RevenueManagementEngine:
             "pace_status": "ahead" if pace_index > 110 else ("behind" if pace_index < 90 else "on_track"),
         }
 
-    async def get_pickup_trends(self, tenant_id: str, start_date: str, end_date: str) -> Dict[str, Any]:
+    async def get_pickup_trends(self, tenant_id: str, start_date: str, end_date: str) -> dict[str, Any]:
         """Analyze reservation pickup trends over a date range."""
         sd = date.fromisoformat(start_date)
         ed = date.fromisoformat(end_date)
@@ -60,40 +66,50 @@ class RevenueManagementEngine:
         while cur <= ed:
             day_s = cur.isoformat()
             # Bookings made for this stay date
-            bookings_for_day = await db.bookings.count_documents({
-                "tenant_id": tenant_id,
-                "check_in": {"$lte": day_s},
-                "check_out": {"$gt": day_s},
-                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
-            })
+            bookings_for_day = await db.bookings.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "check_in": {"$lte": day_s},
+                    "check_out": {"$gt": day_s},
+                    "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
+                }
+            )
             # Net new bookings created on this date
-            new_bookings = await db.bookings.count_documents({
-                "tenant_id": tenant_id,
-                "created_at": {"$gte": day_s, "$lt": (cur + timedelta(days=1)).isoformat()},
-            })
+            new_bookings = await db.bookings.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "created_at": {"$gte": day_s, "$lt": (cur + timedelta(days=1)).isoformat()},
+                }
+            )
             # Cancellations on this date
-            cancellations = await db.bookings.count_documents({
-                "tenant_id": tenant_id,
-                "status": "cancelled",
-                "updated_at": {"$gte": day_s, "$lt": (cur + timedelta(days=1)).isoformat()},
-            })
-            trends.append({
-                "date": day_s,
-                "on_the_books": bookings_for_day,
-                "new_bookings": new_bookings,
-                "cancellations": cancellations,
-                "net_pickup": new_bookings - cancellations,
-            })
+            cancellations = await db.bookings.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "status": "cancelled",
+                    "updated_at": {"$gte": day_s, "$lt": (cur + timedelta(days=1)).isoformat()},
+                }
+            )
+            trends.append(
+                {
+                    "date": day_s,
+                    "on_the_books": bookings_for_day,
+                    "new_bookings": new_bookings,
+                    "cancellations": cancellations,
+                    "net_pickup": new_bookings - cancellations,
+                }
+            )
             cur += timedelta(days=1)
 
         return {"tenant_id": tenant_id, "start_date": start_date, "end_date": end_date, "trends": trends}
 
-    async def get_occupancy_forecast(self, tenant_id: str, forecast_days: int = 14) -> Dict[str, Any]:
+    async def get_occupancy_forecast(self, tenant_id: str, forecast_days: int = 14) -> dict[str, Any]:
         """Generate occupancy forecast for upcoming days."""
-        total_rooms = await db.rooms.count_documents({
-            "tenant_id": tenant_id,
-            "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
-        })
+        total_rooms = await db.rooms.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
+            }
+        )
         if total_rooms == 0:
             total_rooms = 1
 
@@ -103,34 +119,40 @@ class RevenueManagementEngine:
             target = today + timedelta(days=i)
             day_s = target.isoformat()
 
-            booked = await db.bookings.count_documents({
-                "tenant_id": tenant_id,
-                "check_in": {"$lte": day_s},
-                "check_out": {"$gt": day_s},
-                "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-            })
-            blocked = await db.room_blocks.count_documents({
-                "tenant_id": tenant_id,
-                "status": "active",
-                "start_date": {"$lte": day_s},
-                "$or": [{"end_date": None}, {"end_date": {"$gt": day_s}}],
-            })
+            booked = await db.bookings.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "check_in": {"$lte": day_s},
+                    "check_out": {"$gt": day_s},
+                    "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
+                }
+            )
+            blocked = await db.room_blocks.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "status": "active",
+                    "start_date": {"$lte": day_s},
+                    "$or": [{"end_date": None}, {"end_date": {"$gt": day_s}}],
+                }
+            )
             available = max(total_rooms - booked - blocked, 0)
             occ_pct = round((booked / total_rooms) * 100, 1)
 
-            forecast.append({
-                "date": day_s,
-                "total_rooms": total_rooms,
-                "booked": booked,
-                "blocked": blocked,
-                "available": available,
-                "occupancy_pct": occ_pct,
-                "demand_level": "high" if occ_pct > 85 else ("medium" if occ_pct > 60 else "low"),
-            })
+            forecast.append(
+                {
+                    "date": day_s,
+                    "total_rooms": total_rooms,
+                    "booked": booked,
+                    "blocked": blocked,
+                    "available": available,
+                    "occupancy_pct": occ_pct,
+                    "demand_level": "high" if occ_pct > 85 else ("medium" if occ_pct > 60 else "low"),
+                }
+            )
 
         return {"tenant_id": tenant_id, "total_rooms": total_rooms, "forecast": forecast}
 
-    async def get_lead_time_analysis(self, tenant_id: str, days_back: int = 30) -> Dict[str, Any]:
+    async def get_lead_time_analysis(self, tenant_id: str, days_back: int = 30) -> dict[str, Any]:
         """Analyze booking lead time distribution."""
         cutoff = (date.today() - timedelta(days=days_back)).isoformat()
         bookings = await db.bookings.find(
@@ -180,16 +202,14 @@ class RevenueManagementEngine:
 
     # ── RATE OPTIMIZATION ──
 
-    async def calculate_ideal_adr(self, tenant_id: str, target_date: str) -> Dict[str, Any]:
+    async def calculate_ideal_adr(self, tenant_id: str, target_date: str) -> dict[str, Any]:
         """Calculate ideal ADR based on demand and historical data."""
         forecast = await self.get_occupancy_forecast(tenant_id, 1)
         day_data = forecast["forecast"][0] if forecast["forecast"] else {}
         occ_pct = day_data.get("occupancy_pct", 50)
 
         # Get current rate plans
-        rate_plans = await db.rate_plans.find(
-            {"tenant_id": tenant_id, "is_active": True}, {"_id": 0}
-        ).to_list(20)
+        rate_plans = await db.rate_plans.find({"tenant_id": tenant_id, "is_active": True}, {"_id": 0}).to_list(20)
         base_rate = rate_plans[0].get("base_price", 100) if rate_plans else 100
 
         # Get historical ADR
@@ -227,27 +247,29 @@ class RevenueManagementEngine:
             "recommendation": "increase" if multiplier > 1 else ("decrease" if multiplier < 1 else "maintain"),
         }
 
-    async def get_rate_suggestions(self, tenant_id: str, days: int = 7) -> Dict[str, Any]:
+    async def get_rate_suggestions(self, tenant_id: str, days: int = 7) -> dict[str, Any]:
         """Generate rate suggestions for upcoming days."""
         suggestions = []
         today = date.today()
         for i in range(days):
             target = (today + timedelta(days=i)).isoformat()
             adr_data = await self.calculate_ideal_adr(tenant_id, target)
-            suggestions.append({
-                "date": target,
-                "current_occupancy_pct": adr_data["current_occupancy_pct"],
-                "ideal_adr": adr_data["ideal_adr"],
-                "recommendation": adr_data["recommendation"],
-                "revpar_estimate": adr_data["revpar_estimate"],
-                "demand_multiplier": adr_data["demand_multiplier"],
-            })
+            suggestions.append(
+                {
+                    "date": target,
+                    "current_occupancy_pct": adr_data["current_occupancy_pct"],
+                    "ideal_adr": adr_data["ideal_adr"],
+                    "recommendation": adr_data["recommendation"],
+                    "revpar_estimate": adr_data["revpar_estimate"],
+                    "demand_multiplier": adr_data["demand_multiplier"],
+                }
+            )
 
         return {"tenant_id": tenant_id, "suggestions": suggestions}
 
     # ── YIELD RULES ──
 
-    async def get_yield_recommendations(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_yield_recommendations(self, tenant_id: str) -> dict[str, Any]:
         """Generate yield management recommendations: min stay, stop sell, CTA/CTD."""
         forecast = await self.get_occupancy_forecast(tenant_id, 14)
         recommendations = []
@@ -285,7 +307,7 @@ class RevenueManagementEngine:
 
     # ── CHANNEL STRATEGY ──
 
-    async def get_channel_performance(self, tenant_id: str, days_back: int = 30) -> Dict[str, Any]:
+    async def get_channel_performance(self, tenant_id: str, days_back: int = 30) -> dict[str, Any]:
         """Analyze channel mix and rate parity."""
         cutoff = (date.today() - timedelta(days=days_back)).isoformat()
         bookings = await db.bookings.find(
@@ -306,14 +328,16 @@ class RevenueManagementEngine:
 
         channels = []
         for ch, stats in channel_stats.items():
-            channels.append({
-                "channel": ch,
-                "bookings": stats["count"],
-                "revenue": round(stats["revenue"], 2),
-                "booking_share_pct": round((stats["count"] / total_bookings * 100), 1) if total_bookings > 0 else 0,
-                "revenue_share_pct": round((stats["revenue"] / total_revenue * 100), 1) if total_revenue > 0 else 0,
-                "avg_booking_value": round(stats["revenue"] / stats["count"], 2) if stats["count"] > 0 else 0,
-            })
+            channels.append(
+                {
+                    "channel": ch,
+                    "bookings": stats["count"],
+                    "revenue": round(stats["revenue"], 2),
+                    "booking_share_pct": round((stats["count"] / total_bookings * 100), 1) if total_bookings > 0 else 0,
+                    "revenue_share_pct": round((stats["revenue"] / total_revenue * 100), 1) if total_revenue > 0 else 0,
+                    "avg_booking_value": round(stats["revenue"] / stats["count"], 2) if stats["count"] > 0 else 0,
+                }
+            )
 
         channels.sort(key=lambda x: x["revenue"], reverse=True)
 
@@ -330,26 +354,30 @@ class RevenueManagementEngine:
 
     # ── REVENUE DASHBOARD DATA ──
 
-    async def get_revenue_dashboard(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_revenue_dashboard(self, tenant_id: str) -> dict[str, Any]:
         """Comprehensive revenue dashboard with ADR, RevPAR, trends."""
         today = date.today()
         start_30 = (today - timedelta(days=30)).isoformat()
         today_s = today.isoformat()
 
-        total_rooms = await db.rooms.count_documents({
-            "tenant_id": tenant_id,
-            "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
-        })
+        total_rooms = await db.rooms.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
+            }
+        )
         if total_rooms == 0:
             total_rooms = 1
 
         # Today's metrics
-        today_booked = await db.bookings.count_documents({
-            "tenant_id": tenant_id,
-            "check_in": {"$lte": today_s},
-            "check_out": {"$gt": today_s},
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-        })
+        today_booked = await db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "check_in": {"$lte": today_s},
+                "check_out": {"$gt": today_s},
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
+            }
+        )
         today_occ = round((today_booked / total_rooms) * 100, 1)
 
         # 30-day revenue
@@ -362,11 +390,13 @@ class RevenueManagementEngine:
         room_revenue = sum(c.get("amount", 0) for c in charges if c.get("category") == "room")
 
         # Room nights sold in last 30 days
-        room_nights = await db.bookings.count_documents({
-            "tenant_id": tenant_id,
-            "check_in": {"$gte": start_30},
-            "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
-        })
+        room_nights = await db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "check_in": {"$gte": start_30},
+                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
+            }
+        )
 
         adr = round(room_revenue / room_nights, 2) if room_nights > 0 else 0
         revpar = round(room_revenue / (total_rooms * 30), 2)
@@ -374,43 +404,51 @@ class RevenueManagementEngine:
         # Daily revenue trend
         daily_trend = []
         for i in range(30):
-            d = (today - timedelta(days=29 - i))
+            d = today - timedelta(days=29 - i)
             d_s = d.isoformat()
             d_next = (d + timedelta(days=1)).isoformat()
             day_rev = sum(c.get("amount", 0) for c in charges if d_s <= (c.get("posted_at") or "")[:10] < d_next)
-            day_booked = await db.bookings.count_documents({
-                "tenant_id": tenant_id,
-                "check_in": {"$lte": d_s},
-                "check_out": {"$gt": d_s},
-                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
-            })
+            day_booked = await db.bookings.count_documents(
+                {
+                    "tenant_id": tenant_id,
+                    "check_in": {"$lte": d_s},
+                    "check_out": {"$gt": d_s},
+                    "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
+                }
+            )
             day_occ = round((day_booked / total_rooms) * 100, 1)
-            daily_trend.append({
-                "date": d_s,
-                "revenue": round(day_rev, 2),
-                "occupancy_pct": day_occ,
-                "adr": round(day_rev / day_booked, 2) if day_booked > 0 else 0,
-                "revpar": round(day_rev / total_rooms, 2),
-            })
+            daily_trend.append(
+                {
+                    "date": d_s,
+                    "revenue": round(day_rev, 2),
+                    "occupancy_pct": day_occ,
+                    "adr": round(day_rev / day_booked, 2) if day_booked > 0 else 0,
+                    "revpar": round(day_rev / total_rooms, 2),
+                }
+            )
 
         # Revenue opportunities
         forecast = await self.get_occupancy_forecast(tenant_id, 7)
         opportunities = []
         for day in forecast.get("forecast", []):
             if day["demand_level"] == "high" and day["available"] > 0:
-                opportunities.append({
-                    "date": day["date"],
-                    "type": "price_increase",
-                    "message": f"Yuksek talep, {day['available']} oda musait - fiyat artisi onerilir",
-                    "potential_revenue": round(day["available"] * adr * 0.2, 2),
-                })
+                opportunities.append(
+                    {
+                        "date": day["date"],
+                        "type": "price_increase",
+                        "message": f"Yuksek talep, {day['available']} oda musait - fiyat artisi onerilir",
+                        "potential_revenue": round(day["available"] * adr * 0.2, 2),
+                    }
+                )
             elif day["demand_level"] == "low" and day["available"] > 5:
-                opportunities.append({
-                    "date": day["date"],
-                    "type": "promotion",
-                    "message": f"Dusuk talep, {day['available']} oda bos - promosyon onerilir",
-                    "potential_revenue": round(day["available"] * adr * 0.6, 2),
-                })
+                opportunities.append(
+                    {
+                        "date": day["date"],
+                        "type": "promotion",
+                        "message": f"Dusuk talep, {day['available']} oda bos - promosyon onerilir",
+                        "potential_revenue": round(day["available"] * adr * 0.6, 2),
+                    }
+                )
 
         return {
             "tenant_id": tenant_id,
@@ -430,7 +468,7 @@ class RevenueManagementEngine:
 
     # ── AUTO-APPLY RATES ──
 
-    async def apply_rate_suggestion(self, tenant_id: str, target_date: str, new_rate: float, user_id: str) -> Dict[str, Any]:
+    async def apply_rate_suggestion(self, tenant_id: str, target_date: str, new_rate: float, user_id: str) -> dict[str, Any]:
         """Apply a suggested rate to the rate plan for a specific date."""
         # Store rate override
         override = {
@@ -439,21 +477,23 @@ class RevenueManagementEngine:
             "date": target_date,
             "rate": new_rate,
             "applied_by": user_id,
-            "applied_at": datetime.now(timezone.utc).isoformat(),
+            "applied_at": datetime.now(UTC).isoformat(),
             "source": "revenue_engine",
         }
         await db.revenue_rate_overrides.insert_one(override)
 
         # Audit
-        await db.pms_audit_trail.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": tenant_id,
-            "entity_type": "revenue_rate",
-            "entity_id": override["id"],
-            "action": "rate_override_applied",
-            "user_id": user_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "details": {"date": target_date, "new_rate": new_rate},
-        })
+        await db.pms_audit_trail.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "entity_type": "revenue_rate",
+                "entity_id": override["id"],
+                "action": "rate_override_applied",
+                "user_id": user_id,
+                "timestamp": datetime.now(UTC).isoformat(),
+                "details": {"date": target_date, "new_rate": new_rate},
+            }
+        )
 
         return {"success": True, "override_id": override["id"], "date": target_date, "new_rate": new_rate}

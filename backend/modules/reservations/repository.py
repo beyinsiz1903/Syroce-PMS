@@ -1,6 +1,6 @@
 import hashlib
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from pymongo.errors import DuplicateKeyError
 
@@ -13,11 +13,11 @@ class ReservationsRepository:
         tenant_id: str,
         limit: int = 30,
         offset: int = 0,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        status: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        query: Dict[str, Any] = {"tenant_id": tenant_id}
+        start_date: str | None = None,
+        end_date: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        query: dict[str, Any] = {"tenant_id": tenant_id}
 
         if start_date or end_date:
             if start_date and end_date:
@@ -36,7 +36,7 @@ class ReservationsRepository:
         cursor = db.bookings.find(query, {"_id": 0}).sort("check_in", -1).skip(offset).limit(limit)
         return await cursor.to_list(length=limit)
 
-    async def get_guest_name(self, guest_id: str) -> Optional[str]:
+    async def get_guest_name(self, guest_id: str) -> str | None:
         guest = await db.guests.find_one(
             {"id": guest_id},
             {"first_name": 1, "last_name": 1, "name": 1, "_id": 0},
@@ -52,15 +52,15 @@ class ReservationsRepository:
         full_name = f"{first_name} {last_name}".strip()
         return full_name or None
 
-    async def get_room_number(self, room_id: str) -> Optional[str]:
+    async def get_room_number(self, room_id: str) -> str | None:
         room = await db.rooms.find_one({"id": room_id}, {"room_number": 1, "_id": 0})
         return room.get("room_number") if room else None
 
-    async def get_room_for_tenant_public(self, room_id: str) -> Optional[Dict[str, Any]]:
+    async def get_room_for_tenant_public(self, room_id: str) -> dict[str, Any] | None:
         """Get room_number + room_type by room_id (no tenant check, for enrichment)."""
         return await db.rooms.find_one({"id": room_id}, {"_id": 0, "room_number": 1, "room_type": 1})
 
-    async def get_room_for_tenant(self, tenant_id: str, room_id: str) -> Optional[Dict[str, Any]]:
+    async def get_room_for_tenant(self, tenant_id: str, room_id: str) -> dict[str, Any] | None:
         return await db.rooms.find_one(
             {
                 "tenant_id": tenant_id,
@@ -70,37 +70,55 @@ class ReservationsRepository:
             {"_id": 0},
         )
 
-    async def update_room_for_tenant(self, tenant_id: str, room_id: str, update_doc: Dict[str, Any]) -> None:
+    async def update_room_for_tenant(self, tenant_id: str, room_id: str, update_doc: dict[str, Any]) -> None:
         await db.rooms.update_one(
             {"tenant_id": tenant_id, "id": room_id},
             {"$set": update_doc},
         )
 
-    async def get_guest_for_tenant(self, tenant_id: str, guest_id: str) -> Optional[Dict[str, Any]]:
+    async def get_guest_for_tenant(self, tenant_id: str, guest_id: str) -> dict[str, Any] | None:
         return await db.guests.find_one({"tenant_id": tenant_id, "id": guest_id}, {"_id": 0})
 
-    async def get_booking_for_tenant(self, tenant_id: str, booking_id: str) -> Optional[Dict[str, Any]]:
+    async def get_booking_for_tenant(self, tenant_id: str, booking_id: str) -> dict[str, Any] | None:
         return await db.bookings.find_one(
             {"tenant_id": tenant_id, "id": booking_id},
             {"_id": 0},
         )
 
-    async def update_booking(self, tenant_id: str, booking_id: str, update_doc: Dict[str, Any]) -> None:
-        await db.bookings.update_one(
-            {"tenant_id": tenant_id, "id": booking_id},
-            {"$set": update_doc},
-        )
+    async def update_booking(self, tenant_id: str, booking_id: str, update_doc: dict[str, Any], expected_version: int | None = None) -> bool:
+        """Update booking with optional optimistic locking (INV-4).
 
-    async def insert_booking(self, booking_doc: Dict[str, Any]) -> None:
-        await db.bookings.insert_one(booking_doc)
+        If expected_version is provided, the update only succeeds if the
+        current _version matches. This prevents lost updates from concurrent
+        modifications (cancel vs modify race).
 
-    async def insert_rate_override_log(self, override_doc: Dict[str, Any]) -> None:
+        Returns True if the update was applied, False if version conflict.
+        """
+        query = {"tenant_id": tenant_id, "id": booking_id}
+        if expected_version is not None:
+            query["_version"] = expected_version
+
+        update_doc["_version"] = (expected_version or 0) + 1
+
+        result = await db.bookings.update_one(query, {"$set": update_doc})
+
+        if result.matched_count == 0 and expected_version is not None:
+            # Version conflict — someone else modified the booking
+            return False
+        return True
+
+    async def insert_booking(self, booking_doc: dict[str, Any]) -> None:
+        from core.atomic_booking import create_booking_atomic
+
+        await create_booking_atomic(booking_doc)
+
+    async def insert_rate_override_log(self, override_doc: dict[str, Any]) -> None:
         await db.rate_override_logs.insert_one(override_doc)
 
-    async def insert_folio(self, folio_doc: Dict[str, Any]) -> None:
+    async def insert_folio(self, folio_doc: dict[str, Any]) -> None:
         await db.folios.insert_one(folio_doc)
 
-    async def insert_outbox_event(self, event_doc: Dict[str, Any]) -> None:
+    async def insert_outbox_event(self, event_doc: dict[str, Any]) -> None:
         await db.outbox_events.insert_one(event_doc)
 
     async def acquire_idempotency_lock(
@@ -109,9 +127,17 @@ class ReservationsRepository:
         scope: str,
         idempotency_key: str,
         request_hash: str,
-        correlation_id: Optional[str],
-    ) -> Dict[str, Any]:
-        lock_id = hashlib.sha256(f"{tenant_id}:{scope}:{idempotency_key}".encode("utf-8")).hexdigest()
+        correlation_id: str | None,
+    ) -> dict[str, Any]:
+        from datetime import timedelta as _td
+
+        from shared_kernel.idempotency import (
+            IDEMPOTENCY_PROCESSING_GRACE_SECONDS,
+            unseal_response_body,
+        )
+
+        lock_id = hashlib.sha256(f"{tenant_id}:{scope}:{idempotency_key}".encode()).hexdigest()
+        now = datetime.now(UTC)
         lock_doc = {
             "_id": lock_id,
             "tenant_id": tenant_id,
@@ -120,7 +146,9 @@ class ReservationsRepository:
             "request_hash": request_hash,
             "correlation_id": correlation_id,
             "status": "processing",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": now.isoformat(),
+            # Task #81 — TTL sweep field; processing rows expire after grace.
+            "expires_at": now + _td(seconds=IDEMPOTENCY_PROCESSING_GRACE_SECONDS),
         }
         try:
             await db.idempotency_keys.insert_one(lock_doc)
@@ -128,34 +156,56 @@ class ReservationsRepository:
             return {"status": "acquired", "document": lock_doc, "lock_id": lock_id}
         except DuplicateKeyError:
             existing = await db.idempotency_keys.find_one({"_id": lock_id}, {"_id": 0})
+            if existing is not None:
+                # Surface a decrypted body so the service's existing
+                # `existing["response_body"]` replay path stays unchanged.
+                existing["response_body"] = unseal_response_body(existing)
             return {"status": "existing", "document": existing or {}, "lock_id": lock_id}
 
     async def complete_idempotency_lock(
         self,
         lock_id: str,
         reservation_id: str,
-        response_body: Dict[str, Any],
+        response_body: dict[str, Any],
     ) -> None:
+        from datetime import timedelta as _td
+
+        from shared_kernel.idempotency import (
+            IDEMPOTENCY_RETENTION_SECONDS,
+            seal_response_body,
+        )
+
+        now = datetime.now(UTC)
         await db.idempotency_keys.update_one(
             {"_id": lock_id},
             {
                 "$set": {
                     "status": "completed",
                     "reservation_id": reservation_id,
-                    "response_body": response_body,
-                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    # PII-at-rest: encrypted envelope only, never plaintext.
+                    **seal_response_body(response_body),
+                    "completed_at": now.isoformat(),
+                    # Task #81 — extend TTL to retention window on completion.
+                    "expires_at": now + _td(seconds=IDEMPOTENCY_RETENTION_SECONDS),
                 }
             },
         )
 
     async def fail_idempotency_lock(self, lock_id: str, error_message: str) -> None:
+        from datetime import timedelta as _td
+
+        from shared_kernel.idempotency import IDEMPOTENCY_RETENTION_SECONDS
+
+        now = datetime.now(UTC)
         await db.idempotency_keys.update_one(
             {"_id": lock_id},
             {
                 "$set": {
                     "status": "failed",
                     "error_message": error_message,
-                    "failed_at": datetime.now(timezone.utc).isoformat(),
+                    "failed_at": now.isoformat(),
+                    # Task #81 — failed rows kept for replay; expire at 24h.
+                    "expires_at": now + _td(seconds=IDEMPOTENCY_RETENTION_SECONDS),
                 }
             },
         )

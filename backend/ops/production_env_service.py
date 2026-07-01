@@ -4,12 +4,12 @@ Phase 7 — Production Environment Preparation Service
 Validates infrastructure, security, data safety, and observability
 readiness for production rollout.
 """
-import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict
 
-from common.result import ServiceResult
+import logging
+from datetime import UTC, datetime, timedelta
+
 from common.context import OperationContext
+from common.result import ServiceResult
 
 logger = logging.getLogger(__name__)
 
@@ -19,11 +19,12 @@ class ProductionEnvService:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     async def run_full_validation(self, ctx: OperationContext) -> ServiceResult:
         """Run all 4 category validations and produce overall readiness."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         categories = {
             "infrastructure": await self._validate_infrastructure(ctx),
             "security": await self._validate_security(ctx),
@@ -49,15 +50,17 @@ class ProductionEnvService:
             "validated_at": now.isoformat(),
         }
 
-        await self._db.production_env_validations.insert_one({
-            "tenant_id": ctx.tenant_id,
-            "result": result,
-            "validated_at": now.isoformat(),
-        })
+        await self._db.production_env_validations.insert_one(
+            {
+                "tenant_id": ctx.tenant_id,
+                "result": result,
+                "validated_at": now.isoformat(),
+            }
+        )
 
         return ServiceResult.success(result)
 
-    async def _validate_infrastructure(self, ctx: OperationContext) -> Dict:
+    async def _validate_infrastructure(self, ctx: OperationContext) -> dict:
         checks = []
         issues = []
         critical = False
@@ -71,9 +74,7 @@ class ProductionEnvService:
             critical = True
 
         # Worker readiness
-        worker_tasks = await self._db.celery_task_log.count_documents({
-            "created_at": {"$gte": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()}
-        })
+        worker_tasks = await self._db.celery_task_log.count_documents({"created_at": {"$gte": (datetime.now(UTC) - timedelta(hours=1)).isoformat()}})
         if worker_tasks >= 0:
             checks.append({"name": "worker_autoscaling_readiness", "status": "pass"})
         else:
@@ -98,7 +99,7 @@ class ProductionEnvService:
             "critical_fail": critical,
         }
 
-    async def _validate_security(self, ctx: OperationContext) -> Dict:
+    async def _validate_security(self, ctx: OperationContext) -> dict:
         checks = []
         issues = []
         critical = False
@@ -120,6 +121,7 @@ class ProductionEnvService:
 
         # JWT security
         import os
+
         jwt_secret = os.environ.get("JWT_SECRET", "")
         if jwt_secret and len(jwt_secret) >= 16:
             checks.append({"name": "jwt_secret_strength", "status": "pass"})
@@ -136,7 +138,7 @@ class ProductionEnvService:
             "critical_fail": critical,
         }
 
-    async def _validate_data_safety(self, ctx: OperationContext) -> Dict:
+    async def _validate_data_safety(self, ctx: OperationContext) -> dict:
         checks = []
         issues = []
 
@@ -166,7 +168,7 @@ class ProductionEnvService:
             "critical_fail": False,
         }
 
-    async def _validate_observability(self, ctx: OperationContext) -> Dict:
+    async def _validate_observability(self, ctx: OperationContext) -> dict:
         checks = []
         issues = []
 
@@ -181,6 +183,7 @@ class ProductionEnvService:
 
         # Alert routing
         from modules.observability.alert_enrichment import ALERT_RULES
+
         if len(ALERT_RULES) >= 10:
             checks.append({"name": "alert_routing_active", "status": "pass"})
         else:

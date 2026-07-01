@@ -15,17 +15,18 @@ Collections:
   8. ari_drift_state            — ARI parity / consistency tracking
   9. channel_reconciliation_cases — Discrepancy tracking
 """
-import uuid
+
 import hashlib
 import json
-from datetime import datetime, timezone
+import uuid
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Optional, Dict, Any, List
+from typing import Any
 
 from pydantic import BaseModel, Field
 
-
 # ── Provider Enum (HotelRunner + Exely only) ──────────────────────────
+
 
 class ConnectorProvider(str, Enum):
     HOTELRUNNER = "hotelrunner"
@@ -33,6 +34,7 @@ class ConnectorProvider(str, Enum):
 
 
 # ── Connection Status ─────────────────────────────────────────────────
+
 
 class ConnectionStatus(str, Enum):
     DRAFT = "draft"
@@ -45,6 +47,7 @@ class ConnectionStatus(str, Enum):
 # ══════════════════════════════════════════════════════════════════════
 # CANONICAL RESERVATION STATE MODEL
 # ══════════════════════════════════════════════════════════════════════
+
 
 class ReservationState(str, Enum):
     PENDING = "pending"
@@ -68,17 +71,22 @@ class MutationType(str, Enum):
 
 
 # Valid state transitions: {from_state: [allowed_to_states]}
-STATE_TRANSITIONS: Dict[str, List[str]] = {
+STATE_TRANSITIONS: dict[str, list[str]] = {
     ReservationState.PENDING: [
-        ReservationState.CONFIRMED, ReservationState.CANCELLED,
+        ReservationState.CONFIRMED,
+        ReservationState.CANCELLED,
     ],
     ReservationState.CONFIRMED: [
-        ReservationState.MODIFIED, ReservationState.CANCELLED,
-        ReservationState.CHECKED_IN, ReservationState.NO_SHOW,
+        ReservationState.MODIFIED,
+        ReservationState.CANCELLED,
+        ReservationState.CHECKED_IN,
+        ReservationState.NO_SHOW,
     ],
     ReservationState.MODIFIED: [
-        ReservationState.CONFIRMED, ReservationState.MODIFIED,
-        ReservationState.CANCELLED, ReservationState.CHECKED_IN,
+        ReservationState.CONFIRMED,
+        ReservationState.MODIFIED,
+        ReservationState.CANCELLED,
+        ReservationState.CHECKED_IN,
         ReservationState.NO_SHOW,
     ],
     ReservationState.CHECKED_IN: [
@@ -103,6 +111,7 @@ def is_valid_transition(from_state: str, to_state: str) -> bool:
 # DELIVERY CONFIRMATION MODEL
 # ══════════════════════════════════════════════════════════════════════
 
+
 class DeliveryState(str, Enum):
     QUEUED = "queued"
     SENT = "sent"
@@ -117,6 +126,7 @@ class DeliveryState(str, Enum):
 # ERROR CLASSIFICATION
 # ══════════════════════════════════════════════════════════════════════
 
+
 class ErrorClass(str, Enum):
     RETRYABLE = "retryable"
     CONFIGURATION = "configuration"
@@ -126,6 +136,7 @@ class ErrorClass(str, Enum):
 # ══════════════════════════════════════════════════════════════════════
 # DRIFT TAXONOMY
 # ══════════════════════════════════════════════════════════════════════
+
 
 class DriftType(str, Enum):
     MISSING_LOCALLY = "missing_locally"
@@ -148,6 +159,7 @@ class DriftResolution(str, Enum):
 # MAPPING VALIDATION STATUS
 # ══════════════════════════════════════════════════════════════════════
 
+
 class MappingFailure(str, Enum):
     UNMAPPED = "unmapped"
     INACTIVE = "inactive"
@@ -161,6 +173,7 @@ class MappingFailure(str, Enum):
 
 COLL_PROVIDER_CONNECTIONS = "provider_connections"
 
+
 class ProviderConnection(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
@@ -171,7 +184,7 @@ class ProviderConnection(BaseModel):
     display_name: str = ""
 
     # Provider-specific credentials (encrypted at rest)
-    credentials: Dict[str, Any] = Field(default_factory=dict)
+    credentials: dict[str, Any] = Field(default_factory=dict)
 
     # Sync configuration
     sync_inventory: bool = True
@@ -184,27 +197,27 @@ class ProviderConnection(BaseModel):
     max_requests_per_hour: int = 1000
 
     # Health tracking
-    last_successful_sync: Optional[str] = None
-    last_error: Optional[str] = None
-    last_error_at: Optional[str] = None
+    last_successful_sync: str | None = None
+    last_error: str | None = None
+    last_error_at: str | None = None
     consecutive_failures: int = 0
     total_syncs: int = 0
     total_errors: int = 0
 
     # Audit
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    created_by: Optional[str] = None
-    updated_at: Optional[str] = None
-    updated_by: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    created_by: str | None = None
+    updated_at: str | None = None
+    updated_by: str | None = None
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         d = self.model_dump()
         d["provider"] = self.provider.value
         d["status"] = self.status.value
         return d
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "ProviderConnection":
+    def from_doc(cls, doc: dict[str, Any]) -> "ProviderConnection":
         doc.pop("_id", None)
         return cls(**doc)
 
@@ -214,6 +227,7 @@ class ProviderConnection(BaseModel):
 # ══════════════════════════════════════════════════════════════════════
 
 COLL_ROOM_MAPPINGS = "room_mappings"
+
 
 class RoomMapping(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -235,19 +249,19 @@ class RoomMapping(BaseModel):
     # Status
     is_active: bool = True
     validation_status: str = "pending"  # pending | valid | invalid
-    last_validated_at: Optional[str] = None
+    last_validated_at: str | None = None
 
     # Audit
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    updated_at: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    updated_at: str | None = None
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         d = self.model_dump()
         d["provider"] = self.provider.value
         return d
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "RoomMapping":
+    def from_doc(cls, doc: dict[str, Any]) -> "RoomMapping":
         doc.pop("_id", None)
         return cls(**doc)
 
@@ -257,6 +271,7 @@ class RoomMapping(BaseModel):
 # ══════════════════════════════════════════════════════════════════════
 
 COLL_RATE_PLAN_MAPPINGS = "rate_plan_mappings"
+
 
 class RatePlanMapping(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -273,25 +288,25 @@ class RatePlanMapping(BaseModel):
     provider_rate_id: str = ""
 
     # Optional transform
-    rate_modifier: Optional[float] = None  # multiply rate by this before push
-    rate_offset: Optional[float] = None  # add this to rate before push
+    rate_modifier: float | None = None  # multiply rate by this before push
+    rate_offset: float | None = None  # add this to rate before push
 
     # Status
     is_active: bool = True
     validation_status: str = "pending"  # pending | valid | invalid
-    last_validated_at: Optional[str] = None
+    last_validated_at: str | None = None
 
     # Audit
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    updated_at: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    updated_at: str | None = None
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         d = self.model_dump()
         d["provider"] = self.provider.value
         return d
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "RatePlanMapping":
+    def from_doc(cls, doc: dict[str, Any]) -> "RatePlanMapping":
         doc.pop("_id", None)
         return cls(**doc)
 
@@ -301,6 +316,8 @@ class RatePlanMapping(BaseModel):
 # ══════════════════════════════════════════════════════════════════════
 
 COLL_RAW_CHANNEL_EVENTS = "raw_channel_events"
+COLL_CHANNEL_EVENT_DEDUP = "channel_event_dedup"
+
 
 class RawEventSource(str, Enum):
     WEBHOOK = "webhook"
@@ -330,24 +347,24 @@ class RawChannelEvent(BaseModel):
     provider_event_id: str = ""
     external_reservation_id: str = ""
     provider_version: str = ""
-    provider_last_modified_at: Optional[str] = None
+    provider_last_modified_at: str | None = None
 
     # Raw data from provider
-    raw_payload: Dict[str, Any] = Field(default_factory=dict)
+    raw_payload: dict[str, Any] = Field(default_factory=dict)
     payload_hash: str = ""
     raw_payload_hash: str = ""  # hash of raw payload before normalization
-    canonical_hash: str = ""    # hash of canonicalized payload (same meaning despite format diffs)
+    canonical_hash: str = ""  # hash of canonicalized payload (same meaning despite format diffs)
 
     # Processing state
     processing_status: ProcessingStatus = ProcessingStatus.PENDING
-    processing_error: Optional[str] = None
-    processed_at: Optional[str] = None
+    processing_error: str | None = None
+    processed_at: str | None = None
 
     # Decision tracking (stored on raw event for traceability)
-    decision_result: Optional[str] = None    # create/update/cancel/skip etc
-    decision_reason: Optional[str] = None
-    decision_version: int = 0                # aggregate version at decision time
-    normalization_result: Optional[Dict[str, Any]] = None  # canonical form after normalization
+    decision_result: str | None = None  # create/update/cancel/skip etc
+    decision_reason: str | None = None
+    decision_version: int = 0  # aggregate version at decision time
+    normalization_result: dict[str, Any] | None = None  # canonical form after normalization
 
     # Ingest tracking
     received_via: RawEventSource = RawEventSource.WEBHOOK
@@ -355,11 +372,11 @@ class RawChannelEvent(BaseModel):
     trace_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
 
     # Timestamps: provider_timestamp vs received_timestamp vs processed_at
-    provider_timestamp: Optional[str] = None  # when provider generated the event
-    received_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    provider_timestamp: str | None = None  # when provider generated the event
+    received_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     # processed_at already above
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         d = self.model_dump()
         d["provider"] = self.provider.value
         d["received_via"] = self.received_via.value
@@ -367,12 +384,12 @@ class RawChannelEvent(BaseModel):
         return d
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "RawChannelEvent":
+    def from_doc(cls, doc: dict[str, Any]) -> "RawChannelEvent":
         doc.pop("_id", None)
         return cls(**doc)
 
     @staticmethod
-    def compute_payload_hash(payload: Dict[str, Any]) -> str:
+    def compute_payload_hash(payload: dict[str, Any]) -> str:
         raw = json.dumps(payload, sort_keys=True, default=str)
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
@@ -383,6 +400,7 @@ class RawChannelEvent(BaseModel):
 
 COLL_RESERVATION_LINEAGE = "reservation_lineage"
 
+
 class ReservationLineage(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
@@ -390,11 +408,11 @@ class ReservationLineage(BaseModel):
     provider: ConnectorProvider
 
     # Core identity
-    reservation_id: Optional[str] = None  # PMS reservation ID (linked after import)
+    reservation_id: str | None = None  # PMS reservation ID (linked after import)
     external_reservation_id: str
     provider_event_id: str = ""
     provider_version: str = ""
-    provider_last_modified: Optional[str] = None
+    provider_last_modified: str | None = None
 
     # Idempotency & versioning
     payload_hash: str = ""
@@ -426,42 +444,42 @@ class ReservationLineage(BaseModel):
 
     # State (canonical)
     status: str = "pending"  # uses ReservationState values
-    previous_status: Optional[str] = None  # for transition tracking
-    cancellation_reason: Optional[str] = None
+    previous_status: str | None = None  # for transition tracking
+    cancellation_reason: str | None = None
 
     # Mutation tracking
-    mutation_type: Optional[str] = None  # uses MutationType values
+    mutation_type: str | None = None  # uses MutationType values
     last_decision: str = ""  # create | update | cancel | skip | pending_mapping | manual_review
     decision_reason: str = ""
 
     # Reconciliation
     reconciled: bool = False
-    reconciled_at: Optional[str] = None
+    reconciled_at: str | None = None
 
     # Concurrency control
-    lock_holder: Optional[str] = None  # worker ID holding lock
-    lock_acquired_at: Optional[str] = None
-    lock_expires_at: Optional[str] = None
+    lock_holder: str | None = None  # worker ID holding lock
+    lock_acquired_at: str | None = None
+    lock_expires_at: str | None = None
 
     # Timestamps
-    first_seen_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    last_seen_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    last_synced_at: Optional[str] = None
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    updated_at: Optional[str] = None
+    first_seen_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    last_seen_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    last_synced_at: str | None = None
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    updated_at: str | None = None
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         d = self.model_dump()
         d["provider"] = self.provider.value
         return d
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "ReservationLineage":
+    def from_doc(cls, doc: dict[str, Any]) -> "ReservationLineage":
         doc.pop("_id", None)
         return cls(**doc)
 
     @staticmethod
-    def compute_payload_hash(canonical_data: Dict[str, Any]) -> str:
+    def compute_payload_hash(canonical_data: dict[str, Any]) -> str:
         key_fields = {
             "arrival_date": canonical_data.get("arrival_date", ""),
             "departure_date": canonical_data.get("departure_date", ""),
@@ -491,6 +509,7 @@ COLL_ARI_DRIFT_STATE = "ari_drift_state"
 # ══════════════════════════════════════════════════════════════════════
 
 COLL_RECONCILIATION_CASES = "channel_reconciliation_cases"
+
 
 class CaseSeverity(str, Enum):
     CRITICAL = "critical"
@@ -533,8 +552,8 @@ class ReconciliationCase(BaseModel):
     provider: ConnectorProvider
 
     # Case identity
-    external_reservation_id: Optional[str] = None
-    reservation_id: Optional[str] = None
+    external_reservation_id: str | None = None
+    reservation_id: str | None = None
 
     case_type: CaseType
     severity: CaseSeverity
@@ -542,23 +561,23 @@ class ReconciliationCase(BaseModel):
 
     # Evidence
     description: str = ""
-    details: Optional[Dict[str, Any]] = None
+    details: dict[str, Any] | None = None
     suggested_action: str = ""
-    pms_value: Optional[Dict[str, Any]] = None
-    provider_value: Optional[Dict[str, Any]] = None
+    pms_value: dict[str, Any] | None = None
+    provider_value: dict[str, Any] | None = None
 
     # Resolution
-    resolution: Optional[str] = None
-    resolved_by: Optional[str] = None
-    resolved_at: Optional[str] = None
-    dismiss_reason: Optional[str] = None
+    resolution: str | None = None
+    resolved_by: str | None = None
+    resolved_at: str | None = None
+    dismiss_reason: str | None = None
 
     # Timestamps
-    detected_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    updated_at: Optional[str] = None
+    detected_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    updated_at: str | None = None
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         d = self.model_dump()
         d["provider"] = self.provider.value
         d["case_type"] = self.case_type.value
@@ -567,7 +586,7 @@ class ReconciliationCase(BaseModel):
         return d
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "ReconciliationCase":
+    def from_doc(cls, doc: dict[str, Any]) -> "ReconciliationCase":
         doc.pop("_id", None)
         return cls(**doc)
 

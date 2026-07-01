@@ -1,0 +1,126 @@
+{
+  "iteration": 173,
+  "date": "2026-04-01",
+  "summary": "Tested HR Rate Manager and Exely Rate Manager - two separate rate/availability management screens for HotelRunner and Exely channel managers. All 21 backend API tests passed. Both frontend pages load correctly with their respective room types, badges, and functionality.",
+  "features_tested": [
+    "GET /api/channel-manager/hr-rate-manager/grid - Returns HR room types (Corner Süit, Standart Oda, Deluxe Oda, Default room type) with rate plan data",
+    "GET /api/channel-manager/hr-rate-manager/room-types - Returns HR room types and rate plans",
+    "GET /api/channel-manager/hr-rate-manager/push-providers - Returns HotelRunner in shadow mode",
+    "POST /api/channel-manager/hr-rate-manager/bulk-grid-update - Saves rate calendar data for HR rooms",
+    "GET /api/channel-manager/hr-rate-manager/stop-sale-summary - Returns stop sale data from hr_rate_calendar",
+    "GET /api/channel-manager/hr-rate-manager/holidays - Returns holiday periods",
+    "GET /api/channel-manager/hr-rate-manager/stop-sale-schedules - Returns list of schedules",
+    "GET /api/channel-manager/hr-rate-manager/pricing-settings - Returns pricing settings",
+    "PUT /api/channel-manager/hr-rate-manager/pricing-settings - Updates pricing settings",
+    "GET /api/channel-manager/rate-manager/grid - Returns Exely room types (Standart, Deluxe, Suite) with rate data",
+    "GET /api/channel-manager/rate-manager/room-types - Returns Exely room types and rate plans",
+    "GET /api/channel-manager/rate-manager/push-providers - Returns Exely (live) and HotelRunner (shadow)",
+    "POST /api/channel-manager/rate-manager/bulk-grid-update - Saves rate calendar data for Exely rooms",
+    "GET /api/channel-manager/rate-manager/stop-sale-summary - Returns stop sale data from rate_calendar",
+    "GET /api/channel-manager/rate-manager/holidays - Returns holiday periods",
+    "GET /api/channel-manager/rate-manager/stop-sale-schedules - Returns list of schedules",
+    "GET /api/channel-manager/rate-manager/pricing-settings - Returns pricing settings",
+    "Frontend: /hr-rate-manager page loads with HotelRunner room types",
+    "Frontend: /rate-manager page loads with Exely room types",
+    "Frontend: HR Rate Manager shows 'HotelRunner: Shadow Mode' badge (amber)",
+    "Frontend: Exely Rate Manager shows 'Exely: Push Aktif' badge (green)",
+    "Frontend: StopSalePanel uses correct API prefix for both pages"
+  ],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Auth page",
+        "issues": ["i18n translation keys showing as raw text (common.welcome, auth.signIn, etc.) - pre-existing issue from iteration 170/171/172"]
+      }
+    ]
+  },
+  "test_results": {
+    "backend": {
+      "test_hr_grid_returns_200": "PASSED",
+      "test_hr_grid_room_types_structure": "PASSED",
+      "test_hr_room_types_returns_200": "PASSED",
+      "test_hr_push_providers_returns_hotelrunner_shadow": "PASSED",
+      "test_hr_bulk_update_saves_data": "PASSED",
+      "test_hr_stop_sale_summary": "PASSED",
+      "test_hr_stop_sale_schedules_list": "PASSED",
+      "test_hr_holidays_returns_periods": "PASSED",
+      "test_hr_pricing_settings_get": "PASSED",
+      "test_hr_pricing_settings_put": "PASSED",
+      "test_exely_grid_returns_200": "PASSED",
+      "test_exely_grid_room_types_structure": "PASSED",
+      "test_exely_room_types_returns_200": "PASSED",
+      "test_exely_push_providers_returns_exely_active": "PASSED",
+      "test_exely_bulk_update_saves_data": "PASSED",
+      "test_exely_stop_sale_summary": "PASSED",
+      "test_exely_stop_sale_schedules_list": "PASSED",
+      "test_exely_holidays_returns_periods": "PASSED",
+      "test_exely_pricing_settings_get": "PASSED",
+      "test_hr_and_exely_have_different_room_types": "PASSED",
+      "test_hr_and_exely_push_providers_differ": "PASSED"
+    },
+    "frontend": {
+      "hr_rate_manager_page_loads": "PASSED - Title: HotelRunner - Fiyat ve Musaitlik",
+      "hr_rate_manager_badge": "PASSED - Shows 'HotelRunner: Shadow Mode' (amber)",
+      "hr_rate_manager_room_types": "PASSED - Corner Süit, Standart Oda, Deluxe Oda, Default room type",
+      "hr_rate_manager_tabs": "PASSED - Toplu Guncelle, Takvim Gorunumu, Stop Sale",
+      "hr_rate_manager_calendar_grid": "PASSED - Shows rates in TRY, availability, min stay",
+      "hr_rate_manager_stop_sale_panel": "PASSED - Uses HR API prefix",
+      "exely_rate_manager_page_loads": "PASSED - Title: Exely - Fiyat ve Musaitlik",
+      "exely_rate_manager_badge": "PASSED - Shows 'Exely: Push Aktif' (green) + 'HotelRunner: Shadow Mode' (amber)",
+      "exely_rate_manager_room_types": "PASSED - Standart, Deluxe, Suite",
+      "exely_rate_manager_tabs": "PASSED - Toplu Guncelle, Takvim Gorunumu, Stop Sale",
+      "exely_rate_manager_calendar_grid": "PASSED - Shows rates in USD, availability, sold counts",
+      "exely_rate_manager_stop_sale_panel": "PASSED - Uses Exely API prefix"
+    }
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_hr_exely_rate_managers.py",
+    "/app/test_reports/pytest/pytest_hr_exely_rate_managers.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Both HR Rate Manager and Exely Rate Manager are fully functional with separate data stores",
+    "HR uses hr_rate_calendar, hr_pricing_settings, hr_stop_sale_schedules MongoDB collections",
+    "Exely uses rate_calendar, pricing_settings, stop_sale_schedules MongoDB collections",
+    "StopSalePanel correctly accepts apiPrefix prop to route to correct backend",
+    "HR shows room types from hotelrunner_connections.cached_rooms (inv_code as identifier)",
+    "Exely shows room types from exely_connections.room_types",
+    "HotelRunner is in Shadow Mode (write_enabled=false) - writes are logged but not sent to HR API",
+    "Exely is in Live Mode (push_active=true) - writes are sent to Exely API"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_hr_exely_rate_managers.py - Created comprehensive test file for both rate managers"
+  ],
+  "success_rate": {
+    "backend": "100% (21/21 tests passed)",
+    "frontend": "100% (all UI elements verified)"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123"
+  },
+  "seed_data_creation": "None - used existing data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "HR Rate Manager (/hr-rate-manager) and Exely Rate Manager (/rate-manager) are two separate pages for managing rates/availability for different channel managers. HR uses HotelRunner room types (Corner Süit, Standart Oda, Deluxe Oda, Default room type) with TRY currency. Exely uses Exely room types (Standart, Deluxe, Suite) with USD currency. Both use shared UI components (BulkUpdatePanel, CalendarGridView, StopSalePanel) but StopSalePanel accepts apiPrefix prop to route to correct backend. HotelRunner is in Shadow Mode, Exely is in Live Mode.",
+  "data_summary": {
+    "hr_rate_manager": {
+      "room_types": ["Corner Süit", "Standart Oda", "Deluxe Oda", "Default room type"],
+      "currency": "TRY",
+      "push_mode": "shadow",
+      "api_prefix": "/api/channel-manager/hr-rate-manager"
+    },
+    "exely_rate_manager": {
+      "room_types": ["Standart", "Deluxe", "Suite"],
+      "currency": "USD",
+      "push_mode": "live",
+      "api_prefix": "/api/channel-manager/rate-manager"
+    }
+  }
+}

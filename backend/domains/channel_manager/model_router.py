@@ -8,22 +8,28 @@ Prefix: /api/channel-manager/model/
 Replaces the over-abstracted v2 connector/mapping/reconciliation endpoints
 with a simpler, 2-provider-optimized API surface.
 """
-import logging
-from typing import Optional, List
-from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+import logging
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v99 DW
 
 from . import unified_repository as repo
 from .data_model import (
-    ConnectorProvider, ConnectionStatus,
-    ProviderConnection, RoomMapping, RatePlanMapping,
-    RawChannelEvent, ReservationLineage, ReconciliationCase,
-    CaseType, CaseSeverity, CaseStatus,
+    CaseSeverity,
+    CaseStatus,
+    CaseType,
+    ConnectionStatus,
+    ConnectorProvider,
+    ProviderConnection,
+    RatePlanMapping,
+    ReconciliationCase,
+    RoomMapping,
 )
 
 logger = logging.getLogger("channel_manager.model_router")
@@ -36,6 +42,7 @@ router = APIRouter(
 
 # ── Request Models ────────────────────────────────────────────────────
 
+
 class CreateConnectionRequest(BaseModel):
     provider: str  # hotelrunner | exely
     property_id: str
@@ -44,9 +51,9 @@ class CreateConnectionRequest(BaseModel):
 
 
 class UpdateConnectionRequest(BaseModel):
-    display_name: Optional[str] = None
-    credentials: Optional[dict] = None
-    status: Optional[str] = None
+    display_name: str | None = None
+    credentials: dict | None = None
+    status: str | None = None
 
 
 class CreateRoomMappingRequest(BaseModel):
@@ -73,8 +80,8 @@ class CreateReconciliationCaseRequest(BaseModel):
     case_type: str
     severity: str
     description: str = ""
-    external_reservation_id: Optional[str] = None
-    reservation_id: Optional[str] = None
+    external_reservation_id: str | None = None
+    reservation_id: str | None = None
 
 
 class ResolveCaseRequest(BaseModel):
@@ -87,13 +94,15 @@ class DismissCaseRequest(BaseModel):
 
 # ── Provider Connections ──────────────────────────────────────────────
 
+
 @router.get("/connections")
 async def list_connections(
-    status: Optional[str] = None,
+    status: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     connections = await repo.get_connections_by_tenant(
-        current_user.tenant_id, status,
+        current_user.tenant_id,
+        status,
     )
     return {"connections": connections, "count": len(connections)}
 
@@ -102,6 +111,7 @@ async def list_connections(
 async def create_connection(
     req: CreateConnectionRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     # Validate provider
     try:
@@ -114,7 +124,9 @@ async def create_connection(
 
     # Check for existing connection
     existing = await repo.get_connection_by_provider(
-        current_user.tenant_id, req.property_id, req.provider,
+        current_user.tenant_id,
+        req.property_id,
+        req.provider,
     )
     if existing:
         raise HTTPException(
@@ -144,7 +156,7 @@ async def get_connection(
         raise HTTPException(status_code=404, detail="Connection not found")
     # Mask credentials
     if "credentials" in conn:
-        conn["credentials"] = {k: "***" for k in conn["credentials"]}
+        conn["credentials"] = dict.fromkeys(conn["credentials"], "***")
     return conn
 
 
@@ -153,6 +165,7 @@ async def update_connection(
     connection_id: str,
     req: UpdateConnectionRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     conn = await repo.get_connection(current_user.tenant_id, connection_id)
     if not conn:
@@ -172,6 +185,7 @@ async def update_connection(
 async def delete_connection(
     connection_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     deleted = await repo.delete_connection(current_user.tenant_id, connection_id)
     if not deleted:
@@ -183,6 +197,7 @@ async def delete_connection(
 async def activate_connection(
     connection_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     conn = await repo.get_connection(current_user.tenant_id, connection_id)
     if not conn:
@@ -197,6 +212,7 @@ async def activate_connection(
 async def pause_connection(
     connection_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     conn = await repo.get_connection(current_user.tenant_id, connection_id)
     if not conn:
@@ -209,14 +225,18 @@ async def pause_connection(
 
 # ── Room Mappings ─────────────────────────────────────────────────────
 
+
 @router.get("/room-mappings")
 async def list_room_mappings(
-    property_id: str,
-    provider: Optional[str] = None,
+    property_id: str | None = None,
+    provider: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
+    property_id = property_id or str(getattr(current_user, "hotel_id", "") or "")
     mappings = await repo.get_room_mappings(
-        current_user.tenant_id, property_id, provider,
+        current_user.tenant_id,
+        property_id,
+        provider,
     )
     return {"mappings": mappings, "count": len(mappings)}
 
@@ -225,6 +245,7 @@ async def list_room_mappings(
 async def create_room_mapping(
     req: CreateRoomMappingRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     try:
         provider_enum = ConnectorProvider(req.provider)
@@ -248,6 +269,7 @@ async def create_room_mapping(
 async def delete_room_mapping(
     mapping_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     deleted = await repo.delete_room_mapping(current_user.tenant_id, mapping_id)
     if not deleted:
@@ -257,14 +279,18 @@ async def delete_room_mapping(
 
 # ── Rate Plan Mappings ────────────────────────────────────────────────
 
+
 @router.get("/rate-plan-mappings")
 async def list_rate_plan_mappings(
-    property_id: str,
-    provider: Optional[str] = None,
+    property_id: str | None = None,
+    provider: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
+    property_id = property_id or str(getattr(current_user, "hotel_id", "") or "")
     mappings = await repo.get_rate_plan_mappings(
-        current_user.tenant_id, property_id, provider,
+        current_user.tenant_id,
+        property_id,
+        provider,
     )
     return {"mappings": mappings, "count": len(mappings)}
 
@@ -273,6 +299,7 @@ async def list_rate_plan_mappings(
 async def create_rate_plan_mapping(
     req: CreateRatePlanMappingRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     try:
         provider_enum = ConnectorProvider(req.provider)
@@ -296,6 +323,7 @@ async def create_rate_plan_mapping(
 async def delete_rate_plan_mapping(
     mapping_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
     deleted = await repo.delete_rate_plan_mapping(current_user.tenant_id, mapping_id)
     if not deleted:
@@ -305,34 +333,65 @@ async def delete_rate_plan_mapping(
 
 # ── Raw Channel Events ────────────────────────────────────────────────
 
+
 @router.get("/raw-events")
 async def list_raw_events(
-    property_id: str,
-    provider: Optional[str] = None,
-    processed: Optional[bool] = None,
+    property_id: str | None = None,
+    provider: str | None = None,
+    processed: bool | None = None,
     limit: int = Query(50, le=200),
     current_user: User = Depends(get_current_user),
 ):
+    property_id = property_id or str(getattr(current_user, "hotel_id", "") or "")
     events = await repo.get_raw_events(
-        current_user.tenant_id, property_id, provider, processed, limit,
+        current_user.tenant_id,
+        property_id,
+        provider,
+        processed,
+        limit,
     )
     return {"events": events, "count": len(events)}
 
 
 # ── Reservation Lineage ──────────────────────────────────────────────
 
+
 @router.get("/lineage")
 async def list_reservation_lineages(
-    property_id: str,
-    provider: Optional[str] = None,
-    status: Optional[str] = None,
+    property_id: str | None = None,
+    provider: str | None = None,
+    status: str | None = None,
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
+    property_id = property_id or str(getattr(current_user, "hotel_id", "") or "")
     lineages = await repo.get_reservation_lineages(
-        current_user.tenant_id, property_id, provider, status, limit,
+        current_user.tenant_id,
+        property_id,
+        provider,
+        status,
+        limit,
     )
     return {"lineages": lineages, "count": len(lineages)}
+
+
+# Route order matters: the static `/lineage/stats` GET must be declared
+# BEFORE the dynamic `/lineage/{lineage_id}` GET below. FastAPI matches
+# in declaration order, so a `{lineage_id}` placeholder declared first
+# would silently swallow `/lineage/stats` (lineage_id="stats" → 404 from
+# `get_reservation_lineage_detail`). See Task #133.
+@router.get("/lineage/stats")
+async def get_lineage_stats(
+    property_id: str,
+    provider: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    stats = await repo.get_lineage_stats(
+        current_user.tenant_id,
+        property_id,
+        provider,
+    )
+    return stats
 
 
 @router.get("/lineage/{lineage_id}")
@@ -346,30 +405,23 @@ async def get_reservation_lineage_detail(
     return lineage
 
 
-@router.get("/lineage/stats")
-async def get_lineage_stats(
-    property_id: str,
-    provider: Optional[str] = None,
-    current_user: User = Depends(get_current_user),
-):
-    stats = await repo.get_lineage_stats(
-        current_user.tenant_id, property_id, provider,
-    )
-    return stats
-
-
 # ── Reconciliation Cases ─────────────────────────────────────────────
+
 
 @router.get("/reconciliation/cases")
 async def list_reconciliation_cases(
-    property_id: Optional[str] = None,
-    provider: Optional[str] = None,
+    property_id: str | None = None,
+    provider: str | None = None,
     status: str = Query("open"),
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
     cases = await repo.get_reconciliation_cases(
-        current_user.tenant_id, property_id, provider, status, limit,
+        current_user.tenant_id,
+        property_id,
+        provider,
+        status,
+        limit,
     )
     return {"cases": cases, "count": len(cases)}
 
@@ -378,6 +430,7 @@ async def list_reconciliation_cases(
 async def create_case(
     req: CreateReconciliationCaseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     try:
         provider_enum = ConnectorProvider(req.provider)
@@ -416,16 +469,20 @@ async def resolve_case(
     case_id: str,
     req: ResolveCaseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     case = await repo.get_reconciliation_case(current_user.tenant_id, case_id)
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
-    await repo.update_reconciliation_case(case_id, {
-        "status": CaseStatus.RESOLVED.value,
-        "resolution": req.resolution,
-        "resolved_by": current_user.id,
-        "resolved_at": datetime.now(timezone.utc).isoformat(),
-    })
+    await repo.update_reconciliation_case(
+        case_id,
+        {
+            "status": CaseStatus.RESOLVED.value,
+            "resolution": req.resolution,
+            "resolved_by": current_user.id,
+            "resolved_at": datetime.now(UTC).isoformat(),
+        },
+    )
     return {"message": "Case resolved"}
 
 
@@ -434,31 +491,37 @@ async def dismiss_case(
     case_id: str,
     req: DismissCaseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     case = await repo.get_reconciliation_case(current_user.tenant_id, case_id)
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
-    await repo.update_reconciliation_case(case_id, {
-        "status": CaseStatus.DISMISSED.value,
-        "dismiss_reason": req.reason,
-        "resolved_by": current_user.id,
-        "resolved_at": datetime.now(timezone.utc).isoformat(),
-    })
+    await repo.update_reconciliation_case(
+        case_id,
+        {
+            "status": CaseStatus.DISMISSED.value,
+            "dismiss_reason": req.reason,
+            "resolved_by": current_user.id,
+            "resolved_at": datetime.now(UTC).isoformat(),
+        },
+    )
     return {"message": "Case dismissed"}
 
 
 @router.get("/reconciliation/summary")
 async def get_summary(
-    provider: Optional[str] = None,
+    provider: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     summary = await repo.get_reconciliation_summary(
-        current_user.tenant_id, provider,
+        current_user.tenant_id,
+        provider,
     )
     return summary
 
 
 # ── Data Model Overview ───────────────────────────────────────────────
+
 
 @router.get("/schema")
 async def get_data_model_schema():

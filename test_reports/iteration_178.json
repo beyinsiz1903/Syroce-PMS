@@ -1,0 +1,82 @@
+{
+  "iteration": 178,
+  "date": "2026-04-02",
+  "summary": "Verified calendar occupancy fix and compact UI changes. All features working correctly: (1) Occupancy counter now includes unassigned bookings, (2) Compact 72px cells implemented, (3) Font-extrabold on booking bars, (4) Drag and drop still functional.",
+  "features_tested": [
+    "Occupancy counter includes unassigned bookings - PASSED (Deluxe shows 2/8, 3/8 including unassigned)",
+    "Compact 72px cell width - PASSED (560 cells with w-[72px] class, computed width 72px)",
+    "Font-extrabold on booking bar guest names - PASSED (font-weight: 800)",
+    "Room type header labels use w-28 - PASSED",
+    "Unassigned bookings section visible - PASSED (6 unassigned bookings in 'Atanmamis' rows)",
+    "Unassigned count button visible - PASSED ('6 atanmamis oda')",
+    "Calendar grid renders without JS errors - PASSED",
+    "Booking bars are draggable - PASSED (13 draggable elements)",
+    "Calendar navigation works - PASSED",
+    "Login flow works - PASSED (demo@hotel.com / demo123)"
+  ],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "occupancy_fix": {
+      "description": "Occupancy counter in room type header rows now includes both assigned and unassigned bookings",
+      "verification": "Deluxe row shows 2/8, 3/8 on dates with unassigned bookings",
+      "code_location": "CalendarGrid.jsx lines 179-193",
+      "status": "PASSED"
+    },
+    "compact_ui": {
+      "cell_width": "72px (was 96px)",
+      "cell_count": 560,
+      "tailwind_class": "w-[72px]",
+      "status": "PASSED"
+    },
+    "font_styling": {
+      "guest_name_font_weight": 800,
+      "has_font_extrabold_class": true,
+      "status": "PASSED"
+    },
+    "label_width": {
+      "room_type_header": "w-28",
+      "unassigned_section": "w-28",
+      "room_rows": "w-28",
+      "status": "PASSED"
+    },
+    "drag_and_drop": {
+      "draggable_elements": 13,
+      "status": "PASSED"
+    }
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Occupancy calculation correctly adds assigned + unassigned bookings (line 193)",
+    "CELL_W constant properly set to 72 (line 12)",
+    "CELL_CLS uses w-[72px] Tailwind class (line 13)",
+    "All label divs use w-28 for consistent alignment",
+    "Booking bars have font-extrabold class on guest names"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend only test)",
+    "frontend": "100%"
+  },
+  "test_credentials": {
+    "email": "demo@hotel.com",
+    "password": "demo123"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Calendar occupancy fix verified - unassigned bookings are now counted in the X/Y occupancy indicator in room type headers. Compact UI with 72px cells is working. Font-extrabold styling on booking bars confirmed. All 6 unassigned bookings visible in 'Atanmamis' rows. Drag and drop functionality intact.",
+  "rca_of_the_issue": {
+    "original_issue": "Unassigned reservations in the calendar didn't count towards occupancy numbers (showing 0/8 instead of 3/8 for Deluxe type)",
+    "fix_applied": "CalendarGrid.jsx now counts both assigned and unassigned bookings for occupancy calculation",
+    "verification": "Deluxe header shows 2/8, 3/8 on dates with unassigned bookings, confirming the fix works"
+  }
+}

@@ -3,11 +3,12 @@ Production Config Activation Workflow — Required/optional config validation,
 secret source inspection, invalid format detection, boot blocker/warning
 classification, and readiness validator integration.
 """
+
+import logging
 import os
 import re
-import logging
-from typing import Dict, Any, List
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("infra.config_activation")
 
@@ -169,9 +170,7 @@ CONFIG_DEFINITIONS = {
     },
 }
 
-SENSITIVE_PATTERNS = re.compile(
-    r"(token|secret|key|password|dsn|auth|sid|credential)", re.IGNORECASE
-)
+SENSITIVE_PATTERNS = re.compile(r"(token|secret|key|password|dsn|auth|sid|credential)", re.IGNORECASE)
 
 
 def _mask_value(key: str, value: str) -> str:
@@ -206,13 +205,13 @@ def _detect_source(key: str) -> str:
 class ConfigActivationWorkflow:
     """Validates production config completeness and format correctness."""
 
-    def validate_all(self) -> Dict[str, Any]:
+    def validate_all(self) -> dict[str, Any]:
         """Full validation with blocker/warning classification."""
-        blockers: List[Dict[str, Any]] = []
-        warnings: List[Dict[str, Any]] = []
-        passed: List[Dict[str, Any]] = []
-        format_errors: List[Dict[str, Any]] = []
-        categories: Dict[str, Dict[str, Any]] = {}
+        blockers: list[dict[str, Any]] = []
+        warnings: list[dict[str, Any]] = []
+        passed: list[dict[str, Any]] = []
+        format_errors: list[dict[str, Any]] = []
+        categories: dict[str, dict[str, Any]] = {}
 
         for var_name, cfg in CONFIG_DEFINITIONS.items():
             cat = cfg["category"]
@@ -240,11 +239,13 @@ class ConfigActivationWorkflow:
             if is_set and cfg.get("format_regex"):
                 if not re.match(cfg["format_regex"], value):
                     entry["format_valid"] = False
-                    format_errors.append({
-                        "variable": var_name,
-                        "hint": cfg["format_hint"],
-                        "blocker": cfg["blocker"],
-                    })
+                    format_errors.append(
+                        {
+                            "variable": var_name,
+                            "hint": cfg["format_hint"],
+                            "blocker": cfg["blocker"],
+                        }
+                    )
 
             categories[cat]["variables"].append(entry)
 
@@ -274,7 +275,7 @@ class ConfigActivationWorkflow:
             boot_status = "CLEAR"
 
         return {
-            "validated_at": datetime.now(timezone.utc).isoformat(),
+            "validated_at": datetime.now(UTC).isoformat(),
             "boot_status": boot_status,
             "total_variables": total,
             "configured_count": configured,
@@ -288,15 +289,15 @@ class ConfigActivationWorkflow:
             "source_summary": self._get_source_summary(),
         }
 
-    def _get_source_summary(self) -> Dict[str, int]:
+    def _get_source_summary(self) -> dict[str, int]:
         """Summary of config sources."""
-        sources: Dict[str, int] = {}
+        sources: dict[str, int] = {}
         for var_name in CONFIG_DEFINITIONS:
             src = _detect_source(var_name)
             sources[src] = sources.get(src, 0) + 1
         return sources
 
-    def get_boot_check(self) -> Dict[str, Any]:
+    def get_boot_check(self) -> dict[str, Any]:
         """Lightweight boot blocker check."""
         blockers = []
         for var_name, cfg in CONFIG_DEFINITIONS.items():
@@ -306,22 +307,24 @@ class ConfigActivationWorkflow:
         return {
             "status": "BLOCKED" if blockers else "CLEAR",
             "blockers": blockers,
-            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "checked_at": datetime.now(UTC).isoformat(),
         }
 
-    def get_category_status(self, category: str) -> Dict[str, Any]:
+    def get_category_status(self, category: str) -> dict[str, Any]:
         """Get status for a specific config category."""
         entries = []
         for var_name, cfg in CONFIG_DEFINITIONS.items():
             if cfg["category"] != category:
                 continue
             value = os.environ.get(var_name, "")
-            entries.append({
-                "variable": var_name,
-                "configured": bool(value),
-                "source": _detect_source(var_name),
-                "masked_value": _mask_value(var_name, value) if value else None,
-            })
+            entries.append(
+                {
+                    "variable": var_name,
+                    "configured": bool(value),
+                    "source": _detect_source(var_name),
+                    "masked_value": _mask_value(var_name, value) if value else None,
+                }
+            )
         return {"category": category, "variables": entries}
 
 

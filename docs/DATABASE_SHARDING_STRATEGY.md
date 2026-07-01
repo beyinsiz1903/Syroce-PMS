@@ -105,3 +105,67 @@ sh.getBalancerState()
 # Shard istatistikleri
 db.adminCommand({ listShards: 1 })
 ```
+
+### 9. Shard-Readiness Denetimi (yeniden koşulabilir)
+
+Gerçek sharding (config server, mongos, `sh.shardCollection`, balancer) bir
+Atlas/DBA altyapı işidir ve bu repodaki kapsamın **dışındadır**. Bu bölüm,
+o migrasyondan **önce** kodun "shard'a hazır" olduğunu kanıtlayan hazırlık
+denetimini tanımlar. Denetim **salt-okunurdur**: index oluşturmaz/düşürmez,
+veri değiştirmez, canlı sharding tetiklemez.
+
+Araç: `backend/scripts/audit_shard_readiness.py`
+(birim testi: `backend/tests/test_audit_shard_readiness.py`).
+
+Denetim üç şeyi raporlar:
+
+1. **Shard-key index kapsaması** — yukarıdaki §2'de önerilen her shard-key
+   için (öncül `tenant_id`), prefix'i shard-key ile eşleşen bir bileşik
+   index'in var olup olmadığı. Eksik kapsama raporlanır, asla oluşturulmaz.
+2. **Sorgu shard-uyumu** — shardlanabilir bir koleksiyonda `tenant_id`
+   filtresi olmadan, doğrudan ham (`_raw_db`) handle üzerinden yapılan
+   okumaların statik taraması. Sharded cluster'da bu sorgular tüm shard'lara
+   yayılır (scatter-gather). Tenant-aware proxy (`db`) üzerinden giden
+   okumalar `tenant_id`'yi otomatik enjekte ettiği için yapısal olarak
+   shard-routable'dır; tarama yalnızca `_raw_db` kaçış yolunu inceler.
+3. **Hazırlık özeti** — operatörün sharding migrasyonu için go/no-go
+   referansı olarak kullanabileceği PASS / REVIEW / FAIL kararı.
+
+```bash
+# Tam denetim (index kapsaması canlı cluster ister; sorgu taraması statiktir)
+MONGO_URL="$MONGO_ATLAS_URI" DB_NAME=syroce-pms \
+    python backend/scripts/audit_shard_readiness.py
+
+# Sadece statik sorgu taraması (DB gerektirmez — CI/offline)
+python backend/scripts/audit_shard_readiness.py --query-only
+
+# REVIEW (uyarı) durumunu da hata say (deploy/CI kapısı)
+python backend/scripts/audit_shard_readiness.py --strict
+```
+
+Çıkış kodları: `0` = PASS/REVIEW, `1` = FAIL (BLOCKER veya `--strict` altında
+REVIEW), `2` = kullanım/bağlantı hatası. Makine-okunur kuyruk satırı:
+`SUMMARY blockers=N warnings=M info=K verdict=PASS|REVIEW|FAIL`.
+
+#### Hazırlık durumu (canlı denetim, 2026-06-11)
+
+| Koleksiyon | Önerilen shard-key | Durum | Not |
+|------------|--------------------|-------|-----|
+| `bookings` | `{tenant_id:1, check_in:-1}` | HAZIR | `idx_bookings_tenant_checkin_checkout` prefix'i eşleşir; yön (`check_in`) ters → sharding anında tam yönlü index önerilir |
+| `guests` | `{tenant_id:1, email:1}` | HAZIR | `idx_guests_tenant_email_unique` birebir (yön dâhil) |
+| `rooms` | `{tenant_id:1}` | HAZIR | `idx_room_status` vb. öncül `tenant_id` |
+| `folios` | `{tenant_id:1, created_at:-1}` | REVIEW | `tenant_id` öncüllü index'ler var (`idx_folio_*`) ama `{tenant_id, created_at}` prefix'ini destekleyen index **yok** → sharding'den önce eklenmeli (ya da `{tenant_id}` shard-key'i seçilmeli) |
+| `audit_logs` | `{tenant_id:1, timestamp:-1}` | HAZIR | `idx_audit_log_timestamp` birebir (yön dâhil) |
+| `tasks` | `{tenant_id:1}` | HAZIR | Kod tabanında `tasks` koleksiyonu **yok**; karşılığı `housekeeping_tasks` (`idx_hk_*`) ve `task_queue` (`idx_task_queue_poll`) — ikisi de öncül `tenant_id`. §2'deki `hotel_pms.tasks` satırı bu iki koleksiyona göre uyarlanmalı |
+
+**Sorgu taraması:** doğrudan `_raw_db.<koleksiyon>` üzerinden yapılan
+shardlanabilir okumaların tümü `tenant_id` taşıyor — `tenant_id`'siz
+scatter-gather riski tespit edilmedi. (Sınırlama: tarama yalnızca doğrudan
+`_raw_db.<koleksiyon>` zincirlerini görür; takma değişkene atanmış handle'lar
+veya `get_system_db()` sonucu üzerinden yapılan okumalar kapsanmaz.)
+
+**Genel karar:** `REVIEW` — tek açık kalem `folios` için önerilen bileşik
+shard-key index'inin eksikliği. Bu bir BLOCKER değildir: `folios` `tenant_id`
+öncüllü olduğundan `{tenant_id}` shard-key'i ile zaten shardlanabilir; yalnızca
+`{tenant_id, created_at}` bileşik anahtarı seçilecekse sharding'den önce ilgili
+index eklenmelidir.

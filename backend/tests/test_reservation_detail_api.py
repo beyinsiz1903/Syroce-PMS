@@ -6,7 +6,12 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
+BASE_URL = os.environ.get("VITE_BACKEND_URL", "").rstrip("/")
+
+pytestmark = pytest.mark.skipif(
+    not BASE_URL,
+    reason="VITE_BACKEND_URL not set - integration tests require a running server"
+)
 
 # Test credentials
 TEST_EMAIL = "demo@hotel.com"
@@ -293,6 +298,23 @@ class TestQuickActions:
 
     def test_early_checkin(self, authenticated_client, booking_id):
         """Test early check-in action."""
+        import os
+        from pymongo import MongoClient
+        _mongo = MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms"))
+        _db = _mongo[os.environ.get("DB_NAME", "hotel_pms")]
+        # Find a confirmed booking (not no_show/cancelled/checked_out)
+        booking = _db.bookings.find_one(
+            {"id": booking_id}, {"_id": 0, "room_id": 1, "status": 1}
+        )
+        # If the booking isn't in a check-in-eligible state, reset it
+        eligible = ['confirmed', 'guaranteed', 'pending']
+        if booking and booking.get("status") not in eligible:
+            _db.bookings.update_one({"id": booking_id}, {"$set": {"status": "confirmed"}})
+        if booking:
+            _db.rooms.update_one({"id": booking["room_id"]}, {"$set": {"status": "available", "current_booking_id": None}})
+            _db.room_night_locks.delete_many({"room_id": booking["room_id"]})
+        _mongo.close()
+
         response = authenticated_client.post(
             f"{BASE_URL}/api/pms/reservations/{booking_id}/early-checkin",
             json={"extra_charge": 50.0},
@@ -425,6 +447,155 @@ class TestGuestUpdate:
 
         data = response.json()
         assert data.get("success") is True
+
+
+class TestEnsureFolioSplitFlow:
+    """Folyo Böl: masraf-var-folio-yok uçtan uca akış (task #424).
+
+    Onaylı bir rezervasyonda restoran masrafı bulunsa bile folio belgesi tembel
+    oluşturulduğu için `db.folios` boş kalabilir; "Folyo Böl" o anda
+    `/ensure-folio`'yu çağırır. Gerçek backend + canlı Mongo üzerinden:
+      * masraf seed + ensure-folio → AÇIK guest folio oluşur, orphan masraf
+        bağlanır (bound_charges >= 1),
+      * ikinci çağrı idempotent (created=False, yeni folio yok),
+      * full-detail folioyu + bağlı masrafı gösterir (bölme dialogu kalemleri
+        listeleyebilir).
+
+    İzole, kendi seed'ini yapan/temizleyen `E2E_` prefix'li bir rezervasyon
+    kullanır; mevcut/pilot veriye dokunmaz.
+    """
+
+    @pytest.fixture
+    def seeded_booking(self, booking_id):
+        """Seed a fresh confirmed booking + restaurant charge with NO folio."""
+        import uuid as _uuid
+        from pymongo import MongoClient
+
+        mongo = MongoClient(
+            os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
+        )
+        mdb = mongo[os.environ.get("DB_NAME", "hotel_pms")]
+
+        # Derive the tenant context from an existing booking the API can see.
+        ref = mdb.bookings.find_one({"id": booking_id}, {"_id": 0, "tenant_id": 1})
+        if not ref or not ref.get("tenant_id"):
+            mongo.close()
+            pytest.skip("No tenant context available for ensure-folio seed")
+        tid = ref["tenant_id"]
+
+        new_booking_id = f"E2E_ENSUREFOLIO_{_uuid.uuid4().hex[:8]}"
+        charge_id = f"E2E_CHARGE_{_uuid.uuid4().hex[:8]}"
+
+        mdb.bookings.insert_one({
+            "id": new_booking_id,
+            "tenant_id": tid,
+            "status": "confirmed",
+            "guest_id": None,
+            "room_id": None,
+            "booking_number": new_booking_id,
+            "total_amount": 0.0,
+            "guest_name": "E2E EnsureFolio Guest",
+        })
+        # Restoran masrafı: folio_id YOK (orphan) → ensure-folio bunu bağlamalı.
+        mdb.folio_charges.insert_one({
+            "id": charge_id,
+            "tenant_id": tid,
+            "booking_id": new_booking_id,
+            "folio_id": None,
+            "charge_category": "restaurant",
+            "description": "Restoran - Aksam yemegi",
+            "amount": 120.0,
+            "quantity": 1.0,
+            "total": 120.0,
+            "voided": False,
+        })
+
+        yield {
+            "booking_id": new_booking_id,
+            "charge_id": charge_id,
+            "tenant_id": tid,
+        }
+
+        # Cleanup — seed-only, tenant-scoped.
+        mdb.bookings.delete_many({"id": new_booking_id, "tenant_id": tid})
+        mdb.folio_charges.delete_many({"booking_id": new_booking_id, "tenant_id": tid})
+        mdb.folios.delete_many({"booking_id": new_booking_id, "tenant_id": tid})
+        mdb.folio_operations.delete_many({"from_booking_id": new_booking_id})
+        mongo.close()
+
+    def test_ensure_folio_creates_open_folio_and_binds_charge(
+        self, authenticated_client, seeded_booking
+    ):
+        """charges-but-no-folio → open guest folio created + orphan charge bound."""
+        bid = seeded_booking["booking_id"]
+        response = authenticated_client.post(
+            f"{BASE_URL}/api/pms/reservations/{bid}/ensure-folio"
+        )
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: {response.text}"
+        )
+
+        data = response.json()
+        assert data.get("success") is True
+        assert data.get("created") is True, "A new folio should be created"
+        assert data.get("bound_charges", 0) >= 1, "Orphan restaurant charge should bind"
+
+        folio = data["folio"]
+        assert folio["status"] == "open"
+        assert folio["folio_type"] == "guest"
+        assert folio["booking_id"] == bid
+        assert folio.get("id")
+
+    def test_ensure_folio_second_call_is_idempotent(
+        self, authenticated_client, seeded_booking
+    ):
+        """Second ensure-folio returns the same open folio, created=False, no rebind."""
+        bid = seeded_booking["booking_id"]
+
+        first = authenticated_client.post(
+            f"{BASE_URL}/api/pms/reservations/{bid}/ensure-folio"
+        )
+        assert first.status_code == 200, f"{first.status_code}: {first.text}"
+        first_data = first.json()
+        assert first_data.get("created") is True
+        created_folio_id = first_data["folio"]["id"]
+
+        second = authenticated_client.post(
+            f"{BASE_URL}/api/pms/reservations/{bid}/ensure-folio"
+        )
+        assert second.status_code == 200, f"{second.status_code}: {second.text}"
+        second_data = second.json()
+        assert second_data.get("created") is False, "No second folio should be created"
+        assert second_data.get("bound_charges") == 0
+        assert second_data["folio"]["id"] == created_folio_id
+
+    def test_full_detail_shows_folio_and_bound_charge(
+        self, authenticated_client, seeded_booking
+    ):
+        """After ensure-folio, the split dialog source (full-detail) lists the folio + charge."""
+        bid = seeded_booking["booking_id"]
+
+        ensure = authenticated_client.post(
+            f"{BASE_URL}/api/pms/reservations/{bid}/ensure-folio"
+        )
+        assert ensure.status_code == 200, f"{ensure.status_code}: {ensure.text}"
+        folio_id = ensure.json()["folio"]["id"]
+
+        detail = authenticated_client.get(
+            f"{BASE_URL}/api/pms/reservations/{bid}/full-detail"
+        )
+        assert detail.status_code == 200, f"{detail.status_code}: {detail.text}"
+        data = detail.json()
+
+        folio_ids = [f.get("id") for f in data.get("folios", [])]
+        assert folio_id in folio_ids, "Ensured folio should appear in full-detail"
+
+        charges = data.get("charges", [])
+        seeded_charge = next(
+            (c for c in charges if c.get("id") == seeded_booking["charge_id"]), None
+        )
+        assert seeded_charge is not None, "Seeded restaurant charge should be listed"
+        assert seeded_charge.get("folio_id") == folio_id, "Charge should be bound to the new folio"
 
 
 if __name__ == "__main__":

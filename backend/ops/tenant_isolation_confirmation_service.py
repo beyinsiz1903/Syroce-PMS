@@ -5,13 +5,13 @@ Production-grade tenant isolation validation:
 cross-tenant access, cache isolation, queue scope,
 websocket room isolation, noisy tenant simulation.
 """
-import uuid
-import logging
-from datetime import datetime, timezone
-from typing import Dict
 
-from common.result import ServiceResult
+import logging
+import uuid
+from datetime import UTC, datetime
+
 from common.context import OperationContext
+from common.result import ServiceResult
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +32,12 @@ class TenantIsolationConfirmationService:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     async def run_full_validation(self, ctx: OperationContext) -> ServiceResult:
         """Run all isolation tests."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         results = []
 
         for test in ISOLATION_TESTS:
@@ -66,7 +67,7 @@ class TenantIsolationConfirmationService:
         del validation_result["_id"]
         return ServiceResult.success(validation_result)
 
-    async def _run_test(self, ctx: OperationContext, test: Dict) -> Dict:
+    async def _run_test(self, ctx: OperationContext, test: dict) -> dict:
         """Run a single isolation test."""
         test_id = test["id"]
         base = {
@@ -87,9 +88,7 @@ class TenantIsolationConfirmationService:
 
         if test_id == "queue_scope":
             # Verify queue tasks are scoped to tenant
-            await self._db.task_queue.find(
-                {"tenant_id": {"$ne": ctx.tenant_id}}, {"_id": 0, "tenant_id": 1}
-            ).limit(1).to_list(1)
+            await self._db.task_queue.find({"tenant_id": {"$ne": ctx.tenant_id}}, {"_id": 0, "tenant_id": 1}).limit(1).to_list(1)
             return {**base, "passed": True, "details": "Queue tasks are tenant-scoped"}
 
         if test_id == "websocket_room_isolation":

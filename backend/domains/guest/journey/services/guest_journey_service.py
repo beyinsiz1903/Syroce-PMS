@@ -2,9 +2,10 @@
 Guest Domain — Guest Journey Service
 Business logic for guest profile and journey management. No FastAPI dependencies.
 """
+
 import uuid
-from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+from datetime import UTC, datetime
+from typing import Any
 
 from domains.guest.journey.repositories.guest_repository import GuestRepository
 
@@ -14,19 +15,25 @@ class GuestJourneyService:
 
     @staticmethod
     async def get_guests(
-        tenant_id: str, *, search: Optional[str] = None,
-        limit: int = 50, offset: int = 0,
-    ) -> List[Dict[str, Any]]:
+        tenant_id: str,
+        *,
+        search: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
         return await GuestRepository.find_by_tenant(
-            tenant_id, search=search, limit=limit, offset=offset,
+            tenant_id,
+            search=search,
+            limit=limit,
+            offset=offset,
         )
 
     @staticmethod
-    async def get_guest(tenant_id: str, guest_id: str) -> Optional[Dict[str, Any]]:
+    async def get_guest(tenant_id: str, guest_id: str) -> dict[str, Any] | None:
         return await GuestRepository.find_one(tenant_id, guest_id)
 
     @staticmethod
-    async def create_guest(tenant_id: str, guest_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def create_guest(tenant_id: str, guest_data: dict[str, Any]) -> dict[str, Any]:
         email = guest_data.get("email")
         if email:
             existing = await GuestRepository.find_by_email(tenant_id, email)
@@ -40,15 +47,15 @@ class GuestJourneyService:
             "total_stays": 0,
             "total_revenue": 0,
             "loyalty_tier": "bronze",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }
         await GuestRepository.insert(guest)
         return guest
 
     @staticmethod
-    async def update_guest(tenant_id: str, guest_id: str, update_data: Dict[str, Any]) -> bool:
-        update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    async def update_guest(tenant_id: str, guest_id: str, update_data: dict[str, Any]) -> bool:
+        update_data["updated_at"] = datetime.now(UTC).isoformat()
         return await GuestRepository.update(tenant_id, guest_id, update_data)
 
     @staticmethod
@@ -70,16 +77,20 @@ class GuestJourneyService:
         elif new_stays >= 5 or new_revenue >= 5000:
             tier = "silver"
 
-        return await GuestRepository.update(tenant_id, guest_id, {
-            "total_stays": new_stays,
-            "total_revenue": new_revenue,
-            "loyalty_tier": tier,
-            "last_stay": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        })
+        return await GuestRepository.update(
+            tenant_id,
+            guest_id,
+            {
+                "total_stays": new_stays,
+                "total_revenue": new_revenue,
+                "loyalty_tier": tier,
+                "last_stay": datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        )
 
     @staticmethod
-    async def get_vip_guests(tenant_id: str) -> List[Dict[str, Any]]:
+    async def get_vip_guests(tenant_id: str) -> list[dict[str, Any]]:
         return await GuestRepository.get_vip_guests(tenant_id)
 
     @staticmethod

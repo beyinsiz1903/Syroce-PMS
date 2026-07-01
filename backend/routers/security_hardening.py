@@ -1,24 +1,32 @@
 """
 Security Hardening Router - API endpoints for multi-tenant security.
 """
-from fastapi import APIRouter, Depends, Query, Body
-from typing import Optional, Dict, Any
 
-from shared_kernel.tenancy_context import get_current_tenant, TenantContext
+from typing import Any
 
-from modules.security_hardening.tenant_scoped_queries import tenant_query_guard
-from modules.security_hardening.property_permissions import property_permissions
+from fastapi import APIRouter, Body, Depends, Query
+
+from core.cache import cached
+from modules.pms_core.role_permission_service import require_op  # v80 Bug DP
+from modules.security_hardening.audit_completeness import audit_completeness
 from modules.security_hardening.credential_vault import credential_vault
 from modules.security_hardening.data_masking import data_masking
-from modules.security_hardening.audit_completeness import audit_completeness
+from modules.security_hardening.property_permissions import property_permissions
+from modules.security_hardening.tenant_scoped_queries import tenant_query_guard
+from shared_kernel.tenancy_context import TenantContext, get_current_tenant
 
 router = APIRouter(prefix="/api/security-hardening", tags=["security-hardening"])
 
 
 # --- Tenant Scope ---
 
+
 @router.get("/tenant-scope/check")
-async def check_tenant_isolation(tenant: TenantContext = Depends(get_current_tenant)):
+@cached(ttl=60, key_prefix="tenant_scope_check")
+async def check_tenant_isolation(
+    tenant: TenantContext = Depends(get_current_tenant),
+    _perm=Depends(require_op("view_executive_reports")),  # v80 Bug DP: multi-tenant security audit
+):
     return await tenant_query_guard.check_isolation(tenant.tenant_id)
 
 
@@ -32,9 +40,10 @@ async def get_violations(
 
 # --- Property Permissions ---
 
+
 @router.get("/property-permissions")
 async def get_property_permissions(
-    property_id: Optional[str] = None,
+    property_id: str | None = None,
     tenant: TenantContext = Depends(get_current_tenant),
 ):
     return await property_permissions.get_property_permissions(tenant.tenant_id, property_id)
@@ -48,9 +57,7 @@ async def check_permission(
     action: str = Query(...),
     tenant: TenantContext = Depends(get_current_tenant),
 ):
-    return await property_permissions.check_permission(
-        tenant.tenant_id, user_id, role, property_id, action
-    )
+    return await property_permissions.check_permission(tenant.tenant_id, user_id, role, property_id, action)
 
 
 @router.get("/property-permissions/roles")
@@ -59,6 +66,7 @@ async def get_role_permissions(tenant: TenantContext = Depends(get_current_tenan
 
 
 # --- Credential Vault ---
+
 
 @router.get("/vault/status")
 async def get_vault_status(tenant: TenantContext = Depends(get_current_tenant)):
@@ -73,10 +81,15 @@ async def store_credential(
     description: str = Query(""),
     rotation_days: int = Query(90),
     tenant: TenantContext = Depends(get_current_tenant),
+    _perm=Depends(require_op("manage_secrets")),  # v88 DW
 ):
     return await credential_vault.store_credential(
-        tenant.tenant_id, credential_type, credential_key,
-        credential_value, description, rotation_days,
+        tenant.tenant_id,
+        credential_type,
+        credential_key,
+        credential_value,
+        description,
+        rotation_days,
     )
 
 
@@ -85,6 +98,7 @@ async def rotate_credential(
     credential_id: str,
     new_value: str = Query(...),
     tenant: TenantContext = Depends(get_current_tenant),
+    _perm=Depends(require_op("manage_secrets")),  # v88 DW
 ):
     return await credential_vault.rotate_credential(tenant.tenant_id, credential_id, new_value)
 
@@ -96,23 +110,27 @@ async def check_leakage(tenant: TenantContext = Depends(get_current_tenant)):
 
 # --- Data Masking ---
 
+
 @router.post("/masking-preview")
 async def preview_masking(
-    data: Dict[str, Any] = Body(...),
+    data: dict[str, Any] = Body(...),
     tenant: TenantContext = Depends(get_current_tenant),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v92 DW
 ):
     return data_masking.preview_masking(data)
 
 
 @router.post("/masking-coverage")
 async def check_masking_coverage(
-    data: Dict[str, Any] = Body(...),
+    data: dict[str, Any] = Body(...),
     tenant: TenantContext = Depends(get_current_tenant),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v92 DW
 ):
     return data_masking.get_masking_coverage(data)
 
 
 # --- Audit Completeness ---
+
 
 @router.get("/audit-completeness")
 async def check_audit_completeness(

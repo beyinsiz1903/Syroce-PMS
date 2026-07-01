@@ -1,0 +1,580 @@
+name: Mobile Smoke (post EAS build)
+
+# This workflow runs the Maestro smoke suite from `mobile/scripts/smoke.sh`
+# against an EAS build artifact, so a bad preview/production build can never
+# slip into TestFlight or Play Internal Testing without a green smoke run.
+#
+# Trigger options:
+#   1. workflow_dispatch — operator pastes the EAS build URL (and optionally
+#      a PR / issue number to comment on) and picks the platform(s).
+#   2. repository_dispatch (event type `eas-build-finished`) — a tiny relay
+#      maps the EAS build webhook payload to a repository_dispatch with the
+#      same shape as the manual inputs. This keeps the secret (EAS_WEBHOOK_SECRET)
+#      out of GitHub and avoids exposing a public endpoint here.
+#
+# EAS webhook payload reference (HMAC-SHA1 signed with EAS_WEBHOOK_SECRET):
+#   { id, status: "finished" | "errored", platform: "ios" | "android",
+#     artifacts: { buildUrl, applicationArchiveUrl }, ... }
+#
+# The relay must:
+#   - verify the HMAC signature (header `expo-signature`),
+#   - bail when status != "finished",
+#   - POST to the GitHub API with a token that has `repo` scope:
+#       POST /repos/<owner>/<repo>/dispatches
+#       { "event_type": "eas-build-finished",
+#         "client_payload": {
+#           "platform": "ios" | "android",
+#           "build_url": "<applicationArchiveUrl>",
+#           "build_id":  "<id>",
+#           "profile":   "preview" | "production",
+#           "issue_number": "<optional>"
+#         } }
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Hangi platform için smoke koşulsun?"
+        required: true
+        default: "ios"
+        type: choice
+        options:
+          - ios
+          - android
+          - both
+      build_url:
+        description: >-
+          EAS build artifact URL'si (iOS .tar.gz / .app.tar.gz veya Android .apk).
+          `both` seçilirse bu alanı boş bırakıp ios_build_url + android_build_url
+          alanlarını doldurun.
+        required: false
+        type: string
+      ios_build_url:
+        description: "iOS build artifact URL'si (sadece `both` için)"
+        required: false
+        type: string
+      android_build_url:
+        description: "Android build artifact URL'si (sadece `both` için)"
+        required: false
+        type: string
+      profile:
+        description: "EAS build profili (yalnızca raporlama için)"
+        required: false
+        default: "preview"
+        type: choice
+        options:
+          - preview
+          - production
+      issue_number:
+        description: "Sonuçların yorumlanacağı PR / issue numarası (opsiyonel)"
+        required: false
+        type: string
+
+  repository_dispatch:
+    types: [eas-build-finished]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: mobile-smoke-${{ github.event.client_payload.build_id || github.event.inputs.build_url || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------- Resolve trigger inputs into per-platform build URLs ----------
+  resolve:
+    name: Tetikleyici girdilerini çöz
+    runs-on: ubuntu-latest
+    outputs:
+      run_ios: ${{ steps.parse.outputs.run_ios }}
+      run_android: ${{ steps.parse.outputs.run_android }}
+      ios_build_url: ${{ steps.parse.outputs.ios_build_url }}
+      android_build_url: ${{ steps.parse.outputs.android_build_url }}
+      profile: ${{ steps.parse.outputs.profile }}
+      build_id: ${{ steps.parse.outputs.build_id }}
+      issue_number: ${{ steps.parse.outputs.issue_number }}
+    steps:
+      - id: parse
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          # workflow_dispatch inputs
+          IN_PLATFORM: ${{ github.event.inputs.platform }}
+          IN_BUILD_URL: ${{ github.event.inputs.build_url }}
+          IN_IOS_URL: ${{ github.event.inputs.ios_build_url }}
+          IN_ANDROID_URL: ${{ github.event.inputs.android_build_url }}
+          IN_PROFILE: ${{ github.event.inputs.profile }}
+          IN_ISSUE: ${{ github.event.inputs.issue_number }}
+          # repository_dispatch payload
+          CP_PLATFORM: ${{ github.event.client_payload.platform }}
+          CP_BUILD_URL: ${{ github.event.client_payload.build_url }}
+          CP_PROFILE: ${{ github.event.client_payload.profile }}
+          CP_BUILD_ID: ${{ github.event.client_payload.build_id }}
+          CP_ISSUE: ${{ github.event.client_payload.issue_number }}
+        run: |
+          set -euo pipefail
+          run_ios=false
+          run_android=false
+          ios_url=""
+          android_url=""
+          profile="preview"
+          build_id=""
+          issue_number=""
+
+          if [ "$EVENT_NAME" = "repository_dispatch" ]; then
+            case "$CP_PLATFORM" in
+              ios)
+                run_ios=true
+                ios_url="$CP_BUILD_URL"
+                ;;
+              android)
+                run_android=true
+                android_url="$CP_BUILD_URL"
+                ;;
+              *)
+                echo "::error::repository_dispatch payload icin gecersiz platform: '$CP_PLATFORM'"
+                exit 1
+                ;;
+            esac
+            [ -n "$CP_PROFILE" ] && profile="$CP_PROFILE"
+            build_id="$CP_BUILD_ID"
+            issue_number="$CP_ISSUE"
+          else
+            case "$IN_PLATFORM" in
+              ios)
+                run_ios=true
+                ios_url="$IN_BUILD_URL"
+                ;;
+              android)
+                run_android=true
+                android_url="$IN_BUILD_URL"
+                ;;
+              both)
+                run_ios=true
+                run_android=true
+                ios_url="$IN_IOS_URL"
+                android_url="$IN_ANDROID_URL"
+                if [ -z "$ios_url" ] || [ -z "$android_url" ]; then
+                  echo "::error::'both' secildiginde ios_build_url ve android_build_url zorunlu"
+                  exit 1
+                fi
+                ;;
+              *)
+                echo "::error::Bilinmeyen platform '$IN_PLATFORM'"
+                exit 1
+                ;;
+            esac
+            [ -n "$IN_PROFILE" ] && profile="$IN_PROFILE"
+            issue_number="$IN_ISSUE"
+          fi
+
+          if [ "$run_ios" = "true" ] && [ -z "$ios_url" ]; then
+            echo "::error::iOS smoke icin build URL'si bos"
+            exit 1
+          fi
+          if [ "$run_android" = "true" ] && [ -z "$android_url" ]; then
+            echo "::error::Android smoke icin build URL'si bos"
+            exit 1
+          fi
+
+          {
+            echo "run_ios=$run_ios"
+            echo "run_android=$run_android"
+            echo "ios_build_url=$ios_url"
+            echo "android_build_url=$android_url"
+            echo "profile=$profile"
+            echo "build_id=$build_id"
+            echo "issue_number=$issue_number"
+          } >> "$GITHUB_OUTPUT"
+
+  # ---------- iOS smoke on macOS runner with iOS Simulator ----------
+  ios-smoke:
+    name: iOS smoke (Simulator)
+    needs: resolve
+    if: needs.resolve.outputs.run_ios == 'true'
+    runs-on: macos-14
+    timeout-minutes: 45
+    env:
+      MAESTRO_VERSION: "1.39.0"
+      IOS_RUNTIME: "iOS-17-5"
+      IOS_DEVICE: "iPhone 15"
+      BUILD_URL: ${{ needs.resolve.outputs.ios_build_url }}
+      PROFILE: ${{ needs.resolve.outputs.profile }}
+    outputs:
+      result: ${{ steps.smoke.outcome }}
+      summary_path: smoke-ios-summary.txt
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Maestro CLI
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          "$HOME/.maestro/bin/maestro" --version
+
+      - name: Boot iOS Simulator (${{ env.IOS_DEVICE }})
+        id: boot
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices --json > /tmp/sim.json
+          UDID=$(node -e '
+            const d = JSON.parse(require("fs").readFileSync("/tmp/sim.json","utf8")).devices;
+            for (const r of Object.keys(d)) {
+              for (const dev of d[r]) {
+                if (dev.name === process.env.IOS_DEVICE && dev.isAvailable) {
+                  process.stdout.write(dev.udid); return;
+                }
+              }
+            }
+          ')
+          if [ -z "$UDID" ]; then
+            echo "::error::Mevcut bir '${IOS_DEVICE}' simulatoru bulunamadi"
+            xcrun simctl list devices
+            exit 1
+          fi
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          echo "MAESTRO_DEVICE=$UDID" >> "$GITHUB_ENV"
+
+      - name: Download EAS iOS artifact
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/eas
+          cd /tmp/eas
+          echo "[smoke] Downloading $BUILD_URL"
+          curl -fSL --retry 3 --retry-delay 5 -o build.bin "$BUILD_URL"
+          ls -la
+          file build.bin || true
+          mkdir -p extracted
+          # EAS preview/production iOS artifact for simulator distribution is a
+          # tar.gz containing Syroce PMS.app. Production store IPAs cannot be
+          # installed on a simulator — the operator must pass a simulator build
+          # (eas build --profile development --platform ios, or a preview build
+          # with `ios.simulator: true`).
+          if tar -tzf build.bin >/dev/null 2>&1; then
+            tar -xzf build.bin -C extracted
+          elif unzip -tq build.bin >/dev/null 2>&1; then
+            unzip -q build.bin -d extracted
+          else
+            echo "::error::Bilinmeyen artifact formati — .tar.gz veya .zip bekleniyordu"
+            exit 1
+          fi
+          APP_PATH=$(find extracted -maxdepth 4 -name "*.app" -type d | head -n1)
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::Cikartilan artifact icinde .app bulunamadi (simulator build mi?)"
+            find extracted -maxdepth 4 -type d
+            exit 1
+          fi
+          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+
+      - name: Install app on Simulator
+        run: |
+          set -euo pipefail
+          xcrun simctl install "$MAESTRO_DEVICE" "$APP_PATH"
+          # Sanity check: bundle id matches what the Maestro flows expect.
+          PLIST="$APP_PATH/Info.plist"
+          if [ -f "$PLIST" ]; then
+            BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$PLIST" 2>/dev/null || true)
+            echo "Installed bundleId: $BUNDLE_ID"
+            if [ -n "$BUNDLE_ID" ] && [ "$BUNDLE_ID" != "com.syroce.pms" ]; then
+              echo "::warning::Bundle id '$BUNDLE_ID' beklenen com.syroce.pms ile ayni degil — Maestro akislari basarisiz olabilir"
+            fi
+          fi
+
+      - name: Run Maestro smoke flows
+        id: smoke
+        env:
+          SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+          SMOKE_GUEST_EMAIL: ${{ secrets.SMOKE_GUEST_EMAIL }}
+          SMOKE_GUEST_PASSWORD: ${{ secrets.SMOKE_GUEST_PASSWORD }}
+        run: |
+          set -o pipefail
+          cd mobile
+          mkdir -p ../smoke-artifacts/ios
+          npm run smoke 2>&1 | tee ../smoke-artifacts/ios/output.log
+
+      - name: Collect Maestro debug artifacts
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p smoke-artifacts/ios/maestro-tests
+          if [ -d "$HOME/.maestro/tests" ]; then
+            cp -R "$HOME/.maestro/tests/." smoke-artifacts/ios/maestro-tests/ || true
+          fi
+
+      - name: Build summary
+        if: always()
+        run: |
+          set -euo pipefail
+          OUT=smoke-ios-summary.txt
+          STATUS="${{ steps.smoke.outcome }}"
+          {
+            echo "## Mobil smoke — iOS (${PROFILE})"
+            echo ""
+            echo "- Sonuc: **${STATUS}**"
+            echo "- Build URL: \`${BUILD_URL}\`"
+            echo "- Cihaz: ${IOS_DEVICE} (${MAESTRO_DEVICE})"
+            echo ""
+            echo "<details><summary>Maestro ciktisi (son 80 satir)</summary>"
+            echo ""
+            echo '```'
+            tail -80 smoke-artifacts/ios/output.log 2>/dev/null || echo "(no output)"
+            echo '```'
+            echo "</details>"
+          } > "$OUT"
+          cat "$OUT" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Maestro debug output
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: maestro-ios-debug
+          path: |
+            smoke-artifacts/ios/output.log
+            smoke-artifacts/ios/maestro-tests
+          if-no-files-found: warn
+
+      - name: Upload PR comment summary
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: smoke-ios-summary
+          path: smoke-ios-summary.txt
+
+  # ---------- Android smoke on linux + emulator ----------
+  android-smoke:
+    name: Android smoke (Emulator)
+    needs: resolve
+    if: needs.resolve.outputs.run_android == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      MAESTRO_VERSION: "1.39.0"
+      ANDROID_API: "34"
+      BUILD_URL: ${{ needs.resolve.outputs.android_build_url }}
+      PROFILE: ${{ needs.resolve.outputs.profile }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Maestro CLI
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          "$HOME/.maestro/bin/maestro" --version
+
+      - name: Enable KVM (hardware accel)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Download EAS Android artifact
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/eas
+          cd /tmp/eas
+          echo "[smoke] Downloading $BUILD_URL"
+          curl -fSL --retry 3 --retry-delay 5 -o build.bin "$BUILD_URL"
+          file build.bin || true
+          # EAS preview/production Android default artifact is .aab which
+          # cannot be installed on an emulator. Operator must pass an APK
+          # build URL (development profile or `android.buildType: "apk"`).
+          if file build.bin | grep -qi "Zip archive"; then
+            if unzip -p build.bin AndroidManifest.xml >/dev/null 2>&1; then
+              mv build.bin /tmp/eas/build.apk
+            else
+              echo "::error::Yuklenen artifact bir APK degil. AAB dogrudan kurulamaz — APK URL'si verin."
+              exit 1
+            fi
+          else
+            echo "::error::Beklenmeyen artifact formati"
+            exit 1
+          fi
+          APK_PATH=/tmp/eas/build.apk
+          ls -la "$APK_PATH"
+          echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
+
+      - name: Run Maestro smoke flows on emulator
+        id: smoke
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+          SMOKE_GUEST_EMAIL: ${{ secrets.SMOKE_GUEST_EMAIL }}
+          SMOKE_GUEST_PASSWORD: ${{ secrets.SMOKE_GUEST_PASSWORD }}
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            set -o pipefail
+            adb wait-for-device
+            adb install -r -g "$APK_PATH"
+            mkdir -p smoke-artifacts/android
+            cd mobile
+            npm run smoke 2>&1 | tee ../smoke-artifacts/android/output.log
+
+      - name: Collect Maestro debug artifacts
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p smoke-artifacts/android/maestro-tests
+          if [ -d "$HOME/.maestro/tests" ]; then
+            cp -R "$HOME/.maestro/tests/." smoke-artifacts/android/maestro-tests/ || true
+          fi
+
+      - name: Build summary
+        if: always()
+        run: |
+          set -euo pipefail
+          OUT=smoke-android-summary.txt
+          STATUS="${{ steps.smoke.outcome }}"
+          {
+            echo "## Mobil smoke — Android (${PROFILE})"
+            echo ""
+            echo "- Sonuc: **${STATUS}**"
+            echo "- Build URL: \`${BUILD_URL}\`"
+            echo "- Cihaz: pixel_6 (API ${ANDROID_API})"
+            echo ""
+            echo "<details><summary>Maestro ciktisi (son 80 satir)</summary>"
+            echo ""
+            echo '```'
+            tail -80 smoke-artifacts/android/output.log 2>/dev/null || echo "(no output)"
+            echo '```'
+            echo "</details>"
+          } > "$OUT"
+          cat "$OUT" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Maestro debug output
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: maestro-android-debug
+          path: |
+            smoke-artifacts/android/output.log
+            smoke-artifacts/android/maestro-tests
+          if-no-files-found: warn
+
+      - name: Upload PR comment summary
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: smoke-android-summary
+          path: smoke-android-summary.txt
+
+  # ---------- Comment results back to PR / issue ----------
+  comment:
+    name: Sonuclari yorumla
+    needs: [resolve, ios-smoke, android-smoke]
+    if: always() && needs.resolve.outputs.issue_number != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download summaries
+        uses: actions/download-artifact@v5
+        with:
+          path: summaries
+          pattern: smoke-*-summary
+
+      - name: Compose and post comment
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ needs.resolve.outputs.issue_number }}
+          PROFILE: ${{ needs.resolve.outputs.profile }}
+          IOS_RESULT: ${{ needs.ios-smoke.result }}
+          ANDROID_RESULT: ${{ needs.android-smoke.result }}
+          BUILD_ID: ${{ needs.resolve.outputs.build_id }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const issue_number = parseInt(process.env.ISSUE_NUMBER, 10);
+            if (!issue_number) {
+              core.info('issue_number bos — yorum atlandi');
+              return;
+            }
+
+            const sections = [];
+            const dir = 'summaries';
+            if (fs.existsSync(dir)) {
+              for (const sub of fs.readdirSync(dir)) {
+                const full = path.join(dir, sub);
+                if (!fs.statSync(full).isDirectory()) continue;
+                for (const file of fs.readdirSync(full)) {
+                  if (!file.endsWith('.txt')) continue;
+                  sections.push(fs.readFileSync(path.join(full, file), 'utf8'));
+                }
+              }
+            }
+
+            const overall = [process.env.IOS_RESULT, process.env.ANDROID_RESULT]
+              .filter(r => r && r !== '')
+              .every(r => r === 'success' || r === 'skipped')
+              ? 'BASARILI'
+              : 'BASARISIZ';
+
+            const header = [
+              `### Mobil smoke sonucu — **${overall}**`,
+              '',
+              `- Profil: \`${process.env.PROFILE}\``,
+              process.env.BUILD_ID ? `- EAS build id: \`${process.env.BUILD_ID}\`` : null,
+              `- Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              '---',
+              ''
+            ].filter(Boolean).join('\n');
+
+            const body = header + (sections.join('\n\n---\n\n') || '_(akis ciktisi bulunamadi)_');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              body,
+            });
+
+  # ---------- Aggregate gate so eas submit can require this single check ----------
+  gate:
+    name: Smoke gate
+    needs: [resolve, ios-smoke, android-smoke]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all requested platforms passed
+        env:
+          RUN_IOS: ${{ needs.resolve.outputs.run_ios }}
+          RUN_ANDROID: ${{ needs.resolve.outputs.run_android }}
+          IOS_RESULT: ${{ needs.ios-smoke.result }}
+          ANDROID_RESULT: ${{ needs.android-smoke.result }}
+        run: |
+          set -euo pipefail
+          fail=0
+          if [ "$RUN_IOS" = "true" ] && [ "$IOS_RESULT" != "success" ]; then
+            echo "::error::iOS smoke basarisiz: $IOS_RESULT"
+            fail=1
+          fi
+          if [ "$RUN_ANDROID" = "true" ] && [ "$ANDROID_RESULT" != "success" ]; then
+            echo "::error::Android smoke basarisiz: $ANDROID_RESULT"
+            fail=1
+          fi
+          if [ "$fail" -eq 1 ]; then
+            echo "::error::Smoke gate kapali — eas submit calistirilmamali."
+            exit 1
+          fi
+          echo "Smoke gate acik — eas submit guvenli."

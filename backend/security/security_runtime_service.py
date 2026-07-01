@@ -3,8 +3,9 @@ Security — Runtime Service
 Production-grade: aggregates real tenant guard violations, credential scan results,
 audit completeness, rate limit metrics, log sanitization coverage, and security event history.
 """
+
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -18,11 +19,12 @@ class SecurityRuntimeService:
 
     def __init__(self):
         from security.audit_validator import audit_validator
-        from security.rate_limiter import tenant_rate_limiter
         from security.credential_guard import credential_guard
-        from security.tenant_guard import tenant_guard
+        from security.log_sanitizer import detect_secret_leakage, sanitize_string
         from security.property_guard import property_guard
-        from security.log_sanitizer import sanitize_string, detect_secret_leakage
+        from security.rate_limiter import tenant_rate_limiter
+        from security.tenant_guard import tenant_guard
+
         self._audit = audit_validator
         self._rate_limiter = tenant_rate_limiter
         self._credential_guard = credential_guard
@@ -53,14 +55,16 @@ class SecurityRuntimeService:
         if gaps > 0:
             severity = "warning" if gaps <= 3 else "critical"
 
-        return ServiceResult.success({
-            "completeness": completeness,
-            "summary": summary,
-            "completeness_score": score,
-            "severity": severity,
-            "total_entries_period": total_entries,
-            "gaps_found": gaps,
-        })
+        return ServiceResult.success(
+            {
+                "completeness": completeness,
+                "summary": summary,
+                "completeness_score": score,
+                "severity": severity,
+                "total_entries_period": total_entries,
+                "gaps_found": gaps,
+            }
+        )
 
     async def get_rate_limit_status(self, ctx: OperationContext) -> ServiceResult:
         """Real rate limit stats with burst detection."""
@@ -78,19 +82,21 @@ class SecurityRuntimeService:
         elif rejected > 10:
             severity = "warning"
 
-        return ServiceResult.success({
-            "tenant_id": ctx.tenant_id,
-            "enforcement": "active",
-            "stats": stats,
-            "burst_detected": burst_detected,
-            "severity": severity,
-            "total_requests": total,
-            "rejection_rate": round((rejected / max(total, 1)) * 100, 1),
-            "global_tenants_tracked": len(all_stats) if isinstance(all_stats, dict) else 0,
-        })
+        return ServiceResult.success(
+            {
+                "tenant_id": ctx.tenant_id,
+                "enforcement": "active",
+                "stats": stats,
+                "burst_detected": burst_detected,
+                "severity": severity,
+                "total_requests": total,
+                "rejection_rate": round((rejected / max(total, 1)) * 100, 1),
+                "global_tenants_tracked": len(all_stats) if isinstance(all_stats, dict) else 0,
+            }
+        )
 
     async def check_credentials(self, ctx: OperationContext) -> ServiceResult:
-        if ctx.actor_role not in ("admin", "super_admin"):
+        if not getattr(ctx, "actor_is_super_admin", False) and ctx.actor_role not in ("admin", "super_admin"):
             return ServiceResult.fail("Admin access required", "FORBIDDEN")
         result = await self._credential_guard.scan_weak_credentials(tenant_id=ctx.tenant_id)
 
@@ -101,15 +107,19 @@ class SecurityRuntimeService:
         elif findings:
             severity = "warning"
 
-        return ServiceResult.success({
-            **result,
-            "severity": severity,
-            "remediation": [
-                "Force password reset for flagged users",
-                "Enable MFA for admin accounts",
-                "Review password policy requirements",
-            ] if findings else [],
-        })
+        return ServiceResult.success(
+            {
+                **result,
+                "severity": severity,
+                "remediation": [
+                    "Force password reset for flagged users",
+                    "Enable MFA for admin accounts",
+                    "Review password policy requirements",
+                ]
+                if findings
+                else [],
+            }
+        )
 
     async def get_tenant_guard_status(self, ctx: OperationContext) -> ServiceResult:
         """Real tenant guard violations from DB."""
@@ -124,10 +134,12 @@ class SecurityRuntimeService:
         elif total_violations > 0:
             severity = "warning"
 
-        return ServiceResult.success({
-            **data,
-            "severity": severity,
-        })
+        return ServiceResult.success(
+            {
+                **data,
+                "severity": severity,
+            }
+        )
 
     async def get_log_sanitization_status(self, ctx: OperationContext) -> ServiceResult:
         """Real log sanitization pattern check."""
@@ -142,30 +154,31 @@ class SecurityRuntimeService:
         all_masked = all(t != s for t, s in zip(test_inputs, sanitized))
         labels = ["password", "api_key", "email", "card_number", "jwt_token"]
 
-        return ServiceResult.success({
-            "enforcement": "active",
-            "patterns_active": len(test_inputs),
-            "all_patterns_working": all_masked,
-            "coverage_pct": round(sum(1 for t, s in zip(test_inputs, sanitized) if t != s) / len(test_inputs) * 100),
-            "sample_results": [
-                {"input_type": labels[i], "masked": test_inputs[i] != sanitized[i]}
-                for i in range(len(test_inputs))
-            ],
-        })
+        return ServiceResult.success(
+            {
+                "enforcement": "active",
+                "patterns_active": len(test_inputs),
+                "all_patterns_working": all_masked,
+                "coverage_pct": round(sum(1 for t, s in zip(test_inputs, sanitized) if t != s) / len(test_inputs) * 100),
+                "sample_results": [{"input_type": labels[i], "masked": test_inputs[i] != sanitized[i]} for i in range(len(test_inputs))],
+            }
+        )
 
     async def check_secret_leakage(self, ctx: OperationContext, text: str) -> ServiceResult:
-        if ctx.actor_role not in ("admin", "super_admin"):
+        if not getattr(ctx, "actor_is_super_admin", False) and ctx.actor_role not in ("admin", "super_admin"):
             return ServiceResult.fail("Admin access required", "FORBIDDEN")
         leaked = self._detect_leakage(text)
-        return ServiceResult.success({
-            "contains_secret": leaked,
-            "action": "alert" if leaked else "safe",
-        })
+        return ServiceResult.success(
+            {
+                "contains_secret": leaked,
+                "action": "alert" if leaked else "safe",
+            }
+        )
 
     async def get_comprehensive_status(self, ctx: OperationContext) -> ServiceResult:
         """Aggregated security health for dashboard consumption."""
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Tenant guard violations
             tg = await self._tenant_guard.get_status(ctx.tenant_id)
@@ -173,9 +186,7 @@ class SecurityRuntimeService:
             tg_recent = tg.get("violations_last_24h", 0)
 
             # Property guard (check if any denial exists)
-            pg_denials = await db.get_collection("property_access_denials").count_documents(
-                {"tenant_id": ctx.tenant_id}
-            ) if "property_access_denials" in await db.list_collection_names() else 0
+            pg_denials = await db.get_collection("property_access_denials").count_documents({"tenant_id": ctx.tenant_id}) if "property_access_denials" in await db.list_collection_names() else 0
 
             # Audit completeness
             audit = await self._audit.validate_completeness(ctx.tenant_id, hours=24)
@@ -194,10 +205,11 @@ class SecurityRuntimeService:
             sanitization_active = test != "password=test123"
 
             # Recent security events
-            sec_events = await db.security_events.find(
-                {"tenant_id": ctx.tenant_id, "timestamp": {"$gte": (now - timedelta(hours=24)).isoformat()}},
-                {"_id": 0}
-            ).sort("timestamp", -1).limit(10).to_list(10) if "security_events" in await db.list_collection_names() else []
+            sec_events = (
+                await db.security_events.find({"tenant_id": ctx.tenant_id, "timestamp": {"$gte": (now - timedelta(hours=24)).isoformat()}}, {"_id": 0}).sort("timestamp", -1).limit(10).to_list(10)
+                if "security_events" in await db.list_collection_names()
+                else []
+            )
 
             # Overall severity
             severity = "info"
@@ -206,23 +218,27 @@ class SecurityRuntimeService:
             elif tg_recent > 0 or rl_rejected > 10 or audit.get("gaps_found", 0) > 0:
                 severity = "warning"
 
-            return ServiceResult.success({
-                "severity": severity,
-                "tenant_guard": {"violations": tg_violations, "recent_24h": tg_recent},
-                "property_guard": {"denials": pg_denials},
-                "audit": {"completeness_score": audit_score, "gaps": audit.get("gaps_found", 0)},
-                "rate_limiting": {"rejected": rl_rejected, "burst_detected": rl_rejected > 10},
-                "log_sanitization": {"active": sanitization_active},
-                "recent_events": sec_events,
-                "checked_at": now.isoformat(),
-            })
+            return ServiceResult.success(
+                {
+                    "severity": severity,
+                    "tenant_guard": {"violations": tg_violations, "recent_24h": tg_recent},
+                    "property_guard": {"denials": pg_denials},
+                    "audit": {"completeness_score": audit_score, "gaps": audit.get("gaps_found", 0)},
+                    "rate_limiting": {"rejected": rl_rejected, "burst_detected": rl_rejected > 10},
+                    "log_sanitization": {"active": sanitization_active},
+                    "recent_events": sec_events,
+                    "checked_at": now.isoformat(),
+                }
+            )
         except Exception as e:
             logger.error(f"SecurityRuntimeService.get_comprehensive_status error: {e}")
-            return ServiceResult.success({
-                "severity": "warning",
-                "error": str(e)[:100],
-                "checked_at": datetime.now(timezone.utc).isoformat(),
-            })
+            return ServiceResult.success(
+                {
+                    "severity": "warning",
+                    "error": str(e)[:100],
+                    "checked_at": datetime.now(UTC).isoformat(),
+                }
+            )
 
 
 security_runtime_service = SecurityRuntimeService()

@@ -13,11 +13,13 @@ Metrics tracked over time:
 
 Enables SLA tracking and early detection of degradation patterns.
 """
+
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, List
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
+
 from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.health_trend")
@@ -29,7 +31,7 @@ _NO_ID = {"_id": 0}
 class HealthTrendService:
     """Manages health trend snapshots and provides trend analytics."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     async def record_health_snapshot(
@@ -42,9 +44,9 @@ class HealthTrendService:
         active_alerts: int,
         retry_count: int,
         rate_push_success_rate: float = 100.0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Record a health snapshot for trend tracking."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         snapshot = {
             "tenant_id": tenant_id,
             "connector_id": connector_id,
@@ -62,85 +64,107 @@ class HealthTrendService:
         return {"recorded": True, "date": snapshot["date"]}
 
     async def get_daily_trend(
-        self, tenant_id: str, connector_id: str, days: int = 30,
-    ) -> List[Dict[str, Any]]:
+        self,
+        tenant_id: str,
+        connector_id: str,
+        days: int = 30,
+    ) -> list[dict[str, Any]]:
         """Get daily health score trend for a connector."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
         pipeline = [
-            {"$match": {
-                "tenant_id": tenant_id,
-                "connector_id": connector_id,
-                "date": {"$gte": cutoff},
-            }},
-            {"$group": {
-                "_id": "$date",
-                "avg_health_score": {"$avg": "$health_score"},
-                "avg_sync_rate": {"$avg": "$sync_success_rate"},
-                "avg_import_rate": {"$avg": "$import_success_rate"},
-                "avg_rate_push_rate": {"$avg": "$rate_push_success_rate"},
-                "total_alerts": {"$sum": "$active_alerts"},
-                "total_retries": {"$sum": "$retry_count"},
-                "snapshot_count": {"$sum": 1},
-            }},
+            {
+                "$match": {
+                    "tenant_id": tenant_id,
+                    "connector_id": connector_id,
+                    "date": {"$gte": cutoff},
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$date",
+                    "avg_health_score": {"$avg": "$health_score"},
+                    "avg_sync_rate": {"$avg": "$sync_success_rate"},
+                    "avg_import_rate": {"$avg": "$import_success_rate"},
+                    "avg_rate_push_rate": {"$avg": "$rate_push_success_rate"},
+                    "total_alerts": {"$sum": "$active_alerts"},
+                    "total_retries": {"$sum": "$retry_count"},
+                    "snapshot_count": {"$sum": 1},
+                }
+            },
             {"$sort": {"_id": 1}},
-            {"$project": {
-                "_id": 0,
-                "date": "$_id",
-                "health_score": {"$round": ["$avg_health_score", 1]},
-                "sync_success_rate": {"$round": ["$avg_sync_rate", 1]},
-                "import_success_rate": {"$round": ["$avg_import_rate", 1]},
-                "rate_push_success_rate": {"$round": ["$avg_rate_push_rate", 1]},
-                "alert_count": "$total_alerts",
-                "retry_count": "$total_retries",
-                "snapshot_count": 1,
-            }},
+            {
+                "$project": {
+                    "_id": 0,
+                    "date": "$_id",
+                    "health_score": {"$round": ["$avg_health_score", 1]},
+                    "sync_success_rate": {"$round": ["$avg_sync_rate", 1]},
+                    "import_success_rate": {"$round": ["$avg_import_rate", 1]},
+                    "rate_push_success_rate": {"$round": ["$avg_rate_push_rate", 1]},
+                    "alert_count": "$total_alerts",
+                    "retry_count": "$total_retries",
+                    "snapshot_count": 1,
+                }
+            },
         ]
         return await db[HEALTH_SNAPSHOTS].aggregate(pipeline).to_list(days + 1)
 
     async def get_weekly_trend(
-        self, tenant_id: str, connector_id: str, weeks: int = 12,
-    ) -> List[Dict[str, Any]]:
+        self,
+        tenant_id: str,
+        connector_id: str,
+        weeks: int = 12,
+    ) -> list[dict[str, Any]]:
         """Get weekly aggregated health trend."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(weeks=weeks)).strftime("%Y-%m-%d")
+        cutoff = (datetime.now(UTC) - timedelta(weeks=weeks)).strftime("%Y-%m-%d")
         pipeline = [
-            {"$match": {
-                "tenant_id": tenant_id,
-                "connector_id": connector_id,
-                "date": {"$gte": cutoff},
-            }},
-            {"$addFields": {
-                "date_obj": {"$dateFromString": {"dateString": "$date", "format": "%Y-%m-%d"}},
-            }},
-            {"$group": {
-                "_id": {"$isoWeek": "$date_obj"},
-                "week_start": {"$min": "$date"},
-                "week_end": {"$max": "$date"},
-                "avg_health_score": {"$avg": "$health_score"},
-                "avg_sync_rate": {"$avg": "$sync_success_rate"},
-                "avg_import_rate": {"$avg": "$import_success_rate"},
-                "total_alerts": {"$sum": "$active_alerts"},
-                "total_retries": {"$sum": "$retry_count"},
-            }},
+            {
+                "$match": {
+                    "tenant_id": tenant_id,
+                    "connector_id": connector_id,
+                    "date": {"$gte": cutoff},
+                }
+            },
+            {
+                "$addFields": {
+                    "date_obj": {"$dateFromString": {"dateString": "$date", "format": "%Y-%m-%d"}},
+                }
+            },
+            {
+                "$group": {
+                    "_id": {"$isoWeek": "$date_obj"},
+                    "week_start": {"$min": "$date"},
+                    "week_end": {"$max": "$date"},
+                    "avg_health_score": {"$avg": "$health_score"},
+                    "avg_sync_rate": {"$avg": "$sync_success_rate"},
+                    "avg_import_rate": {"$avg": "$import_success_rate"},
+                    "total_alerts": {"$sum": "$active_alerts"},
+                    "total_retries": {"$sum": "$retry_count"},
+                }
+            },
             {"$sort": {"week_start": 1}},
-            {"$project": {
-                "_id": 0,
-                "week_number": "$_id",
-                "week_start": 1,
-                "week_end": 1,
-                "health_score": {"$round": ["$avg_health_score", 1]},
-                "sync_success_rate": {"$round": ["$avg_sync_rate", 1]},
-                "import_success_rate": {"$round": ["$avg_import_rate", 1]},
-                "alert_count": "$total_alerts",
-                "retry_count": "$total_retries",
-            }},
+            {
+                "$project": {
+                    "_id": 0,
+                    "week_number": "$_id",
+                    "week_start": 1,
+                    "week_end": 1,
+                    "health_score": {"$round": ["$avg_health_score", 1]},
+                    "sync_success_rate": {"$round": ["$avg_sync_rate", 1]},
+                    "import_success_rate": {"$round": ["$avg_import_rate", 1]},
+                    "alert_count": "$total_alerts",
+                    "retry_count": "$total_retries",
+                }
+            },
         ]
         return await db[HEALTH_SNAPSHOTS].aggregate(pipeline).to_list(weeks + 1)
 
     async def get_trend_summary(
-        self, tenant_id: str, connector_id: str,
-    ) -> Dict[str, Any]:
+        self,
+        tenant_id: str,
+        connector_id: str,
+    ) -> dict[str, Any]:
         """Get trend summary comparing recent vs previous period."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         recent_cutoff = (now - timedelta(days=7)).strftime("%Y-%m-%d")
         previous_cutoff = (now - timedelta(days=14)).strftime("%Y-%m-%d")
 
@@ -184,18 +208,20 @@ class HealthTrendService:
             },
         }
 
-    async def _period_avg(self, base_q: Dict, from_date: str, to_date: str) -> Dict[str, Any]:
+    async def _period_avg(self, base_q: dict, from_date: str, to_date: str) -> dict[str, Any]:
         """Get average metrics for a period."""
         pipeline = [
             {"$match": {**base_q, "date": {"$gte": from_date, "$lt": to_date}}},
-            {"$group": {
-                "_id": None,
-                "health_score": {"$avg": "$health_score"},
-                "sync_success_rate": {"$avg": "$sync_success_rate"},
-                "import_success_rate": {"$avg": "$import_success_rate"},
-                "alert_count": {"$sum": "$active_alerts"},
-                "retry_count": {"$sum": "$retry_count"},
-            }},
+            {
+                "$group": {
+                    "_id": None,
+                    "health_score": {"$avg": "$health_score"},
+                    "sync_success_rate": {"$avg": "$sync_success_rate"},
+                    "import_success_rate": {"$avg": "$import_success_rate"},
+                    "alert_count": {"$sum": "$active_alerts"},
+                    "retry_count": {"$sum": "$retry_count"},
+                }
+            },
         ]
         result = await db[HEALTH_SNAPSHOTS].aggregate(pipeline).to_list(1)
         if result:

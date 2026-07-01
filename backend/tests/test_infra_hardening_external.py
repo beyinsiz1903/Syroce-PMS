@@ -8,9 +8,9 @@ import requests
 import os
 
 # Use public URL for testing
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '')
 
-pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set")
 
 
 @pytest.fixture(scope="module")
@@ -65,8 +65,8 @@ class TestRedisEndpoints:
         data = resp.json()
         assert "status" in data
         assert "mode" in data
-        # In fallback mode, status should be disconnected
-        assert data["status"] in ("connected", "disconnected")
+        # Status depends on Redis availability: healthy, unhealthy, or disconnected
+        assert data["status"] in ("healthy", "unhealthy", "disconnected")
     
     def test_redis_metrics_returns_connection_metrics(self, auth_headers):
         resp = requests.get(f"{BASE_URL}/api/infra/redis/metrics", headers=auth_headers)

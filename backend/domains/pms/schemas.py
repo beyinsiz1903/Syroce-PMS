@@ -2,43 +2,45 @@
 PMS Domain — Schemas
 Request/response models extracted from PMS routers.
 """
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone
-import uuid
 
+import uuid
+from datetime import UTC, datetime
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 # ── Front Desk ──
 
+
 class PassportScanData(BaseModel):
-    passport_number: Optional[str] = None
-    name: Optional[str] = None
-    surname: Optional[str] = None
-    nationality: Optional[str] = None
-    date_of_birth: Optional[str] = None
-    expiry_date: Optional[str] = None
-    sex: Optional[str] = None
-    mrz_line1: Optional[str] = None
-    mrz_line2: Optional[str] = None
+    passport_number: str | None = None
+    name: str | None = None
+    surname: str | None = None
+    nationality: str | None = None
+    date_of_birth: str | None = None
+    expiry_date: str | None = None
+    sex: str | None = None
+    mrz_line1: str | None = None
+    mrz_line2: str | None = None
 
 
 class PassportScanRequest(BaseModel):
     image_base64: str
-    booking_id: Optional[str] = None
+    booking_id: str | None = None
 
 
 class WalkInBookingRequest(BaseModel):
     guest_name: str
-    guest_email: Optional[str] = None
+    guest_email: str | None = None
     guest_phone: str
-    guest_id_number: Optional[str] = None
-    nationality: Optional[str] = None
+    guest_id_number: str | None = None
+    nationality: str | None = None
     room_id: str
     nights: int = 1
     adults: int = 1
     children: int = 0
-    rate_per_night: Optional[float] = None
-    special_requests: Optional[str] = None
+    rate_per_night: float | None = None
+    special_requests: str | None = None
 
 
 class GuestAlert(BaseModel):
@@ -52,8 +54,8 @@ class GuestAlert(BaseModel):
     description: str
     is_active: bool = True
     show_on_checkin: bool = True
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    expires_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime | None = None
 
 
 class KeycardIssueRequest(BaseModel):
@@ -64,11 +66,13 @@ class KeycardIssueRequest(BaseModel):
 
 # ── Housekeeping ──
 
+
 class CleaningRequestStatusUpdate(BaseModel):
     status: str
 
 
 # ── Mobile ──
+
 
 class ProcessNoShowRequest(BaseModel):
     booking_id: str
@@ -77,23 +81,23 @@ class ProcessNoShowRequest(BaseModel):
 class ChangeRoomRequest(BaseModel):
     booking_id: str
     new_room_id: str
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 class QuickTaskRequest(BaseModel):
     title: str
     department: str
     priority: str = "normal"
-    assigned_to: Optional[str] = None
-    notes: Optional[str] = None
+    assigned_to: str | None = None
+    notes: str | None = None
 
 
 class QuickIssueRequest(BaseModel):
     title: str
     category: str
     priority: str = "normal"
-    room_number: Optional[str] = None
-    description: Optional[str] = None
+    room_number: str | None = None
+    description: str | None = None
 
 
 class QuickOrderItem(BaseModel):
@@ -103,8 +107,8 @@ class QuickOrderItem(BaseModel):
 
 class QuickOrderRequest(BaseModel):
     room_number: str
-    items: List[QuickOrderItem]
-    notes: Optional[str] = None
+    items: list[QuickOrderItem]
+    notes: str | None = None
 
 
 class MenuPriceUpdateRequest(BaseModel):
@@ -114,35 +118,37 @@ class MenuPriceUpdateRequest(BaseModel):
 
 # ── Notifications ──
 
+
 class NotificationPreferenceRequest(BaseModel):
     channel: str
     enabled: bool
-    settings: Optional[Dict[str, Any]] = None
+    settings: dict[str, Any] | None = None
 
 
 class SystemAlertRequest(BaseModel):
     title: str
     message: str
     severity: str = "info"
-    target_roles: List[str] = []
+    target_roles: list[str] = []
 
 
 # ── Approvals ──
 
+
 class CreateApprovalRequest(BaseModel):
     type: str
     title: str
-    description: Optional[str] = None
-    amount: Optional[float] = None
-    department: Optional[str] = None
+    description: str | None = None
+    amount: float | None = None
+    department: str | None = None
     priority: str = "normal"
-    data: Optional[Dict[str, Any]] = None
-    approvers: List[str] = []
+    data: dict[str, Any] | None = None
+    approvers: list[str] = []
 
 
 class ApprovalActionRequest(BaseModel):
     action: str
-    comment: Optional[str] = None
+    comment: str | None = None
 
 
 class BudgetMonth(BaseModel):
@@ -150,16 +156,17 @@ class BudgetMonth(BaseModel):
     year: int
     amount: float
     category: str
-    department: Optional[str] = None
+    department: str | None = None
 
 
 class BudgetConfig(BaseModel):
     fiscal_year: int
-    months: List[BudgetMonth]
-    auto_approval_limit: Optional[float] = None
+    months: list[BudgetMonth]
+    auto_approval_limit: float | None = None
 
 
 # ── Calendar ──
+
 
 class ChannelMixRequest(BaseModel):
     date_from: str
@@ -168,41 +175,43 @@ class ChannelMixRequest(BaseModel):
 
 # ── POS / F&B ──
 
+
 class POSMenuItem(BaseModel):
     name: str
     category: str
     price: float
-    description: Optional[str] = None
+    description: str | None = None
     is_available: bool = True
-    allergens: List[str] = []
-    prep_time_minutes: Optional[int] = None
-    image_url: Optional[str] = None
+    allergens: list[str] = []
+    prep_time_minutes: int | None = None
+    image_url: str | None = None
 
 
 class POSOrderItem(BaseModel):
     menu_item_id: str
     quantity: int = 1
-    notes: Optional[str] = None
-    modifiers: List[str] = []
+    notes: str | None = None
+    modifiers: list[str] = []
 
 
 class LostFoundItemCreate(BaseModel):
     description: str
     location: str
-    found_by: Optional[str] = None
+    found_by: str | None = None
     category: str = "other"
-    image_url: Optional[str] = None
+    image_url: str | None = None
 
 
 class MenuItemCreate(BaseModel):
     name: str
     category: str
     price: float
-    description: Optional[str] = None
+    description: str | None = None
     is_available: bool = True
 
 
 # ── Misc ──
+
 
 class PingTestRequest(BaseModel):
     target: str

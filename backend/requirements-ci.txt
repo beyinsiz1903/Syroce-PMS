@@ -1,3 +1,0 @@
-# CI requirements - references main requirements.txt
-# This avoids duplicate maintenance
--r requirements.txt

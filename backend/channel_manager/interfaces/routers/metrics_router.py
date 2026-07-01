@@ -1,12 +1,13 @@
 """Historical metrics, trends, retention, daily-aggregation endpoints."""
-import logging
-from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, Body
+import logging
+
+from fastapi import APIRouter, Body, Depends, Query
 from pydantic import BaseModel
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 from ...application.historical_metrics_service import HistoricalMetricsService
 
@@ -16,13 +17,14 @@ router = APIRouter(tags=["CM Metrics"])
 
 
 class CreateSnapshotRequest(BaseModel):
-    connector_id: Optional[str] = None
+    connector_id: str | None = None
 
 
 @router.post("/metrics/snapshot")
 async def create_metrics_snapshot(
     req: CreateSnapshotRequest = Body(CreateSnapshotRequest()),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     svc = HistoricalMetricsService()
     return await svc.create_snapshot(current_user.tenant_id, req.connector_id)
@@ -30,7 +32,7 @@ async def create_metrics_snapshot(
 
 @router.get("/metrics/history")
 async def get_metrics_history(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     period: str = Query("7d"),
     limit: int = Query(500, le=2000),
     current_user: User = Depends(get_current_user),
@@ -41,7 +43,7 @@ async def get_metrics_history(
 
 @router.get("/metrics/trends")
 async def get_metrics_trends(
-    connector_id: Optional[str] = None,
+    connector_id: str | None = None,
     period: str = Query("7d"),
     current_user: User = Depends(get_current_user),
 ):
@@ -72,6 +74,7 @@ async def get_property_metrics_history(
 @router.post("/metrics/retention-cleanup")
 async def run_retention_cleanup(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     svc = HistoricalMetricsService()
     return await svc.run_retention_cleanup(current_user.tenant_id)
@@ -79,8 +82,9 @@ async def run_retention_cleanup(
 
 @router.post("/metrics/daily-aggregation")
 async def run_daily_aggregation(
-    date: Optional[str] = Body(None, embed=True),
+    date: str | None = Body(None, embed=True),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     svc = HistoricalMetricsService()
     return await svc.create_daily_aggregation(current_user.tenant_id, date)

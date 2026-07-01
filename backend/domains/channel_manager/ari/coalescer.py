@@ -10,9 +10,9 @@ Rules:
   - Consecutive dates with same value → date range merge
   - Restriction precedence: close > open, explicit values override old
 """
+
 import logging
 from datetime import date, timedelta
-from typing import Dict, List, Optional, Tuple
 
 from .events import ARIChangeEvent
 from .repositories import compute_delta_hash, compute_outbound_delta_hash
@@ -26,21 +26,21 @@ def _parse_date(d) -> date:
     return date.fromisoformat(str(d))
 
 
-def _deduplicate_by_date_range(events: List[ARIChangeEvent]) -> List[ARIChangeEvent]:
+def _deduplicate_by_date_range(events: list[ARIChangeEvent]) -> list[ARIChangeEvent]:
     """For overlapping date ranges, keep only the last event (last write wins).
 
     Events arriving in the same debounce window for the same date range
     represent successive updates — only the final value matters.
     """
     # Group by (date_from, date_to), preserve insertion order, keep last
-    seen: Dict[tuple, ARIChangeEvent] = {}
+    seen: dict[tuple, ARIChangeEvent] = {}
     for ev in events:
         key = (_parse_date(ev.date_from), _parse_date(ev.date_to))
         seen[key] = ev  # last write wins
     return list(seen.values())
 
 
-def _merge_date_ranges(events: List[ARIChangeEvent]) -> List[dict]:
+def _merge_date_ranges(events: list[ARIChangeEvent]) -> list[dict]:
     """Deduplicate overlapping ranges (last write wins), then merge consecutive
     date ranges with identical payloads into minimal range set."""
     if not events:
@@ -78,7 +78,7 @@ def _merge_date_ranges(events: List[ARIChangeEvent]) -> List[dict]:
     return merged
 
 
-def _apply_restriction_precedence(payloads: List[dict]) -> dict:
+def _apply_restriction_precedence(payloads: list[dict]) -> dict:
     """Apply restriction precedence rules: close > open, latest explicit wins."""
     result = {}
     for p in payloads:
@@ -98,9 +98,9 @@ def _apply_restriction_precedence(payloads: List[dict]) -> dict:
 
 def coalesce_events(
     coalescing_key: str,
-    events: List[ARIChangeEvent],
-    providers: List[str],
-) -> List[dict]:
+    events: list[ARIChangeEvent],
+    providers: list[str],
+) -> list[dict]:
     """
     Coalesce a batch of events into per-provider change sets.
 
@@ -115,11 +115,13 @@ def coalesce_events(
     # For restrictions, apply precedence rules
     if event_type == "restriction":
         merged_payload = _apply_restriction_precedence([e.payload for e in events])
-        merged_ranges = [{
-            "date_from": _parse_date(ref.date_from),
-            "date_to": _parse_date(ref.date_to),
-            "payload": merged_payload,
-        }]
+        merged_ranges = [
+            {
+                "date_from": _parse_date(ref.date_from),
+                "date_to": _parse_date(ref.date_to),
+                "payload": merged_payload,
+            }
+        ]
     else:
         # For availability/rate: last write wins, then merge date ranges
         merged_ranges = _merge_date_ranges(events)
@@ -155,8 +157,5 @@ def coalesce_events(
             }
             change_sets.append(cs)
 
-    logger.info(
-        f"Coalesced {len(events)} events → {len(change_sets)} change sets "
-        f"for key={coalescing_key}"
-    )
+    logger.info(f"Coalesced {len(events)} events → {len(change_sets)} change sets for key={coalescing_key}")
     return change_sets

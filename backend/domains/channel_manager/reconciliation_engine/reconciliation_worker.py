@@ -15,21 +15,27 @@ The worker supports:
   - Incremental scanning (last 24h window)
   - Batching to avoid full table scans
 """
+
 import logging
-import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 from domains.channel_manager import unified_repository as repo
 from domains.channel_manager.data_model import (
-    ConnectorProvider, CaseType, CaseSeverity, CaseStatus,
-    ReconciliationCase, COLL_RECONCILIATION_CASES,
-    COLL_RESERVATION_LINEAGE, COLL_PROVIDER_CONNECTIONS,
+    COLL_PROVIDER_CONNECTIONS,
+    COLL_RECONCILIATION_CASES,
+    COLL_RESERVATION_LINEAGE,
+    CaseSeverity,
+    CaseStatus,
+    CaseType,
+    ConnectorProvider,
+    ReconciliationCase,
 )
+
+from .auto_resolver import attempt_auto_resolve
 from .comparison_engine import compare_reservations
 from .snapshot_collectors import collect_provider_snapshot
-from .auto_resolver import attempt_auto_resolve, can_auto_resolve
 
 logger = logging.getLogger("reconciliation.worker")
 
@@ -47,11 +53,11 @@ _reconciliation_state = {
 }
 
 
-def get_reconciliation_worker_state() -> Dict[str, Any]:
+def get_reconciliation_worker_state() -> dict[str, Any]:
     return {**_reconciliation_state}
 
 
-async def reconciliation_run_once() -> Dict[str, Any]:
+async def reconciliation_run_once() -> dict[str, Any]:
     """
     Execute a single reconciliation cycle across all active connections.
     """
@@ -60,7 +66,7 @@ async def reconciliation_run_once() -> Dict[str, Any]:
         return {"status": "already_running"}
 
     state["running"] = True
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     result = {
         "status": "completed",
         "started_at": now.isoformat(),
@@ -76,18 +82,28 @@ async def reconciliation_run_once() -> Dict[str, Any]:
 
     try:
         # Get all active provider connections across all tenants
-        active_connections = await db[COLL_PROVIDER_CONNECTIONS].find(
-            {"status": "active"}, _NO_ID,
-        ).to_list(100)
+        active_connections = (
+            await db[COLL_PROVIDER_CONNECTIONS]
+            .find(
+                {"status": "active"},
+                _NO_ID,
+            )
+            .to_list(100)
+        )
 
         if not active_connections:
             # Fall back to all connections for demo
-            active_connections = await db[COLL_PROVIDER_CONNECTIONS].find(
-                {}, _NO_ID,
-            ).to_list(100)
+            active_connections = (
+                await db[COLL_PROVIDER_CONNECTIONS]
+                .find(
+                    {},
+                    _NO_ID,
+                )
+                .to_list(100)
+            )
 
         # Group connections by (tenant_id, property_id)
-        grouped: Dict[str, List[Dict]] = {}
+        grouped: dict[str, list[dict]] = {}
         for conn in active_connections:
             key = f"{conn['tenant_id']}:{conn['property_id']}"
             grouped.setdefault(key, []).append(conn)
@@ -99,7 +115,10 @@ async def reconciliation_run_once() -> Dict[str, Any]:
                 provider = conn.get("provider", "")
                 try:
                     provider_result = await _reconcile_provider(
-                        tenant_id, property_id, provider, conn,
+                        tenant_id,
+                        property_id,
+                        provider,
+                        conn,
                     )
                     result["providers_checked"].append(provider)
                     result["total_pms_reservations"] += provider_result["pms_count"]
@@ -113,7 +132,7 @@ async def reconciliation_run_once() -> Dict[str, Any]:
                     result["errors"].append(error_msg)
                     logger.error(error_msg)
 
-        result["completed_at"] = datetime.now(timezone.utc).isoformat()
+        result["completed_at"] = datetime.now(UTC).isoformat()
         state["runs_total"] += 1
         state["cases_created"] += result["cases_created"]
         state["cases_auto_resolved"] += result["cases_auto_resolved"]
@@ -127,11 +146,7 @@ async def reconciliation_run_once() -> Dict[str, Any]:
     finally:
         state["running"] = False
 
-    logger.info(
-        f"Reconciliation complete: mismatches={result['mismatches_found']}, "
-        f"cases_created={result['cases_created']}, "
-        f"auto_resolved={result['cases_auto_resolved']}"
-    )
+    logger.info(f"Reconciliation complete: mismatches={result['mismatches_found']}, cases_created={result['cases_created']}, auto_resolved={result['cases_auto_resolved']}")
     return result
 
 
@@ -139,8 +154,8 @@ async def _reconcile_provider(
     tenant_id: str,
     property_id: str,
     provider: str,
-    connection: Dict[str, Any],
-) -> Dict[str, Any]:
+    connection: dict[str, Any],
+) -> dict[str, Any]:
     """Reconcile a single provider for a single property."""
     result = {
         "pms_count": 0,
@@ -152,28 +167,31 @@ async def _reconcile_provider(
     }
 
     # 1. Fetch PMS reservations from lineage
-    pms_reservations = await db[COLL_RESERVATION_LINEAGE].find(
-        {
-            "tenant_id": tenant_id,
-            "property_id": property_id,
-            "provider": provider,
-        },
-        _NO_ID,
-    ).to_list(5000)
+    pms_reservations = (
+        await db[COLL_RESERVATION_LINEAGE]
+        .find(
+            {
+                "tenant_id": tenant_id,
+                "property_id": property_id,
+                "provider": provider,
+            },
+            _NO_ID,
+        )
+        .to_list(5000)
+    )
     result["pms_count"] = len(pms_reservations)
 
     # 2. Fetch provider snapshot
     provider_snapshots = await collect_provider_snapshot(
-        provider, connection, since_hours=24,
+        provider,
+        connection,
+        since_hours=24,
     )
     result["provider_count"] = len(provider_snapshots)
 
     # If no provider snapshots (stub), skip comparison
     if not provider_snapshots:
-        logger.info(
-            f"No provider snapshots for {provider}/{property_id} — "
-            f"skipping comparison (pull workers are stubs)"
-        )
+        logger.info(f"No provider snapshots for {provider}/{property_id} — skipping comparison (pull workers are stubs)")
         return result
 
     # 3. Run comparison engine
@@ -218,7 +236,7 @@ def _build_case(
     tenant_id: str,
     property_id: str,
     provider: str,
-    mismatch: Dict[str, Any],
+    mismatch: dict[str, Any],
 ) -> ReconciliationCase:
     """Build a ReconciliationCase from a mismatch dict."""
     case_type_str = mismatch["case_type"]
@@ -249,7 +267,7 @@ def _build_case(
         provider_value=mismatch.get("provider_value"),
         details={
             "detected_by": "reconciliation_engine",
-            "comparison_timestamp": datetime.now(timezone.utc).isoformat(),
+            "comparison_timestamp": datetime.now(UTC).isoformat(),
         },
     )
 
@@ -258,8 +276,8 @@ async def reconciliation_run_with_snapshots(
     tenant_id: str,
     property_id: str,
     provider: str,
-    provider_snapshots: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    provider_snapshots: list[dict[str, Any]],
+) -> dict[str, Any]:
     """
     Run reconciliation with explicitly provided snapshots.
     Used for testing and manual reconciliation triggers.
@@ -274,14 +292,18 @@ async def reconciliation_run_with_snapshots(
     }
 
     # Fetch PMS reservations
-    pms_reservations = await db[COLL_RESERVATION_LINEAGE].find(
-        {
-            "tenant_id": tenant_id,
-            "property_id": property_id,
-            "provider": provider,
-        },
-        _NO_ID,
-    ).to_list(5000)
+    pms_reservations = (
+        await db[COLL_RESERVATION_LINEAGE]
+        .find(
+            {
+                "tenant_id": tenant_id,
+                "property_id": property_id,
+                "provider": provider,
+            },
+            _NO_ID,
+        )
+        .to_list(5000)
+    )
     result["pms_count"] = len(pms_reservations)
 
     # Run comparison

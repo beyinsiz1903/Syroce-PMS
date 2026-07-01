@@ -2,10 +2,11 @@
 Workers — Task Guard
 Provides idempotency and deduplication for background tasks.
 """
+
 import hashlib
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -20,23 +21,27 @@ class TaskGuard:
     @classmethod
     async def is_duplicate(cls, task_key: str) -> bool:
         """Check if a task with this key was already processed recently."""
-        threshold = (datetime.now(timezone.utc) - timedelta(seconds=cls.DEDUP_TTL_SECONDS)).isoformat()
-        existing = await db.task_dedup_log.find_one({
-            "task_key": task_key,
-            "processed_at": {"$gt": threshold},
-        })
+        threshold = (datetime.now(UTC) - timedelta(seconds=cls.DEDUP_TTL_SECONDS)).isoformat()
+        existing = await db.task_dedup_log.find_one(
+            {
+                "task_key": task_key,
+                "processed_at": {"$gt": threshold},
+            }
+        )
         return existing is not None
 
     @classmethod
-    async def mark_processed(cls, task_key: str, result: Optional[str] = None) -> None:
+    async def mark_processed(cls, task_key: str, result: str | None = None) -> None:
         """Mark a task key as processed for deduplication."""
         await db.task_dedup_log.update_one(
             {"task_key": task_key},
-            {"$set": {
-                "task_key": task_key,
-                "processed_at": datetime.now(timezone.utc).isoformat(),
-                "result": result,
-            }},
+            {
+                "$set": {
+                    "task_key": task_key,
+                    "processed_at": datetime.now(UTC).isoformat(),
+                    "result": result,
+                }
+            },
             upsert=True,
         )
 
@@ -47,7 +52,7 @@ class TaskGuard:
         return hashlib.sha256(raw.encode()).hexdigest()
 
     @classmethod
-    async def execute_idempotent(cls, task_key: str, coroutine_fn, *args, **kwargs) -> Dict[str, Any]:
+    async def execute_idempotent(cls, task_key: str, coroutine_fn, *args, **kwargs) -> dict[str, Any]:
         """Execute a task only if not already processed (idempotent guard)."""
         if await cls.is_duplicate(task_key):
             logger.info(f"Task dedup: {task_key[:16]}... already processed, skipping")
@@ -64,7 +69,7 @@ class TaskGuard:
     @classmethod
     async def cleanup_expired(cls) -> int:
         """Remove expired dedup entries."""
-        threshold = (datetime.now(timezone.utc) - timedelta(seconds=cls.DEDUP_TTL_SECONDS * 2)).isoformat()
+        threshold = (datetime.now(UTC) - timedelta(seconds=cls.DEDUP_TTL_SECONDS * 2)).isoformat()
         result = await db.task_dedup_log.delete_many({"processed_at": {"$lt": threshold}})
         return result.deleted_count
 

@@ -4,11 +4,12 @@ latency measurement, failure classification, and audit logging for all external 
 
 Supports: Twilio SMS, SendGrid Email, WhatsApp, Redis, Sentry, OTel Exporter.
 """
+
+import logging
 import os
 import time
-import logging
-from typing import Dict, Any, Optional, List
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("infra.provider_test_connection")
 
@@ -20,16 +21,16 @@ class ConnectionTestResult:
         self.provider = provider
         self.status = "pending"
         self.latency_ms: float = 0
-        self.error: Optional[str] = None
-        self.error_masked: Optional[str] = None
-        self.failure_class: Optional[str] = None
+        self.error: str | None = None
+        self.error_masked: str | None = None
+        self.failure_class: str | None = None
         self.mode: str = "unknown"  # sandbox / test / live
-        self.validated_at: str = datetime.now(timezone.utc).isoformat()
+        self.validated_at: str = datetime.now(UTC).isoformat()
         self.network_reachable: bool = False
         self.credential_valid: bool = False
-        self.details: Dict[str, Any] = {}
+        self.details: dict[str, Any] = {}
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "provider": self.provider,
             "status": self.status,
@@ -49,9 +50,9 @@ def _mask_error(error: str) -> str:
     if not error:
         return ""
     import re
-    masked = re.sub(r'(key|token|secret|password|sid|dsn)[\s=:]+\S+',
-                     r'\1=***', error, flags=re.IGNORECASE)
-    masked = re.sub(r'https?://[^\s]+', '[URL_MASKED]', masked)
+
+    masked = re.sub(r"(key|token|secret|password|sid|dsn)[\s=:]+\S+", r"\1=***", error, flags=re.IGNORECASE)
+    masked = re.sub(r"https?://[^\s]+", "[URL_MASKED]", masked)
     return masked[:300]
 
 
@@ -79,10 +80,10 @@ class ProviderTestConnectionService:
     """Live test connection for all external providers."""
 
     def __init__(self):
-        self._test_history: List[Dict[str, Any]] = []
-        self._last_results: Dict[str, Dict[str, Any]] = {}
+        self._test_history: list[dict[str, Any]] = []
+        self._last_results: dict[str, dict[str, Any]] = {}
         self._max_history = 200
-        self._audit_log: List[Dict[str, Any]] = []
+        self._audit_log: list[dict[str, Any]] = []
 
     def _record_audit(self, provider: str, action: str, result: str, user_id: str = "system"):
         entry = {
@@ -90,13 +91,13 @@ class ProviderTestConnectionService:
             "action": action,
             "result": result,
             "user_id": user_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
         self._audit_log.append(entry)
         if len(self._audit_log) > 500:
             self._audit_log = self._audit_log[-500:]
 
-    async def test_provider(self, provider: str, user_id: str = "system") -> Dict[str, Any]:
+    async def test_provider(self, provider: str, user_id: str = "system") -> dict[str, Any]:
         """Run live test for a specific provider."""
         result = ConnectionTestResult(provider)
         start = time.time()
@@ -129,12 +130,12 @@ class ProviderTestConnectionService:
         self._last_results[provider] = result_dict
         self._test_history.append(result_dict)
         if len(self._test_history) > self._max_history:
-            self._test_history = self._test_history[-self._max_history:]
+            self._test_history = self._test_history[-self._max_history :]
 
         self._record_audit(provider, "test_connection", result.status, user_id)
         return result_dict
 
-    async def test_all_providers(self, user_id: str = "system") -> Dict[str, Any]:
+    async def test_all_providers(self, user_id: str = "system") -> dict[str, Any]:
         """Test all providers and return aggregated results."""
         providers = ["twilio_sms", "sendgrid_email", "whatsapp", "redis", "sentry", "otel"]
         results = {}
@@ -153,7 +154,7 @@ class ProviderTestConnectionService:
             overall = "failed"
 
         return {
-            "tested_at": datetime.now(timezone.utc).isoformat(),
+            "tested_at": datetime.now(UTC).isoformat(),
             "providers": results,
             "summary": {
                 "total": len(providers),
@@ -164,15 +165,15 @@ class ProviderTestConnectionService:
             },
         }
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get last known status for all providers."""
         return {
             "last_results": self._last_results,
             "total_tests": len(self._test_history),
-            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "checked_at": datetime.now(UTC).isoformat(),
         }
 
-    def get_audit_log(self, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_audit_log(self, limit: int = 50) -> list[dict[str, Any]]:
         return self._audit_log[-limit:]
 
     # ── Provider-specific test implementations ──────────────────
@@ -199,6 +200,7 @@ class ProviderTestConnectionService:
         # Network test via HTTP
         try:
             import httpx
+
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(
                     f"https://api.twilio.com/2010-04-01/Accounts/{sid}.json",
@@ -250,6 +252,7 @@ class ProviderTestConnectionService:
 
         try:
             import httpx
+
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(
                     "https://api.sendgrid.com/v3/scopes",
@@ -300,6 +303,7 @@ class ProviderTestConnectionService:
         if not redis_url:
             # Check if in-memory fallback is active
             from infra.redis_cluster import redis_cluster
+
             if redis_cluster.connected:
                 result.status = "degraded"
                 result.mode = redis_cluster.mode
@@ -312,6 +316,7 @@ class ProviderTestConnectionService:
 
         try:
             from infra.redis_cluster import redis_cluster
+
             health = await redis_cluster.health_check()
             result.network_reachable = health.get("status") != "disconnected"
             result.credential_valid = health.get("status") == "healthy"
@@ -344,6 +349,7 @@ class ProviderTestConnectionService:
             return
 
         from infra.cloud_observability import sentry_integration
+
         sentry_status = sentry_integration.get_status()
         result.credential_valid = sentry_status.get("active", False) or bool(dsn)
         result.network_reachable = True
@@ -364,6 +370,7 @@ class ProviderTestConnectionService:
             return
 
         from infra.cloud_observability import otel_tracer
+
         otel_status = otel_tracer.get_status()
         result.credential_valid = otel_status.get("active", False)
         result.network_reachable = bool(endpoint)

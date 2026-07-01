@@ -1,0 +1,156 @@
+{
+  "identity": {
+    "name": "E1",
+    "persona": "The Anti-AI Designer",
+    "mission": "Transform enterprise PMS from 'Data-Driven' to 'Decision-Driven' with a Premium, Calm, Uncluttered aesthetic."
+  },
+  "design_philosophy": {
+    "core_principle": "Decision First, Data Second.",
+    "visual_style": "Modern Luxury Hospitality",
+    "tone": "Professional, Calm, Anticipatory (Butler-like)",
+    "rules": [
+      "No 'Inter' for Headings. Use 'Manrope' or 'Plus Jakarta Sans'.",
+      "No Gradient Overload. Use texture and subtle borders.",
+      "Asymmetry creates interest. Use Bento Grids.",
+      "Dark Sidebar/Nav, Light Content Area.",
+      "Max 1-2 clicks per operation."
+    ]
+  },
+  "typography": {
+    "headings": {
+      "family": "Manrope, sans-serif",
+      "weights": {
+        "regular": 400,
+        "semibold": 600,
+        "bold": 700
+      },
+      "usage": "Page titles, Card headers, Modal titles",
+      "install_url": "https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap"
+    },
+    "body": {
+      "family": "Inter, sans-serif",
+      "usage": "Data tables, Inputs, Paragraphs",
+      "weights": {
+        "regular": 400,
+        "medium": 500
+      }
+    }
+  },
+  "colors": {
+    "theme_name": "Royal Slate & Gold",
+    "palette": {
+      "primary": {
+        "DEFAULT": "#111827",
+        "foreground": "#FFFFFF",
+        "description": "Deep Charcoal/Slate 900 for Navigation and Structural Elements"
+      },
+      "secondary": {
+        "DEFAULT": "#F1F5F9",
+        "foreground": "#0F172A",
+        "description": "Slate 100 for background contrasts"
+      },
+      "accent": {
+        "DEFAULT": "#C09D63",
+        "foreground": "#FFFFFF",
+        "description": "Muted Gold for Primary Actions, Active States, and High-Priority Calls"
+      },
+      "background": "#FFFFFF",
+      "surface": "#F8FAFC",
+      "border": "#E2E8F0",
+      "success": "#059669",
+      "warning": "#D97706",
+      "error": "#DC2626",
+      "text": {
+        "primary": "#0F172A",
+        "secondary": "#64748B",
+        "muted": "#94A3B8"
+      }
+    },
+    "semantic_usage": {
+      "nav_bg": "bg-slate-900",
+      "nav_text": "text-slate-300",
+      "nav_active_bg": "bg-slate-800",
+      "nav_active_text": "text-white",
+      "nav_active_border": "border-l-4 border-[#C09D63]",
+      "action_button": "bg-[#C09D63] hover:bg-[#B08D55] text-white shadow-md",
+      "card_bg": "bg-white border border-slate-100 shadow-sm hover:shadow-md transition-all"
+    }
+  },
+  "layout_strategy": {
+    "dashboard": {
+      "type": "Bento Grid",
+      "grid_cols": "grid-cols-1 md:grid-cols-12",
+      "gap": "gap-6",
+      "sections": [
+        {
+          "name": "Command Center (Morning Brief)",
+          "span": "col-span-12 lg:col-span-8 row-span-2",
+          "description": "AI-driven summary of 'What Needs Attention'. Payments, VIPs, Dirty Rooms."
+        },
+        {
+          "name": "Occupancy Radial",
+          "span": "col-span-12 md:col-span-4 lg:col-span-4",
+          "description": "Visual gauge of current occupancy."
+        },
+        {
+          "name": "Smart Actions",
+          "span": "col-span-12 md:col-span-6 lg:col-span-4",
+          "description": "Quick action buttons: 'Check-in VIP', 'Process Payments'."
+        }
+      ]
+    },
+    "spacing": {
+      "container_padding": "p-6 md:p-8",
+      "card_padding": "p-6",
+      "section_gap": "gap-8"
+    }
+  },
+  "components": {
+    "SmartActionPanel": {
+      "description": "A unified right-side drawer (Sheet) that replaces fragmented modals.",
+      "usage": "Check-ins, Upsells, Quick Edits.",
+      "base_component": "Sheet (shadcn/ui)",
+      "customization": "Remove default close button, use custom header with 'Decision' suggestions.",
+      "path": "/app/frontend/src/components/SmartActionPanel.jsx"
+    },
+    "RoomCard": {
+      "description": "Live entity card for Room Board.",
+      "usage": "Rooms Tab.",
+      "features": ["Status Color Strip", "Cleaning Progress Ring", "Next Guest ETA", "Priority Badge"],
+      "path": "/app/frontend/src/components/RoomCard.jsx"
+    },
+    "DecisionDialog": {
+      "description": "Intelligent dialog for Dirty Rooms / Payments.",
+      "usage": "Overlays.",
+      "features": ["Analysis Section (Why?)", "Suggestion Section (Do this)", "Alternative Actions"],
+      "path": "/app/frontend/src/components/DecisionDialog.jsx"
+    },
+    "DashboardWidget": {
+      "description": "Wrapper for Bento Grid items.",
+      "style": "bg-white rounded-xl border border-slate-100 shadow-sm p-6 relative overflow-hidden",
+      "path": "/app/frontend/src/components/DashboardWidget.jsx"
+    }
+  },
+  "images": {
+    "hero_bg": "https://images.unsplash.com/photo-1723974915612-c9b6f524f28c?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "login_bg": "https://images.pexels.com/photos/161758/governor-s-mansion-montgomery-alabama-grand-staircase-161758.jpeg",
+    "room_sample": "https://images.unsplash.com/photo-1759038085872-c4bf91b63989?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "logo_placeholder": "https://via.placeholder.com/150x50?text=LUX+PMS"
+  },
+  "instructions_to_main_agent": [
+    "TRANSFORM, DON'T JUST COPY: The goal is to change the UX model from 'Display Data' to 'Suggest Action'.",
+    "LANGUAGE: Use Turkish for all visible text labels (or i18n keys). 'Dikkat Gerektiren', 'Akıllı İşlemler', etc.",
+    "TESTING: Every interactive element MUST have a `data-testid` attribute. E.g., `data-testid='checkin-btn-room-302'`.",
+    "ACCESSIBILITY: Ensure contrast ratios. Use `aria-label` on icon-only buttons.",
+    "PERFORMANCE: Use `lazy` loading for the new panels if they are heavy.",
+    "CODE STRUCTURE: Create new components in `/app/frontend/src/components/` and pages in `/app/frontend/src/pages/`. Do not overwrite existing logic unless necessary for the UX upgrade.",
+    "ICONS: Use `lucide-react`. No Emojis.",
+    "DATA: Mock data is acceptable for the 'Intelligence' features if real backend endpoints are missing, but structure it to be easily replaced."
+  ],
+  "universal_guidelines": [
+    "Don't make generic centered layouts.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur) for the Action Panel overlay.",
+    "NEVER use AI assistant Emoji characters like 🤖 for icons. Use clean Lucide icons (e.g., Sparkles, Brain, Zap)."
+  ]
+}

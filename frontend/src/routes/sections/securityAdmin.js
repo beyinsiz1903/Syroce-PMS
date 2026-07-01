@@ -1,0 +1,54 @@
+import {
+  GDPRCompliance, EncryptionManagementPage, CentralOfficeDashboard,
+  CentralPricingManager, CrossPropertyGuests, MLDashboard, AdminTenants,
+  AdminVendors, QuickIdSettings, RoomQrCodes, RoomRequests, ModuleReport,
+  AdminLeads, GovernancePanel, UserRoleManager, HousekeepingDashboard,
+  POSDashboard, FeaturesShowcase, WebhookOutboxAdmin, EarlyWarningDashboard,
+  ModuleDiscovery, IntegrationCredentials, IntegrationsOverview, CapXIntegration,
+  RnlAutoResolveRuns, RnlDuplicates, SiteContentEditor, VoiceNumberMapping,
+  AutonomousCollectionJobs, PhysicalSecurityDashboard,
+} from "./lazyPages";
+
+export function securityAdminRoutes({ p, pa }) {
+  return [
+    // ── Security & Compliance ──────────────────────────
+    { path: "/app/physical-security", ...pa(PhysicalSecurityDashboard), wrapLayout: true, layoutModule: "physical_security" },
+    { path: "/security-center", type: "redirect", to: "/security?tab=center" },
+    { path: "/app/güvenlik", type: "redirect", to: "/security?tab=monitor" },
+    { path: "/gdpr-compliance", ...p(GDPRCompliance), wrapLayout: true },
+    { path: "/encryption-management", ...p(EncryptionManagementPage), wrapLayout: true, layoutModule: "encryption_management" },
+    { path: "/central-office", ...p(CentralOfficeDashboard), wrapLayout: true },
+    { path: "/central-pricing", ...p(CentralPricingManager) },
+    { path: "/cross-property-guests", ...p(CrossPropertyGuests), wrapLayout: true },
+    { path: "/ml-dashboard", ...p(MLDashboard), wrapLayout: true },
+
+    // ── Admin ──────────────────────────────────────────
+    { path: "/admin/tenants", ...pa(AdminTenants), wrapLayout: true, layoutModule: "admin-tenants" },
+    { path: "/admin/vendors", ...pa(AdminVendors), wrapLayout: true, layoutModule: "admin_vendors" },
+    { path: "/admin/quick-id", ...pa(QuickIdSettings), wrapLayout: true, layoutModule: "quick_id_settings" },
+    { path: "/admin/voice-numbers", ...pa(VoiceNumberMapping), wrapLayout: true, layoutModule: "voice-number-mapping" },
+    { path: "/admin/room-qr-codes", ...pa(RoomQrCodes), wrapLayout: true, layoutModule: "room_qr_codes" },
+    { path: "/app/room-requests", ...p(RoomRequests), wrapLayout: true, layoutModule: "room_qr_requests" },
+    { path: "/admin/module-report", ...pa(ModuleReport), wrapLayout: true, layoutModule: "admin-module-report" },
+    { path: "/app/admin/leads", ...pa(AdminLeads), wrapLayout: true, layoutModule: "admin-leads" },
+    { path: "/admin/governance", ...pa(GovernancePanel), wrapLayout: true, layoutModule: "governance" },
+    { path: "/admin/user-roles", ...pa(UserRoleManager), wrapLayout: true, layoutModule: "user-role-manager" },
+    { path: "/admin/housekeeping", ...pa(HousekeepingDashboard), wrapLayout: true, layoutModule: "housekeeping" },
+    { path: "/admin/pos", ...pa(POSDashboard), wrapLayout: true, layoutModule: "pos" },
+    { path: "/admin/features", ...pa(FeaturesShowcase), wrapLayout: true },
+    { path: "/admin/webhook-outbox", ...pa(WebhookOutboxAdmin), wrapLayout: true, layoutModule: "webhook-outbox-admin" },
+    { path: "/admin/early-warning", ...pa(EarlyWarningDashboard), wrapLayout: true, layoutModule: "early_warning_dashboard" },
+    { path: "/admin/module-discovery", ...pa(ModuleDiscovery), wrapLayout: true, layoutModule: "module-discovery" },
+    { path: "/admin/integration-credentials", ...pa(IntegrationCredentials), wrapLayout: true, layoutModule: "integration-credentials" },
+    { path: "/admin/integrations-overview", ...pa(IntegrationsOverview), wrapLayout: true, layoutModule: "integrations_overview" },
+    { path: "/admin/capx-integration", ...pa(CapXIntegration), wrapLayout: true, layoutModule: "capx-integration" },
+    { path: "/admin/rnl-auto-resolve-runs", ...pa(RnlAutoResolveRuns), wrapLayout: true, layoutModule: "rnl-auto-resolve-runs" },
+    { path: "/admin/rnl-duplicates", ...pa(RnlDuplicates), wrapLayout: true, layoutModule: "rnl-duplicates" },
+    { path: "/admin/autonomous-collection", ...pa(AutonomousCollectionJobs), wrapLayout: true, layoutModule: "autonomous-collection" },
+    { path: "/admin/site-content", ...pa(SiteContentEditor), wrapLayout: true, layoutModule: "site-content" },
+    { path: "/admin/cost", type: "redirect", to: "/app/raporlar?section=expenses" },
+    { path: "/app/cost-management", type: "redirect", to: "/app/raporlar?section=expenses" },
+    { path: "/cost-management", type: "redirect", to: "/app/raporlar?section=expenses" },
+    { path: "/admin/gm-enhanced", type: "redirect", to: "/executive" },
+  ];
+}

@@ -3,22 +3,23 @@ Workers — Celery Hooks
 Pre/post task hooks for audit logging, idempotency enforcement,
 and failure routing to dead-letter archive.
 """
+
 import logging
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
-from workers.task_guard import task_guard
 from workers.failure_archive import failure_archive
+from workers.task_guard import task_guard
 
 logger = logging.getLogger(__name__)
 
 
 async def pre_task_hook(
     task_type: str,
-    task_data: Dict[str, Any],
-    tenant_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    task_data: dict[str, Any],
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
     """
     Pre-task hook: idempotency check + audit log.
     Returns {"proceed": True/False, "reason": ...}
@@ -31,14 +32,16 @@ async def pre_task_hook(
         return {"proceed": False, "reason": "duplicate", "dedup_key": dedup_key}
 
     # Log task start
-    await db.task_queue.insert_one({
-        "id": dedup_key[:16],
-        "task_type": task_type,
-        "tenant_id": tenant_id,
-        "status": "processing",
-        "started_at": datetime.now(timezone.utc).isoformat(),
-        "task_data_summary": str(task_data)[:500],
-    })
+    await db.task_queue.insert_one(
+        {
+            "id": dedup_key[:16],
+            "task_type": task_type,
+            "tenant_id": tenant_id,
+            "status": "processing",
+            "started_at": datetime.now(UTC).isoformat(),
+            "task_data_summary": str(task_data)[:500],
+        }
+    )
 
     return {"proceed": True, "dedup_key": dedup_key}
 
@@ -48,12 +51,12 @@ async def post_task_hook(
     task_type: str,
     success: bool,
     result: Any = None,
-    error: Optional[str] = None,
+    error: str | None = None,
     attempts: int = 1,
-    tenant_id: Optional[str] = None,
+    tenant_id: str | None = None,
 ) -> None:
     """Post-task hook: mark processed, archive failures."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     if success:
         await task_guard.mark_processed(dedup_key, result="success")

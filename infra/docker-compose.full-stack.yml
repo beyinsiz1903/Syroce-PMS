@@ -110,6 +110,16 @@ services:
       - syroce-net
     deploy:
       replicas: ${BACKEND_REPLICAS:-2}
+      update_config:
+        order: start-first
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        order: stop-first
+        parallelism: 1
+        delay: 5s
       resources:
         limits:
           cpus: "2.0"
@@ -132,12 +142,22 @@ services:
       context: ../frontend
       dockerfile: Dockerfile
       args:
-        REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL}
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL}
     restart: always
     networks:
       - syroce-net
     deploy:
       replicas: ${FRONTEND_REPLICAS:-2}
+      update_config:
+        order: start-first
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        order: stop-first
+        parallelism: 1
+        delay: 5s
       resources:
         limits:
           cpus: "0.5"
@@ -169,6 +189,16 @@ services:
       - syroce-net
     deploy:
       replicas: ${WORKER_REPLICAS:-2}
+      update_config:
+        order: start-first
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        order: stop-first
+        parallelism: 1
+        delay: 5s
       resources:
         limits:
           cpus: "2.0"
@@ -206,6 +236,10 @@ services:
       - syroce-net
     deploy:
       replicas: 1
+      update_config:
+        order: stop-first
+        parallelism: 1
+        delay: 5s
       resources:
         limits:
           cpus: "0.25"
@@ -322,4 +356,32 @@ services:
         limits:
           cpus: "0.25"
           memory: 128M
+    logging: *default-logging
+
+  # ── Offsite Yedekleme (mongodump -> S3) ──
+  # S3_BUCKET bos ise konteyner baslamaz (script fail-closed) — Atlas
+  # yonetilen yedek kullaniyorsaniz bu servisi calistirmaniza gerek yok.
+  backup:
+    build:
+      context: ./backup
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      MONGO_URL: ${MONGO_URL}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_PREFIX: ${S3_PREFIX:-syroce}
+      BACKUP_TIME: ${BACKUP_TIME:-03:00}
+      BACKUP_RUN_ON_START: ${BACKUP_RUN_ON_START:-false}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-eu-central-1}
+      AWS_DEFAULT_REGION: ${AWS_REGION:-eu-central-1}
+      AWS_S3_EXTRA_ARGS: ${AWS_S3_EXTRA_ARGS:-}
+    networks:
+      - syroce-net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
     logging: *default-logging

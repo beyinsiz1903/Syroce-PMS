@@ -1,0 +1,245 @@
+import React, { useMemo, useState } from 'react';
+import { ScrollView, View } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
+import { Body, Button, Card, H1, Muted, SkeletonCard } from '../../src/components/ui';
+import { DatePicker } from '../../src/components/DatePicker';
+import { FilterChips } from '../../src/components/FilterChips';
+import { OfflineBanner } from '../../src/components/OfflineBanner';
+import { radius, spacing, useTheme } from '../../src/theme';
+import { tr } from '../../src/i18n/tr';
+import { CellStatus, getAvailabilityGrid } from '../../src/api/availability';
+import { errorMessage, isOffline } from '../../src/utils/errors';
+
+const DAY_OPTIONS = [
+  { value: '7', label: `7 ${tr.availability.days}` },
+  { value: '14', label: `14 ${tr.availability.days}` },
+  { value: '30', label: `30 ${tr.availability.days}` },
+];
+
+const ROOM_COL_WIDTH = 92;
+const CELL_WIDTH = 40;
+const CELL_HEIGHT = 32;
+
+function todayISO(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function dayHeaderLabel(iso: string): { dow: string; dom: string } {
+  const d = new Date(`${iso}T00:00:00`);
+  return {
+    dow: d.toLocaleDateString('tr-TR', { weekday: 'short' }),
+    dom: d.toLocaleDateString('tr-TR', { day: '2-digit' }),
+  };
+}
+
+function useCellColors() {
+  const c = useTheme();
+  return (status: CellStatus): string => {
+    switch (status) {
+      case 'free':
+        return c.success;
+      case 'occupied':
+        return c.primary;
+      case 'blocked':
+        return c.danger;
+      default:
+        return c.surfaceAlt;
+    }
+  };
+}
+
+function Legend() {
+  const colorFor = useCellColors();
+  const items: { status: CellStatus; label: string }[] = [
+    { status: 'free', label: tr.availability.free },
+    { status: 'occupied', label: tr.availability.occupied },
+    { status: 'blocked', label: tr.availability.blocked },
+  ];
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
+      {items.map((it) => (
+        <View key={it.status} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+          <View
+            style={{
+              width: 14,
+              height: 14,
+              borderRadius: radius.sm,
+              backgroundColor: colorFor(it.status),
+            }}
+          />
+          <Muted>{it.label}</Muted>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+export default function AvailabilityScreen() {
+  const c = useTheme();
+  const colorFor = useCellColors();
+
+  const [startInput, setStartInput] = useState('');
+  const [endInput, setEndInput] = useState('');
+  const [days, setDays] = useState('7');
+
+  const startDate = startInput || todayISO();
+
+  // When both range bounds are picked, draw the grid straight through to the
+  // end date (inclusive). Otherwise fall back to the 7/14/30 day shortcuts.
+  const rangeDays = useMemo(() => {
+    if (!startInput || !endInput) return null;
+    const a = new Date(`${startInput}T00:00:00`).getTime();
+    const b = new Date(`${endInput}T00:00:00`).getTime();
+    if (Number.isNaN(a) || Number.isNaN(b) || b < a) return null;
+    const n = Math.round((b - a) / 86_400_000) + 1;
+    return Math.min(Math.max(n, 1), 90);
+  }, [startInput, endInput]);
+
+  const dayCount = rangeDays ?? (Number(days) || 7);
+
+  const q = useQuery({
+    queryKey: ['availability-grid', startDate, dayCount],
+    queryFn: () => getAvailabilityGrid(startDate, dayCount),
+    staleTime: 30_000,
+  });
+
+  const grid = q.data;
+  const offline = q.isError && isOffline(q.error);
+
+  const dayHeaders = useMemo(() => (grid?.days || []).map(dayHeaderLabel), [grid?.days]);
+
+  return (
+    <View style={{ flex: 1, backgroundColor: c.bg, padding: spacing.lg }}>
+      <H1>{tr.availability.title}</H1>
+      <View style={{ height: spacing.sm }} />
+      <DatePicker
+        mode="range"
+        placeholder={tr.availability.dateRange}
+        startValue={startInput}
+        endValue={endInput}
+        onRangeChange={(start, end) => {
+          setStartInput(start || '');
+          setEndInput(end || '');
+        }}
+        allowClear
+        testID="smoke-availability-start"
+      />
+      <View style={{ height: spacing.sm }} />
+      <FilterChips
+        options={DAY_OPTIONS}
+        value={rangeDays ? '' : days}
+        onChange={(v) => {
+          setDays(v);
+          setEndInput('');
+        }}
+      />
+      <View style={{ height: spacing.sm }} />
+      <Legend />
+      <View style={{ height: spacing.md }} />
+
+      <OfflineBanner visible={offline} />
+
+      {q.isLoading ? (
+        <View style={{ gap: spacing.sm }}>
+          <SkeletonCard />
+          <SkeletonCard />
+        </View>
+      ) : q.isError && !offline ? (
+        <Card accent={c.danger}>
+          <Muted>{errorMessage(q.error, tr.availability.loadError)}</Muted>
+          <View style={{ height: spacing.sm }} />
+          <Button
+            title={tr.app.retry}
+            icon="refresh"
+            variant="outline"
+            onPress={() => q.refetch()}
+            fullWidth
+          />
+        </Card>
+      ) : !grid || grid.rooms.length === 0 ? (
+        <Card>
+          <Muted>{tr.availability.noRooms}</Muted>
+        </Card>
+      ) : (
+        <ScrollView horizontal showsHorizontalScrollIndicator>
+          <View>
+            {/* Header row */}
+            <View style={{ flexDirection: 'row' }}>
+              <View
+                style={{
+                  width: ROOM_COL_WIDTH,
+                  height: CELL_HEIGHT + 8,
+                  justifyContent: 'center',
+                  paddingLeft: spacing.xs,
+                }}
+              >
+                <Muted style={{ fontWeight: '600' }}>{tr.availability.room}</Muted>
+              </View>
+              {dayHeaders.map((h, i) => (
+                <View
+                  key={grid.days[i]}
+                  style={{
+                    width: CELL_WIDTH,
+                    height: CELL_HEIGHT + 8,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Muted style={{ fontSize: 10 }}>{h.dow}</Muted>
+                  <Body style={{ fontSize: 12, fontWeight: '600' }}>{h.dom}</Body>
+                </View>
+              ))}
+            </View>
+
+            {/* Body rows */}
+            <ScrollView style={{ maxHeight: 9999 }} contentContainerStyle={{ paddingBottom: spacing.xxl }}>
+              {grid.rooms.map((room) => (
+                <View key={room.id} style={{ flexDirection: 'row', marginBottom: 4 }}>
+                  <View
+                    style={{
+                      width: ROOM_COL_WIDTH,
+                      height: CELL_HEIGHT,
+                      justifyContent: 'center',
+                      paddingLeft: spacing.xs,
+                    }}
+                  >
+                    <Body style={{ fontSize: 13, fontWeight: '600' }}>{room.room_number}</Body>
+                    {room.room_type ? (
+                      <Muted style={{ fontSize: 10 }} numberOfLines={1}>
+                        {room.room_type}
+                      </Muted>
+                    ) : null}
+                  </View>
+                  {grid.days.map((day) => {
+                    const status = room.cells[day] || 'free';
+                    return (
+                      <View
+                        key={day}
+                        style={{ width: CELL_WIDTH, height: CELL_HEIGHT, padding: 2 }}
+                      >
+                        <View
+                          accessibilityLabel={`${room.room_number} ${day} ${tr.availability[status]}`}
+                          style={{
+                            flex: 1,
+                            borderRadius: radius.sm,
+                            backgroundColor: colorFor(status) + '33',
+                            borderWidth: 1,
+                            borderColor: colorFor(status),
+                          }}
+                        />
+                      </View>
+                    );
+                  })}
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </ScrollView>
+      )}
+    </View>
+  );
+}

@@ -1,0 +1,296 @@
+name: Full Stress Suite (one-shot)
+
+# Task #163 + #192 review fix — TÜM stress suite'ini (`yarn test:e2e:stress`)
+# split/shard yapısında çalıştırır: setup (seed) -> parallel matrix shards -> teardown (cleanup).
+#
+# Kapsam:
+#   - Shard B (Front Office Core): Specs 00..09, 95, 99 — Reservation, room move, folio, night audit.
+#   - Shard C (Operations & Service): Specs 08, 08B, 10..13, 98-maintenance, 98-messaging — Housekeeping, complaints, messaging.
+#   - Shard D (MICE & Sales & HR & Finance): Specs 14..29, 32..35B, 37..39B, 70..72, 98-pos*, 98-rms*, 99-pos* — MICE, HR, Finance.
+#   - Shard E (Security & Integrations): Specs 30, 31, 36, 40..45, 50..52B, 60..66, 96, 97, 98-auth*, 98-vcc*, 98B*, 98C*, 98D* — Security, cross-tenant isolation, CM.
+
+on:
+    schedule:
+        - cron: '30 2 * * *'
+    workflow_dispatch:
+        inputs:
+            report_tag:
+                description: 'STRESS_REPORT_TAG (drill report filename suffix). Default: full_stress_suite'
+                required: false
+                default: 'full_stress_suite'
+            room_count:
+                description: 'E2E_ROOM_COUNT (seed size). Default: 500'
+                required: false
+                default: '500'
+            spec_pattern:
+                description: 'Optional Playwright spec filter (relative to e2e-stress/, e.g. `specs/99-finance-folio-surface.spec.js`). Empty = full suite.'
+                required: false
+                default: ''
+
+concurrency:
+    group: stress-suite-one-shot
+    cancel-in-progress: false
+
+env:
+    NODE_VERSION: '22'
+    # Global environment vars for all jobs
+    E2E_BASE_URL: ${{ secrets.STRESS_E2E_BASE_URL }}
+    E2E_FE_BASE_URL: ${{ secrets.STRESS_FE_BASE_URL }}
+    E2E_ADMIN_EMAIL: ${{ secrets.STRESS_PILOT_ADMIN_EMAIL }}
+    E2E_ADMIN_PASSWORD: ${{ secrets.STRESS_PILOT_ADMIN_PASSWORD }}
+    E2E_STRESS_ADMIN_EMAIL: ${{ secrets.STRESS_TENANT_ADMIN_EMAIL }}
+    E2E_STRESS_ADMIN_PASSWORD: ${{ secrets.STRESS_TENANT_ADMIN_PASSWORD }}
+    E2E_STRESS_TENANT_ID: ${{ secrets.STRESS_TENANT_ID }}
+    PILOT_TENANT_ID: ${{ secrets.PILOT_TENANT_ID }}
+    E2E_ALLOW_DESTRUCTIVE_STRESS: 'true'
+    E2E_EXTERNAL_DRY_RUN: 'true'
+    HOTELRUNNER_WEBHOOK_SECRET: ${{ secrets.STRESS_HOTELRUNNER_WEBHOOK_SECRET }}
+    E2E_ROOM_COUNT: ${{ github.event.inputs.room_count || '500' }}
+    CI: 'true'
+    DISABLE_EXPO_PUSH: '1'
+    SLACK_WEBHOOK_URL: ${{ secrets.STRESS_SLACK_WEBHOOK_URL }}
+
+jobs:
+    setup:
+        name: Stress Setup & Seed
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Pre-flight — required secrets + base URL health
+              id: preflight
+              run: |
+                  set -euo pipefail
+                  missing=()
+                  for v in E2E_BASE_URL E2E_ADMIN_EMAIL E2E_ADMIN_PASSWORD \
+                           E2E_STRESS_ADMIN_EMAIL E2E_STRESS_ADMIN_PASSWORD \
+                           E2E_STRESS_TENANT_ID PILOT_TENANT_ID; do
+                      if [ -z "${!v}" ]; then missing+=("$v"); fi
+                  done
+                  if [ ${#missing[@]} -ne 0 ]; then
+                      echo "::error::Missing required secrets: ${missing[*]}"
+                      exit 1
+                  fi
+                  if [ "$E2E_STRESS_TENANT_ID" = "$PILOT_TENANT_ID" ]; then
+                      echo "::error::E2E_STRESS_TENANT_ID == PILOT_TENANT_ID — fail-closed."
+                      exit 1
+                  fi
+                  if ! echo "$E2E_BASE_URL" | grep -qE '^https?://[^[:space:]]+'; then
+                      echo "::error::E2E_BASE_URL formatı geçersiz: '$E2E_BASE_URL'"
+                      exit 1
+                  fi
+                  reachable=0
+                  for attempt in $(seq 1 30); do
+                      code=$(curl -sS -o /dev/null -w '%{http_code}' \
+                          --max-time 10 "${E2E_BASE_URL%/}/health" || echo "000")
+                      if [ "$code" != "000" ] && [ "$code" -lt 500 ]; then
+                          reachable=1
+                          echo "✓ Health check OK (HTTP $code, attempt $attempt)"
+                          break
+                      fi
+                      echo "Health check attempt $attempt: HTTP $code"
+                      sleep 5
+                  done
+                  if [ "$reachable" -eq 0 ]; then
+                      echo "::error::E2E_BASE_URL erişilemez"
+                      exit 1
+                  fi
+                  echo "✓ Pre-flight gates OK"
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v5
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+                  cache: 'yarn'
+                  cache-dependency-path: frontend/yarn.lock
+
+            - name: Install frontend deps
+              run: cd frontend && yarn install --ignore-engines --frozen-lockfile
+
+            - name: Install Playwright browsers
+              run: |
+                  sudo find /etc/apt/sources.list.d -type f \( -name '*.list' -o -name '*.sources' \) \
+                      -exec grep -lE 'packages\.microsoft\.com' {} + 2>/dev/null | xargs -r sudo rm -f || true
+                  cd frontend && yarn e2e:install
+
+            - name: Run Gates and Database Seed
+              env:
+                  STRESS_SKIP_TEARDOWN: 'true'
+              run: |
+                  cd frontend
+                  yarn playwright test --config=playwright.stress.config.js specs/00-gates.spec.js specs/01-bulk-seed-500.spec.js
+
+            - name: Upload Auth State
+              uses: actions/upload-artifact@v5
+              with:
+                  name: stress-auth
+                  path: frontend/e2e-stress/.auth/
+                  retention-days: 1
+
+    stress:
+        name: Shard ${{ matrix.shard }} - ${{ matrix.name }}
+        needs: setup
+        runs-on: ubuntu-latest
+        timeout-minutes: 45
+        strategy:
+            fail-fast: false
+            matrix:
+                shard: [B, C, D, E]
+                include:
+                    - shard: B
+                      name: "Front Office Core"
+                      spec_pattern: "specs/02-*.spec.js specs/03-*.spec.js specs/04-*.spec.js specs/05-*.spec.js specs/06-*.spec.js specs/09-*.spec.js specs/95-*.spec.js specs/99-*.spec.js specs/99B-*.spec.js"
+                      report_tag: "shard_b_front_office"
+                    - shard: C
+                      name: "Operations & Service"
+                      spec_pattern: "specs/08-*.spec.js specs/08B-*.spec.js specs/10-*.spec.js specs/11-*.spec.js specs/12-*.spec.js specs/13-*.spec.js specs/98-maintenance-workorder-lifecycle.spec.js specs/98-messaging-template-lifecycle.spec.js"
+                      report_tag: "shard_c_operations"
+                    - shard: D
+                      name: "MICE & Sales & HR & Finance"
+                      spec_pattern: "specs/14-*.spec.js specs/15-*.spec.js specs/16-*.spec.js specs/17-*.spec.js specs/18-*.spec.js specs/19-*.spec.js specs/20-*.spec.js specs/21-*.spec.js specs/22-*.spec.js specs/23-*.spec.js specs/24-*.spec.js specs/25-*.spec.js specs/26-*.spec.js specs/27-*.spec.js specs/28-*.spec.js specs/29-*.spec.js specs/32-*.spec.js specs/33-*.spec.js specs/33B-*.spec.js specs/34-*.spec.js specs/35-*.spec.js specs/35B-*.spec.js specs/37-*.spec.js specs/38-*.spec.js specs/38B-*.spec.js specs/39-*.spec.js specs/39B-*.spec.js specs/70-*.spec.js specs/71-*.spec.js specs/72-*.spec.js specs/98-mobile-cashier-surface.spec.js specs/98-payment-pos-reconciliation-dryrun.spec.js specs/98-pos-deep-lifecycle.spec.js specs/98-pos-kds-inventory.spec.js specs/98-efatura-earsiv-dryrun.spec.js specs/98-konaklama-vergisi-dryrun.spec.js specs/98-fnb-beo-generator.spec.js specs/98-golf-operational.spec.js specs/98-rms-revenue-deep.spec.js specs/98-sales-basic-lifecycle.spec.js specs/98-spa-wellness-operational.spec.js"
+                      report_tag: "shard_d_mice_hr_finance"
+                    - shard: E
+                      name: "Security & Integrations"
+                      spec_pattern: "specs/30-*.spec.js specs/31-*.spec.js specs/36-*.spec.js specs/40-*.spec.js specs/41-*.spec.js specs/41B-*.spec.js specs/42-*.spec.js specs/43-*.spec.js specs/44-*.spec.js specs/45-*.spec.js specs/50-*.spec.js specs/51-*.spec.js specs/52-*.spec.js specs/52B-*.spec.js specs/60-*.spec.js specs/61-*.spec.js specs/62-*.spec.js specs/63-*.spec.js specs/64-*.spec.js specs/65-*.spec.js specs/66-*.spec.js specs/96-*.spec.js specs/97-*.spec.js specs/98-auth-token-lifecycle.spec.js specs/98-vcc-pci-compliance.spec.js specs/98B-websocket-tenant-isolation.spec.js specs/98C-twofa-totp-lifecycle.spec.js specs/98D-peer-login-throttle.spec.js"
+                      report_tag: "shard_e_security_integrations"
+        env:
+            STRESS_SKIP_SETUP: 'true'
+            STRESS_SKIP_TEARDOWN: 'true'
+            STRESS_REPORT_TAG: ${{ matrix.report_tag }}
+            STRESS_REPORT_TITLE: 'Stress Shard ${{ matrix.shard }} — ${{ matrix.name }}'
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v5
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+                  cache: 'yarn'
+                  cache-dependency-path: frontend/yarn.lock
+
+            - name: Install frontend deps
+              run: cd frontend && yarn install --ignore-engines --frozen-lockfile
+
+            - name: Install Playwright browsers
+              run: |
+                  sudo find /etc/apt/sources.list.d -type f \( -name '*.list' -o -name '*.sources' \) \
+                      -exec grep -lE 'packages\.microsoft\.com' {} + 2>/dev/null | xargs -r sudo rm -f || true
+                  cd frontend && yarn e2e:install
+
+            - name: Download Auth State
+              uses: actions/download-artifact@v5
+              with:
+                  name: stress-auth
+                  path: frontend/e2e-stress/.auth/
+
+            - name: Run Shard Specs
+              run: |
+                  cd frontend
+                  yarn playwright test --config=playwright.stress.config.js ${{ matrix.spec_pattern }}
+
+            - name: Verify drill report verdict (hard-fail on NO-GO)
+              id: verdict_check
+              if: always()
+              run: |
+                  set -euo pipefail
+                  report=$(ls -1t docs/drill_reports/*_stress_${{ env.STRESS_REPORT_TAG }}.md 2>/dev/null | head -n1 || true)
+                  verdict="UNKNOWN"
+                  verdict_line=""
+                  if [ -n "$report" ]; then
+                      echo "Drill report: $report"
+                      verdict_line=$(grep -E '^\| Final verdict \|' "$report" | head -n1 || true)
+                      echo "Verdict line: $verdict_line"
+                      if echo "$verdict_line" | grep -q 'NO-GO'; then
+                          verdict="NO-GO"
+                      elif echo "$verdict_line" | grep -q 'GO WITH WATCH'; then
+                          verdict="GO WITH WATCH"
+                      elif echo "$verdict_line" | grep -qE '\bGO\b'; then
+                          verdict="GO"
+                      fi
+                  fi
+                  {
+                      echo "verdict=$verdict"
+                      echo "report_path=${report:-}"
+                      echo "verdict_line<<VERDICT_EOF"
+                      echo "${verdict_line}"
+                      echo "VERDICT_EOF"
+                  } >> "$GITHUB_OUTPUT"
+                  if [ -z "$report" ]; then
+                      echo "::error::No stress drill report found for tag=${{ env.STRESS_REPORT_TAG }}"
+                      exit 1
+                  fi
+                  if [ "$verdict" = "NO-GO" ]; then
+                      echo "::error::Stress verdict is NO-GO — see $report"
+                      exit 1
+                  fi
+                  if [ "$verdict" != "GO" ] && [ "$verdict" != "GO WITH WATCH" ]; then
+                      echo "::error::Verdict line missing or unparseable in $report"
+                      exit 1
+                  fi
+                  echo "✓ Verdict gate passed ($verdict)"
+
+            - name: Upload Playwright HTML report
+              if: always()
+              uses: actions/upload-artifact@v5
+              with:
+                  name: playwright-stress-report-shard-${{ matrix.shard }}
+                  path: frontend/playwright-stress-report/
+                  retention-days: 30
+
+            - name: Upload drill report (markdown)
+              if: always()
+              uses: actions/upload-artifact@v5
+              with:
+                  name: stress-drill-report-shard-${{ matrix.shard }}
+                  path: docs/drill_reports/*_stress_${{ env.STRESS_REPORT_TAG }}.md
+                  retention-days: 90
+                  if-no-files-found: warn
+
+            - name: Upload traces / videos / screenshots
+              if: always()
+              uses: actions/upload-artifact@v5
+              with:
+                  name: stress-test-results-shard-${{ matrix.shard }}
+                  path: frontend/test-results-stress/
+                  retention-days: 14
+                  if-no-files-found: ignore
+
+    teardown:
+        name: Stress Teardown & Cleanup
+        needs: [setup, stress]
+        if: always() && needs.setup.result == 'success'
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v5
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+                  cache: 'yarn'
+                  cache-dependency-path: frontend/yarn.lock
+
+            - name: Install frontend deps
+              run: cd frontend && yarn install --ignore-engines --frozen-lockfile
+
+            - name: Install Playwright browsers
+              run: |
+                  sudo find /etc/apt/sources.list.d -type f \( -name '*.list' -o -name '*.sources' \) \
+                      -exec grep -lE 'packages\.microsoft\.com' {} + 2>/dev/null | xargs -r sudo rm -f || true
+                  cd frontend && yarn e2e:install
+
+            - name: Download Auth State
+              uses: actions/download-artifact@v5
+              with:
+                  name: stress-auth
+                  path: frontend/e2e-stress/.auth/
+
+            - name: Run Cleanup and Teardown
+              env:
+                  STRESS_SKIP_SETUP: 'true'
+                  STRESS_SKIP_TEARDOWN: 'false'
+              run: |
+                  cd frontend
+                  yarn playwright test --config=playwright.stress.config.js specs/00-gates.spec.js

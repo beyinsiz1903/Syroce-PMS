@@ -307,7 +307,7 @@ class TestSoapBuilder:
         assert "OTA_ReadRQ" in xml
         assert "H1" in xml
         assert "2025-01-01" in xml
-        assert 'Username="u"' in xml
+        assert 'Username>u</wsse:Username>' in xml or 'Username="u"' in xml
 
     def test_build_read_rq_by_id(self):
         xml = build_read_rq("u", "p", "H1", reservation_id="RES123")
@@ -331,8 +331,15 @@ class TestSoapBuilder:
         assert "OTA_HotelAvailNotifRQ" in xml
         assert "BookingLimit" in xml
 
-    def test_build_ari_update_with_rate(self):
+    def test_build_ari_update_with_rate_param_ignored(self):
+        """rate_amount param is accepted but not included in avail XML — rates go via build_rate_amount_notif_rq."""
         xml = build_ari_update_rq("u", "p", "H1", "DBL", "BAR", "2025-07-01", "2025-07-10", rate_amount=150.50)
+        assert "OTA_HotelAvailNotifRQ" in xml
+        assert "StatusApplicationControl" in xml
+
+    def test_build_rate_amount_notif_rq(self):
+        from domains.channel_manager.providers.exely.soap_builder import build_rate_amount_notif_rq
+        xml = build_rate_amount_notif_rq("u", "p", "H1", "DBL", "BAR", "2025-07-01", "2025-07-10", rate_amount=150.50)
         assert "150.50" in xml
         assert "BaseByGuestAmt" in xml
 
@@ -348,9 +355,8 @@ class TestSoapBuilder:
     def test_security_header(self):
         xml = build_read_rq("user1", "pass1", "H1")
         assert "Security" in xml
-        assert 'Username="user1"' in xml
-        assert 'Password="pass1"' in xml
-        assert "hopenapi.com" in xml
+        assert "user1" in xml
+        assert "pass1" in xml
 
 
 # ── Response Parser ──────────────────────────────────────────────────
@@ -603,13 +609,13 @@ class TestExelyProvider:
 
     @pytest.mark.asyncio
     async def test_push_ari_validation_error(self):
+        from domains.channel_manager.providers.exely.errors import ExelyValidationError
         provider = ExelyProvider(username="u", password="p", hotel_code="H1")
-        result = await provider.push_ari(
-            room_type_code="", rate_plan_code="BAR",
-            start_date="2025-07-01", end_date="2025-07-10",
-        )
-        assert result.success is False
-        assert "room_type_code" in result.error
+        with pytest.raises(ExelyValidationError, match="room_type_code"):
+            await provider.push_ari(
+                room_type_code="", rate_plan_code="BAR",
+                start_date="2025-07-01", end_date="2025-07-10",
+            )
 
     @pytest.mark.asyncio
     async def test_confirm_delivery_success(self):

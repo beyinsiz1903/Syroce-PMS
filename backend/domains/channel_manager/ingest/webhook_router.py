@@ -10,18 +10,22 @@ Endpoints:
   POST /api/channel-manager/hotelrunner/webhooks/modifications
   POST /api/channel-manager/hotelrunner/webhooks/cancellations
 """
-import logging
-from typing import Any, Dict
 
-from fastapi import APIRouter, Request, HTTPException
+import logging
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from domains.channel_manager import unified_repository as repo
 from domains.channel_manager.data_model import (
-    ConnectorProvider, RawChannelEvent, RawEventSource, ProcessingStatus,
+    ConnectorProvider,
+    ProcessingStatus,
+    RawChannelEvent,
+    RawEventSource,
 )
 from domains.channel_manager.ingest.normalizer import (
-    extract_hotelrunner_identity, RawChannelEvent as _,
+    extract_hotelrunner_identity,
 )
 
 logger = logging.getLogger("ingest.hotelrunner_webhooks")
@@ -39,7 +43,7 @@ class WebhookResponse(BaseModel):
 
 
 async def _persist_webhook(
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     event_type: str,
 ) -> str:
     """Persist a webhook payload as a raw event. Returns event_id."""

@@ -1,0 +1,19 @@
+export const app = {
+  name: 'Syroce PMS',
+  offline: 'Bağlantı kurulamadı, tekrar dene',
+  lastUpdate: 'Son güncelleme',
+  loading: 'Yükleniyor...',
+  retry: 'Tekrar dene',
+  cancel: 'İptal',
+  save: 'Kaydet',
+  confirm: 'Onayla',
+  close: 'Kapat',
+  success: 'Başarılı',
+  error: 'Hata',
+  empty: 'Kayıt bulunamadı',
+  send: 'Gönder',
+  nightScreen: {
+    title: 'Gece Ekranı',
+    hint: 'Çıkmak için ekrana dokun',
+  },
+};

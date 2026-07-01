@@ -1,0 +1,909 @@
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import axios from 'axios';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { useToast } from '@/hooks/use-toast';
+import { useWebSocket } from '@/lib/websocket';
+import { useNotifications } from '@/context/NotificationContext';
+import { canSendUrgentMessage } from '@/utils/authRoles';
+import { Send, RefreshCw, CheckCheck, Plus } from 'lucide-react';
+
+// R4 split: state'ler ve render orchestration burada kalır; ağır iş üç
+// yardımcı modüle çıkarıldı (visibility-aware polling, Socket.IO event
+// handler'ları, mesaj action factory'leri).
+import {
+  STAFF_ROLES,
+  CONVERSATION_DEPARTMENT_FILTERS,
+  POLL_INTERVAL_MS,
+  PRESENCE_REFRESH_INTERVAL_MS,
+  TYPING_EMIT_THROTTLE_MS,
+} from './internalChat/constants';
+import InboxList from './internalChat/InboxList';
+import ComposeForm from './internalChat/ComposeForm';
+import ConversationsList from './internalChat/ConversationsList';
+import ThreadView from './internalChat/ThreadView';
+import GuestRequestsPanel from './internalChat/GuestRequestsPanel';
+import { useVisibilityAwarePoller } from './internalChat/hooks/useVisibilityAwarePoller';
+import { useChatRealtime } from './internalChat/hooks/useChatRealtime';
+import {
+  submitEditMessage,
+  recallMessage,
+  fetchEditHistoryFor,
+  markInboxMessageRead,
+  sendThreadReply,
+  sendNewMessage,
+} from './internalChat/messageActions';
+import { useTranslation } from 'react-i18next';
+
+
+const InternalChatTab = ({ currentUser }) => {
+  const { t } = useTranslation();
+  const { toast } = useToast();
+  // Keep the global bell counter in sync when this tab mutates read state.
+  const { decrementInternalUnread, markAllInternalRead } = useNotifications();
+  // Task #43: no explicit room — the server auto-enrols the socket in
+  // tenant-scoped internal_chat / pms rooms at connect time based on the
+  // JWT identity. Passing the legacy global 'pms' room here used to
+  // trigger a `room_join_denied` from the protected-room guard.
+  const { socketEmit: wsSocketEmit } = useWebSocket();
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [markingAllRead, setMarkingAllRead] = useState(false);
+
+  // "Misafir Talepleri" sekmesi yalnızca yetkili rollere görünür (server-side
+  // ACL ile çift korumalı). Erişim bilgisi mount'ta bir kez çekilir; rozet
+  // sayacı panel tarafından bildirilir.
+  const [canViewGuestRequests, setCanViewGuestRequests] = useState(false);
+  const [guestRequestsUnread, setGuestRequestsUnread] = useState(0);
+
+  // "Acil" mesaj kanalı alıcıda alarm tetiklediği için ayrı bir izinle
+  // korunuyor. Yetkisiz roller (front_desk, housekeeping, vb.) bu seçeneği
+  // hiç görmesin — backend de aynı kontrolü yapıyor (defense-in-depth).
+  // Task #28: rol-bazlı yetki yoksa kullanıcıya tek tek verilen
+  // `granted_permissions: ["send_urgent_message"]` izni de kabul edilir.
+  const canSendUrgent = useMemo(() => canSendUrgentMessage(currentUser), [currentUser]);
+
+  const [inbox, setInbox] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [myDepartment, setMyDepartment] = useState('');
+  const [loadingInbox, setLoadingInbox] = useState(false);
+  const [showUnreadOnly, setShowUnreadOnly] = useState(false);
+
+  const [users, setUsers] = useState([]);
+  const [usersLoaded, setUsersLoaded] = useState(false);
+  const [usersAccessDenied, setUsersAccessDenied] = useState(false);
+
+  const [recipientType, setRecipientType] = useState('department');
+  const [toDepartment, setToDepartment] = useState('Reception');
+  const [toUserId, setToUserId] = useState('');
+  const [userSearch, setUserSearch] = useState('');
+  const [userDeptFilter, setUserDeptFilter] = useState('all');
+  // Task #25: "Sadece çevrimiçi personeli göster" filtresi.
+  // `onlineUsers` bir Set<string> tutar; presence endpoint'i her dialog
+  // açıldığında ve toggle her açılıp kapatıldığında yeniden çekilir.
+  // Endpoint patlarsa boş set'le degrade ederiz — toggle hâlâ çalışır
+  // ama "Eşleşen kullanıcı yok" gösterir, sessiz hata UX'i bozmaz.
+  const [onlineOnly, setOnlineOnly] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState(() => new Set());
+  const [messageText, setMessageText] = useState('');
+  const [priority, setPriority] = useState('normal');
+  const [sending, setSending] = useState(false);
+
+  const [conversations, setConversations] = useState([]);
+  const [loadingConversations, setLoadingConversations] = useState(false);
+  const [selectedConvUserId, setSelectedConvUserId] = useState(null);
+  const [selectedConvUserName, setSelectedConvUserName] = useState('');
+  const [threadMessages, setThreadMessages] = useState([]);
+  const [loadingThread, setLoadingThread] = useState(false);
+  const [threadReply, setThreadReply] = useState('');
+  const [threadPriority, setThreadPriority] = useState('normal');
+  const [sendingThreadReply, setSendingThreadReply] = useState(false);
+  const [urgentConfirmOpen, setUrgentConfirmOpen] = useState(false);
+  // Inline edit state — at most one message per thread can be in edit mode at
+  // a time. `editingDraft` mirrors the textarea so the user can cancel
+  // without losing their place in the thread.
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [editingDraft, setEditingDraft] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  // Task #39: per-message edit-history cache (lazy populated by popover).
+  const [editHistoryByMsg, setEditHistoryByMsg] = useState({});
+  const [conversationSearch, setConversationSearch] = useState('');
+  const [conversationDeptFilter, setConversationDeptFilter] = useState('all');
+  const [conversationOnlyUnread, setConversationOnlyUnread] = useState(false);
+  // Task #30: badge tıklayınca dropdown'ı programmatik kapatabilmek için
+  // Select'i controlled tutuyoruz.
+  const [conversationDeptOpen, setConversationDeptOpen] = useState(false);
+
+  // Live "yazıyor…" indicator — partner_id of the user currently typing
+  // to me in the open thread. Auto-clears after TYPING_INDICATOR_TTL_MS.
+  const [typingPartnerName, setTypingPartnerName] = useState('');
+
+  const threadScrollRef = useRef(null);
+  const isMountedRef = useRef(true);
+  const inboxRequestIdRef = useRef(0);
+  const inboxAbortRef = useRef(null);
+  const conversationsRequestIdRef = useRef(0);
+  const conversationsAbortRef = useRef(null);
+  const threadRequestIdRef = useRef(0);
+  const threadAbortRef = useRef(null);
+  // Refs that don't trigger re-renders — used by WS handlers and the
+  // throttled typing emitter.
+  const selectedConvUserIdRef = useRef(null);
+  const lastTypingEmitRef = useRef(0);
+
+  useEffect(() => {
+    selectedConvUserIdRef.current = selectedConvUserId;
+    // Switching threads clears any stale "yazıyor…" indicator from the
+    // previous partner.
+    setTypingPartnerName('');
+  }, [selectedConvUserId]);
+
+  const loadInbox = useCallback(async (silent = false) => {
+    // Cancel any in-flight inbox request — prevents stale responses from
+    // overwriting state when the filter changes faster than the network.
+    if (inboxAbortRef.current) inboxAbortRef.current.abort();
+    const controller = new AbortController();
+    inboxAbortRef.current = controller;
+    const requestId = ++inboxRequestIdRef.current;
+
+    if (!silent) setLoadingInbox(true);
+    try {
+      const res = await axios.get('/messaging/internal/inbox', {
+        params: { limit: 100, unread_only: showUnreadOnly },
+        signal: controller.signal,
+      });
+      if (
+        !isMountedRef.current
+        || requestId !== inboxRequestIdRef.current
+        || controller.signal.aborted
+      ) return;
+      setInbox(res.data?.messages || []);
+      setUnreadCount(res.data?.unread_count || 0);
+      setMyDepartment(res.data?.my_department || '');
+    } catch (err) {
+      if (axios.isCancel?.(err) || err.name === 'CanceledError' || err.name === 'AbortError') return;
+      if (!silent) {
+        toast({
+          title: 'Gelen kutusu yüklenemedi',
+          description: err.response?.data?.detail || err.message || 'Bilinmeyen hata',
+          variant: 'destructive',
+        });
+      }
+    } finally {
+      if (!silent && isMountedRef.current && requestId === inboxRequestIdRef.current) {
+        setLoadingInbox(false);
+      }
+    }
+  }, [showUnreadOnly, toast]);
+
+  const loadConversations = useCallback(async (silent = false) => {
+    if (conversationsAbortRef.current) conversationsAbortRef.current.abort();
+    const controller = new AbortController();
+    conversationsAbortRef.current = controller;
+    const requestId = ++conversationsRequestIdRef.current;
+
+    if (!silent) setLoadingConversations(true);
+    try {
+      const res = await axios.get('/messaging/internal/conversations', {
+        signal: controller.signal,
+      });
+      if (
+        !isMountedRef.current
+        || requestId !== conversationsRequestIdRef.current
+        || controller.signal.aborted
+      ) return;
+      setConversations(res.data?.conversations || []);
+    } catch (err) {
+      if (axios.isCancel?.(err) || err.name === 'CanceledError' || err.name === 'AbortError') return;
+      if (!silent) {
+        toast({
+          title: 'Konuşmalar yüklenemedi',
+          description: err.response?.data?.detail || err.message || 'Bilinmeyen hata',
+          variant: 'destructive',
+        });
+      }
+    } finally {
+      if (!silent && isMountedRef.current && requestId === conversationsRequestIdRef.current) {
+        setLoadingConversations(false);
+      }
+    }
+  }, [toast]);
+
+  const loadThread = useCallback(
+    async (userId, { silent = false, markRead = false } = {}) => {
+      if (!userId) return;
+      if (threadAbortRef.current) threadAbortRef.current.abort();
+      const controller = new AbortController();
+      threadAbortRef.current = controller;
+      const requestId = ++threadRequestIdRef.current;
+
+      if (!silent) setLoadingThread(true);
+      try {
+        const res = await axios.get(
+          `/messaging/internal/conversation/${encodeURIComponent(userId)}`,
+          { signal: controller.signal },
+        );
+        if (
+          !isMountedRef.current
+          || requestId !== threadRequestIdRef.current
+          || controller.signal.aborted
+        ) return;
+        setThreadMessages(res.data?.messages || []);
+
+        if (markRead) {
+          // Mark the whole thread as read on the server, then refresh the
+          // conversations list so the unread badge clears immediately.
+          try {
+            await axios.put(
+              `/messaging/internal/conversation/${encodeURIComponent(userId)}/mark-read`,
+            );
+            if (isMountedRef.current) {
+              setConversations((prev) => prev.map((c) => (
+                c.user_id === userId ? { ...c, unread_count: 0 } : c
+              )));
+              loadInbox(true);
+            }
+          } catch { /* non-fatal */ }
+        }
+      } catch (err) {
+        if (axios.isCancel?.(err) || err.name === 'CanceledError' || err.name === 'AbortError') return;
+        if (!silent) {
+          toast({
+            title: 'Konuşma yüklenemedi',
+            description: err.response?.data?.detail || err.message || 'Bilinmeyen hata',
+            variant: 'destructive',
+          });
+        }
+      } finally {
+        if (!silent && isMountedRef.current && requestId === threadRequestIdRef.current) {
+          setLoadingThread(false);
+        }
+      }
+    },
+    [loadInbox, toast],
+  );
+
+  const handleSelectConversation = useCallback(
+    (conv) => {
+      setSelectedConvUserId(conv.user_id);
+      setSelectedConvUserName(conv.user_name);
+      setThreadReply('');
+      setThreadPriority('normal');
+      setThreadMessages([]);
+      setUrgentConfirmOpen(false);
+      // Drop any in-flight edit when switching threads — the message id is
+      // about to disappear from the rendered list anyway.
+      setEditingMessageId(null);
+      setEditingDraft('');
+      setSavingEdit(false);
+      loadThread(conv.user_id, { markRead: true });
+    },
+    [loadThread],
+  );
+
+  // Task #30: Departman dropdown badge'i tıklanınca dropdown'ı kapat,
+  // o departmana filtre koy ve listede ilk okunmamış mesajı olan
+  // konuşmayı aç.
+  const jumpToFirstUnreadInDepartment = useCallback(
+    (deptValue) => {
+      setConversationDeptFilter(deptValue);
+      setConversationDeptOpen(false);
+      const opt = CONVERSATION_DEPARTMENT_FILTERS.find((o) => o.value === deptValue);
+      const allowed = opt?.roles ? new Set(opt.roles) : null;
+      const target = conversations.find((c) => {
+        if (allowed && !allowed.has(c.user_role || '')) return false;
+        return (c.unread_count || 0) > 0;
+      });
+      if (target) handleSelectConversation(target);
+    },
+    [conversations, handleSelectConversation],
+  );
+
+  // Wrapper used by Send button / Enter key. For "urgent" priority we first
+  // pop a quick confirmation so a misclick on Acil doesn't blast an alarm.
+  const handleSendThreadReply = useCallback(() => {
+    const trimmed = threadReply.trim();
+    if (!trimmed || !selectedConvUserId || sendingThreadReply) return;
+    if (threadPriority === 'urgent') {
+      setUrgentConfirmOpen(true);
+      return;
+    }
+    sendThreadReply({
+      threadReply, threadPriority, selectedConvUserId,
+      setThreadReply, setThreadPriority, setSendingThreadReply,
+      loadThread, loadConversations, toast,
+    });
+  }, [threadReply, threadPriority, selectedConvUserId, sendingThreadReply, loadThread, loadConversations, toast]);
+
+  const handleConfirmUrgentSend = useCallback(() => {
+    setUrgentConfirmOpen(false);
+    sendThreadReply({
+      threadReply, threadPriority, selectedConvUserId,
+      setThreadReply, setThreadPriority, setSendingThreadReply,
+      loadThread, loadConversations, toast,
+    });
+  }, [threadReply, threadPriority, selectedConvUserId, loadThread, loadConversations, toast]);
+
+  // ── Inline edit handlers ────────────────────────────────────────────────
+  // Begin editing: snapshot the current text into the draft so cancel is a
+  // pure local rollback. We deliberately allow editing even if the bubble
+  // priority is 'urgent' — the alarm has already fired and the recipient
+  // should still be able to read the corrected wording.
+  const beginEditMessage = useCallback((msg) => {
+    if (!msg) return;
+    setEditingMessageId(msg.id);
+    setEditingDraft(msg.message || '');
+  }, []);
+
+  const cancelEditMessage = useCallback(() => {
+    setEditingMessageId(null);
+    setEditingDraft('');
+    setSavingEdit(false);
+  }, []);
+
+  const fetchEditHistory = useCallback(
+    (messageId) => fetchEditHistoryFor({ messageId, setEditHistoryByMsg }),
+    [],
+  );
+
+  const handleSubmitEditMessage = useCallback(
+    (messageId) => submitEditMessage({
+      messageId,
+      editingDraft,
+      threadMessages,
+      setThreadMessages,
+      setInbox,
+      setSavingEdit,
+      cancelEditMessage,
+      selectedConvUserId,
+      loadThread,
+      loadConversations,
+      toast,
+    }),
+    [editingDraft, threadMessages, cancelEditMessage, selectedConvUserId, loadThread, loadConversations, toast],
+  );
+
+  const handleRecallMessage = useCallback(
+    (messageId) => recallMessage({
+      messageId,
+      setThreadMessages,
+      selectedConvUserId,
+      loadThread,
+      loadConversations,
+      toast,
+    }),
+    [selectedConvUserId, loadThread, loadConversations, toast],
+  );
+
+  const handleStartConversationFromUser = useCallback(
+    (user) => {
+      const existing = conversations.find((c) => c.user_id === user.id);
+      if (existing) handleSelectConversation(existing);
+      else handleSelectConversation({ user_id: user.id, user_name: user.name });
+    },
+    [conversations, handleSelectConversation],
+  );
+
+  const loadUsers = useCallback(async () => {
+    try {
+      const res = await axios.get('/admin/users', { params: { limit: 200 } });
+      if (!isMountedRef.current) return;
+      const list = (res.data?.users || [])
+        .filter((u) => u.is_active !== false && STAFF_ROLES.has(u.role) && u.id !== currentUser?.id)
+        .map((u) => ({
+          id: u.id,
+          name: u.name || u.username || u.email || 'Kullanıcı',
+          email: u.email || '',
+          role: u.role,
+        }))
+        .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'tr'));
+      setUsers(list);
+      setUsersLoaded(true);
+      setUsersAccessDenied(false);
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      const status = err.response?.status;
+      if (status === 401 || status === 403) setUsersAccessDenied(true);
+      setUsersLoaded(true);
+    }
+  }, [currentUser?.id]);
+
+  // Task #25: tenant kapsamlı çevrimiçi kullanıcı listesi.
+  // Hata durumunda sessiz: presence bir UX ipucu, güvenlik sınırı değil.
+  const loadOnlinePresence = useCallback(async () => {
+    try {
+      // axios.defaults.baseURL zaten `/api` ile bitiyor — göreli yol kullan,
+      // aksi halde `/api/api/...` çift prefix'i 404'e yol açar.
+      const res = await axios.get('/messaging/internal/presence/online');
+      if (!isMountedRef.current) return;
+      const ids = Array.isArray(res.data?.user_ids) ? res.data.user_ids : [];
+      setOnlineUsers(new Set(ids));
+    } catch {
+      if (!isMountedRef.current) return;
+      // Endpoint'e ulaşılamıyorsa boş set'e düşür ki toggle yanıltıcı
+      // şekilde "herkes online" göstermesin.
+      setOnlineUsers(new Set());
+    }
+  }, []);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    loadInbox();
+    loadUsers();
+    loadConversations();
+    return () => {
+      isMountedRef.current = false;
+      if (inboxAbortRef.current) inboxAbortRef.current.abort();
+      if (conversationsAbortRef.current) conversationsAbortRef.current.abort();
+      if (threadAbortRef.current) threadAbortRef.current.abort();
+    };
+  }, [loadInbox, loadUsers, loadConversations]);
+
+  // Misafir Talepleri erişim bilgisi (sekmeyi gizlemek için; backend ayrıca
+  // 403 ile çift korur). Hata durumunda sekme gösterilmez (fail-closed UX).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await axios.get('/messaging/guest-requests/access');
+        if (!cancelled) setCanViewGuestRequests(!!res.data?.can_view);
+      } catch {
+        if (!cancelled) setCanViewGuestRequests(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Polling — Socket.IO ana iletim, polling güvenlik ağı (60s).
+  // Sekme arka plana geçince timer'lar duraklar, geri gelince hemen tetikler.
+  useVisibilityAwarePoller(useCallback(() => loadInbox(true), [loadInbox]), { intervalMs: POLL_INTERVAL_MS });
+  useVisibilityAwarePoller(useCallback(() => loadConversations(true), [loadConversations]), { intervalMs: POLL_INTERVAL_MS });
+  useVisibilityAwarePoller(
+    useCallback(() => {
+      if (selectedConvUserId) loadThread(selectedConvUserId, { silent: true, markRead: true });
+    }, [selectedConvUserId, loadThread]),
+    { enabled: !!selectedConvUserId, intervalMs: POLL_INTERVAL_MS },
+  );
+  // Task #25: compose dialog açıkken presence (kim çevrimiçi) bilgisi
+  // 30 sn'de bir tazelenir. Sadece dialog açıkken çalışır — kapalıyken
+  // backend'e gereksiz istek gitmez. Sekme arka plana geçince
+  // visibility-aware poller timer'ı durdurur, geri gelince hemen tetikler.
+  useVisibilityAwarePoller(loadOnlinePresence, {
+    enabled: composeOpen,
+    intervalMs: PRESENCE_REFRESH_INTERVAL_MS,
+  });
+
+  // Auto-scroll the thread to the bottom whenever new messages arrive.
+  useEffect(() => {
+    if (!threadScrollRef.current) return;
+    const node = threadScrollRef.current;
+    requestAnimationFrame(() => {
+      node.scrollTop = node.scrollHeight;
+    });
+  }, [threadMessages]);
+
+  // ── Live updates: Socket.IO ile mesaj akışı + read receipt + typing ──
+  useChatRealtime({
+    currentUser,
+    selectedConvUserIdRef,
+    setInbox,
+    setUnreadCount,
+    setThreadMessages,
+    setTypingPartnerName,
+  });
+
+  // Throttled emitter for the local user's typing activity. Called from
+  // the reply textarea's onChange handler.
+  const emitTyping = useCallback(() => {
+    const partnerId = selectedConvUserIdRef.current;
+    const myId = currentUser?.id;
+    if (!partnerId || !myId) return;
+    const now = Date.now();
+    if (now - lastTypingEmitRef.current < TYPING_EMIT_THROTTLE_MS) return;
+    lastTypingEmitRef.current = now;
+    wsSocketEmit('internal_typing', {
+      from_user_id: myId,
+      from_user_name: currentUser?.name || '',
+      to_user_id: partnerId,
+      tenant_id: currentUser?.tenant_id,
+      is_typing: true,
+    });
+  }, [wsSocketEmit, currentUser?.id, currentUser?.name, currentUser?.tenant_id]);
+
+  const filteredUsers = useMemo(() => {
+    const q = userSearch.trim().toLocaleLowerCase('tr');
+    const deptOption = CONVERSATION_DEPARTMENT_FILTERS.find((opt) => opt.value === userDeptFilter);
+    const allowedRoles = deptOption?.roles ? new Set(deptOption.roles) : null;
+
+    const matches = users.filter((u) => {
+      if (allowedRoles && !allowedRoles.has(u.role || '')) return false;
+      if (onlineOnly && !onlineUsers.has(u.id)) return false;
+      if (q) {
+        const name = (u.name || '').toLocaleLowerCase('tr');
+        const email = (u.email || '').toLocaleLowerCase('tr');
+        if (!name.includes(q) && !email.includes(q)) return false;
+      }
+      return true;
+    });
+
+    return matches.slice(0, 50);
+  }, [users, userSearch, userDeptFilter, onlineOnly, onlineUsers]);
+
+  const filteredConversations = useMemo(() => {
+    const q = conversationSearch.trim().toLocaleLowerCase('tr');
+    const deptOption = CONVERSATION_DEPARTMENT_FILTERS.find((opt) => opt.value === conversationDeptFilter);
+    const allowedRoles = deptOption?.roles ? new Set(deptOption.roles) : null;
+
+    return conversations.filter((c) => {
+      if (q && !(c.user_name || '').toLocaleLowerCase('tr').includes(q)) return false;
+      if (allowedRoles && !allowedRoles.has(c.user_role || '')) return false;
+      if (conversationOnlyUnread && (c.unread_count || 0) <= 0) return false;
+      return true;
+    });
+  }, [conversations, conversationSearch, conversationDeptFilter, conversationOnlyUnread]);
+
+  const conversationFiltersActive = conversationDeptFilter !== 'all'
+    || conversationOnlyUnread
+    || !!conversationSearch.trim();
+
+  const totalConversationUnread = useMemo(
+    () => conversations.reduce((sum, c) => sum + (c.unread_count || 0), 0),
+    [conversations],
+  );
+
+  // Per-department unread totals keyed by the filter `value`. Counts are derived
+  // from the same `conversations` state used by the list, so they refresh
+  // automatically whenever polling pulls in new data.
+  const conversationUnreadByDept = useMemo(() => {
+    const counts = {};
+    for (const opt of CONVERSATION_DEPARTMENT_FILTERS) {
+      if (opt.value === 'all') {
+        counts[opt.value] = conversations.reduce((sum, c) => sum + (c.unread_count || 0), 0);
+        continue;
+      }
+      const allowed = opt.roles ? new Set(opt.roles) : null;
+      counts[opt.value] = conversations.reduce((sum, c) => {
+        if (allowed && !allowed.has(c.user_role || '')) return sum;
+        return sum + (c.unread_count || 0);
+      }, 0);
+    }
+    return counts;
+  }, [conversations]);
+
+  const handleMarkAllRead = useCallback(async () => {
+    if (markingAllRead || unreadCount === 0) return;
+    setMarkingAllRead(true);
+    // Optimistically clear local state so the badge / inbox flip read
+    // immediately — the global bell counter is reset inside the context
+    // helper, the conversations panel below picks the new state up via
+    // its existing refresh.
+    setInbox((prev) => prev.map((m) => ({ ...m, read: true })));
+    setUnreadCount(0);
+    setConversations((prev) => prev.map((c) => ({ ...c, unread_count: 0 })));
+    try {
+      const result = await markAllInternalRead();
+      if (!result?.success) {
+        // Roll back to server truth on failure.
+        await loadInbox(true);
+        await loadConversations(true);
+        toast({
+          title: 'İşaretleme başarısız',
+          description: result?.error?.response?.data?.detail
+            || result?.error?.message
+            || 'Mesajlar işaretlenirken bir sorun oluştu.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      toast({
+        title: 'Tüm mesajlar okundu olarak işaretlendi',
+        description: result.updated_count > 0
+          ? `${result.updated_count} mesaj güncellendi.`
+          : 'Okunmamış mesaj kalmamıştı.',
+      });
+      // Pull a fresh inbox so any messages that arrived during the request
+      // (and so were not part of the bulk update) are reflected accurately.
+      loadInbox(true);
+      loadConversations(true);
+    } finally {
+      setMarkingAllRead(false);
+    }
+  }, [markingAllRead, unreadCount, markAllInternalRead, loadInbox, loadConversations, toast]);
+
+  const markAsRead = useCallback(
+    (messageId) => markInboxMessageRead({
+      messageId, inbox, setInbox, setUnreadCount, decrementInternalUnread, toast,
+    }),
+    [inbox, decrementInternalUnread, toast],
+  );
+
+  const handleReply = useCallback(
+    (msg) => {
+      // For 1-to-1 DMs (sender to a specific user), prefer opening the
+      // WhatsApp-style thread so the operator sees full context.
+      // Detect DMs by `to_user_id` (canonical signal) so we still route
+      // legacy records that lack a denormalized `to_user_name`.
+      if (msg.from_user_id && (msg.to_user_id || msg.to_user_name)) {
+        const partner = {
+          user_id: msg.from_user_id,
+          user_name: msg.from_user_name || 'Kullanıcı',
+        };
+        setComposeOpen(false);
+        handleSelectConversation(partner);
+        return;
+      }
+      if (msg.from_user_id) {
+        setRecipientType('user');
+        setToUserId(msg.from_user_id);
+        setUserSearch(msg.from_user_name || '');
+      } else if (msg.from_department) {
+        setRecipientType('department');
+        setToDepartment(msg.from_department);
+      }
+      setMessageText('');
+      setComposeOpen(true);
+    },
+    [handleSelectConversation],
+  );
+
+  const resetForm = useCallback(() => {
+    setMessageText('');
+    setPriority('normal');
+    setUserSearch('');
+    setToUserId('');
+  }, []);
+
+  const handleSend = useCallback(
+    () => sendNewMessage({
+      messageText, priority, recipientType, toDepartment, toUserId,
+      setPriority, setSending, resetForm, loadInbox, toast,
+    }),
+    [messageText, priority, recipientType, toDepartment, toUserId, resetForm, loadInbox, toast],
+  );
+
+  const [view, setView] = useState('conversations');
+
+  return (
+    <div className="flex flex-col h-full min-h-0 bg-background" data-testid="internal-chat-panel">
+      {selectedConvUserId ? (
+        <div className="flex-1 min-h-0 overflow-hidden" data-testid="pane-detail">
+          <ThreadView
+            selectedConvUserId={selectedConvUserId}
+            selectedConvUserName={selectedConvUserName}
+            setSelectedConvUserId={setSelectedConvUserId}
+            setSelectedConvUserName={setSelectedConvUserName}
+            setThreadMessages={setThreadMessages}
+            threadMessages={threadMessages}
+            loadingThread={loadingThread}
+            loadThread={loadThread}
+            threadScrollRef={threadScrollRef}
+            typingPartnerName={typingPartnerName}
+            usersAccessDenied={usersAccessDenied}
+            users={users}
+            handleStartConversationFromUser={handleStartConversationFromUser}
+            editingMessageId={editingMessageId}
+            editingDraft={editingDraft}
+            setEditingDraft={setEditingDraft}
+            savingEdit={savingEdit}
+            beginEditMessage={beginEditMessage}
+            cancelEditMessage={cancelEditMessage}
+            handleSubmitEditMessage={handleSubmitEditMessage}
+            handleRecallMessage={handleRecallMessage}
+            editHistoryByMsg={editHistoryByMsg}
+            fetchEditHistory={fetchEditHistory}
+            threadReply={threadReply}
+            setThreadReply={setThreadReply}
+            threadPriority={threadPriority}
+            setThreadPriority={setThreadPriority}
+            emitTyping={emitTyping}
+            handleSendThreadReply={handleSendThreadReply}
+            sendingThreadReply={sendingThreadReply}
+            canSendUrgent={canSendUrgent}
+            urgentConfirmOpen={urgentConfirmOpen}
+            setUrgentConfirmOpen={setUrgentConfirmOpen}
+            handleConfirmUrgentSend={handleConfirmUrgentSend}
+          />
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-1.5 px-2.5 py-2 border-b shrink-0">
+            <div className="flex items-center rounded-lg bg-muted p-0.5">
+              <button
+                type="button"
+                onClick={() => setView('conversations')}
+                data-testid="button-view-conversations"
+                className={`relative flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${view === 'conversations' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                Konuşmalar
+                {totalConversationUnread > 0 && (
+                  <span className="ml-0.5 inline-flex items-center justify-center rounded-full bg-red-500 px-1 py-0.5 text-[10px] font-semibold leading-none text-white min-w-[16px]">
+                    {totalConversationUnread > 99 ? '99+' : totalConversationUnread}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setView('inbox')}
+                data-testid="button-view-inbox"
+                className={`relative flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${view === 'inbox' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                Gelen Kutusu
+                {unreadCount > 0 && (
+                  <span className="ml-0.5 inline-flex items-center justify-center rounded-full bg-red-500 px-1 py-0.5 text-[10px] font-semibold leading-none text-white min-w-[16px]">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+              {canViewGuestRequests && (
+                <button
+                  type="button"
+                  onClick={() => setView('guest_requests')}
+                  data-testid="button-view-guest-requests"
+                  className={`relative flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${view === 'guest_requests' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  Misafir Talepleri
+                  {guestRequestsUnread > 0 && (
+                    <span className="ml-0.5 inline-flex items-center justify-center rounded-full bg-red-500 px-1 py-0.5 text-[10px] font-semibold leading-none text-white min-w-[16px]">
+                      {guestRequestsUnread > 99 ? '99+' : guestRequestsUnread}
+                    </span>
+                  )}
+                </button>
+              )}
+            </div>
+
+            <div className="ml-auto flex items-center gap-0.5">
+              {view === 'inbox' && (
+                <Button
+                  type="button"
+                  variant={showUnreadOnly ? 'default' : 'ghost'}
+                  size="sm"
+                  className="h-8 px-2 text-xs"
+                  onClick={() => setShowUnreadOnly((v) => !v)}
+                  data-testid="button-toggle-unread"
+                  title="Sadece okunmamışları göster"
+                >
+                  {showUnreadOnly ? 'Tümü' : 'Okunmamış'}
+                </Button>
+              )}
+              {view !== 'guest_requests' && (
+                <>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={handleMarkAllRead}
+                    disabled={markingAllRead || unreadCount === 0}
+                    data-testid="button-mark-all-read"
+                    title={t('cm.components_pms_InternalChatTab.gelen_kutusundaki_tum_okunmamis_mesajlar')}
+                  >
+                    <CheckCheck className={`h-4 w-4 ${markingAllRead ? 'animate-pulse' : ''}`} />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => { loadInbox(); loadConversations(); }}
+                    disabled={loadingInbox || loadingConversations}
+                    data-testid="button-refresh-inbox"
+                    title={t('cm.components_pms_InternalChatTab.yenile')}
+                  >
+                    <RefreshCw className={`h-4 w-4 ${(loadingInbox || loadingConversations) ? 'animate-spin' : ''}`} />
+                  </Button>
+                </>
+              )}
+              <Button
+                type="button"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setComposeOpen(true)}
+                data-testid="button-open-compose"
+                title={t('cm.components_pms_InternalChatTab.yeni_mesaj')}
+                aria-label={t('cm.components_pms_InternalChatTab.yeni_mesaj')}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-hidden" data-testid="pane-detail">
+            {view === 'conversations' ? (
+              <ConversationsList
+                embedded
+                conversations={conversations}
+                filteredConversations={filteredConversations}
+                loadingConversations={loadingConversations}
+                loadConversations={loadConversations}
+                selectedConvUserId={selectedConvUserId}
+                handleSelectConversation={handleSelectConversation}
+                totalConversationUnread={totalConversationUnread}
+                conversationSearch={conversationSearch}
+                setConversationSearch={setConversationSearch}
+                conversationDeptFilter={conversationDeptFilter}
+                setConversationDeptFilter={setConversationDeptFilter}
+                conversationDeptOpen={conversationDeptOpen}
+                setConversationDeptOpen={setConversationDeptOpen}
+                conversationOnlyUnread={conversationOnlyUnread}
+                setConversationOnlyUnread={setConversationOnlyUnread}
+                conversationUnreadByDept={conversationUnreadByDept}
+                conversationFiltersActive={conversationFiltersActive}
+                jumpToFirstUnreadInDepartment={jumpToFirstUnreadInDepartment}
+              />
+            ) : view === 'inbox' ? (
+              <InboxList
+                embedded
+                inbox={inbox}
+                unreadCount={unreadCount}
+                loadingInbox={loadingInbox}
+                showUnreadOnly={showUnreadOnly}
+                markAsRead={markAsRead}
+                handleReply={handleReply}
+              />
+            ) : (
+              <GuestRequestsPanel onUnreadChange={setGuestRequestsUnread} />
+            )}
+          </div>
+        </>
+      )}
+
+      <Dialog
+        open={composeOpen}
+        onOpenChange={(open) => {
+          setComposeOpen(open);
+          if (open) {
+            loadUsers();
+            // Task #25: dialog her açıldığında presence taze olsun.
+            loadOnlinePresence();
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="dialog-compose">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="h-5 w-5" /> {t('cm.components_pms_InternalChatTab.yeni_mesaj_b9b18')}
+            </DialogTitle>
+            <DialogDescription>
+              {t('cm.components_pms_InternalChatTab.bir_departmana_belirli_bir_personele_vey')}
+            </DialogDescription>
+          </DialogHeader>
+          <ComposeForm
+            recipientType={recipientType}
+            setRecipientType={setRecipientType}
+            toDepartment={toDepartment}
+            setToDepartment={setToDepartment}
+            usersAccessDenied={usersAccessDenied}
+            userSearch={userSearch}
+            setUserSearch={setUserSearch}
+            toUserId={toUserId}
+            setToUserId={setToUserId}
+            userDeptFilter={userDeptFilter}
+            setUserDeptFilter={setUserDeptFilter}
+            onlineOnly={onlineOnly}
+            setOnlineOnly={setOnlineOnly}
+            onlineUsers={onlineUsers}
+            loadOnlinePresence={loadOnlinePresence}
+            usersLoaded={usersLoaded}
+            users={users}
+            filteredUsers={filteredUsers}
+            messageText={messageText}
+            setMessageText={setMessageText}
+            priority={priority}
+            setPriority={setPriority}
+            canSendUrgent={canSendUrgent}
+            resetForm={resetForm}
+            handleSend={handleSend}
+            sending={sending}
+          />
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+export default InternalChatTab;

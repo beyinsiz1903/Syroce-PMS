@@ -10,8 +10,9 @@ domains/ and routers/.
 
 Target: < 300 lines.
 """
-import os
+
 import logging
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -20,8 +21,24 @@ from dotenv import load_dotenv
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
+# ── Redis TLS normalization (managed rediss:// for redis-py clients) ──
+# Managed Redis (DigitalOcean Managed Caching / Valkey) enforces TLS, so the
+# operator-supplied REDIS_URL uses the rediss:// scheme. redis-py's SSLConnection
+# defaults to CERT_REQUIRED and would fail verification against the managed CA
+# (not in the system trust store), silently dropping every redis-py client
+# (cache, auth throttle, event bus) to its in-memory fallback — splitting the
+# event bus from the Celery workers. Normalize the URL once, before any router or
+# module constructs a redis client (cache = CacheManager() and
+# redis_cluster = RedisClusterManager() build their pools at import time). No-op
+# for plain redis:// (DigitalOcean/local dev).
+from redis_ssl import normalize_redis_url_for_redis_py  # noqa: E402
+
+_redis_url = os.environ.get("REDIS_URL")
+if _redis_url:
+    os.environ["REDIS_URL"] = normalize_redis_url_for_redis_py(_redis_url)
+
 # ── App factory ─────────────────────────────────────────────────────
-from app import create_app  # noqa: E402
+from app import create_app, register_shutdown, register_startup, register_startup_first  # noqa: E402
 
 app = create_app()
 
@@ -36,32 +53,85 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Attach PII sanitization filter to root logger + silence verbose third-party
+# HTTP request logging (httpx/httpcore) that would otherwise echo outbound URLs
+# carrying "?token=..." query params. See security.log_sanitizer.harden_logging.
+try:
+    from security.log_sanitizer import harden_logging
+
+    harden_logging()
+    logger.info("Log sanitization filter attached to all handlers")
+except Exception as _log_err:
+    logger.warning("Log sanitization filter skipped: %s", _log_err)
+
 # ── Core (single-instance DB, auth) ────────────────────────────────
-from core.database import db, client  # noqa: E402
+from core.database import client, db  # noqa: E402
+
+
+# ── DB schema migrations (run FIRST, before any index/bootstrap phase) ──
+# Versiyonlu migration runner indeks fazlarından ÖNCE koşar. Hata/timeout →
+# fail-closed: app.state.startup_failed=True + warm-up gate kapalı kalır.
+@register_startup_first
+async def _db_migrations_startup():
+    from bootstrap.migrations import run_migrations
+    from core.database import _raw_db
+
+    try:
+        await run_migrations(_raw_db)
+    except Exception as _mig_err:
+        # Şema migration'ı kritik — fail-closed. Lifespan bu istisnayı
+        # yakalayıp gate'i kapalı tutar (defer mod) veya yeniden fırlatır
+        # (eager mod). Bayrakları açıkça da set ederek savunmayı güçlendir.
+        try:
+            app.state.startup_failed = True
+            app.state.routes_ready = False
+        except Exception:
+            pass
+        logging.getLogger(__name__).critical(
+            "DB MIGRATION BAŞARISIZ — açılış fail-closed: %s",
+            _mig_err,
+        )
+        raise
+
+
+from core.helpers import (  # noqa: E402
+    require_admin,
+    require_feature,
+    require_module,
+    require_super_admin_guard,
+)
 from core.security import (  # noqa: E402
-    get_current_user,
-    create_token,
-    hash_password,
-    verify_password,
-    security,
-    JWT_SECRET,
     JWT_ALGORITHM,
     JWT_EXPIRATION_HOURS,
+    JWT_SECRET,
+    create_token,
+    get_current_user,
+    hash_password,
+    security,
+    verify_password,
 )
-from core.helpers import (  # noqa: E402
-    require_feature,
-    require_super_admin_guard,
-    require_module,
-    require_admin,
-)
-from models.schemas import User  # noqa: E402
 from models.enums import ChannelType  # noqa: E402
+from models.schemas import User  # noqa: E402
 
 # Backward compat alias
-require_super_admin = require_super_admin_guard
+require_super_admin = require_super_admin_guard()
 
 # Expose db on app.state early
 app.state.db = db
+
+# Expose cache manager on app.state so health checks (and any other
+# read-only consumer) can resolve a Redis-or-fallback client without
+# importing module-level singletons. Defensive: cache_manager import is
+# wrapped because a misconfigured cache must NEVER prevent server boot.
+try:
+    # The module-level singleton is named ``cache`` (created at import
+    # time, see ``cache_manager.py``: ``cache = CacheManager()``).
+    from cache_manager import cache as _cache_manager_singleton
+
+    app.state.cache_manager = _cache_manager_singleton
+except Exception as _cm_err:
+    app.state.cache_manager = None
+    logger.warning("cache_manager not exposed on app.state: %s", _cm_err)
 
 # ── Middleware (via bootstrap) ──────────────────────────────────────
 from bootstrap.middleware_registry import register_middleware  # noqa: E402
@@ -69,6 +139,8 @@ from bootstrap.middleware_registry import register_middleware  # noqa: E402
 register_middleware(app)
 
 # Additional CORS with explicit origins
+from datetime import UTC
+
 from starlette.middleware.cors import CORSMiddleware  # noqa: E402
 
 _cors_raw = os.environ.get("CORS_ORIGINS", "")
@@ -78,20 +150,50 @@ _always_allowed = [
     "https://www.pms.syroce.com",
     "https://syroce.com",
     "http://localhost:3000",
+    "http://localhost:5000",
+    "https://syroce-b2b-api.syroce.com",
+    # Mobile (Expo Web) production deploy origin. Cross-origin to this API
+    # backend, so it must be enumerated explicitly (single host, NOT a
+    # wildcard — see Bug AL note below) or its CORS preflight is rejected.
+    # Live-verified topology (2026-06-16): pms.syroce.com
+    # is this web+backend host's own origin (Reserved VM, serves /api JSON);
+    # the -1-syroce host is the SEPARATE static Expo Web (mobile) bundle that
+    # calls this backend cross-origin, so it needs the CORS grant.
+    "https://pms.syroce.com",
+    "https://www.pms.syroce.com",
 ]
 for origin in _always_allowed:
     if origin not in _cors_origins:
         _cors_origins.append(origin)
+
+# DigitalOcean dev domain auto-detection (development convenience)
+_replit_dev = os.environ.get("CLOUD_DEV_DOMAIN")
+if _replit_dev and f"https://{_replit_dev}" not in _cors_origins:
+    _cors_origins.append(f"https://{_replit_dev}")
+
+# Bug AL: previous regex allowed ANY *.syroce.com subdomain — an attacker
+# could publish their own evil.syroce.com and ride credentials=true to
+# perform CSRF/XHR against a logged-in user. Production hosts MUST be
+# enumerated explicitly via CORS_ORIGINS or _always_allowed; we only
+# auto-allow ephemeral *.syroce.local preview hosts here (those are
+# tied to a single Repl owner and not registrable by attackers).
+_env_mode = (os.environ.get("ENVIRONMENT") or os.environ.get("ENV") or "development").lower()
+_cors_origin_regex = None
+if _env_mode != "production":
+    _cors_origin_regex = r"^https://[a-z0-9-]+\.(digitalocean\.dev|riker\.digitalocean\.dev)$"
+
+# Avoid the wildcard + credentials CORS protocol violation
+_allow_credentials = True
 if not _cors_origins:
     _cors_origins = ["*"]
+    _allow_credentials = False  # Cannot combine `*` with credentials per CORS spec.
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=_cors_origins,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# NOTE: CORSMiddleware is registered LAST (after the upload guard, below) so it
+# is the OUTERMOST middleware. Starlette wraps middleware in reverse order of
+# registration, so the final `add_middleware` call wraps every inner layer —
+# including EnhancedRateLimitMiddleware. That is what guarantees a rate-limit
+# 429 (and any other inner short-circuit) still carries the CORS headers. The
+# origin/credentials values computed just above are consumed there.
 
 # APM & rate limiting
 try:
@@ -102,37 +204,257 @@ try:
     logger.info("APM & Rate Limiting middleware activated")
 except Exception:
     from collections import deque
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     class _FallbackStore:
         requests = deque(maxlen=100)
         rate_limit_hits = 0
-        started_at = datetime.now(timezone.utc)
-        def get_summary(self, minutes=10): return {"total_requests": 0, "error_rate_percent": 0}
-        def get_recent_errors(self, limit=50): return []
-        def record_request(self, **kw): pass
-        def record_rate_limit_hit(self, p): pass
+        started_at = datetime.now(UTC)
+
+        def get_summary(self, minutes=10):
+            return {"total_requests": 0, "error_rate_percent": 0}
+
+        def get_recent_errors(self, limit=50):
+            return []
+
+        def record_request(self, **kw):
+            pass
+
+        def record_rate_limit_hit(self, p):
+            pass
 
     apm_store = _FallbackStore()
-    def get_rate_limit_stats(): return {}
+
+    def get_rate_limit_stats():
+        return {}
+
+
+# Entitlement enforcement
+try:
+    from core.entitlement import EntitlementMiddleware
+
+    app.add_middleware(EntitlementMiddleware)
+    logger.info("Entitlement enforcement middleware activated")
+except Exception as _ent_err:
+    logger.warning(f"Entitlement middleware skipped: {_ent_err}")
+
+# Error response normalizer (O2 — standardize all errors to {"detail": ...})
+try:
+    from middleware.error_normalizer import ErrorNormalizerMiddleware
+
+    app.add_middleware(ErrorNormalizerMiddleware)
+    logger.info("Error response normalizer middleware activated")
+except Exception as _norm_err:
+    logger.warning("Error normalizer middleware skipped: %s", _norm_err)
 
 # Request tracing
 try:
     from modules.observability.request_tracing_middleware import RequestTracingMiddleware
+
     app.add_middleware(RequestTracingMiddleware)
-except Exception:
+except Exception as _trace_err:
+    logger.warning("Request tracing middleware skipped: %s", _trace_err)
+
+# Upload body-size guard (v39 — architect feedback D): fail-fast on oversized
+# multipart/JSON bodies via Content-Length, before downstream parsers spool to disk.
+try:
+    from middleware.upload_size_limit import UploadSizeLimitMiddleware
+
+    app.add_middleware(UploadSizeLimitMiddleware)
+    logger.info("Upload size-limit middleware activated")
+except Exception as _usl_err:
+    logger.warning("Upload size-limit middleware skipped: %s", _usl_err)
+
+# Static client-disconnect silencer — swallow uvicorn's benign
+# "Response content shorter/longer than Content-Length" RuntimeError raised when
+# a client cancels a static-asset (/js, /assets, images, ...) download mid-flight
+# (mobile prefetch / fast navigation). Registered AFTER the upload guard and
+# BEFORE CORS, so CORS stays the OUTERMOST layer while this sits just inside it,
+# wrapping every other app middleware. It catches the benign error as it unwinds
+# so uvicorn never logs "Exception in ASGI application" and the duplicate Sentry
+# capture never fires (the before_send filter in cloud_observability remains as a
+# defense-in-depth backstop). A genuine API truncation still re-raises and pages.
+try:
+    from middleware.static_disconnect_silencer import StaticDisconnectSilencerMiddleware
+
+    app.add_middleware(StaticDisconnectSilencerMiddleware)
+    logger.info("Static disconnect silencer middleware activated")
+except Exception as _sds_err:
+    logger.warning("Static disconnect silencer middleware skipped: %s", _sds_err)
+
+# CORS — registered LAST so it is the OUTERMOST middleware (Starlette wraps in
+# reverse registration order). As the outermost layer it (a) answers OPTIONS
+# preflights before they reach the rate limiter, so preflights no longer burn
+# the auth bucket, and (b) decorates EVERY inner response — including the rate
+# limiter's raw 429 and the upload guard's 413 — with Access-Control-Allow-
+# Origin. Without this a throttled login reached the mobile/web client as a
+# CORS-blocked failure (status 0 → "Sunucuya ulaşılamıyor") instead of a
+# readable 429. The rate-limit values themselves are unchanged.
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=_allow_credentials,
+    allow_origins=_cors_origins,
+    allow_origin_regex=_cors_origin_regex,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# PII masking disabled at middleware level to avoid GZip conflicts.
+# Masking is applied at the application layer via security/sensitive_output.py
+# and security/pii_registry.py which are used by individual endpoints.
+logger.info("PII Masking: application-layer masking active (middleware bypassed)")
+
+# ── Global exception handler for Exely provider errors ──────────────
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+try:
+    from domains.channel_manager.providers.exely.errors import ExelyError
+
+    @app.exception_handler(ExelyError)
+    async def exely_error_handler(request: Request, exc: ExelyError):
+        return JSONResponse(status_code=502, content={"detail": f"Exely provider error: {exc.message}"})
+except ImportError:
     pass
+
+# ── 422 validation handler: NaN/Infinity input echo'sunu temizle ───────
+# Pydantic 422 hatalarında payload input'u response'a yansıtılır;
+# Starlette JSONResponse `allow_nan=False` kullandığından NaN/Inf 500 verir.
+import math as _math
+
+from fastapi.exceptions import RequestValidationError
+
+
+def _scrub_non_finite(obj):
+    if isinstance(obj, float):
+        if _math.isnan(obj) or _math.isinf(obj):
+            return str(obj)
+        return obj
+    if isinstance(obj, (bytes, bytearray)):
+        try:
+            return obj.decode("utf-8", errors="replace")
+        except Exception:
+            return repr(obj)
+    if isinstance(obj, list):
+        return [_scrub_non_finite(x) for x in obj]
+    if isinstance(obj, tuple):
+        return tuple(_scrub_non_finite(x) for x in obj)
+    if isinstance(obj, dict):
+        return {k: _scrub_non_finite(v) for k, v in obj.items()}
+    # Fallback: JSON-serialize edilemeyen herhangi bir tip → str
+    if not isinstance(obj, (str, int, bool, type(None))):
+        try:
+            import json as _json
+
+            _json.dumps(obj)
+            return obj
+        except (TypeError, ValueError):
+            return str(obj)
+    return obj
+
+
+_PII_FIELD_PATTERNS = (
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "authorization",
+    "card",
+    "credit_card",
+    "cvv",
+    "cvc",
+    "pan",
+    "iban",
+    "ssn",
+    "tckn",
+    "tc_kimlik",
+    "passport",
+    "otp",
+    "pin",
+    "private_key",
+    "client_secret",
+    "session",
+    "cookie",
+)
+
+
+def _redact_pii(value):
+    """Recursively redact PII-suspicious fields and any string longer than 200 chars."""
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            kl = str(k).lower()
+            if any(p in kl for p in _PII_FIELD_PATTERNS):
+                out[k] = "***REDACTED***"
+            else:
+                out[k] = _redact_pii(v)
+        return out
+    if isinstance(value, list):
+        return [_redact_pii(v) for v in value]
+    if isinstance(value, str) and len(value) > 200:
+        return value[:50] + "...[truncated]"
+    return value
+
+
+from core.tenant_db import TenantViolationError as _TenantViolationError  # Bug AR follow-up
+
+
+@app.exception_handler(_TenantViolationError)
+async def _tenant_violation_handler(request: Request, exc: _TenantViolationError):
+    # Bug AR (architect follow-up, April 2026): map TenantViolationError → 403
+    # so cross-tenant smuggle attempts return a controlled authorization
+    # response rather than a noisy 500 + stack trace, while still logging
+    # the violation server-side for forensics.
+    import logging as _log
+
+    _log.getLogger("core.tenant_db").warning(
+        "tenant violation rejected: path=%s method=%s detail=%s",
+        request.url.path,
+        request.method,
+        str(exc),
+    )
+    return JSONResponse(status_code=403, content={"detail": "Yetkisiz islem"})
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_handler(request: Request, exc: RequestValidationError):
+    # Agency v1 (ADR Karar 1, donmus hata modeli): acente uclarinda 422 govdesi de
+    # ADR ortak zarfini doner (error_code UST seviyede + schema_version), FastAPI'nin
+    # varsayilan {"detail":[...]} formati DEGIL. Alan-bazli detay (PII iceren input)
+    # bu uclarda disari verilmez. Diger tum yollar asagidaki PII-scrub davranisini korur.
+    from routers.agency_v1.errors import agency_validation_response, is_agency_path
+
+    if is_agency_path(request):
+        return agency_validation_response()
+    # Strip echoed `input` (which contains raw request body, often with PII like
+    # credit cards, passwords, tokens). Replace with a redacted summary so debugging
+    # is still possible without leaking sensitive data.
+    safe_errors = []
+    for err in _scrub_non_finite(exc.errors()):
+        if isinstance(err, dict):
+            err = dict(err)
+            if "input" in err:
+                err["input"] = _redact_pii(err["input"])
+            # Drop the pydantic doc URL which is verbose and not needed by clients
+            err.pop("url", None)
+        safe_errors.append(err)
+    return JSONResponse(status_code=422, content={"detail": safe_errors})
+
 
 # ── Additional API router (AI endpoints) ─────────────────────────────
 from fastapi import APIRouter
+
 api_router = APIRouter(prefix="/api")
 
 try:
-    from ai_endpoints import api_router as ai_ai_router
+    from domains.ai.endpoints import api_router as ai_ai_router
+
     api_router.include_router(ai_ai_router, tags=["AI Intelligence"])
     logger.info("  ✅ AI Intelligence endpoints loaded")
-except Exception:
-    pass
+except Exception as _ai_err:
+    logger.warning("AI Intelligence endpoints skipped: %s", _ai_err)
 
 # Mount the main API router
 app.include_router(api_router)
@@ -140,28 +462,103 @@ app.include_router(api_router)
 # ── Health check router ─────────────────────────────────────────────
 try:
     from health_check import health_router
+
     app.include_router(health_router)
 except ImportError:
     pass
 
 # ── External routers (via bootstrap registry) ───────────────────────
-from bootstrap.router_registry import register_routers  # noqa: E402
+# This is the slow step: register_routers() imports ~189 router modules
+# synchronously (~17-34s). On Cloud autoscale the port-open window is
+# ~30s, so when DEFER_STARTUP_BOOTSTRAP=1 we defer the call into a
+# startup callback. The app.py warm-up middleware returns 503 for
+# non-health requests until app.state.routes_ready flips to True.
+from bootstrap.router_registry import register_routers, register_routers_async  # noqa: E402
 
-register_routers(app, api_router, require_super_admin_dep=require_super_admin)
+_DEFER_ROUTER_MOUNT = os.getenv("DEFER_STARTUP_BOOTSTRAP", "").lower() in ("1", "true", "yes")
+
+if _DEFER_ROUTER_MOUNT:
+    # Warm-up gate stays closed until ALL startup callbacks finish (app.py
+    # _run_startup_callbacks flips routes_ready=True on full success, or
+    # startup_failed=True on any error — fail-closed).
+    app.state.routes_ready = False
+    app.state.startup_failed = False
+
+    @register_startup
+    async def _deferred_router_mount():
+        import time as _t
+
+        _t0 = _t.time()
+        logger.warning("DEFER_STARTUP_BOOTSTRAP=1 — deferred router registration starting (port already open)")
+        # Async variant releases the event loop between routers so uvicorn can
+        # keep serving the cheap `/` health probe + SPA shell during the
+        # ~17-34s import window. The sync register_routers() would block the
+        # loop the whole time → healthcheck timeout → edge-proxy
+        # "Internal Server Error" on every cold boot.
+        await register_routers_async(app, api_router, require_super_admin_dep=require_super_admin)
+        logger.warning("Deferred router registration complete in %.2fs", _t.time() - _t0)
+else:
+    app.state.routes_ready = True
+    register_routers(app, api_router, require_super_admin_dep=require_super_admin)
+
+
+# ── WeasyPrint native-lib EAGER PRELOAD (PDF export robustness) ──────
+# The PDF endpoints (report_builder export, mice BEO, konaklama vergisi)
+# lazy-import weasyprint per request; that import dlopen()s the native libs
+# (libgobject/pango/cairo/fontconfig) via cffi. On the Reserved-VM deploy this
+# dlopen has been observed to raise `OSError: [Errno 5] Input/output error`
+# (NOT the earlier "cannot load library 'libgobject'") when it first runs LATE,
+# under stress load — the nix-store .so read faults under memory/IO pressure
+# (the same pressure that SIGBUS-crashed the uvicorn worker in that window).
+# start.sh's boot probe proves the libs load in a CLEAN subprocess at boot, but
+# that does NOT guarantee the long-lived worker can dlopen them minutes later
+# under load. Fix: import weasyprint ONCE in the serving worker at startup
+# (clean memory, right after port-open via the deferred bootstrap). The native
+# .so handles then stay resident and `from weasyprint import HTML` becomes a
+# sys.modules cache hit on every request — no per-request dlopen, no
+# import-time EIO 503. This does NOT mask a broken deploy: if the libs are
+# genuinely unloadable the warm logs HATA and the per-request 503 path still
+# applies. Fail-OPEN: it must never raise (that would trip the fail-closed
+# warm-up gate and 503 the whole app); real write_pdf() failures stay 500.
+@register_startup
+async def _warm_pdf_renderer():
+    import asyncio as _asyncio
+
+    def _do_import():
+        from weasyprint import HTML  # noqa: F401  # dlopen native libs into sys.modules
+
+    try:
+        await _asyncio.to_thread(_do_import)
+        logger.info("WeasyPrint PDF renderer worker'a önceden yüklendi (native lib resident; per-request import-time EIO/503 önlendi)")
+    except Exception as _warm_err:  # incl. ImportError / OSError EIO — must NOT propagate
+        logger.error(
+            "WeasyPrint önyükleme BAŞARISIZ (%s); PDF endpoint'leri import anında 503 verebilir — digitalocean.nix + LD_LIBRARY_PATH/VM IO baskısını incele",
+            _warm_err,
+        )
+
+
+# ── Compatibility / stub endpoints (UI-required modules not yet
+# (re)implemented — see backend/routers/missing_endpoints_compat.py) ──
+try:
+    from routers.missing_endpoints_compat import router as missing_endpoints_router
+
+    app.include_router(missing_endpoints_router)
+    logger.info("  ✅ routers.missing_endpoints_compat")
+except Exception as _compat_err:
+    logger.warning("Compatibility router skipped: %s", _compat_err)
 
 # ── Additional optional routers (factory-pattern modules) ───────────
-_optional_factory_routers = [
-    ("security_2fa", "create_2fa_routes", "2FA Security"),
-    ("ip_access_control", "create_ip_access_routes", "IP Access Control"),
-    ("gdpr_compliance", "create_gdpr_routes", "GDPR/KVKK Compliance"),
-    ("central_office_endpoints", "create_central_office_routes", "Central Office Dashboard"),
-    ("central_pricing_endpoints", "create_central_pricing_routes", "Central Pricing"),
-    ("cross_property_guests", "create_cross_property_guest_routes", "Cross-Property Guests"),
-    ("ml_real_models", "create_ml_routes", "ML/AI Models"),
-    ("tenant_isolation", "create_tenant_isolation_routes", "Tenant Isolation"),
-    ("pci_dss_compliance", "create_pci_dss_routes", "PCI DSS Compliance"),
+# NOT: Asagidaki 9 modulun hicbiri kod tabaninda artik mevcut degil
+# (security_2fa, ip_access_control, gdpr_compliance, central_office_endpoints,
+# central_pricing_endpoints, cross_property_guests, ml_real_models,
+# tenant_isolation, pci_dss_compliance). Bu ozellikler basta domains/admin,
+# domains/security ve security/tenant_isolation_router altinda yeniden
+# konumlanmis durumda. Bu liste sessizce yukleme denemesini sonlandiriyor.
+_optional_factory_routers: list[tuple[str, str, str]] = [
+    # ("module_name", "factory_function", "Display Tag")  -- eklemek istersen buraya yaz.
 ]
 
+_failed_routers = []
 for mod_name, factory_name, tag in _optional_factory_routers:
     try:
         mod = __import__(mod_name)
@@ -169,59 +566,381 @@ for mod_name, factory_name, tag in _optional_factory_routers:
         router = factory(db, get_current_user)
         app.include_router(router, tags=[tag])
         logger.info(f"  ✅ {tag}")
-    except Exception:
-        pass
+    except Exception as _fac_err:
+        _failed_routers.append(tag)
+        logger.warning("Factory router '%s' skipped: %s", tag, _fac_err)
+if _failed_routers:
+    logger.warning("⚠️ %d factory router(s) failed to load: %s", len(_failed_routers), ", ".join(_failed_routers))
 
 # Report Builder & Guest Messaging (init pattern)
 try:
-    from routers.report_builder import router as report_builder_router, init_report_builder
+    # Router itself is mounted via bootstrap/router_registry.py:72 — we only
+    # need to call init_report_builder here so the handlers see db + auth.
+    from routers.report_builder import init_report_builder
+
     init_report_builder(db, get_current_user)
-    app.include_router(report_builder_router, tags=["Report Builder"])
-except Exception:
-    pass
+except Exception as _rb_err:
+    logger.warning("Report Builder init skipped: %s", _rb_err)
 
 try:
-    from routers.guest_messaging import router as guest_messaging_router, init_guest_messaging
+    # Router itself is mounted via bootstrap/router_registry.py:73 — we only
+    # need to call init_guest_messaging here so the handlers see db + auth.
+    from routers.guest_messaging import init_guest_messaging
+
     init_guest_messaging(db, get_current_user)
-    app.include_router(guest_messaging_router, tags=["Guest Messaging"])
-except Exception:
-    pass
+except Exception as _gm_err:
+    logger.warning("Guest Messaging init skipped: %s", _gm_err)
+
+# Supplies Marketplace (B2B) — vendor portal + hotel storefront + admin
+try:
+    from modules.supplies_market.repository import ensure_indexes as _sm_ensure_indexes
+    from modules.supplies_market.router_admin import router as _sm_admin_router
+    from modules.supplies_market.router_hotel import router as _sm_hotel_router
+    from modules.supplies_market.router_vendor import router as _sm_vendor_router
+
+    app.include_router(_sm_vendor_router)
+    app.include_router(_sm_hotel_router)
+    app.include_router(_sm_admin_router)
+
+    @register_startup
+    async def _supplies_market_indexes():
+        await _sm_ensure_indexes()
+
+    logger.info("✅ Supplies Marketplace routers mounted")
+except Exception as _sm_err:
+    logger.warning("Supplies Marketplace router skipped: %s", _sm_err)
 
 # GraphQL
 try:
+    from fastapi import Depends
     from strawberry.fastapi import GraphQLRouter
-    from graphql_schema import schema
 
-    graphql_app = GraphQLRouter(schema, context_getter=lambda: {"db": db, "cache": None, "materialized_views": None})
+    from graphql_api.schema import schema
+
+    async def _graphql_context_getter(
+        current_user=Depends(get_current_user),
+    ) -> dict:
+        # get_current_user enforces: access-token-only (rejects refresh tokens),
+        # JTI revocation, tokens_invalid_before, user existence, and tenant
+        # consistency. Any failure raises HTTP 401 before a resolver runs.
+        #
+        # Task #254 (F8M § 40 P1): pass the authenticated user into the GraphQL
+        # context so every resolver can derive `tenant_id` explicitly instead
+        # of trusting the TenantContextMiddleware → contextvars chain. This is
+        # defense-in-depth: if middleware fails to set the contextvar (JWT
+        # decode mismatch, secret rotation, ASGI hop) the resolver's explicit
+        # filter still enforces tenant isolation. Without this, the proxy
+        # returns an UNSCOPED collection in soft mode (STRICT_TENANT_MODE=false)
+        # and the resolver leaks cross-tenant data.
+        return {
+            "db": db,
+            "cache": None,
+            "materialized_views": None,
+            "current_user": current_user,
+            "tenant_id": getattr(current_user, "tenant_id", None),
+        }
+
+    graphql_app = GraphQLRouter(schema, context_getter=_graphql_context_getter)
     app.include_router(graphql_app, prefix="/api/graphql", tags=["graphql"])
-except Exception:
-    pass
+except Exception as _gql_err:
+    logger.warning("GraphQL router skipped: %s", _gql_err)
 
 # WebSocket
 try:
     from websocket_server import socket_app
-    app.mount("/ws", socket_app)
-except Exception:
-    pass
 
-# Channel Manager v2
+    app.mount("/ws", socket_app)
+except Exception as _ws_sock_err:
+    logger.warning("WebSocket server skipped: %s", _ws_sock_err)
+
+# Channel Manager — Hardening: mounted via bootstrap/router_registry.py:122.
+# DO NOT re-include here — it would double-register all hardening routes and
+# emit "Duplicate Operation ID" warnings at OpenAPI generation time.
+
+# Channel Manager v2 — included via bootstrap/router_registry.py:256.
+# DO NOT also include it here, it would double-mount 147 routes and emit
+# ~213 "Duplicate Operation ID" warnings at OpenAPI generation time.
+
+# OTA-002: Outbox Admin endpoints (requeue, replay, status)
+# Mounted via bootstrap/router_registry.py:247 — not here.
+
+# Webhook Admin endpoints (deliveries, DLQ, manual retry)
 try:
-    from channel_manager.interfaces.router_registry import router as cm_v2_router
-    app.include_router(cm_v2_router, tags=["Channel Manager v2"])
-    print("✅ Channel Manager v2 router included (connector-first architecture)")
-except Exception:
-    pass
+    from routers.webhook_admin import webhook_admin_router
+
+    app.include_router(webhook_admin_router, prefix="/api", tags=["Webhook Admin"])
+    logger.info("  ✅ Webhook Admin router loaded (deliveries/DLQ/retry)")
+except Exception as _wh_err:
+    logger.warning("Webhook Admin router skipped: %s", _wh_err)
+
+# DATA-001: Import Admin endpoints (review queue, retry, approve, dismiss)
+# Mounted via bootstrap/router_registry.py:248 — not here.
+
+# Entitlement, Metering & Feature Flags Admin API
+try:
+    from domains.admin.entitlement_router import router as entitlement_admin_router
+
+    app.include_router(entitlement_admin_router, tags=["Entitlement & Metering"])
+    logger.info("  ✅ Entitlement & Metering admin router loaded")
+except Exception as _e:
+    logger.warning(f"Entitlement admin router skipped: {_e}")
+
+# Deploy Pipeline — Hard Gate CI/CD, Progressive Deploy, Auto-Rollback
+try:
+    from ops.deploy_router import router as deploy_router
+
+    app.include_router(deploy_router, tags=["Deploy Pipeline"])
+    logger.info("  ✅ Deploy Pipeline router loaded")
+except Exception as _dep_err:
+    logger.warning(f"Deploy Pipeline router skipped: {_dep_err}")
+
+# Wire Status — Unified failure chain visibility
+try:
+    from routers.wire_status import router as wire_status_router
+
+    app.include_router(wire_status_router, tags=["Wire Status"])
+    logger.info("  ✅ Wire Status router loaded")
+except Exception as _ws_err:
+    logger.warning(f"Wire Status router skipped: {_ws_err}")
+
+# Quick-ID Microservice Proxy (kimlik tarama)
+# Note: room_qr_router is mounted via bootstrap/router_registry.py:250 — not here.
+try:
+    from routers.quick_id_proxy import public_router as quick_id_public_router
+    from routers.quick_id_proxy import router as quick_id_proxy_router
+
+    app.include_router(quick_id_proxy_router)
+    app.include_router(quick_id_public_router)
+    logger.info("  ✅ Quick-ID proxy router loaded")
+except Exception as _qid_err:
+    logger.warning(f"Quick-ID proxy router skipped: {_qid_err}")
+
+# WhatsApp Business Cloud API — Inbound webhook (Meta verification + messages + statuses)
+try:
+    from routers.whatsapp_webhook import router as whatsapp_webhook_router
+
+    app.include_router(whatsapp_webhook_router)
+    logger.info("  ✅ WhatsApp webhook router loaded")
+except Exception as _wa_wh_err:
+    logger.warning(f"WhatsApp webhook router skipped: {_wa_wh_err}")
+
+# Integrations Overview (super-admin) — kod hazır / API gerekli / geliştirme
+try:
+    from routers.integrations_overview import router as integrations_overview_router
+
+    app.include_router(integrations_overview_router)
+    logger.info("  ✅ Integrations Overview router loaded")
+except Exception as _io_err:
+    logger.warning(f"Integrations Overview router skipped: {_io_err}")
+
+# Security Classification & PII Management
+try:
+    from security.classification_router import router as classification_router
+
+    app.include_router(classification_router, tags=["Security — Classification & PII"])
+    logger.info("  ✅ Security Classification & PII router loaded")
+except Exception as _cls_err:
+    logger.warning(f"Security Classification router skipped: {_cls_err}")
+
+# Secret Rotation — Safe rotate + test + activate + rollback
+try:
+    from security.rotation_router import router as rotation_router
+
+    app.include_router(rotation_router, tags=["Security — Secret Rotation"])
+    logger.info("  ✅ Secret Rotation router loaded")
+except Exception as _rot_err:
+    logger.warning(f"Secret Rotation router skipped: {_rot_err}")
+
+# Field-Level Encryption — At-rest PII encryption ops
+try:
+    from security.field_encryption_router import router as field_enc_router
+
+    app.include_router(field_enc_router, tags=["Security — Field Encryption"])
+    logger.info("  ✅ Field Encryption router loaded")
+except Exception as _fenc_err:
+    logger.warning(f"Field Encryption router skipped: {_fenc_err}")
+
+# ── Notifications Router ────────────────────────────────────────────
+try:
+    from domains.notifications_router import router as notifications_router
+
+    app.include_router(notifications_router, tags=["Notifications"])
+    logger.info("  ✅ Notifications router loaded")
+except Exception as _notif_err:
+    logger.warning(f"Notifications router skipped: {_notif_err}")
+
+# ── Ops Events & Telemetry Router ───────────────────────────────────
+# Mounted via bootstrap/router_registry.py:243 — not here.
+
+# ── Ops Timeline & Incident Correlation Router ──────────────────────
+# Mounted via bootstrap/router_registry.py:244 — not here.
+
+# ── Encryption Management Router ─────────────────────────────────────
+try:
+    from security.encryption_management_router import router as encryption_mgmt_router
+
+    app.include_router(encryption_mgmt_router, tags=["Encryption Management"])
+    logger.info("  ✅ Encryption Management router loaded")
+except Exception as _enc_mgmt_err:
+    logger.warning(f"Encryption Management router skipped: {_enc_mgmt_err}")
+
+# ── Early Warning & Predictive Alerting Router ───────────────────────
+# Mounted via bootstrap/router_registry.py:245 — not here.
+
 
 # ── Lifecycle events ────────────────────────────────────────────────
-from startup import on_startup, on_shutdown  # noqa: E402
+from startup import on_shutdown, on_startup  # noqa: E402
 
 
-@app.on_event("startup")
+@register_startup
 async def _startup():
     await on_startup(app)
+    try:
+        from routers.integration_credentials import load_credentials_to_env
+
+        await load_credentials_to_env()
+    except Exception as _e:
+        logging.getLogger(__name__).warning("integration credentials startup skipped: %s", _e)
+    # Pre-create notifications compound indexes so the very first dashboard
+    # poll after a cold start hits an indexed query (was 1.2s, now < 50ms).
+    try:
+        from domains.pms.notification_router import _ensure_notif_indexes
+
+        await _ensure_notif_indexes()
+    except Exception as _e:
+        logging.getLogger(__name__).warning("notif index prewarm skipped: %s", _e)
+    # Task #231: build the duplicate-prevention unique-index backstops at boot so
+    # a deferred build (legacy duplicate residue → safeguard OFF) surfaces a
+    # warning + Prometheus metric immediately at startup, instead of only on the
+    # first request. The builds self-heal on later attempts once data is cleaned.
+    try:
+        from routers.mice import _ensure_indexes as _mice_ensure_indexes
+
+        await _mice_ensure_indexes()
+    except Exception as _e:
+        logging.getLogger(__name__).warning("mice uniqueness backstop prewarm skipped: %s", _e)
+    try:
+        from domains.revenue.rms_router.sales import _ensure_contract_indexes
+
+        await _ensure_contract_indexes()
+    except Exception as _e:
+        logging.getLogger(__name__).warning("contract uniqueness backstop prewarm skipped: %s", _e)
+    try:
+        from core.database import db as _db
+        from scripts.ensure_demo_user import ensure_demo_user
+
+        await ensure_demo_user(_db)
+    except Exception as _e:
+        logging.getLogger(__name__).warning("demo user seed skipped: %s", _e)
+    try:
+        from core.database import db as _db
+        from scripts.create_operator_admin import ensure_operator_admin
+
+        await ensure_operator_admin(_db)
+    except Exception as _e:
+        logging.getLogger(__name__).warning("operator admin seed skipped: %s", _e)
+    # v109 Bug DAJ round-4 (architect P1 follow-up): startup security guardrails.
+    # Several env vars exist as breakglass / dev escape hatches that silently
+    # disable webhook signature checks, retention floors, or restore safety. If
+    # any are enabled in a production-flagged environment, log a CRITICAL line
+    # at every boot so it appears in deployment log monitoring and can be caught
+    # by operators before damage. We do not abort boot (some breakglass paths
+    # are legitimate during incidents) but we make the override impossible to
+    # miss in log review.
+    import os as _os
+
+    _env = (_os.environ.get("ENVIRONMENT") or _os.environ.get("APP_ENV") or "").lower()
+    _is_prod = _env in ("production", "prod", "live")
+    _bypass_flags = [
+        "ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK",
+        "ALLOW_UNSIGNED_HOTELRUNNER_WEBHOOK",
+        "ALLOW_UNSIGNED_CM_WEBHOOK",
+        "ALLOW_AUDIT_RETENTION_OVERRIDE",
+        "ENABLE_BACKUP_RESTORE",
+    ]
+    _enabled = [f for f in _bypass_flags if _os.environ.get(f) == "1"]
+    if _enabled:
+        _log = logging.getLogger("security.startup_guardrail")
+        for _flag in _enabled:
+            _log.critical(
+                "SECURITY_BYPASS_ENV_ENABLED flag=%s env=%s prod=%s — webhook/audit/restore safety check is DISABLED. Verify this is intentional and time-bounded.",
+                _flag,
+                _env or "unset",
+                _is_prod,
+            )
+        if _is_prod:
+            _log.critical(
+                "SECURITY_BYPASS_ENV_PRODUCTION count=%d flags=%s — bypass(es) active in PRODUCTION environment. Disable at first opportunity.",
+                len(_enabled),
+                ",".join(_enabled),
+            )
+    # v109 Bug DAJ round-5 (architect P1 follow-up): trusted-proxy misconfig.
+    # If EXELY_TRUST_FORWARDED=1 is set without EXELY_TRUSTED_PROXY_IPS, the
+    # webhook code falls back to peer IP (safe by design), but the operator
+    # almost certainly intended XFF to be honored — silently degrading to
+    # peer-only allowlist matching can cause production outages OR mask an
+    # attacker's spoofed XFF (the webhook now ignores it). Surface the
+    # misconfig at boot.
+    if _os.environ.get("EXELY_TRUST_FORWARDED") == "1":
+        _spec = (_os.environ.get("EXELY_TRUSTED_PROXY_IPS") or "").strip()
+        _g = logging.getLogger("security.startup_guardrail")
+        if not _spec:
+            _g.critical(
+                "EXELY_TRUST_FORWARDED=1 without EXELY_TRUSTED_PROXY_IPS — "
+                "X-Forwarded-For will NOT be honored. Set EXELY_TRUSTED_PROXY_IPS "
+                "to your edge proxy IP/CIDR list to enable real-client extraction."
+            )
+        else:
+            import ipaddress as _ipa2
+
+            _valid = 0
+            for _tok in _spec.split(","):
+                _tok = _tok.strip()
+                if not _tok:
+                    continue
+                try:
+                    _ipa2.ip_network(_tok, strict=False)
+                    _valid += 1
+                except ValueError:
+                    pass
+            if _valid == 0:
+                _g.critical("EXELY_TRUSTED_PROXY_IPS contains no valid IP/CIDR entries — X-Forwarded-For will NOT be honored. Verify configuration.")
+
+    # Pilot Readiness hard-blocker #1 — Exely IP-allowlist startup audit.
+    # Reuses scripts/verify_exely_whitelist.verify so verdict matches the
+    # CLI and readiness API exactly. We log CRITICAL when production has
+    # blockers but DO NOT abort startup — the rest of the PMS must keep
+    # serving even if Exely is misconfigured. Readiness/deploy smoke is
+    # the gate that should reject the deploy. Counts only — no raw IPs.
+    if _is_prod:
+        try:
+            from scripts.verify_exely_whitelist import verify as _verify_exely
+
+            _exely_findings = _verify_exely(dict(_os.environ), environment=_env, expect_ips=[])
+            _exely_log = logging.getLogger("security.startup_guardrail")
+            if _exely_findings.blockers:
+                _exely_log.critical(
+                    "EXELY_WHITELIST_PRODUCTION_BLOCKER verdict=%s blockers=%d "
+                    "warnings=%d — run `python backend/scripts/verify_exely_whitelist.py "
+                    "--env production` for redacted details. Webhook deliveries "
+                    "will be rejected until configuration is fixed.",
+                    _exely_findings.verdict,
+                    len(_exely_findings.blockers),
+                    len(_exely_findings.warnings),
+                )
+            elif _exely_findings.warnings:
+                _exely_log.warning(
+                    "EXELY_WHITELIST_PRODUCTION_REVIEW verdict=REVIEW warnings=%d — non-blocking but operator should inspect via the CLI.",
+                    len(_exely_findings.warnings),
+                )
+        except Exception as _exely_exc:
+            logging.getLogger("security.startup_guardrail").error(
+                "EXELY_WHITELIST_AUDIT_ERROR type=%s — startup audit failed; readiness check still active.",
+                type(_exely_exc).__name__,
+            )
 
 
-@app.on_event("shutdown")
+@register_shutdown
 async def _shutdown():
     await on_shutdown(app)
 
@@ -232,8 +951,10 @@ cm_push_event = None
 try:
     from domains.channel_manager.router import cm_push_event  # noqa: F811
 except ImportError:
+
     async def cm_push_event(event):
         pass
+
 
 __all__ = [
     "app",

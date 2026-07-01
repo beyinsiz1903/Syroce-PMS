@@ -9,8 +9,8 @@ provider does and does not guarantee.
 Every provider difference should be encoded here, not scattered
 across ad-hoc if-else branches.
 """
+
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 from enum import Enum
 
 from .data_model import ConnectorProvider, ErrorClass
@@ -35,8 +35,8 @@ class ModificationBehavior(str, Enum):
 
 
 class ARIPushBehavior(str, Enum):
-    SINGLE_MESSAGE = "single_message"       # rates + avail in one call
-    SPLIT_MESSAGES = "split_messages"       # rates and avail must be separate
+    SINGLE_MESSAGE = "single_message"  # rates + avail in one call
+    SPLIT_MESSAGES = "split_messages"  # rates and avail must be separate
     BATCH_ONLY = "batch_only"
 
 
@@ -46,8 +46,8 @@ class RetryPolicy:
     base_delay_seconds: float = 2.0
     max_delay_seconds: float = 60.0
     exponential_factor: float = 2.0
-    retryable_http_codes: List[int] = field(default_factory=lambda: [429, 500, 502, 503, 504])
-    retryable_error_patterns: List[str] = field(default_factory=list)
+    retryable_http_codes: list[int] = field(default_factory=lambda: [429, 500, 502, 503, 504])
+    retryable_error_patterns: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -94,14 +94,14 @@ class ProviderCapability:
     retry_policy: RetryPolicy = field(default_factory=RetryPolicy)
 
     # Error taxonomy: maps error patterns to error classes
-    error_classification: Dict[str, ErrorClass] = field(default_factory=dict)
+    error_classification: dict[str, ErrorClass] = field(default_factory=dict)
 
 
 # ══════════════════════════════════════════════════════════════════════
 # PROVIDER REGISTRY
 # ══════════════════════════════════════════════════════════════════════
 
-PROVIDER_CAPABILITIES: Dict[str, ProviderCapability] = {
+PROVIDER_CAPABILITIES: dict[str, ProviderCapability] = {
     "exely": ProviderCapability(
         provider=ConnectorProvider.EXELY,
         display_name="Exely",
@@ -226,5 +226,5 @@ def get_retry_delay(provider: str, attempt: int) -> float:
     """Calculate retry delay with exponential backoff."""
     cap = get_capability(provider)
     policy = cap.retry_policy
-    delay = policy.base_delay_seconds * (policy.exponential_factor ** attempt)
+    delay = policy.base_delay_seconds * (policy.exponential_factor**attempt)
     return min(delay, policy.max_delay_seconds)

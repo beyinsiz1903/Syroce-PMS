@@ -1,0 +1,151 @@
+# ─────────────────────────────────────────────────────────────────────
+# Syroce PMS — Render.com Blueprint (Infrastructure as Code)
+#
+# Bu dosya Render'da "New > Blueprint" ile tek seferde tum servisleri kurar:
+#   - syroce-backend  : FastAPI API (Docker, web service)         -> $PORT
+#   - syroce-worker   : Celery worker (Docker, background worker)
+#   - syroce-beat     : Celery beat / scheduler (Docker, bg worker)
+#   - syroce-redis    : Redis (Render Key Value) — Celery broker + cache
+#   - syroce-frontend : React/Vite SPA (Render Static Site)
+#
+# MongoDB: Render'da yonetilen Mongo YOKTUR. Mevcut MongoDB Atlas kullanilir;
+#   baglanti dizesini MONGO_URL ortam degiskenine (sync:false) elle girin.
+#
+# YAPMANIZ GEREKENLER (Render panelinden, deploy oncesi/sonrasi):
+#   1) MONGO_URL (Atlas baglanti dizesi) -> syroce-shared grubuna girin.
+#   2) CORS_ORIGINS -> backend'e frontend origin'ini girin
+#      (or: https://syroce-frontend.onrender.com  veya kendi alan adiniz).
+#   3) VITE_BACKEND_URL -> frontend'e backend URL'ini girin
+#      (or: https://syroce-backend.onrender.com).
+#   4) replit.md "Environment Variables" listesindeki tum gizli degerleri
+#      (RESEND_API_KEY, SENTRY_DSN, QUICKID_SERVICE_KEY, ROOM_QR_SECRET, ...)
+#      syroce-shared env grubuna sync:false olarak ekleyin.
+#
+# NOT (PDF raporlari): backend Docker imaji (requirements/api-runtime.txt)
+#   reports.txt'yi (WeasyPrint) ve native kutuphaneleri (libpango/cairo)
+#   ICERMEZ. Render'da PDF export (BEO / rapor PDF) gerekiyorsa backend
+#   imajina reports bagimliliklari + apt native lib'leri eklenmeli (istenirse
+#   ayrica yapilir). PMS'in geri kalani PDF'siz tam calisir.
+# ─────────────────────────────────────────────────────────────────────
+
+envVarGroups:
+  - name: syroce-shared
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: MONGO_URL
+        sync: false            # MongoDB Atlas baglanti dizesi (elle girin)
+      - key: DB_NAME
+        value: hotel_pms
+      - key: STRICT_TENANT_MODE
+        value: "true"
+      - key: EVENT_BUS_MODE
+        value: redis
+      - key: REDIS_MODE
+        value: standalone
+      - key: SECRETS_PROVIDER
+        value: env
+      # --- Asagidakileri replit.md'deki tam listeye gore sync:false ekleyin ---
+      # RESEND_API_KEY, SENTRY_DSN, QUICKID_SERVICE_KEY, QUICKID_URL,
+      # ROOM_QR_SECRET, PUBLIC_APP_URL, HOTELRUNNER_WEBHOOK_SECRET,
+      # EFATURA_SUPPLIER_VKN, vb. (gizli degerler panelden girilir)
+      #
+      # --- Contact Center Faz 2 (sesli softphone) — TUMU OPSIYONEL ---
+      # Bu degiskenler GIRILMEZSE sesli katman fail-closed (not_configured)
+      # kalir; PMS'in geri kalani etkilenmez. Girilince aktiflesir. Tum
+      # gizli degerleri panelden sync:false ekleyin:
+      #   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN (webhook imza dogrulama),
+      #   TWILIO_API_KEY_SID, TWILIO_API_KEY_SECRET, TWILIO_TWIML_APP_SID
+      #   (WebRTC AccessToken uretimi), TWILIO_VOICE_TOKEN_TTL (varsayilan 3600).
+      # Cagri kayitlari AYRI S3/Spaces bucket'ta (recording_ref-only + at-rest
+      # AES-GCM); worker+beat de gorur:
+      #   CC_RECORDING_S3_BUCKET, CC_RECORDING_S3_REGION, CC_RECORDING_S3_ENDPOINT,
+      #   CC_RECORDING_S3_ACCESS_KEY_ID, CC_RECORDING_S3_SECRET_ACCESS_KEY,
+      #   CC_RECORDING_RETENTION_DAYS (varsayilan 90).
+      # Webhook URL'i icin PUBLIC_APP_URL zorunlu (Twilio'ya /api/voice/* verirsiniz).
+
+services:
+  # ── Backend API (FastAPI) ──────────────────────────────────────────
+  - type: web
+    name: syroce-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: standard             # ihtiyaca gore tune edin (starter/standard/pro)
+    healthCheckPath: /api/health/liveness
+    autoDeploy: true
+    envVars:
+      - fromGroup: syroce-shared
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: syroce-redis
+          property: connectionString
+      - key: CORS_ORIGINS
+        sync: false            # frontend origin(ler)i, virgulle ayrik
+      - key: WEB_CONCURRENCY
+        value: "4"             # uvicorn worker sayisi (plan'a gore dusurun)
+
+  # ── Celery Worker ──────────────────────────────────────────────────
+  - type: worker
+    name: syroce-worker
+    runtime: docker
+    dockerfilePath: ./worker/Dockerfile
+    dockerContext: .
+    # Adanmis `pricing` kuyrugu da tuketilsin (Rota 1-A Revenue Autopilot fiyat
+    # hesaplama gorevleri); diger kuyruklar yavaslasa bile izole calisir.
+    dockerCommand: celery -A celery_app worker --loglevel=info --concurrency=4 -Q default,ml,analytics,messaging,pipeline,backup,pricing
+    plan: standard
+    autoDeploy: true
+    envVars:
+      - fromGroup: syroce-shared
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: syroce-redis
+          property: connectionString
+
+  # ── Celery Beat (Scheduler) ────────────────────────────────────────
+  - type: worker
+    name: syroce-beat
+    runtime: docker
+    dockerfilePath: ./worker/Dockerfile
+    dockerContext: .
+    dockerCommand: celery -A celery_app beat --loglevel=info
+    plan: starter              # beat tek-instance, hafif
+    autoDeploy: true
+    envVars:
+      - fromGroup: syroce-shared
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: syroce-redis
+          property: connectionString
+
+  # ── Redis (Render Key Value) — Celery broker + cache ───────────────
+  - type: keyvalue
+    name: syroce-redis
+    plan: starter
+    ipAllowList: []            # bos = sadece Render ic agindan erisim
+
+  # ── Frontend (React/Vite SPA, Static Site) ─────────────────────────
+  - type: web
+    name: syroce-frontend
+    runtime: static
+    buildCommand: cd frontend && yarn install --ignore-engines --production=false && yarn build
+    staticPublishPath: ./frontend/build
+    autoDeploy: true
+    envVars:
+      - key: VITE_BACKEND_URL
+        sync: false            # backend URL, or: https://syroce-backend.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /js/*
+        name: Cache-Control
+        value: "public, max-age=31536000, immutable"
+      - path: /assets/*
+        name: Cache-Control
+        value: "public, max-age=31536000, immutable"

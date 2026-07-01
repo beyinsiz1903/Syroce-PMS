@@ -10,22 +10,25 @@ API endpoints for the runtime enforcement layers:
   5. Safe Actions — 1-click idempotent operator actions
   6. Rollout Framework — controlled live deployment
 """
+
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from core.security import get_current_user
-from models.schemas import User
-
 from domains.channel_manager.ari.hard_fail_gate import (
-    get_hard_fail_stats, release_quarantine,
-)
-from domains.channel_manager.auto_heal_service import (
-    run_auto_heal_cycle, get_auto_heal_stats, get_auto_heal_history,
+    get_hard_fail_stats,
+    release_quarantine,
 )
 from domains.channel_manager.ari.push_loop_worker import get_push_worker
+from domains.channel_manager.auto_heal_service import (
+    get_auto_heal_history,
+    get_auto_heal_stats,
+    run_auto_heal_cycle,
+)
+from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 logger = logging.getLogger("lockdown.runtime")
 router = APIRouter(prefix="/api/lockdown/runtime", tags=["Runtime Enforcement"])
@@ -33,10 +36,11 @@ router = APIRouter(prefix="/api/lockdown/runtime", tags=["Runtime Enforcement"])
 
 # ── Request Models ────────────────────────────────────────────
 
+
 class ReleaseQuarantineRequest(BaseModel):
     room_type_code: str
-    rate_plan_code: Optional[str] = None
-    provider: Optional[str] = None
+    rate_plan_code: str | None = None
+    provider: str | None = None
 
 
 class AutoHealRequest(BaseModel):
@@ -47,6 +51,7 @@ class AutoHealRequest(BaseModel):
 # ══════════════════════════════════════════════════════════════
 # 1. HARD FAIL GATE
 # ══════════════════════════════════════════════════════════════
+
 
 @router.get("/hard-fail/stats")
 async def hard_fail_stats(
@@ -60,6 +65,7 @@ async def hard_fail_stats(
 async def release_hard_fail(
     request: ReleaseQuarantineRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Release quarantined change sets after mapping fix."""
     released = await release_quarantine(
@@ -79,6 +85,7 @@ async def release_hard_fail(
 # 2. AUTO-HEAL
 # ══════════════════════════════════════════════════════════════
 
+
 @router.get("/auto-heal/stats")
 async def auto_heal_stats(
     current_user: User = Depends(get_current_user),
@@ -91,6 +98,7 @@ async def auto_heal_stats(
 async def run_auto_heal(
     request: AutoHealRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """Trigger an auto-heal cycle."""
     result = await run_auto_heal_cycle(
@@ -109,7 +117,9 @@ async def auto_heal_history(
 ):
     """Recent auto-heal operations."""
     history = await get_auto_heal_history(
-        current_user.tenant_id, limit=limit, skip=skip,
+        current_user.tenant_id,
+        limit=limit,
+        skip=skip,
     )
     return {"history": history, "limit": limit, "skip": skip}
 
@@ -117,6 +127,7 @@ async def auto_heal_history(
 # ══════════════════════════════════════════════════════════════
 # 3. PUSH LOOP
 # ══════════════════════════════════════════════════════════════
+
 
 @router.get("/push-loop/status")
 async def push_loop_status(
@@ -130,6 +141,7 @@ async def push_loop_status(
 @router.post("/push-loop/start")
 async def push_loop_start(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v100 DW
 ):
     """Start the push loop worker."""
     worker = get_push_worker()
@@ -140,6 +152,7 @@ async def push_loop_start(
 @router.post("/push-loop/stop")
 async def push_loop_stop(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v100 DW
 ):
     """Stop the push loop worker."""
     worker = get_push_worker()
@@ -150,6 +163,7 @@ async def push_loop_stop(
 @router.post("/push-loop/pause")
 async def push_loop_pause(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v100 DW
 ):
     """Pause the push loop worker."""
     worker = get_push_worker()
@@ -160,6 +174,7 @@ async def push_loop_pause(
 @router.post("/push-loop/resume")
 async def push_loop_resume(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v100 DW
 ):
     """Resume the push loop worker."""
     worker = get_push_worker()
@@ -179,6 +194,7 @@ async def push_loop_metrics(
 # ══════════════════════════════════════════════════════════════
 # 4. RUNTIME COCKPIT — Unified Dashboard
 # ══════════════════════════════════════════════════════════════
+
 
 @router.get("/cockpit")
 async def runtime_cockpit(
@@ -204,42 +220,48 @@ async def runtime_cockpit(
 
     # Quarantine overview
     from domains.channel_manager.quarantine_service import get_quarantine_overview
+
     quarantine = await get_quarantine_overview(tenant_id)
 
     # Open incidents
     from core.database import db as _db
     from domains.channel_manager.data_model import COLL_RECONCILIATION_CASES
-    open_incidents = await _db[COLL_RECONCILIATION_CASES].count_documents({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["open", "investigating"]},
-    })
-    critical_incidents = await _db[COLL_RECONCILIATION_CASES].count_documents({
-        "tenant_id": tenant_id,
-        "status": "open",
-        "severity": "critical",
-    })
+
+    open_incidents = await _db[COLL_RECONCILIATION_CASES].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["open", "investigating"]},
+        }
+    )
+    critical_incidents = await _db[COLL_RECONCILIATION_CASES].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "open",
+            "severity": "critical",
+        }
+    )
 
     # Dead letters (manual_review)
     from domains.channel_manager.ari.models import COLL_ARI_CHANGE_SETS
-    dead_letters = await _db[COLL_ARI_CHANGE_SETS].count_documents({
-        "tenant_id": tenant_id,
-        "status": "manual_review",
-    })
+
+    dead_letters = await _db[COLL_ARI_CHANGE_SETS].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "manual_review",
+        }
+    )
 
     # Drift count
-    drift_count = await _db[COLL_RECONCILIATION_CASES].count_documents({
-        "tenant_id": tenant_id,
-        "status": {"$in": ["open", "investigating"]},
-        "drift_type": {"$exists": True, "$ne": None},
-    })
+    drift_count = await _db[COLL_RECONCILIATION_CASES].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": {"$in": ["open", "investigating"]},
+            "drift_type": {"$exists": True, "$ne": None},
+        }
+    )
 
     # Production readiness
-    is_production_ready = (
-        hf_stats["hard_fail_change_sets"] == 0
-        and hf_stats["open_hard_fail_incidents"] == 0
-        and critical_incidents == 0
-        and quarantine["total_quarantined"] == 0
-    )
+    is_production_ready = hf_stats["hard_fail_change_sets"] == 0 and hf_stats["open_hard_fail_incidents"] == 0 and critical_incidents == 0 and quarantine["total_quarantined"] == 0
 
     return {
         # a) Health Summary
@@ -290,28 +312,32 @@ async def runtime_cockpit(
 # 5. QUARANTINE VISIBILITY
 # ══════════════════════════════════════════════════════════════
 
+
 @router.get("/quarantine/overview")
 async def quarantine_overview(
     current_user: User = Depends(get_current_user),
 ):
     """Quarantine items: classification, age buckets, provider breakdown."""
     from domains.channel_manager.quarantine_service import get_quarantine_overview
+
     return await get_quarantine_overview(current_user.tenant_id)
 
 
 class SafeReleaseRequest(BaseModel):
     room_type_code: str
-    rate_plan_code: Optional[str] = None
-    provider: Optional[str] = None
+    rate_plan_code: str | None = None
+    provider: str | None = None
 
 
 @router.post("/quarantine/check-release")
 async def quarantine_check_release(
     request: SafeReleaseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Safe release guard: validates mapping is fixed before allowing release."""
     from domains.channel_manager.quarantine_service import check_safe_release
+
     return await check_safe_release(
         current_user.tenant_id,
         request.room_type_code,
@@ -324,6 +350,7 @@ async def quarantine_check_release(
 async def quarantine_safe_release(
     request: SafeReleaseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """
     Safe release: check mapping validity first, then release.
@@ -363,6 +390,7 @@ async def quarantine_safe_release(
 # 6. READINESS SCORER — "Why NOT READY?"
 # ══════════════════════════════════════════════════════════════
 
+
 @router.get("/readiness-score")
 async def readiness_score(
     current_user: User = Depends(get_current_user),
@@ -372,16 +400,21 @@ async def readiness_score(
     Returns: score (0-100), issues sorted by severity, fix order suggestion.
     """
     from domains.channel_manager.readiness_scorer import (
-        compute_readiness_score, log_ready_state_transition,
+        compute_readiness_score,
+        log_ready_state_transition,
     )
+
     property_id = getattr(current_user, "property_id", "default")
     result = await compute_readiness_score(current_user.tenant_id, property_id)
 
     # Log state transition
     state = "READY" if result["is_ready"] else "NOT_READY"
     await log_ready_state_transition(
-        current_user.tenant_id, state, result["score"],
-        result["scores"], result["issues"],
+        current_user.tenant_id,
+        state,
+        result["score"],
+        result["scores"],
+        result["issues"],
     )
 
     return result
@@ -391,23 +424,28 @@ async def readiness_score(
 # 7. SAFE ACTIONS — 1-Click Operator Actions
 # ══════════════════════════════════════════════════════════════
 
+
 class RetrySafeRequest(BaseModel):
     pass
 
+
 class RevalidateMappingRequest(BaseModel):
-    provider: Optional[str] = None
+    provider: str | None = None
+
 
 class SuppressNoiseRequest(BaseModel):
-    event_type: Optional[str] = None
+    event_type: str | None = None
     duration_minutes: int = 30
 
 
 @router.post("/actions/retry-safe")
 async def action_retry_safe(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """1-click: Retry all retryable failed change sets."""
     from domains.channel_manager.safe_actions_service import retry_safe
+
     return await retry_safe(current_user.tenant_id, operator_id=current_user.email)
 
 
@@ -415,9 +453,11 @@ async def action_retry_safe(
 async def action_release_quarantine(
     request: SafeReleaseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """1-click: Safe release from quarantine with full guard chain."""
     from domains.channel_manager.safe_actions_service import safe_release_quarantine
+
     return await safe_release_quarantine(
         current_user.tenant_id,
         request.room_type_code,
@@ -431,9 +471,11 @@ async def action_release_quarantine(
 async def action_revalidate_mapping(
     request: RevalidateMappingRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """1-click: Full mapping revalidation with diff output."""
     from domains.channel_manager.safe_actions_service import revalidate_mapping
+
     return await revalidate_mapping(
         current_user.tenant_id,
         provider=request.provider,
@@ -445,9 +487,11 @@ async def action_revalidate_mapping(
 async def action_suppress_noise(
     request: SuppressNoiseRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """1-click: Suppress noisy notifications temporarily."""
     from domains.channel_manager.safe_actions_service import suppress_noise
+
     return await suppress_noise(
         current_user.tenant_id,
         event_type=request.event_type,
@@ -460,21 +504,25 @@ async def action_suppress_noise(
 # 8. NARROW ROLLOUT FRAMEWORK
 # ══════════════════════════════════════════════════════════════
 
+
 @router.get("/rollout/state")
 async def rollout_state(
     current_user: User = Depends(get_current_user),
 ):
     """Get current rollout state."""
     from domains.channel_manager.rollout_framework import get_rollout_state
+
     return await get_rollout_state(current_user.tenant_id)
 
 
 @router.post("/rollout/initialize")
 async def rollout_initialize(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """Initialize rollout at INTERNAL phase."""
     from domains.channel_manager.rollout_framework import initialize_rollout
+
     return await initialize_rollout(current_user.tenant_id, operator_id=current_user.email)
 
 
@@ -484,18 +532,21 @@ async def rollout_gate_check(
 ):
     """Evaluate whether current phase gate conditions are met."""
     from domains.channel_manager.rollout_framework import evaluate_phase_gate
+
     return await evaluate_phase_gate(current_user.tenant_id)
 
 
 @router.post("/rollout/advance")
 async def rollout_advance(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     """
     Attempt phase transition. ONLY succeeds if all gate checks pass.
     No manual override available.
     """
     from domains.channel_manager.rollout_framework import attempt_phase_transition
+
     return await attempt_phase_transition(current_user.tenant_id, operator_id=current_user.email)
 
 
@@ -505,4 +556,5 @@ async def rollout_dashboard(
 ):
     """Full rollout dashboard: phase, duration, gates, history."""
     from domains.channel_manager.rollout_framework import get_rollout_dashboard
+
     return await get_rollout_dashboard(current_user.tenant_id)

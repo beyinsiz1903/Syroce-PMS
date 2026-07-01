@@ -7,9 +7,10 @@ Indexes:
   ExternalRoomType: (tenant_id, connector_id, external_id): unique
   ExternalRatePlan: (tenant_id, connector_id, external_id): unique
 """
+
 import uuid
-from datetime import datetime, timezone
-from typing import Optional, Dict, Any
+from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -22,15 +23,15 @@ class ExternalProperty(BaseModel):
     name: str = ""
     currency: str = "TRY"
     timezone: str = "Europe/Istanbul"
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    last_synced_at: Optional[str] = None
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    last_synced_at: str | None = None
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         return self.model_dump()
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "ExternalProperty":
+    def from_doc(cls, doc: dict[str, Any]) -> "ExternalProperty":
         doc.pop("_id", None)
         return cls(**doc)
 
@@ -45,16 +46,16 @@ class ExternalRoomType(BaseModel):
     max_occupancy: int = 2
     base_occupancy: int = 2
     description: str = ""
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     is_active: bool = True
-    last_synced_at: Optional[str] = None
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    last_synced_at: str | None = None
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         return self.model_dump()
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "ExternalRoomType":
+    def from_doc(cls, doc: dict[str, Any]) -> "ExternalRoomType":
         doc.pop("_id", None)
         return cls(**doc)
 
@@ -71,15 +72,15 @@ class ExternalRatePlan(BaseModel):
     is_derived: bool = False
     meal_plan: str = "RO"  # RO, BB, HB, FB, AI
     cancellation_policy: str = "flexible"
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     is_active: bool = True
-    last_synced_at: Optional[str] = None
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    last_synced_at: str | None = None
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
-    def to_doc(self) -> Dict[str, Any]:
+    def to_doc(self) -> dict[str, Any]:
         return self.model_dump()
 
     @classmethod
-    def from_doc(cls, doc: Dict[str, Any]) -> "ExternalRatePlan":
+    def from_doc(cls, doc: dict[str, Any]) -> "ExternalRatePlan":
         doc.pop("_id", None)
         return cls(**doc)

@@ -2,9 +2,10 @@
 Workers — Queue Monitor
 Monitors queue backlog, saturation, and stuck tasks. Emits alerts to observability.
 """
+
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -22,7 +23,7 @@ class QueueMonitor:
     }
 
     @classmethod
-    async def get_queue_status(cls) -> Dict[str, Any]:
+    async def get_queue_status(cls) -> dict[str, Any]:
         """Get current queue backlog and health metrics."""
         # Check pending tasks
         pending = await db.task_queue.count_documents({"status": "pending"})
@@ -34,11 +35,13 @@ class QueueMonitor:
         saturation_pct = round((pending + processing) / max(total_capacity, 1) * 100, 1)
 
         # Detect stuck tasks
-        threshold = (datetime.now(timezone.utc) - timedelta(seconds=cls._thresholds["stuck_timeout_seconds"])).isoformat()
-        stuck = await db.task_queue.count_documents({
-            "status": "processing",
-            "started_at": {"$lt": threshold},
-        })
+        threshold = (datetime.now(UTC) - timedelta(seconds=cls._thresholds["stuck_timeout_seconds"])).isoformat()
+        stuck = await db.task_queue.count_documents(
+            {
+                "status": "processing",
+                "started_at": {"$lt": threshold},
+            }
+        )
 
         health = "healthy"
         if pending > cls._thresholds["backlog_critical"] or stuck > 0:
@@ -54,12 +57,12 @@ class QueueMonitor:
             "failed": failed,
             "stuck": stuck,
             "saturation_pct": saturation_pct,
-            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "checked_at": datetime.now(UTC).isoformat(),
         }
 
     @classmethod
-    async def get_stuck_tasks(cls) -> List[Dict[str, Any]]:
-        threshold = (datetime.now(timezone.utc) - timedelta(seconds=cls._thresholds["stuck_timeout_seconds"])).isoformat()
+    async def get_stuck_tasks(cls) -> list[dict[str, Any]]:
+        threshold = (datetime.now(UTC) - timedelta(seconds=cls._thresholds["stuck_timeout_seconds"])).isoformat()
         return await db.task_queue.find(
             {"status": "processing", "started_at": {"$lt": threshold}},
             {"_id": 0},
@@ -69,7 +72,7 @@ class QueueMonitor:
     async def unstick_task(cls, task_id: str) -> bool:
         result = await db.task_queue.update_one(
             {"id": task_id, "status": "processing"},
-            {"$set": {"status": "failed", "error": "Task stuck — force-failed by monitor", "updated_at": datetime.now(timezone.utc).isoformat()}},
+            {"$set": {"status": "failed", "error": "Task stuck — force-failed by monitor", "updated_at": datetime.now(UTC).isoformat()}},
         )
         return result.modified_count > 0
 

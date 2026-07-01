@@ -1,16 +1,15 @@
 """
 Data Pipeline Router - API endpoints for ML data pipeline management.
 """
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Optional
 
-from shared_kernel.tenancy_context import get_current_tenant, TenantContext
-
-from modules.data_pipeline.feature_store import feature_store
 from modules.data_pipeline.dataset_generator import dataset_generator
+from modules.data_pipeline.feature_store import feature_store
 from modules.data_pipeline.model_registry import model_registry
-from modules.data_pipeline.prediction_service import prediction_service
 from modules.data_pipeline.pipeline_orchestrator import pipeline_orchestrator
+from modules.data_pipeline.prediction_service import prediction_service
+from shared_kernel.tenancy_context import TenantContext, get_current_tenant
 
 router = APIRouter(prefix="/api/data-pipeline", tags=["data-pipeline"])
 
@@ -33,7 +32,7 @@ async def extract_features(feature_set: str, tenant: TenantContext = Depends(get
 
 @router.get("/datasets")
 async def list_datasets(
-    model_type: Optional[str] = None,
+    model_type: str | None = None,
     limit: int = Query(20, le=100),
     tenant: TenantContext = Depends(get_current_tenant),
 ):
@@ -47,14 +46,12 @@ async def generate_dataset(
     description: str = Query(""),
     tenant: TenantContext = Depends(get_current_tenant),
 ):
-    return await dataset_generator.generate_dataset(
-        tenant.tenant_id, model_type, feature_set, description
-    )
+    return await dataset_generator.generate_dataset(tenant.tenant_id, model_type, feature_set, description)
 
 
 @router.get("/models")
 async def list_models(
-    model_type: Optional[str] = None,
+    model_type: str | None = None,
     limit: int = Query(20, le=100),
     tenant: TenantContext = Depends(get_current_tenant),
 ):
@@ -81,7 +78,7 @@ async def deploy_model(model_id: str, tenant: TenantContext = Depends(get_curren
 
 @router.get("/predictions")
 async def list_predictions(
-    model_type: Optional[str] = None,
+    model_type: str | None = None,
     limit: int = Query(20, le=100),
     tenant: TenantContext = Depends(get_current_tenant),
 ):
@@ -112,7 +109,7 @@ async def make_prediction(
 
 @router.get("/runs")
 async def list_pipeline_runs(
-    model_type: Optional[str] = None,
+    model_type: str | None = None,
     limit: int = Query(20, le=100),
     tenant: TenantContext = Depends(get_current_tenant),
 ):
@@ -124,9 +121,7 @@ async def execute_pipeline(
     model_type: str = Query(...),
     tenant: TenantContext = Depends(get_current_tenant),
 ):
-    return await pipeline_orchestrator.run_full_pipeline(
-        tenant.tenant_id, model_type, triggered_by=tenant.user_id or "api"
-    )
+    return await pipeline_orchestrator.run_full_pipeline(tenant.tenant_id, model_type, triggered_by=tenant.user_id or "api")
 
 
 @router.get("/health")

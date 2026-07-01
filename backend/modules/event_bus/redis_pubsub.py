@@ -3,14 +3,15 @@ Redis Pub/Sub Backend for Event Bus — Production Mode.
 Connection manager, health check, reconnect strategy, delivery metrics,
 channel cardinality monitoring, backpressure safety, and observability hooks.
 """
-import logging
-import json
+
 import asyncio
+import json
+import logging
 import os
 import time
 import uuid
-from typing import Callable, Dict, Optional, List
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Callable
 
 logger = logging.getLogger("event_bus.redis")
 
@@ -18,8 +19,7 @@ logger = logging.getLogger("event_bus.redis")
 class RedisConnectionManager:
     """Manages Redis connection lifecycle with reconnect strategy."""
 
-    def __init__(self, redis_url: str, max_retries: int = 10,
-                 base_backoff_sec: float = 1.0, max_backoff_sec: float = 30.0):
+    def __init__(self, redis_url: str, max_retries: int = 10, base_backoff_sec: float = 1.0, max_backoff_sec: float = 30.0):
         self._redis_url = redis_url
         self._redis = None
         self._connected = False
@@ -27,7 +27,7 @@ class RedisConnectionManager:
         self._base_backoff = base_backoff_sec
         self._max_backoff = max_backoff_sec
         self._reconnect_count = 0
-        self._last_reconnect_at: Optional[str] = None
+        self._last_reconnect_at: str | None = None
         self._connect_lock = asyncio.Lock()
 
     @property
@@ -49,6 +49,7 @@ class RedisConnectionManager:
 
             try:
                 import redis.asyncio as aioredis
+
                 self._redis = aioredis.from_url(
                     self._redis_url,
                     decode_responses=True,
@@ -59,7 +60,7 @@ class RedisConnectionManager:
                 )
                 await self._redis.ping()
                 self._connected = True
-                self._last_reconnect_at = datetime.now(timezone.utc).isoformat()
+                self._last_reconnect_at = datetime.now(UTC).isoformat()
                 logger.info(f"Redis connected: {self._redis_url}")
                 return True
             except Exception as e:
@@ -69,7 +70,7 @@ class RedisConnectionManager:
 
     async def reconnect_with_backoff(self) -> bool:
         for attempt in range(self._max_retries):
-            backoff = min(self._base_backoff * (2 ** attempt), self._max_backoff)
+            backoff = min(self._base_backoff * (2**attempt), self._max_backoff)
             logger.info(f"Redis reconnect attempt {attempt + 1}/{self._max_retries} in {backoff}s")
             await asyncio.sleep(backoff)
             if await self.connect():
@@ -102,18 +103,18 @@ class RedisPubSubBackend:
     def __init__(self, redis_url: str):
         self._conn_mgr = RedisConnectionManager(redis_url)
         self._pubsub = None
-        self._subscriptions: Dict[str, dict] = {}
-        self._listener_task: Optional[asyncio.Task] = None
+        self._subscriptions: dict[str, dict] = {}
+        self._listener_task: asyncio.Task | None = None
 
         # Delivery metrics
         self._published = 0
         self._delivered = 0
         self._dropped = 0
         self._errors = 0
-        self._publish_latencies: List[float] = []
+        self._publish_latencies: list[float] = []
 
         # Channel cardinality
-        self._channel_message_counts: Dict[str, int] = {}
+        self._channel_message_counts: dict[str, int] = {}
 
         # Backpressure
         self._max_buffer_size = 10000
@@ -229,13 +230,13 @@ class RedisPubSubBackend:
         try:
             await self._conn_mgr.redis.ping()
             info = await self._conn_mgr.redis.info("clients")
-            base.update({
-                "status": "healthy",
-                "connected_clients": info.get("connected_clients", 0),
-                "avg_publish_latency_ms": round(
-                    sum(self._publish_latencies) / max(len(self._publish_latencies), 1), 2
-                ),
-            })
+            base.update(
+                {
+                    "status": "healthy",
+                    "connected_clients": info.get("connected_clients", 0),
+                    "avg_publish_latency_ms": round(sum(self._publish_latencies) / max(len(self._publish_latencies), 1), 2),
+                }
+            )
             return base
         except Exception as e:
             base["status"] = "error"
@@ -248,13 +249,9 @@ class RedisPubSubBackend:
             "delivered": self._delivered,
             "dropped": self._dropped,
             "errors": self._errors,
-            "avg_publish_latency_ms": round(
-                sum(self._publish_latencies) / max(len(self._publish_latencies), 1), 2
-            ),
+            "avg_publish_latency_ms": round(sum(self._publish_latencies) / max(len(self._publish_latencies), 1), 2),
             "channel_cardinality": len(self._channel_message_counts),
-            "top_channels": dict(
-                sorted(self._channel_message_counts.items(), key=lambda x: -x[1])[:10]
-            ),
+            "top_channels": dict(sorted(self._channel_message_counts.items(), key=lambda x: -x[1])[:10]),
         }
 
     def _start_listener(self):
@@ -264,8 +261,13 @@ class RedisPubSubBackend:
 
     async def _listen_loop(self):
         """Background listener for incoming Redis pub/sub messages."""
+        _last_err = None
         try:
             while self._conn_mgr.connected and self._pubsub:
+                # Hicbir abone yoksa pubsub connection acilmamistir; sessizce bekle.
+                if not self._subscriptions:
+                    await asyncio.sleep(5)
+                    continue
                 try:
                     message = await asyncio.wait_for(
                         self._pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0),
@@ -274,21 +276,24 @@ class RedisPubSubBackend:
                     if message and message["type"] == "message":
                         channel = message["channel"]
                         data = json.loads(message["data"])
-                        # Dispatch to subscribed callbacks
                         for sub_info in self._subscriptions.values():
                             if sub_info["channel"] == channel:
                                 try:
                                     from modules.event_bus.abstraction import EventEnvelope
+
                                     envelope = EventEnvelope.from_dict(data)
                                     await sub_info["callback"](envelope)
                                     self._delivered += 1
                                 except Exception as e:
                                     logger.warning(f"Callback error: {e}")
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
                 except Exception as e:
-                    logger.warning(f"Listener error: {e}")
-                    await asyncio.sleep(1)
+                    msg = str(e)
+                    if msg != _last_err:
+                        logger.warning(f"Listener error: {e}")
+                        _last_err = msg
+                    await asyncio.sleep(5)
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -315,7 +320,7 @@ class RedisPubSubBackend:
             logger.error("Redis reconnect exhausted, falling back to in-memory")
 
 
-async def try_init_redis_backend(redis_url: Optional[str] = None) -> Optional[RedisPubSubBackend]:
+async def try_init_redis_backend(redis_url: str | None = None) -> RedisPubSubBackend | None:
     """Try to initialize Redis backend. Returns None if unavailable."""
     if not redis_url:
         redis_url = os.environ.get("REDIS_URL")

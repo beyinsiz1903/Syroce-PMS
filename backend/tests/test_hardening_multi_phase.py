@@ -11,9 +11,23 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
 
-pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
+
+def _backend_reachable():
+    if not BASE_URL:
+        return False
+    try:
+        resp = requests.get(f"{BASE_URL}/api/health", timeout=3)
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _backend_reachable(),
+    reason=f"Backend not reachable at {BASE_URL or '(not set)'}"
+)
 
 class TestAuth:
     """Authentication endpoint tests"""

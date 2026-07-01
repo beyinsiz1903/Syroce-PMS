@@ -13,8 +13,9 @@ Mismatch types:
   - status_conflict       (status differs — critical)
   - duplicate_reservation (multiple with same external_reservation_id)
 """
+
 import logging
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 logger = logging.getLogger("reconciliation.comparison_engine")
 
@@ -48,68 +49,80 @@ SUGGESTED_ACTIONS = {
 
 
 def compare_reservations(
-    pms_reservations: List[Dict[str, Any]],
-    provider_snapshots: List[Dict[str, Any]],
+    pms_reservations: list[dict[str, Any]],
+    provider_snapshots: list[dict[str, Any]],
     provider: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Compare PMS reservations against provider snapshots for a single provider.
     Returns a list of mismatch dicts ready for case creation.
     """
-    mismatches: List[Dict[str, Any]] = []
+    mismatches: list[dict[str, Any]] = []
 
     # Index PMS by external_reservation_id
-    pms_by_ext_id: Dict[str, Dict] = {}
+    pms_by_ext_id: dict[str, dict] = {}
     for res in pms_reservations:
         ext_id = res.get("external_reservation_id", "")
         if ext_id:
             if ext_id in pms_by_ext_id:
                 # Duplicate in PMS
-                mismatches.append(_build_mismatch(
-                    MismatchType.DUPLICATE_RESERVATION,
-                    provider, ext_id,
-                    pms_value=pms_by_ext_id[ext_id],
-                    provider_value=res,
-                    description=f"Duplicate PMS reservation for {ext_id}",
-                ))
+                mismatches.append(
+                    _build_mismatch(
+                        MismatchType.DUPLICATE_RESERVATION,
+                        provider,
+                        ext_id,
+                        pms_value=pms_by_ext_id[ext_id],
+                        provider_value=res,
+                        description=f"Duplicate PMS reservation for {ext_id}",
+                    )
+                )
             pms_by_ext_id[ext_id] = res
 
     # Index provider snapshots by external_reservation_id
-    provider_by_ext_id: Dict[str, Dict] = {}
+    provider_by_ext_id: dict[str, dict] = {}
     for snap in provider_snapshots:
         ext_id = snap.get("external_reservation_id", "")
         if ext_id:
             if ext_id in provider_by_ext_id:
-                mismatches.append(_build_mismatch(
-                    MismatchType.DUPLICATE_RESERVATION,
-                    provider, ext_id,
-                    pms_value=None,
-                    provider_value=snap,
-                    description=f"Duplicate provider reservation for {ext_id}",
-                ))
+                mismatches.append(
+                    _build_mismatch(
+                        MismatchType.DUPLICATE_RESERVATION,
+                        provider,
+                        ext_id,
+                        pms_value=None,
+                        provider_value=snap,
+                        description=f"Duplicate provider reservation for {ext_id}",
+                    )
+                )
             provider_by_ext_id[ext_id] = snap
 
     # 1. Missing reservations: provider has, PMS doesn't
     for ext_id, snap in provider_by_ext_id.items():
         if ext_id not in pms_by_ext_id:
-            mismatches.append(_build_mismatch(
-                MismatchType.MISSING_RESERVATION,
-                provider, ext_id,
-                pms_value=None,
-                provider_value=snap,
-                description=f"Provider reservation {ext_id} not found in PMS",
-            ))
+            mismatches.append(
+                _build_mismatch(
+                    MismatchType.MISSING_RESERVATION,
+                    provider,
+                    ext_id,
+                    pms_value=None,
+                    provider_value=snap,
+                    description=f"Provider reservation {ext_id} not found in PMS",
+                )
+            )
 
     # 2. Ghost reservations: PMS has, provider doesn't
     for ext_id, pms_res in pms_by_ext_id.items():
         if ext_id not in provider_by_ext_id:
-            mismatches.append(_build_mismatch(
-                MismatchType.GHOST_RESERVATION,
-                provider, ext_id,
-                pms_value=pms_res,
-                provider_value=None,
-                description=f"PMS reservation {ext_id} not found in provider",
-            ))
+            mismatches.append(
+                _build_mismatch(
+                    MismatchType.GHOST_RESERVATION,
+                    provider,
+                    ext_id,
+                    pms_value=pms_res,
+                    provider_value=None,
+                    description=f"PMS reservation {ext_id} not found in provider",
+                )
+            )
 
     # 3. Field-level comparison for matched reservations
     for ext_id in set(pms_by_ext_id.keys()) & set(provider_by_ext_id.keys()):
@@ -117,17 +130,16 @@ def compare_reservations(
         snap = provider_by_ext_id[ext_id]
         mismatches.extend(_compare_fields(provider, ext_id, pms_res, snap))
 
-    logger.info(
-        f"Comparison [{provider}]: PMS={len(pms_by_ext_id)}, "
-        f"Provider={len(provider_by_ext_id)}, Mismatches={len(mismatches)}"
-    )
+    logger.info(f"Comparison [{provider}]: PMS={len(pms_by_ext_id)}, Provider={len(provider_by_ext_id)}, Mismatches={len(mismatches)}")
     return mismatches
 
 
 def _compare_fields(
-    provider: str, ext_id: str,
-    pms: Dict[str, Any], snap: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+    provider: str,
+    ext_id: str,
+    pms: dict[str, Any],
+    snap: dict[str, Any],
+) -> list[dict[str, Any]]:
     """Compare individual fields between matched PMS and provider reservation."""
     mismatches = []
 
@@ -135,13 +147,16 @@ def _compare_fields(
     pms_amount = float(pms.get("total_amount", 0))
     snap_amount = float(snap.get("total_amount", 0))
     if pms_amount > 0 and snap_amount > 0 and abs(pms_amount - snap_amount) > 0.01:
-        mismatches.append(_build_mismatch(
-            MismatchType.AMOUNT_MISMATCH,
-            provider, ext_id,
-            pms_value={"total_amount": pms_amount, "currency": pms.get("currency", "")},
-            provider_value={"total_amount": snap_amount, "currency": snap.get("currency", "")},
-            description=f"Amount mismatch: PMS={pms_amount} vs Provider={snap_amount}",
-        ))
+        mismatches.append(
+            _build_mismatch(
+                MismatchType.AMOUNT_MISMATCH,
+                provider,
+                ext_id,
+                pms_value={"total_amount": pms_amount, "currency": pms.get("currency", "")},
+                provider_value={"total_amount": snap_amount, "currency": snap.get("currency", "")},
+                description=f"Amount mismatch: PMS={pms_amount} vs Provider={snap_amount}",
+            )
+        )
 
     # Date conflict
     pms_ci = pms.get("arrival_date") or pms.get("check_in", "")
@@ -149,25 +164,31 @@ def _compare_fields(
     snap_ci = snap.get("check_in", "")
     snap_co = snap.get("check_out", "")
     if (pms_ci and snap_ci and pms_ci != snap_ci) or (pms_co and snap_co and pms_co != snap_co):
-        mismatches.append(_build_mismatch(
-            MismatchType.DATE_CONFLICT,
-            provider, ext_id,
-            pms_value={"check_in": pms_ci, "check_out": pms_co},
-            provider_value={"check_in": snap_ci, "check_out": snap_co},
-            description=f"Date conflict: PMS={pms_ci}/{pms_co} vs Provider={snap_ci}/{snap_co}",
-        ))
+        mismatches.append(
+            _build_mismatch(
+                MismatchType.DATE_CONFLICT,
+                provider,
+                ext_id,
+                pms_value={"check_in": pms_ci, "check_out": pms_co},
+                provider_value={"check_in": snap_ci, "check_out": snap_co},
+                description=f"Date conflict: PMS={pms_ci}/{pms_co} vs Provider={snap_ci}/{snap_co}",
+            )
+        )
 
     # Status conflict
     pms_status = _normalize_status(pms.get("status", ""))
     snap_status = _normalize_status(snap.get("status", ""))
     if pms_status and snap_status and pms_status != snap_status:
-        mismatches.append(_build_mismatch(
-            MismatchType.STATUS_CONFLICT,
-            provider, ext_id,
-            pms_value={"status": pms.get("status", "")},
-            provider_value={"status": snap.get("status", "")},
-            description=f"Status conflict: PMS={pms.get('status','')} vs Provider={snap.get('status','')}",
-        ))
+        mismatches.append(
+            _build_mismatch(
+                MismatchType.STATUS_CONFLICT,
+                provider,
+                ext_id,
+                pms_value={"status": pms.get("status", "")},
+                provider_value={"status": snap.get("status", "")},
+                description=f"Status conflict: PMS={pms.get('status', '')} vs Provider={snap.get('status', '')}",
+            )
+        )
 
     return mismatches
 
@@ -194,7 +215,7 @@ def _build_mismatch(
     pms_value: Any = None,
     provider_value: Any = None,
     description: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return {
         "case_type": mismatch_type,
         "severity": SEVERITY_MAP.get(mismatch_type, "medium"),

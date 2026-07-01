@@ -7,21 +7,20 @@ API endpoints for the high-signal notification system:
   - Event configuration
   - Manual evaluation trigger
 """
+
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
 
 from core.security import get_current_user
-from models.schemas import User
 from domains.channel_manager.notification_events_service import (
     evaluate_tenant_readiness,
+    get_event_config,
     get_event_history,
     get_event_summary,
-    get_event_config,
-    emit_event,
 )
+from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v100 DW
 
 logger = logging.getLogger("lockdown.notifications")
 router = APIRouter(prefix="/api/lockdown/notifications", tags=["Notification Events"])
@@ -29,8 +28,8 @@ router = APIRouter(prefix="/api/lockdown/notifications", tags=["Notification Eve
 
 @router.get("/events")
 async def list_events(
-    severity: Optional[str] = Query(None, description="info|warning|critical|blocker"),
-    event_type: Optional[str] = Query(None),
+    severity: str | None = Query(None, description="info|warning|critical|blocker"),
+    event_type: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     skip: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
@@ -65,10 +64,12 @@ async def event_config(
 @router.post("/evaluate")
 async def evaluate_readiness(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v100 DW
 ):
     """Trigger tenant readiness evaluation and emit events."""
     property_id = getattr(current_user, "property_id", "default")
     result = await evaluate_tenant_readiness(
-        current_user.tenant_id, property_id,
+        current_user.tenant_id,
+        property_id,
     )
     return result

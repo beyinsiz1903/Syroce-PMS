@@ -3,25 +3,24 @@ ARI Outbound Service — Main push orchestrator.
 
 Coordinates: buffer → coalesce → compile delta → rate limit check → provider push → ack.
 """
-import asyncio
-import logging
-from typing import Dict, List, Optional
 
-from .events import ARIChangeEvent, ARIDelta, ProviderResult
+import logging
+
+from . import repositories as repo
+from .ack_service import process_ack
 from .buffer import ARIEventBuffer
 from .coalescer import coalesce_events
 from .delta_compiler import compile_delta
+from .events import ARIChangeEvent, ARIDelta, ProviderResult
 from .rate_limit_service import rate_limiter
-from .ack_service import process_ack
-from . import repositories as repo
 
 logger = logging.getLogger(__name__)
 
 # Active providers per tenant (in production, this comes from DB)
-_ACTIVE_PROVIDERS: Dict[str, List[str]] = {}
+_ACTIVE_PROVIDERS: dict[str, list[str]] = {}
 
 # Provider adapter registry
-_PROVIDER_ADAPTERS: Dict[str, object] = {}
+_PROVIDER_ADAPTERS: dict[str, object] = {}
 
 
 def register_provider_adapter(provider: str, adapter):
@@ -30,27 +29,76 @@ def register_provider_adapter(provider: str, adapter):
     logger.info(f"Registered ARI adapter: {provider}")
 
 
-def set_active_providers(tenant_id: str, providers: List[str]):
+def set_active_providers(tenant_id: str, providers: list[str]):
     """Set active providers for a tenant."""
     _ACTIVE_PROVIDERS[tenant_id] = providers
 
 
-def get_active_providers(tenant_id: str) -> List[str]:
-    """Get active providers for a tenant. Default: hotelrunner."""
+def get_active_providers(tenant_id: str) -> list[str]:
+    """Get active providers for a tenant.
+
+    Sync API for callers that can't await. Returns the in-memory cache
+    if present, else conservative default. Prefer
+    `get_active_providers_async` which falls back to DB-registered
+    connections (hotelrunner_connections / exely_connections).
+    """
     return _ACTIVE_PROVIDERS.get(tenant_id, ["hotelrunner"])
 
 
-async def _on_buffer_flush(coalescing_key: str, events: List[ARIChangeEvent]):
+async def get_active_providers_async(tenant_id: str) -> list[str]:
+    """DB-aware active provider list.
+
+    Resolution order:
+      1. If `_ACTIVE_PROVIDERS[tenant_id]` is set explicitly → use it.
+      2. Else inspect provider connection collections; every provider
+         that has a connection doc for this tenant counts as active.
+      3. Else default to ['hotelrunner'].
+
+    This prevents the silent skip where a tenant has an Exely
+    connection configured but ARI dispatch only fires HotelRunner
+    because nothing ever called `set_active_providers`.
+    """
+    if tenant_id in _ACTIVE_PROVIDERS:
+        return _ACTIVE_PROVIDERS[tenant_id]
+    try:
+        from core.database import db as _db
+
+        active: list[str] = []
+        if await _db.hotelrunner_connections.find_one({"tenant_id": tenant_id}, {"_id": 1}):
+            active.append("hotelrunner")
+        if await _db.exely_connections.find_one({"tenant_id": tenant_id}, {"_id": 1}):
+            active.append("exely")
+        if active:
+            # Cache so subsequent flushes don't pay the DB hit
+            _ACTIVE_PROVIDERS[tenant_id] = active
+            logger.info(f"[ARI] Auto-detected active providers for {tenant_id}: {active}")
+            return active
+    except Exception as exc:
+        logger.warning(f"[ARI] active provider auto-detect failed: {exc}")
+    return ["hotelrunner"]
+
+
+async def _on_buffer_flush(coalescing_key: str, events: list[ARIChangeEvent]):
     """Callback when buffer flushes a batch of events."""
     if not events:
         return
 
     tenant_id = events[0].tenant_id
-    providers = get_active_providers(tenant_id)
+    providers = await get_active_providers_async(tenant_id)
 
     # Persist raw events
     for event in events:
         await repo.insert_ari_event(event.model_dump())
+
+    # T004: best-effort per-agency Redis Streams fanout (Channel B), parallel to
+    # the coalesce/provider pipeline. MUST NOT break ARI — fully swallowed here
+    # AND inside the service (Redis-down => Mongo outbox replayed later).
+    try:
+        from services.b2b_streams import publish_ari_to_agency_streams
+
+        await publish_ari_to_agency_streams(events)
+    except Exception:  # noqa: BLE001
+        logger.exception("[ARI] B2B stream fanout failed (non-fatal)")
 
     # Coalesce into change sets
     change_sets = coalesce_events(coalescing_key, events, providers)
@@ -63,7 +111,7 @@ async def _on_buffer_flush(coalescing_key: str, events: List[ARIChangeEvent]):
 
 
 # Singleton buffer
-_buffer: Optional[ARIEventBuffer] = None
+_buffer: ARIEventBuffer | None = None
 
 
 def get_buffer() -> ARIEventBuffer:
@@ -92,7 +140,7 @@ async def publish_ari_event(event: ARIChangeEvent) -> dict:
 
 async def push_pending_changes(
     tenant_id: str,
-    provider: Optional[str] = None,
+    provider: str | None = None,
     limit: int = 50,
 ) -> dict:
     """
@@ -108,16 +156,15 @@ async def push_pending_changes(
         prop_id = cs["property_id"]
 
         # Hard fail gate check (runtime mapping enforcement)
-        from .hard_fail_gate import enforce_hard_fail_gate, HF_PASS
+        from .hard_fail_gate import HF_PASS, enforce_hard_fail_gate
+
         verdict = await enforce_hard_fail_gate(cs)
         if verdict.status != HF_PASS:
             results["failed"] += 1
             continue
 
         # Outbound idempotency check
-        is_dupe = await repo.check_outbound_idempotency(
-            prov, prop_id, cs["provider_delta_hash"]
-        )
+        is_dupe = await repo.check_outbound_idempotency(prov, prop_id, cs["provider_delta_hash"])
         if is_dupe:
             await repo.update_change_set_status(cs["id"], "skipped")
             results["skipped"] += 1
@@ -152,18 +199,14 @@ async def push_pending_changes(
         try:
             result = await _push_to_provider(adapter, delta)
         except Exception as e:
-            result = ProviderResult(
-                success=False, provider=prov, error=str(e), retryable=True
-            )
+            result = ProviderResult(success=False, provider=prov, error=str(e), retryable=True)
 
         # Handle 429
         if result.status_code == 429:
             rate_limiter.record_429(prov, prop_id)
 
         # Process ack
-        status = await process_ack(
-            cs, result, cs.get("outbound_change_id", "")
-        )
+        status = await process_ack(cs, result, cs.get("outbound_change_id", ""))
 
         if status == "acked":
             results["pushed"] += 1
@@ -183,15 +226,13 @@ async def _push_to_provider(adapter, delta: ARIDelta) -> ProviderResult:
     elif scope == "restriction":
         return await adapter.push_restrictions(delta)
     else:
-        return ProviderResult(
-            success=False, provider=delta.provider,
-            error=f"Unknown change scope: {scope}"
-        )
+        return ProviderResult(success=False, provider=delta.provider, error=f"Unknown change scope: {scope}")
 
 
 async def force_push_change_set(cs_id: str) -> dict:
     """Force push a specific change set (manual override)."""
     from core.database import db
+
     from .models import COLL_ARI_CHANGE_SETS
 
     cs = await db[COLL_ARI_CHANGE_SETS].find_one({"id": cs_id}, {"_id": 0})
@@ -199,9 +240,7 @@ async def force_push_change_set(cs_id: str) -> dict:
         return {"error": "Change set not found"}
 
     await repo.update_change_set_status(cs_id, "pending")
-    result = await push_pending_changes(
-        cs["tenant_id"], cs["provider"], limit=1
-    )
+    result = await push_pending_changes(cs["tenant_id"], cs["provider"], limit=1)
     return result
 
 
@@ -225,5 +264,5 @@ def get_engine_stats() -> dict:
         "buffer": buf.get_buffer_stats(),
         "rate_limiter": rate_limiter.get_stats(),
         "registered_adapters": list(_PROVIDER_ADAPTERS.keys()),
-        "active_tenants": {k: v for k, v in _ACTIVE_PROVIDERS.items()},
+        "active_tenants": dict(_ACTIVE_PROVIDERS.items()),
     }

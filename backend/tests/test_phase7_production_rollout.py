@@ -7,9 +7,9 @@ import pytest
 import httpx
 import os
 
-API = os.environ.get("REACT_APP_BACKEND_URL", "")
+API = os.environ.get("VITE_BACKEND_URL", "")
 
-pytestmark = pytest.mark.skipif(not API, reason="REACT_APP_BACKEND_URL not set")
+pytestmark = pytest.mark.skipif(not API, reason="VITE_BACKEND_URL not set")
 TEST_EMAIL = "demo@hotel.com"
 TEST_PASS = "demo123"
 

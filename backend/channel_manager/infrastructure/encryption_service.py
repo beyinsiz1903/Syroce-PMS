@@ -1,112 +1,66 @@
 """
-Encryption Service — Phase 3: Credential Security Hardening.
+Encryption Service — REFACTORED to delegate to core.crypto.
 
-Replaces XOR encryption with AES-256-GCM:
-  - Secure random 12-byte IV (nonce)
-  - 16-byte authentication tag (tamper detection)
-  - Key derived from environment variable via SHA-256
-  - Migration path from legacy XOR-encrypted credentials
+Backward-compatible wrapper. All callers that import EncryptionService
+or KeyManagementService continue to work without changes.
 """
-import base64
-import hashlib
-import logging
-import os
-import secrets
-from typing import Dict, Optional
 
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+import logging
+
+from core.crypto import get_crypto_service
 
 logger = logging.getLogger("channel_manager.infrastructure.encryption")
 
-_ENV_KEY = os.environ.get("CM_CREDENTIAL_KEY", "")
-_LEGACY_KEY_RAW = os.environ.get("CM_CREDENTIAL_KEY", "")
-
-# Magic prefix to distinguish AES-GCM ciphertext from legacy XOR
+# Keep prefix constant for format detection compatibility
 AES_PREFIX = "aes256gcm:"
 
 
 class KeyManagementService:
-    """Derives and manages encryption keys from environment secrets."""
+    """Backward-compatible wrapper — key management is now in core.crypto.keys."""
 
-    def __init__(self, raw_key: Optional[str] = None):
-        source = raw_key or _ENV_KEY or "syroce-pms-default-key-change-in-production"
-        self._key = hashlib.sha256(source.encode()).digest()  # 32 bytes
+    def __init__(self, raw_key: str | None = None):
+        self._raw_key = raw_key
 
     @property
     def key(self) -> bytes:
-        return self._key
+        svc = get_crypto_service()
+        _, key = svc._keyring.encryption_key()
+        return key
 
     def rotate_key(self, new_raw_key: str) -> "KeyManagementService":
         return KeyManagementService(raw_key=new_raw_key)
 
 
 class EncryptionService:
-    """AES-256-GCM encryption/decryption with tamper detection."""
+    """AES-256-GCM encryption — delegates to core.crypto.CredentialEncryptionService."""
 
-    def __init__(self, kms: Optional[KeyManagementService] = None):
-        self._kms = kms or KeyManagementService()
-        self._aesgcm = AESGCM(self._kms.key)
+    def __init__(self, kms: KeyManagementService | None = None):
+        self._svc = get_crypto_service()
 
     def encrypt(self, plaintext: str) -> str:
-        """Encrypt a string using AES-256-GCM. Returns base64 string prefixed with 'aes256gcm:'."""
-        nonce = secrets.token_bytes(12)  # 96-bit nonce per NIST recommendation
-        ct = self._aesgcm.encrypt(nonce, plaintext.encode("utf-8"), None)
-        # ct includes 16-byte auth tag appended by AESGCM
-        encoded = base64.b64encode(nonce + ct).decode("ascii")
-        return f"{AES_PREFIX}{encoded}"
+        """Encrypt a string. Returns encrypted string."""
+        if not plaintext:
+            return ""
+        return self._svc.encrypt(plaintext)
 
     def decrypt(self, ciphertext: str) -> str:
-        """Decrypt an AES-256-GCM encrypted string. Raises on tamper."""
-        if not ciphertext.startswith(AES_PREFIX):
-            raise ValueError("Not an AES-256-GCM ciphertext — may be legacy format")
-        raw = base64.b64decode(ciphertext[len(AES_PREFIX):])
-        nonce = raw[:12]
-        ct = raw[12:]
-        plaintext = self._aesgcm.decrypt(nonce, ct, None)
-        return plaintext.decode("utf-8")
+        """Decrypt a string. Supports all formats via core.crypto."""
+        if not ciphertext:
+            return ""
+        return self._svc.decrypt(ciphertext)
 
-    def encrypt_credentials(self, credentials: Dict[str, str]) -> Dict[str, str]:
+    def encrypt_credentials(self, credentials: dict[str, str]) -> dict[str, str]:
         """Encrypt all credential values."""
-        encrypted = {}
-        for k, v in credentials.items():
-            if isinstance(v, str) and v:
-                encrypted[k] = self.encrypt(v)
-            else:
-                encrypted[k] = v
-        return encrypted
+        return self._svc.encrypt_dict(credentials)
 
-    def decrypt_credentials(self, encrypted: Dict[str, str]) -> Dict[str, str]:
-        """Decrypt all credential values, supporting both AES and legacy XOR."""
-        decrypted = {}
-        for k, v in encrypted.items():
-            if isinstance(v, str) and v.startswith(AES_PREFIX):
-                decrypted[k] = self.decrypt(v)
-            elif isinstance(v, str) and v:
-                # Try legacy XOR decryption
-                decrypted[k] = self._legacy_decrypt(v)
-            else:
-                decrypted[k] = v
-        return decrypted
+    def decrypt_credentials(self, encrypted: dict[str, str]) -> dict[str, str]:
+        """Decrypt all credential values (supports all legacy formats)."""
+        return self._svc.decrypt_dict(encrypted)
 
-    def migrate_credentials(self, encrypted: Dict[str, str]) -> Dict[str, str]:
-        """Migrate legacy XOR-encrypted credentials to AES-256-GCM."""
-        decrypted = self.decrypt_credentials(encrypted)
-        return self.encrypt_credentials(decrypted)
+    def migrate_credentials(self, encrypted: dict[str, str]) -> dict[str, str]:
+        """Re-encrypt credentials to current format."""
+        return self._svc.re_encrypt_dict(encrypted)
 
     @staticmethod
     def is_aes_encrypted(value: str) -> bool:
-        return isinstance(value, str) and value.startswith(AES_PREFIX)
-
-    # ─── Legacy XOR Support ──────────────────────────────────────────
-
-    def _legacy_decrypt(self, ciphertext: str) -> str:
-        """Attempt legacy XOR decryption for migration purposes."""
-        try:
-            raw = base64.b64decode(ciphertext)
-            nonce = raw[:16]
-            cipher = raw[16:]
-            key = self._kms.key + nonce
-            plain = bytes(b ^ key[i % len(key)] for i, b in enumerate(cipher))
-            return plain.decode("utf-8")
-        except Exception:
-            return ciphertext  # Return as-is if decryption fails
+        return isinstance(value, str) and (value.startswith(AES_PREFIX) or value.startswith("SYR1:"))

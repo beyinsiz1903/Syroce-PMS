@@ -7,12 +7,14 @@ Stores: sync success, ack success, retry, latency, error types, mapping validati
 Retention: 30d (hourly), 90d (daily), 1y (weekly)
 Aggregation: daily, weekly, monthly
 """
+
 import logging
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, List
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
+
 from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.historical_metrics")
@@ -23,58 +25,58 @@ SNAPSHOTS = "cm_metrics_snapshots"
 class HistoricalMetricsService:
     """Collects, stores, and queries historical metrics snapshots."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     # ─── Snapshot Creation ─────────────────────────────────────────────
 
-    async def create_snapshot(self, tenant_id: str, connector_id: Optional[str] = None) -> Dict[str, Any]:
+    async def create_snapshot(self, tenant_id: str, connector_id: str | None = None) -> dict[str, Any]:
         """Create a metrics snapshot for all connectors or a specific one."""
         connectors = await self._repo.get_connectors_by_tenant(tenant_id)
         if connector_id:
             connectors = [c for c in connectors if c.get("id") == connector_id]
 
         snapshots = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         for c in connectors:
             cid = c.get("id", "")
             metrics = await self._repo.get_sync_metrics(tenant_id, cid)
             error_summary = await self._repo.get_error_queue_summary(tenant_id, cid)
             from ..application.reconciliation_service import ReconciliationService
+
             recon = ReconciliationService(self._repo)
             health = await recon.get_health_score(tenant_id, cid)
 
-            # ACK metrics
-            total_imports = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid}
-            )
-            ack_sent = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "ack_status": "ack_sent"}
-            )
-            ack_failed = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "ack_status": "ack_failed"}
-            )
-
-            # Reservation import metrics
-            import_created = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "import_status": "created"}
-            )
-            import_modified = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "import_status": "modified"}
-            )
-            import_cancelled = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "import_status": "cancelled"}
-            )
-            import_failed = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "import_status": "failed"}
-            )
-            import_review = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "import_status": {"$in": ["review", "conflict", "out_of_order"]}}
-            )
-            import_duplicate = await db.cm_imported_reservations.count_documents(
-                {"tenant_id": tenant_id, "connector_id": cid, "import_status": "duplicate"}
-            )
+            # ACK + import metrics — tek aggregation ile (8 count_documents yerine 1 sorgu)
+            ack_pipeline = [
+                {"$match": {"tenant_id": tenant_id, "connector_id": cid}},
+                {
+                    "$group": {
+                        "_id": None,
+                        "total": {"$sum": 1},
+                        "ack_sent": {"$sum": {"$cond": [{"$eq": ["$ack_status", "ack_sent"]}, 1, 0]}},
+                        "ack_failed": {"$sum": {"$cond": [{"$eq": ["$ack_status", "ack_failed"]}, 1, 0]}},
+                        "import_created": {"$sum": {"$cond": [{"$eq": ["$import_status", "created"]}, 1, 0]}},
+                        "import_modified": {"$sum": {"$cond": [{"$eq": ["$import_status", "modified"]}, 1, 0]}},
+                        "import_cancelled": {"$sum": {"$cond": [{"$eq": ["$import_status", "cancelled"]}, 1, 0]}},
+                        "import_failed": {"$sum": {"$cond": [{"$eq": ["$import_status", "failed"]}, 1, 0]}},
+                        "import_review": {"$sum": {"$cond": [{"$in": ["$import_status", ["review", "conflict", "out_of_order"]]}, 1, 0]}},
+                        "import_duplicate": {"$sum": {"$cond": [{"$eq": ["$import_status", "duplicate"]}, 1, 0]}},
+                    }
+                },
+            ]
+            ack_rows = await db.cm_imported_reservations.aggregate(ack_pipeline).to_list(1)
+            ack_row = ack_rows[0] if ack_rows else {}
+            total_imports = ack_row.get("total", 0)
+            ack_sent = ack_row.get("ack_sent", 0)
+            ack_failed = ack_row.get("ack_failed", 0)
+            import_created = ack_row.get("import_created", 0)
+            import_modified = ack_row.get("import_modified", 0)
+            import_cancelled = ack_row.get("import_cancelled", 0)
+            import_failed = ack_row.get("import_failed", 0)
+            import_review = ack_row.get("import_review", 0)
+            import_duplicate = ack_row.get("import_duplicate", 0)
             import_success = import_created + import_modified + import_cancelled
             import_success_rate = round(import_success / max(total_imports, 1) * 100, 1)
 
@@ -83,10 +85,7 @@ class HistoricalMetricsService:
             total_sync = sum(jobs.values())
             succeeded_sync = jobs.get("succeeded", 0)
             failed_sync = jobs.get("failed", 0)
-            retry_jobs = sum(1 for _ in await db.cm_sync_jobs.find(
-                {"tenant_id": tenant_id, "connector_id": cid, "retry_count": {"$gt": 0}},
-                {"_id": 0, "id": 1}
-            ).to_list(1000))
+            retry_jobs = await db.cm_sync_jobs.count_documents({"tenant_id": tenant_id, "connector_id": cid, "retry_count": {"$gt": 0}})
 
             # Mapping
             mappings = await self._repo.get_mappings(tenant_id, cid)
@@ -147,14 +146,17 @@ class HistoricalMetricsService:
     # ─── Trend Calculation ─────────────────────────────────────────────
 
     async def get_trends(
-        self, tenant_id: str, connector_id: Optional[str] = None,
-        period: str = "7d", metric_keys: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        self,
+        tenant_id: str,
+        connector_id: str | None = None,
+        period: str = "7d",
+        metric_keys: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Get trend data for specified metrics over a period."""
         days = {"24h": 1, "7d": 7, "30d": 30, "90d": 90, "1y": 365}.get(period, 7)
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
-        q: Dict[str, Any] = {"tenant_id": tenant_id, "timestamp": {"$gte": cutoff}}
+        q: dict[str, Any] = {"tenant_id": tenant_id, "timestamp": {"$gte": cutoff}}
         if connector_id:
             q["connector_id"] = connector_id
 
@@ -162,13 +164,17 @@ class HistoricalMetricsService:
 
         if not metric_keys:
             metric_keys = [
-                "health_score", "sync_success_rate", "ack_success_rate",
-                "retry_rate", "mapping_validation_rate", "error_queue_total",
+                "health_score",
+                "sync_success_rate",
+                "ack_success_rate",
+                "retry_rate",
+                "mapping_validation_rate",
+                "error_queue_total",
                 "recon_total_open",
             ]
 
         # Aggregate by date
-        by_date: Dict[str, Dict[str, List]] = {}
+        by_date: dict[str, dict[str, list]] = {}
         for doc in docs:
             date = doc.get("date", "")
             if date not in by_date:
@@ -196,14 +202,17 @@ class HistoricalMetricsService:
     # ─── History Query ─────────────────────────────────────────────────
 
     async def get_history(
-        self, tenant_id: str, connector_id: Optional[str] = None,
-        period: str = "7d", limit: int = 500,
-    ) -> Dict[str, Any]:
+        self,
+        tenant_id: str,
+        connector_id: str | None = None,
+        period: str = "7d",
+        limit: int = 500,
+    ) -> dict[str, Any]:
         """Get raw snapshot history."""
         days = {"24h": 1, "7d": 7, "30d": 30, "90d": 90, "1y": 365}.get(period, 7)
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
-        q: Dict[str, Any] = {"tenant_id": tenant_id, "timestamp": {"$gte": cutoff}}
+        q: dict[str, Any] = {"tenant_id": tenant_id, "timestamp": {"$gte": cutoff}}
         if connector_id:
             q["connector_id"] = connector_id
 
@@ -211,12 +220,15 @@ class HistoricalMetricsService:
         return {"snapshots": docs, "count": len(docs), "period": period}
 
     async def get_history_by_property(
-        self, tenant_id: str, property_id: str,
-        period: str = "7d", limit: int = 500,
-    ) -> Dict[str, Any]:
+        self,
+        tenant_id: str,
+        property_id: str,
+        period: str = "7d",
+        limit: int = 500,
+    ) -> dict[str, Any]:
         """Get snapshot history for a specific property."""
         days = {"24h": 1, "7d": 7, "30d": 30, "90d": 90, "1y": 365}.get(period, 7)
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
         q = {"tenant_id": tenant_id, "property_id": property_id, "timestamp": {"$gte": cutoff}}
         docs = await db[SNAPSHOTS].find(q, {"_id": 0}).sort("timestamp", -1).to_list(limit)
@@ -224,40 +236,34 @@ class HistoricalMetricsService:
 
     # ─── Retention Cleanup ─────────────────────────────────────────────
 
-    async def run_retention_cleanup(self, tenant_id: str) -> Dict[str, Any]:
+    async def run_retention_cleanup(self, tenant_id: str) -> dict[str, Any]:
         """Clean up old snapshots based on retention policy."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         deleted = {"hourly": 0, "daily": 0, "weekly": 0}
 
         # Hourly snapshots older than 30 days
         cutoff_30d = (now - timedelta(days=30)).isoformat()
-        r = await db[SNAPSHOTS].delete_many({
-            "tenant_id": tenant_id, "granularity": "hourly", "timestamp": {"$lt": cutoff_30d}
-        })
+        r = await db[SNAPSHOTS].delete_many({"tenant_id": tenant_id, "granularity": "hourly", "timestamp": {"$lt": cutoff_30d}})
         deleted["hourly"] = r.deleted_count
 
         # Daily snapshots older than 90 days
         cutoff_90d = (now - timedelta(days=90)).isoformat()
-        r = await db[SNAPSHOTS].delete_many({
-            "tenant_id": tenant_id, "granularity": "daily", "timestamp": {"$lt": cutoff_90d}
-        })
+        r = await db[SNAPSHOTS].delete_many({"tenant_id": tenant_id, "granularity": "daily", "timestamp": {"$lt": cutoff_90d}})
         deleted["daily"] = r.deleted_count
 
         # Weekly snapshots older than 1 year
         cutoff_1y = (now - timedelta(days=365)).isoformat()
-        r = await db[SNAPSHOTS].delete_many({
-            "tenant_id": tenant_id, "granularity": "weekly", "timestamp": {"$lt": cutoff_1y}
-        })
+        r = await db[SNAPSHOTS].delete_many({"tenant_id": tenant_id, "granularity": "weekly", "timestamp": {"$lt": cutoff_1y}})
         deleted["weekly"] = r.deleted_count
 
         return {"deleted": deleted, "cleaned_at": now.isoformat()}
 
     # ─── Daily Aggregation ─────────────────────────────────────────────
 
-    async def create_daily_aggregation(self, tenant_id: str, date: Optional[str] = None) -> Dict[str, Any]:
+    async def create_daily_aggregation(self, tenant_id: str, date: str | None = None) -> dict[str, Any]:
         """Aggregate hourly snapshots into a daily snapshot."""
         if not date:
-            date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+            date = (datetime.now(UTC) - timedelta(days=1)).strftime("%Y-%m-%d")
 
         q = {"tenant_id": tenant_id, "granularity": "hourly", "date": date}
         hourly_docs = await db[SNAPSHOTS].find(q, {"_id": 0}).to_list(5000)
@@ -266,7 +272,7 @@ class HistoricalMetricsService:
             return {"aggregated": 0, "date": date}
 
         # Group by connector
-        by_connector: Dict[str, List] = {}
+        by_connector: dict[str, list] = {}
         for doc in hourly_docs:
             cid = doc.get("connector_id", "")
             if cid not in by_connector:
@@ -297,7 +303,7 @@ class HistoricalMetricsService:
                 "hour": "",
                 "metrics": avg_metrics,
                 "sample_count": len(docs),
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             }
             await db[SNAPSHOTS].insert_one(daily)
             daily.pop("_id", None)
@@ -305,10 +311,13 @@ class HistoricalMetricsService:
 
         return {"aggregated": created, "date": date}
 
-
     async def record_validation_result(
-        self, tenant_id: str, connector_id: str,
-        passed: int, failed: int, total: int,
+        self,
+        tenant_id: str,
+        connector_id: str,
+        passed: int,
+        failed: int,
+        total: int,
     ) -> None:
         """Record a sandbox validation result as a metrics snapshot."""
         doc = {
@@ -317,13 +326,13 @@ class HistoricalMetricsService:
             "connector_id": connector_id,
             "property_id": "",
             "granularity": "event",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "metrics": {
                 "validation_passed": passed,
                 "validation_failed": failed,
                 "validation_total": total,
                 "validation_score": round(passed / max(total, 1) * 100, 1),
             },
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         await db[SNAPSHOTS].insert_one(doc)

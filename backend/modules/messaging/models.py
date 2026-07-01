@@ -1,16 +1,15 @@
 """
 Data models for the messaging module.
+Channels: Email (SMTP) and WhatsApp (Meta Business API).
 """
-from pydantic import BaseModel
-from typing import Optional, List, Dict
-from enum import Enum
-from datetime import datetime, timezone
+
 import uuid
+from datetime import UTC, datetime
+from enum import Enum
 
 
 class ProviderType(str, Enum):
-    TWILIO_SMS = "twilio_sms"
-    SENDGRID_EMAIL = "sendgrid_email"
+    SMTP_EMAIL = "smtp_email"
     WHATSAPP = "whatsapp"
 
 
@@ -25,7 +24,6 @@ class DeliveryStatus(str, Enum):
 
 
 class MessageChannel(str, Enum):
-    SMS = "sms"
     EMAIL = "email"
     WHATSAPP = "whatsapp"
 
@@ -37,17 +35,20 @@ class ConsentStatus(str, Enum):
 
 
 class TemplateCategory(str, Enum):
-    PRE_ARRIVAL = "pre_arrival"
-    CHECK_IN = "check_in"
-    ROOM_READY = "room_ready"
-    GUEST_REQUEST_ACK = "guest_request_ack"
-    CHECKOUT_THANKYOU = "checkout_thankyou"
-    REVIEW_REQUEST = "review_request"
-    MARKETING = "marketing"
-    ALERT = "alert"
+    HOSGELDINIZ = "hosgeldiniz"
+    YOL_TARIFI = "yol_tarifi"
+    TESIS_BILGI = "tesis_bilgi"
+    FATURA = "fatura"
+    KAMPANYA = "kampanya"
+    PUAN_DEGERLENDIRME = "puan_degerlendirme"
+    CHECKOUT = "checkout"
+    REZERVASYON_ONAY = "rezervasyon_onay"
+    ILETISIM = "iletisim"
+    GENEL = "genel"
 
 
 # ── Document shapes for MongoDB ──
+
 
 def new_provider_config(
     tenant_id: str,
@@ -66,23 +67,23 @@ def new_provider_config(
         "health_status": "unknown",
         "last_health_check": None,
         "rate_limit_per_minute": 60,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
 
 
 def new_delivery_log(
     tenant_id: str,
-    property_id: Optional[str],
+    property_id: str | None,
     channel: str,
     provider_type: str,
     recipient: str,
-    template_id: Optional[str],
-    subject: Optional[str],
+    template_id: str | None,
+    subject: str | None,
     body: str,
-    booking_id: Optional[str] = None,
-    guest_id: Optional[str] = None,
-    use_case: Optional[str] = None,
+    booking_id: str | None = None,
+    guest_id: str | None = None,
+    use_case: str | None = None,
 ) -> dict:
     return {
         "id": str(uuid.uuid4()),
@@ -104,8 +105,8 @@ def new_delivery_log(
         "max_retries": 3,
         "next_retry_at": None,
         "delivered_at": None,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
 
 
@@ -114,7 +115,7 @@ def new_message_template(
     name: str,
     category: str,
     channel: str,
-    subject: Optional[str],
+    subject: str | None,
     body_template: str,
     variables: list,
     version: int = 1,
@@ -130,46 +131,6 @@ def new_message_template(
         "variables": variables,
         "version": version,
         "is_active": True,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
-
-
-# ── Pydantic request/response models ──
-
-class ProviderConfigCreate(BaseModel):
-    provider_type: ProviderType
-    credentials: Dict[str, str]
-    is_sandbox: bool = False
-    enabled: bool = True
-
-class ProviderConfigUpdate(BaseModel):
-    credentials: Optional[Dict[str, str]] = None
-    is_sandbox: Optional[bool] = None
-    enabled: Optional[bool] = None
-
-class TemplateCreate(BaseModel):
-    name: str
-    category: TemplateCategory
-    channel: MessageChannel
-    subject: Optional[str] = None
-    body_template: str
-    variables: List[str] = []
-
-class TemplateUpdate(BaseModel):
-    subject: Optional[str] = None
-    body_template: Optional[str] = None
-    variables: Optional[List[str]] = None
-    is_active: Optional[bool] = None
-
-class SendMessageRequest(BaseModel):
-    channel: MessageChannel
-    recipient: str
-    template_id: Optional[str] = None
-    subject: Optional[str] = None
-    body: Optional[str] = None
-    variables: Dict[str, str] = {}
-    booking_id: Optional[str] = None
-    guest_id: Optional[str] = None
-    property_id: Optional[str] = None
-    use_case: Optional[str] = None

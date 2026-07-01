@@ -1,0 +1,133 @@
+{
+  "summary": "Tested Security Hardening consolidated dashboard with 3 tabs (Güvenlik, PII Koruma, Altyapı) and Infrastructure dropdown consolidation. All 7 backend API tests passed. All frontend tests passed - 3 main tabs work correctly with live data, Infrastructure dropdown shows exactly 8 items (down from 11), removed items still accessible via direct URLs.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_security_hardening_consolidated.py",
+    "/app/test_reports/pytest/pytest_security_hardening_consolidated.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_security_hardening_consolidated.py"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7 tests passed)",
+    "frontend": "100% (all UI tests passed)"
+  },
+  "test_credentials": "demo@hotel.com / demo123",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Security Hardening page at /security-hardening now has 3 consolidated tabs: Güvenlik (Security), PII Koruma, Altyapı. The Security tab has 4 sub-tabs: Izolasyon, RBAC, Vault, Audit. Infrastructure dropdown has 8 items (Data Pipeline, Event Bus, System Health, Security Hardening, Runtime Infrastructure, Production Go-Live, Platform Scaling, Enterprise Live). Direct URLs /observability, /pii-strict-mode, /infra-hardening still work standalone.",
+  "test_cases_executed": [
+    {
+      "test": "Backend: /api/security-hardening/tenant-scope/check returns 200",
+      "expected": "HTTP 200 (was 500 before fix)",
+      "result": "PASS"
+    },
+    {
+      "test": "Backend: /api/security/pii-strict-mode/config returns 200",
+      "expected": "HTTP 200",
+      "result": "PASS"
+    },
+    {
+      "test": "Backend: /api/security/pii-strict-mode/summary returns 200",
+      "expected": "HTTP 200",
+      "result": "PASS"
+    },
+    {
+      "test": "Backend: /api/infra/summary returns 200",
+      "expected": "HTTP 200",
+      "result": "PASS"
+    },
+    {
+      "test": "Backend: /api/security-hardening/property-permissions returns 200",
+      "expected": "HTTP 200",
+      "result": "PASS"
+    },
+    {
+      "test": "Backend: /api/security-hardening/vault/status returns 200",
+      "expected": "HTTP 200",
+      "result": "PASS"
+    },
+    {
+      "test": "Backend: /api/security-hardening/audit-completeness returns 200",
+      "expected": "HTTP 200",
+      "result": "PASS"
+    },
+    {
+      "test": "Frontend: Security Hardening Dashboard loads",
+      "expected": "Dashboard with data-testid='security-hardening-dashboard' visible",
+      "result": "PASS"
+    },
+    {
+      "test": "Frontend: 3 main tabs exist (Güvenlik, PII Koruma, Altyapı)",
+      "expected": "All 3 tabs with data-testid main-tab-security, main-tab-pii, main-tab-infra",
+      "result": "PASS"
+    },
+    {
+      "test": "Frontend: Security tab shows 4 sub-tabs",
+      "expected": "Izolasyon, RBAC, Vault, Audit sub-tabs visible",
+      "result": "PASS"
+    },
+    {
+      "test": "Frontend: Security tab shows live data",
+      "expected": "Tenant Isolation 100%, Vault Healthy, summary cards visible",
+      "result": "PASS"
+    },
+    {
+      "test": "Frontend: PII Koruma tab loads embedded dashboard",
+      "expected": "PII Strict Mode dashboard with toggle, encryption coverage, policy",
+      "result": "PASS"
+    },
+    {
+      "test": "Frontend: Altyapı tab loads embedded dashboard",
+      "expected": "Infrastructure Hardening dashboard with Redis, Workers, Secrets, Backup metrics",
+      "result": "PASS"
+    },
+    {
+      "test": "Frontend: Infrastructure dropdown has exactly 8 items",
+      "expected": "8 items: Data Pipeline, Event Bus, System Health, Security Hardening, Runtime Infrastructure, Production Go-Live, Platform Scaling, Enterprise Live",
+      "result": "PASS",
+      "details": "Confirmed 8 items in dropdown menu"
+    },
+    {
+      "test": "Frontend: Observability NOT in Infrastructure dropdown",
+      "expected": "Observability removed from nav",
+      "result": "PASS"
+    },
+    {
+      "test": "Frontend: PII Strict Mode NOT in Infrastructure dropdown",
+      "expected": "PII Strict Mode removed from nav",
+      "result": "PASS"
+    },
+    {
+      "test": "Frontend: Infrastructure Hardening NOT in Infrastructure dropdown",
+      "expected": "Infrastructure Hardening removed from nav",
+      "result": "PASS"
+    },
+    {
+      "test": "Frontend: Direct URL /observability still works",
+      "expected": "Route accessible",
+      "result": "PASS"
+    },
+    {
+      "test": "Frontend: Direct URL /pii-strict-mode still works",
+      "expected": "PII Strict Mode dashboard loads standalone",
+      "result": "PASS"
+    },
+    {
+      "test": "Frontend: Direct URL /infra-hardening still works",
+      "expected": "Infrastructure Hardening dashboard loads standalone",
+      "result": "PASS"
+    }
+  ]
+}

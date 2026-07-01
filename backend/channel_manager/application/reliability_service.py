@@ -5,11 +5,13 @@ Metrics: uptime, MTTR, MTBF, sync success rate, ack success rate, retry rate,
          provider latency, error frequency, mapping validation rate, recon frequency.
 Analysis: failure pattern detection, unstable/degraded classification, outage windows.
 """
+
 import logging
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
+
 from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.application.reliability")
@@ -18,10 +20,10 @@ logger = logging.getLogger("channel_manager.application.reliability")
 class ReliabilityService:
     """Calculates reliability metrics for each connector."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
-    async def get_reliability(self, tenant_id: str, connector_id: str) -> Dict[str, Any]:
+    async def get_reliability(self, tenant_id: str, connector_id: str) -> dict[str, Any]:
         """Get comprehensive reliability metrics for a connector."""
         connector = await self._repo.get_connector(tenant_id, connector_id)
         if not connector:
@@ -38,12 +40,8 @@ class ReliabilityService:
         retry_rate = round(len(retry_jobs) / max(total_jobs, 1) * 100, 1)
 
         # ─── ACK rate ───
-        total_imports = await db.cm_imported_reservations.count_documents(
-            {"tenant_id": tenant_id, "connector_id": connector_id}
-        )
-        ack_sent = await db.cm_imported_reservations.count_documents(
-            {"tenant_id": tenant_id, "connector_id": connector_id, "ack_status": "ack_sent"}
-        )
+        total_imports = await db.cm_imported_reservations.count_documents({"tenant_id": tenant_id, "connector_id": connector_id})
+        ack_sent = await db.cm_imported_reservations.count_documents({"tenant_id": tenant_id, "connector_id": connector_id, "ack_status": "ack_sent"})
         ack_success_rate = round(ack_sent / max(total_imports, 1) * 100, 1)
 
         # ─── Mapping rate ───
@@ -64,18 +62,10 @@ class ReliabilityService:
         recon_summary = await self._repo.get_reconciliation_summary(tenant_id, connector_id)
 
         # ─── Reservation Import Metrics ───
-        import_total = await db.cm_imported_reservations.count_documents(
-            {"tenant_id": tenant_id, "connector_id": connector_id}
-        )
-        import_failed = await db.cm_imported_reservations.count_documents(
-            {"tenant_id": tenant_id, "connector_id": connector_id, "import_status": "failed"}
-        )
-        import_review = await db.cm_imported_reservations.count_documents(
-            {"tenant_id": tenant_id, "connector_id": connector_id, "import_status": {"$in": ["review", "conflict", "out_of_order"]}}
-        )
-        import_success_rate = round(
-            (import_total - import_failed - import_review) / max(import_total, 1) * 100, 1
-        )
+        import_total = await db.cm_imported_reservations.count_documents({"tenant_id": tenant_id, "connector_id": connector_id})
+        import_failed = await db.cm_imported_reservations.count_documents({"tenant_id": tenant_id, "connector_id": connector_id, "import_status": "failed"})
+        import_review = await db.cm_imported_reservations.count_documents({"tenant_id": tenant_id, "connector_id": connector_id, "import_status": {"$in": ["review", "conflict", "out_of_order"]}})
+        import_success_rate = round((import_total - import_failed - import_review) / max(import_total, 1) * 100, 1)
 
         # ─── Classification ───
         classification = self._classify_connector(sync_success_rate, uptime, mttr, len(failed), import_success_rate)
@@ -104,10 +94,10 @@ class ReliabilityService:
             "import_success_rate": import_success_rate,
             "failure_patterns": patterns,
             "classification": classification,
-            "calculated_at": datetime.now(timezone.utc).isoformat(),
+            "calculated_at": datetime.now(UTC).isoformat(),
         }
 
-    async def get_all_reliability(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_all_reliability(self, tenant_id: str) -> dict[str, Any]:
         """Get reliability metrics for all connectors."""
         connectors = await self._repo.get_connectors_by_tenant(tenant_id)
         results = []
@@ -121,9 +111,7 @@ class ReliabilityService:
             cls = r.get("classification", "unknown")
             classifications[cls] = classifications.get(cls, 0) + 1
 
-        avg_uptime = round(
-            sum(r.get("uptime_percentage", 0) for r in results) / max(len(results), 1), 1
-        )
+        avg_uptime = round(sum(r.get("uptime_percentage", 0) for r in results) / max(len(results), 1), 1)
 
         return {
             "connectors": results,
@@ -132,7 +120,7 @@ class ReliabilityService:
             "classifications": classifications,
         }
 
-    async def get_reliability_by_property(self, tenant_id: str, property_id: str) -> Dict[str, Any]:
+    async def get_reliability_by_property(self, tenant_id: str, property_id: str) -> dict[str, Any]:
         """Get reliability for connectors of a specific property."""
         connectors = await self._repo.get_connectors_by_tenant(tenant_id)
         property_connectors = [c for c in connectors if c.get("property_id") == property_id]
@@ -145,7 +133,7 @@ class ReliabilityService:
     # ─── MTBF / MTTR Calculation ───────────────────────────────────────
 
     @staticmethod
-    def _calculate_mtbf_mttr(jobs: List[Dict]) -> tuple:
+    def _calculate_mtbf_mttr(jobs: list[dict]) -> tuple:
         """Calculate Mean Time Between Failures and Mean Time To Recovery."""
         if not jobs:
             return 0.0, 0.0
@@ -196,7 +184,7 @@ class ReliabilityService:
         return mtbf, mttr
 
     @staticmethod
-    def _calculate_uptime(connector: Dict, jobs: List[Dict]) -> float:
+    def _calculate_uptime(connector: dict, jobs: list[dict]) -> float:
         """Calculate uptime percentage based on job history."""
         if not jobs:
             return 100.0 if connector.get("status") == "active" else 0.0
@@ -206,7 +194,7 @@ class ReliabilityService:
         return round((total - failed) / max(total, 1) * 100, 1)
 
     @staticmethod
-    def _detect_failure_patterns(jobs: List[Dict]) -> List[Dict]:
+    def _detect_failure_patterns(jobs: list[dict]) -> list[dict]:
         """Detect recurring failure patterns."""
         patterns = []
         sorted_jobs = sorted(jobs, key=lambda j: j.get("created_at", ""))
@@ -226,12 +214,14 @@ class ReliabilityService:
                 consecutive = 0
 
         if max_consecutive >= 3:
-            patterns.append({
-                "pattern": "consecutive_failures",
-                "severity": "critical" if max_consecutive >= 5 else "warning",
-                "detail": f"Max {max_consecutive} consecutive failures detected",
-                "count": max_consecutive,
-            })
+            patterns.append(
+                {
+                    "pattern": "consecutive_failures",
+                    "severity": "critical" if max_consecutive >= 5 else "warning",
+                    "detail": f"Max {max_consecutive} consecutive failures detected",
+                    "count": max_consecutive,
+                }
+            )
 
         # Pattern: recurring time windows
         hours = {}
@@ -245,13 +235,15 @@ class ReliabilityService:
 
         for h, count in hours.items():
             if count >= 3:
-                patterns.append({
-                    "pattern": "time_window_failures",
-                    "severity": "warning",
-                    "detail": f"{count} failures around hour {h}:00",
-                    "hour": h,
-                    "count": count,
-                })
+                patterns.append(
+                    {
+                        "pattern": "time_window_failures",
+                        "severity": "warning",
+                        "detail": f"{count} failures around hour {h}:00",
+                        "hour": h,
+                        "count": count,
+                    }
+                )
 
         # Pattern: error type concentration
         error_types = {}
@@ -262,20 +254,22 @@ class ReliabilityService:
 
         for err, count in error_types.items():
             if count >= 3:
-                patterns.append({
-                    "pattern": "repeated_error",
-                    "severity": "warning",
-                    "detail": f"'{err}' occurred {count} times",
-                    "error": err,
-                    "count": count,
-                })
+                patterns.append(
+                    {
+                        "pattern": "repeated_error",
+                        "severity": "warning",
+                        "detail": f"'{err}' occurred {count} times",
+                        "error": err,
+                        "count": count,
+                    }
+                )
 
         return patterns
 
     @staticmethod
     def _classify_connector(success_rate: float, uptime: float, mttr: float, failed_count: int, import_success_rate: float = 100.0) -> str:
         """Classify connector reliability including import health."""
-        combined_rate = (success_rate * 0.6 + import_success_rate * 0.4)
+        combined_rate = success_rate * 0.6 + import_success_rate * 0.4
         if combined_rate >= 95 and uptime >= 98:
             return "stable"
         elif combined_rate >= 80 and uptime >= 90:
@@ -285,16 +279,20 @@ class ReliabilityService:
         else:
             return "unstable"
 
-
     async def record_validation_event(
-        self, tenant_id: str, connector_id: str,
-        success: bool, details: Optional[Dict[str, Any]] = None,
+        self,
+        tenant_id: str,
+        connector_id: str,
+        success: bool,
+        details: dict[str, Any] | None = None,
     ) -> None:
         """Record a validation result for reliability tracking."""
-        await db["cm_validation_events"].insert_one({
-            "tenant_id": tenant_id,
-            "connector_id": connector_id,
-            "success": success,
-            "details": details or {},
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
+        await db["cm_validation_events"].insert_one(
+            {
+                "tenant_id": tenant_id,
+                "connector_id": connector_id,
+                "success": success,
+                "details": details or {},
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )

@@ -4,11 +4,11 @@ ARI Rate Limit Service.
 Per-provider per-property rate limiter using token bucket algorithm.
 Prevents exceeding provider API limits.
 """
+
 import asyncio
 import logging
 import time
 from collections import defaultdict
-from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +52,9 @@ class ARIRateLimitService:
     """Manages per-provider per-property rate limits."""
 
     def __init__(self):
-        self._buckets: Dict[str, TokenBucket] = {}
-        self._daily_counts: Dict[str, int] = defaultdict(int)
-        self._daily_reset: Dict[str, float] = {}
+        self._buckets: dict[str, TokenBucket] = {}
+        self._daily_counts: dict[str, int] = defaultdict(int)
+        self._daily_reset: dict[str, float] = {}
 
     def _get_key(self, provider: str, property_id: str) -> str:
         return f"{provider}|{property_id}"
@@ -104,7 +104,7 @@ class ARIRateLimitService:
         bucket = self._get_bucket(provider, property_id)
         bucket.tokens = 0  # drain tokens, forcing wait
 
-    def get_stats(self, provider: Optional[str] = None) -> dict:
+    def get_stats(self, provider: str | None = None) -> dict:
         stats = {}
         for key, bucket in self._buckets.items():
             p, prop = key.split("|", 1)

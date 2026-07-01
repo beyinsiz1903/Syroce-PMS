@@ -3,21 +3,34 @@ import json
 import logging
 import threading
 from collections import defaultdict, deque
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from time import perf_counter
-from typing import Any, Dict, Optional
-
+from typing import Any
 
 logger = logging.getLogger("shadow_metrics")
+
+_db_ref = None
+
+
+def _get_db():
+    global _db_ref
+    if _db_ref is None:
+        try:
+            from core.database import db
+
+            _db_ref = db
+        except Exception:
+            pass
+    return _db_ref
 
 
 class ShadowMetricsStore:
     def __init__(self, max_entries: int = 1000):
         self._lock = threading.Lock()
-        self._metric_counts: Dict[str, int] = defaultdict(int)
+        self._metric_counts: dict[str, int] = defaultdict(int)
         self._recent_events = deque(maxlen=max_entries)
 
-    def record(self, event: Dict[str, Any]) -> None:
+    def record(self, event: dict[str, Any]) -> None:
         endpoint = event.get("endpoint", "unknown")
         compare_key = f"shadow.{endpoint}.compare.total"
 
@@ -33,11 +46,51 @@ class ShadowMetricsStore:
 
             self._recent_events.append(event)
 
+        self._persist_to_db(event)
+
+    def _persist_to_db(self, event: dict[str, Any]) -> None:
+        try:
+            db = _get_db()
+            if db is None:
+                return
+            doc = {**event, "_persisted_at": datetime.now(UTC).isoformat()}
+            doc.pop("_id", None)
+            import asyncio
+
+            loop = None
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+            if loop and loop.is_running():
+                loop.create_task(db.shadow_compare_events.insert_one(doc))
+            else:
+                db.delegate["shadow_compare_events"].insert_one(doc)
+        except Exception as exc:
+            logger.debug("Shadow metrics DB persist failed: %s", exc)
+
+    async def load_from_db(self, tenant_id: str | None = None, limit: int = 500) -> None:
+        try:
+            db = _get_db()
+            if db is None:
+                return
+            query: dict[str, Any] = {}
+            if tenant_id:
+                query["tenant_id"] = tenant_id
+            cursor = db.shadow_compare_events.find(query, {"_id": 0}).sort("timestamp", -1).limit(limit)
+            docs = await cursor.to_list(limit)
+            with self._lock:
+                for doc in reversed(docs):
+                    doc.pop("_persisted_at", None)
+                    self._recent_events.append(doc)
+        except Exception as exc:
+            logger.debug("Shadow metrics DB load failed: %s", exc)
+
     def get_metric(self, metric_name: str) -> int:
         with self._lock:
             return self._metric_counts.get(metric_name, 0)
 
-    def get_recent_events(self) -> list[Dict[str, Any]]:
+    def get_recent_events(self) -> list[dict[str, Any]]:
         with self._lock:
             return list(self._recent_events)
 
@@ -68,8 +121,8 @@ def _normalized_number(value: Any, default: float = 0.0) -> float:
     return float(value)
 
 
-def normalize_availability_payload(payload: list[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    normalized: Dict[str, Dict[str, Any]] = {}
+def normalize_availability_payload(payload: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    normalized: dict[str, dict[str, Any]] = {}
     for row in payload or []:
         room_key = row.get("id") or row.get("room_number")
         if not room_key:
@@ -88,7 +141,7 @@ def normalize_availability_payload(payload: list[Dict[str, Any]]) -> Dict[str, D
     return normalized
 
 
-def normalize_folio_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_folio_payload(payload: dict[str, Any]) -> dict[str, Any]:
     folio = payload.get("folio") or {}
     return {
         "folio_id": folio.get("id"),
@@ -103,15 +156,15 @@ def normalize_folio_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def compare_availability_payloads(
-    semantic_payload: list[Dict[str, Any]],
-    legacy_payload: list[Dict[str, Any]],
-) -> Dict[str, Any]:
+    semantic_payload: list[dict[str, Any]],
+    legacy_payload: list[dict[str, Any]],
+) -> dict[str, Any]:
     semantic_rows = normalize_availability_payload(semantic_payload)
     legacy_rows = normalize_availability_payload(legacy_payload)
     semantic_keys = set(semantic_rows.keys())
     legacy_keys = set(legacy_rows.keys())
-    missing_rows = sorted(list(legacy_keys - semantic_keys))
-    extra_rows = sorted(list(semantic_keys - legacy_keys))
+    missing_rows = sorted(legacy_keys - semantic_keys)
+    extra_rows = sorted(semantic_keys - legacy_keys)
     mismatch_fields = set()
     mismatch_count = len(missing_rows) + len(extra_rows)
 
@@ -124,16 +177,16 @@ def compare_availability_payloads(
     return {
         "compare_result": "mismatch" if mismatch_count else "match",
         "mismatch_count": mismatch_count,
-        "mismatch_fields": sorted(list(mismatch_fields)),
+        "mismatch_fields": sorted(mismatch_fields),
         "missing_rows": missing_rows,
         "extra_rows": extra_rows,
     }
 
 
 def compare_folio_payloads(
-    semantic_payload: Dict[str, Any],
-    legacy_payload: Dict[str, Any],
-) -> Dict[str, Any]:
+    semantic_payload: dict[str, Any],
+    legacy_payload: dict[str, Any],
+) -> dict[str, Any]:
     semantic = normalize_folio_payload(semantic_payload)
     legacy = normalize_folio_payload(legacy_payload)
     mismatch_fields = [field for field in semantic.keys() if semantic.get(field) != legacy.get(field)]
@@ -149,19 +202,19 @@ def compare_folio_payloads(
 async def run_shadow_compare(
     endpoint: str,
     tenant_id: str,
-    property_id: Optional[str],
-    correlation_id: Optional[str],
+    property_id: str | None,
+    correlation_id: str | None,
     semantic_payload: Any,
     legacy_loader,
     comparator,
-    entity_id: Optional[str] = None,
+    entity_id: str | None = None,
 ) -> None:
     start = perf_counter()
     try:
         legacy_payload = await legacy_loader()
         comparison = comparator(semantic_payload, legacy_payload)
         event = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "endpoint": endpoint,
             "tenant_id": tenant_id,
             "property_id": property_id,
@@ -180,7 +233,7 @@ async def run_shadow_compare(
         logger.info(json.dumps(event, sort_keys=True, default=str))
     except Exception as exc:
         event = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "endpoint": endpoint,
             "tenant_id": tenant_id,
             "property_id": property_id,

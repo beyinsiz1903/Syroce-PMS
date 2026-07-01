@@ -7,17 +7,20 @@ Enhanced quarantine analytics for the Runtime Cockpit:
   - Age buckets (< 5 min, 5-30 min, 30-120 min, > 2h)
   - Safe release guard (validates mapping is fixed before allowing release)
 """
+
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 from domains.channel_manager.ari.models import COLL_ARI_CHANGE_SETS
-from domains.channel_manager.mapping_validator import (
-    validate_room_mapping, validate_rate_plan_mapping,
-)
 from domains.channel_manager.data_model import (
-    COLL_ROOM_MAPPINGS, COLL_RATE_PLAN_MAPPINGS,
+    COLL_RATE_PLAN_MAPPINGS,
+    COLL_ROOM_MAPPINGS,
+)
+from domains.channel_manager.mapping_validator import (
+    validate_rate_plan_mapping,
+    validate_room_mapping,
 )
 
 logger = logging.getLogger("ari.quarantine")
@@ -25,14 +28,18 @@ logger = logging.getLogger("ari.quarantine")
 _NO_ID = {"_id": 0}
 
 
-async def get_quarantine_overview(tenant_id: str) -> Dict[str, Any]:
+async def get_quarantine_overview(tenant_id: str) -> dict[str, Any]:
     """
     Full quarantine visibility: count, classification, age buckets.
     """
-    quarantined = await db[COLL_ARI_CHANGE_SETS].find(
-        {"tenant_id": tenant_id, "status": "hard_fail"},
-        _NO_ID,
-    ).to_list(500)
+    quarantined = (
+        await db[COLL_ARI_CHANGE_SETS]
+        .find(
+            {"tenant_id": tenant_id, "status": "hard_fail"},
+            _NO_ID,
+        )
+        .to_list(500)
+    )
 
     total = len(quarantined)
     if total == 0:
@@ -44,11 +51,11 @@ async def get_quarantine_overview(tenant_id: str) -> Dict[str, Any]:
             "items": [],
         }
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Classification breakdown
-    by_classification: Dict[str, int] = {}
-    by_provider: Dict[str, int] = {}
+    by_classification: dict[str, int] = {}
+    by_provider: dict[str, int] = {}
     by_age = {"lt_5min": 0, "5_30min": 0, "30_120min": 0, "gt_2h": 0}
     items = []
 
@@ -79,17 +86,19 @@ async def get_quarantine_overview(tenant_id: str) -> Dict[str, Any]:
         else:
             by_age["gt_2h"] += 1
 
-        items.append({
-            "id": cs.get("id"),
-            "room_type_code": cs.get("room_type_code"),
-            "rate_plan_code": cs.get("rate_plan_code"),
-            "provider": prov,
-            "hard_fail_reason": cs.get("hard_fail_reason", ""),
-            "classification": failures[0].get("failure_type", "unknown") if failures else "unknown",
-            "age_minutes": age_minutes,
-            "hard_fail_at": hf_at,
-            "operator_action": failures[0].get("operator_action", "") if failures else "",
-        })
+        items.append(
+            {
+                "id": cs.get("id"),
+                "room_type_code": cs.get("room_type_code"),
+                "rate_plan_code": cs.get("rate_plan_code"),
+                "provider": prov,
+                "hard_fail_reason": cs.get("hard_fail_reason", ""),
+                "classification": failures[0].get("failure_type", "unknown") if failures else "unknown",
+                "age_minutes": age_minutes,
+                "hard_fail_at": hf_at,
+                "operator_action": failures[0].get("operator_action", "") if failures else "",
+            }
+        )
 
     # Sort by age (oldest first)
     items.sort(key=lambda x: -x["age_minutes"])
@@ -110,7 +119,7 @@ def _compute_age_minutes(iso_str: str, now: datetime) -> int:
     try:
         ts = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
         if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
+            ts = ts.replace(tzinfo=UTC)
         return int((now - ts).total_seconds() / 60)
     except (ValueError, TypeError):
         return 0
@@ -119,9 +128,9 @@ def _compute_age_minutes(iso_str: str, now: datetime) -> int:
 async def check_safe_release(
     tenant_id: str,
     room_type_code: str,
-    rate_plan_code: Optional[str] = None,
-    provider: Optional[str] = None,
-) -> Dict[str, Any]:
+    rate_plan_code: str | None = None,
+    provider: str | None = None,
+) -> dict[str, Any]:
     """
     Safe release guard: verify mapping is fixed before allowing quarantine release.
 
@@ -173,13 +182,15 @@ async def check_safe_release(
                 checks["rate_mapping_valid"] = True
 
     # Check staleness (quarantined items > 24h)
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-    stale_count = await db[COLL_ARI_CHANGE_SETS].count_documents({
-        "tenant_id": tenant_id,
-        "status": "hard_fail",
-        "room_type_code": room_type_code,
-        "hard_fail_at": {"$lt": cutoff},
-    })
+    cutoff = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
+    stale_count = await db[COLL_ARI_CHANGE_SETS].count_documents(
+        {
+            "tenant_id": tenant_id,
+            "status": "hard_fail",
+            "room_type_code": room_type_code,
+            "hard_fail_at": {"$lt": cutoff},
+        }
+    )
     if stale_count > 0:
         checks["not_stale"] = False
         issues.append(f"{stale_count} quarantined change set(s) older than 24h — may be stale")
@@ -191,9 +202,5 @@ async def check_safe_release(
         "checks": checks,
         "issues": issues,
         "stale_count": stale_count,
-        "recommendation": (
-            "Release is safe — mappings verified"
-            if safe_to_release
-            else "DO NOT release — fix issues first: " + "; ".join(issues)
-        ),
+        "recommendation": ("Release is safe — mappings verified" if safe_to_release else "DO NOT release — fix issues first: " + "; ".join(issues)),
     }

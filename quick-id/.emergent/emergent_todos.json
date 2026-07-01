@@ -1,0 +1,18 @@
+[
+  {
+    "content": "Fix: AI prompt to detect multiple IDs in single image",
+    "status": "completed"
+  },
+  {
+    "content": "Fix: Backend scan endpoint returns array of extracted documents",
+    "status": "completed"
+  },
+  {
+    "content": "Fix: Frontend bulk scan handles multiple extractions per capture",
+    "status": "completed"
+  },
+  {
+    "content": "Fix: End to End Testing",
+    "status": "completed"
+  }
+]

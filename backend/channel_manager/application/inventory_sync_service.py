@@ -14,27 +14,37 @@ Supported change types:
   - minimum_stay_changed
   - rate_changed
 """
+
 import logging
 import time
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, List, Tuple
 from collections import defaultdict
-
-from ..domain.models.sync import (
-    SyncJob, SyncEvent, PushReceipt,
-    SyncJobStatus, SyncDirection, SyncType, ChangeType,
-)
-from ..domain.models.audit import IntegrationAuditLog, AuditAction
-from ..domain.models.connector_account import ConnectorAccount, ConnectorProvider
-from ..infrastructure.repository import ChannelManagerRepository
-from ..connectors.hotelrunner.client import HotelRunnerClient
-from ..connectors.hotelrunner.auth import HotelRunnerAuth
-from ..connectors.hotelrunner.errors import (
-    ConnectorError, AuthenticationError, RateLimitError,
-    ProviderUnavailableError, ValidationError, XmlParseError,
-)
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
+
+from ..connectors.hotelrunner_v2.auth import HotelRunnerAuth
+from ..connectors.hotelrunner_v2.connector_errors import (
+    AuthenticationError,
+    ConnectorError,
+    ProviderUnavailableError,
+    RateLimitError,
+    ValidationError,
+    XmlParseError,
+)
+from ..connectors.hotelrunner_v2.hr_client import HotelRunnerClient
+from ..domain.models.audit import AuditAction, IntegrationAuditLog
+from ..domain.models.connector_account import ConnectorAccount, ConnectorProvider
+from ..domain.models.sync import (
+    ChangeType,
+    PushReceipt,
+    SyncDirection,
+    SyncEvent,
+    SyncJob,
+    SyncJobStatus,
+    SyncType,
+)
+from ..infrastructure.repository import ChannelManagerRepository
 
 logger = logging.getLogger("channel_manager.inventory_sync_engine")
 
@@ -49,7 +59,7 @@ MAX_RETRIES = 3
 class InventorySyncService:
     """Production-grade inventory/rate/restriction delta sync engine."""
 
-    def __init__(self, repo: Optional[ChannelManagerRepository] = None):
+    def __init__(self, repo: ChannelManagerRepository | None = None):
         self._repo = repo or ChannelManagerRepository()
 
     # ─── Main Entry Points ──────────────────────────────────────────────
@@ -60,18 +70,23 @@ class InventorySyncService:
         connector_id: str,
         date_start: str,
         date_end: str,
-        room_type_ids: Optional[List[str]] = None,
+        room_type_ids: list[str] | None = None,
         triggered_by: str = "system",
         trigger_reason: str = "",
-        actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Trigger a delta inventory+restriction sync to the external provider."""
         connector = await self._load_connector(tenant_id, connector_id)
         job = await self._create_job(
-            tenant_id, connector.property_id, connector_id,
-            SyncType.INVENTORY, date_start, date_end,
+            tenant_id,
+            connector.property_id,
+            connector_id,
+            SyncType.INVENTORY,
+            date_start,
+            date_end,
             room_type_ids=room_type_ids,
-            triggered_by=triggered_by, trigger_reason=trigger_reason,
+            triggered_by=triggered_by,
+            trigger_reason=trigger_reason,
         )
         await self._audit_job(job, AuditAction.SYNC_JOB_STARTED, actor_id)
 
@@ -86,17 +101,22 @@ class InventorySyncService:
         connector_id: str,
         date_start: str,
         date_end: str,
-        rate_plan_ids: Optional[List[str]] = None,
+        rate_plan_ids: list[str] | None = None,
         triggered_by: str = "system",
-        actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Trigger a delta rate sync to the external provider."""
         connector = await self._load_connector(tenant_id, connector_id)
         job = await self._create_job(
-            tenant_id, connector.property_id, connector_id,
-            SyncType.RATES, date_start, date_end,
+            tenant_id,
+            connector.property_id,
+            connector_id,
+            SyncType.RATES,
+            date_start,
+            date_end,
             rate_plan_ids=rate_plan_ids,
-            triggered_by=triggered_by, trigger_reason="Rate sync",
+            triggered_by=triggered_by,
+            trigger_reason="Rate sync",
         )
         await self._audit_job(job, AuditAction.SYNC_JOB_STARTED, actor_id)
 
@@ -109,8 +129,8 @@ class InventorySyncService:
         self,
         tenant_id: str,
         job_id: str,
-        actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Retry a failed/manual_review job's failed events."""
         job_doc = await self._repo.get_sync_job(job_id)
         if not job_doc:
@@ -127,13 +147,20 @@ class InventorySyncService:
             return {"job_id": job_id, "status": "succeeded", "message": "No failed events to retry"}
 
         # Update job status to retrying
-        await self._repo.update_sync_job(job_id, {
-            "status": SyncJobStatus.RETRYING.value,
-            "retry_count": job_doc.get("retry_count", 0) + 1,
-        })
+        await self._repo.update_sync_job(
+            job_id,
+            {
+                "status": SyncJobStatus.RETRYING.value,
+                "retry_count": job_doc.get("retry_count", 0) + 1,
+            },
+        )
         await self._audit_job_by_id(
-            tenant_id, job_doc.get("property_id", ""), job_doc["connector_id"],
-            job_id, AuditAction.MANUAL_RETRY, actor_id,
+            tenant_id,
+            job_doc.get("property_id", ""),
+            job_doc["connector_id"],
+            job_id,
+            AuditAction.MANUAL_RETRY,
+            actor_id,
             {"failed_event_count": len(failed_events)},
         )
 
@@ -158,12 +185,15 @@ class InventorySyncService:
         else:
             final_status = SyncJobStatus.FAILED
 
-        await self._repo.update_sync_job(job_id, {
-            "status": final_status.value,
-            "completed_events": total_completed,
-            "failed_events": total_failed,
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-        })
+        await self._repo.update_sync_job(
+            job_id,
+            {
+                "status": final_status.value,
+                "completed_events": total_completed,
+                "failed_events": total_failed,
+                "completed_at": datetime.now(UTC).isoformat(),
+            },
+        )
 
         return {
             "job_id": job_id,
@@ -177,8 +207,8 @@ class InventorySyncService:
         self,
         tenant_id: str,
         job_id: str,
-        actor_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
         """Dismiss a manual review job (acknowledge the failure)."""
         job_doc = await self._repo.get_sync_job(job_id)
         if not job_doc or job_doc["tenant_id"] != tenant_id:
@@ -186,37 +216,53 @@ class InventorySyncService:
         if job_doc["status"] != "manual_review":
             raise ValueError("Job is not in manual_review status")
 
-        await self._repo.update_sync_job(job_id, {
-            "status": SyncJobStatus.FAILED.value,
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-            "last_error": "Dismissed by user",
-        })
+        await self._repo.update_sync_job(
+            job_id,
+            {
+                "status": SyncJobStatus.FAILED.value,
+                "completed_at": datetime.now(UTC).isoformat(),
+                "last_error": "Dismissed by user",
+            },
+        )
         await self._audit_job_by_id(
-            tenant_id, job_doc.get("property_id", ""), job_doc["connector_id"],
-            job_id, AuditAction.MANUAL_REVIEW_DISMISSED, actor_id,
+            tenant_id,
+            job_doc.get("property_id", ""),
+            job_doc["connector_id"],
+            job_id,
+            AuditAction.MANUAL_REVIEW_DISMISSED,
+            actor_id,
         )
         return {"job_id": job_id, "status": "failed", "message": "Manual review dismissed"}
 
     async def get_manual_review_queue(
-        self, tenant_id: str, connector_id: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        self,
+        tenant_id: str,
+        connector_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Get all jobs awaiting manual review."""
         return await self._repo.get_manual_review_jobs(tenant_id, connector_id)
 
     # ─── Pipeline: Inventory + Restrictions ─────────────────────────────
 
     async def _execute_inventory_pipeline(
-        self, job: SyncJob, connector: ConnectorAccount,
-        date_start: str, date_end: str, room_type_ids: Optional[List[str]],
-    ) -> Dict[str, Any]:
+        self,
+        job: SyncJob,
+        connector: ConnectorAccount,
+        date_start: str,
+        date_end: str,
+        room_type_ids: list[str] | None,
+    ) -> dict[str, Any]:
         """Full pipeline: detect → coalesce → batch → dispatch → finalize."""
         pipeline_start = time.monotonic()
 
         # 1. Get room type mappings
         from ..application.mapping_service import MappingService
+
         mapping_svc = MappingService(self._repo)
         room_lookup = await mapping_svc.get_mapping_lookup(
-            job.tenant_id, job.connector_id, "room_type",
+            job.tenant_id,
+            job.connector_id,
+            "room_type",
         )
         if not room_lookup:
             await self._transition_job(job, SyncJobStatus.FAILED, error="No active room type mappings found")
@@ -224,50 +270,72 @@ class InventorySyncService:
 
         # 2. Detect delta changes
         changes = await self._detect_inventory_deltas(
-            job.tenant_id, job.property_id, job.connector_id,
-            date_start, date_end, room_type_ids, room_lookup,
+            job.tenant_id,
+            job.property_id,
+            job.connector_id,
+            date_start,
+            date_end,
+            room_type_ids,
+            room_lookup,
         )
 
         if not changes:
             await self._transition_job(job, SyncJobStatus.SUCCEEDED)
-            await self._repo.update_sync_job(job.id, {
-                "total_changes_detected": 0,
-                "total_changes_after_coalescing": 0,
-                "completed_at": datetime.now(timezone.utc).isoformat(),
-                "duration_ms": int((time.monotonic() - pipeline_start) * 1000),
-            })
+            await self._repo.update_sync_job(
+                job.id,
+                {
+                    "total_changes_detected": 0,
+                    "total_changes_after_coalescing": 0,
+                    "completed_at": datetime.now(UTC).isoformat(),
+                    "duration_ms": int((time.monotonic() - pipeline_start) * 1000),
+                },
+            )
             return {**self._job_response(job), "message": "No inventory changes to push"}
 
-        await self._repo.update_sync_job(job.id, {
-            "total_changes_detected": len(changes),
-            "change_types": list({c["change_type"] for c in changes}),
-        })
+        await self._repo.update_sync_job(
+            job.id,
+            {
+                "total_changes_detected": len(changes),
+                "change_types": list({c["change_type"] for c in changes}),
+            },
+        )
 
         # 3. Coalesce changes
         coalesced = self._coalesce_changes(changes)
         await self._transition_job(job, SyncJobStatus.BATCHED)
-        await self._repo.update_sync_job(job.id, {
-            "total_changes_after_coalescing": len(coalesced),
-            "batched_at": datetime.now(timezone.utc).isoformat(),
-        })
-        await self._audit_job(job, AuditAction.SYNC_JOB_BATCHED, metadata={
-            "total_changes": len(changes),
-            "after_coalescing": len(coalesced),
-        })
+        await self._repo.update_sync_job(
+            job.id,
+            {
+                "total_changes_after_coalescing": len(coalesced),
+                "batched_at": datetime.now(UTC).isoformat(),
+            },
+        )
+        await self._audit_job(
+            job,
+            AuditAction.SYNC_JOB_BATCHED,
+            metadata={
+                "total_changes": len(changes),
+                "after_coalescing": len(coalesced),
+            },
+        )
 
         # 4. Split into inventory updates vs restriction updates
         inv_updates = [c for c in coalesced if c["change_type"] == ChangeType.AVAILABILITY_CHANGED.value]
-        restriction_updates = [c for c in coalesced if c["change_type"] != ChangeType.AVAILABILITY_CHANGED.value
-                               and c["change_type"] != ChangeType.RATE_CHANGED.value]
+        restriction_updates = [c for c in coalesced if c["change_type"] != ChangeType.AVAILABILITY_CHANGED.value and c["change_type"] != ChangeType.RATE_CHANGED.value]
 
         # 5. Create sync events (batched)
         events = []
         for batch_idx, batch in enumerate(self._batch_updates(inv_updates)):
             event = SyncEvent(
-                job_id=job.id, tenant_id=job.tenant_id, connector_id=job.connector_id,
-                direction=SyncDirection.PUSH, sync_type=SyncType.INVENTORY,
-                status=SyncJobStatus.PENDING, change_type="availability_changed",
-                batch_index=batch_idx, batch_size=len(batch),
+                job_id=job.id,
+                tenant_id=job.tenant_id,
+                connector_id=job.connector_id,
+                direction=SyncDirection.PUSH,
+                sync_type=SyncType.INVENTORY,
+                status=SyncJobStatus.PENDING,
+                change_type="availability_changed",
+                batch_index=batch_idx,
+                batch_size=len(batch),
                 coalesced_count=sum(c.get("coalesced_count", 1) for c in batch),
                 request_payload={"updates": batch},
             )
@@ -275,11 +343,15 @@ class InventorySyncService:
 
         for batch_idx, batch in enumerate(self._batch_updates(restriction_updates)):
             event = SyncEvent(
-                job_id=job.id, tenant_id=job.tenant_id, connector_id=job.connector_id,
-                direction=SyncDirection.PUSH, sync_type=SyncType.RESTRICTIONS,
+                job_id=job.id,
+                tenant_id=job.tenant_id,
+                connector_id=job.connector_id,
+                direction=SyncDirection.PUSH,
+                sync_type=SyncType.RESTRICTIONS,
                 status=SyncJobStatus.PENDING,
                 change_type=batch[0]["change_type"] if batch else "restriction",
-                batch_index=batch_idx + len(inv_updates), batch_size=len(batch),
+                batch_index=batch_idx + len(inv_updates),
+                batch_size=len(batch),
                 coalesced_count=sum(c.get("coalesced_count", 1) for c in batch),
                 request_payload={"updates": batch},
             )
@@ -295,10 +367,14 @@ class InventorySyncService:
 
         # 6. Dispatch events (rate-limit aware)
         await self._transition_job(job, SyncJobStatus.DISPATCHED)
-        await self._repo.update_sync_job(job.id, {"dispatched_at": datetime.now(timezone.utc).isoformat()})
-        await self._audit_job(job, AuditAction.SYNC_JOB_DISPATCHED, metadata={
-            "total_events": len(events),
-        })
+        await self._repo.update_sync_job(job.id, {"dispatched_at": datetime.now(UTC).isoformat()})
+        await self._audit_job(
+            job,
+            AuditAction.SYNC_JOB_DISPATCHED,
+            metadata={
+                "total_events": len(events),
+            },
+        )
 
         completed, failed, retried = await self._dispatch_events(connector, events)
 
@@ -310,14 +386,17 @@ class InventorySyncService:
         duration_ms = int((time.monotonic() - pipeline_start) * 1000)
         final_status = self._determine_final_status(completed, failed, retried, job.retry_count)
 
-        await self._repo.update_sync_job(job.id, {
-            "status": final_status.value,
-            "completed_events": completed,
-            "failed_events": failed,
-            "retried_events": retried,
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-            "duration_ms": duration_ms,
-        })
+        await self._repo.update_sync_job(
+            job.id,
+            {
+                "status": final_status.value,
+                "completed_events": completed,
+                "failed_events": failed,
+                "retried_events": retried,
+                "completed_at": datetime.now(UTC).isoformat(),
+                "duration_ms": duration_ms,
+            },
+        )
         job.status = final_status
 
         # Update connector health
@@ -325,23 +404,42 @@ class InventorySyncService:
 
         # Audit completion
         if final_status == SyncJobStatus.SUCCEEDED:
-            await self._audit_job(job, AuditAction.SYNC_JOB_COMPLETED, metadata={
-                "completed": completed, "duration_ms": duration_ms,
-            })
+            await self._audit_job(
+                job,
+                AuditAction.SYNC_JOB_COMPLETED,
+                metadata={
+                    "completed": completed,
+                    "duration_ms": duration_ms,
+                },
+            )
         elif final_status == SyncJobStatus.MANUAL_REVIEW:
-            await self._audit_job(job, AuditAction.SYNC_JOB_MANUAL_REVIEW, metadata={
-                "completed": completed, "failed": failed, "duration_ms": duration_ms,
-            })
+            await self._audit_job(
+                job,
+                AuditAction.SYNC_JOB_MANUAL_REVIEW,
+                metadata={
+                    "completed": completed,
+                    "failed": failed,
+                    "duration_ms": duration_ms,
+                },
+            )
         else:
-            await self._audit_job(job, AuditAction.SYNC_JOB_FAILED, metadata={
-                "completed": completed, "failed": failed, "duration_ms": duration_ms,
-            })
+            await self._audit_job(
+                job,
+                AuditAction.SYNC_JOB_FAILED,
+                metadata={
+                    "completed": completed,
+                    "failed": failed,
+                    "duration_ms": duration_ms,
+                },
+            )
 
         # Emit WebSocket event for inventory sync
         try:
             from .realtime_service import RealtimeEventService
+
             await RealtimeEventService.emit_sync_job_update(
-                job.tenant_id, self._job_response(job, duration_ms=duration_ms, completed=completed, failed=failed),
+                job.tenant_id,
+                self._job_response(job, duration_ms=duration_ms, completed=completed, failed=failed),
             )
         except Exception:
             pass
@@ -351,45 +449,66 @@ class InventorySyncService:
     # ─── Pipeline: Rate Sync ────────────────────────────────────────────
 
     async def _execute_rate_pipeline(
-        self, job: SyncJob, connector: ConnectorAccount,
-        date_start: str, date_end: str, rate_plan_ids: Optional[List[str]],
-    ) -> Dict[str, Any]:
+        self,
+        job: SyncJob,
+        connector: ConnectorAccount,
+        date_start: str,
+        date_end: str,
+        rate_plan_ids: list[str] | None,
+    ) -> dict[str, Any]:
         pipeline_start = time.monotonic()
 
         from ..application.mapping_service import MappingService
+
         mapping_svc = MappingService(self._repo)
         room_lookup = await mapping_svc.get_mapping_lookup(job.tenant_id, job.connector_id, "room_type")
         rate_lookup = await mapping_svc.get_mapping_lookup(job.tenant_id, job.connector_id, "rate_plan")
 
         # Detect rate deltas
         changes = await self._detect_rate_deltas(
-            job.tenant_id, job.property_id, job.connector_id,
-            date_start, date_end, room_lookup, rate_lookup,
+            job.tenant_id,
+            job.property_id,
+            job.connector_id,
+            date_start,
+            date_end,
+            room_lookup,
+            rate_lookup,
         )
 
         if not changes:
             await self._transition_job(job, SyncJobStatus.SUCCEEDED)
             return {**self._job_response(job), "message": "No rate changes to push"}
 
-        await self._repo.update_sync_job(job.id, {
-            "total_changes_detected": len(changes),
-            "change_types": [ChangeType.RATE_CHANGED.value],
-        })
+        await self._repo.update_sync_job(
+            job.id,
+            {
+                "total_changes_detected": len(changes),
+                "change_types": [ChangeType.RATE_CHANGED.value],
+            },
+        )
 
         coalesced = self._coalesce_changes(changes)
         await self._transition_job(job, SyncJobStatus.BATCHED)
-        await self._repo.update_sync_job(job.id, {
-            "total_changes_after_coalescing": len(coalesced),
-            "batched_at": datetime.now(timezone.utc).isoformat(),
-        })
+        await self._repo.update_sync_job(
+            job.id,
+            {
+                "total_changes_after_coalescing": len(coalesced),
+                "batched_at": datetime.now(UTC).isoformat(),
+            },
+        )
 
         events = []
         for batch_idx, batch in enumerate(self._batch_updates(coalesced)):
             event = SyncEvent(
-                job_id=job.id, tenant_id=job.tenant_id, connector_id=job.connector_id,
-                direction=SyncDirection.PUSH, sync_type=SyncType.RATES,
-                status=SyncJobStatus.PENDING, change_type="rate_changed",
-                batch_index=batch_idx, batch_size=len(batch),
+                job_id=job.id,
+                tenant_id=job.tenant_id,
+                connector_id=job.connector_id,
+                direction=SyncDirection.PUSH,
+                sync_type=SyncType.RATES,
+                status=SyncJobStatus.PENDING,
+                change_type="rate_changed",
+                batch_index=batch_idx,
+                batch_size=len(batch),
                 coalesced_count=sum(c.get("coalesced_count", 1) for c in batch),
                 request_payload={"updates": batch},
             )
@@ -403,35 +522,46 @@ class InventorySyncService:
         await self._repo.update_sync_job(job.id, {"total_events": len(events)})
 
         await self._transition_job(job, SyncJobStatus.DISPATCHED)
-        await self._repo.update_sync_job(job.id, {"dispatched_at": datetime.now(timezone.utc).isoformat()})
+        await self._repo.update_sync_job(job.id, {"dispatched_at": datetime.now(UTC).isoformat()})
 
         completed, failed, retried = await self._dispatch_events(connector, events, is_rate=True)
 
         duration_ms = int((time.monotonic() - pipeline_start) * 1000)
         final_status = self._determine_final_status(completed, failed, retried, job.retry_count)
 
-        await self._repo.update_sync_job(job.id, {
-            "status": final_status.value,
-            "completed_events": completed,
-            "failed_events": failed,
-            "retried_events": retried,
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-            "duration_ms": duration_ms,
-        })
+        await self._repo.update_sync_job(
+            job.id,
+            {
+                "status": final_status.value,
+                "completed_events": completed,
+                "failed_events": failed,
+                "retried_events": retried,
+                "completed_at": datetime.now(UTC).isoformat(),
+                "duration_ms": duration_ms,
+            },
+        )
         job.status = final_status
         await self._update_connector_health(connector, final_status, failed)
 
         audit_action = AuditAction.SYNC_JOB_COMPLETED if final_status == SyncJobStatus.SUCCEEDED else AuditAction.SYNC_JOB_FAILED
-        await self._audit_job(job, audit_action, metadata={
-            "completed": completed, "failed": failed, "duration_ms": duration_ms,
-        })
+        await self._audit_job(
+            job,
+            audit_action,
+            metadata={
+                "completed": completed,
+                "failed": failed,
+                "duration_ms": duration_ms,
+            },
+        )
 
         # Record rate push metrics
         try:
             from .rate_push_tracking_service import RatePushTrackingService
+
             rpt = RatePushTrackingService(repo=self._repo)
             await rpt.record_rate_push(
-                tenant_id=job.tenant_id, connector_id=job.connector_id,
+                tenant_id=job.tenant_id,
+                connector_id=job.connector_id,
                 success=final_status == SyncJobStatus.SUCCEEDED,
                 latency_ms=duration_ms,
                 error_type=type(Exception).__name__ if failed > 0 else "",
@@ -444,8 +574,10 @@ class InventorySyncService:
         # Emit WebSocket event
         try:
             from .realtime_service import RealtimeEventService
+
             await RealtimeEventService.emit_sync_job_update(
-                job.tenant_id, self._job_response(job, duration_ms=duration_ms, completed=completed, failed=failed),
+                job.tenant_id,
+                self._job_response(job, duration_ms=duration_ms, completed=completed, failed=failed),
             )
         except Exception:
             pass
@@ -454,75 +586,124 @@ class InventorySyncService:
 
     # ─── Delta Detection ────────────────────────────────────────────────
 
+    async def _check_inventory_freshness(
+        self,
+        tenant_id: str,
+        date: str,
+        stale_threshold_minutes: int = 15,
+    ) -> str:
+        """Check freshness of room_type_inventory materialized view.
+
+        Returns: 'fresh' | 'recent' | 'stale' | 'empty'
+        No fallback — stale means reconcile, not ignore.
+        """
+        latest = await db.room_type_inventory.find_one(
+            {"tenant_id": tenant_id, "date": date},
+            {"_id": 0, "last_computed_at": 1},
+            sort=[("last_computed_at", -1)],
+        )
+        if not latest or not latest.get("last_computed_at"):
+            return "empty"
+
+        try:
+            last_dt = datetime.fromisoformat(latest["last_computed_at"])
+            age_minutes = (datetime.now(UTC) - last_dt).total_seconds() / 60
+            if age_minutes < 5:
+                return "fresh"
+            elif age_minutes < stale_threshold_minutes:
+                return "recent"
+            else:
+                return "stale"
+        except (ValueError, TypeError):
+            return "stale"
+
     async def _detect_inventory_deltas(
-        self, tenant_id: str, property_id: str, connector_id: str,
-        date_start: str, date_end: str,
-        room_type_ids: Optional[List[str]], room_lookup: Dict[str, str],
-    ) -> List[Dict[str, Any]]:
-        """Detect inventory changes by comparing PMS state with last synced snapshot."""
-        changes: List[Dict[str, Any]] = []
+        self,
+        tenant_id: str,
+        property_id: str,
+        connector_id: str,
+        date_start: str,
+        date_end: str,
+        room_type_ids: list[str] | None,
+        room_lookup: dict[str, str],
+    ) -> list[dict[str, Any]]:
+        """Detect inventory changes using room_type_inventory as authoritative truth.
 
-        # Get all rooms for this property
-        room_query: Dict[str, Any] = {"tenant_id": tenant_id}
-        if property_id:
-            room_query["property_id"] = property_id
-        rooms = await db.rooms.find(room_query, {"_id": 0}).to_list(1000)
+        Authoritative source: room_type_inventory materialized view (from room_night_locks).
+        Accounts for booking + hold + OOO + OOS locks — NOT raw booking counts.
+        NO fallback to booking-based computation. If view is stale, reconcile first.
+        """
+        from core.room_type_inventory_service import (
+            get_room_type_inventory,
+            reconcile_date_range,
+        )
 
-        # Group by room type
-        room_type_counts: Dict[str, int] = {}
-        for r in rooms:
-            rt = r.get("room_type", "")
-            if rt and (not room_type_ids or rt in room_type_ids) and rt in room_lookup:
-                room_type_counts[rt] = room_type_counts.get(rt, 0) + 1
+        changes: list[dict[str, Any]] = []
 
-        if not room_type_counts:
-            return changes
+        # Step 1: Freshness check — stale view = reconcile, NOT fallback
+        freshness = await self._check_inventory_freshness(tenant_id, date_start)
+        if freshness in ("stale", "empty"):
+            logger.warning(
+                "Inventory view %s for tenant %s — reconciling before sync",
+                freshness,
+                tenant_id,
+            )
+            recon_result = await reconcile_date_range(tenant_id, date_start, date_end)
+            if recon_result.get("drift_detected", 0) > 0:
+                logger.warning(
+                    "Pre-sync reconciliation found %d drifts for tenant %s",
+                    recon_result["drift_detected"],
+                    tenant_id,
+                )
 
-        # Get bookings in date range
-        bookings = await db.bookings.find({
-            "tenant_id": tenant_id,
-            "check_in": {"$lte": date_end},
-            "check_out": {"$gte": date_start},
-            "status": {"$nin": ["cancelled", "no_show"]},
-        }, {"_id": 0, "room_type": 1, "check_in": 1, "check_out": 1}).to_list(5000)
-
-        # Get restriction data from PMS
-        restrictions = await db.inventory_restrictions.find({
-            "tenant_id": tenant_id,
-            "date": {"$gte": date_start, "$lte": date_end},
-        }, {"_id": 0}).to_list(5000)
-        restriction_map = {}
+        # Step 2: Get restriction data from PMS (unchanged — restrictions have no alt source)
+        restrictions = await db.inventory_restrictions.find(
+            {
+                "tenant_id": tenant_id,
+                "date": {"$gte": date_start, "$lte": date_end},
+            },
+            {"_id": 0},
+        ).to_list(5000)
+        restriction_map: dict[str, dict] = {}
         for r in restrictions:
             key = f"{r.get('room_type_id', '')}_{r.get('date', '')}"
             restriction_map[key] = r
 
-        # Calculate daily values and compare with snapshots
+        # Step 3: Iterate date range, read from AUTHORITATIVE view
         start = datetime.strptime(date_start, "%Y-%m-%d").date()
         end = datetime.strptime(date_end, "%Y-%m-%d").date()
-        current = start
+        current_date = start
 
-        while current <= end:
-            date_str = current.isoformat()
-            for rt, total in room_type_counts.items():
+        while current_date <= end:
+            date_str = current_date.isoformat()
+
+            # Read from room_type_inventory — the SINGLE source of truth
+            inventory_items = await get_room_type_inventory(tenant_id, date_str)
+
+            for item in inventory_items:
+                rt = item.get("room_type", "")
+                if not rt:
+                    continue
+                if room_type_ids and rt not in room_type_ids:
+                    continue
                 ext_code = room_lookup.get(rt)
                 if not ext_code:
                     continue
 
-                # Calculate current availability
-                occupied = sum(
-                    1 for b in bookings
-                    if b.get("room_type") == rt
-                    and b.get("check_in", "") <= date_str
-                    and b.get("check_out", "") > date_str
-                )
-                current_available = max(0, total - occupied)
+                # Authoritative sellable count from room_night_locks
+                current_available = item.get("sellable", 0)
 
-                # Get restriction state
+                # Restriction state
                 restriction_key = f"{rt}_{date_str}"
                 restriction = restriction_map.get(restriction_key, {})
 
-                # Get last synced snapshot
-                snapshot = await self._repo.get_sync_snapshot(tenant_id, connector_id, rt, date_str)
+                # Last synced snapshot (what the channel currently has)
+                snapshot = await self._repo.get_sync_snapshot(
+                    tenant_id,
+                    connector_id,
+                    rt,
+                    date_str,
+                )
                 last_available = snapshot.get("available") if snapshot else None
                 last_stop_sell = snapshot.get("stop_sell", False) if snapshot else None
                 last_cta = snapshot.get("closed_to_arrival", False) if snapshot else None
@@ -541,76 +722,95 @@ class InventorySyncService:
                     "date_end": date_str,
                 }
 
-                # Availability delta
+                # Availability delta (from authoritative view)
                 if last_available is None or current_available != last_available:
-                    changes.append({
-                        **base_change,
-                        "change_type": ChangeType.AVAILABILITY_CHANGED.value,
-                        "old_value": last_available,
-                        "new_value": current_available,
-                        "available": current_available,
-                    })
+                    changes.append(
+                        {
+                            **base_change,
+                            "change_type": ChangeType.AVAILABILITY_CHANGED.value,
+                            "old_value": last_available,
+                            "new_value": current_available,
+                            "available": current_available,
+                            "source": "room_type_inventory",
+                        }
+                    )
 
                 # Stop sell delta
                 if last_stop_sell is None or current_stop_sell != last_stop_sell:
                     if current_stop_sell or last_stop_sell:
-                        changes.append({
-                            **base_change,
-                            "change_type": ChangeType.STOP_SELL_CHANGED.value,
-                            "old_value": last_stop_sell,
-                            "new_value": current_stop_sell,
-                            "restriction_status": "Close" if current_stop_sell else "Open",
-                        })
+                        changes.append(
+                            {
+                                **base_change,
+                                "change_type": ChangeType.STOP_SELL_CHANGED.value,
+                                "old_value": last_stop_sell,
+                                "new_value": current_stop_sell,
+                                "restriction_status": "Close" if current_stop_sell else "Open",
+                            }
+                        )
 
                 # Closed to arrival delta
                 if last_cta is None or current_cta != last_cta:
                     if current_cta or last_cta:
-                        changes.append({
-                            **base_change,
-                            "change_type": ChangeType.CLOSED_TO_ARRIVAL_CHANGED.value,
-                            "old_value": last_cta,
-                            "new_value": current_cta,
-                            "closed_to_arrival": current_cta,
-                        })
+                        changes.append(
+                            {
+                                **base_change,
+                                "change_type": ChangeType.CLOSED_TO_ARRIVAL_CHANGED.value,
+                                "old_value": last_cta,
+                                "new_value": current_cta,
+                                "closed_to_arrival": current_cta,
+                            }
+                        )
 
                 # Closed to departure delta
                 if last_ctd is None or current_ctd != last_ctd:
                     if current_ctd or last_ctd:
-                        changes.append({
-                            **base_change,
-                            "change_type": ChangeType.CLOSED_TO_DEPARTURE_CHANGED.value,
-                            "old_value": last_ctd,
-                            "new_value": current_ctd,
-                            "closed_to_departure": current_ctd,
-                        })
+                        changes.append(
+                            {
+                                **base_change,
+                                "change_type": ChangeType.CLOSED_TO_DEPARTURE_CHANGED.value,
+                                "old_value": last_ctd,
+                                "new_value": current_ctd,
+                                "closed_to_departure": current_ctd,
+                            }
+                        )
 
                 # Minimum stay delta
                 if last_min_stay != current_min_stay:
                     if current_min_stay is not None or last_min_stay is not None:
-                        changes.append({
-                            **base_change,
-                            "change_type": ChangeType.MINIMUM_STAY_CHANGED.value,
-                            "old_value": last_min_stay,
-                            "new_value": current_min_stay,
-                            "min_stay": current_min_stay,
-                        })
+                        changes.append(
+                            {
+                                **base_change,
+                                "change_type": ChangeType.MINIMUM_STAY_CHANGED.value,
+                                "old_value": last_min_stay,
+                                "new_value": current_min_stay,
+                                "min_stay": current_min_stay,
+                            }
+                        )
 
-            current += timedelta(days=1)
+            current_date += timedelta(days=1)
 
         return changes
 
     async def _detect_rate_deltas(
-        self, tenant_id: str, property_id: str, connector_id: str,
-        date_start: str, date_end: str,
-        room_lookup: Dict[str, str], rate_lookup: Dict[str, str],
-    ) -> List[Dict[str, Any]]:
+        self,
+        tenant_id: str,
+        property_id: str,
+        connector_id: str,
+        date_start: str,
+        date_end: str,
+        room_lookup: dict[str, str],
+        rate_lookup: dict[str, str],
+    ) -> list[dict[str, Any]]:
         """Detect rate changes by comparing PMS state with last synced snapshot."""
-        changes: List[Dict[str, Any]] = []
+        changes: list[dict[str, Any]] = []
 
-        rates = await db.rate_overrides.find({
-            "tenant_id": tenant_id,
-            "date": {"$gte": date_start, "$lte": date_end},
-        }, {"_id": 0}).to_list(5000)
+        rates = await db.rate_overrides.find(
+            {
+                "tenant_id": tenant_id,
+                "date": {"$gte": date_start, "$lte": date_end},
+            },
+            {"_id": 0},
+        ).to_list(5000)
 
         for r in rates:
             room_type_id = r.get("room_type_id", "")
@@ -627,25 +827,27 @@ class InventorySyncService:
             last_rate = snapshot.get("sell_rate") if snapshot else None
 
             if last_rate is None or abs(current_rate - (last_rate or 0)) > 0.01:
-                changes.append({
-                    "change_type": ChangeType.RATE_CHANGED.value,
-                    "room_type_id": room_type_id,
-                    "room_type_code": ext_room,
-                    "rate_plan_id": rate_plan_id,
-                    "rate_plan_code": ext_rate,
-                    "date_start": date,
-                    "date_end": date,
-                    "old_value": last_rate,
-                    "new_value": current_rate,
-                    "amount_after_tax": current_rate,
-                    "currency": r.get("currency", "TRY"),
-                })
+                changes.append(
+                    {
+                        "change_type": ChangeType.RATE_CHANGED.value,
+                        "room_type_id": room_type_id,
+                        "room_type_code": ext_room,
+                        "rate_plan_id": rate_plan_id,
+                        "rate_plan_code": ext_rate,
+                        "date_start": date,
+                        "date_end": date,
+                        "old_value": last_rate,
+                        "new_value": current_rate,
+                        "amount_after_tax": current_rate,
+                        "currency": r.get("currency", "TRY"),
+                    }
+                )
 
         return changes
 
     # ─── Coalescing ─────────────────────────────────────────────────────
 
-    def _coalesce_changes(self, changes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _coalesce_changes(self, changes: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Merge consecutive changes for the same property/room_type/rate_plan/change_type.
         Adjacent dates with same values are merged into a single date range.
@@ -654,7 +856,7 @@ class InventorySyncService:
             return []
 
         # Group by (room_type_code, rate_plan_code, change_type)
-        groups: Dict[str, List[Dict]] = defaultdict(list)
+        groups: dict[str, list[dict]] = defaultdict(list)
         for c in changes:
             key = f"{c.get('room_type_code', '')}|{c.get('rate_plan_code', c.get('rate_plan_id', ''))}|{c['change_type']}"
             groups[key].append(c)
@@ -688,17 +890,20 @@ class InventorySyncService:
 
     # ─── Batching ───────────────────────────────────────────────────────
 
-    def _batch_updates(self, updates: List[Dict], batch_size: int = BATCH_SIZE) -> List[List[Dict]]:
+    def _batch_updates(self, updates: list[dict], batch_size: int = BATCH_SIZE) -> list[list[dict]]:
         """Split updates into batches for efficient API calls."""
         if not updates:
             return []
-        return [updates[i:i+batch_size] for i in range(0, len(updates), batch_size)]
+        return [updates[i : i + batch_size] for i in range(0, len(updates), batch_size)]
 
     # ─── Dispatch (Rate-Limit Aware) ────────────────────────────────────
 
     async def _dispatch_events(
-        self, connector: ConnectorAccount, events: List[SyncEvent], is_rate: bool = False,
-    ) -> Tuple[int, int, int]:
+        self,
+        connector: ConnectorAccount,
+        events: list[SyncEvent],
+        is_rate: bool = False,
+    ) -> tuple[int, int, int]:
         """Dispatch all events with rate limiting and retry logic."""
         completed = 0
         failed = 0
@@ -720,24 +925,33 @@ class InventorySyncService:
         return completed, failed, retried
 
     async def _dispatch_single_event(
-        self, connector: ConnectorAccount, event: SyncEvent, is_rate: bool = False,
-    ) -> Dict[str, Any]:
+        self,
+        connector: ConnectorAccount,
+        event: SyncEvent,
+        is_rate: bool = False,
+    ) -> dict[str, Any]:
         """Dispatch a single sync event to the provider with retry logic."""
         event_start = time.monotonic()
 
         # Update event to dispatched
-        await self._repo.update_sync_event(event.id, {
-            "status": SyncJobStatus.DISPATCHED.value,
-            "started_at": datetime.now(timezone.utc).isoformat(),
-        })
+        await self._repo.update_sync_event(
+            event.id,
+            {
+                "status": SyncJobStatus.DISPATCHED.value,
+                "started_at": datetime.now(UTC).isoformat(),
+            },
+        )
 
         updates = (event.request_payload or {}).get("updates", [])
         if not updates:
-            await self._repo.update_sync_event(event.id, {
-                "status": SyncJobStatus.SUCCEEDED.value,
-                "completed_at": datetime.now(timezone.utc).isoformat(),
-                "duration_ms": 0,
-            })
+            await self._repo.update_sync_event(
+                event.id,
+                {
+                    "status": SyncJobStatus.SUCCEEDED.value,
+                    "completed_at": datetime.now(UTC).isoformat(),
+                    "duration_ms": 0,
+                },
+            )
             return {"success": True}
 
         last_error = None
@@ -764,29 +978,41 @@ class InventorySyncService:
                 latency_ms = int((time.monotonic() - event_start) * 1000)
 
                 # Success
-                await self._repo.update_sync_event(event.id, {
-                    "status": SyncJobStatus.SUCCEEDED.value,
-                    "response_payload": result,
-                    "completed_at": datetime.now(timezone.utc).isoformat(),
-                    "duration_ms": latency_ms,
-                    "latency_ms": latency_ms,
-                    "retry_count": attempt,
-                })
+                await self._repo.update_sync_event(
+                    event.id,
+                    {
+                        "status": SyncJobStatus.SUCCEEDED.value,
+                        "response_payload": result,
+                        "completed_at": datetime.now(UTC).isoformat(),
+                        "duration_ms": latency_ms,
+                        "latency_ms": latency_ms,
+                        "retry_count": attempt,
+                    },
+                )
 
                 # Create push receipt
                 receipt = PushReceipt(
-                    tenant_id=connector.tenant_id, connector_id=connector.id,
-                    sync_event_id=event.id, job_id=event.job_id,
-                    provider_status="success", provider_response=result,
-                    acknowledged=True, latency_ms=latency_ms,
-                    acknowledged_at=datetime.now(timezone.utc).isoformat(),
+                    tenant_id=connector.tenant_id,
+                    connector_id=connector.id,
+                    sync_event_id=event.id,
+                    job_id=event.job_id,
+                    provider_status="success",
+                    provider_response=result,
+                    acknowledged=True,
+                    latency_ms=latency_ms,
+                    acknowledged_at=datetime.now(UTC).isoformat(),
                 )
                 await self._repo.create_push_receipt(receipt.to_doc())
 
                 # Audit
-                await self._audit_event(event, AuditAction.SYNC_EVENT_SUCCEEDED, {
-                    "latency_ms": latency_ms, "attempt": attempt + 1,
-                })
+                await self._audit_event(
+                    event,
+                    AuditAction.SYNC_EVENT_SUCCEEDED,
+                    {
+                        "latency_ms": latency_ms,
+                        "attempt": attempt + 1,
+                    },
+                )
 
                 return {"success": True, "latency_ms": latency_ms, "retried": attempt > 0}
 
@@ -794,20 +1020,29 @@ class InventorySyncService:
                 # Non-retryable: fail immediately
                 latency_ms = int((time.monotonic() - event_start) * 1000)
                 error_msg = getattr(e, "message", str(e))
-                await self._repo.update_sync_event(event.id, {
-                    "status": SyncJobStatus.FAILED.value,
-                    "error_message": error_msg,
-                    "error_code": type(e).__name__,
-                    "is_retryable": False,
-                    "completed_at": datetime.now(timezone.utc).isoformat(),
-                    "duration_ms": latency_ms,
-                    "latency_ms": latency_ms,
-                    "retry_count": attempt,
-                })
-                await self._audit_event(event, AuditAction.SYNC_EVENT_FAILED, {
-                    "error": error_msg, "error_code": type(e).__name__,
-                    "retryable": False, "latency_ms": latency_ms,
-                })
+                await self._repo.update_sync_event(
+                    event.id,
+                    {
+                        "status": SyncJobStatus.FAILED.value,
+                        "error_message": error_msg,
+                        "error_code": type(e).__name__,
+                        "is_retryable": False,
+                        "completed_at": datetime.now(UTC).isoformat(),
+                        "duration_ms": latency_ms,
+                        "latency_ms": latency_ms,
+                        "retry_count": attempt,
+                    },
+                )
+                await self._audit_event(
+                    event,
+                    AuditAction.SYNC_EVENT_FAILED,
+                    {
+                        "error": error_msg,
+                        "error_code": type(e).__name__,
+                        "retryable": False,
+                        "latency_ms": latency_ms,
+                    },
+                )
                 return {"success": False, "error": error_msg, "retryable": False}
 
             except RETRYABLE_ERRORS as e:
@@ -817,20 +1052,23 @@ class InventorySyncService:
                     break
 
                 # Update event as retrying
-                await self._repo.update_sync_event(event.id, {
-                    "status": SyncJobStatus.RETRYING.value,
-                    "retry_count": attempt,
-                    "error_message": getattr(e, "message", str(e)),
-                })
+                await self._repo.update_sync_event(
+                    event.id,
+                    {
+                        "status": SyncJobStatus.RETRYING.value,
+                        "retry_count": attempt,
+                        "error_message": getattr(e, "message", str(e)),
+                    },
+                )
 
                 # Backoff delay
                 delay = min(2.0 * (2 ** (attempt - 1)), 30.0)
                 if isinstance(e, RateLimitError):
                     delay = min(e.retry_after_seconds, 60)
 
-                logger.warning("Event %s retry %d/%d after %.1fs: %s",
-                               event.id[:8], attempt, max_retries, delay, str(e))
+                logger.warning("Event %s retry %d/%d after %.1fs: %s", event.id[:8], attempt, max_retries, delay, str(e))
                 import asyncio
+
                 await asyncio.sleep(delay)
 
             except ConnectorError as e:
@@ -839,11 +1077,15 @@ class InventorySyncService:
                     attempt += 1
                     if attempt > max_retries:
                         break
-                    await self._repo.update_sync_event(event.id, {
-                        "status": SyncJobStatus.RETRYING.value,
-                        "retry_count": attempt,
-                    })
+                    await self._repo.update_sync_event(
+                        event.id,
+                        {
+                            "status": SyncJobStatus.RETRYING.value,
+                            "retry_count": attempt,
+                        },
+                    )
                     import asyncio
+
                     await asyncio.sleep(2.0 * (2 ** (attempt - 1)))
                 else:
                     break
@@ -851,26 +1093,37 @@ class InventorySyncService:
         # Exhausted retries or non-recoverable ConnectorError
         latency_ms = int((time.monotonic() - event_start) * 1000)
         error_msg = getattr(last_error, "message", str(last_error)) if last_error else "Unknown error"
-        await self._repo.update_sync_event(event.id, {
-            "status": SyncJobStatus.FAILED.value,
-            "error_message": error_msg,
-            "error_code": type(last_error).__name__ if last_error else "UNKNOWN",
-            "is_retryable": getattr(last_error, "recoverable", False) if last_error else False,
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-            "duration_ms": latency_ms,
-            "latency_ms": latency_ms,
-            "retry_count": attempt,
-        })
-        await self._audit_event(event, AuditAction.SYNC_EVENT_FAILED, {
-            "error": error_msg, "retries_exhausted": attempt,
-            "latency_ms": latency_ms,
-        })
+        await self._repo.update_sync_event(
+            event.id,
+            {
+                "status": SyncJobStatus.FAILED.value,
+                "error_message": error_msg,
+                "error_code": type(last_error).__name__ if last_error else "UNKNOWN",
+                "is_retryable": getattr(last_error, "recoverable", False) if last_error else False,
+                "completed_at": datetime.now(UTC).isoformat(),
+                "duration_ms": latency_ms,
+                "latency_ms": latency_ms,
+                "retry_count": attempt,
+            },
+        )
+        await self._audit_event(
+            event,
+            AuditAction.SYNC_EVENT_FAILED,
+            {
+                "error": error_msg,
+                "retries_exhausted": attempt,
+                "latency_ms": latency_ms,
+            },
+        )
         return {"success": False, "error": error_msg, "retried": attempt > 0}
 
     # ─── Snapshot Management ────────────────────────────────────────────
 
     async def _update_snapshots(
-        self, tenant_id: str, connector_id: str, coalesced: List[Dict[str, Any]],
+        self,
+        tenant_id: str,
+        connector_id: str,
+        coalesced: list[dict[str, Any]],
     ) -> None:
         """Update sync snapshots after successful dispatch."""
         for change in coalesced:
@@ -886,7 +1139,7 @@ class InventorySyncService:
                     "connector_id": connector_id,
                     "room_type_id": room_type_id,
                     "date": date_str,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(UTC).isoformat(),
                 }
 
                 ct = change.get("change_type", "")
@@ -917,11 +1170,17 @@ class InventorySyncService:
         return ConnectorAccount.from_doc(doc)
 
     async def _create_job(
-        self, tenant_id: str, property_id: str, connector_id: str,
-        sync_type: SyncType, date_start: str, date_end: str,
-        room_type_ids: Optional[List[str]] = None,
-        rate_plan_ids: Optional[List[str]] = None,
-        triggered_by: str = "system", trigger_reason: str = "",
+        self,
+        tenant_id: str,
+        property_id: str,
+        connector_id: str,
+        sync_type: SyncType,
+        date_start: str,
+        date_end: str,
+        room_type_ids: list[str] | None = None,
+        rate_plan_ids: list[str] | None = None,
+        triggered_by: str = "system",
+        trigger_reason: str = "",
     ) -> SyncJob:
         job = SyncJob(
             tenant_id=tenant_id,
@@ -936,33 +1195,40 @@ class InventorySyncService:
             triggered_by=triggered_by,
             trigger_reason=trigger_reason,
             status=SyncJobStatus.PENDING,
-            started_at=datetime.now(timezone.utc).isoformat(),
+            started_at=datetime.now(UTC).isoformat(),
         )
         await self._repo.create_sync_job(job.to_doc())
         return job
 
-    async def _transition_job(self, job: SyncJob, status: SyncJobStatus, error: Optional[str] = None) -> None:
-        updates: Dict[str, Any] = {"status": status.value}
+    async def _transition_job(self, job: SyncJob, status: SyncJobStatus, error: str | None = None) -> None:
+        updates: dict[str, Any] = {"status": status.value}
         if error:
             updates["last_error"] = error
         if status in (SyncJobStatus.SUCCEEDED, SyncJobStatus.FAILED, SyncJobStatus.MANUAL_REVIEW):
-            updates["completed_at"] = datetime.now(timezone.utc).isoformat()
+            updates["completed_at"] = datetime.now(UTC).isoformat()
         await self._repo.update_sync_job(job.id, updates)
         job.status = status
 
-    async def _handle_job_failure(self, job: SyncJob, error: Exception) -> Dict[str, Any]:
+    async def _handle_job_failure(self, job: SyncJob, error: Exception) -> dict[str, Any]:
         error_msg = str(error)[:500]
-        await self._repo.update_sync_job(job.id, {
-            "status": SyncJobStatus.FAILED.value,
-            "last_error": error_msg,
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-        })
+        await self._repo.update_sync_job(
+            job.id,
+            {
+                "status": SyncJobStatus.FAILED.value,
+                "last_error": error_msg,
+                "completed_at": datetime.now(UTC).isoformat(),
+            },
+        )
         job.status = SyncJobStatus.FAILED
         await self._audit_job(job, AuditAction.SYNC_JOB_FAILED, metadata={"error": error_msg})
         return self._job_response(job, error=error_msg)
 
     def _determine_final_status(
-        self, completed: int, failed: int, retried: int, job_retry_count: int,
+        self,
+        completed: int,
+        failed: int,
+        retried: int,
+        job_retry_count: int,
     ) -> SyncJobStatus:
         if failed == 0:
             return SyncJobStatus.SUCCEEDED
@@ -973,25 +1239,32 @@ class InventorySyncService:
         return SyncJobStatus.FAILED
 
     async def _update_connector_health(
-        self, connector: ConnectorAccount, status: SyncJobStatus, failed: int,
+        self,
+        connector: ConnectorAccount,
+        status: SyncJobStatus,
+        failed: int,
     ) -> None:
         doc = await self._repo.get_connector(connector.tenant_id, connector.id)
         if not doc:
             return
         if status == SyncJobStatus.SUCCEEDED:
-            doc["last_successful_sync"] = datetime.now(timezone.utc).isoformat()
+            doc["last_successful_sync"] = datetime.now(UTC).isoformat()
             doc["consecutive_failures"] = 0
         else:
             doc["consecutive_failures"] = doc.get("consecutive_failures", 0) + 1
             doc["last_error"] = f"{failed} events failed"
-            doc["last_error_at"] = datetime.now(timezone.utc).isoformat()
+            doc["last_error_at"] = datetime.now(UTC).isoformat()
         doc["total_syncs"] = doc.get("total_syncs", 0) + 1
         await self._repo.upsert_connector(doc)
 
     def _job_response(
-        self, job: SyncJob, duration_ms: int = 0, completed: int = 0,
-        failed: int = 0, error: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        self,
+        job: SyncJob,
+        duration_ms: int = 0,
+        completed: int = 0,
+        failed: int = 0,
+        error: str | None = None,
+    ) -> dict[str, Any]:
         resp = {
             "job_id": job.id,
             "status": job.status.value,
@@ -1016,8 +1289,11 @@ class InventorySyncService:
     # ─── Audit Helpers ──────────────────────────────────────────────────
 
     async def _audit_job(
-        self, job: SyncJob, action: AuditAction,
-        actor_id: Optional[str] = None, metadata: Optional[Dict] = None,
+        self,
+        job: SyncJob,
+        action: AuditAction,
+        actor_id: str | None = None,
+        metadata: dict | None = None,
     ) -> None:
         log = IntegrationAuditLog(
             tenant_id=job.tenant_id,
@@ -1032,20 +1308,32 @@ class InventorySyncService:
         await self._repo.create_audit_log(log.to_doc())
 
     async def _audit_job_by_id(
-        self, tenant_id: str, property_id: str, connector_id: str,
-        job_id: str, action: AuditAction,
-        actor_id: Optional[str] = None, metadata: Optional[Dict] = None,
+        self,
+        tenant_id: str,
+        property_id: str,
+        connector_id: str,
+        job_id: str,
+        action: AuditAction,
+        actor_id: str | None = None,
+        metadata: dict | None = None,
     ) -> None:
         log = IntegrationAuditLog(
-            tenant_id=tenant_id, property_id=property_id,
-            connector_id=connector_id, action=action,
-            entity_type="sync_job", entity_id=job_id,
-            actor_id=actor_id, metadata=metadata or {},
+            tenant_id=tenant_id,
+            property_id=property_id,
+            connector_id=connector_id,
+            action=action,
+            entity_type="sync_job",
+            entity_id=job_id,
+            actor_id=actor_id,
+            metadata=metadata or {},
         )
         await self._repo.create_audit_log(log.to_doc())
 
     async def _audit_event(
-        self, event: SyncEvent, action: AuditAction, metadata: Optional[Dict] = None,
+        self,
+        event: SyncEvent,
+        action: AuditAction,
+        metadata: dict | None = None,
     ) -> None:
         log = IntegrationAuditLog(
             tenant_id=event.tenant_id,

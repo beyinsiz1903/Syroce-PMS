@@ -1,0 +1,4498 @@
+
+# frontend/src/pages/AIModule.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_AIModule.jsx	2026-05-06 14:49:44.834833829 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_AIModule.jsx	2026-05-06 14:49:44.835833828 +0000
+@@ -1,6 +1,6 @@
+ import React, { useState, useEffect, lazy, Suspense } from 'react';
+ import { useNavigate } from 'react-router-dom';
+-import Layout from '@/components/Layout';
++
+ import axios from 'axios';
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+@@ -454,7 +454,7 @@
+   };
+ 
+   const wrap = (content) => embedded ? content : (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="ai">{content}</Layout>
++    <>{content}</>
+   );
+ 
+   return wrap(
+
+
+# frontend/src/pages/AIZekaPage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_AIZekaPage.jsx	2026-05-06 14:49:44.882833791 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_AIZekaPage.jsx	2026-05-06 14:49:44.882833791 +0000
+@@ -1,5 +1,5 @@
+ import React, { useState, lazy, Suspense } from 'react';
+-import Layout from '@/components/Layout';
++
+ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+ import { Brain, BarChart3, Loader2 } from 'lucide-react';
+ 
+@@ -19,7 +19,7 @@
+   const [tab, setTab] = useState('ai-hub');
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="ai">
++    <>
+       <div className="p-4 lg:p-6 space-y-4" data-testid="ai-zeka-page">
+         <div>
+           <h1 className="text-2xl font-bold tracking-tight">AI & Zeka</h1>
+@@ -49,6 +49,6 @@
+           </TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/ARIPushDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_ARIPushDashboard.jsx	2026-05-06 14:49:44.918833763 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_ARIPushDashboard.jsx	2026-05-06 14:49:44.919833762 +0000
+@@ -1,7 +1,7 @@
+ import { useState, useEffect, useCallback } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+@@ -142,7 +142,7 @@
+   });
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} title="ARI Push Engine">
++    <>
+       <div data-testid="ari-push-dashboard" className="space-y-6 p-4 sm:p-6">
+         {/* Header */}
+         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+@@ -563,7 +563,7 @@
+           </TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/AdminControlPanel.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_AdminControlPanel.jsx	2026-05-06 14:49:44.957833732 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_AdminControlPanel.jsx	2026-05-06 14:49:44.958781429 +0000
+@@ -1,6 +1,6 @@
+ import { useState, Suspense, lazy } from 'react';
+ import { useTranslation } from 'react-i18next';
+-import Layout from '../components/Layout';
++
+ import { Loader2, Activity, AlertTriangle, Clock, Key, AlertOctagon, BarChart3, Shield, Bell, TrendingUp, Boxes, Building2, FileText, PlayCircle, Heart, Send, Zap, Map, LineChart, Gauge, Wifi } from 'lucide-react';
+ import { useAdminWebSocket } from '../hooks/useAdminWebSocket';
+ 
+@@ -77,7 +77,7 @@
+   const { connected, lastEvent } = useAdminWebSocket('default');
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="admin_control_panel">
++    <>
+       <div data-testid="admin-control-panel" className="max-w-7xl mx-auto px-4 py-6">
+         <div className="flex items-center justify-between mb-6">
+           <div>
+@@ -128,7 +128,7 @@
+           <TabContent tabId={activeTab} />
+         </Suspense>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/AdminHub.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_AdminHub.jsx	2026-05-06 14:49:45.003833696 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_AdminHub.jsx	2026-05-06 14:49:45.004559448 +0000
+@@ -22,7 +22,6 @@
+   ChevronRight,
+ } from 'lucide-react';
+ import { Card, CardContent } from '@/components/ui/card';
+-import Layout from '@/components/Layout';
+ 
+ const SECTIONS = [
+   {
+@@ -103,7 +102,7 @@
+   const sections = useMemo(() => SECTIONS, []);
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="admin">
++    <>
+       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6" data-testid="admin-hub">
+         <div className="flex items-center gap-3">
+           <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+@@ -159,6 +158,6 @@
+           ))}
+         </div>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/AdminLeads.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_AdminLeads.jsx	2026-05-06 14:49:45.039833668 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_AdminLeads.jsx	2026-05-06 14:49:45.040694598 +0000
+@@ -1,6 +1,6 @@
+ import React, { useEffect, useState } from "react";
+ import axios from "axios";
+-import Layout from "@/components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+ import { Input } from "@/components/ui/input";
+@@ -144,7 +144,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="admin-leads">
++    <>
+       <div className="p-6 space-y-4">
+         <div className="flex items-center justify-between">
+           <h1 className="text-2xl font-semibold">PMS Lite Lead Listesi</h1>
+@@ -364,7 +364,7 @@
+           </CardContent>
+         </Card>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/AdminTenants.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_AdminTenants.jsx	2026-05-06 14:49:45.079833636 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_AdminTenants.jsx	2026-05-06 14:49:45.079833636 +0000
+@@ -1,6 +1,6 @@
+ import React, { useEffect, useState, useMemo } from 'react';
+ import axios from 'axios';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent } from '@/components/ui/card';
+ import { Switch } from '@/components/ui/switch';
+ import { Button } from '@/components/ui/button';
+@@ -192,16 +192,16 @@
+ 
+   if (activeView === 'users') {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="admin-tenants">
++      <>
+         <div className="p-4 md:p-6 max-w-[1600px] mx-auto">
+           <AllUsersView onBack={() => setActiveView('tenants')} tenants={tenants} />
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="admin-tenants">
++    <>
+       <div className="p-4 md:p-6 space-y-4 max-w-[1600px] mx-auto">
+         {/* Header */}
+         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+@@ -484,7 +484,7 @@
+           </div>
+         </DialogContent>
+       </Dialog>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/AdminVendors.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_AdminVendors.jsx	2026-05-06 14:49:45.119841296 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_AdminVendors.jsx	2026-05-06 14:49:45.120105586 +0000
+@@ -2,7 +2,6 @@
+ import axios from "axios";
+ import { toast } from "react-hot-toast";
+ import { Store, CheckCircle2, Ban, Loader2, RefreshCw, ShoppingBag } from "lucide-react";
+-import Layout from "@/components/Layout";
+ 
+ import { confirmDialog, promptDialog } from '@/lib/dialogs';
+ const STATUS_BADGE = {
+@@ -95,14 +94,7 @@
+   };
+ 
+   return (
+-    <Layout
+-      user={user}
+-      tenant={tenant}
+-      onLogout={onLogout}
+-      currentModule="admin_vendors"
+-      title="Tedarikçi Yönetimi"
+-      subtitle="Tedarikçi başvurularını onaylayın, hesapları yönetin ve siparişleri takip edin."
+-    >
++    <>
+       <div className="max-w-7xl mx-auto p-4 space-y-4">
+         {/* Tabs */}
+         <div className="flex items-center gap-2 border-b border-gray-200">
+@@ -287,6 +279,6 @@
+           </>
+         )}
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/AfsadakatLauncher.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_AfsadakatLauncher.jsx	2026-05-06 14:49:45.152833579 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_AfsadakatLauncher.jsx	2026-05-06 14:49:45.153702075 +0000
+@@ -1,7 +1,7 @@
+ import { useEffect, useState } from "react";
+ import axios from "axios";
+ import { toast } from "sonner";
+-import Layout from "@/components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+ import { Badge } from "@/components/ui/badge";
+@@ -55,11 +55,11 @@
+ 
+   if (loading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="afsadakat">
++      <>
+         <div className="min-h-[60vh] flex items-center justify-center">
+           <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+@@ -68,7 +68,7 @@
+   const externalReady = !!status?.external_configured;
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="afsadakat">
++    <>
+       <div className="max-w-3xl mx-auto p-4 sm:p-6 space-y-6">
+         <div>
+           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+@@ -165,6 +165,6 @@
+           </Card>
+         )}
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/AgencyContentDistribution.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_AgencyContentDistribution.jsx	2026-05-06 14:49:45.188833550 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_AgencyContentDistribution.jsx	2026-05-06 14:49:45.191833548 +0000
+@@ -17,7 +17,6 @@
+   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+   AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+ } from '@/components/ui/alert-dialog';
+-import Layout from '@/components/Layout';
+ 
+ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
+   const [content, setContent] = useState(null);
+@@ -140,9 +139,9 @@
+   };
+ 
+   if (loading) {
+-    return <Layout user={user} tenant={tenant} onLogout={onLogout}>
++    return <>
+       <div className="flex justify-center py-20"><Loader2 className="animate-spin text-slate-400" size={32} /></div>
+-    </Layout>;
++    </>;
+   }
+ 
+   const pageContent = (
+@@ -404,7 +403,7 @@
+     </div>
+   );
+ 
+-  return <Layout user={user} tenant={tenant} onLogout={onLogout}>{pageContent}</Layout>;
++  return <>{pageContent}</>;
+ };
+ 
+ export default AgencyContentDistribution;
+
+
+# frontend/src/pages/AgencyManagement.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_AgencyManagement.jsx	2026-05-06 14:49:45.227833520 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_AgencyManagement.jsx	2026-05-06 14:49:45.227833520 +0000
+@@ -14,7 +14,7 @@
+ import {
+   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+ } from '@/components/ui/dialog';
+-import Layout from '@/components/Layout';
++
+ import { confirmDialog } from '@/lib/dialogs';
+ 
+ const AgencyManagement = ({ user, tenant, onLogout }) => {
+@@ -510,7 +510,7 @@
+     </div>
+   );
+ 
+-  return <Layout user={user} tenant={tenant} onLogout={onLogout}>{content}</Layout>;
++  return <>{content}</>;
+ };
+ 
+ export default AgencyManagement;
+
+
+# frontend/src/pages/AnalitikRaporlarPage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_AnalitikRaporlarPage.jsx	2026-05-06 14:49:45.265462643 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_AnalitikRaporlarPage.jsx	2026-05-06 14:49:45.265697583 +0000
+@@ -1,5 +1,5 @@
+ import React, { useState, lazy, Suspense } from 'react';
+-import Layout from '@/components/Layout';
++
+ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+ import { Download, Clock, Loader2, Brain } from 'lucide-react';
+ 
+@@ -20,7 +20,7 @@
+   const [tab, setTab] = useState('rapor-export');
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="rms">
++    <>
+       <div className="p-4 lg:p-6 space-y-4" data-testid="analitik-raporlar-page">
+         <div>
+           <h1 className="text-2xl font-bold tracking-tight">Analitik & Raporlar</h1>
+@@ -59,6 +59,6 @@
+           </TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/ArrivalList.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_ArrivalList.jsx	2026-05-06 14:49:45.299602213 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_ArrivalList.jsx	2026-05-06 14:49:45.299878913 +0000
+@@ -1,7 +1,7 @@
+ import React, { useState, useEffect } from 'react';
+ import { useNavigate } from 'react-router-dom';
+ import axios from 'axios';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+@@ -173,7 +173,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
++    <>
+     <div className="p-6">
+       {/* Header */}
+       <div className="mb-8">
+@@ -398,7 +398,7 @@
+       onClose={() => setScanBookingId(null)}
+       onExtracted={(doc) => { if (scanBookingId) applyScanToBooking(scanBookingId, doc); }}
+     />
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/AuditTimelinePage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_AuditTimelinePage.jsx	2026-05-06 14:49:45.329833439 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_AuditTimelinePage.jsx	2026-05-06 14:49:45.330450042 +0000
+@@ -1,7 +1,7 @@
+ import { useState, useEffect, useCallback } from "react";
+ import { useNavigate } from "react-router-dom";
+ import axios from "axios";
+-import Layout from "../components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+ import { Badge } from "../components/ui/badge";
+ import { Button } from "../components/ui/button";
+@@ -138,14 +138,7 @@
+   };
+ 
+   return (
+-    <Layout
+-      user={user}
+-      tenant={tenant}
+-      onLogout={onLogout}
+-      currentModule="audit-timeline"
+-      title="Audit Timeline"
+-      subtitle="Compliance & operational audit trail"
+-    >
++    <>
+     <div data-testid="audit-timeline-page" className="min-h-screen bg-gray-50">
+       <div className="max-w-7xl mx-auto px-4 py-6">
+         <div className="flex items-center justify-between mb-6">
+@@ -331,6 +324,6 @@
+         </div>
+       </div>
+     </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/B2BAnalyticsDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_B2BAnalyticsDashboard.jsx	2026-05-06 14:49:45.370833407 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_B2BAnalyticsDashboard.jsx	2026-05-06 14:49:45.371933331 +0000
+@@ -13,7 +13,6 @@
+   XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell,
+ } from 'recharts';
+ import { KPICard, CustomTooltip, COLORS, formatCurrency, formatNumber } from './reports/ReportHelpers';
+-import Layout from '@/components/Layout';
+ 
+ const BACKEND_URL = "";
+ 
+@@ -128,7 +127,7 @@
+   const kpis = summary?.kpis || {};
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="b2b-analytics">
++    <>
+     <div className="min-h-screen bg-gray-50/50 p-6 space-y-6">
+       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+         <div>
+@@ -492,6 +491,6 @@
+         </Button>
+       </div>
+     </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/BasicReports.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_BasicReports.jsx	2026-05-06 14:49:45.411685671 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_BasicReports.jsx	2026-05-06 14:49:45.411833375 +0000
+@@ -1,7 +1,7 @@
+ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+ import { useSearchParams } from 'react-router-dom';
+ import { useTranslation } from 'react-i18next';
+-import Layout from '@/components/Layout';
++
+ import CostAnalyticsView from '@/components/cost/CostAnalyticsView';
+ import { Card, CardContent } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+@@ -190,18 +190,18 @@
+   const isInitialDashboardLoad = needsDashboard && data === null && !error;
+ 
+   if ((loading || isInitialDashboardLoad) && needsDashboard) return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports_basic">
++    <>
+       <div className="flex items-center justify-center min-h-[60vh]">
+         <div className="text-center">
+           <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-3" />
+           <p className="text-sm text-gray-500">Raporlar yükleniyor...</p>
+         </div>
+       </div>
+-    </Layout>
++    </>
+   );
+ 
+   if (error && needsDashboard) return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports_basic">
++    <>
+       <div className="p-6">
+         <Card className="border-red-200 bg-red-50">
+           <CardContent className="p-6 text-center">
+@@ -213,7 +213,7 @@
+           </CardContent>
+         </Card>
+       </div>
+-    </Layout>
++    </>
+   );
+ 
+   const s = data?.summary || {};
+@@ -296,7 +296,7 @@
+   const currentMenuItem = REPORT_MENU.find(m => m.id === activeSection);
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports_basic">
++    <>
+       <div className="flex min-h-[calc(100vh-64px)]">
+         <aside className="w-[260px] bg-white border-r border-gray-200 flex-shrink-0 hidden lg:flex lg:flex-col" data-testid="reports-sidebar">
+           <div className="p-4 border-b border-gray-100">
+@@ -378,7 +378,7 @@
+           </div>
+         </main>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/CapXIntegration.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_CapXIntegration.jsx	2026-05-06 14:49:45.448895040 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_CapXIntegration.jsx	2026-05-06 14:49:45.449301080 +0000
+@@ -1,6 +1,6 @@
+ import React, { useCallback, useEffect, useState } from "react";
+ import axios from "axios";
+-import Layout from "@/components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+ import { Badge } from "@/components/ui/badge";
+@@ -150,7 +150,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="capx-integration">
++    <>
+       <div className="p-6 space-y-6 max-w-5xl">
+         <div className="flex items-center gap-3">
+           <Network className="w-7 h-7 text-emerald-500" />
+@@ -332,6 +332,6 @@
+           </CardContent>
+         </Card>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/CentralOfficeDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_CentralOfficeDashboard.jsx	2026-05-06 14:49:45.477588439 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_CentralOfficeDashboard.jsx	2026-05-06 14:49:45.477823589 +0000
+@@ -2,7 +2,7 @@
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+-import Layout from '@/components/Layout';
++
+ import axios from 'axios';
+ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+ import { useTranslation } from 'react-i18next';
+@@ -42,7 +42,7 @@
+   const kpi = dashboard?.chain_kpi;
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
++    <>
+       <div className="p-6 space-y-6">
+         <div className="flex justify-between items-center">
+           <div>
+@@ -190,6 +190,6 @@
+           </Card>
+         )}
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/ChannelHub.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_ChannelHub.jsx	2026-05-06 14:49:45.512909499 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_ChannelHub.jsx	2026-05-06 14:49:45.513223419 +0000
+@@ -3,7 +3,6 @@
+ import { useTranslation } from 'react-i18next';
+ import { Loader2, PlugZap, BarChart3, Settings2 } from 'lucide-react';
+ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+-import Layout from '@/components/Layout';
+ 
+ const ChannelConnections = lazy(() => import('@/pages/ChannelConnections'));
+ const ChannelManagerDashboardV2 = lazy(() => import('@/pages/ChannelManagerDashboardV2'));
+@@ -31,7 +30,7 @@
+   const childProps = { user, tenant, onLogout, embedded: true };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="channels">
++    <>
+       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6" data-testid="channel-hub">
+         <div className="flex items-center gap-3">
+           <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center">
+@@ -84,6 +83,6 @@
+           </Suspense>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/ChannelManagerModule.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_ChannelManagerModule.jsx	2026-05-06 14:49:45.543833271 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_ChannelManagerModule.jsx	2026-05-06 14:49:45.544833270 +0000
+@@ -2,7 +2,7 @@
+ import axios from 'axios';
+ import { toast } from 'sonner';
+ import { useTranslation } from 'react-i18next';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+@@ -353,7 +353,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="channel-manager">
++    <>
+       <div className="p-6 space-y-6">
+         {/* Header */}
+         <div className="flex justify-between items-center">
+@@ -1017,7 +1017,7 @@
+           </TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/CityLedgerAccounts.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_CityLedgerAccounts.jsx	2026-05-06 14:49:45.583833239 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_CityLedgerAccounts.jsx	2026-05-06 14:49:45.584389728 +0000
+@@ -1,7 +1,7 @@
+ import { useEffect, useState } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+@@ -150,16 +150,16 @@
+ 
+   if (loading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="city-ledger">
++      <>
+         <div className="flex items-center justify-center h-screen">
+           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600" />
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="city-ledger">
++    <>
+       <div className="p-6 space-y-6">
+         {/* Header */}
+         <div className="flex items-center justify-between">
+@@ -437,7 +437,7 @@
+           </DialogContent>
+         </Dialog>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/ControlPlane.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_ControlPlane.jsx	2026-05-06 14:49:45.617725607 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_ControlPlane.jsx	2026-05-06 14:49:45.617833212 +0000
+@@ -9,7 +9,7 @@
+ import { ScrollArea } from "../components/ui/scroll-area";
+ import { Skeleton } from "../components/ui/skeleton";
+ import { toast } from "sonner";
+-import Layout from "../components/Layout";
++
+ import { ChannelHealth } from "../components/ChannelHealthDashboard";
+ import { TechDebtDashboard } from "../components/TechDebtDashboard";
+ import { WeeklyProof } from "../components/WeeklyProofDashboard";
+@@ -625,7 +625,7 @@
+ // ─── Main Page ───────────────────────────────────────────────────
+ export default function ControlPlane({ user, tenant, onLogout }) {
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentPage="control_plane">
++    <>
+       <div className="min-h-screen bg-white text-gray-900" data-testid="control-plane-page">
+         <div className="max-w-6xl mx-auto px-4 py-6">
+           {/* Header */}
+@@ -732,6 +732,6 @@
+           </Tabs>
+         </div>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/CorporateContractsDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_CorporateContractsDashboard.jsx	2026-05-06 14:49:45.651833186 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_CorporateContractsDashboard.jsx	2026-05-06 14:49:45.651833186 +0000
+@@ -1,5 +1,5 @@
+ import React, { useEffect, useState } from "react";
+-import Layout from "@/components/Layout";
++
+ import axios from "axios";
+ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+ import { Badge } from "@/components/ui/badge";
+@@ -33,7 +33,7 @@
+   const contracts = data?.contracts || [];
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
++    <>
+       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
+         {/* Header */}
+         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+@@ -174,7 +174,7 @@
+           </CardContent>
+         </Card>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/CrossPropertyGuests.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_CrossPropertyGuests.jsx	2026-05-06 14:49:45.686833158 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_CrossPropertyGuests.jsx	2026-05-06 14:49:45.687833157 +0000
+@@ -4,7 +4,7 @@
+ import { Input } from '@/components/ui/input';
+ import { Badge } from '@/components/ui/badge';
+ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+-import Layout from '@/components/Layout';
++
+ import axios from 'axios';
+ import { useTranslation } from 'react-i18next';
+ 
+@@ -48,7 +48,7 @@
+   useEffect(() => { fetchLoyalty(); }, []);
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
++    <>
+       <div className="p-6 space-y-6">
+         <div>
+           <h1 className="text-2xl font-bold">Cross-Property Misafir Profilleri</h1>
+@@ -207,6 +207,6 @@
+           </TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/Dashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_Dashboard.jsx	2026-05-06 14:49:45.721833130 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_Dashboard.jsx	2026-05-06 14:49:45.722493165 +0000
+@@ -6,7 +6,7 @@
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+-import Layout from '@/components/Layout';
++
+ import { Hotel, FileText, TrendingUp, TrendingDown, Minus, Award, ShoppingCart, Users, BedDouble, Calendar, Package, Shield, Sparkles, Bot, Star, Building, Gift, UserCheck, MessageCircle, Target, Instagram, Zap, Monitor, ArrowRight } from 'lucide-react';
+ import CommandCenter from '@/components/CommandCenter';
+ import { useCurrency } from '@/context/CurrencyContext';
+@@ -554,7 +554,7 @@
+   }, [filteredModules]);
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="dashboard">
++    <>
+       <div className="p-4 md:p-6 space-y-4">
+         <div>
+           <h1 className="text-2xl md:text-3xl font-bold mb-1" style={{ fontFamily: 'Space Grotesk' }}>
+@@ -1029,7 +1029,7 @@
+           </>
+         )}
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+@@ -1040,7 +1040,7 @@
+   const { t } = useTranslation();
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={() => {}} currentModule="dashboard">
++    <>
+       <div className="p-4 md:p-6 space-y-4">
+         <PmsLiteOnboarding tenant={tenant} />
+         <div>
+@@ -1129,7 +1129,7 @@
+           </div>
+         </div>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/DataModelDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_DataModelDashboard.jsx	2026-05-06 14:49:45.758833101 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_DataModelDashboard.jsx	2026-05-06 14:49:45.759833100 +0000
+@@ -2,7 +2,7 @@
+ import axios from 'axios';
+ import { toast } from 'sonner';
+ import { TrendCharts } from '../components/TrendCharts';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+@@ -403,7 +403,7 @@
+   const lineageStats = ingestStatus?.pipeline?.lineage || {};
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
++    <>
+       <div data-testid="data-model-dashboard" className="space-y-6 p-4 md:p-6">
+         {/* Header */}
+         <div className="flex items-center justify-between">
+@@ -1428,7 +1428,7 @@
+           </TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/DepartureList.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_DepartureList.jsx	2026-05-06 14:49:45.796833071 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_DepartureList.jsx	2026-05-06 14:49:45.797414934 +0000
+@@ -1,7 +1,7 @@
+ import React, { useState, useEffect } from 'react';
+ import { useNavigate } from 'react-router-dom';
+ import axios from 'axios';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+@@ -80,7 +80,7 @@
+   const withDebt = departures.filter((b) => (b.balance || 0) > 0).length;
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
++    <>
+       <div className="p-6">
+         <div className="mb-8 flex items-center justify-between">
+           <div className="flex items-center gap-3">
+@@ -211,7 +211,7 @@
+           )}
+         </div>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/DepositTracking.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_DepositTracking.jsx	2026-05-06 14:49:45.831833044 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_DepositTracking.jsx	2026-05-06 14:49:45.832759973 +0000
+@@ -1,7 +1,7 @@
+ import { useState, useEffect, useCallback } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Badge } from '@/components/ui/badge';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+@@ -188,7 +188,7 @@
+   const totalAll = totalActive + totalPartial;
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="deposits">
++    <>
+       <div className="p-6 space-y-6">
+         <div className="flex items-center justify-between">
+           <div>
+@@ -575,6 +575,6 @@
+           </DialogFooter>
+         </DialogContent>
+       </Dialog>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/EarlyWarningDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_EarlyWarningDashboard.jsx	2026-05-06 14:49:45.863689672 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_EarlyWarningDashboard.jsx	2026-05-06 14:49:45.863833019 +0000
+@@ -1,6 +1,6 @@
+ import React, { useEffect, useState, useCallback } from "react";
+ import axios from "axios";
+-import Layout from "@/components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+ import { Badge } from "@/components/ui/badge";
+@@ -157,7 +157,7 @@
+   const running = !!engineStatus?.running;
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="early-warning" title="Erken Uyarı Motoru" subtitle="Tahminsel operasyonel sinyaller ve trend analizi">
++    <>
+       <div className="space-y-6 p-4">
+         {error && (
+           <div className="p-3 rounded bg-red-50 text-red-700 border border-red-200 text-sm">{error}</div>
+@@ -371,6 +371,6 @@
+           </CardContent>
+         </Card>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/EncryptionManagementPage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_EncryptionManagementPage.jsx	2026-05-06 14:49:45.909832982 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_EncryptionManagementPage.jsx	2026-05-06 14:49:45.910554412 +0000
+@@ -1,7 +1,7 @@
+ import { useState, useEffect, useCallback } from 'react';
+ import { useTranslation } from 'react-i18next';
+ import axios from 'axios';
+-import Layout from '../components/Layout';
++
+ import { Button } from '../components/ui/button';
+ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
+ import { Badge } from '../components/ui/badge';
+@@ -242,11 +242,11 @@
+ 
+   if (loading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="encryption_management">
++      <>
+         <div className="flex items-center justify-center h-96">
+           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500" />
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+@@ -258,7 +258,7 @@
+   const warningKeys = dashboard?.keys?.rotation_warnings || [];
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="encryption_management">
++    <>
+       <div className="space-y-6 p-6" data-testid="encryption-management-page">
+         {/* Header */}
+         <div className="flex items-center justify-between">
+@@ -910,6 +910,6 @@
+           </DialogContent>
+         </Dialog>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/ExelyIntegration.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_ExelyIntegration.jsx	2026-05-06 14:49:45.947832952 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_ExelyIntegration.jsx	2026-05-06 14:49:45.947832952 +0000
+@@ -1,7 +1,7 @@
+ import { useState, useEffect, useCallback } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+@@ -192,7 +192,7 @@
+   const isConnected = connection?.connected;
+ 
+   return (
+-    <Layout user={user} onLogout={onLogout} tenant={tenant}>
++    <>
+       <div className="p-4 md:p-6 space-y-6" data-testid="exely-integration">
+         <div className="flex items-center justify-between">
+           <div>
+@@ -743,7 +743,7 @@
+           </TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/FeaturesShowcase.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_FeaturesShowcase.jsx	2026-05-06 14:49:45.982832925 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_FeaturesShowcase.jsx	2026-05-06 14:49:45.983557940 +0000
+@@ -1,6 +1,6 @@
+ import React, { useState } from 'react';
+ import { useNavigate } from 'react-router-dom';
+-import Layout from '../components/Layout';
++
+ import POSTableManagement from '../components/POSTableManagement';
+ import POSMenuItems from '../components/POSMenuItems';
+ import StaffAssignment from '../components/StaffAssignment';
+@@ -24,7 +24,7 @@
+   const navigate = useNavigate();
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
++    <>
+       <div className="p-6 space-y-6">
+         {/* Header */}
+         <div className="flex items-center justify-between">
+@@ -200,7 +200,7 @@
+           </CardContent>
+         </Card>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/FnBComplete.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_FnBComplete.jsx	2026-05-06 14:49:46.015505000 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_FnBComplete.jsx	2026-05-06 14:49:46.015741500 +0000
+@@ -1,7 +1,7 @@
+ import React, { useState, useEffect } from 'react';
+ import { useNavigate } from 'react-router-dom';
+ import axios from 'axios';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+@@ -17,7 +17,7 @@
+   const { t } = useTranslation();
+   const navigate = useNavigate();
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="fnb">
++    <>
+       <div className="p-6 space-y-6">
+         {/* Header */}
+         <div className="flex items-center justify-between">
+@@ -114,7 +114,7 @@
+           </TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/FnbBeoGenerator.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_FnbBeoGenerator.jsx	2026-05-06 14:49:46.044832876 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_FnbBeoGenerator.jsx	2026-05-06 14:49:46.045561869 +0000
+@@ -1,6 +1,6 @@
+ import React, { useState } from 'react';
+ import axios from 'axios';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+@@ -51,7 +51,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="fnb">
++    <>
+       <div className="p-6 space-y-6">
+         <div className="flex items-center justify-between">
+           <div>
+@@ -221,7 +221,7 @@
+           </Card>
+         </div>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/FolioDetailView.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_FolioDetailView.jsx	2026-05-06 14:49:46.075832852 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_FolioDetailView.jsx	2026-05-06 14:49:46.076832851 +0000
+@@ -2,7 +2,7 @@
+ import { useParams } from "react-router-dom";
+ import axios from "axios";
+ import { useTranslation } from "react-i18next";
+-import Layout from "../components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+ import { Badge } from "../components/ui/badge";
+ import { Button } from "../components/ui/button";
+@@ -466,7 +466,7 @@
+   );
+ 
+   if (user && tenant) {
+-    return <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="folio_detail">{content}{chargeFormPanel}</Layout>;
++    return <>{content}{chargeFormPanel}</>;
+   }
+   return <>{content}{chargeFormPanel}</>;
+ }
+
+
+# frontend/src/pages/FrontdeskAuditChecklist.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_FrontdeskAuditChecklist.jsx	2026-05-06 14:49:46.111832823 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_FrontdeskAuditChecklist.jsx	2026-05-06 14:49:46.111832823 +0000
+@@ -1,5 +1,5 @@
+ import React, { useState, useEffect } from "react";
+-import Layout from "@/components/Layout";
++
+ import axios from "axios";
+ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+@@ -31,7 +31,7 @@
+   const summary = data?.summary || {};
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
++    <>
+       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
+         {/* Header */}
+         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+@@ -319,7 +319,7 @@
+           </Card>
+         </div>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/GDPRCompliance.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_GDPRCompliance.jsx	2026-05-06 14:49:46.151832792 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_GDPRCompliance.jsx	2026-05-06 14:49:46.152335867 +0000
+@@ -4,7 +4,7 @@
+ import { Badge } from '@/components/ui/badge';
+ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+ import { Progress } from '@/components/ui/progress';
+-import Layout from '@/components/Layout';
++
+ import axios from 'axios';
+ import { useTranslation } from 'react-i18next';
+ 
+@@ -41,7 +41,7 @@
+   const cs = complianceStatus;
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
++    <>
+       <div className="p-6 space-y-6">
+         <div className="flex justify-between items-center">
+           <div>
+@@ -211,6 +211,6 @@
+           </TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/GoLiveReadinessCockpit.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_GoLiveReadinessCockpit.jsx	2026-05-06 14:49:46.185832765 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_GoLiveReadinessCockpit.jsx	2026-05-06 14:49:46.186525157 +0000
+@@ -2,7 +2,7 @@
+ import { useNavigate } from 'react-router-dom';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+@@ -178,16 +178,16 @@
+ 
+   if (loading && !dashboard) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout}>
++      <>
+         <div className="flex items-center justify-center min-h-[60vh]">
+           <Loader2 className="w-8 h-8 animate-spin text-[#C09D63]" />
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
++    <>
+       <div className="max-w-6xl mx-auto space-y-6" data-testid="golive-cockpit">
+         <div className="flex items-center justify-between">
+           <div className="flex items-center gap-3">
+@@ -460,7 +460,7 @@
+           </div>
+         </div>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/GovernancePanel.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_GovernancePanel.jsx	2026-05-06 14:49:46.220832737 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_GovernancePanel.jsx	2026-05-06 14:49:46.221807646 +0000
+@@ -1,6 +1,6 @@
+ import React, { useEffect, useState, useCallback } from 'react';
+ import axios from 'axios';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+@@ -834,7 +834,7 @@
+    ================================================================ */
+ const GovernancePanel = ({ user, tenant, onLogout }) => {
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="governance">
++    <>
+       <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-4">
+         <div>
+           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2" data-testid="governance-title">
+@@ -860,7 +860,7 @@
+           <TabsContent value="deploy"><DeployTab /></TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/GroupBookings.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_GroupBookings.jsx	2026-05-06 14:49:46.253850055 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_GroupBookings.jsx	2026-05-06 14:49:46.254193745 +0000
+@@ -1,7 +1,7 @@
+ import { useState, useEffect, useCallback } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+ import { Input } from '@/components/ui/input';
+@@ -175,7 +175,7 @@
+   );
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="group-bookings">
++    <>
+       <div className="p-6 space-y-6">
+         <div className="flex items-center justify-between">
+           <div>
+@@ -458,6 +458,6 @@
+           </DialogContent>
+         </Dialog>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/GroupFolioPage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_GroupFolioPage.jsx	2026-05-06 14:49:46.288832684 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_GroupFolioPage.jsx	2026-05-06 14:49:46.289832683 +0000
+@@ -1,7 +1,7 @@
+ import { useState, useEffect, useCallback } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+@@ -305,7 +305,7 @@
+   const unmergedCount = (groupDetail?.bookings || []).filter(b => !b.folio_merged_to).length;
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="group_folio">
++    <>
+       <div className="p-4 md:p-6 space-y-5 max-w-7xl mx-auto" data-testid="group-folio-page">
+         {/* Header */}
+         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+@@ -852,7 +852,7 @@
+           </DialogContent>
+         </Dialog>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/GroupSales.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_GroupSales.jsx	2026-05-06 14:49:46.329832652 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_GroupSales.jsx	2026-05-06 14:49:46.330673324 +0000
+@@ -2,7 +2,7 @@
+ import { useNavigate } from 'react-router-dom';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+@@ -250,7 +250,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="group-sales">
++    <>
+     <div className="p-6">
+       {/* Header */}
+       <div className="flex items-center justify-between mb-8">
+@@ -975,7 +975,7 @@
+         </DialogContent>
+       </Dialog>
+     </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/GuestJourney.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_GuestJourney.jsx	2026-05-06 14:49:46.364832624 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_GuestJourney.jsx	2026-05-06 14:49:46.364832624 +0000
+@@ -15,7 +15,7 @@
+   MessageSquare, DoorClosed,
+ } from 'lucide-react';
+ import { useTranslation } from 'react-i18next';
+-import Layout from '@/components/Layout';
++
+ import { confirmDialog } from '@/lib/dialogs';
+ 
+ const CATEGORY_BADGE = {
+@@ -118,7 +118,7 @@
+                   'text-red-600';
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
++    <>
+       <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-5">
+         {/* Header */}
+         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+@@ -390,7 +390,7 @@
+           </DialogContent>
+         </Dialog>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/HRHub.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_HRHub.jsx	2026-05-06 14:49:46.401774863 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_HRHub.jsx	2026-05-06 14:49:46.401832595 +0000
+@@ -3,7 +3,6 @@
+ import { useTranslation } from 'react-i18next';
+ import { Loader2, Users, Activity } from 'lucide-react';
+ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+-import Layout from '@/components/Layout';
+ 
+ const HRComplete = lazy(() => import('@/pages/HRComplete'));
+ const HRv2OpsDashboard = lazy(() => import('@/pages/HRv2OpsDashboard'));
+@@ -21,7 +20,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="hr">
++    <>
+       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6" data-testid="hr-hub">
+         <div className="flex items-center gap-3">
+           <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center">
+@@ -63,6 +62,6 @@
+           </Suspense>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/HelpCenter.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_HelpCenter.jsx	2026-05-06 14:49:46.436832567 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_HelpCenter.jsx	2026-05-06 14:49:46.438832566 +0000
+@@ -1,7 +1,7 @@
+ import { useEffect, useMemo, useState } from "react";
+ import axios from "axios";
+ import { toast } from "sonner";
+-import Layout from "@/components/Layout";
++
+ import {
+   BookOpen, ChevronRight, FileText, Hotel, LifeBuoy, Loader2,
+   Package, Rocket, ScrollText, Search, Tag,
+@@ -152,14 +152,7 @@
+   const html = useMemo(() => renderMarkdown(article?.body_markdown), [article]);
+ 
+   return (
+-    <Layout
+-      user={user}
+-      tenant={tenant}
+-      onLogout={onLogout}
+-      currentModule="help"
+-      title="Yardım Merkezi"
+-      subtitle="Modül rehberleri, sık sorulanlar ve mevzuat bilgileri."
+-    >
++    <>
+     <div className="p-4 lg:p-6 space-y-4">
+       <div className="flex items-center justify-end">
+         <div className="flex items-center gap-2 w-full max-w-md">
+@@ -254,6 +247,6 @@
+         </main>
+       </div>
+     </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/HotelInventory.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_HotelInventory.jsx	2026-05-06 14:49:46.490832525 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_HotelInventory.jsx	2026-05-06 14:49:46.491835801 +0000
+@@ -2,7 +2,7 @@
+ import { useNavigate } from 'react-router-dom';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+@@ -255,16 +255,16 @@
+ 
+   if (loading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout}>
++      <>
+         <div className="flex items-center justify-center h-64">
+           <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
++    <>
+       <div className="p-6 space-y-6">
+         {/* Header */}
+         <div className="flex justify-between items-center">
+@@ -1070,7 +1070,7 @@
+           </div>
+         </div>
+       )}
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/HotelRunnerIntegration.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_HotelRunnerIntegration.jsx	2026-05-06 14:49:46.534832490 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_HotelRunnerIntegration.jsx	2026-05-06 14:49:46.535515100 +0000
+@@ -1,7 +1,7 @@
+ import { useState, useEffect, useCallback } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+@@ -271,7 +271,7 @@
+   const isConnected = connection?.connected;
+ 
+   return (
+-    <Layout user={user} onLogout={onLogout} tenant={tenant}>
++    <>
+       <div className="p-4 md:p-6 space-y-6" data-testid="hotelrunner-integration">
+         {/* Header */}
+         <div className="flex items-center justify-between">
+@@ -845,7 +845,7 @@
+           </TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/HousekeepingDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_HousekeepingDashboard.jsx	2026-05-06 14:49:46.572832460 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_HousekeepingDashboard.jsx	2026-05-06 14:49:46.573603919 +0000
+@@ -1,7 +1,7 @@
+ import { useEffect, useState } from 'react';
+ import { useNavigate } from 'react-router-dom';
+ import axios from 'axios';
+-import Layout from '../components/Layout';
++
+ import StaffAssignment from '../components/StaffAssignment';
+ import HousekeepingDetailedReports from '../components/HousekeepingDetailedReports';
+ import HousekeepingQualityPanel from '../components/HousekeepingQualityPanel';
+@@ -40,7 +40,7 @@
+     + (roomStatus?.status_counts?.maintenance ?? roomStatus?.summary?.out_of_service ?? 0);
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="housekeeping">
++    <>
+       <div className="p-6 space-y-6" data-testid="page-housekeeping">
+         {/* Header */}
+         <div className="flex items-center justify-between flex-wrap gap-3">
+@@ -149,7 +149,7 @@
+           </CardContent>
+         </Card>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/HousekeepingStatusPage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_HousekeepingStatusPage.jsx	2026-05-06 14:49:46.609832431 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_HousekeepingStatusPage.jsx	2026-05-06 14:49:46.610743409 +0000
+@@ -1,11 +1,11 @@
+-import Layout from '@/components/Layout';
++
+ import HousekeepingRoomGrid from '@/components/pms/HousekeepingRoomGrid';
+ 
+ const HousekeepingStatusPage = ({ user, tenant, onLogout }) => {
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="housekeeping">
++    <>
+       <HousekeepingRoomGrid embedded={false} />
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/IdPhotoAdminPage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_IdPhotoAdminPage.jsx	2026-05-06 14:49:46.637895628 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_IdPhotoAdminPage.jsx	2026-05-06 14:49:46.638240538 +0000
+@@ -17,7 +17,7 @@
+ import { useCallback, useEffect, useMemo, useState } from "react";
+ import { useNavigate } from "react-router-dom";
+ import axios from "axios";
+-import Layout from "../components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+ import { Button } from "../components/ui/button";
+ import { Input } from "../components/ui/input";
+@@ -366,14 +366,7 @@
+   }, []);
+ 
+   return (
+-    <Layout
+-      user={user}
+-      tenant={tenant}
+-      onLogout={onLogout}
+-      currentModule="id-photo-admin"
+-      title="Bekleyen Kimlik Fotoğrafları"
+-      subtitle="Ön görüntüleme & manuel/KVKK silme — saklama süresi içindeki tüm kayıtlar"
+-    >
++    <>
+       <div data-testid="id-photo-admin-page" className="min-h-screen bg-gray-50">
+         <div className="max-w-7xl mx-auto px-4 py-6">
+           <div className="flex items-center justify-between mb-6">
+@@ -1004,6 +997,6 @@
+           </div>
+         </div>
+       )}
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/IdPhotoViewReportPage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_IdPhotoViewReportPage.jsx	2026-05-06 14:49:46.666832386 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_IdPhotoViewReportPage.jsx	2026-05-06 14:49:46.667882308 +0000
+@@ -17,7 +17,7 @@
+ import { useState, useEffect, useCallback, useMemo } from "react";
+ import { useNavigate } from "react-router-dom";
+ import axios from "axios";
+-import Layout from "../components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+ import { Button } from "../components/ui/button";
+ import { Input } from "../components/ui/input";
+@@ -198,14 +198,7 @@
+   };
+ 
+   return (
+-    <Layout
+-      user={user}
+-      tenant={tenant}
+-      onLogout={onLogout}
+-      currentModule="id-photo-view-report"
+-      title="Kimlik Fotoğrafı Görüntüleme Raporu"
+-      subtitle="KVKK denetimi — kim, ne zaman, hangi misafirin kimliğini açtı"
+-    >
++    <>
+       <div
+         data-testid="id-photo-view-report-page"
+         className="min-h-screen bg-gray-50"
+@@ -667,6 +660,6 @@
+           </div>
+         </div>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/IncomingAgencyContracts.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_IncomingAgencyContracts.jsx	2026-05-06 14:49:46.699835397 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_IncomingAgencyContracts.jsx	2026-05-06 14:49:46.700125817 +0000
+@@ -2,7 +2,7 @@
+ import axios from 'axios';
+ import { toast } from 'sonner';
+ import { useTranslation } from 'react-i18next';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+@@ -278,7 +278,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
++    <>
+       <div className="p-6 max-w-7xl mx-auto space-y-6">
+         <div className="flex items-center justify-between">
+           <div>
+@@ -471,7 +471,7 @@
+           </DialogFooter>
+         </DialogContent>
+       </Dialog>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/InfraHardeningDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_InfraHardeningDashboard.jsx	2026-05-06 14:49:46.732812616 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_InfraHardeningDashboard.jsx	2026-05-06 14:49:46.732832334 +0000
+@@ -1,6 +1,5 @@
+ import { useTranslation } from 'react-i18next';
+ import React, { useState, useEffect, useCallback } from "react";
+-import Layout from "../components/Layout";
+ 
+ const API = "";
+ 
+@@ -110,22 +109,22 @@
+   if (loading) {
+     if (embedded) return <div data-testid="infra-loading" className="flex items-center justify-center min-h-[40vh]"><div className="text-zinc-400 animate-pulse text-lg">Altyapi durumu yükleniyor...</div></div>;
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="infra_hardening">
++      <>
+         <div data-testid="infra-loading" className="flex items-center justify-center min-h-[60vh]">
+           <div className="text-zinc-400 animate-pulse text-lg">Altyapi durumu yükleniyor...</div>
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   if (error) {
+     if (embedded) return <div data-testid="infra-error" className="flex items-center justify-center min-h-[40vh]"><div className="text-red-400">Hata: {error}</div></div>;
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="infra_hardening">
++      <>
+         <div data-testid="infra-error" className="flex items-center justify-center min-h-[60vh]">
+           <div className="text-red-400">Hata: {error}</div>
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+@@ -333,8 +332,8 @@
+   if (embedded) return dashboardContent;
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="infra_hardening">
++    <>
+       {dashboardContent}
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/IntegrationCredentials.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_IntegrationCredentials.jsx	2026-05-06 14:49:46.766832307 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_IntegrationCredentials.jsx	2026-05-06 14:49:46.767642746 +0000
+@@ -1,6 +1,6 @@
+ import React, { useCallback, useEffect, useMemo, useState } from "react";
+ import axios from "axios";
+-import Layout from "@/components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+ import { Badge } from "@/components/ui/badge";
+@@ -89,7 +89,7 @@
+   }, [items]);
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="integration-credentials">
++    <>
+       <div className="max-w-6xl mx-auto p-6 space-y-6">
+         {/* Header */}
+         <div className="flex items-start justify-between gap-4">
+@@ -281,6 +281,6 @@
+           </Card>
+         )}
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/IntegrationHub.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_IntegrationHub.jsx	2026-05-06 14:49:46.800832281 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_IntegrationHub.jsx	2026-05-06 14:49:46.801550635 +0000
+@@ -2,7 +2,7 @@
+ import { useState, useEffect, useCallback } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+@@ -354,7 +354,7 @@
+   const ctx = { t, activeTab, setActiveTab, dashboard, setDashboard, connectors, setConnectors, mappings, setMappings, syncJobs, setSyncJobs, importedReservations, setImportedReservations, issues, setIssues, auditLogs, setAuditLogs, loading, setLoading, showNewConnector, setShowNewConnector, showNewMapping, setShowNewMapping, selectedConnector, setSelectedConnector, newConnector, setNewConnector, newMapping, setNewMapping, testResult, setTestResult, showTestResult, setShowTestResult, testLoading, setTestLoading, selectedJob, setSelectedJob, jobEvents, setJobEvents, showJobDetail, setShowJobDetail, jobDetailLoading, setJobDetailLoading, manualReviewQueue, setManualReviewQueue, importBatches, setImportBatches, reservationReviewQueue, setReservationReviewQueue, selectedReservation, setSelectedReservation, showReservationDetail, setShowReservationDetail, selectedBatch, setSelectedBatch, showBatchDetail, setShowBatchDetail, batchReservations, setBatchReservations, batchDetailLoading, setBatchDetailLoading, mappingReadiness, setMappingReadiness, mappingFilter, setMappingFilter, pullLoading, setPullLoading, fetchDashboard, fetchConnectors, fetchData, handleCreateConnector, handleActivate, handlePause, handleTestConnection, handleCreateMapping, fetchMappings, fetchMappingReadiness, handleValidateAllMappings, handleValidateMapping, handleDeactivateMapping, handleSyncInventory, handleSyncRates, handlePullReservations, handleViewBatchDetail, handleViewReservationDetail, handleReprocessReview, handleDismissReview, handleRunReconciliation, handleResolveIssue, handleViewJobDetail, handleRetryJob, handleDismissJob, hs };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="integration-hub">
++    <>
+       <div data-testid="integration-hub" className="space-y-6">
+         <div className="flex items-center justify-between">
+           <div>
+@@ -1176,7 +1176,7 @@
+           </DialogContent>
+         </Dialog>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/InventoryProcurementGuide.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_InventoryProcurementGuide.jsx	2026-05-06 14:49:46.836832252 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_InventoryProcurementGuide.jsx	2026-05-06 14:49:46.837807495 +0000
+@@ -2,7 +2,7 @@
+ import { useNavigate } from 'react-router-dom';
+ import { useTranslation } from 'react-i18next';
+ import axios from 'axios';
+-import Layout from '@/components/Layout';
++
+ import { Button } from '@/components/ui/button';
+ import {
+   Package, AlertTriangle, ClipboardList, CheckCircle2, Truck,
+@@ -213,14 +213,7 @@
+   ];
+ 
+   return (
+-    <Layout
+-      user={user}
+-      tenant={tenant}
+-      onLogout={onLogout}
+-      currentModule="procurement"
+-      title={t('opsCenter.title')}
+-      subtitle={t('opsCenter.subtitle')}
+-    >
++    <>
+       <div className="p-6 max-w-7xl mx-auto space-y-6">
+         {/* Header strip */}
+         <div className="flex flex-wrap items-center justify-between gap-3">
+@@ -445,7 +438,7 @@
+           )}
+         </div>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/InvoiceModule.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_InvoiceModule.jsx	2026-05-06 14:49:46.870832226 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_InvoiceModule.jsx	2026-05-06 14:49:46.871832225 +0000
+@@ -2,7 +2,7 @@
+ import axios from 'axios';
+ import { toast } from 'sonner';
+ import { useTranslation } from 'react-i18next';
+-import Layout from '@/components/Layout';
++
+ import { useCurrency } from '@/context/CurrencyContext';
+ import { formatAmount } from '@/lib/currency';
+ import { ExpenseDialog, SupplierDialog, BankAccountDialog, InventoryDialog } from '@/components/invoice/AccountingDialogs';
+@@ -172,9 +172,9 @@
+ 
+   if (!user || !tenant) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
++      <>
+         <div className="p-6 text-sm text-slate-600">{t('common.loading')}</div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+@@ -182,35 +182,35 @@
+   const _isAllowed = ['super_admin', 'admin'].includes(user?.role) || _userRoles.includes('super_admin') || _userRoles.includes('admin');
+   if (!_isAllowed) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
++      <>
+         <div className="p-6 text-sm text-slate-600">{t('common.noAccess') || 'Bu modüle erişim izniniz yok.'}</div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   if (loading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
++      <>
+         <div className="p-6 text-center">{t('common.loading')}</div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   if (fatal) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
++      <>
+         <div className="p-6 space-y-2">
+           <div className="text-sm font-medium text-red-600">{t('common.error') || 'Hata'}</div>
+           <pre className="text-xs bg-slate-950/80 text-slate-200 p-3 rounded-md overflow-auto">{String(fatal)}</pre>
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   const money = (v) => fmtMoney(v || 0, { decimals: 2 });
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="invoices">
++    <>
+       <div className="p-6 space-y-6">
+         <div>
+           <h1 className="text-4xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk' }}>{t('invoice.title')}</h1>
+@@ -520,7 +520,7 @@
+         <BankAccountDialog open={openDialog === 'bank'} onClose={() => { setOpenDialog(null); loadBanks(true); refreshDashboard(); }} />
+         <InventoryDialog open={openDialog === 'inventory'} onClose={() => { setOpenDialog(null); loadInventory(true); }} />
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/KonaklamaVergisiModule.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_KonaklamaVergisiModule.jsx	2026-05-06 14:49:46.911832193 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_KonaklamaVergisiModule.jsx	2026-05-06 14:49:46.912832192 +0000
+@@ -1,7 +1,7 @@
+ import { useEffect, useMemo, useState } from "react";
+ import axios from "axios";
+ import { toast } from "sonner";
+-import Layout from "@/components/Layout";
++
+ import { confirmDialog, promptDialog } from '@/lib/dialogs';
+ import {
+   Building2,
+@@ -245,14 +245,7 @@
+   const yearOptions = Array.from({ length: 5 }, (_, i) => today.getFullYear() - i);
+ 
+   return (
+-    <Layout
+-      user={user}
+-      tenant={tenant}
+-      onLogout={onLogout}
+-      currentModule="konaklama-vergisi"
+-      title="Konaklama Vergisi Otomasyonu"
+-      subtitle="7194 sayılı Kanun — Türkiye Konaklama Vergisi (varsayılan %2). Aylık beyanname takip eden ayın 26'sına kadar verilir."
+-    >
++    <>
+       <div className="p-4 lg:p-6 space-y-4">
+ 
+       <div className="border-b">
+@@ -611,7 +604,7 @@
+         </div>
+       )}
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+ 
+
+
+# frontend/src/pages/LockdownDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_LockdownDashboard.jsx	2026-05-06 14:49:46.944702643 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_LockdownDashboard.jsx	2026-05-06 14:49:46.944832167 +0000
+@@ -1,7 +1,7 @@
+ import { useState, useEffect, useCallback } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Badge } from '@/components/ui/badge';
+ import { Button } from '@/components/ui/button';
+@@ -120,11 +120,11 @@
+ 
+   if (loading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="lockdown">
++      <>
+         <div className="flex items-center justify-center h-[60vh]">
+           <Loader2 className="w-8 h-8 animate-spin text-gray-500" />
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+@@ -143,7 +143,7 @@
+   const recon = reconMetrics || {};
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="lockdown">
++    <>
+       <div className="space-y-6 p-4 lg:p-6 max-w-[1400px] mx-auto">
+ 
+         {/* ─── Header ──────────────────────────────────────── */}
+@@ -570,6 +570,6 @@
+           Son güncelleme: {status?.timestamp ? new Date(status.timestamp).toLocaleString('tr-TR') : '-'}
+         </p>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/LoyaltyModule.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_LoyaltyModule.jsx	2026-05-06 14:49:46.972832145 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_LoyaltyModule.jsx	2026-05-06 14:49:46.973772472 +0000
+@@ -2,7 +2,7 @@
+ import axios from 'axios';
+ import { toast } from 'sonner';
+ import { useTranslation } from 'react-i18next';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+@@ -142,14 +142,14 @@
+ 
+   if (loading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="loyalty">
++      <>
+         <div className="p-6 text-center">{t("common.loading")}</div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="loyalty">
++    <>
+       <div className="p-6 space-y-6">
+         <div className="flex justify-between items-center">
+           <div>
+@@ -510,7 +510,7 @@
+           </DialogContent>
+         </Dialog>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/MLDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_MLDashboard.jsx	2026-05-06 14:49:47.013832113 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_MLDashboard.jsx	2026-05-06 14:49:47.014713521 +0000
+@@ -5,7 +5,7 @@
+ import { Badge } from '@/components/ui/badge';
+ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+ import { Progress } from '@/components/ui/progress';
+-import Layout from '@/components/Layout';
++
+ import axios from 'axios';
+ import { useTranslation } from 'react-i18next';
+ 
+@@ -69,7 +69,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
++    <>
+       <div className="p-6 space-y-6">
+         <div>
+           <h1 className="text-2xl font-bold">AI/ML Modelleri</h1>
+@@ -248,6 +248,6 @@
+           </TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/MailingPage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_MailingPage.jsx	2026-05-06 14:49:47.047786321 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_MailingPage.jsx	2026-05-06 14:49:47.047832086 +0000
+@@ -11,7 +11,6 @@
+ import { Switch } from '@/components/ui/switch';
+ import { Mail, Users, FileText, Send, Trash2, Plus, Sparkles, AlertCircle, Zap } from 'lucide-react';
+ import { useNavigate } from 'react-router-dom';
+-import Layout from '@/components/Layout';
+ 
+ import { confirmDialog } from '@/lib/dialogs';
+ const API = '/mailing';
+@@ -49,7 +48,7 @@
+   useEffect(() => { refresh(); }, [refresh]);
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="mailing">
++    <>
+     <div className="container mx-auto p-6 max-w-7xl space-y-6">
+       <div className="flex items-center justify-between">
+         <div>
+@@ -95,7 +94,7 @@
+         </TabsContent>
+       </Tabs>
+     </div>
+-    </Layout>
++    </>
+   );
+ }
+ 
+
+
+# frontend/src/pages/MaintenanceAssets.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_MaintenanceAssets.jsx	2026-05-06 14:49:47.087832054 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_MaintenanceAssets.jsx	2026-05-06 14:49:47.088603390 +0000
+@@ -1,5 +1,5 @@
+ import React, { useEffect, useState } from "react";
+-import Layout from "@/components/Layout";
++
+ import axios from "axios";
+ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+@@ -64,7 +64,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="maintenance">
++    <>
+       <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
+         {/* Header */}
+         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+@@ -258,7 +258,7 @@
+           </DialogContent>
+         </Dialog>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/MaintenancePlans.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_MaintenancePlans.jsx	2026-05-06 14:49:47.116832032 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_MaintenancePlans.jsx	2026-05-06 14:49:47.117921339 +0000
+@@ -1,5 +1,5 @@
+ import React, { useEffect, useState } from "react";
+-import Layout from "@/components/Layout";
++
+ import axios from "axios";
+ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+@@ -74,7 +74,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="maintenance">
++    <>
+       <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
+         {/* Header */}
+         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+@@ -243,7 +243,7 @@
+           </DialogContent>
+         </Dialog>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/MaintenanceWorkOrders.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_MaintenanceWorkOrders.jsx	2026-05-06 14:49:47.153832003 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_MaintenanceWorkOrders.jsx	2026-05-06 14:49:47.154832002 +0000
+@@ -1,5 +1,5 @@
+ import React, { useEffect, useState } from "react";
+-import Layout from "@/components/Layout";
++
+ import axios from "axios";
+ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+ import { Badge } from "@/components/ui/badge";
+@@ -185,7 +185,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="maintenance">
++    <>
+       <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
+         {/* Header */}
+         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+@@ -440,7 +440,7 @@
+           )}
+         </DialogContent>
+       </Dialog>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/MappingManager.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_MappingManager.jsx	2026-05-06 14:49:47.189241108 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_MappingManager.jsx	2026-05-06 14:49:47.189591948 +0000
+@@ -1,7 +1,7 @@
+ import { useState, useEffect, useCallback } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+@@ -159,7 +159,7 @@
+   const unmappedExt = currentExtOptions.filter(e => !mappedExtIds.has(e.external_id || e.id));
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="channel-manager">
++    <>
+       <div className="p-6 space-y-6 max-w-7xl mx-auto">
+         {/* Header */}
+         <div className="flex items-center justify-between">
+@@ -478,7 +478,7 @@
+           </DialogContent>
+         </Dialog>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/MarketplaceModule.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_MarketplaceModule.jsx	2026-05-06 14:49:47.218831951 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_MarketplaceModule.jsx	2026-05-06 14:49:47.219831950 +0000
+@@ -2,7 +2,7 @@
+ import axios from 'axios';
+ import { toast } from 'sonner';
+ import { useTranslation } from 'react-i18next';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+@@ -162,14 +162,14 @@
+ 
+   if (loading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="marketplace">
++      <>
+         <div className="p-6 text-center">{t("common.loading")}</div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="marketplace">
++    <>
+       <div className="p-6 space-y-6">
+         <div className="flex justify-between items-center">
+           <div>
+@@ -341,7 +341,7 @@
+           </TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/MessagingCenter.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_MessagingCenter.jsx	2026-05-06 14:49:47.252831925 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_MessagingCenter.jsx	2026-05-06 14:49:47.253831924 +0000
+@@ -1,6 +1,6 @@
+ import { useState } from 'react';
+ import { useNavigate } from 'react-router-dom';
+-import Layout from '../components/Layout';
++
+ import MessagingTemplates from '../components/MessagingTemplates';
+ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+ import { Button } from '../components/ui/button';
+@@ -101,7 +101,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="messaging">
++    <>
+       <div className="space-y-6">
+         {/* Header */}
+         <div className="flex items-center justify-between">
+@@ -389,7 +389,7 @@
+           </DialogFooter>
+         </DialogContent>
+       </Dialog>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/MessagingDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_MessagingDashboard.jsx	2026-05-06 14:49:47.292831893 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_MessagingDashboard.jsx	2026-05-06 14:49:47.293831892 +0000
+@@ -1,6 +1,6 @@
+ import React, { useState, useEffect, useCallback } from 'react';
+ import { useTranslation } from 'react-i18next';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent } from '../components/ui/card';
+ import { Badge } from '../components/ui/badge';
+ import { Button } from '../components/ui/button';
+@@ -1279,7 +1279,7 @@
+   }, []);
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="messaging">
++    <>
+       <div data-testid="messaging-dashboard" className="p-4 lg:p-6 space-y-4 max-w-7xl mx-auto">
+         <div>
+           <h1 className="text-2xl font-bold tracking-tight">Mesajlasma Merkezi</h1>
+@@ -1318,6 +1318,6 @@
+           <TabsContent value="settings"><SettingsTab /></TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/MevzuatRaporlari.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_MevzuatRaporlari.jsx	2026-05-06 14:49:47.330831863 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_MevzuatRaporlari.jsx	2026-05-06 14:49:47.331831862 +0000
+@@ -1,7 +1,7 @@
+ import { useEffect, useMemo, useState } from "react";
+ import axios from "axios";
+ import { toast } from "sonner";
+-import Layout from "@/components/Layout";
++
+ import {
+   AlertTriangle, Award, BarChart3, CheckCircle2, ClipboardCheck,
+   Download, FileText, Loader2, RefreshCw, ScrollText, Save, ShieldCheck,
+@@ -106,14 +106,7 @@
+   const yearOpts = Array.from({ length: 5 }, (_, i) => today.getFullYear() - i);
+ 
+   return (
+-    <Layout
+-      user={user}
+-      tenant={tenant}
+-      onLogout={onLogout}
+-      currentModule="mevzuat-raporlari"
+-      title="Mevzuat Raporları"
+-      subtitle="TÜİK Aylık Konaklama Anketi · Bakanlık Denetim Hazırlığı · Yıldız Sınıflama Self-Check"
+-    >
++    <>
+     <div className="p-4 lg:p-6 space-y-4">
+ 
+       <div className="border-b">
+@@ -376,7 +369,7 @@
+         </div>
+       )}
+     </div>
+-    </Layout>
++    </>
+   );
+ }
+ 
+
+
+# frontend/src/pages/MicePage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_MicePage.jsx	2026-05-06 14:49:47.366831835 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_MicePage.jsx	2026-05-06 14:49:47.367831834 +0000
+@@ -30,7 +30,6 @@
+   History as HistoryIcon, Pencil,
+ } from 'lucide-react';
+ import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
+-import Layout from '@/components/Layout';
+ 
+ import { confirmDialog, promptDialog } from '@/lib/dialogs';
+ const MicePage = ({ user, tenant, onLogout }) => {
+@@ -435,7 +434,7 @@
+   const psTotal = form.payment_schedule.reduce((a, p) => a + (Number(p.amount) || 0), 0);
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="mice">
++    <>
+     <div className="max-w-7xl mx-auto p-4 space-y-4">
+       <div className="flex items-start justify-between flex-wrap gap-3">
+         <div>
+@@ -757,7 +756,7 @@
+         <OpsModal opsData={opsData} onClose={() => setOpsData(null)} />
+       )}
+     </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/MigrationObservabilityPage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_MigrationObservabilityPage.jsx	2026-05-06 14:49:47.401831807 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_MigrationObservabilityPage.jsx	2026-05-06 14:49:47.402368884 +0000
+@@ -4,7 +4,7 @@
+ import { Activity, AlertTriangle, ChevronLeft, ChevronRight, Clock3, RefreshCw, ShieldAlert, Waves } from 'lucide-react';
+ import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, Tooltip, XAxis, YAxis } from 'recharts';
+ 
+-import Layout from '@/components/Layout';
++
+ import { Badge } from '@/components/ui/badge';
+ import { Button } from '@/components/ui/button';
+ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+@@ -186,7 +186,7 @@
+   const shadowPageData = shadowEvents.slice((shadowPage - 1) * PAGE_SIZE, shadowPage * PAGE_SIZE);
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
++    <>
+       <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(20,184,166,0.16),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(245,158,11,0.16),_transparent_24%),linear-gradient(180deg,#f8fafc_0%,#fffdf7_100%)] p-4 md:p-6" data-testid="migration-observability-page">
+         <div className="mx-auto max-w-7xl space-y-6">
+           <section className="overflow-hidden rounded-[28px] border border-slate-200/70 bg-slate-950 text-white shadow-2xl shadow-slate-200/60" data-testid="migration-observability-hero">
+@@ -538,6 +538,6 @@
+           )}
+         </div>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/ModuleDiscovery.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_ModuleDiscovery.jsx	2026-05-06 14:49:47.434831781 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_ModuleDiscovery.jsx	2026-05-06 14:49:47.435831780 +0000
+@@ -1,6 +1,6 @@
+ import React, { useMemo, useState } from "react";
+ import { Link } from "react-router-dom";
+-import Layout from "@/components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+ import { Input } from "@/components/ui/input";
+ import { Badge } from "@/components/ui/badge";
+@@ -119,7 +119,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="module-discovery" title="Modül Keşfi" subtitle="Sidebar'da görünmeyen sayfalar dahil tüm uygulama rotaları">
++    <>
+       <div className="p-4 space-y-4">
+         {/* Summary */}
+         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+@@ -261,6 +261,6 @@
+           ))
+         )}
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/ModuleReport.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_ModuleReport.jsx	2026-05-06 14:49:47.473831751 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_ModuleReport.jsx	2026-05-06 14:49:47.474920183 +0000
+@@ -1,6 +1,6 @@
+ import React, { useEffect, useMemo, useState } from 'react';
+ import axios from 'axios';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+ import { Badge } from '@/components/ui/badge';
+ import { Button } from '@/components/ui/button';
+@@ -160,7 +160,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="admin-module-report">
++    <>
+       <div className="p-4 md:p-6 space-y-4">
+         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+           <div>
+@@ -433,7 +433,7 @@
+           </Card>
+         )}
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/ModuleStorePage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_ModuleStorePage.jsx	2026-05-06 14:49:47.508831723 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_ModuleStorePage.jsx	2026-05-06 14:49:47.509656912 +0000
+@@ -1,7 +1,7 @@
+ import { useEffect, useState, useMemo } from "react";
+ import axios from "axios";
+ import { toast } from "sonner";
+-import Layout from "@/components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+ import { Badge } from "@/components/ui/badge";
+@@ -197,16 +197,16 @@
+ 
+   if (loading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="module-store">
++      <>
+         <div className="min-h-[60vh] flex items-center justify-center">
+           <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="module-store">
++    <>
+       <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+         <div className="flex items-center justify-between flex-wrap gap-3">
+           <div>
+@@ -311,6 +311,6 @@
+           </TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/NightAuditDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_NightAuditDashboard.jsx	2026-05-06 14:49:47.545831694 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_NightAuditDashboard.jsx	2026-05-06 14:49:47.546708001 +0000
+@@ -1,7 +1,7 @@
+ import React, { useState, useEffect, useCallback } from "react";
+ import { useTranslation } from 'react-i18next';
+ import axios from "axios";
+-import Layout from "@/components/Layout";
++
+ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+ import { Badge } from "@/components/ui/badge";
+@@ -298,7 +298,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="night_audit">
++    <>
+       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-5">
+         {/* Header */}
+         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+@@ -727,7 +727,7 @@
+           </DialogContent>
+         </Dialog>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/NightAuditLogs.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_NightAuditLogs.jsx	2026-05-06 14:49:47.584831663 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_NightAuditLogs.jsx	2026-05-06 14:49:47.585566401 +0000
+@@ -1,7 +1,7 @@
+ import React, { useState, useEffect } from "react";
+ import { useNavigate } from "react-router-dom";
+ import axios from "axios";
+-import Layout from "@/components/Layout";
++
+ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+ import { Input } from "@/components/ui/input";
+@@ -112,7 +112,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
++    <>
+       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
+         {/* Header */}
+         <div className="flex items-center justify-between gap-3">
+@@ -341,7 +341,7 @@
+           </CardContent>
+         </Card>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/NoShowToday.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_NoShowToday.jsx	2026-05-06 14:49:47.619655360 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_NoShowToday.jsx	2026-05-06 14:49:47.619831636 +0000
+@@ -1,7 +1,7 @@
+ import React, { useState, useEffect } from 'react';
+ import { useNavigate } from 'react-router-dom';
+ import axios from 'axios';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+@@ -87,7 +87,7 @@
+   const totalLoss = items.reduce((s, b) => s + (b.total_amount || 0), 0);
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
++    <>
+       <div className="p-6">
+         <div className="mb-8 flex items-center justify-between">
+           <div className="flex items-center gap-3">
+@@ -218,7 +218,7 @@
+           )}
+         </div>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/OfficialGuestList.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_OfficialGuestList.jsx	2026-05-06 14:49:47.658831605 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_OfficialGuestList.jsx	2026-05-06 14:49:47.659831604 +0000
+@@ -1,6 +1,6 @@
+ import React, { useEffect, useMemo, useState } from 'react';
+ import axios from 'axios';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+@@ -107,7 +107,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
++    <>
+       <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto">
+         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+           <div>
+@@ -225,7 +225,7 @@
+           </CardContent>
+         </Card>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/OnboardingWizard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_OnboardingWizard.jsx	2026-05-06 14:49:47.694831576 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_OnboardingWizard.jsx	2026-05-06 14:49:47.695509599 +0000
+@@ -2,7 +2,7 @@
+ import { useNavigate } from "react-router-dom";
+ import axios from "axios";
+ import { toast } from "sonner";
+-import Layout from "@/components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+ import { Input } from "@/components/ui/input";
+@@ -106,16 +106,16 @@
+ 
+   if (loading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="onboarding">
++      <>
+         <div className="min-h-[60vh] flex items-center justify-center">
+           <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="onboarding">
++    <>
+       <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
+         <div>
+           <h1 className="text-2xl font-bold text-slate-900">Hoş geldiniz 👋</h1>
+@@ -337,7 +337,7 @@
+           </Button>
+         </div>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+ 
+
+
+# frontend/src/pages/OperationalEventDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_OperationalEventDashboard.jsx	2026-05-06 14:49:47.729831549 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_OperationalEventDashboard.jsx	2026-05-06 14:49:47.729831549 +0000
+@@ -8,7 +8,6 @@
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+-import Layout from '@/components/Layout';
+ 
+ const API = "";
+ 
+@@ -102,16 +101,16 @@
+ 
+   if (loading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms_operations">
++      <>
+         <div className="flex items-center justify-center h-64" data-testid="event-loading">
+           <RefreshCw className="w-8 h-8 animate-spin text-teal-600" />
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms_operations">
++    <>
+       <div className="space-y-6 p-4 lg:p-6" data-testid="event-system-dashboard">
+         {/* Header */}
+         <div className="flex items-center justify-between">
+@@ -378,6 +377,6 @@
+           </div>
+         )}
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/OperatorIncidentPanel.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_OperatorIncidentPanel.jsx	2026-05-06 14:49:47.762743027 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_OperatorIncidentPanel.jsx	2026-05-06 14:49:47.762831523 +0000
+@@ -2,7 +2,7 @@
+ import { useTranslation } from 'react-i18next';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Badge } from '@/components/ui/badge';
+ import { Button } from '@/components/ui/button';
+@@ -216,11 +216,11 @@
+ 
+   if (loading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout}>
++      <>
+         <div className="flex items-center justify-center h-64">
+           <Loader2 className="w-8 h-8 animate-spin text-slate-500" />
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+@@ -228,7 +228,7 @@
+   const criticals = summary?.by_severity?.critical || 0;
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
++    <>
+       <div data-testid="incident-panel" className="space-y-6 max-w-[1400px] mx-auto">
+         {/* Header */}
+         <div className="flex items-center justify-between">
+@@ -361,6 +361,6 @@
+           </CardContent>
+         </Card>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/PCIComplianceDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_PCIComplianceDashboard.jsx	2026-05-06 14:49:47.797831495 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_PCIComplianceDashboard.jsx	2026-05-06 14:49:47.798256057 +0000
+@@ -1,7 +1,7 @@
+ import { useEffect, useState } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+@@ -90,14 +90,7 @@
+   const { summary, controls } = data;
+ 
+   return (
+-    <Layout
+-      user={user}
+-      tenant={tenant}
+-      onLogout={onLogout}
+-      currentModule="pci-compliance"
+-      title="PCI-DSS Uyum Paneli"
+-      subtitle={`${summary.version} • Değerlendirme: ${summary.evaluated_at?.slice(0, 19).replace('T', ' ')}`}
+-    >
++    <>
+     <div className="max-w-6xl mx-auto p-4 space-y-4">
+       <div className="flex items-start justify-end flex-wrap gap-3">
+         <div className="hidden"></div>
+@@ -192,7 +185,7 @@
+         ))}
+       </div>
+     </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/PMSOperationalDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_PMSOperationalDashboard.jsx	2026-05-06 14:49:47.828831471 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_PMSOperationalDashboard.jsx	2026-05-06 14:49:47.829508486 +0000
+@@ -1,7 +1,7 @@
+ import { useState, useEffect, useCallback } from "react";
+ import axios from "axios";
+ import { useTranslation } from "react-i18next";
+-import Layout from "../components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+ import { Badge } from "../components/ui/badge";
+ import { Button } from "../components/ui/button";
+@@ -527,18 +527,18 @@
+ 
+   if (loading && !data) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms_operations">
++      <>
+         <div className="flex items-center justify-center py-32">
+           <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   const tr = trends?.trends;
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms_operations">
++    <>
+       <div data-testid="pms-operational-dashboard" className="max-w-[1600px] mx-auto px-4 py-6">
+         {/* Header */}
+         <div className="flex items-center justify-between mb-6">
+@@ -663,6 +663,6 @@
+           </TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/POSDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_POSDashboard.jsx	2026-05-06 14:49:47.861673926 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_POSDashboard.jsx	2026-05-06 14:49:47.861831445 +0000
+@@ -2,7 +2,7 @@
+ import { useNavigate } from 'react-router-dom';
+ import { useTranslation } from 'react-i18next';
+ import axios from 'axios';
+-import Layout from '../components/Layout';
++
+ import POSTableManagement from '../components/POSTableManagement';
+ import POSMenuItems from '../components/POSMenuItems';
+ import POSOutletManagement from '../components/POSOutletManagement';
+@@ -78,7 +78,7 @@
+   const selectedOutlet = outlets.find(o => o.id === selectedOutletId);
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pos">
++    <>
+       <div className="p-6 space-y-6">
+         {/* Header */}
+         <div className="flex items-center justify-between flex-wrap gap-3">
+@@ -230,7 +230,7 @@
+           </TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/PendingAR.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_PendingAR.jsx	2026-05-06 14:49:47.900831414 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_PendingAR.jsx	2026-05-06 14:49:47.901838875 +0000
+@@ -1,7 +1,7 @@
+ import { useState, useEffect } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+@@ -209,18 +209,18 @@
+ 
+   if (loading && agingLoading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pending-ar">
++      <>
+         <div className="flex items-center justify-center h-screen">
+           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   const agingRows = flattenAgingRows();
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pending-ar">
++    <>
+       <div className="p-6 space-y-6">
+         <Tabs defaultValue="pending-ar">
+           <TabsList className="mb-4">
+@@ -642,7 +642,7 @@
+           </DialogContent>
+         </Dialog>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/PlatformScalingDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_PlatformScalingDashboard.jsx	2026-05-06 14:49:47.933831388 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_PlatformScalingDashboard.jsx	2026-05-06 14:49:47.934831387 +0000
+@@ -14,7 +14,6 @@
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+-import Layout from '@/components/Layout';
+ 
+ const API = "";
+ const COLORS = ['#0f766e', '#0ea5e9', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981', '#6366f1', '#ec4899'];
+@@ -65,16 +64,16 @@
+ 
+   if (loading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout}>
++      <>
+         <div className="flex items-center justify-center h-96" data-testid="loading-spinner">
+           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500" />
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
++    <>
+       <div className="space-y-6 p-6" data-testid="platform-scaling-dashboard">
+         {/* Header */}
+         <div className="flex items-center justify-between">
+@@ -117,7 +116,7 @@
+         {activeModule === 'multi_property' && <MultiPropertyPanel data={multiPropData} />}
+         {activeModule === 'competitive' && <CompetitivePanel data={compData} headers={headers} fetchAll={fetchAll} />}
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+ 
+
+
+# frontend/src/pages/ProcurementPage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_ProcurementPage.jsx	2026-05-06 14:49:47.964831364 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_ProcurementPage.jsx	2026-05-06 14:49:47.965769194 +0000
+@@ -15,7 +15,7 @@
+   Plus, Truck, ClipboardList, Package, FileCheck2, RefreshCw,
+   Trash2, Send, History as HistoryIcon, X,
+ } from 'lucide-react';
+-import Layout from '@/components/Layout';
++
+ import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
+ 
+ import { confirmDialog, promptDialog } from '@/lib/dialogs';
+@@ -408,7 +408,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="procurement">
++    <>
+     <div className="p-6 max-w-7xl mx-auto space-y-4">
+       <div className="flex items-center justify-between">
+         <div>
+@@ -1051,7 +1051,7 @@
+           onClose={() => setHistory(null)} />
+       )}
+     </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/ProductionGoLiveDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_ProductionGoLiveDashboard.jsx	2026-05-06 14:49:48.001831335 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_ProductionGoLiveDashboard.jsx	2026-05-06 14:49:48.002416703 +0000
+@@ -1,6 +1,6 @@
+ import { useTranslation } from 'react-i18next';
+ import React, { useState, useEffect, useCallback } from "react";
+-import Layout from "../components/Layout";
++
+ import { Shield, Activity, Server, Database, Radio, Bell, Rocket, RefreshCw, ChevronRight, AlertTriangle, CheckCircle2, XCircle, Clock, Zap, Settings, FileText, Play, Box, GitBranch, HardDrive, Lock, BarChart3, Download } from "lucide-react";
+ 
+ const API = "";
+@@ -190,8 +190,8 @@
+ 
+   useEffect(() => { if (activeTab === "deployment") fetchDeployment(); }, [activeTab, fetchDeployment]);
+ 
+-  if (loading) return <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="production_golive"><div data-testid="golive-loading" className="flex items-center justify-center min-h-[60vh]"><div className="text-gray-600 animate-pulse text-lg">Production Go-Live kontrol ediliyor...</div></div></Layout>;
+-  if (error) return <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="production_golive"><div data-testid="golive-error" className="flex items-center justify-center min-h-[60vh]"><div className="text-red-400">Hata: {error}</div></div></Layout>;
++  if (loading) return <><div data-testid="golive-loading" className="flex items-center justify-center min-h-[60vh]"><div className="text-gray-600 animate-pulse text-lg">Production Go-Live kontrol ediliyor...</div></div></>;
++  if (error) return <><div data-testid="golive-error" className="flex items-center justify-center min-h-[60vh]"><div className="text-red-400">Hata: {error}</div></div></>;
+ 
+   const readiness = data?.readiness || {};
+   const config = data?.configuration || {};
+@@ -221,7 +221,7 @@
+   ];
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="production_golive">
++    <>
+       <div data-testid="production-golive-dashboard" className="space-y-5 pb-10">
+         {/* Header */}
+         <div className={`bg-gradient-to-r ${rColors.gradient} ${rColors.border} border rounded-2xl p-6 ring-1 ${rColors.ring}`}>
+@@ -766,7 +766,7 @@
+           </div>
+         )}
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+ 
+
+
+# frontend/src/pages/ProfilePage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_ProfilePage.jsx	2026-05-06 14:49:48.035831308 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_ProfilePage.jsx	2026-05-06 14:49:48.036417912 +0000
+@@ -6,7 +6,7 @@
+ import { Label } from '@/components/ui/label';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+-import Layout from '@/components/Layout';
++
+ import { promptDialog } from '@/lib/dialogs';
+ import {
+   User as UserIcon, Hotel, Shield, KeyRound, Mail, Phone,
+@@ -89,7 +89,7 @@
+   );
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="profile" title="Profilim" subtitle="Hesap bilgilerinizi görüntüleyin, şifrenizi değiştirin ve güvenliğinizi yönetin.">
++    <>
+     <div className="max-w-3xl mx-auto p-4 space-y-4">
+ 
+       <Card>
+@@ -183,7 +183,7 @@
+         </CardContent>
+       </Card>
+     </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/RecalledMessagesReportPage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_RecalledMessagesReportPage.jsx	2026-05-06 14:49:48.067919362 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_RecalledMessagesReportPage.jsx	2026-05-06 14:49:48.068273402 +0000
+@@ -11,7 +11,7 @@
+ import { useState, useEffect, useCallback, useMemo } from "react";
+ import { useNavigate } from "react-router-dom";
+ import axios from "axios";
+-import Layout from "../components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+ import { Button } from "../components/ui/button";
+ import { Input } from "../components/ui/input";
+@@ -166,14 +166,7 @@
+   };
+ 
+   return (
+-    <Layout
+-      user={user}
+-      tenant={tenant}
+-      onLogout={onLogout}
+-      currentModule="recalled-messages-report"
+-      title="Geri Alınan Mesajlar Raporu"
+-      subtitle="Hangi kullanıcı hangi mesajını ne zaman geri aldı"
+-    >
++    <>
+       <div
+         data-testid="recalled-messages-report-page"
+         className="min-h-screen bg-gray-50"
+@@ -655,6 +648,6 @@
+           </div>
+         </div>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/ReportBuilder.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_ReportBuilder.jsx	2026-05-06 14:49:48.099703941 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_ReportBuilder.jsx	2026-05-06 14:49:48.099831257 +0000
+@@ -1,6 +1,6 @@
+ import React, { useState, useEffect, useCallback } from 'react';
+ import { useTranslation } from 'react-i18next';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+@@ -273,16 +273,16 @@
+ 
+   if (configLoading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
++      <>
+         <div className="flex items-center justify-center min-h-[60vh]">
+           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="reports">
++    <>
+       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6" data-testid="report-builder-page">
+         {/* Header */}
+         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+@@ -766,7 +766,7 @@
+           </Card>
+         )}
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/ReportScheduler.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_ReportScheduler.jsx	2026-05-06 14:49:48.136831228 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_ReportScheduler.jsx	2026-05-06 14:49:48.137374831 +0000
+@@ -1,5 +1,5 @@
+ import { useState, useEffect, useCallback, useMemo } from "react";
+-import Layout from "@/components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+ import { Badge } from "@/components/ui/badge";
+@@ -220,7 +220,7 @@
+   }
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="report-scheduler">
++    <>
+     <div className="space-y-6 p-4 md:p-6 max-w-7xl mx-auto">
+       {error && (
+         <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2">
+@@ -627,6 +627,6 @@
+         </DialogContent>
+       </Dialog>
+     </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/ReservationLineage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_ReservationLineage.jsx	2026-05-06 14:49:48.170879580 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_ReservationLineage.jsx	2026-05-06 14:49:48.171331810 +0000
+@@ -1,7 +1,7 @@
+ import { useState, useEffect, useCallback } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+@@ -129,7 +129,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="channel-manager">
++    <>
+       <div className="p-6 space-y-6 max-w-7xl mx-auto">
+         {/* Header */}
+         <div className="flex items-center justify-between">
+@@ -405,7 +405,7 @@
+           </DialogContent>
+         </Dialog>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/RevenueEngineDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_RevenueEngineDashboard.jsx	2026-05-06 14:49:48.212831168 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_RevenueEngineDashboard.jsx	2026-05-06 14:49:48.213674349 +0000
+@@ -13,7 +13,6 @@
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+-import Layout from '@/components/Layout';
+ 
+ const API = "";
+ const COLORS = ['#0f766e', '#0ea5e9', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981'];
+@@ -33,7 +32,7 @@
+   const headers = { Authorization: `Bearer ${token}` };
+ 
+   const wrap = (content) => embedded ? content : (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="rms">{content}</Layout>
++    <>{content}</>
+   );
+ 
+   const fetchAll = useCallback(async () => {
+
+
+# frontend/src/pages/RevenueHub.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_RevenueHub.jsx	2026-05-06 14:49:48.241931939 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_RevenueHub.jsx	2026-05-06 14:49:48.242312799 +0000
+@@ -14,7 +14,6 @@
+   AlertTriangle,
+ } from 'lucide-react';
+ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+-import Layout from '@/components/Layout';
+ 
+ const GelirYonetimiPage = lazy(() => import('@/pages/GelirYonetimiPage'));
+ const RevenueAutopilotDashboard = lazy(() => import('@/pages/RevenueAutopilotDashboard'));
+@@ -64,7 +63,7 @@
+   ];
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="revenue">
++    <>
+       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6" data-testid="revenue-hub">
+         <div className="flex items-center gap-3">
+           <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center">
+@@ -130,6 +129,6 @@
+           </Suspense>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/RoomMappingWizard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_RoomMappingWizard.jsx	2026-05-06 14:49:48.293868228 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_RoomMappingWizard.jsx	2026-05-06 14:49:48.294121618 +0000
+@@ -1,7 +1,7 @@
+ import { useState, useEffect, useCallback } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+@@ -304,7 +304,7 @@
+   const enabledRates = rateSelections.filter((s) => s.enabled && s.external_entity_id).length;
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
++    <>
+       <div className="max-w-5xl mx-auto space-y-6" data-testid="room-mapping-wizard">
+         {/* Header */}
+         <div className="flex items-center gap-3">
+@@ -854,7 +854,7 @@
+           </div>
+         )}
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/RoomRequests.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_RoomRequests.jsx	2026-05-06 14:49:48.325831079 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_RoomRequests.jsx	2026-05-06 14:49:48.326561897 +0000
+@@ -1,7 +1,7 @@
+ import React, { useEffect, useMemo, useState, useCallback } from "react";
+ import { useTranslation } from 'react-i18next';
+ import axios from "axios";
+-import Layout from "@/components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+ import { Badge } from "@/components/ui/badge";
+@@ -155,7 +155,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="room_qr_requests">
++    <>
+       <div className="p-6 space-y-6">
+         <div className="flex flex-wrap items-center justify-between gap-4">
+           <div>
+@@ -321,7 +321,7 @@
+           )}
+         </DialogContent>
+       </Dialog>
+-    </Layout>
++    </>
+   );
+ }
+ 
+
+
+# frontend/src/pages/RuntimeCockpitPage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_RuntimeCockpitPage.jsx	2026-05-06 14:49:48.357831054 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_RuntimeCockpitPage.jsx	2026-05-06 14:49:48.358552116 +0000
+@@ -2,7 +2,7 @@
+ import axios from 'axios';
+ import { io } from 'socket.io-client';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Badge } from '@/components/ui/badge';
+ import { Button } from '@/components/ui/button';
+@@ -280,11 +280,11 @@
+ 
+   if (loading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="lockdown">
++      <>
+         <div className="flex items-center justify-center h-[60vh]">
+           <Loader2 className="w-8 h-8 animate-spin text-slate-500" />
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+@@ -305,7 +305,7 @@
+   const phaseProgress = ro.phase_progress || [];
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} activeModule="lockdown">
++    <>
+       <div className="space-y-5 p-4 lg:p-6 max-w-[1400px] mx-auto">
+ 
+         {/* ─── Header ──────────────────────────────────────── */}
+@@ -861,6 +861,6 @@
+         )}
+ 
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/SalesCRM.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_SalesCRM.jsx	2026-05-06 14:49:48.391831027 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_SalesCRM.jsx	2026-05-06 14:49:48.392406126 +0000
+@@ -1,7 +1,7 @@
+ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+@@ -217,7 +217,7 @@
+   }), []);
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="sales-crm">
++    <>
+       <div className="p-6">
+         {/* Başlık + Yeni Lead */}
+         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+@@ -618,7 +618,7 @@
+           </DialogContent>
+         </Dialog>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/SalesModule.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_SalesModule.jsx	2026-05-06 14:49:48.423831002 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_SalesModule.jsx	2026-05-06 14:49:48.423831002 +0000
+@@ -2,7 +2,7 @@
+ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
+ import { toast } from 'sonner';
+ import { useNavigate } from 'react-router-dom';
+-import Layout from '../components/Layout';
++
+ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+ import { Button } from '../components/ui/button';
+ import { Badge } from '../components/ui/badge';
+@@ -190,7 +190,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="sales">
++    <>
+       <div className="space-y-6">
+         {/* Header */}
+         <div className="flex items-center justify-between">
+@@ -522,7 +522,7 @@
+           </DialogFooter>
+         </DialogContent>
+       </Dialog>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/SecurityHub.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_SecurityHub.jsx	2026-05-06 14:49:48.453830979 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_SecurityHub.jsx	2026-05-06 14:49:48.454491335 +0000
+@@ -3,7 +3,6 @@
+ import { useTranslation } from 'react-i18next';
+ import { Loader2, Shield, Activity, Lock } from 'lucide-react';
+ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+-import Layout from '@/components/Layout';
+ 
+ const SecurityCenter = lazy(() => import('@/pages/SecurityCenter'));
+ const SecurityDashboard = lazy(() => import('@/pages/SecurityDashboard'));
+@@ -24,7 +23,7 @@
+   const childProps = { user, tenant, onLogout, embedded: true };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="security">
++    <>
+       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6" data-testid="security-hub">
+         <div className="flex items-center gap-3">
+           <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+@@ -73,6 +72,6 @@
+           </Suspense>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/ServiceRecovery.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_ServiceRecovery.jsx	2026-05-06 14:49:48.491830949 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_ServiceRecovery.jsx	2026-05-06 14:49:48.492408654 +0000
+@@ -14,7 +14,6 @@
+   ArrowUpCircle, ArrowDownCircle, User, DoorOpen, Calendar,
+   MessageSquare, Trash2, Edit, Zap, History, Wallet, BellRing, FileText
+ } from 'lucide-react';
+-import Layout from '@/components/Layout';
+ 
+ import { confirmDialog, promptDialog } from '@/lib/dialogs';
+ const CATEGORIES = [
+@@ -431,19 +430,19 @@
+ 
+   if (loading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout}>
++      <>
+         <div className="flex items-center justify-center h-96">
+           <div className="text-center">
+             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-red-600 mx-auto mb-4" />
+             <p className="text-gray-500">Yükleniyor...</p>
+           </div>
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout}>
++    <>
+       <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-6">
+         {/* Header */}
+         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+@@ -1095,7 +1094,7 @@
+           </DialogContent>
+         </Dialog>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/Settings.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_Settings.jsx	2026-05-06 14:49:48.524830923 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_Settings.jsx	2026-05-06 14:49:48.525432793 +0000
+@@ -2,7 +2,7 @@
+ import axios from 'axios';
+ import { toast } from 'sonner';
+ import { useTranslation } from 'react-i18next';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+@@ -360,7 +360,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="settings">
++    <>
+       <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
+         {/* Header */}
+         <div className="flex items-center justify-between">
+@@ -1079,7 +1079,7 @@
+         onRoomsCreated={loadRooms}
+         user={user}
+       />
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/SpaWellness.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_SpaWellness.jsx	2026-05-06 14:49:48.554830899 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_SpaWellness.jsx	2026-05-06 14:49:48.555713013 +0000
+@@ -1,7 +1,7 @@
+ import { useEffect, useMemo, useState } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import {
+   Card, CardContent, CardHeader, CardTitle, CardDescription,
+ } from '@/components/ui/card';
+@@ -132,16 +132,16 @@
+ 
+   if (loading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="spa">
++      <>
+         <div className="p-8 text-center text-gray-500">
+           <RefreshCw className="w-6 h-6 animate-spin inline" /> Yükleniyor…
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="spa">
++    <>
+     <div className="max-w-7xl mx-auto p-4 space-y-4">
+       <div className="flex items-start justify-between flex-wrap gap-3">
+         <div>
+@@ -466,7 +466,7 @@
+         </Modal>
+       )}
+     </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/StaffRoomServiceOrders.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_StaffRoomServiceOrders.jsx	2026-05-06 14:49:48.587687322 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_StaffRoomServiceOrders.jsx	2026-05-06 14:49:48.587830873 +0000
+@@ -2,7 +2,7 @@
+ import { useNavigate } from 'react-router-dom';
+ import { useTranslation } from 'react-i18next';
+ import axios from 'axios';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+@@ -267,7 +267,7 @@
+   }, [orders]);
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pos">
++    <>
+       <div className="p-6 space-y-6">
+         {/* Header */}
+         <div className="flex items-center justify-between flex-wrap gap-3">
+@@ -459,7 +459,7 @@
+           </div>
+         )}
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/SuppliesMarket.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_SuppliesMarket.jsx	2026-05-06 14:49:48.625830843 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_SuppliesMarket.jsx	2026-05-06 14:49:48.626830842 +0000
+@@ -20,7 +20,6 @@
+   Clock,
+   Wallet,
+ } from "lucide-react";
+-import Layout from "@/components/Layout";
+ 
+ const PAYMENT_LABELS = {
+   cash_on_delivery: "Kapıda Ödeme",
+@@ -241,7 +240,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="supplies_market">
++    <>
+     <div className="p-6 max-w-7xl mx-auto">
+       <div className="flex items-center justify-between mb-6">
+         <div>
+@@ -775,6 +774,6 @@
+         </div>
+       )}
+     </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/SystemHealthDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_SystemHealthDashboard.jsx	2026-05-06 14:49:48.656830819 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_SystemHealthDashboard.jsx	2026-05-06 14:49:48.657387331 +0000
+@@ -5,7 +5,7 @@
+ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+ import { Badge } from "../components/ui/badge";
+ import { Button } from "../components/ui/button";
+-import Layout from "../components/Layout";
++
+ import {
+   Activity, Shield, Server, AlertTriangle, RefreshCw, CheckCircle2,
+   XCircle, Clock, Wifi, WifiOff, Lock, Eye, ArrowLeft, Loader2,
+@@ -819,7 +819,7 @@
+   const roomService = normalizedOverview?.subsystems?.room_service || null;
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="system-health">
++    <>
+     <div data-testid="system-health-dashboard" className="min-h-screen bg-white text-gray-900">
+       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+         {/* Header */}
+@@ -910,6 +910,6 @@
+         )}
+       </div>
+     </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/TemplateManager.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_TemplateManager.jsx	2026-05-06 14:49:48.685830796 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_TemplateManager.jsx	2026-05-06 14:49:48.686507030 +0000
+@@ -1,7 +1,7 @@
+ import React, { useState, useEffect } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+@@ -88,7 +88,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
++    <>
+       <div className="p-6 space-y-6">
+         <div className="flex justify-between items-center">
+           <div>
+@@ -210,7 +210,7 @@
+           </DialogContent>
+         </Dialog>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/TravelAgentARAP.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_TravelAgentARAP.jsx	2026-05-06 14:49:48.717830771 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_TravelAgentARAP.jsx	2026-05-06 14:49:48.718748760 +0000
+@@ -1,7 +1,7 @@
+ import { useState, useEffect, useCallback } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+@@ -208,16 +208,16 @@
+ 
+   if (loading && !summary) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} activeItem="travel_agent_arap">
++      <>
+         <div className="flex items-center justify-center h-64">
+           <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} activeItem="travel_agent_arap">
++    <>
+       <div className="space-y-6">
+         <div>
+           <h1 className="text-2xl font-bold">{t('agentArap.title')}</h1>
+@@ -733,7 +733,7 @@
+           ) : null}
+         </DialogContent>
+       </Dialog>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/UrgentMessageReportPage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_UrgentMessageReportPage.jsx	2026-05-06 14:49:48.753818309 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_UrgentMessageReportPage.jsx	2026-05-06 14:49:48.753830742 +0000
+@@ -11,7 +11,7 @@
+ import { useState, useEffect, useCallback, useMemo } from "react";
+ import { useNavigate } from "react-router-dom";
+ import axios from "axios";
+-import Layout from "../components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+ import { Button } from "../components/ui/button";
+ import { Input } from "../components/ui/input";
+@@ -134,14 +134,7 @@
+   };
+ 
+   return (
+-    <Layout
+-      user={user}
+-      tenant={tenant}
+-      onLogout={onLogout}
+-      currentModule="urgent-message-report"
+-      title="Acil Mesaj Raporu"
+-      subtitle="Acil mesaj denetim kayıtları — kim, kime, ne zaman"
+-    >
++    <>
+       <div
+         data-testid="urgent-message-report-page"
+         className="min-h-screen bg-gray-50"
+@@ -511,6 +504,6 @@
+           </div>
+         </div>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/UrgentPermissionAdminPage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_UrgentPermissionAdminPage.jsx	2026-05-06 14:49:48.782830719 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_UrgentPermissionAdminPage.jsx	2026-05-06 14:49:48.783650209 +0000
+@@ -11,7 +11,7 @@
+  */
+ import { useCallback, useEffect, useMemo, useState } from "react";
+ import axios from "axios";
+-import Layout from "../components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+ import { Button } from "../components/ui/button";
+ import { Input } from "../components/ui/input";
+@@ -159,7 +159,7 @@
+   }, [toast]);
+ 
+   return (
+-    <Layout currentModule="urgent-permission-admin">
++    <>
+       <div data-testid="urgent-permission-admin-page" className="min-h-screen bg-gray-50">
+         <div className="max-w-5xl mx-auto p-6 space-y-4">
+           <div className="flex items-center justify-between">
+@@ -329,6 +329,6 @@
+           )}
+         </div>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/UserRoleManager.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_UserRoleManager.jsx	2026-05-06 14:49:48.814830694 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_UserRoleManager.jsx	2026-05-06 14:49:48.815830693 +0000
+@@ -1,6 +1,6 @@
+ import React, { useState, useEffect } from 'react';
+ import axios from 'axios';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+@@ -81,7 +81,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="user-role-manager">
++    <>
+       <div className="p-6 space-y-6">
+         <div>
+           <h1 className="text-3xl font-bold">👥 Kullanıcı Role Yönetimi</h1>
+@@ -203,7 +203,7 @@
+           </CardContent>
+         </Card>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/WebhookOutboxAdmin.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_WebhookOutboxAdmin.jsx	2026-05-06 14:49:48.846830669 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_WebhookOutboxAdmin.jsx	2026-05-06 14:49:48.847659647 +0000
+@@ -1,6 +1,6 @@
+ import React, { useEffect, useState, useCallback } from "react";
+ import axios from "axios";
+-import Layout from "@/components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+ import { Badge } from "@/components/ui/badge";
+@@ -142,7 +142,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="webhook-outbox-admin">
++    <>
+       <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto">
+         <div className="flex items-center justify-between">
+           <div>
+@@ -381,6 +381,6 @@
+           </TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/WireFailureDashboard.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_WireFailureDashboard.jsx	2026-05-06 14:49:48.876830645 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_WireFailureDashboard.jsx	2026-05-06 14:49:48.877502117 +0000
+@@ -1,7 +1,7 @@
+ import { useState, useEffect, useCallback } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+@@ -63,7 +63,7 @@
+   const severityColor = (s) => s === 'high' ? 'text-red-700 bg-red-50' : s === 'medium' ? 'text-amber-700 bg-amber-50' : 'text-slate-700 bg-slate-50';
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="channel-manager">
++    <>
+       <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto" data-testid="wire-failure-dashboard">
+         <div className="flex items-center justify-between">
+           <div>
+@@ -236,7 +236,7 @@
+           </TabsContent>
+         </Tabs>
+       </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/XchangePage.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_XchangePage.jsx	2026-05-06 14:49:48.914830615 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_XchangePage.jsx	2026-05-06 14:49:48.915705946 +0000
+@@ -1,7 +1,7 @@
+ import { useEffect, useMemo, useState } from 'react';
+ import axios from 'axios';
+ import { toast } from 'sonner';
+-import Layout from '@/components/Layout';
++
+ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Button } from '@/components/ui/button';
+ import { Badge } from '@/components/ui/badge';
+@@ -138,14 +138,7 @@
+   }
+ 
+   return (
+-    <Layout
+-      user={user}
+-      tenant={tenant}
+-      onLogout={onLogout}
+-      currentModule="xchange"
+-      title="Syroce Xchange (SXI)"
+-      subtitle="GDS, CRS ve ERP partner'larıyla HTNG 2024B mesaj bus'ı. OPERA PMSXchange (OXI) eşdeğeri."
+-    >
++    <>
+     <div className="max-w-7xl mx-auto p-4 space-y-4">
+       <div className="flex items-start justify-end flex-wrap gap-3">
+         <div className="hidden"></div>
+@@ -367,7 +360,7 @@
+         </div>
+       )}
+     </div>
+-    </Layout>
++    </>
+   );
+ };
+ 
+
+
+# frontend/src/pages/admin/QuickIdSettings.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_QuickIdSettings.jsx	2026-05-06 14:49:48.949830588 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_QuickIdSettings.jsx	2026-05-06 14:49:48.950830587 +0000
+@@ -1,6 +1,6 @@
+ import React, { useEffect, useState } from "react";
+ import axios from "axios";
+-import Layout from "@/components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+ import { Input } from "@/components/ui/input";
+@@ -84,11 +84,11 @@
+ 
+   if (loading) {
+     return (
+-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="quick_id_settings">
++      <>
+         <div className="flex items-center justify-center min-h-[60vh]">
+           <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+         </div>
+-      </Layout>
++      </>
+     );
+   }
+ 
+@@ -101,7 +101,7 @@
+   };
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="quick_id_settings">
++    <>
+       <div className="max-w-4xl mx-auto p-6 space-y-6">
+         <div>
+           <h1 className="text-3xl font-bold flex items-center gap-2">
+@@ -335,6 +335,6 @@
+           </p>
+         )}
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+
+
+# frontend/src/pages/admin/RoomQrCodes.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_RoomQrCodes.jsx	2026-05-06 14:49:48.984830560 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_RoomQrCodes.jsx	2026-05-06 14:49:48.985517275 +0000
+@@ -1,6 +1,6 @@
+ import React, { useEffect, useState } from "react";
+ import axios from "axios";
+-import Layout from "@/components/Layout";
++
+ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+ import { Input } from "@/components/ui/input";
+@@ -68,7 +68,7 @@
+   );
+ 
+   return (
+-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="room_qr_codes">
++    <>
+       <div className="p-6 space-y-6 print:hidden">
+         <div className="flex justify-between items-center">
+           <div>
+@@ -149,7 +149,7 @@
+       <div className="hidden print:block">
+         <PrintAllQrCodes rooms={filtered} />
+       </div>
+-    </Layout>
++    </>
+   );
+ }
+ 
+
+
+# frontend/src/routes/routeDefinitions.jsx
+--- /home/runner/workspace/tools/codemod-layout/.report/_b_routeDefinitions.jsx	2026-05-06 14:49:49.021830531 +0000
++++ /home/runner/workspace/tools/codemod-layout/.report/_a_routeDefinitions.jsx	2026-05-06 14:49:49.022567634 +0000
+@@ -288,28 +288,28 @@
+     { path: "/precheckin/:token", type: "public", component: PreCheckinPage },
+ 
+     // ── Core Operations ────────────────────────────────
+-    { path: "/app/dashboard", ...p(Dashboard, { modules }) },
+-    { path: "/app/profile", ...p(ProfilePage) },
+-    { path: "/profile", ...p(ProfilePage) },
+-    { path: "/app/compliance/pci", ...p(PCIComplianceDashboard) },
+-    { path: "/app/xchange", ...p(XchangePage) },
+-    { path: "/app/mice", ...pm(MicePage, "mice", undefined, { strict: true }) },
+-    { path: "/app/procurement", ...p(ProcurementPage) },
+-    { path: "/app/stock-rehber", ...p(InventoryProcurementGuide) },
+-    { path: "/app/mailing", ...p(MailingPage) },
+-    { path: "/app/module-store", ...p(ModuleStorePage) },
+-    { path: "/module-store", ...p(ModuleStorePage) },
+-    { path: "/app/afsadakat", ...p(AfsadakatLauncher) },
+-    { path: "/app/onboarding", ...p(OnboardingWizard) },
+-    { path: "/dashboard-simple", ...p(Dashboard, { modules }) },
++    { path: "/app/dashboard", ...p(Dashboard, { modules }) , wrapLayout: true, layoutModule: "dashboard" },
++    { path: "/app/profile", ...p(ProfilePage) , wrapLayout: true, layoutModule: "profile" },
++    { path: "/profile", ...p(ProfilePage) , wrapLayout: true, layoutModule: "profile" },
++    { path: "/app/compliance/pci", ...p(PCIComplianceDashboard) , wrapLayout: true, layoutModule: "pci-compliance" },
++    { path: "/app/xchange", ...p(XchangePage) , wrapLayout: true, layoutModule: "xchange" },
++    { path: "/app/mice", ...pm(MicePage, "mice", undefined, { strict: true }) , wrapLayout: true, layoutModule: "mice" },
++    { path: "/app/procurement", ...p(ProcurementPage) , wrapLayout: true, layoutModule: "procurement" },
++    { path: "/app/stock-rehber", ...p(InventoryProcurementGuide) , wrapLayout: true, layoutModule: "procurement" },
++    { path: "/app/mailing", ...p(MailingPage) , wrapLayout: true, layoutModule: "mailing" },
++    { path: "/app/module-store", ...p(ModuleStorePage) , wrapLayout: true, layoutModule: "module-store" },
++    { path: "/module-store", ...p(ModuleStorePage) , wrapLayout: true, layoutModule: "module-store" },
++    { path: "/app/afsadakat", ...p(AfsadakatLauncher) , wrapLayout: true, layoutModule: "afsadakat" },
++    { path: "/app/onboarding", ...p(OnboardingWizard) , wrapLayout: true, layoutModule: "onboarding" },
++    { path: "/dashboard-simple", ...p(Dashboard, { modules }) , wrapLayout: true, layoutModule: "dashboard" },
+     { path: "/ai-pms", ...p(AIEnhancedPMS) },
+-    { path: "/app/ai", ...p(AIModule) },
++    { path: "/app/ai", ...p(AIModule) , wrapLayout: true, layoutModule: "ai" },
+     { path: "/pms", type: "memory", targetPath: "/pms", ...p(PMSModule) },
+     { path: "/app/pms", type: "memory", targetPath: "/app/pms", ...p(PMSModule) },
+-    { path: "/pms-operations", ...p(PMSOperationalDashboard) },
+-    { path: "/folio-detail", ...p(FolioDetailView) },
+-    { path: "/folio-detail/:folioId", ...p(FolioDetailView) },
+-    { path: "/housekeeping-status", ...p(HousekeepingStatusPage) },
++    { path: "/pms-operations", ...p(PMSOperationalDashboard) , wrapLayout: true, layoutModule: "pms_operations" },
++    { path: "/folio-detail", ...p(FolioDetailView) , wrapLayout: true, layoutModule: "folio_detail" },
++    { path: "/folio-detail/:folioId", ...p(FolioDetailView) , wrapLayout: true, layoutModule: "folio_detail" },
++    { path: "/housekeeping-status", ...p(HousekeepingStatusPage) , wrapLayout: true, layoutModule: "housekeeping" },
+     // M5 pilot (May 2026): Layout sarımı ProtectedRoute tarafından yapılır.
+     // Bu route'lar `wrapLayout: true` flag'i ile işaretli; sayfa dosyaları
+     // Layout import/sarımını kendi return'lerinden kaldırmıştır.
+@@ -320,86 +320,86 @@
+     { path: "/room-map", ...p(RoomMapPage), wrapLayout: true, layoutModule: "dashboard" },
+     { path: "/wake-up-calls", ...p(WakeUpCallsPage), wrapLayout: true, layoutModule: "pms" },
+     { path: "/lost-found", ...p(LostFoundPage), wrapLayout: true, layoutModule: "pms" },
+-    { path: "/guest-journey", ...p(GuestJourney) },
+-    { path: "/operational-events", ...p(OperationalEventDashboard) },
+-    { path: "/app/migration-observability", ...p(MigrationObservabilityPage) },
+-    { path: "/app/integration-hub", ...pa(IntegrationHub) },
+-    { path: "/app/admin-control-panel", ...pa(AdminControlPanel) },
++    { path: "/guest-journey", ...p(GuestJourney) , wrapLayout: true },
++    { path: "/operational-events", ...p(OperationalEventDashboard) , wrapLayout: true, layoutModule: "pms_operations" },
++    { path: "/app/migration-observability", ...p(MigrationObservabilityPage) , wrapLayout: true, layoutModule: "reports" },
++    { path: "/app/integration-hub", ...pa(IntegrationHub) , wrapLayout: true, layoutModule: "integration-hub" },
++    { path: "/app/admin-control-panel", ...pa(AdminControlPanel) , wrapLayout: true, layoutModule: "admin_control_panel" },
+ 
+     // ── Reservations ───────────────────────────────────
+     { path: "/reservation-calendar", ...p(ReservationCalendar) },
+     { path: "/app/reservation-calendar", ...p(ReservationCalendar) },
+-    { path: "/reservation-lineage", ...p(ReservationLineage) },
+-    { path: "/group-bookings-manage", ...p(GroupBookingsPage) },
+-    { path: "/deposit-tracking", ...p(DepositTrackingPage) },
+-    { path: "/group-folio", ...p(GroupFolioPage) },
++    { path: "/reservation-lineage", ...p(ReservationLineage) , wrapLayout: true, layoutModule: "channel-manager" },
++    { path: "/group-bookings-manage", ...p(GroupBookingsPage) , wrapLayout: true, layoutModule: "group-bookings" },
++    { path: "/deposit-tracking", ...p(DepositTrackingPage) , wrapLayout: true, layoutModule: "deposits" },
++    { path: "/group-folio", ...p(GroupFolioPage) , wrapLayout: true, layoutModule: "group_folio" },
+     { path: "/no-show-analytics", ...p(NoShowAnalytics) },
+     { path: "/group-reservations", ...p(GroupReservations) },
+-    { path: "/arrival-list", ...p(ArrivalList) },
+-    { path: "/departure-list", ...p(DepartureList) },
+-    { path: "/no-show-today", ...p(NoShowToday) },
++    { path: "/arrival-list", ...p(ArrivalList) , wrapLayout: true, layoutModule: "pms" },
++    { path: "/departure-list", ...p(DepartureList) , wrapLayout: true, layoutModule: "pms" },
++    { path: "/no-show-today", ...p(NoShowToday) , wrapLayout: true, layoutModule: "pms" },
+ 
+     // ── Finance ────────────────────────────────────────
+-    { path: "/invoices", ...p(InvoiceModule) },
+-    { path: "/app/invoices", ...p(InvoiceModule) },
+-    { path: "/night-audit", ...p(NightAuditDashboard) },
+-    { path: "/night-audit/logs", ...p(NightAuditLogs) },
+-    { path: "/pending-ar", ...p(PendingAR) },
+-    { path: "/city-ledger", ...p(CityLedgerAccounts) },
++    { path: "/invoices", ...p(InvoiceModule) , wrapLayout: true, layoutModule: "invoices" },
++    { path: "/app/invoices", ...p(InvoiceModule) , wrapLayout: true, layoutModule: "invoices" },
++    { path: "/night-audit", ...p(NightAuditDashboard) , wrapLayout: true, layoutModule: "night_audit" },
++    { path: "/night-audit/logs", ...p(NightAuditLogs) , wrapLayout: true, layoutModule: "reports" },
++    { path: "/pending-ar", ...p(PendingAR) , wrapLayout: true, layoutModule: "pending-ar" },
++    { path: "/city-ledger", ...p(CityLedgerAccounts) , wrapLayout: true, layoutModule: "city-ledger" },
+     { path: "/efatura", ...p(EFaturaModule) },
+ 
+     // ── Settings ───────────────────────────────────────
+-    { path: "/settings", ...p(Settings) },
+-    { path: "/app/settings", ...p(Settings) },
++    { path: "/settings", ...p(Settings) , wrapLayout: true, layoutModule: "settings" },
++    { path: "/app/settings", ...p(Settings) , wrapLayout: true, layoutModule: "settings" },
+ 
+     // ── Channel Manager ────────────────────────────────
+     { path: "/channel-connections", type: "redirect", to: "/channels?tab=connections" },
+     { path: "/cm-dashboard", type: "redirect", to: "/channels?tab=dashboard" },
+-    { path: "/go-live-readiness", ...p(GoLiveReadinessCockpit) },
+-    { path: "/channel-manager", ...p(ChannelManagerModule) },
+-    { path: "/app/channel-manager", ...p(ChannelManagerModule) },
++    { path: "/go-live-readiness", ...p(GoLiveReadinessCockpit) , wrapLayout: true },
++    { path: "/channel-manager", ...p(ChannelManagerModule) , wrapLayout: true, layoutModule: "channel-manager" },
++    { path: "/app/channel-manager", ...p(ChannelManagerModule) , wrapLayout: true, layoutModule: "channel-manager" },
+     { path: "/channel-ops", type: "redirect", to: "/channels?tab=ops" },
+-    { path: "/channels", ...p(ChannelHub) },
+-    { path: "/app/channels", ...p(ChannelHub) },
+-    { path: "/app/revenue-hub", ...p(RevenueHub) },
+-    { path: "/app/admin-hub", ...pa(AdminHub) },
+-    { path: "/mapping-manager", ...p(MappingManager) },
+-    { path: "/room-mapping-wizard", ...p(RoomMappingWizard) },
+-    { path: "/hotelrunner", ...pa(HotelRunnerIntegration) },
++    { path: "/channels", ...p(ChannelHub) , wrapLayout: true, layoutModule: "channels" },
++    { path: "/app/channels", ...p(ChannelHub) , wrapLayout: true, layoutModule: "channels" },
++    { path: "/app/revenue-hub", ...p(RevenueHub) , wrapLayout: true, layoutModule: "revenue" },
++    { path: "/app/admin-hub", ...pa(AdminHub) , wrapLayout: true, layoutModule: "admin" },
++    { path: "/mapping-manager", ...p(MappingManager) , wrapLayout: true, layoutModule: "channel-manager" },
++    { path: "/room-mapping-wizard", ...p(RoomMappingWizard) , wrapLayout: true },
++    { path: "/hotelrunner", ...pa(HotelRunnerIntegration) , wrapLayout: true },
+     { path: "/hrv2-ops", type: "redirect", to: "/hr?tab=ops" },
+-    { path: "/exely", ...pa(ExelyIntegration) },
+-    { path: "/ari-push", ...pa(ARIPushDashboard) },
++    { path: "/exely", ...pa(ExelyIntegration) , wrapLayout: true },
++    { path: "/ari-push", ...pa(ARIPushDashboard) , wrapLayout: true },
+     { path: "/rate-manager", ...pa(UnifiedRateManager) },
+     { path: "/hr-rate-manager", ...pa(UnifiedRateManager) },
+     { path: "/unified-rate-manager", ...p(UnifiedRateManager) },
+-    { path: "/wire-failures", ...pa(WireFailureDashboard) },
+-    { path: "/data-model", ...pa(DataModelDashboard) },
+-    { path: "/lockdown", ...pa(LockdownDashboard) },
+-    { path: "/incidents", ...pa(OperatorIncidentPanel) },
+-    { path: "/runtime-cockpit", ...pa(RuntimeCockpitPage) },
+-    { path: "/control-plane", ...pa(ControlPlane) },
++    { path: "/wire-failures", ...pa(WireFailureDashboard) , wrapLayout: true, layoutModule: "channel-manager" },
++    { path: "/data-model", ...pa(DataModelDashboard) , wrapLayout: true },
++    { path: "/lockdown", ...pa(LockdownDashboard) , wrapLayout: true },
++    { path: "/incidents", ...pa(OperatorIncidentPanel) , wrapLayout: true },
++    { path: "/runtime-cockpit", ...pa(RuntimeCockpitPage) , wrapLayout: true },
++    { path: "/control-plane", ...pa(ControlPlane) , wrapLayout: true },
+ 
+     // ── Reports ────────────────────────────────────────
+-    { path: "/app/raporlar", ...p(BasicReports) },
+-    { path: "/app/gelismis-raporlar", ...p(BasicReports) },
+-    { path: "/reports", ...p(BasicReports) },
+-    { path: "/app/reports", ...p(BasicReports) },
+-    { path: "/reports/builder", ...p(ReportBuilder) },
+-    { path: "/app/rapor-olusturucu", ...p(ReportBuilder) },
+-    { path: "/reports/official-guest-list", ...p(OfficialGuestList) },
+-    { path: "/reports/corporate-contracts", ...p(CorporateContractsDashboard) },
++    { path: "/app/raporlar", ...p(BasicReports) , wrapLayout: true, layoutModule: "reports_basic" },
++    { path: "/app/gelismis-raporlar", ...p(BasicReports) , wrapLayout: true, layoutModule: "reports_basic" },
++    { path: "/reports", ...p(BasicReports) , wrapLayout: true, layoutModule: "reports_basic" },
++    { path: "/app/reports", ...p(BasicReports) , wrapLayout: true, layoutModule: "reports_basic" },
++    { path: "/reports/builder", ...p(ReportBuilder) , wrapLayout: true, layoutModule: "reports" },
++    { path: "/app/rapor-olusturucu", ...p(ReportBuilder) , wrapLayout: true, layoutModule: "reports" },
++    { path: "/reports/official-guest-list", ...p(OfficialGuestList) , wrapLayout: true, layoutModule: "reports" },
++    { path: "/reports/corporate-contracts", ...p(CorporateContractsDashboard) , wrapLayout: true, layoutModule: "reports" },
+ 
+     // ── Revenue & Analytics (Consolidated) ───────────
+     { path: "/displacement-analysis", ...p(DisplacementAnalysis) },
+     { path: "/app/displacement-analysis", ...p(DisplacementAnalysis) },
+     { path: "/app/gelir-yonetimi", ...p(GelirYonetimiPage) },
+-    { path: "/app/ai-zeka", ...p(AIZekaPage) },
+-    { path: "/app/analitik", ...p(AnalitikRaporlarPage) },
++    { path: "/app/ai-zeka", ...p(AIZekaPage) , wrapLayout: true, layoutModule: "ai" },
++    { path: "/app/analitik", ...p(AnalitikRaporlarPage) , wrapLayout: true, layoutModule: "rms" },
+ 
+     // ── Revenue & Analytics (Legacy routes — backward compat) ──
+-    { path: "/revenue-engine", ...p(RevenueEngineDashboard) },
++    { path: "/revenue-engine", ...p(RevenueEngineDashboard) , wrapLayout: true, layoutModule: "rms" },
+     { path: "/data-intelligence", ...p(DataIntelligenceDashboard) },
+-    { path: "/messaging-dashboard", ...p(MessagingDashboard) },
++    { path: "/messaging-dashboard", ...p(MessagingDashboard) , wrapLayout: true, layoutModule: "messaging" },
+     { path: "/ml-scheduler", ...p(MLSchedulerDashboard) },
+     { path: "/revenue-autopilot-v2", ...p(RevenueAutopilotDashboard) },
+     { path: "/analytics-export", ...p(AnalyticsExportDashboard) },
+@@ -409,21 +409,21 @@
+     { path: "/app/rms", type: "feature", featureKey: "hidden_rms", ...p(RMSModule) },
+ 
+     // ── Marketplace ────────────────────────────────────
+-    { path: "/marketplace", ...p(MarketplaceModule) },
+-    { path: "/app/marketplace", ...p(MarketplaceModule) },
+-    { path: "/app/supplies-market", ...p(SuppliesMarket) },
++    { path: "/marketplace", ...p(MarketplaceModule) , wrapLayout: true, layoutModule: "marketplace" },
++    { path: "/app/marketplace", ...p(MarketplaceModule) , wrapLayout: true, layoutModule: "marketplace" },
++    { path: "/app/supplies-market", ...p(SuppliesMarket) , wrapLayout: true, layoutModule: "supplies_market" },
+     { path: "/vendor", type: "public", component: VendorPortal },
+     { path: "/vendor/*", type: "public", component: VendorPortal },
+ 
+     // ── Loyalty & Inventory ────────────────────────────
+-    { path: "/loyalty", ...p(LoyaltyModule) },
+-    { path: "/hotel-inventory", ...p(HotelInventory) },
+-    { path: "/templates", ...p(TemplateManager) },
++    { path: "/loyalty", ...p(LoyaltyModule) , wrapLayout: true, layoutModule: "loyalty" },
++    { path: "/hotel-inventory", ...p(HotelInventory) , wrapLayout: true },
++    { path: "/templates", ...p(TemplateManager) , wrapLayout: true, layoutModule: "pms" },
+ 
+     // ── Core Operations (Dashboard module cards) ──────
+-    { path: "/housekeeping", ...p(HousekeepingDashboard) },
+-    { path: "/pos", ...p(POSDashboard) },
+-    { path: "/features", ...p(FeaturesShowcase) },
++    { path: "/housekeeping", ...p(HousekeepingDashboard) , wrapLayout: true, layoutModule: "housekeeping" },
++    { path: "/pos", ...p(POSDashboard) , wrapLayout: true, layoutModule: "pos" },
++    { path: "/features", ...p(FeaturesShowcase) , wrapLayout: true },
+ 
+     // ── Guest Features ─────────────────────────────────
+     { path: "/guest/checkin/:bookingId", ...p(SelfCheckin) },
+@@ -432,24 +432,24 @@
+ 
+     // ── Staff & OTA ────────────────────────────────────
+     { path: "/staff/mobile", ...p(StaffMobileApp) },
+-    { path: "/staff/room-service", ...p(StaffRoomServiceOrders) },
++    { path: "/staff/room-service", ...p(StaffRoomServiceOrders) , wrapLayout: true, layoutModule: "pos" },
+     { path: "/ota-messaging-hub", ...p(OTAMessagingHub) },
+-    { path: "/messaging-center", ...p(MessagingCenter) },
+-    { path: "/sales", ...p(SalesModule) },
+-    { path: "/travel-agent-arap", ...p(TravelAgentARAP) },
+-    { path: "/app/travel-agent-arap", ...p(TravelAgentARAP) },
++    { path: "/messaging-center", ...p(MessagingCenter) , wrapLayout: true, layoutModule: "messaging" },
++    { path: "/sales", ...p(SalesModule) , wrapLayout: true, layoutModule: "sales" },
++    { path: "/travel-agent-arap", ...p(TravelAgentARAP) , wrapLayout: true },
++    { path: "/app/travel-agent-arap", ...p(TravelAgentARAP) , wrapLayout: true },
+     { path: "/agency-requests", ...p(AgencyRequests) },
+-    { path: "/app/incoming-agency-contracts", ...p(IncomingAgencyContracts) },
+-    { path: "/agency-management", ...p(AgencyManagement) },
+-    { path: "/agency-content", ...p(AgencyContentDistribution) },
+-    { path: "/b2b-analytics", ...p(B2BAnalyticsDashboard) },
+-    { path: "/report-scheduler", ...p(ReportScheduler) },
++    { path: "/app/incoming-agency-contracts", ...p(IncomingAgencyContracts) , wrapLayout: true },
++    { path: "/agency-management", ...p(AgencyManagement) , wrapLayout: true },
++    { path: "/agency-content", ...p(AgencyContentDistribution) , wrapLayout: true },
++    { path: "/b2b-analytics", ...p(B2BAnalyticsDashboard) , wrapLayout: true, layoutModule: "b2b-analytics" },
++    { path: "/report-scheduler", ...p(ReportScheduler) , wrapLayout: true, layoutModule: "report-scheduler" },
+ 
+     // ── Frontdesk & Maintenance ────────────────────────
+-    { path: "/frontdesk/audit-checklist", ...p(FrontdeskAuditChecklist) },
+-    { path: "/maintenance/work-orders", ...p(MaintenanceWorkOrders) },
+-    { path: "/maintenance/assets", ...p(MaintenanceAssets) },
+-    { path: "/maintenance/plans", ...p(MaintenancePlans) },
++    { path: "/frontdesk/audit-checklist", ...p(FrontdeskAuditChecklist) , wrapLayout: true, layoutModule: "pms" },
++    { path: "/maintenance/work-orders", ...p(MaintenanceWorkOrders) , wrapLayout: true, layoutModule: "maintenance" },
++    { path: "/maintenance/assets", ...p(MaintenanceAssets) , wrapLayout: true, layoutModule: "maintenance" },
++    { path: "/maintenance/plans", ...p(MaintenancePlans) , wrapLayout: true, layoutModule: "maintenance" },
+ 
+     // ── Multi Property ─────────────────────────────────
+     { path: "/multi-property-dashboard", ...p(MultiPropertyDashboard) },
+@@ -476,9 +476,9 @@
+     { path: "/mobile/logs", ...p(MobileLogViewer) },
+ 
+     // ── Executive & GM ─────────────────────────────────
+-    { path: "/app/konaklama-vergisi", ...pm(KonaklamaVergisiModule, "invoices") },
+-    { path: "/app/help", ...p(HelpCenter) },
+-    { path: "/app/mevzuat-raporlari", ...pm(MevzuatRaporlari, "basic_reporting") },
++    { path: "/app/konaklama-vergisi", ...pm(KonaklamaVergisiModule, "invoices") , wrapLayout: true, layoutModule: "konaklama-vergisi" },
++    { path: "/app/help", ...p(HelpCenter) , wrapLayout: true, layoutModule: "help" },
++    { path: "/app/mevzuat-raporlari", ...pm(MevzuatRaporlari, "basic_reporting") , wrapLayout: true, layoutModule: "mevzuat-raporlari" },
+     { path: "/executive", ...pm(ExecutiveDashboard, "gm_dashboards") },
+     { path: "/gm/enhanced", type: "redirect", to: "/executive" },
+     { path: "/gm-classic", type: "redirect", to: "/app/dashboard" },
+@@ -486,25 +486,25 @@
+     // ── Infrastructure ─────────────────────────────────
+     { path: "/data-pipeline", ...p(DataPipelineDashboard) },
+     { path: "/event-bus", ...p(EventBusDashboard) },
+-    { path: "/system-health", ...p(SystemHealthDashboard) },
++    { path: "/system-health", ...p(SystemHealthDashboard) , wrapLayout: true, layoutModule: "system-health" },
+     { path: "/observability", ...p(ObservabilityDashboard) },
+     { path: "/security-hardening", type: "redirect", to: "/security?tab=hardening" },
+-    { path: "/security", ...p(SecurityHub) },
+-    { path: "/app/security", ...p(SecurityHub) },
++    { path: "/security", ...p(SecurityHub) , wrapLayout: true, layoutModule: "security" },
++    { path: "/app/security", ...p(SecurityHub) , wrapLayout: true, layoutModule: "security" },
+     { path: "/runtime-infrastructure", ...p(RuntimeInfrastructureDashboard) },
+-    { path: "/infra-hardening", ...p(InfraHardeningDashboard) },
+-    { path: "/production-golive", ...p(ProductionGoLiveDashboard) },
+-    { path: "/platform-scaling", ...p(PlatformScalingDashboard) },
++    { path: "/infra-hardening", ...p(InfraHardeningDashboard) , wrapLayout: true },
++    { path: "/production-golive", ...p(ProductionGoLiveDashboard) , wrapLayout: true },
++    { path: "/platform-scaling", ...p(PlatformScalingDashboard) , wrapLayout: true },
+     { path: "/enterprise-live", type: "redirect", to: "/executive" },
+     { path: "/pii-strict-mode", ...p(PIIStrictModeDashboard) },
+ 
+     // ── Ops & Phases ───────────────────────────────────
+-    { path: "/audit-timeline", ...p(AuditTimelinePage, {}) },
+-    { path: "/urgent-message-report", ...p(UrgentMessageReportPage, {}) },
+-    { path: "/recalled-messages-report", ...p(RecalledMessagesReportPage, {}) },
+-    { path: "/id-photo-view-report", ...p(IdPhotoViewReportPage, {}) },
+-    { path: "/id-photo-admin", ...p(IdPhotoAdminPage, {}) },
+-    { path: "/admin/urgent-permissions", ...p(UrgentPermissionAdminPage, {}) },
++    { path: "/audit-timeline", ...p(AuditTimelinePage, {}) , wrapLayout: true, layoutModule: "audit-timeline" },
++    { path: "/urgent-message-report", ...p(UrgentMessageReportPage, {}) , wrapLayout: true, layoutModule: "urgent-message-report" },
++    { path: "/recalled-messages-report", ...p(RecalledMessagesReportPage, {}) , wrapLayout: true, layoutModule: "recalled-messages-report" },
++    { path: "/id-photo-view-report", ...p(IdPhotoViewReportPage, {}) , wrapLayout: true, layoutModule: "id-photo-view-report" },
++    { path: "/id-photo-admin", ...p(IdPhotoAdminPage, {}) , wrapLayout: true, layoutModule: "id-photo-admin" },
++    { path: "/admin/urgent-permissions", ...p(UrgentPermissionAdminPage, {}) , wrapLayout: true, layoutModule: "urgent-permission-admin" },
+     { path: "/pilot-readiness", ...p(PilotReadinessPage, {}) },
+     { path: "/incident-dashboard", ...p(IncidentDashboardPage, {}) },
+     { path: "/golive-dashboard", ...p(GoLiveDashboardPage, {}) },
+@@ -519,17 +519,17 @@
+     // ── 5-Star Hotel Features ──────────────────────────
+     { path: "/online-checkin", ...p(OnlineCheckin) },
+     { path: "/flash-report", ...p(FlashReport) },
+-    { path: "/group-sales", ...p(GroupSales) },
+-    { path: "/sales-crm", ...p(SalesCRM) },
+-    { path: "/service-recovery", ...p(ServiceRecovery) },
+-    { path: "/spa-wellness", ...pm(SpaWellness, "spa", undefined, { strict: true }) },
++    { path: "/group-sales", ...p(GroupSales) , wrapLayout: true, layoutModule: "group-sales" },
++    { path: "/sales-crm", ...p(SalesCRM) , wrapLayout: true, layoutModule: "sales-crm" },
++    { path: "/service-recovery", ...p(ServiceRecovery) , wrapLayout: true },
++    { path: "/spa-wellness", ...pm(SpaWellness, "spa", undefined, { strict: true }) , wrapLayout: true, layoutModule: "spa" },
+     { path: "/multi-property", ...p(MultiProperty) },
+     { path: "/staff-management", ...p(StaffManagement) },
+     { path: "/hr-complete", type: "redirect", to: "/hr?tab=suite" },
+-    { path: "/hr", ...p(HRHub) },
+-    { path: "/app/hr", ...p(HRHub) },
+-    { path: "/fnb-complete", ...p(FnBComplete) },
+-    { path: "/fnb/beo-generator", ...p(FnbBeoGenerator) },
++    { path: "/hr", ...p(HRHub) , wrapLayout: true, layoutModule: "hr" },
++    { path: "/app/hr", ...p(HRHub) , wrapLayout: true, layoutModule: "hr" },
++    { path: "/fnb-complete", ...p(FnBComplete) , wrapLayout: true, layoutModule: "fnb" },
++    { path: "/fnb/beo-generator", ...p(FnbBeoGenerator) , wrapLayout: true, layoutModule: "fnb" },
+     { path: "/kitchen-display", ...p(KitchenDisplay) },
+ 
+     // ── AI Module-gated ────────────────────────────────
+@@ -543,31 +543,31 @@
+     // ── Security & Compliance ──────────────────────────
+     { path: "/security-center", type: "redirect", to: "/security?tab=center" },
+     { path: "/app/güvenlik", type: "redirect", to: "/security?tab=monitor" },
+-    { path: "/gdpr-compliance", ...p(GDPRCompliance) },
+-    { path: "/encryption-management", ...p(EncryptionManagementPage) },
+-    { path: "/central-office", ...p(CentralOfficeDashboard) },
++    { path: "/gdpr-compliance", ...p(GDPRCompliance) , wrapLayout: true },
++    { path: "/encryption-management", ...p(EncryptionManagementPage) , wrapLayout: true, layoutModule: "encryption_management" },
++    { path: "/central-office", ...p(CentralOfficeDashboard) , wrapLayout: true },
+     { path: "/central-pricing", ...p(CentralPricingManager) },
+-    { path: "/cross-property-guests", ...p(CrossPropertyGuests) },
+-    { path: "/ml-dashboard", ...p(MLDashboard) },
++    { path: "/cross-property-guests", ...p(CrossPropertyGuests) , wrapLayout: true },
++    { path: "/ml-dashboard", ...p(MLDashboard) , wrapLayout: true },
+ 
+     // ── Admin ──────────────────────────────────────────
+-    { path: "/admin/tenants", ...pa(AdminTenants) },
+-    { path: "/admin/vendors", ...pa(AdminVendors) },
+-    { path: "/admin/quick-id", ...pa(QuickIdSettings) },
+-    { path: "/admin/room-qr-codes", ...pa(RoomQrCodes) },
+-    { path: "/app/room-requests", ...p(RoomRequests) },
+-    { path: "/admin/module-report", ...pa(ModuleReport) },
+-    { path: "/app/admin/leads", ...pa(AdminLeads) },
+-    { path: "/admin/governance", ...pa(GovernancePanel) },
+-    { path: "/admin/user-roles", ...pa(UserRoleManager) },
+-    { path: "/admin/housekeeping", ...pa(HousekeepingDashboard) },
+-    { path: "/admin/pos", ...pa(POSDashboard) },
+-    { path: "/admin/features", ...pa(FeaturesShowcase) },
+-    { path: "/admin/webhook-outbox", ...pa(WebhookOutboxAdmin) },
+-    { path: "/admin/early-warning", ...pa(EarlyWarningDashboard) },
+-    { path: "/admin/module-discovery", ...pa(ModuleDiscovery) },
+-    { path: "/admin/integration-credentials", ...pa(IntegrationCredentials) },
+-    { path: "/admin/capx-integration", ...pa(CapXIntegration) },
++    { path: "/admin/tenants", ...pa(AdminTenants) , wrapLayout: true, layoutModule: "admin-tenants" },
++    { path: "/admin/vendors", ...pa(AdminVendors) , wrapLayout: true, layoutModule: "admin_vendors" },
++    { path: "/admin/quick-id", ...pa(QuickIdSettings) , wrapLayout: true, layoutModule: "quick_id_settings" },
++    { path: "/admin/room-qr-codes", ...pa(RoomQrCodes) , wrapLayout: true, layoutModule: "room_qr_codes" },
++    { path: "/app/room-requests", ...p(RoomRequests) , wrapLayout: true, layoutModule: "room_qr_requests" },
++    { path: "/admin/module-report", ...pa(ModuleReport) , wrapLayout: true, layoutModule: "admin-module-report" },
++    { path: "/app/admin/leads", ...pa(AdminLeads) , wrapLayout: true, layoutModule: "admin-leads" },
++    { path: "/admin/governance", ...pa(GovernancePanel) , wrapLayout: true, layoutModule: "governance" },
++    { path: "/admin/user-roles", ...pa(UserRoleManager) , wrapLayout: true, layoutModule: "user-role-manager" },
++    { path: "/admin/housekeeping", ...pa(HousekeepingDashboard) , wrapLayout: true, layoutModule: "housekeeping" },
++    { path: "/admin/pos", ...pa(POSDashboard) , wrapLayout: true, layoutModule: "pos" },
++    { path: "/admin/features", ...pa(FeaturesShowcase) , wrapLayout: true },
++    { path: "/admin/webhook-outbox", ...pa(WebhookOutboxAdmin) , wrapLayout: true, layoutModule: "webhook-outbox-admin" },
++    { path: "/admin/early-warning", ...pa(EarlyWarningDashboard) , wrapLayout: true, layoutModule: "early-warning" },
++    { path: "/admin/module-discovery", ...pa(ModuleDiscovery) , wrapLayout: true, layoutModule: "module-discovery" },
++    { path: "/admin/integration-credentials", ...pa(IntegrationCredentials) , wrapLayout: true, layoutModule: "integration-credentials" },
++    { path: "/admin/capx-integration", ...pa(CapXIntegration) , wrapLayout: true, layoutModule: "capx-integration" },
+     { path: "/admin/cost", type: "redirect", to: "/app/raporlar?section=expenses" },
+     { path: "/app/cost-management", type: "redirect", to: "/app/raporlar?section=expenses" },
+     { path: "/cost-management", type: "redirect", to: "/app/raporlar?section=expenses" },

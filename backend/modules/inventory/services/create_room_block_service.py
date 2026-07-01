@@ -6,11 +6,9 @@ from typing import Dict, Optional
 
 from fastapi import HTTPException, Request, status
 
-from modules.inventory.events import INVENTORY_BLOCKED_EVENT
 from modules.inventory.repository import InventoryRepository
-from room_block_models import BlockStatus, RoomBlock, RoomBlockCreate
+from domains.pms.room_block_models import BlockStatus, RoomBlock, RoomBlockCreate
 from shared_kernel.audit_helper import audit_log
-from shared_kernel.event_envelope import build_event_envelope
 from shared_kernel.idempotency import ensure_idempotent_request
 from shared_kernel.tenancy_context import build_property_context, build_tenant_context
 
@@ -84,6 +82,31 @@ class CreateRoomBlockService:
             block_with_tenant = {**block_dict, 'tenant_id': tenant_context.tenant_id}
             await self.repository.insert_room_block(block_with_tenant)
 
+            # INV-5: Also write to room_night_locks (single source of truth)
+            if not block_data.allow_sell and block_data.end_date:
+                block_type_map = {
+                    "out_of_order": "ooo",
+                    "out_of_service": "oos",
+                    "maintenance": "maintenance",
+                }
+                lock_block_type = block_type_map.get(block.type.value, "ooo")
+                try:
+                    from core.atomic_booking import apply_room_block as apply_lock
+                    await apply_lock(
+                        tenant_id=tenant_context.tenant_id,
+                        room_id=block_data.room_id,
+                        block_type=lock_block_type,
+                        start_date=block_data.start_date,
+                        end_date=block_data.end_date,
+                        reason=block_data.reason,
+                        actor=current_user.id,
+                    )
+                except Exception as exc:
+                    import logging
+                    logging.getLogger("inventory.create_room_block").warning(
+                        "room_night_locks write failed for block %s: %s", block.id, exc
+                    )
+
             if conflicting_bookings and not block_data.allow_sell:
                 for booking in conflicting_bookings:
                     await self.repository.insert_exception({
@@ -109,9 +132,17 @@ class CreateRoomBlockService:
                         'created_at': datetime.now(timezone.utc).isoformat(),
                     })
 
-            event_envelope = build_event_envelope(
-                event_type=INVENTORY_BLOCKED_EVENT,
+            # OTA-002: Enqueue outbox event for guaranteed OTA delivery
+            from core.outbox_service import enqueue_outbox_event, INVENTORY_BLOCKED
+            from core.database import db as _outbox_db
+
+            await enqueue_outbox_event(
+                _outbox_db,
                 tenant_id=tenant_context.tenant_id,
+                event_type=INVENTORY_BLOCKED,
+                entity_type="room_block",
+                entity_id=block.id,
+                property_id=property_context.property_id or tenant_context.tenant_id,
                 correlation_id=correlation_id,
                 payload={
                     'room_block_id': block.id,
@@ -119,18 +150,12 @@ class CreateRoomBlockService:
                     'block_type': block.type.value,
                     'start_date': block.start_date,
                     'end_date': block.end_date,
+                    'date_start': block.start_date,
+                    'date_end': block.end_date,
                     'allow_sell': block.allow_sell,
-                    'source': 'semantic_inventory_service',
+                    'property_id': property_context.property_id or tenant_context.tenant_id,
                 },
-            ).model_dump()
-            outbox_doc = {
-                **event_envelope,
-                'property_id': property_context.property_id or tenant_context.tenant_id,
-                'room_block_id': block.id,
-                'status': 'pending',
-                'created_at': event_envelope['timestamp'],
-            }
-            await self.repository.insert_outbox_event(outbox_doc)
+            )
 
             await audit_log(
                 actor_id=current_user.id,

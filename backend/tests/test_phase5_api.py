@@ -13,9 +13,9 @@ BACKEND_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
 # Read API URL from frontend env or default to local
-API_BASE = os.environ.get("REACT_APP_BACKEND_URL", "")
+API_BASE = os.environ.get("VITE_BACKEND_URL", "")
 
-pytestmark = pytest.mark.skipif(not API_BASE, reason="REACT_APP_BACKEND_URL not set")
+pytestmark = pytest.mark.skipif(not API_BASE, reason="VITE_BACKEND_URL not set")
 
 
 @pytest.fixture(scope="session")
@@ -280,7 +280,7 @@ class TestPOSV2:
             headers=auth_headers,
         )
         assert r.status_code == 200
-        data = r.json()["data"]
+        data = r.json()
         assert data["order_id"]
         assert data["grand_total"] == 110.0  # (50*2) + 10% tax
 
@@ -293,7 +293,7 @@ class TestPOSV2:
             headers=auth_headers,
         )
         assert r.status_code == 200
-        assert r.json()["data"]["message"] == "Order closed and payment processed"
+        assert r.json()["message"] == "Order closed and payment processed"
 
     def test_void_order_no_permission(self, auth_headers):
         # This test uses demo admin who has admin role, so it should be allowed

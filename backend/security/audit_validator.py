@@ -2,9 +2,10 @@
 Security — Audit Validator
 Validates audit trail completeness and detects gaps.
 """
+
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 
@@ -12,12 +13,28 @@ logger = logging.getLogger(__name__)
 
 # Operations that MUST generate audit entries
 _REQUIRED_AUDITS = {
-    "booking.create", "booking.update", "booking.cancel", "booking.check_in", "booking.check_out",
-    "room.create", "room.update", "room.delete", "room.status_change",
-    "folio.create", "folio.charge", "folio.payment", "folio.close",
-    "user.create", "user.update", "user.role_change", "user.delete",
-    "rate.override", "rate.update",
-    "channel.connect", "channel.disconnect", "channel.sync",
+    "booking.create",
+    "booking.update",
+    "booking.cancel",
+    "booking.check_in",
+    "booking.check_out",
+    "room.create",
+    "room.update",
+    "room.delete",
+    "room.status_change",
+    "folio.create",
+    "folio.charge",
+    "folio.payment",
+    "folio.close",
+    "user.create",
+    "user.update",
+    "user.role_change",
+    "user.delete",
+    "rate.override",
+    "rate.update",
+    "channel.connect",
+    "channel.disconnect",
+    "channel.sync",
 }
 
 
@@ -26,10 +43,12 @@ class AuditValidator:
 
     @staticmethod
     async def validate_completeness(
-        tenant_id: str, *, hours: int = 24,
-    ) -> Dict[str, Any]:
+        tenant_id: str,
+        *,
+        hours: int = 24,
+    ) -> dict[str, Any]:
         """Check audit trail completeness for the last N hours."""
-        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
 
         # Get audit entries
         audit_entries = await db.audit_logs.find(
@@ -38,14 +57,18 @@ class AuditValidator:
         ).to_list(10000)
 
         # Get critical operations from collections
-        bookings_modified = await db.bookings.count_documents({
-            "tenant_id": tenant_id,
-            "updated_at": {"$gte": since},
-        })
-        rooms_modified = await db.rooms.count_documents({
-            "tenant_id": tenant_id,
-            "updated_at": {"$gte": since},
-        })
+        bookings_modified = await db.bookings.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "updated_at": {"$gte": since},
+            }
+        )
+        rooms_modified = await db.rooms.count_documents(
+            {
+                "tenant_id": tenant_id,
+                "updated_at": {"$gte": since},
+            }
+        )
 
         # Count audit entries by action
         audit_actions = {}
@@ -69,12 +92,12 @@ class AuditValidator:
             "gaps_found": len(gaps),
             "gaps": gaps,
             "status": "complete" if not gaps else "gaps_detected",
-            "validated_at": datetime.now(timezone.utc).isoformat(),
+            "validated_at": datetime.now(UTC).isoformat(),
         }
 
     @staticmethod
-    async def get_audit_summary(tenant_id: str, *, hours: int = 24) -> Dict[str, Any]:
-        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    async def get_audit_summary(tenant_id: str, *, hours: int = 24) -> dict[str, Any]:
+        since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
         pipeline = [
             {"$match": {"tenant_id": tenant_id, "timestamp": {"$gte": since}}},
             {"$group": {"_id": "$action", "count": {"$sum": 1}, "last": {"$max": "$timestamp"}}},

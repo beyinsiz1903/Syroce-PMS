@@ -1,12 +1,16 @@
 """
 Analytics Export Router.
 """
+
+import io
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
 from core.security import get_current_user
 from models.schemas import User
-import io
+from modules.pms_core.role_permission_service import require_op  # v98 DW
 
 router = APIRouter(prefix="/api/reports/export", tags=["analytics-export"])
 
@@ -16,8 +20,9 @@ _service = None
 def _get_service():
     global _service
     if _service is None:
-        from server import db
         from modules.analytics_export.service import AnalyticsExportService
+        from server import db
+
         _service = AnalyticsExportService(db)
     return _service
 
@@ -36,10 +41,18 @@ class ExportReq(BaseModel):
 
 
 @router.post("/generate")
-async def generate_export(req: ExportReq, current_user: User = Depends(get_current_user)):
+async def generate_export(
+    req: ExportReq,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v98 DW
+):
     svc = _get_service()
     result = await svc.create_export(
-        current_user.tenant_id, req.report_type, req.export_format, req.filters, current_user.id,
+        current_user.tenant_id,
+        req.report_type,
+        req.export_format,
+        req.filters,
+        current_user.id,
     )
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error", "Export failed"))
@@ -56,10 +69,18 @@ async def generate_export(req: ExportReq, current_user: User = Depends(get_curre
 
 
 @router.post("/download")
-async def download_export(req: ExportReq, current_user: User = Depends(get_current_user)):
+async def download_export(
+    req: ExportReq,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_reports")),  # v98 DW
+):
     svc = _get_service()
     result = await svc.create_export(
-        current_user.tenant_id, req.report_type, req.export_format, req.filters, current_user.id,
+        current_user.tenant_id,
+        req.report_type,
+        req.export_format,
+        req.filters,
+        current_user.id,
     )
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error", "Export failed"))

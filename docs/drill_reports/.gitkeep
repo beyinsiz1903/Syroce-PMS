@@ -1,0 +1,3 @@
+# Drill report output directory.
+# Reports are written by tools/tenant_restore_drill.py --execute.
+# See docs/procedures/TENANT_RESTORE_DRILL.md for the format.

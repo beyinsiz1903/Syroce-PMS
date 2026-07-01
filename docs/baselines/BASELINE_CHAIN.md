@@ -1,0 +1,571 @@
+# Stress Suite Baseline Chain
+
+Bu dosya, web/backend Full Stress Suite'in resmi baseline zincirinin tek kayıt
+kaynağıdır. **Yalnızca Run #206 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
+run'lar tarihsel referans veya post-baseline verification run'dır — provenance ve
+metrikler korunur ama "current/official baseline" DEĞİLDİR. #206, #205 ile TÜM
+eksenlerde birebir EŞİT (708, PASS/FAIL/REVIEW/SKIP=1608/0/9/8, P2=16, P0/P1/P3=0,
+GO WITH WATCH) ama daha YENİ HEAD commit'inde (`d672292` = doc reconciliation
+commit'i; #205 commit'i `6aa53ed` artık HEAD'in gerisinde) zamanlanmış (scheduled)
+koşuldu → metrik iyileşmesi YOK ama bağlayıcı baseline commit'ini HEAD'e re-anchor
+eder ve güncel kodun hâlâ TAM YEŞİL olduğunu kanıtlar (regresyon YOK) olduğu için
+PROMOTE EDİLDİ (2026-06-05); önceki current #205 historical'a indirildi. #205,
+#204'e göre kesin temiz iyileşmedir (P2 −1 [17→16: WATCH E#11 rate_limit auth_login
+bulgusu CI'da temizlendi], PASS/REVIEW/SKIP =, FAIL/P0/P1/P3=0; regresyon YOK) olduğu
+için PROMOTE EDİLMİŞTİ (2026-06-04); önceki current #204 historical'a indirildi. #205'in asıl kazancı:
+`rate_limit_boundary` modülü 10/0/0/0 tam yeşil — auth_login burst'ünün 429
+gözleyememesinin iki-katmanlı kök nedeni (LOGIN_IP/LOGIN_ACCOUNT non-always_on
+autoscale dilution + spec payload `.invalid` TLD'sinin EmailStr 422'siyle handler'a
+ulaşmaması) onarıldı (auth ZAYIFLAMADAN; assertion gevşetme/skip-as-pass YOK). Önceki
+promote: #204, #198'e göre HER eksende daha temiz veya eşit (PASS +2, REVIEW −3, SKIP
+=, P2 −2, FAIL/P0/P1/P3=0; regresyon YOK) → PROMOTE EDİLDİ (Murat kararı, 2026-06-04),
+#198 historical; #204'ün kazancı `file_upload_security` edge-WAF 403 hard-reject ile
+TAM YEŞİL (14/0/0/0). #198, #195'e göre her eksende daha temizdi (REVIEW −3, SKIP −3,
+P2 −4, PASS +36) → PROMOTE EDİLDİ (Murat, 2026-06-03), #195 historical. #196 ve #197
+ise #195'ten SONRA koşulan verification / coverage-expansion run'larıydı; her ikisi de
+#195'e göre REVIEW'i ARTIRDIĞI için PROMOTE EDİLMEMİŞTİ ve historical olarak kalır.
+
+> Kapsam notu: Bu web/backend full stress suite baseline'ıdır, **/100 uygulama
+> kapsamı DEĞİLDİR** — mobile/F10 ayrı ve açıktır (doğrulanmadı). Merkezi kapsam
+> referansı: `docs/TEST_COVERAGE_SCORECARD_100.md`.
+
+## Her fazda mutlak kurallar
+
+pilot mutation=0 · external_calls=[] · failedTests=0 · P0=P1=0 · verdict ≥ GO WITH
+WATCH · assertion gevşetme YOK · skip-as-pass YOK. Asla düz "GO" veya "/100" iddiası
+yok.
+
+---
+
+## Run #206 — CURRENT GREEN BASELINE
+
+- **Tarih / commit:** 2026-06-05, commit `d672292` (head_sha
+  `d672292f884bc5cfcb6b7c1d3de8968049b240dd`) — bu commit web/backend kodunda
+  davranış değişikliği İÇERMEZ; yalnızca doc reconciliation (F9C 3 mobile/maintenance
+  P1'inin RESOLVED + targeted-verified olarak roadmap/scorecard'a işlenmesi + memory
+  topic). Dolayısıyla #205'e göre metrik değişimi beklenmez ve gözlenmedi.
+- **Sonuç:** 708 test, status=Success (conclusion=success), failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1608/0/9/8, P0=P1=0, P2=16 / P3=0, external_calls=[],
+  pilot_drift=0, cleanup#2 idempotent=true, verdict **GO WITH WATCH**. Süre 4377.6s.
+  Seed: prefix `E2E_STRESS_F7_1780642143666_`, rooms=500 guests=500 bookings=500
+  folios=500 charges=2293 rnl=1793 hk=500. Cleanup#1 deleted_total=9095,
+  cleanup#2 deleted_total=0 (idempotent=true), pilot baseline_bookings=30
+  after_bookings=30 drift=0.
+- **#205 → #206 DÜRÜST DELTA (promote-relevant, baseline'a göre):** PASS **=**
+  (1608), REVIEW **=** (9), SKIP **=** (8), P2 **=** (16), FAIL/P0/P1/P3 SABİT (0).
+  **Tüm eksenler EŞİT — metrik iyileşmesi YOK, regresyon da YOK.** Promote gerekçesi
+  metrik değil: bağlayıcı baseline commit'ini `6aa53ed`→`d672292` (güncel HEAD,
+  doc reconciliation içerir) re-anchor eder ve güncel kodun hâlâ TAM YEŞİL olduğunu
+  kanıtlar. REVIEW/SKIP kompozisyonunda küçük data-state jitter var (örn. #205'te
+  full_24h `sabah_walkin` s400 REVIEW'deydi; #206'da `sabah_walkin` temiz, yerine
+  `aksam_folio_charge` s400 10/10 REVIEW — toplam REVIEW=9 değişmedi); tümü
+  by-design/data-state/deploy-gap, yeni gerçek failure YOK. Düz "GO" / "/100"
+  iddiası YOK.
+- **Provenance (anonim public GitHub API, fabrike EDİLMEDİ):** repo
+  `beyinsiz1903/syroce-pms`, run #206 (id 27000015675),
+  head_sha=`d672292f884bc5cfcb6b7c1d3de8968049b240dd`, conclusion=success,
+  event=schedule, actor=beyinsiz1903. Artifacts (2): stress-drill-report
+  (28756 B) — sha256:`e9d88d25fbf2e85c6738a62bddcf4666c12030d328727dbe70e69bafb6128453`,
+  playwright-stress-report (814632 B) —
+  sha256:`37db95cda82ae9f8d6eb5e611dcb96363b09a6db705e63d0abf586ce1d6410bf`.
+  Operatör ekran görüntüsüyle (IMG_3708: #206 Success, 1h14m3s, 2 artifact, commit
+  d672292, main, scheduled) çapraz doğrulandı. Not: #207 (workflow_dispatch,
+  commit `50d8ee2` = deploy-marker) sonradan TAMAMLANDI (success) ama **kod #206 ile
+  özdeş** (git diff boş) + tek delta REVIEW +1 jitter olduğu için **verification-only
+  NOT-PROMOTED** — #206 CURRENT kalır (aşağıdaki "Run #207" bölümüne bakınız).
+
+---
+
+## Run #207 — verification-only (NOT-PROMOTED; #206 CURRENT kalır)
+
+- **Tarih / commit:** 2026-06-05, commit `50d8ee2` ("Published your App", head_sha
+  `50d8ee2fe54f…`), event=workflow_dispatch (manually triggered). **KOD FARKI YOK:**
+  `git diff --stat d672292 50d8ee2` BOŞ — bu deploy-marker commit'i #206'nın commit'i
+  (`d672292`) ile **bit-bit özdeş ağaç**tır. Yani #207, #206 ile **birebir aynı kod**
+  üzerinde koştu.
+- **Sonuç:** 708 test, status=Success (conclusion=success), failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=**1607/0/10/8**, P0=P1=0, **P2=16** / P3=0, external_calls=[],
+  pilot_drift=0, cleanup#2 idempotent=true, verdict **GO WITH WATCH**. Süre 4256.6s.
+  Seed prefix `E2E_STRESS_F7_1780646479523_`.
+- **#206 → #207 DELTA:** PASS **−1** (1608→1607), REVIEW **+1** (9→10), SKIP **=** (8),
+  P2 **=** (16), FAIL/P0/P1/P3 SABİT (0). **Kod özdeş olduğu için bu delta KANITLANABİLİR
+  biçimde saf run-to-run data-state/perf jitter'dır — kod regresyonu DEĞİL.** Bir PASS
+  adımı REVIEW'e döndü: kompozisyon farkı folio-mass `folio_refund_batch` (s400 closed-folio
+  guard, data-state) + perf latency marker'ları (finance_folio perf:A0_open/G_guest_purchase,
+  full_24h perf:aksam_charge — soft latency eşiği jitter). Yeni gerçek failure / yeni
+  P-finding YOK.
+- **NEDEN PROMOTE EDİLMEDİ:** (1) kod #206 ile özdeş → promote hiçbir metrik/kapsam kazancı
+  sağlamaz; (2) tek delta REVIEW +1 jitter → daha kötü sayıyı kabul etmek olur; (3) precedent
+  (#196/#197): REVIEW artışında promote YOK. **#206 (d672292) CURRENT GREEN BASELINE olarak
+  kalır.** #207'nin DEĞERİ: **yayınlanan/deploy edilen commit'in (`50d8ee2` "Published your
+  App") hâlâ TAM YEŞİL** olduğunu (FAIL=0, P0/P1=0, P2=16 değişmedi) bağımsız doğrular →
+  deployment güveni.
+- **Provenance (anonim public GitHub API + IMG_3709, fabrike EDİLMEDİ):** run #207
+  (id 27001198792), head_sha=`50d8ee2fe54f…`, conclusion=success, event=workflow_dispatch,
+  actor=beyinsiz1903. Artifacts (2): stress-drill-report (28801 B) —
+  sha256:`188c09f08ec984756d3f8bcae334a677fd2e8d23041380794bdd6fc5a62426b3`,
+  playwright-stress-report (814926 B) —
+  sha256:`1a64be2296ed3269b9ac0b10a98dca6104277c3ecf40dade397872dee9f40110`.
+  IMG_3709: #207 Success, 1h56m10s (total) / 1h11m (job), 2 artifact, commit 50d8ee2, main,
+  manually triggered. (Aynı SHA üzerinde push event run'ları #1206/#478 de success.)
+
+---
+
+## Run #205 — historical (önce CURRENT GREEN BASELINE)
+
+- **Tarih / commit:** 2026-06-04, commit `6aa53ed` (head_sha
+  `6aa53ed835944d409d237aa66af9cd1955482c66`) — WATCH Reduction Pack Sınıf E #11
+  (rate_limit auth_login) onarımı: (a) `LOGIN_IP` (20/60s) + `LOGIN_ACCOUNT`
+  (10/300s) throttle policy'leri tüm peer login yüzeyleri (agency/vendor/cashier/
+  2FA/reset) zaten `always_on=True` (Mongo cross-instance) iken non-always_on kalan
+  tek brute-force-kritik login yüzeyiydi → Cloud autoscale fan-out'unda burst
+  instance/process'lere dağılıp cap tetiklenmiyordu; `always_on=True` + stabil
+  `name=` (peer pattern) yapıldı. (b) `97-rate-limit-boundary.spec.js` auth_login
+  burst payload'ı `@stress.invalid` kullanıyordu → `.invalid` TLD (RFC 6761)
+  Pydantic `EmailStr` ile handler'a girmeden 422 reddediliyordu → `enforce` hiç
+  çağrılmıyor → throttled=0 vacuous; payload `@example.com`'a (geçerli format,
+  var olmayan hesap → yine yanlış-cred 401) çevrildi. Login ordering DEĞİŞMEDİ
+  (verify-first → record-on-fail → drain-on-success, Task-137); auth ZAYIFLAMADI,
+  429 beklentisi düşürülmedi, assertion gevşetilmedi.
+- **Sonuç:** 708 test, status=Success (conclusion=success), failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1608/0/9/8, P0=P1=0, P2=16 / P3=0, external_calls=[],
+  pilot_drift=0, cleanup#2 idempotent=true, verdict **GO WITH WATCH**. Süre 4333.6s.
+  Seed: prefix `E2E_STRESS_F7_1780604352551_`, rooms=500 guests=500 bookings=500
+  folios=500 charges=2293 rnl=1793 hk=500. Cleanup#1 deleted_total=9095,
+  cleanup#2 deleted_total=0 (idempotent=true), pilot baseline_bookings=30
+  after_bookings=30 drift=0. `rate_limit_boundary` modülü 10/0/0/0 TAM YEŞİL
+  (auth_login P2 listeden kalktı).
+- **#204 → #205 DÜRÜST DELTA (promote-relevant, baseline'a göre):** P2 **−1**
+  (17→16: WATCH E#11 rate_limit auth_login bulgusu temizlendi), PASS **=** (1608),
+  REVIEW **=** (9), SKIP **=** (8), FAIL/P0/P1/P3 SABİT (0). **Tek eksende iyileşme,
+  diğerleri eşit, regresyon YOK.** E#11 fix'in "bir sonraki full stress'te P2 düşer"
+  tahmini doğrulandı. Düz "GO" / "/100" iddiası YOK.
+- **Provenance (anonim public GitHub API, fabrike EDİLMEDİ):** repo
+  `beyinsiz1903/syroce-pms`, run #205 (id 26977075695),
+  head_sha=`6aa53ed835944d409d237aa66af9cd1955482c66`, conclusion=success,
+  event=workflow_dispatch, actor=beyinsiz1903. Artifacts (2): stress-drill-report
+  (28777 B) — sha256:`85e258f89e3f314d324e2b5a241ee3e1f94b38a54048402ed12c55fd16e66d6f`,
+  playwright-stress-report (815210 B) —
+  sha256:`e350d80196e7ecb980c74f1d9be37c2d8221596bf011b9e412bd4338761dbeeb`.
+  Operatör ekran görüntüsüyle (IMG_3707: #205 Success, 1h13m12s, 2 artifact, commit
+  6aa53ed, main) çapraz doğrulandı.
+
+---
+
+## Run #204 — historical (önce CURRENT GREEN BASELINE)
+
+- **Tarih / commit:** 2026-06-04, commit `0606bef` (head_sha
+  `0606bef9b0a15bf6a89b6da777f285fbe7260bce`) — `file_upload_security` spec'inde
+  edge-proxy WAF 403'ünün markup-içeren (`<script>/<html>/<svg>`) kötü-amaçlı
+  yükleme case'lerinde hard-reject olarak tanınması (svg_mime + html_as_pdf_polyglot
+  [HR docs] ve html_as_png_polyglot + svg_as_image [housekeeping photo]). App-side
+  zaten 400/413 ile reddediyordu (validate_document_bytes / Pillow magic-bytes); 403
+  deploy hedefinin edge katmanından geliyor (daha sıkı dış katman). Yalnızca 4
+  markup-case'e 403 eklendi; 2xx kabul hâlâ FAIL — assertion gevşetme/skip-as-pass YOK.
+- **Sonuç:** 708 test, status=Success (conclusion=success), failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1608/0/9/8, P0=P1=0, P2=17 / P3=0, external_calls=[],
+  pilot_drift=0, cleanup#2 idempotent=true, verdict **GO WITH WATCH**. Süre 4266.1s.
+  Seed: prefix `E2E_STRESS_F7_1780594484554_`, rooms=500 guests=500 bookings=500
+  folios=500 charges=2293 rnl=1793 hk=500. Cleanup#1 deleted_total=9095,
+  cleanup#2 deleted_total=0 (idempotent=true), pilot baseline_bookings=30
+  after_bookings=30 drift=0.
+- **#198 → #204 DÜRÜST DELTA (promote-relevant, baseline'a göre):** PASS **+2**
+  (1606→1608), REVIEW **−3** (12→9), SKIP **=** (8), P2 **−2** (19→17),
+  FAIL/P0/P1/P3 SABİT (0). **Her eksende iyileşme veya eşit, regresyon YOK.** Asıl
+  kazanç honest: `file_upload_security` 12/2 FAIL → **14/0/0/0 TAM YEŞİL** (#203'teki
+  2 FAIL + 2 P1 kök-nedenle çözüldü: edge-WAF 403 = hard-reject, app validation
+  bağımsız olarak non-markup case'lerde + 18 birim testle kanıtlı). Düz "GO" / "/100"
+  iddiası YOK.
+- **Provenance (anonim public GitHub API, fabrike EDİLMEDİ):** repo
+  `beyinsiz1903/syroce-pms`, run #204 (id 26968589924),
+  head_sha=`0606bef9b0a15bf6a89b6da777f285fbe7260bce`, conclusion=success,
+  event=workflow_dispatch, actor=beyinsiz1903. Artifacts (2): stress-drill-report
+  (29013 B) — sha256:`054512aeb4f108cfa5ac14d9c708fdb02e5219411e3c465b5430ebe7cd1bd325`,
+  playwright-stress-report (814965 B) —
+  sha256:`299424c56e531de8b03c68a3be02a5bbb3367719b4c3c25501a6562ee38ef3a7`.
+  Aynı `0606bef`'te CI #1201 + Frontend Quality Gates #473 de success (önceki
+  aiohttp/postcss gate fix'leri tutuyor). Run/job/artifact metadata anonim API'dan +
+  operatör ekran görüntüsüyle (IMG_3705, #204 Success, 1h12m02s, 2 artifact, commit
+  0606bef, main) çapraz doğrulandı.
+- **Açık WATCH (P2=17, öncelik sırasız — neredeyse tamamı by-design):** night-audit
+  unresolved exceptions (200), backup posture (BACKUP_ENABLED!=true), settings_audit
+  async marker, reservation_deep waitlist 403 + city-ledger folio=0, digital-key 404
+  (endpoint_not_deployed), webhook_admin_dlq 404 (module not mounted), rate_limit
+  auth_login 60→0 throttled (login-throttle ordering), RMS/konaklama IDOR vacuous
+  (pilot havuz boş — leak DEĞİL), graphql REST/GraphQL count semantik farkı (leak
+  DEĞİL), mice_execution no payment_schedule (data-state), marketplace J1 422,
+  cm_exely HR-only N/A. **#198'e göre kapanan REVIEW −3:** çoğunlukla
+  file_upload_security FAIL temizliği + run-variance reclassify; kalan REVIEW=9 /
+  SKIP=8'in çoğu by-design (409/403/422/data-scarcity) — reduction doğası gereği sınırlı.
+- **PROMOTE KARARI (Murat, 2026-06-04): PROMOTE EDİLDİ.** #204 yeni CURRENT GREEN
+  BASELINE; #198 historical'a indirildi. Gerekçe: #198'e göre her eksende daha temiz
+  veya eşit, FAIL/P0/P1/P3=0 korunur, external_calls=[], pilot_drift=0, cleanup#2
+  idempotent=true, provenance doğrulandı.
+
+---
+
+## Run #198 — HISTORICAL (önceki current; #204'e PROMOTE ile indirildi)
+
+- **Tarih / commit:** 2026-06-03, commit `b03557d1` ("Published your App" — post-#197
+  deploy; docs baseline-pointer revert (#195 current'a sabitleme) + CVE-2026-34993
+  aiohttp 3.13.5→3.14.0 legacy aggregate fix'ini içerir; not: api.txt split-pin
+  fix'i bu commit'ten SONRA landed, stress suite dependency-audit koşmadığı için
+  bu run'ı etkilemez).
+- **Sonuç:** 708 test, status=Success (conclusion=success), failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1606/0/12/8, P0=P1=0, P2=19 / P3=0, external_calls=[],
+  pilot_drift=0, cleanup#2 idempotent=true, verdict **GO WITH WATCH**. Süre 4672.8s.
+  Seed: prefix `E2E_STRESS_F7_1780520814291_`, rooms=500 guests=500 bookings=500
+  folios=500 charges=2293 rnl=1793 hk=500. Cleanup#1 deleted_total=9075,
+  cleanup#2 deleted_total=0 (idempotent=true), pilot baseline_bookings=30
+  after_bookings=30 drift=0.
+- **#195 → #198 DÜRÜST DELTA (promote-relevant, baseline'a göre):** PASS **+36**
+  (1570→1606), REVIEW **−3** (15→12), SKIP **−3** (11→8), P2 **−4** (23→19),
+  FAIL/P0/P1/P3 SABİT (0). **Her eksende iyileşme, regresyon YOK** → #195 kadar
+  değil, ondan DAHA TEMİZ. Bu, #197'nin reddedilme gerekçesinin (REVIEW +5) tersi;
+  #198 promote barını net geçer. Düz "GO" / "/100" iddiası YOK.
+- **Provenance (anonim public GitHub API, fabrike EDİLMEDİ):** repo
+  `beyinsiz1903/syroce-pms`, run #198 (id 26912829694),
+  head_sha=`b03557d1`, conclusion=success, event=workflow_dispatch. Artifacts (2):
+  stress-drill-report (29882 B) —
+  sha256:`1689f90c410ae5f5300118a870b12a871861168eb2e92e5918e3b4331ee07098`,
+  playwright-stress-report (816303 B) —
+  sha256:`1febb066e2a983e764fc7681fdbf8e82dd56c6de900f072d761b405399274cc3`.
+  Run/job/artifact metadata anonim API'dan + operatör ekran görüntüsüyle (IMG_3697,
+  #198 Success, 1h18m59s, 2 artifact, commit b03557d, main) çapraz doğrulandı.
+- **Açık WATCH (P2=19, öncelik sırasız — neredeyse tamamı by-design):** night-audit
+  unresolved exceptions (200), housekeeping rows_50 soft cold-boot TTI (3102/3073ms
+  vs 3000 gate, hard breach YOK), backup posture (BACKUP_ENABLED!=true),
+  settings_audit async marker, reservation_deep waitlist 403 + city-ledger folio=0,
+  digital-key 404 (endpoint_not_deployed), webhook_admin_dlq 404 (module not
+  mounted), rate_limit auth_login 60→0 throttled (login-throttle ordering),
+  RMS/konaklama IDOR vacuous (pilot havuz boş — leak DEĞİL), graphql REST/GraphQL
+  count semantik farkı (leak DEĞİL), mice_execution no payment_schedule (data-state).
+- **PROMOTE KARARI (Murat, 2026-06-03): PROMOTE EDİLMİŞTİ; 2026-06-04'te #204
+  tarafından SÜPERSEDE EDİLDİ.** #198 o tarihte CURRENT GREEN BASELINE oldu (#195
+  historical'a indi); gerekçe: #195'e göre her eksende daha temiz, FAIL/P0/P1/P3=0,
+  external_calls=[], pilot_drift=0, cleanup#2 idempotent=true. 2026-06-04: #204 #198'e
+  göre her eksende daha temiz veya eşit (PASS +2, REVIEW −3, P2 −2; regresyon YOK)
+  olduğu için #204 promote edildi, #198 historical'a indi.
+
+---
+
+## Run #197 — VERIFICATION RUN (NOT PROMOTED, post-#195)
+
+- **Tarih / deploy commit:** 2026-06-03, deploy commit `218054fb` (post-#196:
+  db-stats latency fix — her alt-çağrı `asyncio.wait_for` time-bound +
+  collStats/serverStatus `maxTimeMS`; UP041 ruff lint fix `asyncio.TimeoutError`
+  → builtin `TimeoutError`). Murat tarafından manuel workflow_dispatch edildi.
+- **Sonuç:** 708 test, conclusion=success, failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1592/0/20/11, P0=P1=0, P2=22 / P3=0, external_calls=[],
+  pilot_drift=0, verdict **GO WITH WATCH**.
+- **Provenance (anonim GitHub API, fabrike YOK):** repo
+  `beyinsiz1903/syroce-pms`, run #197 (id 26904195621),
+  head_sha=`218054fb`, conclusion=success. Artifacts: stress-drill-report
+  `sha256:ff5ffbb3969fc1788889c39de99b6aef857367953e3692f095f2e450aef0ef73`,
+  playwright-stress-report
+  `sha256:b95dd97d2454bca19152811ae5dd7e3317a16aeb2bae41fb44cd93236dd8ba57`.
+- **#196 → #197 DÜRÜST DELTA:** PASS **+2** (1590→1592), REVIEW **-1** (21→20),
+  P2 **-1** (23→22), SKIP 11 SABİT, FAIL/P0/P1/P3 SABİT, regresyon YOK.
+  **db-stats latency fix DOĞRULANDI (honest win):** admin_rbac modülü artık TAM
+  YEŞİL (21/0/0/0) — #196'daki db-stats status=0 REVIEW gitti; REVIEW -1 + P2 -1
+  doğrudan bu fix'e atfedilir; PASS +2'nin 1'i bu reclassify (REVIEW→PASS), diğer
+  +1 run-variance step (total step 1622→1623), over-claim YOK (`asyncio.wait_for` +
+  `maxTimeMS`; RBAC posture DEĞİŞMEDİ). Kalan REVIEW=20 / SKIP=11'in çoğu by-design (409/403/422/
+  data-scarcity) — reduction doğası gereği sınırlı.
+- **PROMOTE KARARI (Murat, 2026-06-03): PROMOTE EDİLMEDİ.** #197 güvenli ve
+  başarılı bir verification run'dır (failedTests=0, P0=P1=0, external_calls=[],
+  pilot_drift=0, cleanup#2 idempotent=true, GO WITH WATCH) ama #195'i resmi
+  web/backend GREEN BASELINE olarak DEĞİŞTİRMEZ. **#195 → #197 DELTA
+  (promote-relevant, baseline'a göre):** PASS **+22** (1570→1592), REVIEW **+5
+  ARTTI** (15→20), SKIP 11 SABİT, P2 **-1** (23→22), P3/FAIL/P0/P1 SABİT. P2 -1
+  iyileşmesine rağmen REVIEW +5 ile WATCH yüzeyi genişledi → #197, #195 kadar
+  TEMİZ DEĞİL. Bu nedenle baseline pointer #195'te kalır; #197 post-baseline
+  verification / coverage-expansion olarak arşivlenir. Özellikle full_24h önceki
+  run'lara göre daha fazla gerçek senaryo koştu ama 6 yeni REVIEW üretti:
+  sabah_walkin_20, perf:sabah_walk_in, oglen_inventory_movement,
+  oglen_procurement_pr, aksam_folio_charge, perf:aksam_charge (iyi coverage artışı
+  ama baseline kalitesi #195 kadar temiz değil). Düz "GO" / "/100" iddiası YOK.
+
+---
+
+## Run #196 — VERIFICATION RUN (NOT PROMOTED, post-#195)
+
+- **Tarih / deploy commit:** 2026-06-03, deploy commit `2582b14c` (post-#195
+  REVIEW/SKIP Reduction pack merge'i içerir: finance_folio harvest `limit=5→50`,
+  full_24h `maxPages 8→60`, admin db-stats per-sub-call guard + `degraded[]`).
+  Murat tarafından manuel workflow_dispatch edildi.
+- **Sonuç:** 708 test, conclusion=success, failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1590/0/21/11, P0=P1=0, P2=23 / P3=0, external_calls=[],
+  pilot_drift=0, verdict **GO WITH WATCH**.
+- **#195 → #196 DÜRÜST DELTA:** PASS **+20** (1570→1590), REVIEW **+6 ARTTI**
+  (15→21), SKIP 11 SABİT, FAIL/P0/P1/P2/P3 SABİT, regresyon YOK. **Reduction
+  hedefi TUTMADI** (projeksiyon SKIP→~9 / REVIEW→~12/13 yanlış çıktı). Kök neden
+  (spin yok): (1) finance_folio + full_24h harvest fix'leri SKIP'li step'leri
+  unblock etti ama bunlar by-design REVIEW yüzeylerine düştü (finance_folio A0/D
+  409 open-folio/payment-perm; full_24h sabah_walkin n=25 ok=0 s400, oglen
+  movement 0/3, procurement 422, aksam charge s400) → REVIEW net arttı. Revert
+  EDİLMEDİ (skip-as-pass olurdu). (2) admin db-stats fix'i yanlış failure-mode
+  hedefledi: gerçek sorun serverStatus 500 değil, per-collection collStats
+  timeout/latency (admin_rbac super_admin_baseline db-stats status=0). Post-#196
+  `asyncio.wait_for` latency-bound fix landed (canlı probe 200@8.5s; CI-pending
+  #197), RBAC posture değişmedi.
+- **DÜRÜST META-BULGU:** SKIP'i unblock ederek azaltmak REVIEW'i azaltmaz —
+  unblock'lanan step by-design koşula çarpıp SKIP→REVIEW'e döner. Gerçek sayım
+  düşüşü yalnızca gerçekten kırık şeyi onarmaktan veya meşru reclassify'dan gelir
+  (by-design'lar reclassify EDİLEMEZ).
+- **Run URL:** https://github.com/beyinsiz1903/syroce-pms/actions/runs/26891329963
+  (run #196, run ID 26891329963, event=workflow_dispatch).
+- **Provenance:** anonim GitHub API'dan doğrulandı — head_sha=2582b14c,
+  conclusion=success; artifacts stress-drill-report digest
+  sha256:2018a4255f…, playwright-stress-report sha256:56f40a6b08…. Fabrike
+  EDİLMEDİ (artifact gövdesi auth-gated → gövde re-sum CI-deferred; tutarlılık
+  granülarite-modeli + operatör-rapor'a dayanır).
+- **Rapor:** `attached_assets/Pasted-Full-Operational-Stress-Suite-CI-one-shot-F8A-F8B-F8C-F_1780505483439.txt`
+  (#196 tam rapor, 1029 satır). Post-mortem:
+  `docs/drill_reports/20260603_review_skip_reduction_post_run195.md`.
+
+---
+
+## Run #195 — historical reference (önceki current; #198 promote'unda indirildi)
+
+- **Tarih / commit:** 2026-06-03, commit `a3d43a1cf71dbda61b9795539da127e845727974`
+  ("Published your App" — WATCH Reduction Pack'i içerir: parent commit
+  `c40c277f` `/api/security/audit-logs` + `/api/hr/staff` encode-500 hardening
+  (`backend/common/json_safe.py`) + Room QR submit rate-limit/auth reorder +
+  tenant-scoped limiter key).
+- **Sonuç:** 708 test, status=Success (conclusion=success), failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1570/0/15/11, P0=P1=0, P2=23 / P3=0,
+  external_calls=[], pilot_drift=0, cleanup#2 idempotent=true, verdict
+  **GO WITH WATCH**.
+- **#194 → #195 delta:** PASS +5, REVIEW −2, P2 −1; SKIP/FAIL/P0/P1/P3 sabit.
+  Temiz, pozitif, regresyonsuz ilerleme. WATCH pack kanıtı: #194'te görünen
+  audit-logs 500 ve hr/staff 500 yüzeyleri #195 P2/REVIEW listelerinde ARTIK
+  YOK (T001+T002 landed). Not: rate_limit_boundary P2 sürüyor ama detay
+  `qr_submit: skipped no_room` → T003'ün QR fix'i bu run'da stress-exercise
+  EDİLMEDİ (yalnızca canlı probe ile doğrulandı); kalan finding ayrı bir yüzey
+  olan `auth_login` burst'üdür (0 throttled — login-throttle ordering, yeni WATCH
+  adayı). activity-PII (T004) by-design olarak sürüyor (beklenen).
+- **Run URL:** https://github.com/beyinsiz1903/syroce-pms/actions/runs/26879084806
+  (run #195, run ID 26879084806, job ID 79274137231, event=workflow_dispatch,
+  run_attempt=1, branch main, süre ~70dk / 1h10m8s).
+- **Artifacts (2) — provenance TAM (GitHub Actions API `digest` alanından doğrulandı, fabrike EDİLMEDİ):**
+  - stress-drill-report (30547 B) —
+    sha256:`d67b9615cf547531da2abc532f7afc3f8a84602aff4884a8fae133e5b67de228`.
+  - playwright-stress-report (809220 B) —
+    sha256:`83160fb57dd4ba012a5ea9b68a5057f28fda157bef692124e4c02fb8deed36c5`.
+- **Yöntem dürüstlüğü:** run/job/artifact metadata anonim public GitHub API'dan
+  doğrulandı (head_sha=a3d43a1c, conclusion=success). Artifact ZIP gövdesi
+  auth-gated → #195 gövde REVIEW-toplamı bu oturumda satır-satır re-türetilmedi;
+  sınıflandırma operatör raporu + granülarite-modeli + #190 §5'e dayanır.
+- **Drill:** `docs/drill_reports/20260603_stress_full_stress_suite_GREEN_708test_run195.md`.
+- **Post-#195 REVIEW/SKIP Reduction (Option 1, CI-pending; baseline DEĞİŞMEZ):**
+  3 doctrine-safe fix (finance_folio harvest `limit=5→50`; full_24h `maxPages 8→60`
+  helper safety-net override; admin db-stats 500-hardening guarded 200+`degraded[]`)
+  + housekeeping cold-boot TTI JUSTIFY (index fake-green) + ~22 by-design/irreducible
+  tek tek gerekçeli. Beklenen modest düşüş SKIP 11→~9, REVIEW 15→~12/13 (SIFIR DEĞİL);
+  nihai delta sonraki full stress workflow_dispatch ile doğrulanır (agent dispatch
+  ETMEZ). Drill: `docs/drill_reports/20260603_review_skip_reduction_post_run195.md`.
+
+---
+
+## Run #194 — historical reference (önceki current; #195 promote'unda indirildi)
+
+- **Tarih / commit:** 2026-06-03, commit `9f4b3a74d894f52464e2f0f6a0037387df58f636`
+  ("Update test performance budget to account for increased data size" — seed perf
+  budget 30s→45s recalibration; bu zincirde folio detail + audit timeline + folio
+  activities/operations 500 fix'leri merge edilmiştir).
+- **Sonuç:** 708 test, status=Success (conclusion=success), failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1565/0/17/11, P0=P1=0, P2=24 / P3=0,
+  external_calls=[], pilot_drift=0, cleanup#2 idempotent=true, verdict
+  **GO WITH WATCH**.
+- **#190 → #194 delta:** PASS +94, REVIEW −4, SKIP −33, P2 −6, P3 −2;
+  FAIL/P0/P1 sabit 0. Güçlü pozitif ilerleme (folio-mass void, HR modülleri,
+  settings_audit artık temiz koşuyor); regresyon yok. En değerli kazanım SKIP 44→11.
+- **Run URL:** https://github.com/beyinsiz1903/syroce-pms/actions/runs/26869789889
+  (run #194, run ID 26869789889, job ID 79241995727, event=schedule, branch main).
+- **Artifacts (2) — provenance TAM (GitHub Actions API `digest` alanından doğrulandı, fabrike EDİLMEDİ):**
+  - stress-drill-report — ID `7379444307` (30627 B) —
+    sha256:`346dec0216b6e00257c4a0c1972317ba411b158ff970e239c2888ed39cf0996f`.
+  - playwright-stress-report — ID `7379443979` (808734 B) —
+    sha256:`5a59046a3245be53bfb4f647dc6a12f21b7c4f0400466c62b5bdeae50c75507e`.
+- **Seed perf notu:** #194 seed total=26097.7ms eski 30s eşiğini de geçer →
+  #194 yeşili budget 30s→45s değişikliğine BAĞLI DEĞİL.
+- **Tutarlılık doğrulaması:** Murat'ın 3 maddesi (settings_audit "audit marker not
+  found", reservation_deep waitlist/city-ledger, finance_folio 409) granülarite
+  artefaktı / legitimate harness annotation'dır (modül-tablosu adım ekseni ≠
+  severity-triage ekseni); stale carryover DEĞİL. Yöntem dürüstlüğü: artifact ZIP
+  gövdesi auth-gated (401) → #194 gövde REVIEW-toplamı bu oturumda satır-satır
+  re-türetilemedi; sınıflandırma granülarite-modeli + #190 §5 (aynı yapı satır-satır
+  doğrulanmış) + operatör-transkript sayılarına dayanır. Detay → drill §5.
+- **Drill:** `docs/drill_reports/20260603_stress_full_stress_suite_GREEN_708test_run194.md`.
+
+---
+
+## Run #190 — historical reference (önceki current; #194 promote'unda indirildi)
+
+- **Tarih / commit:** 2026-06-02, commit `adfa87d39f91bac5221247217f89d3207a08ab4a`
+  ("Published your App" — messaging `/send` graceful-delivery 5xx guard + HR
+  RBAC/PII spec-36 false-RED fix içerir).
+- **Sonuç:** 708 test, status=Success, failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1471/0/21/44, P0=P1=0, P2=30 / P3=2 informational,
+  external_calls=[], pilot_drift=0, cleanup#2 idempotent=true, verdict
+  **GO WITH WATCH**.
+- **#184 → #190 delta:** PASS +31, REVIEW +2, SKIP −10, P2 −1; FAIL/P0/P1 sabit 0.
+  Pozitif ilerleme (önceden module-blocked/atlanan yüzeyler artık koşuyor);
+  regresyon yok. REVIEW +2 data-state varyansı.
+- **Run URL:** https://github.com/beyinsiz1903/syroce-pms/actions/runs/26819935740
+  (run #190, run ID 26819935740, job ID 79071540497, branch main).
+- **Artifacts (2) — provenance TAM (GitHub Actions API `digest` alanından doğrulandı, fabrike EDİLMEDİ):**
+  - stress-drill-report — ID `7359234557` (31639 B) —
+    sha256:`827b360b95d91d78d02d9571fadbb7b92e91bc96cc43707d381fb3817df15454`.
+  - playwright-stress-report — ID `7359234213` (794962 B) —
+    sha256:`6a7dedefd75d9d2f490410ed2c48a5fc3e8d28291caf6d8c10651d279a3079e1`.
+- **Tutarlılık doğrulaması:** reservation_deep (waitlist/city-ledger) + settings_audit/
+  admin/HR REVIEW kalemleri GERÇEK run #190 bulgularıdır (modül tablosu REVIEW
+  toplamı = 21 birebir mutabık); stale triage carryover DEĞİL. Envanter "passed" =
+  Playwright case-seviyesi (hard-throw yok); REVIEW = harness adım-içi annotation
+  (module-access 403 / data-state). Detay → drill §5.
+- **Drill:** `docs/drill_reports/20260602_stress_full_stress_suite_GREEN_708test_run190.md`.
+
+---
+
+## Run #184 — historical reference
+
+- **Tarih / commit:** 2026-06-01, commit `1055e6848aa047a3f8d46d5f5d05cde145d2b3fc`.
+- **Sonuç:** 708 test, status=Success, failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1440/0/19/54, P0=P1=0, P2=31 / P3=2 informational,
+  external_calls=[], pilot_drift=0, cleanup#2 idempotent=true, verdict
+  **GO WITH WATCH** (metrikler operatör raporundan; CI conclusion=success doğrulandı).
+- **Run URL:** https://github.com/beyinsiz1903/syroce-pms/actions/runs/26771158900
+  (run #184, run ID 26771158900, job ID 78910688457, branch main).
+- **Artifacts (2) — provenance TAM (GitHub Actions API `digest` alanından doğrulandı):**
+  - stress-drill-report — ID `7339879559` (32351 B) —
+    sha256:`d21e9c5ad6be7731479e5994f99236a8118f94e3dc0397e65914c6a381d9bf74`.
+  - playwright-stress-report — ID `7339879193` (788756 B) —
+    sha256:`ebc0cb3b4cd3a26ce69cd2b0d278b6d5028680ebcadafaec2b0a6202e92b34ac`.
+- **Drift notu:** #184 operatör tarafından current baseline sayıldı ama bu zincir
+  ve `digitalocean.md` o tarihte hiç #184'e güncellenmedi (docs #171'de kaldı). Bu kayıt
+  ilk kez backfill'dir; provenance CI'dan doğrulandı, fabrike EDİLMEDİ. #190
+  promote'u sırasında historical'a alındı.
+
+---
+
+## Run #171 — historical reference (önceki current; #190 promote'unda indirildi)
+
+- **Tarih / commit:** 2026-05-31, commit `b6c61862be61d111a5f725c786073fa57f35276f`
+  ("Published your App" — Post-#170 Minimal Fix Pack'i içerir: e-Fatura VKN spec
+  fix + housekeeping selector-not hizalama).
+- **Sonuç:** 703 test, status=Success, failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1384/0/48/43, P0=P1=0, P2=56 / P3=1 informational,
+  external_calls=[], pilot_drift=0, cleanup#2 idempotent=true, verdict
+  **GO WITH WATCH**.
+- **#168 → #171 delta:** Toplam +1, PASS +2, P2 −1; FAIL/REVIEW/SKIP/P0/P1 aynı.
+  Temiz ve pozitif ilerleme; regresyon yok. e-Fatura test verisi düzeltmesi
+  karşılığını verdi → `accounting_expenses` artık tamamen temiz
+  (10 PASS / 0 REVIEW / 0 SKIP).
+- **Run URL:** https://github.com/beyinsiz1903/syroce-pms/actions/runs/26708567911
+  (run #171, run ID 26708567911, job ID 78714440738, branch main).
+- **Artifacts (2) — provenance TAM (CI'dan doğrulandı, fabrike EDİLMEDİ):**
+  - stress-drill-report — ID 7315902501 —
+    sha256:`142d294eaab0eead173d5f730503d9f6540b5d5a65a4ea10e61b6af9bb015152`.
+  - playwright-stress-report — ID 7315902360 —
+    sha256:`25cd75d903b0015f7bc8816a78a9ee4c1ab78703bd27182f3282a8c37d87f899`.
+- **Drill:** `docs/drill_reports/20260531_stress_full_stress_suite_GREEN_703test_run171.md`.
+
+---
+
+## Run #168 — historical reference
+
+- **Tarih / commit:** 2026-05-30, commit `52575268c025d97ce67b409d187b041283c74064`
+  (güncel HEAD `9e9796d1` yalnız import-sort/ruff I001 farkı — davranış değişikliği yok).
+- **Sonuç:** 702 test, status=Success, failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1382/0/48/43, P0=P1=0, P2=57 / P3=1 informational,
+  external_calls=[], pilot_drift=0, cleanup#1 deleted_total=7761 / cleanup#2
+  deleted_total=0 idempotent=true, seed prefix `E2E_STRESS_F7_1780162874355_`
+  (room_count=500), verdict **GO WITH WATCH**.
+- **Run #167→#168 kod delta:** Exely pull worker transient-DB Sentry-noise guard
+  (`TransientFailureTracker`, commit `52575268`) + webhook/payment reconciliation
+  güvenlik commit'i (`ef7fac1f`) + publish (`78bef111`). Test-yüzeyi delta (PASS +3 /
+  SKIP −1 / P2 −1) data-state varyansıdır, koda atfedilmez (Exely pull worker arka
+  plan işçisi, HTTP test yüzeyinde görünmez; regresyon yok).
+- **Run URL:** https://github.com/beyinsiz1903/syroce-pms/actions/runs/26690524113
+  (run #168, run ID 26690524113, branch main).
+- **Artifacts (2):** playwright-stress-report (754KB,
+  sha256:`cf37bf93d5f570e442ac962c9dac50149b21454acb0486c031723c9ea705c8e4`) +
+  stress-drill-report (37.5KB, sha256 ekran görüntüsünde truncated).
+- **Provenance uyarısı:** job ID + artifact numeric ID'leri + stress-drill-report tam
+  sha256 ekran görüntüsünde yoktu → CI run sayfasından doğrulanmalı, fabrike EDİLMEDİ.
+- **Drill:** `docs/drill_reports/20260530_stress_full_stress_suite_GREEN_702test_run168.md`.
+
+---
+
+## Run #170 — post-packages verification run (NOT baseline)
+
+- **Tarih / commit:** 2026-05-30, commit `b3d3bdb` (HEAD "Published your App").
+- **Sonuç:** 702 test, status=Success, failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1380/0/50/43, P0=P1=0, P2=57 / P3=1 informational,
+  external_calls=[], pilot_drift=0, cleanup#2 idempotent=true, verdict **GO WITH WATCH**.
+- **Promote? HAYIR.** #168'den daha iyi değil (REVIEW +2, PASS −2, P2 aynı). O tarihte #168
+  current GREEN BASELINE olarak kaldı (sonradan #171→#184→#190; artık #190 current); #170 yalnızca paket A+B/C/D/E/F sonrası doğrulama run'ıdır.
+- **Provenance:** #168 (`52575268`) Package C/D/E/F'in hepsinden ÖNCE; #170 hepsini İÇERİR
+  (zincir: `52575268`→C`5c858cbe`→D`76f57095`→E`12452add`→F`443b2093`→docs`0daab6ec`→#170`b3d3bdb`).
+  Delta gerçekten paket etkisini ölçer.
+- **Delta analizi & sınıflandırma:** `docs/drill_reports/20260531_post_run170_delta_review.md`
+  (kalan açıklar: çoğu OPERATOR-ENV; e-Fatura + housekeeping-not SPEC-DRIFT; folio void-charge
+  teşhis-bekler).
+- **Post-#170 Minimal Fix Pack (SPEC-DRIFT, kod CI'da doğrulanmadı — baseline taşımaz):**
+  `docs/drill_reports/20260531_post_run170_minimal_fix_candidate.md`. e-Fatura spec
+  customer_tax_number → geçerli 10-hane VKN + B2 strict-validator assertion (backend validator
+  DEĞİŞMEDİ); housekeeping selector-miss notu test-scope `candidates` + `/housekeeping-status`
+  route'una hizalandı (status ladder / TTI gate DEĞİŞMEDİ). Folio C4 KOD DEĞİŞTİRİLMEDİ
+  (path+shape doğru; charges_empty ayrımı CI detailShapeSnap gerektirir). O tarihte #168 current GREEN
+  BASELINE olarak kaldı; bu Minimal Fix Pack'in etkisi sonradan **Run #171 full stress ile doğrulandı** (o tarihte current; current artık #190).
+
+---
+
+## Run #167 — historical reference
+
+- 2026-05-30, commit `0b99607fe3a64a7ada660d1f1bcb8607bd47f5dd`,
+  PASS/FAIL/REVIEW/SKIP=1379/0/48/44, P2=58/P3=1, verdict GO WITH WATCH.
+- Run URL: https://github.com/beyinsiz1903/syroce-pms/actions/runs/26687012176
+  (run ID 26687012176, job ID 78656853578).
+- Artifacts: stress-drill-report ID 7309449913 + playwright-stress-report ID 7309449854.
+- Drill: `docs/drill_reports/20260530_stress_full_stress_suite_GREEN_702test_run167.md`
+  (Run #162→#167 fix detayı: `docs/drill_reports/20260530_ai_pricing_recommend_rates_500_fix.md`).
+
+## Run #162 — historical reference
+
+- 2026-05-29, 702 test, commit `bde7662744c9b94a5c9294fa778202d813319dfc`,
+  PASS/FAIL/REVIEW/SKIP=1316/0/46/61, P2=60/P3=1, verdict GO WITH WATCH.
+- Run URL: https://github.com/beyinsiz1903/syroce-pms/actions/runs/26653464472
+  (run ID 26653464472, job ID 78557501168).
+- Artifacts: stress-drill-report ID 7298692917 + playwright-stress-report ID 7298692578.
+- Drill: `docs/drill_reports/20260529_stress_full_stress_suite_GREEN_702test.md`.
+
+## Run #161 — historical reference
+
+- 2026-05-29, 702 test, commit `ba9dfc7aafc0a694b70841d3405f8445ecfc1b67`,
+  P2=65/REVIEW=48/P3=1, verdict GO WITH WATCH.
+- Run URL: https://github.com/beyinsiz1903/syroce-pms/actions/runs/26641150604
+  (run ID 26641150604, job ID 78514272098).
+- Artifacts: stress-drill-report ID 7293609890 + playwright-stress-report ID 7293609632.
+- provenance+metrics drill comparison block'ta korunmuştur
+  (`docs/drill_reports/20260529_stress_full_stress_suite_GREEN_702test.md`).
+
+## Run #159 — historical reference
+
+- 2026-05-28, 702 test, commit `e23a4ec603cc32984b741d77d67d57a0abba698b`,
+  P2=65/P3=1, verdict GO WITH WATCH.
+- Drill: `docs/drill_reports/20260528_stress_full_stress_suite_GREEN_702test.md`.
+
+## Run #143 — oldest historical reference
+
+- 2026-05-26, 84 spec / 556 test, commit `3b3891d`, P2=60/P3=1, verdict GO WITH WATCH.
+- F8AH iki-tur kapatma: Tur 1 (commit `94514e6`) 4 P1 (konaklama amount/nights Pydantic
+  `le=1e9/3650`, KDS terminal-state 409, KDS idempotency Mongo unique + 503); Tur 2
+  (commits `147266d4` + `67374954` + `8f7f77b6`) P0 TWOFA throttle — Mongo-backed
+  cross-instance throttle (`backend/security/auth_throttle.py`) + per-user_id layered
+  throttle (`backend/routers/auth.py`, JWT-trusted, IP rotation immune, `consumed_jtis`
+  insert ÖNCESI).
+- Drill: `docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md`.
+  Coverage gap: `docs/STRESS_COVERAGE_GAP_REPORT_20260526.md`.

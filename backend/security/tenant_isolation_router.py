@@ -2,11 +2,12 @@
 Tenant Isolation — Validation API Router
 =========================================
 """
+
 from fastapi import APIRouter, Depends, Query
 
-from core.security import get_current_user
 from common.context import OperationContext
 from common.response import from_service_result
+from core.security import get_current_user
 from security.tenant_isolation_service import tenant_isolation_service
 
 router = APIRouter(prefix="/api/tenant-isolation/v2", tags=["Tenant Isolation v2"])

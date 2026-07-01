@@ -1,0 +1,73 @@
+{
+  "summary": "Governance Layer testing complete. All 28 backend API tests passed (100%). Frontend UI verified with all 4 tabs working: Entitlement (tier summary cards, tenant list with drill-down), Metering (today/monthly usage, active tenants, top tenants), Feature Flags (list, create, toggle, kill switch, delete), Onboarding (progress bars, tenant checklist). Fixed a critical bug in entitlement.py where cross-tenant admin queries were using tenant-isolated db instead of _raw_db.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_governance_layer_api.py",
+    "/app/test_reports/pytest/pytest_governance_layer_api.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fixed: entitlement.py check_quota() and get_tenant_entitlements() were using tenant-isolated db for cross-tenant admin queries - changed to _raw_db",
+    "All data-testid attributes properly set for testing: governance-title, governance-tabs, entitlements-tab, metering-tab, feature-flags-tab, onboarding-tab, create-flag-btn, flag-key-input, save-flag-btn, tenant-row-{id}, top-tenant-{n}, onboard-row-{id}, flag-card-{key}, flag-toggle-{key}",
+    "Turkish language properly implemented throughout the UI (Entitlement, Metering, Feature Flags, Onboarding labels)",
+    "Feature flag system supports: percentage rollout, tenant overrides, kill switch, expiry dates"
+  ],
+  "updated_files": [
+    "/app/backend/core/entitlement.py",
+    "/app/backend/tests/test_governance_layer_api.py"
+  ],
+  "success_rate": {
+    "backend": "100% (28/28 tests passed)",
+    "frontend": "100% (all 4 tabs verified)"
+  },
+  "test_credentials": "demo@hotel.com / demo123 (super_admin role)",
+  "seed_data_creation": "Created test feature flag TEST_governance_test_flag during testing (cleaned up)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Governance Layer is fully functional. Test file test_governance_layer_api.py covers all endpoints: entitlements overview, tenant entitlements, usage overview, tenant usage, feature flags CRUD, tenant overrides, onboarding overview, tenant onboarding, mark step complete, quota checks. Frontend uses shadcn/ui components (Tabs, Card, Badge, Dialog, Switch, Input). Navigation accessible at /admin/governance. Existing feature flag: new_booking_flow (25% rollout, disabled).",
+  "verified_features": {
+    "backend_apis": {
+      "entitlements": {
+        "GET /api/admin/entitlements/overview": "Returns total_tenants (30), by_tier counts, expired_subscriptions",
+        "GET /api/admin/tenants/{tenant_id}/entitlements": "Returns modules, quotas (rooms/users), plan_limits",
+        "GET /api/admin/tenants/{tenant_id}/quota/{resource}": "Returns allowed, current, limit for rooms/users"
+      },
+      "metering": {
+        "GET /api/admin/usage/overview": "Returns today/this_month usage, active_tenants_7d, top_tenants",
+        "GET /api/admin/tenants/{tenant_id}/usage": "Returns events summary, current_resources"
+      },
+      "feature_flags": {
+        "GET /api/admin/feature-flags": "Lists all flags with count",
+        "POST /api/admin/feature-flags": "Creates/updates flag with enabled, rollout_percentage, kill_switch, expires_at",
+        "DELETE /api/admin/feature-flags/{flag_key}": "Deletes flag",
+        "PATCH /api/admin/feature-flags/{flag_key}/tenant-override": "Sets/removes tenant override",
+        "GET /api/admin/feature-flags/{flag_key}/check": "Checks if flag enabled for tenant"
+      },
+      "onboarding": {
+        "GET /api/admin/onboarding/overview": "Lists all tenants with progress_pct, completed, total",
+        "GET /api/admin/tenants/{tenant_id}/onboarding": "Returns steps with auto-detection, progress_pct",
+        "POST /api/admin/tenants/{tenant_id}/onboarding/{step_id}/complete": "Marks step complete"
+      }
+    },
+    "frontend_tabs": {
+      "entitlement": "Tier summary cards (30 total, 1 enterprise, 28 basic, 1 professional), tenant list with module counts, drill-down dialog showing quotas and modules",
+      "metering": "Today/monthly usage cards, active tenants (7 days), top tenants list with drill-down",
+      "feature_flags": "Flag list with toggle, kill switch, delete buttons. Create dialog with all fields. Existing flag: new_booking_flow",
+      "onboarding": "Tenant list with progress bars, drill-down checklist with auto-detection"
+    }
+  },
+  "bug_fixed": {
+    "file": "/app/backend/core/entitlement.py",
+    "issue": "Cross-tenant access blocked error when admin queries entitlements for other tenants",
+    "root_cause": "check_quota() and get_tenant_entitlements() were using tenant-isolated db.rooms.count_documents() and db.users.count_documents() instead of _raw_db for cross-tenant admin queries",
+    "fix": "Changed to use _raw_db for all cross-tenant queries in admin context"
+  }
+}

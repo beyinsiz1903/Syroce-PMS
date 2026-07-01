@@ -3,10 +3,16 @@ Bootstrap: Router Registry
 Centralised router mounting. Each router is imported and mounted
 with proper error isolation so one broken module cannot crash the app.
 """
-from fastapi import FastAPI, Depends
+
+import logging
+
+logger = logging.getLogger(__name__)
+import asyncio
 import importlib
 import traceback
-from typing import List, Tuple, Optional, Callable
+from typing import Callable
+
+from fastapi import Depends, FastAPI
 
 
 def _safe_import(module_path: str, attr: str):
@@ -16,25 +22,47 @@ def _safe_import(module_path: str, attr: str):
         router = getattr(mod, attr)
         return router
     except Exception as e:
-        print(f"⚠️  Router import failed [{module_path}.{attr}]: {e}")
+        logger.info(f"⚠️  Router import failed [{module_path}.{attr}]: {e}")
         traceback.print_exc()
         return None
 
 
 # ── Router manifest ─────────────────────────────────────────────────
 # (module_path, attribute_name, tags, prefix_override, dependencies)
-_EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list]]] = [
+_EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = [
     # Core extracted routers
     ("routers.auth", "router", ["auth"], None, None),
+    ("routers.db_admin", "router", ["admin-db"], None, None),
     ("routers.housekeeping", "router", ["housekeeping"], None, None),
     ("routers.departments", "router", ["departments"], None, None),
     ("routers.pms", "router", ["pms"], None, None),
+    ("routers.pms_rooms", "router", ["pms"], None, None),
+    ("routers.pms_guests", "router", ["pms"], None, None),
+    ("routers.shift_handover", "router", ["pms"], None, None),
+    ("routers.early_late_pricing", "router", ["pms"], None, None),
+    ("routers.eod_report", "router", ["pms"], None, None),
+    ("routers.no_show_risk", "router", ["pms"], None, None),
+    ("routers.walkin", "router", ["pms"], None, None),
+    ("routers.room_map", "router", ["pms"], None, None),
+    ("routers.pms_bookings", "router", ["pms"], None, None),
+    ("routers.pms_dashboard", "router", ["pms"], None, None),
+    ("routers.pms_analytics", "router", ["pms-analytics"], None, None),
+    ("routers.pms_services", "router", ["pms-services"], None, None),
+    ("routers.pms_room_queue", "router", ["pms-room-queue"], None, None),
+    ("routers.pms_room_details", "router", ["pms-room-details"], None, None),
+    ("routers.pms_reservations", "router", ["pms-reservations"], None, None),
+    ("routers.pms_availability", "router", ["pms-availability"], None, None),
     ("routers.reservation_detail", "router", ["reservation-detail"], None, None),
+    ("routers.vcc_router", "router", ["vcc"], None, None),
+    ("routers.payments_router", "router", ["payments"], None, None),
     ("routers.hotel_services", "router", ["hotel-services"], None, None),
     ("routers.finance", "router", ["finance"], None, None),
+    ("routers.finance.folio_einvoice_public", "router", ["e-Fatura"], None, None),
     ("routers.reports", "router", ["reports"], None, None),
     ("routers.pms_hardening", "router", ["pms-core"], None, None),
     ("routers.revenue_management", "router", ["revenue-engine"], None, None),
+    ("routers.displacement_analysis", "router", ["displacement-analysis"], None, None),
+    ("routers.travel_agent_arap", "router", ["travel-agent-arap"], None, None),
     ("routers.event_system", "router", ["event-system"], None, None),
     ("routers.guest_journey", "router", ["guest-journey"], None, None),
     ("routers.platform_scaling", "router", ["platform-scaling"], None, None),
@@ -54,6 +82,22 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("routers.production_golive", "router", ["production-golive"], None, None),
     ("routers.report_builder", "router", ["report-builder"], None, None),
     ("routers.guest_messaging", "router", ["guest-messaging"], None, None),
+    ("routers.mailing", "router", ["mailing"], None, None),
+    ("routers.marketplace", "router", ["marketplace"], None, None),
+    ("routers.integrations_afsadakat", "router", ["af-sadakat"], None, None),
+    ("routers.pms_outbound", "router", ["pms-outbound"], None, None),
+    ("routers.onboarding", "router", ["onboarding"], None, None),
+    ("routers.security_2fa", "router", ["2fa"], None, None),
+    ("routers.pci_compliance", "router", ["compliance"], None, None),
+    ("routers.xchange", "router", ["xchange"], None, None),
+    ("domains.spa.router", "router", ["spa"], None, None),
+    ("domains.golf.router", "router", ["golf"], None, None),
+    ("routers.mice", "router", ["mice"], None, None),
+    ("routers.banquet_competitor", "router", ["banquet-competitor"], None, None),
+    ("routers.cross_property", "router", ["cross-property"], None, None),
+    ("routers.procurement", "router", ["procurement"], None, None),
+    ("routers.integration_rollout", "router", ["integration-rollout"], None, None),
+    ("routers.uploads", "router", ["uploads"], None, None),
     # Domain routers (Phase B extraction)
     ("domains.channel_manager.router", "router", ["channel-manager-domain"], None, None),
     ("domains.guest.router", "router", ["guest-profile-domain"], None, None),
@@ -71,6 +115,8 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("domains.ai.router", "router", ["AI / ML"], None, None),
     ("domains.pms.night_audit_router", "router", ["PMS / Night Audit"], None, None),
     ("domains.guest.messaging.router", "router", ["Guest / Messaging"], None, None),
+    # Misafir Oda Talepleri — personel akışı + admin görünürlük ayarı
+    ("domains.guest.messaging.guest_requests_router", "router", ["Guest Requests"], None, None),
     ("domains.revenue.pricing_router", "router", ["Revenue / Pricing"], None, None),
     ("domains.admin.router", "router", ["Admin / Operations"], None, None),
     ("domains.pms.notification_router", "router", ["PMS / Notifications"], None, None),
@@ -80,12 +126,28 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("domains.pms.housekeeping_router", "router", ["PMS / Housekeeping"], None, None),
     ("domains.pms.maintenance_router", "router", ["PMS / Maintenance"], None, None),
     ("domains.guest.operations_router", "router", ["Guest / Operations"], None, None),
+    ("domains.guest.qr_badge", "router", ["Guest / QR Badge"], None, None),
     ("domains.pms.groups_router", "router", ["PMS / Groups"], None, None),
+    # Task #169 (KOVA 4): reservation-level waitlist surface (distinct from
+    # spa waitlist). add/list/delete + promote-to-booking; tenant scope + RBAC.
+    ("routers.reservation_waitlist", "router", ["PMS / Reservation Waitlist"], None, None),
     ("domains.channel_manager.operations_router", "router", ["Channel Manager / Operations"], None, None),
     ("domains.sales.crm_router", "router", ["Sales / CRM"], None, None),
     ("domains.pms.calendar_router", "router", ["PMS / Calendar"], None, None),
     ("domains.pms.approvals_router", "router", ["PMS / Approvals"], None, None),
     ("domains.pms.misc_router", "router", ["PMS / Operations"], None, None),
+    # Accounting (migrated from _legacy)
+    ("domains.accounting.router", "router", ["Accounting"], None, None),
+    # Genel Muhasebe (GL) — hesap planı + çift-taraflı yevmiye + mizan
+    ("domains.accounting.gl_router", "router", ["Accounting / GL"], None, None),
+    # Accounts Payable — tedarikçi fatura defteri + aging + ödeme eşleştirme
+    ("domains.accounting.ap_router", "router", ["Accounting / AP"], None, None),
+    # Bütçe & sapma analizi — dönem/kategori bütçe + bütçe-gerçekleşen motoru
+    ("domains.accounting.budget_router", "router", ["Accounting / Budget"], None, None),
+    # Sabit kıymet / demirbaş + amortisman (düz/azalan bakiye, dönemsel çalıştırma)
+    ("domains.accounting.fixed_asset_router", "router", ["Accounting / Fixed Assets"], None, None),
+    # Bordro → GL köprüsü (kilitli bordrodan idempotent yevmiye fişi)
+    ("domains.accounting.payroll_gl_router", "router", ["Accounting / Payroll GL"], None, None),
     # Phase C/D/E — Hardening routers
     ("domains.channel_manager.hardening_router", "router", ["Channel Manager / Hardening"], None, None),
     ("workers.hardening_router", "router", ["Workers / Hardening"], None, None),
@@ -104,16 +166,46 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     # Phase 5 — Production Hardening
     ("domains.pms.frontdesk_router_v2", "router", ["Front Desk v2"], None, None),
     ("domains.pms.pos_fnb_router_v2", "router", ["POS & F&B v2"], None, None),
+    # POS Extensions — 8 yeni modül (mevcut POS akışından bağımsız)
+    ("domains.pms.pos_extensions.pos_currency", "router", ["POS Ext / Multi-Currency"], None, None),
+    ("domains.pms.pos_extensions.pos_happy_hour", "router", ["POS Ext / Happy Hour"], None, None),
+    ("domains.pms.pos_extensions.pos_coupons", "router", ["POS Ext / Coupons"], None, None),
+    ("domains.pms.pos_extensions.pos_loyalty_pos", "router", ["POS Ext / Loyalty"], None, None),
+    ("domains.pms.pos_extensions.pos_shift_close", "router", ["POS Ext / Shift Close"], None, None),
+    ("domains.pms.pos_extensions.pos_barcode", "router", ["POS Ext / Barcode"], None, None),
+    ("domains.pms.pos_extensions.pos_print_spool", "router", ["POS Ext / Print Spool"], None, None),
+    ("domains.pms.pos_extensions.pos_fiscal", "router", ["POS Ext / Fiscal (ÖKC)"], None, None),
+    # Semantic Layer (ADR read models for BI/SDK/partner consumers)
+    ("modules.stays.router", "router", ["Semantic Stays"], None, None),
+    ("modules.inventory.router", "router", ["Semantic Inventory"], None, None),
+    # 3rd-party integration credentials (super-admin)
+    ("routers.integration_credentials", "router", ["Integration Credentials"], None, None),
+    ("routers.capx_integration", "router", ["CapX Integration"], None, None),
+    ("routers.capx_webhook", "router", ["CapX Webhook"], None, None),
     ("modules.observability.alert_router", "router", ["Alert Enrichment"], None, None),
     ("modules.incident.incident_router", "router", ["Incident Response"], None, None),
     ("domains.channel_manager.validation_router", "router", ["CM Provider Validation"], None, None),
     ("domains.channel_manager.providers.hotelrunner_router", "router", ["HotelRunner Integration"], None, None),
-    ("domains.channel_manager.providers.hotelrunner_webhook", "router", ["HotelRunner Webhooks & Sync"], None, None),
+    ("domains.channel_manager.providers.hotelrunner_webhook", "router", ["HotelRunner Webhooks"], None, None),
+    ("domains.channel_manager.providers.hotelrunner_sync", "sync_router", ["HotelRunner Sync"], None, None),
     ("domains.channel_manager.providers.exely.exely_router", "router", ["Exely Integration"], None, None),
+    ("domains.channel_manager.providers.exely.exely_webhook_router", "router", ["Exely Webhooks"], None, None),
     # ARI Push Engine
     ("domains.channel_manager.ari.router", "router", ["ARI Push Engine"], None, None),
     # Rate Manager — Fiyat/Müsaitlik/Kısıtlama Yönetimi
     ("domains.channel_manager.rate_manager_router", "router", ["Rate Manager"], None, None),
+    # HR Rate Manager — HotelRunner Fiyat/Müsaitlik Yönetimi
+    ("domains.channel_manager.hr_rate_manager_router", "router", ["HR Rate Manager"], None, None),
+    # Unified Rate Manager — Birlesik Fiyat/Musaitlik Yonetimi
+    ("domains.channel_manager.unified_rate_manager_router", "router", ["Unified Rate Manager"], None, None),
+    # Channel Connections Overview — Kanal Bağlantıları Genel Bakış
+    ("domains.channel_manager.channel_connections_router", "router", ["Channel Connections"], None, None),
+    # Auto-Map — Otomatik Oda Esleme
+    ("domains.channel_manager.auto_map_router", "router", ["Auto-Map"], None, None),
+    # Wire Failure Tracking — Hata Takip
+    ("domains.channel_manager.wire_failure_router", "router", ["Wire Failure Tracking"], None, None),
+    # PII Strict Mode — Zorunlu PII Maskeleme
+    ("security.pii_strict_mode_router", "router", ["Security — PII Strict Mode"], None, None),
     # Channel Manager — Unified Data Model
     ("domains.channel_manager.model_router", "router", ["Channel Manager — Data Model"], None, None),
     # Reservation Ingest Pipeline
@@ -138,44 +230,140 @@ _EXTRACTED_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[list
     ("domains.channel_manager.runtime_enforcement_router", "router", ["Runtime Enforcement"], None, None),
     # Notification Events (High-Signal Dashboard Notifications)
     ("domains.channel_manager.notification_events_router", "router", ["Notification Events"], None, None),
+    # Control Plane — Operational Visibility & Reliability
+    ("controlplane.ops_router", "router", ["Control Plane"], None, None),
+    # Event Timeline — Trace any reservation in seconds
+    ("controlplane.timeline_router", "router", ["Event Timeline"], None, None),
+    # Dashboard — Single pane of glass health view
+    ("controlplane.dashboard_router", "router", ["Control Plane Dashboard"], None, None),
+    # Deploy Events — CI/CD → Control Plane bridge
+    ("controlplane.dashboard_router", "deploy_router", ["Deploy Events"], None, None),
+    # Folio Ledger — Immutable append-only ledger
+    ("routers.folio_ledger", "router", ["Folio Ledger"], None, None),
+    # Learning Loop — Incident classification, RCA, never-again rules
+    ("controlplane.learning_loop_router", "router", ["Learning Loop"], None, None),
+    # Security Operations — SEC-001 Secrets + SEC-002 Crypto rollout APIs
+    ("controlplane.security_ops_router", "router", ["Security Operations"], None, None),
+    # Sandbox Dashboard — Visualization of simulation results on ops dashboard
+    ("controlplane.sandbox_dashboard_router", "router", ["Sandbox Dashboard"], None, None),
+    # CI/CD Pipeline — 3-tier deploy validation (PR Gate, Staging Gate, Nightly)
+    ("controlplane.cicd_pipeline_router", "router", ["CI/CD Pipeline"], None, None),
+    # Room Blocks — OOO/OOS/Maintenance (INV-5: same availability truth)
+    ("routers.room_blocks", "router", ["Room Blocks"], None, None),
+    # Booking Holds — TTL/Hold mechanism for pending bookings
+    ("routers.booking_holds", "router", ["Booking Holds"], None, None),
+    # Room-Type Inventory — Phase C.1 read-only materialized view (ADR-003)
+    ("routers.inventory", "router", ["Room-Type Inventory"], None, None),
+    # HotelRunner External Integration — Compatibility endpoints for HR panel
+    ("routers.hotelrunner_compat", "router", ["HotelRunner External Integration"], None, None),
+    # HotelRunner v2 Connector — Production-grade adapter
+    ("channel_manager.connectors.hotelrunner_v2.router", "router", ["HotelRunner v2 Connector"], None, None),
+    # Agency Portal — Bolgesel Acente Yonetimi ve Portali
+    ("routers.agency_portal", "router", ["Agency Portal"], None, None),
+    ("routers.agency_content", "router", ["Agency Content"], None, None),
+    # Syroce B2B API — Acente Otomasyon Sistemi Entegrasyonu
+    ("routers.b2b_api", "router", ["B2B API - Syroce"], None, None),
+    # Agency <-> PMS v1 — S2S entegrasyon sozlesmesi (ADR 2026-06); fail-closed iskelet
+    ("routers.agency_v1", "router", ["Agency v1 - PMS Entegrasyon"], None, None),
+    # B2B Analytics Dashboard — Acente & API Kullanım Analitikleri
+    ("routers.b2b_analytics", "router", ["B2B Analytics"], None, None),
+    # Marketplace v1 — Cross-tenant B2B köprüsü (Syroce Agent entegrasyonu)
+    ("routers.marketplace_b2b", "router", ["Marketplace v1"], None, None),
+    # Marketplace v1 — Sözleşme yönetimi (agency-side / hotel-side / admin)
+    ("routers.agency_contracts", "agency_router", ["Marketplace v1 / Contracts"], None, None),
+    ("routers.agency_contracts", "hotel_router", ["Marketplace v1 / Incoming"], None, None),
+    ("routers.agency_contracts", "admin_router", ["Marketplace v1 / Admin"], None, None),
+    # KBS — Konaklama Bildirim Sistemi (PMS kullanıcı oturumuyla, key gerekmez)
+    ("routers.kbs", "router", ["KBS"], None, None),
+    ("routers.help", "router", ["help"], None, None),
+    ("routers.academy", "router", ["academy"], None, None),
+    ("routers.academy_public", "router", ["academy-public"], None, None),
+    # Syroce Contact Center (omnichannel) — Faz 0 iskelet, entitlement+RBAC kapılı.
+    ("domains.contact_center.router", "router", ["contact-center"], None, None),
+    # Faz 2 sesli softphone — auth'lu uçlar (token + çağrı listesi), RBAC kapılı.
+    ("domains.contact_center.voice_router", "router", ["contact-center-voice"], None, None),
+    # Faz 2 sesli softphone — public Twilio webhook'ları (imza doğrulamalı, auth yok).
+    ("domains.contact_center.voice_router", "public_router", ["contact-center-voice-webhook"], None, None),
+    ("routers.regulatory", "router", ["regulatory"], None, None),
+    ("routers.report_scheduler", "router", ["Report Scheduler"], None, None),
+    # PMS Minibar — Otomatik tüketim → folio (idempotent charge + stok düşümü)
+    ("domains.pms.minibar_router", "router", ["PMS / Minibar"], None, None),
+    # PMS Cashier, Laundry, Meeting Rooms
+    ("domains.pms.cashier_router", "router", ["PMS / Cashier"], None, None),
+    # PMS Çamaşır — Sipariş → folio (teslimde idempotent charge + late-charge)
+    ("domains.pms.laundry_router", "router", ["PMS / Laundry"], None, None),
+    # PMS Transfer & Otopark — slot-lock (çift-rezervasyon) + idempotent folio charge
+    ("domains.pms.transfer_parking_router", "router", ["PMS / Transfer & Parking"], None, None),
+    # PMS İnsan-Concierge — görev atama/takip (bagaj, transfer, çiçek, hatırlatma)
+    ("domains.pms.concierge_router", "router", ["PMS / Concierge"], None, None),
+    # PMS F&B Cost Controller — reçete-bazlı maliyet + teorik/fiili yield varyansı
+    ("domains.pms.fnb_cost_router", "router", ["PMS / F&B Cost"], None, None),
+    # PMS Turndown — dolu/VIP odalara gün-başına tek akşam servisi görevi (idempotent)
+    ("domains.pms.turndown_router", "router", ["PMS / Turndown"], None, None),
+    # Opera-parity: Folio Routing, Block Mgmt, Activity Scheduler, Loyalty, Forecast
+    ("domains.pms.folio_routing_router", "router", ["PMS / Folio Routing"], None, None),
+    ("domains.pms.folio_window_router", "router", ["PMS / Folio Windows"], None, None),
+    ("domains.pms.long_stay_router", "router", ["PMS / Long Stay"], None, None),
+    ("domains.pms.block_management_router", "router", ["PMS / Block Management"], None, None),
+    ("domains.pms.activity_scheduler_router", "router", ["Activity Scheduler"], None, None),
+    ("domains.pms.function_space_router", "router", ["Function Space"], None, None),
+    ("domains.guest.loyalty_router", "router", ["Loyalty Program"], None, None),
+    ("domains.guest.profile_udf_router", "router", ["Profile UDF"], None, None),
+    ("domains.pms.catering_router", "router", ["Catering Menu"], None, None),
+    ("domains.pms.suite_connecting_router", "router", ["Suite & Connecting"], None, None),
+    ("domains.revenue.hurdle_router", "router", ["Hurdle Rates"], None, None),
+    ("domains.revenue.forecast_router", "router", ["Revenue / Forecast"], None, None),
+    # PMS Operations — Concierge, Banquet, KBS, KVKK, Guest Prefs, Room Features
+    ("domains.pms.operations_router", "router", ["PMS / Operations"], None, None),
+    # Ops Telemetry — Operational events, webhook DLQ, channel health
+    ("routers.ops_events_router", "router", ["Ops Events & Telemetry"], None, None),
+    ("routers.ops_timeline_router", "router", ["Ops Timeline & Incidents"], None, None),
+    ("routers.early_warning_router", "router", ["Early Warning & Predictive"], None, None),
+    # Outbox / Import admin
+    ("routers.outbox_admin", "outbox_admin_router", ["Outbox Admin"], "/api", None),
+    ("routers.import_admin", "import_admin_router", ["Import Admin"], "/api", None),
+    # Room QR Requests — Per-room QR codes for guest service requests
+    # NOTE: route paths inside the router already start with /api, so no extra prefix
+    ("routers.room_qr_requests", "router", ["Room QR Requests"], None, None),
+    # Door Reader — internal, service-key authenticated digital-key verification
+    ("routers.door_reader", "router", ["Door Reader"], None, None),
+    ("domains.pms.lock_bridge.connector_router", "router", ["Lock Bridge"], None, None),
+    ("routers.physical_security", "router", ["PMS / Physical Security"], None, None),
+    ("routers.spa_dining_packages", "router", ["SPA & Dining Scheduler"], None, None),
+    ("routers.procurement_b2b", "router", ["B2B Procurement Automation"], None, None),
+    ("routers.guest_relations", "router", ["Guest Relations Smart Engine"], None, None),
+    # CM Conflict Queue — front-desk resolution UI for pending_assignment bookings (Turu #1b)
+    ("routers.cm_conflict_queue", "router", ["channel-manager"], None, None),
 ]
 
 # Optional routers with special import paths
-_OPTIONAL_ROUTERS: List[Tuple[str, str, List[str], Optional[str], Optional[str]]] = [
-    ("desktop_enhancements_endpoints", "desktop_router", ["desktop-enhancements"], "/api", None),
-    ("world_class_features", "world_class_router", ["world-class-features"], None, "super_admin"),
-    ("advanced_features_endpoints", "advanced_router", ["advanced-features"], "/api", "super_admin"),
-    ("comprehensive_modules_endpoints", "router", ["comprehensive-modules"], "/api", "super_admin"),
-    ("finance_endpoints", "finance_router", ["finance"], "/api", None),
-    ("notification_endpoints", "notification_router", ["notifications"], "/api", None),
-    ("media_endpoints", "media_router", ["media"], "/api", None),
-    ("faz2_endpoints", "faz2_router", ["faz2"], "/api", None),
-    ("agency_endpoints", "agency_router", ["agency-booking"], None, None),
-    ("security_2fa", "twofa_router", ["2FA Security"], None, None),
-    ("ip_access_control", "ip_router", ["IP Access Control"], None, None),
-    ("gdpr_compliance", "gdpr_router", ["GDPR/KVKK Compliance"], None, None),
-    ("central_office_endpoints", "co_router", ["Central Office Dashboard"], None, None),
-    ("central_pricing_endpoints", "cp_router", ["Central Pricing"], None, None),
-    ("cross_property_guests", "cpg_router", ["Cross-Property Guests"], None, None),
-    ("ml_real_models", "ml_router", ["ML/AI Models"], None, None),
-    ("tenant_isolation", "ti_router", ["Tenant Isolation"], None, None),
-    ("pci_dss_compliance", "pci_router", ["PCI DSS Compliance"], None, None),
+# Legacy routers (moved to _legacy/) removed — active modules live in domains/ and routers/
+_OPTIONAL_ROUTERS: list[tuple[str, str, list[str], str | None, str | None]] = [
     ("channel_manager.interfaces.router_registry", "router", ["Channel Manager v2"], None, None),
 ]
 
 
-def register_routers(app: FastAPI, api_router, require_super_admin_dep: Callable = None) -> None:
-    """Mount all extracted and optional routers onto the app."""
-    
+def _iter_register(app: FastAPI, api_router, require_super_admin_dep: Callable = None):
+    """Generator core for router mounting.
+
+    Performs exactly the same work as the old register_routers() body, but
+    ``yield``s after each router so an async caller can release the event loop
+    between the (synchronous, import-heavy) steps. Synchronous callers exhaust
+    it in a tight loop, so their behavior is unchanged.
+    """
     # Mount extracted routers onto the api_router (these all use /api prefix already)
     for mod_path, attr, tags, prefix_override, deps in _EXTRACTED_ROUTERS:
         router = _safe_import(mod_path, attr)
         if router is not None:
             try:
-                app.include_router(router, tags=tags)
-                print(f"  ✅ {mod_path}")
+                kwargs = {"tags": tags}
+                if prefix_override:
+                    kwargs["prefix"] = prefix_override
+                app.include_router(router, **kwargs)
+                logger.info(f"  ✅ {mod_path}")
             except Exception as e:
-                print(f"  ❌ {mod_path}: {e}")
+                logger.info(f"  ❌ {mod_path}: {e}")
+        yield
 
     # Mount optional routers directly on app
     for mod_path, attr, tags, prefix, guard in _OPTIONAL_ROUTERS:
@@ -188,6 +376,43 @@ def register_routers(app: FastAPI, api_router, require_super_admin_dep: Callable
                 kwargs["dependencies"] = [Depends(require_super_admin_dep())]
             try:
                 app.include_router(router, **kwargs)
-                print(f"  ✅ {mod_path} (optional)")
+                logger.info(f"  ✅ {mod_path} (optional)")
             except Exception as e:
-                print(f"  ❌ {mod_path}: {e}")
+                logger.info(f"  ❌ {mod_path}: {e}")
+        yield
+
+
+def register_routers(app: FastAPI, api_router, require_super_admin_dep: Callable = None) -> None:
+    """Mount all extracted and optional routers onto the app (synchronous)."""
+    for _ in _iter_register(app, api_router, require_super_admin_dep):
+        pass
+
+
+async def register_routers_async(
+    app: FastAPI,
+    api_router,
+    require_super_admin_dep: Callable = None,
+    *,
+    yield_every: int = 1,
+) -> None:
+    """Async variant that releases the event loop every ``yield_every`` routers.
+
+    register_routers() imports ~189 router modules synchronously (~17-34s). On
+    the single-worker combined deployment that one call blocks the event loop
+    for the whole window, so uvicorn cannot serve even the cheap ``/`` health
+    probe or the SPA shell while it runs — the platform health check times out
+    ("context deadline exceeded") and the edge proxy shows a plain
+    "Internal Server Error" on every cold boot.
+
+    Driving the same work as a generator and awaiting ``asyncio.sleep(0)``
+    between routers lets the loop service those pending requests between the
+    (still-synchronous) import steps, keeping ``/`` responsive throughout.
+    Route-table mutation stays on the loop thread (no executor) so there is no
+    concurrent-mutation race; ``/api``, ``/ws`` and ``/graphql`` remain shed by
+    the warm-up gate (503) until ``app.state.routes_ready`` flips to True.
+    """
+    count = 0
+    for _ in _iter_register(app, api_router, require_super_admin_dep):
+        count += 1
+        if yield_every <= 1 or count % yield_every == 0:
+            await asyncio.sleep(0)

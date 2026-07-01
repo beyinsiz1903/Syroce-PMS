@@ -1,0 +1,14 @@
+{
+  "availability": [
+    {
+      "room_code": "STD",
+      "date": "2026-06-29",
+      "quantity": 5
+    },
+    {
+      "room_code": "DLX",
+      "date": "2026-06-29",
+      "quantity": 3
+    }
+  ]
+}

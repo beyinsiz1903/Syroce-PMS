@@ -12,41 +12,46 @@ Public methods:
 - push_ari()
 - confirm_delivery()
 """
+
 import logging
 import time
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta
+from typing import Any
 
-from .client import ExelySoapTransport, EXELY_DEFAULT_URL
-from .soap_builder import (
-    build_read_rq,
-    build_hotel_avail_rq,
-    build_notif_report_rq,
-    build_ari_update_rq,
-    build_rate_amount_notif_rq,
-    get_soap_action_uri,
-)
-from .response_parser import (
-    parse_read_rs,
-    parse_hotel_avail_rs,
-    parse_notif_report_rs,
-    parse_ari_update_rs,
-)
-from .normalizer import normalize_reservation
-from .retry import ExelyRetryPolicy
-from .validators import validate_credentials, extract_credentials, validate_ari_payload, validate_date_range
+from . import observability as obs
+from .client import EXELY_DEFAULT_URL, ExelySoapTransport
 from .errors import (
     ExelyError,
-    ExelyAuthError,
-    ExelySOAPFaultError,
-    ExelyParseError,
 )
-from . import observability as obs
+from .normalizer import normalize_reservation
+from .response_parser import (
+    parse_ari_update_rs,
+    parse_hotel_avail_rs,
+    parse_notif_report_rs,
+    parse_read_rs,
+)
+from .retry import ExelyRetryPolicy
+from .soap_builder import (
+    build_ari_update_rq,
+    build_hotel_avail_rq,
+    build_notif_report_rq,
+    build_rate_amount_notif_rq,
+    build_read_rq,
+    get_soap_action_uri,
+)
+from .validators import extract_credentials, validate_ari_payload, validate_credentials, validate_date_range
 
 logger = logging.getLogger("exely.provider")
 
 # Reuse the same ProviderResult from hotelrunner for consistency
+from domains.channel_manager.provider_failover import provider_failover
 from domains.channel_manager.providers.hotelrunner.schemas import ProviderResult
+
+
+def _exely_circuit_key(connection_id: str) -> str:
+    """Per-connection Exely breaker key. One bad tenant must not trip the
+    circuit for other tenants."""
+    return f"exely:{connection_id or '_default'}"
 
 
 class ExelyProvider:
@@ -66,7 +71,7 @@ class ExelyProvider:
         password: str = "",
         hotel_code: str = "",
         *,
-        credentials: Optional[Dict[str, str]] = None,
+        credentials: dict[str, str] | None = None,
         endpoint_url: str = EXELY_DEFAULT_URL,
         connection_id: str = "",
         max_retries: int = 3,
@@ -132,7 +137,9 @@ class ExelyProvider:
     # ── Room Discovery ────────────────────────────────────────────────
 
     async def discover_rooms(
-        self, checkin: Optional[str] = None, checkout: Optional[str] = None,
+        self,
+        checkin: str | None = None,
+        checkout: str | None = None,
     ) -> ProviderResult:
         """Discover room types and rate plans via OTA_HotelAvailRQ."""
         start = time.time()
@@ -174,9 +181,9 @@ class ExelyProvider:
 
     async def pull_reservations(
         self,
-        from_date: Optional[str] = None,
-        to_date: Optional[str] = None,
-        reservation_id: Optional[str] = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        reservation_id: str | None = None,
     ) -> ProviderResult:
         """Pull reservations via OTA_ReadRQ."""
         start = time.time()
@@ -221,17 +228,32 @@ class ExelyProvider:
         rate_plan_code: str,
         start_date: str,
         end_date: str,
-        availability: Optional[int] = None,
-        rate_amount: Optional[float] = None,
-        currency: str = "USD",
-        stop_sell: Optional[bool] = None,
-        min_stay: Optional[int] = None,
+        availability: int | None = None,
+        rate_amount: float | None = None,
+        currency: str = "TRY",
+        stop_sell: bool | None = None,
+        min_stay: int | None = None,
     ) -> ProviderResult:
         """Push ARI update. Splits into separate SOAP calls:
         - OTA_HotelRateAmountNotifRQ for rate changes
         - OTA_HotelAvailNotifRQ for availability/restrictions
-        Exely requires these as separate operations."""
+        Exely requires these as separate operations.
+
+        Wrapped in a per-connection circuit breaker — when OPEN, the SOAP
+        calls are short-circuited and a fail-fast ProviderResult is returned
+        (metadata.circuit_open=True). Both rate and avail sub-pushes share
+        the same breaker; either failing counts as one push attempt.
+        """
         start = time.time()
+        breaker = provider_failover.get_breaker(_exely_circuit_key(self._connection_id))
+        if not await breaker.try_acquire():
+            return ProviderResult(
+                success=False,
+                error=f"circuit_open: Exely breaker is OPEN for connection {self._connection_id or '_default'}",
+                error_type="CircuitOpen",
+                duration_ms=int((time.time() - start) * 1000),
+                metadata={"circuit_open": True, "circuit_state": breaker.get_status()},
+            )
         validate_ari_payload(room_type_code, rate_plan_code, start_date, end_date)
 
         has_rate = rate_amount is not None
@@ -243,9 +265,15 @@ class ExelyProvider:
             try:
                 rate_op = "OTA_HotelRateAmountNotifRQ"
                 rate_xml = build_rate_amount_notif_rq(
-                    self._username, self._password, self._hotel_code,
-                    room_type_code, rate_plan_code, start_date, end_date,
-                    rate_amount, currency,
+                    self._username,
+                    self._password,
+                    self._hotel_code,
+                    room_type_code,
+                    rate_plan_code,
+                    start_date,
+                    end_date,
+                    rate_amount,
+                    currency,
                 )
                 rate_action = get_soap_action_uri(rate_op)
 
@@ -259,7 +287,7 @@ class ExelyProvider:
                 if not result["success"]:
                     errors.append(f"Rate: {result.get('error', 'failed')}")
                 else:
-                    logger.info(f"[ARI-PUSH] Rate pushed OK: room={room_type_code} plan={rate_plan_code} rate={rate_amount} {start_date}-{end_date}")
+                    logger.info(f"[ARI-PUSH] Rate pushed OK: room={room_type_code} plan={rate_plan_code} rate={rate_amount} currency={currency} {start_date}-{end_date}")
             except ExelyError as e:
                 errors.append(f"Rate: {e}")
                 logger.error(f"[ARI-PUSH] Rate push error: {e}")
@@ -269,9 +297,18 @@ class ExelyProvider:
             try:
                 avail_op = "OTA_HotelAvailNotifRQ"
                 avail_xml = build_ari_update_rq(
-                    self._username, self._password, self._hotel_code,
-                    room_type_code, rate_plan_code, start_date, end_date,
-                    availability, None, currency, stop_sell, min_stay,
+                    self._username,
+                    self._password,
+                    self._hotel_code,
+                    room_type_code,
+                    rate_plan_code,
+                    start_date,
+                    end_date,
+                    availability,
+                    None,
+                    currency,
+                    stop_sell,
+                    min_stay,
                 )
                 avail_action = get_soap_action_uri(avail_op)
 
@@ -293,7 +330,9 @@ class ExelyProvider:
         duration_ms = int((time.time() - start) * 1000)
 
         if errors:
+            await breaker.record_failure()
             return ProviderResult(success=False, error="; ".join(errors), duration_ms=duration_ms)
+        await breaker.record_success()
         return ProviderResult(success=True, data={"message": "ARI update applied"}, duration_ms=duration_ms)
 
     # ── Reservation Delivery Confirmation ─────────────────────────────
@@ -302,16 +341,28 @@ class ExelyProvider:
         self,
         reservation_id: str,
         confirmation_number: str,
+        create_datetime: str = None,
+        last_modify_datetime: str = None,
+        res_status: str = "Reserved",
     ) -> ProviderResult:
-        """Confirm reservation delivery via OTA_NotifReportRQ."""
+        """Confirm reservation delivery via OTA_NotifReportRQ.
+        Exely accepts ResStatus='Reserved' for delivery confirmation."""
         start = time.time()
         operation = "OTA_NotifReportRQ"
         soap_action = get_soap_action_uri(operation)
         try:
             xml = build_notif_report_rq(
-                self._username, self._password, self._hotel_code,
-                reservation_id, confirmation_number,
+                self._username,
+                self._password,
+                self._hotel_code,
+                reservation_id,
+                confirmation_number,
+                create_datetime=create_datetime,
+                last_modify_datetime=last_modify_datetime,
+                res_status=res_status,
             )
+
+            logger.info(f"[EXELY] Confirming delivery for {reservation_id} with ResStatus={res_status}")
 
             async def _call():
                 return await self._transport.send_soap(xml, soap_action)
@@ -328,14 +379,17 @@ class ExelyProvider:
             )
 
             if result["success"]:
+                logger.info(f"[EXELY] Delivery confirmed OK for {reservation_id}")
                 return ProviderResult(success=True, data=result, duration_ms=duration_ms)
+
+            logger.warning(f"[EXELY] Delivery confirm failed for {reservation_id}: {result.get('error')}")
             return ProviderResult(success=False, error=result.get("error", "Confirm failed"), duration_ms=duration_ms)
         except ExelyError as e:
             return self._handle_error(e, start, operation)
 
     # ── Canonical helpers (for snapshot collectors & ingest) ───────────
 
-    def normalize_to_canonical(self, raw: Dict[str, Any], source: str = "pull") -> Dict[str, Any]:
+    def normalize_to_canonical(self, raw: dict[str, Any], source: str = "pull") -> dict[str, Any]:
         """Normalize a raw Exely reservation to canonical format."""
         return normalize_reservation(raw, source)
 
@@ -343,7 +397,7 @@ class ExelyProvider:
     # These match the old ExelyClient interface so existing callers
     # can migrate without breaking.
 
-    async def legacy_test_connection(self) -> Dict[str, Any]:
+    async def legacy_test_connection(self) -> dict[str, Any]:
         """Legacy: returns dict like the old ExelyClient."""
         result = await self.test_connection()
         if result.success:
@@ -358,10 +412,10 @@ class ExelyProvider:
 
     async def legacy_pull_reservations(
         self,
-        from_date: Optional[str] = None,
-        to_date: Optional[str] = None,
-        reservation_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        from_date: str | None = None,
+        to_date: str | None = None,
+        reservation_id: str | None = None,
+    ) -> dict[str, Any]:
         """Legacy: returns dict like the old ExelyClient."""
         result = await self.pull_reservations(from_date, to_date, reservation_id)
         if result.success:
@@ -374,7 +428,7 @@ class ExelyProvider:
             }
         return {"success": False, "error": result.error, "reservations": [], "duration_ms": result.duration_ms}
 
-    async def legacy_discover_rooms(self, checkin: str, checkout: str) -> Dict[str, Any]:
+    async def legacy_discover_rooms(self, checkin: str, checkout: str) -> dict[str, Any]:
         """Legacy: returns dict like the old ExelyClient."""
         result = await self.discover_rooms(checkin, checkout)
         if result.success:
@@ -387,21 +441,23 @@ class ExelyProvider:
             }
         return {"success": False, "error": result.error, "room_types": [], "rate_plans": [], "duration_ms": result.duration_ms}
 
-    async def legacy_push_ari(self, **kwargs) -> Dict[str, Any]:
+    async def legacy_push_ari(self, **kwargs) -> dict[str, Any]:
         """Legacy: returns dict like the old ExelyClient."""
         result = await self.push_ari(**kwargs)
         if result.success:
             return {"success": True, **(result.data or {}), "duration_ms": result.duration_ms}
         return {"success": False, "error": result.error, "duration_ms": result.duration_ms}
 
-    async def legacy_confirm_delivery(self, reservation_id: str, confirmation_number: str) -> Dict[str, Any]:
+    async def legacy_confirm_delivery(
+        self, reservation_id: str, confirmation_number: str, create_datetime: str = None, last_modify_datetime: str = None, res_status: str = "Reserved"
+    ) -> dict[str, Any]:
         """Legacy: returns dict like the old ExelyClient."""
-        result = await self.confirm_delivery(reservation_id, confirmation_number)
+        result = await self.confirm_delivery(reservation_id, confirmation_number, create_datetime=create_datetime, last_modify_datetime=last_modify_datetime, res_status=res_status)
         if result.success:
             return {"success": True, **(result.data or {}), "duration_ms": result.duration_ms}
         return {"success": False, "error": result.error, "duration_ms": result.duration_ms}
 
-    def get_usage_stats(self) -> Dict[str, Any]:
+    def get_usage_stats(self) -> dict[str, Any]:
         """Get API usage statistics."""
         health = obs.get_provider_health()
         return {

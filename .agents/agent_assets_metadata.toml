@@ -1,0 +1,49 @@
+uploads = []
+
+[[generated]]
+id = "rZW57zOezozw9UGiQE7km"
+uri = "file://frontend/public/landing/hero-hotel.png"
+type = "image"
+title = "syroce boutique hotel diorama transparent"
+
+[[outputs]]
+id = "2DJEC12LxcHeKjW0aaTYZ"
+uri = "file://.local/syroce_pms_audit_report.md"
+type = "text"
+title = "Syroce PMS — Kapsamlı Denetim Raporu (Düzeltilmiş v2)"
+
+[[outputs]]
+id = "0_gPOU7P0HTSvRg9y1rkv"
+uri = "file://.local/raporlar/UctanUcaTest_2026-05-02.md"
+type = "text"
+title = "Syroce PMS — Uçtan Uca Test Raporu (02.05.2026)"
+
+[[outputs]]
+id = "MB6_3TWRgGwEpTZ0ryIga"
+uri = "file://.local/raporlar/AuthSayfaTesti_2026-05-02.md"
+type = "text"
+title = "Korumalı Sayfa Uçtan Uca Test Raporu (02.05.2026)"
+
+[[outputs]]
+id = "6DganWwJq5ctX5dIq0Nq9"
+uri = "file://.local/opera_vs_syroce.md"
+type = "text"
+title = "Opera Cloud PMS ↔ Syroce Karşılaştırma Raporu"
+
+[[outputs]]
+id = "4dbLAw7iiXZ9NFf166c0Q"
+uri = "file://UCTAN_UCA_AUDIT_RAPORU.md"
+type = "text"
+title = "Syroce PMS — Uçtan Uca Audit + Opera Cloud Karşılaştırması"
+
+[[outputs]]
+id = "Oao2p96ZkLte1f-QRmZTB"
+uri = "file://docs/drill_reports/20260514_stress_f8a_frontoffice_folio_hk.md"
+type = "text"
+title = "F8A Stress Drill Report — Front Office + Folio + Housekeeping (2026-05-14)"
+
+[[outputs]]
+id = "rTFaKYAEkkreI1EdyG2aY"
+uri = "file://docs/B2B_AGENCY_APP_PROMPT.md"
+type = "text"
+title = "Acente Uygulaması Görev Promptu (Senaryo B) — eksiksiz, kırpılamaz"

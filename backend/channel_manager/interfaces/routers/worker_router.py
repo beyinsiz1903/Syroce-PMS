@@ -1,11 +1,13 @@
 """Background Worker Router — Job execution, history, and stats."""
+
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v93 DW
+
 from ...application.background_worker_service import BackgroundWorkerService
 
 logger = logging.getLogger("channel_manager.routers.worker")
@@ -18,6 +20,7 @@ async def run_worker_job(
     job_type: str = Query(..., description="Job type: reservation_import, inventory_safety_sync, connector_health_check, metrics_aggregation"),
     connector_id: str = Query("", description="Optional connector ID"),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     """Manually trigger a background worker job."""
     svc = BackgroundWorkerService()
@@ -28,6 +31,7 @@ async def run_worker_job(
 @router.post("/worker/jobs/run-all")
 async def run_all_worker_jobs(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v93 DW
 ):
     """Run all scheduled job types for the tenant."""
     svc = BackgroundWorkerService()
@@ -36,8 +40,8 @@ async def run_all_worker_jobs(
 
 @router.get("/worker/jobs")
 async def list_worker_jobs(
-    job_type: Optional[str] = None,
-    status: Optional[str] = None,
+    job_type: str | None = None,
+    status: str | None = None,
     limit: int = Query(50, le=200),
     current_user: User = Depends(get_current_user),
 ):

@@ -4,12 +4,14 @@ Production runtime APIs for drift detection, reconciliation,
 sync scheduling, provider health, and credential management.
 Thin router: delegates all business logic to CMRuntimeService.
 """
+
 from fastapi import APIRouter, Depends, Query
 
-from core.security import get_current_user
-from models.schemas import User
 from common.context import OperationContext
+from core.security import get_current_user
 from domains.channel_manager.cm_runtime_service import cm_runtime_service
+from models.schemas import User
+from modules.pms_core.role_permission_service import require_op  # v96 DW
 
 router = APIRouter(prefix="/api/channel-manager", tags=["Channel Manager / Hardening"])
 
@@ -25,7 +27,10 @@ async def get_runtime_status(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/drift/scan", summary="Trigger drift scan")
-async def trigger_drift_scan(current_user: User = Depends(get_current_user)):
+async def trigger_drift_scan(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
+):
     result = await cm_runtime_service.trigger_drift_scan(_ctx(current_user))
     return result.data
 
@@ -43,6 +48,7 @@ async def get_drift_issues(
 async def run_reconciliation(
     auto_fix: bool = Query(True),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     result = await cm_runtime_service.run_reconciliation(_ctx(current_user), auto_fix=auto_fix)
     return result.data
@@ -67,6 +73,7 @@ async def get_sync_schedule(current_user: User = Depends(get_current_user)):
 async def trigger_sync(
     event_type: str = Query("manual", description="Event type triggering sync"),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
 ):
     result = await cm_runtime_service.trigger_sync(_ctx(current_user), event_type=event_type)
     return result.data
@@ -82,6 +89,7 @@ async def get_providers_health(current_user: User = Depends(get_current_user)):
 async def reset_provider_circuit(
     provider: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
     result = await cm_runtime_service.reset_provider_circuit(_ctx(current_user), provider)
     return result.data
@@ -93,8 +101,7 @@ async def encrypt_provider_credential(
     credential_key: str = Query(..., description="e.g. api_key, api_secret"),
     credential_value: str = Query(...),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),  # v101 DW
 ):
-    result = await cm_runtime_service.encrypt_credential(
-        _ctx(current_user), connection_id, credential_key, credential_value
-    )
+    result = await cm_runtime_service.encrypt_credential(_ctx(current_user), connection_id, credential_key, credential_value)
     return result.data

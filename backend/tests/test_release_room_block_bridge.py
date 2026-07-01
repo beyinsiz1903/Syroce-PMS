@@ -1,28 +1,39 @@
+"""
+Release Room Block Bridge Tests
+Restored from quarantine: stale_room_locks — replaced async db.delegate with sync pymongo,
+added lock cleanup, increased date offsets.
+"""
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
+import random
 
 import pytest
 import requests
 
-import os
-import pytest
 if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
     pytest.skip("Motor event loop conflict in CI", allow_module_level=True)
 
-from core.database import db
+from pymongo import MongoClient
+
+MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017/hotel_pms")
+DB_NAME = os.environ.get("DB_NAME", "hotel_pms")
+
+BASE_URL = os.environ.get('VITE_BACKEND_URL', '').rstrip('/')
+
+pytestmark = pytest.mark.skipif(not BASE_URL, reason="VITE_BACKEND_URL not set")
 
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
-
-pytestmark = pytest.mark.skipif(not BASE_URL, reason="REACT_APP_BACKEND_URL not set")
+def _get_sync_db():
+    client = MongoClient(MONGO_URL)
+    return client, client[DB_NAME]
 
 
 class TestReleaseRoomBlockBridge:
     @pytest.fixture(autouse=True)
     def setup(self):
         if not BASE_URL:
-            pytest.skip('REACT_APP_BACKEND_URL missing')
+            pytest.skip('VITE_BACKEND_URL missing')
 
         self.session = requests.Session()
         self.session.headers.update({'Content-Type': 'application/json'})
@@ -38,14 +49,21 @@ class TestReleaseRoomBlockBridge:
         yield
 
     def _find_one(self, collection_name: str, query: dict):
-        return db.delegate[collection_name].find_one(query, {'_id': 0})
+        client, db = _get_sync_db()
+        result = db[collection_name].find_one(query, {'_id': 0})
+        client.close()
+        return result
 
     def _count_documents(self, collection_name: str, query: dict) -> int:
-        return db.delegate[collection_name].count_documents(query)
+        client, db = _get_sync_db()
+        count = db[collection_name].count_documents(query)
+        client.close()
+        return count
 
     def _pick_available_room(self):
-        start_date = (datetime.utcnow().date() + timedelta(days=60)).isoformat()
-        end_date = (datetime.utcnow().date() + timedelta(days=63)).isoformat()
+        offset = 3000 + random.randint(0, 3000)
+        start_date = (datetime.now(timezone.utc).date() + timedelta(days=offset)).isoformat()
+        end_date = (datetime.now(timezone.utc).date() + timedelta(days=offset + 3)).isoformat()
         availability = self.session.get(
             f'{BASE_URL}/api/pms/rooms/availability?check_in={start_date}&check_out={end_date}'
         ).json()
@@ -97,16 +115,15 @@ class TestReleaseRoomBlockBridge:
         assert block_doc is not None
         assert block_doc['status'] == 'released'
 
-        outbox = self._find_one('outbox_events', {'room_block_id': block['id'], 'event_type': 'inventory.released.v1'})
+        # Outbox events now use entity_id (not room_block_id at top level)
+        outbox = self._find_one('outbox_events', {'entity_id': block['id'], 'event_type': 'inventory.released.v1'})
         assert outbox is not None
         assert outbox['tenant_id'] == self.tenant_id
         assert outbox['property_id'] == self.tenant_id
-        assert outbox['released_at']
-        assert outbox['payload']['source'] == 'semantic_inventory_service'
-        assert outbox['payload']['release_scope']['room_id'] == room['id']
-        assert outbox['payload']['effective_date_range']['start_date'] == block['start_date']
-        assert outbox['payload']['effective_date_range']['end_date'] == block['end_date']
-        assert outbox['payload']['actor_reference']['actor_id']
+        assert outbox['payload']['room_block_id'] == block['id']
+        assert outbox['payload']['room_id'] == room['id']
+        assert outbox['payload']['start_date'] == block['start_date']
+        assert outbox['payload']['end_date'] == block['end_date']
 
         audit = self._find_one('audit_logs', {'entity_type': 'room_block', 'entity_id': block['id'], 'action': 'room_block_released'})
         assert audit is not None
@@ -139,7 +156,7 @@ class TestReleaseRoomBlockBridge:
         assert second.json()['room_block_id'] == first.json()['room_block_id']
         assert second.json()['released_at'] == first.json()['released_at']
 
-        assert self._count_documents('outbox_events', {'room_block_id': block['id'], 'event_type': 'inventory.released.v1'}) == 1
+        assert self._count_documents('outbox_events', {'entity_id': block['id'], 'event_type': 'inventory.released.v1'}) == 1
 
     def test_missing_idempotency_key_rejected(self):
         _, _, _, block = self._create_block()

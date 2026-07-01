@@ -1,9 +1,9 @@
 """
 Housekeeping State Service - Room status state machine, task lifecycle, readiness logic.
 """
-from datetime import datetime, timezone
-from typing import Dict, Tuple
+
 import uuid
+from datetime import UTC, datetime
 
 from core.database import db
 
@@ -27,7 +27,7 @@ UNAVAILABLE_STATUSES = {"out_of_order", "out_of_service", "maintenance"}
 class HousekeepingStateService:
     """Manages room status transitions and housekeeping task lifecycle."""
 
-    def validate_room_transition(self, current: str, target: str) -> Tuple[bool, str]:
+    def validate_room_transition(self, current: str, target: str) -> tuple[bool, str]:
         """Validate if a room status transition is allowed."""
         if current == target:
             return True, "no_change"
@@ -36,7 +36,7 @@ class HousekeepingStateService:
             return False, f"Cannot transition room from '{current}' to '{target}'. Allowed: {allowed}"
         return True, "ok"
 
-    async def update_room_status(self, tenant_id: str, room_id: str, new_status: str, user_id: str, notes: str = None, force: bool = False) -> Dict:
+    async def update_room_status(self, tenant_id: str, room_id: str, new_status: str, user_id: str, notes: str = None, force: bool = False) -> dict:
         """Update room status with state machine validation."""
         room = await db.rooms.find_one({"id": room_id, "tenant_id": tenant_id}, {"_id": 0})
         if not room:
@@ -49,7 +49,7 @@ class HousekeepingStateService:
             if not valid:
                 return {"success": False, "error": msg}
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         update_data = {"status": new_status, "updated_at": now.isoformat()}
 
         if new_status in UNAVAILABLE_STATUSES:
@@ -68,32 +68,34 @@ class HousekeepingStateService:
         await db.rooms.update_one({"id": room_id, "tenant_id": tenant_id}, {"$set": update_data})
 
         # Audit trail
-        await db.pms_audit_trail.insert_one({
-            "tenant_id": tenant_id,
-            "entity_type": "room",
-            "entity_id": room_id,
-            "action": "room_status_change",
-            "performed_by": user_id,
-            "metadata": {
-                "from": current_status,
-                "to": new_status,
-                "room_number": room.get("room_number"),
-                "notes": notes,
-                "forced": force,
-            },
-            "timestamp": now.isoformat(),
-        })
+        await db.pms_audit_trail.insert_one(
+            {
+                "tenant_id": tenant_id,
+                "entity_type": "room",
+                "entity_id": room_id,
+                "action": "room_status_change",
+                "performed_by": user_id,
+                "metadata": {
+                    "from": current_status,
+                    "to": new_status,
+                    "room_number": room.get("room_number"),
+                    "notes": notes,
+                    "forced": force,
+                },
+                "timestamp": now.isoformat(),
+            }
+        )
 
         return {"success": True, "room_number": room["room_number"], "from": current_status, "to": new_status}
 
-    async def create_housekeeping_task(self, tenant_id: str, room_id: str, task_type: str, assigned_to: str, priority: str, user_id: str, notes: str = None) -> Dict:
+    async def create_housekeeping_task(self, tenant_id: str, room_id: str, task_type: str, assigned_to: str, priority: str, user_id: str, notes: str = None) -> dict:
         """Create a housekeeping task with lifecycle tracking."""
         room = await db.rooms.find_one({"id": room_id, "tenant_id": tenant_id}, {"_id": 0})
         if not room:
             return {"success": False, "error": "Room not found"}
 
         task_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         task = {
             "id": task_id,
@@ -115,20 +117,47 @@ class HousekeepingStateService:
         if task_type == "cleaning" and room["status"] == "dirty":
             await self.update_room_status(tenant_id, room_id, "cleaning", user_id, force=True)
 
+        # Task #327: notify the assignee on their mobile device. This reuses the
+        # EXISTING Expo push channel (no new notification type / no stored
+        # notifications doc) — it simply wires the existing assignment event to
+        # the existing transport. Best-effort and fully non-blocking: any
+        # failure here must never affect task creation.
+        if assigned_to:
+            try:
+                assignee = await db.users.find_one(
+                    {"tenant_id": tenant_id, "name": assigned_to},
+                    {"_id": 0, "id": 1},
+                )
+                from services.expo_push import fire_and_forget_expo_push
+
+                fire_and_forget_expo_push(
+                    tenant_id,
+                    title="Yeni görev atandı",
+                    body=f"Oda {room['room_number']} — {task_type}",
+                    data={
+                        "type": "housekeeping_task",
+                        "task_id": task_id,
+                        "room_id": room_id,
+                        "action_url": "/(home)/tasks",
+                    },
+                    user_ids=[assignee["id"]] if assignee and assignee.get("id") else None,
+                    departments=None if (assignee and assignee.get("id")) else ["housekeeping"],
+                    priority="high" if priority in ("urgent", "high") else "default",
+                )
+            except Exception:
+                pass
+
         task.pop("_id", None)
         return {"success": True, "task": task}
 
-    async def complete_housekeeping_task(self, tenant_id: str, task_id: str, user_id: str) -> Dict:
+    async def complete_housekeeping_task(self, tenant_id: str, task_id: str, user_id: str) -> dict:
         """Complete a housekeeping task and update room status."""
         task = await db.housekeeping_tasks.find_one({"id": task_id, "tenant_id": tenant_id}, {"_id": 0})
         if not task:
             return {"success": False, "error": "Task not found"}
 
-        now = datetime.now(timezone.utc)
-        await db.housekeeping_tasks.update_one(
-            {"id": task_id, "tenant_id": tenant_id},
-            {"$set": {"status": "completed", "completed_at": now.isoformat()}}
-        )
+        now = datetime.now(UTC)
+        await db.housekeeping_tasks.update_one({"id": task_id, "tenant_id": tenant_id}, {"$set": {"status": "completed", "completed_at": now.isoformat()}})
 
         # If cleaning task, move room to inspected
         if task["task_type"] == "cleaning":
@@ -138,7 +167,7 @@ class HousekeepingStateService:
 
         return {"success": True, "task_id": task_id}
 
-    async def approve_room_inspection(self, tenant_id: str, room_id: str, user_id: str, approved: bool) -> Dict:
+    async def approve_room_inspection(self, tenant_id: str, room_id: str, user_id: str, approved: bool) -> dict:
         """Approve or reject a room inspection. Approved -> available, Rejected -> dirty."""
         room = await db.rooms.find_one({"id": room_id, "tenant_id": tenant_id}, {"_id": 0})
         if not room:
@@ -151,7 +180,7 @@ class HousekeepingStateService:
         result = await self.update_room_status(tenant_id, room_id, new_status, user_id, force=True)
         return {**result, "approved": approved}
 
-    async def check_room_readiness(self, tenant_id: str, room_id: str) -> Dict:
+    async def check_room_readiness(self, tenant_id: str, room_id: str) -> dict:
         """Check if a room is ready for check-in."""
         room = await db.rooms.find_one({"id": room_id, "tenant_id": tenant_id}, {"_id": 0})
         if not room:
@@ -161,18 +190,19 @@ class HousekeepingStateService:
         is_ready = room["status"] in ready_statuses
 
         # Check for active OOO/OOS blocks
-        active_blocks = await db.room_blocks.find({
-            "room_id": room_id, "tenant_id": tenant_id, "status": "active"
-        }, {"_id": 0}).to_list(10)
+        active_blocks = await db.room_blocks.find({"room_id": room_id, "tenant_id": tenant_id, "status": "active"}, {"_id": 0}).to_list(10)
 
         ooo_blocked = any(not b.get("allow_sell", False) for b in active_blocks)
 
         # Check for pending maintenance
-        pending_maintenance = await db.housekeeping_tasks.count_documents({
-            "room_id": room_id, "tenant_id": tenant_id,
-            "status": {"$in": ["pending", "in_progress"]},
-            "task_type": {"$in": ["maintenance", "deep_clean"]},
-        })
+        pending_maintenance = await db.housekeeping_tasks.count_documents(
+            {
+                "room_id": room_id,
+                "tenant_id": tenant_id,
+                "status": {"$in": ["pending", "in_progress"]},
+                "task_type": {"$in": ["maintenance", "deep_clean"]},
+            }
+        )
 
         reasons = []
         if not is_ready:
@@ -192,7 +222,7 @@ class HousekeepingStateService:
             "reasons": reasons,
         }
 
-    async def get_room_status_summary(self, tenant_id: str) -> Dict:
+    async def get_room_status_summary(self, tenant_id: str) -> dict:
         """Get room status summary for dashboard."""
         pipeline = [
             {"$match": {"tenant_id": tenant_id, "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]}},
@@ -215,15 +245,18 @@ class HousekeepingStateService:
             "dirty_rooms": summary.get("dirty", 0) + summary.get("cleaning", 0),
         }
 
-    async def maintenance_impact_on_availability(self, tenant_id: str, room_id: str, start_date: str, end_date: str) -> Dict:
+    async def maintenance_impact_on_availability(self, tenant_id: str, room_id: str, start_date: str, end_date: str) -> dict:
         """Check if putting a room in maintenance affects active bookings."""
-        affected = await db.bookings.find({
-            "tenant_id": tenant_id,
-            "room_id": room_id,
-            "status": {"$in": ["confirmed", "guaranteed"]},
-            "check_in": {"$lt": end_date},
-            "check_out": {"$gt": start_date},
-        }, {"_id": 0, "id": 1, "check_in": 1, "check_out": 1, "guest_id": 1}).to_list(20)
+        affected = await db.bookings.find(
+            {
+                "tenant_id": tenant_id,
+                "room_id": room_id,
+                "status": {"$in": ["confirmed", "guaranteed"]},
+                "check_in": {"$lt": end_date},
+                "check_out": {"$gt": start_date},
+            },
+            {"_id": 0, "id": 1, "check_in": 1, "check_out": 1, "guest_id": 1},
+        ).to_list(20)
 
         return {
             "room_id": room_id,

@@ -148,11 +148,14 @@ class TestWebhookService:
         from channel_manager.application.webhook_service import WebhookService
         svc = WebhookService(mock_repo)
         payload = json.dumps({"event_type": "unknown_event", "data": {}}).encode()
+        ts = str(int(time.time()))
+        signed = f"{ts}.".encode() + payload
+        sig = "sha256=" + hmac.new(b"wh-secret", signed, hashlib.sha256).hexdigest()
         result = await svc.process_webhook(
             tenant_id="t1",
             raw_body=payload,
-            signature=None,
-            timestamp=None,
+            signature=sig,
+            timestamp=ts,
             provider="hotelrunner",
             connector_id="conn-1",
         )
@@ -191,11 +194,15 @@ class TestWebhookService:
     async def test_webhook_invalid_json(self, mock_repo):
         from channel_manager.application.webhook_service import WebhookService
         svc = WebhookService(mock_repo)
+        body = b"not-json"
+        ts = str(int(time.time()))
+        signed = f"{ts}.".encode() + body
+        sig = "sha256=" + hmac.new(b"wh-secret", signed, hashlib.sha256).hexdigest()
         result = await svc.process_webhook(
             tenant_id="t1",
-            raw_body=b"not-json",
-            signature=None,
-            timestamp=None,
+            raw_body=body,
+            signature=sig,
+            timestamp=ts,
             provider="hotelrunner",
             connector_id="conn-1",
         )
@@ -207,11 +214,12 @@ class TestWebhookService:
         from channel_manager.application.webhook_service import WebhookService
         svc = WebhookService(mock_repo)
         payload = json.dumps({"event_type": "test"}).encode()
+        ts = str(int(time.time()))
         result = await svc.process_webhook(
             tenant_id="t1",
             raw_body=payload,
             signature="sha256=invalid_signature",
-            timestamp=None,
+            timestamp=ts,
             provider="hotelrunner",
             connector_id="conn-1",
         )

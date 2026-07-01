@@ -6,10 +6,10 @@ runtime validation, provider validation, incident drills,
 tenant isolation, observability, audit timeline, pilot checklist.
 Produces final go-live score with breakdown.
 """
-import uuid
+
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict
+import uuid
+from datetime import UTC, datetime, timedelta
 
 from common.context import OperationContext
 from common.result import ServiceResult
@@ -18,13 +18,13 @@ logger = logging.getLogger(__name__)
 
 # Weight allocation per category (total = 100)
 CATEGORY_WEIGHTS = {
-    "runtime_validation": 20,    # load/stress/soak/chaos
-    "provider_validation": 15,   # CM provider contract
-    "incident_response": 15,     # drill results + recovery tools
-    "tenant_isolation": 10,      # isolation score
-    "observability": 15,         # metrics/logs/alerts/traces
-    "audit_timeline": 10,        # compliance readiness
-    "pilot_checklist": 15,       # operational readiness
+    "runtime_validation": 20,  # load/stress/soak/chaos
+    "provider_validation": 15,  # CM provider contract
+    "incident_response": 15,  # drill results + recovery tools
+    "tenant_isolation": 10,  # isolation score
+    "observability": 15,  # metrics/logs/alerts/traces
+    "audit_timeline": 10,  # compliance readiness
+    "pilot_checklist": 15,  # operational readiness
 }
 
 MATURITY_LEVELS = {
@@ -41,11 +41,12 @@ class GoLiveReadinessScorer:
 
     def __init__(self):
         from core.database import db
+
         self._db = db
 
     async def compute_score(self, ctx: OperationContext) -> ServiceResult:
         """Compute comprehensive go-live readiness score."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         categories = {}
 
         # 1. Runtime Validation
@@ -89,11 +90,13 @@ class GoLiveReadinessScorer:
         blockers = []
         for cat, data in categories.items():
             if data.get("score", 0) < 50:
-                blockers.append({
-                    "category": cat,
-                    "score": data["score"],
-                    "issues": data.get("issues", []),
-                })
+                blockers.append(
+                    {
+                        "category": cat,
+                        "score": data["score"],
+                        "issues": data.get("issues", []),
+                    }
+                )
 
         result = {
             "overall_score": overall,
@@ -114,22 +117,24 @@ class GoLiveReadinessScorer:
         }
 
         # Persist score
-        await self._db.golive_scores.insert_one({
-            "id": str(uuid.uuid4()),
-            "tenant_id": ctx.tenant_id,
-            **result,
-        })
+        await self._db.golive_scores.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "tenant_id": ctx.tenant_id,
+                **result,
+            }
+        )
 
         return ServiceResult.success(result)
 
-    def _get_maturity_level(self, score: float) -> Dict:
+    def _get_maturity_level(self, score: float) -> dict:
         for (low, high), level in MATURITY_LEVELS.items():
             if low <= score < high:
                 return level
         return {"level": 0, "name": "Unknown", "color": "gray"}
 
-    async def _score_runtime_validation(self, ctx: OperationContext) -> Dict:
-        since = (datetime.now(timezone.utc) - timedelta(hours=72)).isoformat()
+    async def _score_runtime_validation(self, ctx: OperationContext) -> dict:
+        since = (datetime.now(UTC) - timedelta(hours=72)).isoformat()
         runs = await self._db.validation_runs.find(
             {"tenant_id": ctx.tenant_id, "started_at": {"$gte": since}},
             {"_id": 0, "status": 1},
@@ -142,7 +147,7 @@ class GoLiveReadinessScorer:
         issues = [] if score >= 80 else [f"Pass rate: {score}% ({passed}/{total})"]
         return {"score": min(score, 100), "issues": issues}
 
-    async def _score_provider_validation(self, ctx: OperationContext) -> Dict:
+    async def _score_provider_validation(self, ctx: OperationContext) -> dict:
         latest = await self._db.provider_validations.find_one(
             {"tenant_id": ctx.tenant_id},
             sort=[("validated_at", -1)],
@@ -155,10 +160,8 @@ class GoLiveReadinessScorer:
         issues = [] if latest.get("overall_passed") else ["Provider validation has failing checks"]
         return {"score": score, "issues": issues}
 
-    async def _score_incident_response(self, ctx: OperationContext) -> Dict:
-        drills = await self._db.incident_drills.find(
-            {"tenant_id": ctx.tenant_id}, {"_id": 0}
-        ).to_list(20)
+    async def _score_incident_response(self, ctx: OperationContext) -> dict:
+        drills = await self._db.incident_drills.find({"tenant_id": ctx.tenant_id}, {"_id": 0}).to_list(20)
         if not drills:
             return {"score": 40, "issues": ["No incident drills executed"]}
         within_threshold = sum(1 for d in drills if d.get("detection_within_threshold"))
@@ -166,7 +169,7 @@ class GoLiveReadinessScorer:
         issues = [] if score >= 80 else [f"Drill detection within threshold: {score}%"]
         return {"score": max(score, 50), "issues": issues}
 
-    async def _score_tenant_isolation(self, ctx: OperationContext) -> Dict:
+    async def _score_tenant_isolation(self, ctx: OperationContext) -> dict:
         latest = await self._db.tenant_isolation_validations.find_one(
             {"tenant_id": ctx.tenant_id},
             sort=[("validated_at", -1)],
@@ -177,8 +180,9 @@ class GoLiveReadinessScorer:
         issues = [] if score >= 90 else ["Isolation checks have failures"]
         return {"score": score, "issues": issues}
 
-    async def _score_observability(self, ctx: OperationContext) -> Dict:
+    async def _score_observability(self, ctx: OperationContext) -> dict:
         from modules.observability.alert_enrichment import ALERT_RULES
+
         checks = 0
         passed = 0
 
@@ -205,12 +209,10 @@ class GoLiveReadinessScorer:
         issues = [] if score >= 80 else [f"Observability coverage: {score}%"]
         return {"score": score, "issues": issues}
 
-    async def _score_audit_timeline(self, ctx: OperationContext) -> Dict:
+    async def _score_audit_timeline(self, ctx: OperationContext) -> dict:
         # Check if audit timeline has data
         audit_count = await self._db.audit_logs.count_documents({"tenant_id": ctx.tenant_id})
-        has_snapshots = await self._db.audit_logs.count_documents(
-            {"tenant_id": ctx.tenant_id, "before_snapshot": {"$exists": True}}
-        )
+        has_snapshots = await self._db.audit_logs.count_documents({"tenant_id": ctx.tenant_id, "before_snapshot": {"$exists": True}})
         score = 70
         issues = []
         if audit_count > 0:
@@ -221,8 +223,9 @@ class GoLiveReadinessScorer:
             issues.append("No before/after snapshots captured yet")
         return {"score": min(score, 100), "issues": issues}
 
-    async def _score_pilot_checklist(self, ctx: OperationContext) -> Dict:
+    async def _score_pilot_checklist(self, ctx: OperationContext) -> dict:
         from ops.pilot_readiness import PilotReadinessService
+
         svc = PilotReadinessService()
         result = await svc.run_readiness_check(ctx)
         if not result.ok:
@@ -232,13 +235,9 @@ class GoLiveReadinessScorer:
         issues = [b["name"] for b in data.get("critical_blockers", [])]
         return {"score": score, "issues": issues}
 
-    async def get_score_history(
-        self, ctx: OperationContext, limit: int = 10
-    ) -> ServiceResult:
+    async def get_score_history(self, ctx: OperationContext, limit: int = 10) -> ServiceResult:
         """Get historical go-live scores."""
-        scores = await self._db.golive_scores.find(
-            {"tenant_id": ctx.tenant_id}, {"_id": 0}
-        ).sort("computed_at", -1).limit(limit).to_list(limit)
+        scores = await self._db.golive_scores.find({"tenant_id": ctx.tenant_id}, {"_id": 0}).sort("computed_at", -1).limit(limit).to_list(limit)
         return ServiceResult.success({"scores": scores, "count": len(scores)})
 
 

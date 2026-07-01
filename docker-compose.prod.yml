@@ -38,6 +38,16 @@ services:
       - ./backend/.env
     deploy:
       replicas: ${BACKEND_REPLICAS:-2}
+      update_config:
+        order: start-first
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        order: stop-first
+        parallelism: 1
+        delay: 5s
       resources:
         limits:
           cpus: "2.0"
@@ -63,10 +73,20 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL}
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL}
     restart: always
     deploy:
       replicas: ${FRONTEND_REPLICAS:-2}
+      update_config:
+        order: start-first
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        order: stop-first
+        parallelism: 1
+        delay: 5s
       resources:
         limits:
           cpus: "0.5"
@@ -91,6 +111,16 @@ services:
       - ./backend/.env
     deploy:
       replicas: ${WORKER_REPLICAS:-2}
+      update_config:
+        order: start-first
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        order: stop-first
+        parallelism: 1
+        delay: 5s
       resources:
         limits:
           cpus: "2.0"
@@ -123,6 +153,10 @@ services:
     command: ["celery", "-A", "celery_app", "beat", "--loglevel=info", "--pidfile=/tmp/celerybeat.pid"]
     deploy:
       replicas: 1
+      update_config:
+        order: stop-first
+        parallelism: 1
+        delay: 5s
       resources:
         limits:
           cpus: "0.25"

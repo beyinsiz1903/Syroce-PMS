@@ -13,11 +13,11 @@ Tests cover:
 """
 import pytest
 
-from channel_manager.connectors.hotelrunner.mapper import HotelRunnerMapper
-from channel_manager.connectors.hotelrunner.client import (
+from channel_manager.connectors.hotelrunner_v2.reservation_mapper import HotelRunnerMapper
+from channel_manager.connectors.hotelrunner_v2.hr_client import (
     _mask_params, _truncate,
 )
-from channel_manager.connectors.hotelrunner.errors import (
+from channel_manager.connectors.hotelrunner_v2.connector_errors import (
     ResponseParseError, PaginationExhaustedError, AcknowledgementError,
 )
 from channel_manager.domain.models.canonical import (

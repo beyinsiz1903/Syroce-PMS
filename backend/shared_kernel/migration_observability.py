@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from core.database import db
 from shared_kernel.shadow_metrics import shadow_metrics_store
-
 
 MIGRATION_EVENT_TYPES = [
     "reservation.created.v1",
@@ -91,23 +90,23 @@ EVENT_SOURCE_HINTS = {
 }
 
 
-def _parse_timestamp(raw_value: Any) -> Optional[datetime]:
+def _parse_timestamp(raw_value: Any) -> datetime | None:
     if isinstance(raw_value, datetime):
-        return raw_value if raw_value.tzinfo else raw_value.replace(tzinfo=timezone.utc)
+        return raw_value if raw_value.tzinfo else raw_value.replace(tzinfo=UTC)
 
     if not raw_value or not isinstance(raw_value, str):
         return None
 
     try:
         parsed = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     except ValueError:
         return None
 
 
-def _bucket_series(events: List[Dict[str, Any]], key: str, hours: int = 24) -> List[Dict[str, Any]]:
-    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
-    buckets: Dict[str, int] = {}
+def _bucket_series(events: list[dict[str, Any]], key: str, hours: int = 24) -> list[dict[str, Any]]:
+    now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+    buckets: dict[str, int] = {}
 
     for offset in range(hours - 1, -1, -1):
         bucket_start = now - timedelta(hours=offset)
@@ -117,7 +116,7 @@ def _bucket_series(events: List[Dict[str, Any]], key: str, hours: int = 24) -> L
         parsed = _parse_timestamp(event.get(key))
         if not parsed:
             continue
-        bucket_start = parsed.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        bucket_start = parsed.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
         bucket_key = bucket_start.isoformat()
         if bucket_key in buckets:
             buckets[bucket_key] += 1
@@ -132,18 +131,12 @@ def _bucket_series(events: List[Dict[str, Any]], key: str, hours: int = 24) -> L
     ]
 
 
-def _derive_event_source(event: Dict[str, Any]) -> Dict[str, str]:
+def _derive_event_source(event: dict[str, Any]) -> dict[str, str]:
     event_type = str(event.get("event_type") or "unknown")
     payload = event.get("payload") or {}
     hint = EVENT_SOURCE_HINTS.get(event_type, {})
 
-    source = (
-        payload.get("source")
-        or payload.get("origin")
-        or event.get("source")
-        or hint.get("source")
-        or "unknown"
-    )
+    source = payload.get("source") or payload.get("origin") or event.get("source") or hint.get("source") or "unknown"
     source_lower = str(source).lower()
 
     if "legacy" in source_lower:
@@ -162,8 +155,8 @@ def _derive_event_source(event: Dict[str, Any]) -> Dict[str, str]:
 def build_stale_pending_triage(
     *,
     generated_at: str,
-    stale_events: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    stale_events: list[dict[str, Any]],
+) -> dict[str, Any]:
     if not stale_events:
         return {
             "generated_at": generated_at,
@@ -184,23 +177,27 @@ def build_stale_pending_triage(
             },
             "assessment": {
                 "backlog_shape": "clear",
-                "source_scope": "Stale pending event yok",
-                "likely_root_cause": "Triage gerekmiyor",
-                "recommended_action": "Mevcut health score sinyaliyle devam edilebilir",
+                "source_scope_key": "no_stale_pending",
+                "source_scope": "No stale pending events",
+                "source_scope_params": {"count": 0, "total": 0},
+                "likely_root_cause_key": "triage_not_needed",
+                "likely_root_cause": "Triage not needed",
+                "recommended_action_key": "continue_with_health",
+                "recommended_action": "Can continue with current health score signal",
             },
             "sample_events": [],
         }
 
-    now = _parse_timestamp(generated_at) or datetime.now(timezone.utc)
+    now = _parse_timestamp(generated_at) or datetime.now(UTC)
     event_type_counter: Counter[str] = Counter()
     tenant_counter: Counter[str] = Counter()
     property_counter: Counter[str] = Counter()
     source_counter: Counter[str] = Counter()
     origin_counter: Counter[str] = Counter()
-    source_origin_map: Dict[str, str] = {}
+    source_origin_map: dict[str, str] = {}
     processed_count = 0
     retry_metadata_count = 0
-    samples: List[Dict[str, Any]] = []
+    samples: list[dict[str, Any]] = []
 
     sorted_events = sorted(
         stale_events,
@@ -258,22 +255,29 @@ def build_stale_pending_triage(
 
     semantic_count = origin_counter.get("semantic", 0)
     if semantic_count == total_stale:
-        source_scope = "Tüm stale pending kayıtları semantic write-path kaynaklı"
+        source_scope_key = "all_semantic"
+        source_scope = "All stale pending records are from semantic write-path"
     elif semantic_count == 0:
-        source_scope = "Stale pending kayıtlarında semantic kaynak tespit edilmedi"
+        source_scope_key = "no_semantic"
+        source_scope = "No semantic source detected in stale pending records"
     else:
-        source_scope = f"Stale pending kayıtlarının {semantic_count}/{total_stale} adedi semantic kaynaklı"
+        source_scope_key = "partial_semantic"
+        source_scope = f"{semantic_count}/{total_stale} stale pending records are from semantic source"
+
+    source_scope_params = {"count": semantic_count, "total": total_stale}
 
     if processed_count == 0 and retry_metadata_count == 0:
-        likely_root_cause = "Worker/consumer bağlı değil veya outbox state transition lifecycle henüz aktif değil"
+        likely_root_cause_key = "worker_not_connected"
+        likely_root_cause = "Worker/consumer not connected or outbox state transition lifecycle not yet active"
     elif processed_count == 0:
-        likely_root_cause = "Consumer denemesi görünmüyor; queue backlog aktif ama işleme sinyali yok"
+        likely_root_cause_key = "no_consumer_signal"
+        likely_root_cause = "No consumer attempt visible; queue backlog active but no processing signal"
     else:
-        likely_root_cause = "Consumer kısmen aktif; state transition veya retry davranışı ayrıca incelenmeli"
+        likely_root_cause_key = "consumer_partial"
+        likely_root_cause = "Consumer partially active; state transition or retry behavior needs further investigation"
 
-    recommended_action = (
-        "Yeni write-path açmadan önce consumer/worker stratejisini netleştir, gerekiyorsa outbox cleanup ya da explicit park policy tanımla"
-    )
+    recommended_action_key = "clarify_worker_strategy"
+    recommended_action = "Clarify consumer/worker strategy before opening new write-path, define outbox cleanup or explicit park policy if needed"
 
     return {
         "generated_at": generated_at,
@@ -330,8 +334,12 @@ def build_stale_pending_triage(
         },
         "assessment": {
             "backlog_shape": backlog_shape,
+            "source_scope_key": source_scope_key,
             "source_scope": source_scope,
+            "source_scope_params": source_scope_params,
+            "likely_root_cause_key": likely_root_cause_key,
             "likely_root_cause": likely_root_cause,
+            "recommended_action_key": recommended_action_key,
             "recommended_action": recommended_action,
         },
         "sample_events": samples,
@@ -344,12 +352,10 @@ def build_health_score(
     failed_outbox_count: int,
     stale_pending_count: int,
     audit_gap_count: int,
-    shadow_summary: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    shadow_summary: list[dict[str, Any]],
+) -> dict[str, Any]:
     compare_error_count = sum(int(item.get("errors") or 0) for item in shadow_summary)
-    max_mismatch_rate_percent = max(
-        [float(item.get("mismatch_rate_percent") or 0.0) for item in shadow_summary] or [0.0]
-    )
+    max_mismatch_rate_percent = max([float(item.get("mismatch_rate_percent") or 0.0) for item in shadow_summary] or [0.0])
     highest_mismatch = max(
         shadow_summary,
         key=lambda item: float(item.get("mismatch_rate_percent") or 0.0),
@@ -357,46 +363,48 @@ def build_health_score(
     )
 
     status = "green"
-    reasons: List[str] = []
+    reasons: list[str] = []
+
+    reason_params: dict[str, Any] = {}
 
     if audit_gap_count > 0:
         status = "red"
-        reasons.append(f"{audit_gap_count} audit gap detected")
+        reasons.append("audit_gap_detected")
+        reason_params["audit_gap_count"] = audit_gap_count
 
     if failed_outbox_count > 0:
         status = "red"
-        reasons.append(f"{failed_outbox_count} failed outbox event")
+        reasons.append("failed_outbox_event")
+        reason_params["failed_outbox_count"] = failed_outbox_count
 
     if max_mismatch_rate_percent > 5.0:
         status = "red"
-        reasons.append(
-            f"{highest_mismatch.get('endpoint', 'shadow')} mismatch rate %{max_mismatch_rate_percent:.1f}"
-        )
+        reasons.append("mismatch_rate_critical")
+        reason_params["mismatch_endpoint"] = highest_mismatch.get("endpoint", "shadow")
+        reason_params["mismatch_rate"] = round(max_mismatch_rate_percent, 1)
 
     if status != "red":
         if stale_pending_count > 0:
-            reasons.append(f"{stale_pending_count} stale pending event")
+            reasons.append("stale_pending_event")
+            reason_params["stale_pending_count"] = stale_pending_count
         if 1.0 <= max_mismatch_rate_percent <= 5.0:
-            reasons.append(
-                f"{highest_mismatch.get('endpoint', 'shadow')} mismatch rate %{max_mismatch_rate_percent:.1f}"
-            )
+            reasons.append("mismatch_rate_warning")
+            reason_params["mismatch_endpoint"] = highest_mismatch.get("endpoint", "shadow")
+            reason_params["mismatch_rate"] = round(max_mismatch_rate_percent, 1)
         if compare_error_count > 0:
-            reasons.append(f"{compare_error_count} compare error")
+            reasons.append("compare_error")
+            reason_params["compare_error_count"] = compare_error_count
         if reasons:
             status = "yellow"
 
     if status == "green":
         reasons = [
-            "Failed outbox event yok",
-            "Stale pending event yok",
-            "Mismatch rate %1 altında ve compare error yok",
+            "no_failed_outbox",
+            "no_stale_pending",
+            "mismatch_below_1",
         ]
 
-    operational_guidance = {
-        "green": "Green → sıradaki dar write-path’e geçilebilir",
-        "yellow": "Yellow → geçmeden önce gözlem ve inceleme gerekir",
-        "red": "Red → yeni write-path açılmaz, önce sorun çözülür",
-    }[status]
+    operational_guidance_key = status
 
     return {
         "status": status,
@@ -405,7 +413,8 @@ def build_health_score(
         "time_window": "last_24h",
         "time_window_label": "Last 24h",
         "reasons": reasons[:3],
-        "operational_guidance": operational_guidance,
+        "reason_params": reason_params,
+        "operational_guidance_key": operational_guidance_key,
         "signals": {
             "failed_outbox_count": failed_outbox_count,
             "stale_pending_count": stale_pending_count,
@@ -417,64 +426,76 @@ def build_health_score(
 
 
 class MigrationObservabilityService:
-    async def get_dashboard(self, tenant_id: str) -> Dict[str, Any]:
-        now = datetime.now(timezone.utc)
+    _shadow_loaded: set[str] = set()
+
+    async def _ensure_shadow_loaded(self, tenant_id: str) -> None:
+        if tenant_id not in self._shadow_loaded:
+            await shadow_metrics_store.load_from_db(tenant_id=tenant_id, limit=500)
+            self._shadow_loaded.add(tenant_id)
+
+    async def get_dashboard(self, tenant_id: str) -> dict[str, Any]:
+        await self._ensure_shadow_loaded(tenant_id)
+        now = datetime.now(UTC)
         twenty_four_hours_ago = now - timedelta(hours=24)
         five_minutes_ago = now - timedelta(minutes=5)
         fifteen_minutes_ago = now - timedelta(minutes=15)
 
-        outbox_events = await db.outbox_events.find(
-            {
-                "tenant_id": tenant_id,
-                "event_type": {"$in": MIGRATION_EVENT_TYPES},
-            },
-            {"_id": 0},
-        ).sort("created_at", -1).to_list(500)
+        outbox_events = (
+            await db.outbox_events.find(
+                {
+                    "tenant_id": tenant_id,
+                    "event_type": {"$in": MIGRATION_EVENT_TYPES},
+                },
+                {"_id": 0},
+            )
+            .sort("created_at", -1)
+            .to_list(500)
+        )
 
-        audit_logs_24h = await db.audit_logs.find(
-            {
-                "tenant_id": tenant_id,
-                "action": {"$in": MIGRATION_AUDIT_ACTIONS},
-                "timestamp": {"$gte": twenty_four_hours_ago.isoformat()},
-            },
-            {
-                "_id": 0,
-                "id": 1,
-                "actor_id": 1,
-                "entity_type": 1,
-                "entity_id": 1,
-                "action": 1,
-                "property_id": 1,
-                "correlation_id": 1,
-                "timestamp": 1,
-                "metadata": 1,
-            },
-        ).sort("timestamp", -1).to_list(500)
+        audit_logs_24h = (
+            await db.audit_logs.find(
+                {
+                    "tenant_id": tenant_id,
+                    "action": {"$in": MIGRATION_AUDIT_ACTIONS},
+                    "timestamp": {"$gte": twenty_four_hours_ago.isoformat()},
+                },
+                {
+                    "_id": 0,
+                    "id": 1,
+                    "actor_id": 1,
+                    "entity_type": 1,
+                    "entity_id": 1,
+                    "action": 1,
+                    "property_id": 1,
+                    "correlation_id": 1,
+                    "timestamp": 1,
+                    "metadata": 1,
+                },
+            )
+            .sort("timestamp", -1)
+            .to_list(500)
+        )
 
         audit_logs = audit_logs_24h[:20]
 
         shadow_events = [
             event
             for event in shadow_metrics_store.get_recent_events()
-            if (
-                event.get("tenant_id") == tenant_id
-                and event.get("endpoint") in {"availability", "folio"}
-                and (_parse_timestamp(event.get("timestamp")) or now) >= twenty_four_hours_ago
-            )
+            if (event.get("tenant_id") == tenant_id and event.get("endpoint") in {"availability", "folio"} and (_parse_timestamp(event.get("timestamp")) or now) >= twenty_four_hours_ago)
         ]
 
         recent_outbox = []
-        stale_pending_events: List[Dict[str, Any]] = []
+        stale_pending_events: list[dict[str, Any]] = []
         stale_pending_count = 0
         status_counter: Counter[str] = Counter()
         event_counter: Counter[str] = Counter()
-        event_status_breakdown: Dict[str, Counter[str]] = defaultdict(Counter)
-        latest_event_at: Dict[str, str] = {}
+        event_status_breakdown: dict[str, Counter[str]] = defaultdict(Counter)
+        latest_event_at: dict[str, str] = {}
         retry_attempts_total = 0
         retry_fields_found = False
-        latency_values: List[float] = []
-        oldest_pending_at: Optional[datetime] = None
-        oldest_failed_at: Optional[datetime] = None
+        latency_values: list[float] = []
+        oldest_pending_at: datetime | None = None
+        oldest_failed_at: datetime | None = None
 
         for event in outbox_events:
             created_at = _parse_timestamp(event.get("created_at"))
@@ -569,7 +590,7 @@ class MigrationObservabilityService:
 
         audit_action_breakdown = Counter(log.get("action") or "unknown" for log in audit_logs_24h)
 
-        endpoint_metrics: Dict[str, Dict[str, Any]] = defaultdict(
+        endpoint_metrics: dict[str, dict[str, Any]] = defaultdict(
             lambda: {
                 "endpoint": "unknown",
                 "total_compares": 0,
@@ -687,10 +708,7 @@ class MigrationObservabilityService:
             "audit": {
                 "recent_count": len(audit_logs),
                 "audit_gap_count": audit_gap_count,
-                "actions_breakdown": [
-                    {"action": action, "count": count}
-                    for action, count in audit_action_breakdown.most_common()
-                ],
+                "actions_breakdown": [{"action": action, "count": count} for action, count in audit_action_breakdown.most_common()],
                 "recent_stream": audit_logs,
             },
             "shadow": {
@@ -698,3 +716,9 @@ class MigrationObservabilityService:
                 "recent_events": recent_shadow_events,
             },
         }
+
+
+# Module-level singleton — used by routers/reports_pkg/flash_email.py
+# (Sentry PYTHON-FASTAPI-3F: NameError 'migration_observability_service'
+# is not defined — 9 events). Class was defined but no instance exposed.
+migration_observability_service = MigrationObservabilityService()

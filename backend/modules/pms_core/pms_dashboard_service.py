@@ -2,21 +2,32 @@
 PMS Dashboard Service - Aggregates operational data for the PMS dashboard.
 Arrivals, departures, in-house, room status, folio issues, audit exceptions.
 """
-from datetime import datetime, timezone, timedelta
-from typing import Dict
+
+from datetime import UTC, datetime, timedelta
 
 from core.database import db
+
+
+async def _bulk_map(coll, tenant_id: str, ids: list[str], proj: dict) -> dict:
+    """Tek $in sorgusuyla id->doc mapi (N+1 onleyici)."""
+    ids = [i for i in ids if i]
+    if not ids:
+        return {}
+    docs = await coll.find(
+        {"tenant_id": tenant_id, "id": {"$in": list(set(ids))}},
+        proj,
+    ).to_list(len(ids))
+    return {d["id"]: d for d in docs}
 
 
 class PMSDashboardService:
     """Aggregates real-time operational data for the PMS dashboard."""
 
-    async def get_operational_snapshot(self, tenant_id: str) -> Dict:
+    async def get_operational_snapshot(self, tenant_id: str) -> dict:
         """Get comprehensive operational snapshot for today."""
-        today = datetime.now(timezone.utc).date().isoformat()
-        (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
+        today = datetime.now(UTC).date().isoformat()
+        (datetime.now(UTC).date() + timedelta(days=1)).isoformat()
 
-        # Parallel data collection
         arrivals = await self._get_arrivals_today(tenant_id, today)
         departures = await self._get_departures_today(tenant_id, today)
         in_house = await self._get_in_house_guests(tenant_id)
@@ -36,62 +47,79 @@ class PMSDashboardService:
             "blocked_checkins": blocked_checkins,
         }
 
-    async def _get_arrivals_today(self, tenant_id: str, today: str) -> Dict:
-        arrivals = await db.bookings.find({
-            "tenant_id": tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed", "pending"]},
-            "check_in": {"$gte": today + "T00:00:00", "$lte": today + "T23:59:59"},
-        }, {"_id": 0, "id": 1, "guest_id": 1, "room_id": 1, "check_in": 1, "status": 1}).to_list(500)
+    async def _get_arrivals_today(self, tenant_id: str, today: str) -> dict:
+        arrivals = await db.bookings.find(
+            {
+                "tenant_id": tenant_id,
+                "status": {"$in": ["confirmed", "guaranteed", "pending"]},
+                "check_in": {"$gte": today + "T00:00:00", "$lte": today + "T23:59:59"},
+            },
+            {"_id": 0, "id": 1, "guest_id": 1, "room_id": 1, "check_in": 1, "status": 1},
+        ).to_list(500)
 
         total = len(arrivals)
-        # Enrich with room readiness
-        enriched = []
-        for a in arrivals[:50]:  # Limit enrichment
-            room = await db.rooms.find_one({"id": a.get("room_id"), "tenant_id": tenant_id}, {"_id": 0, "room_number": 1, "status": 1})
-            guest = await db.guests.find_one({"id": a.get("guest_id"), "tenant_id": tenant_id}, {"_id": 0, "name": 1})
-            enriched.append({
-                **a,
-                "room_number": room.get("room_number") if room else "Unassigned",
-                "room_status": room.get("status") if room else "unknown",
-                "room_ready": room.get("status") in {"available", "inspected"} if room else False,
-                "guest_name": guest.get("name") if guest else "Unknown",
-            })
+        slice_ = arrivals[:50]
+        rooms_map = await _bulk_map(db.rooms, tenant_id, [a.get("room_id") for a in slice_], {"_id": 0, "id": 1, "room_number": 1, "status": 1})
+        guests_map = await _bulk_map(db.guests, tenant_id, [a.get("guest_id") for a in slice_], {"_id": 0, "id": 1, "name": 1})
 
+        enriched = []
+        for a in slice_:
+            room = rooms_map.get(a.get("room_id"))
+            guest = guests_map.get(a.get("guest_id"))
+            enriched.append(
+                {
+                    **a,
+                    "room_number": room.get("room_number") if room else "Unassigned",
+                    "room_status": room.get("status") if room else "unknown",
+                    "room_ready": room.get("status") in {"available", "inspected"} if room else False,
+                    "guest_name": guest.get("name") if guest else "Unknown",
+                }
+            )
         return {"total": total, "arrivals": enriched}
 
-    async def _get_departures_today(self, tenant_id: str, today: str) -> Dict:
-        departures = await db.bookings.find({
-            "tenant_id": tenant_id,
-            "status": "checked_in",
-            "check_out": {"$gte": today + "T00:00:00", "$lte": today + "T23:59:59"},
-        }, {"_id": 0, "id": 1, "guest_id": 1, "room_id": 1, "check_out": 1}).to_list(500)
+    async def _get_departures_today(self, tenant_id: str, today: str) -> dict:
+        departures = await db.bookings.find(
+            {
+                "tenant_id": tenant_id,
+                "status": "checked_in",
+                "check_out": {"$gte": today + "T00:00:00", "$lte": today + "T23:59:59"},
+            },
+            {"_id": 0, "id": 1, "guest_id": 1, "room_id": 1, "check_out": 1},
+        ).to_list(500)
+
+        slice_ = departures[:50]
+        rooms_map = await _bulk_map(db.rooms, tenant_id, [d.get("room_id") for d in slice_], {"_id": 0, "id": 1, "room_number": 1})
+        guests_map = await _bulk_map(db.guests, tenant_id, [d.get("guest_id") for d in slice_], {"_id": 0, "id": 1, "name": 1})
+        # Folyolar — booking_id $in tek sorgu
+        bk_ids = [d["id"] for d in slice_]
+        folios = await db.folios.find(
+            {"tenant_id": tenant_id, "status": "open", "booking_id": {"$in": bk_ids}},
+            {"_id": 0, "booking_id": 1, "balance": 1},
+        ).to_list(len(bk_ids) or 1)
+        folio_map = {f["booking_id"]: f for f in folios}
 
         enriched = []
-        for d in departures[:50]:
-            room = await db.rooms.find_one({"id": d.get("room_id"), "tenant_id": tenant_id}, {"_id": 0, "room_number": 1})
-            guest = await db.guests.find_one({"id": d.get("guest_id"), "tenant_id": tenant_id}, {"_id": 0, "name": 1})
-
-            # Check folio balance
-            folio = await db.folios.find_one({"booking_id": d["id"], "tenant_id": tenant_id, "status": "open"}, {"_id": 0})
-            balance = 0
-            if folio:
-                balance = folio.get("balance", 0)
-
-            enriched.append({
-                **d,
-                "room_number": room.get("room_number") if room else "N/A",
-                "guest_name": guest.get("name") if guest else "Unknown",
-                "folio_balance": balance,
-                "has_balance": balance > 0.01,
-            })
-
+        for d in slice_:
+            room = rooms_map.get(d.get("room_id"))
+            guest = guests_map.get(d.get("guest_id"))
+            folio = folio_map.get(d["id"])
+            balance = folio.get("balance", 0) if folio else 0
+            enriched.append(
+                {
+                    **d,
+                    "room_number": room.get("room_number") if room else "N/A",
+                    "guest_name": guest.get("name") if guest else "Unknown",
+                    "folio_balance": balance,
+                    "has_balance": balance > 0.01,
+                }
+            )
         return {"total": len(departures), "departures": enriched}
 
-    async def _get_in_house_guests(self, tenant_id: str) -> Dict:
+    async def _get_in_house_guests(self, tenant_id: str) -> dict:
         count = await db.bookings.count_documents({"tenant_id": tenant_id, "status": "checked_in"})
         return {"count": count}
 
-    async def _get_room_status_summary(self, tenant_id: str) -> Dict:
+    async def _get_room_status_summary(self, tenant_id: str) -> dict:
         pipeline = [
             {"$match": {"tenant_id": tenant_id, "$or": [{"is_active": True}, {"is_active": {"$exists": False}}]}},
             {"$group": {"_id": "$status", "count": {"$sum": 1}}},
@@ -112,58 +140,67 @@ class PMSDashboardService:
             "ready": summary.get("available", 0) + summary.get("inspected", 0),
         }
 
-    async def _get_pending_folio_issues(self, tenant_id: str) -> Dict:
+    async def _get_pending_folio_issues(self, tenant_id: str) -> dict:
         """Get open folios with high or negative balances."""
-        open_folios = await db.folios.find(
-            {"tenant_id": tenant_id, "status": "open"}, {"_id": 0}
-        ).to_list(1000)
+        open_folios = await db.folios.find({"tenant_id": tenant_id, "status": "open"}, {"_id": 0}).to_list(1000)
 
         issues = []
         for folio in open_folios:
             balance = folio.get("balance", 0)
             if balance < -0.01:
-                issues.append({
-                    "folio_id": folio["id"],
-                    "folio_number": folio.get("folio_number"),
-                    "issue": "overpayment",
-                    "balance": balance,
-                })
+                issues.append(
+                    {
+                        "folio_id": folio["id"],
+                        "folio_number": folio.get("folio_number"),
+                        "issue": "overpayment",
+                        "balance": balance,
+                    }
+                )
             elif balance > 5000:
-                issues.append({
-                    "folio_id": folio["id"],
-                    "folio_number": folio.get("folio_number"),
-                    "issue": "high_balance",
-                    "balance": balance,
-                })
-
+                issues.append(
+                    {
+                        "folio_id": folio["id"],
+                        "folio_number": folio.get("folio_number"),
+                        "issue": "high_balance",
+                        "balance": balance,
+                    }
+                )
         return {"count": len(issues), "issues": issues}
 
-    async def _get_open_audit_exceptions(self, tenant_id: str) -> Dict:
+    async def _get_open_audit_exceptions(self, tenant_id: str) -> dict:
         count = await db.audit_exceptions.count_documents({"tenant_id": tenant_id, "status": "open"})
-        exceptions = await db.audit_exceptions.find(
-            {"tenant_id": tenant_id, "status": "open"}, {"_id": 0}
-        ).sort("created_at", -1).limit(10).to_list(10)
+        exceptions = await db.audit_exceptions.find({"tenant_id": tenant_id, "status": "open"}, {"_id": 0}).sort("created_at", -1).limit(10).to_list(10)
         return {"count": count, "exceptions": exceptions}
 
-    async def _get_blocked_checkins(self, tenant_id: str, today: str) -> Dict:
+    async def _get_blocked_checkins(self, tenant_id: str, today: str) -> dict:
         """Find today's arrivals where room is not ready."""
-        arrivals = await db.bookings.find({
-            "tenant_id": tenant_id,
-            "status": {"$in": ["confirmed", "guaranteed"]},
-            "check_in": {"$gte": today + "T00:00:00", "$lte": today + "T23:59:59"},
-        }, {"_id": 0, "id": 1, "room_id": 1, "guest_id": 1}).to_list(500)
+        arrivals = await db.bookings.find(
+            {
+                "tenant_id": tenant_id,
+                "status": {"$in": ["confirmed", "guaranteed"]},
+                "check_in": {"$gte": today + "T00:00:00", "$lte": today + "T23:59:59"},
+            },
+            {"_id": 0, "id": 1, "room_id": 1, "guest_id": 1},
+        ).to_list(500)
 
-        blocked = []
+        rooms_map = await _bulk_map(db.rooms, tenant_id, [a.get("room_id") for a in arrivals], {"_id": 0, "id": 1, "room_number": 1, "status": 1})
+        # Sadece engellenenleri belirle, sonra guest map'ini onlar icin cek
+        blocked_arrivals = []
         for a in arrivals:
-            room = await db.rooms.find_one({"id": a.get("room_id"), "tenant_id": tenant_id}, {"_id": 0, "room_number": 1, "status": 1})
+            room = rooms_map.get(a.get("room_id"))
             if room and room.get("status") not in {"available", "inspected"}:
-                guest = await db.guests.find_one({"id": a.get("guest_id"), "tenant_id": tenant_id}, {"_id": 0, "name": 1})
-                blocked.append({
+                blocked_arrivals.append((a, room))
+        guests_map = await _bulk_map(db.guests, tenant_id, [a.get("guest_id") for a, _ in blocked_arrivals], {"_id": 0, "id": 1, "name": 1})
+        blocked = []
+        for a, room in blocked_arrivals:
+            guest = guests_map.get(a.get("guest_id"))
+            blocked.append(
+                {
                     "booking_id": a["id"],
                     "room_number": room.get("room_number"),
                     "room_status": room.get("status"),
                     "guest_name": guest.get("name") if guest else "Unknown",
                     "reason": f"Room {room.get('room_number')} status: {room.get('status')}",
-                })
-
+                }
+            )
         return {"count": len(blocked), "blocked": blocked}

@@ -8,8 +8,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libffi-dev libssl-dev && \
     rm -rf /var/lib/apt/lists/*
 
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+# Phase 5 of requirements split (Pragmatic case): install the production
+# worker subset, NOT the full backend aggregate.
+# - worker-runtime.txt = `-r worker.txt` + ml + reports + integrations
+#   + fastapi + starlette (worker.txt itself = `-r base.txt` +
+#   celery/scheduler/flower core)
+# - fastapi/starlette are needed because integrations/booking.py is a hybrid
+#   FastAPI router + worker helper imported by celery_tasks.py.
+# - integrations.txt covers the 'messaging'/'backup'/'analytics' queues
+#   (boto3/resend/stripe/openai/litellm/google-*); see worker-runtime.txt.
+# - See docs/backend_refactors/requirements-split-plan.md §4.4 and run.md
+#   Phase 4.6 (worker AST scan) + Phase 5 (this swap).
+# - Phase 8.2 (May 2026): legacy aggregate `backend/requirements.txt` was
+#   removed; `requirements/all.txt` is the canonical full-surface aggregate
+#   for development installs. See run.md Phase 8.2 for the full surgery log.
+# - litellm override (--no-deps to >=1.84.0): IDENTICAL to backend/Dockerfile.
+#   integrations.txt pins litellm==1.80.0 only for an openai-1.x compatible dep
+#   tree; the override keeps openai at 1.99.9 and clears CVE-2026-49468.
+COPY backend/requirements/ ./requirements/
+RUN pip install --no-cache-dir --prefix=/install --timeout=300 --retries=5 -r requirements/worker-runtime.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ && \
+    PYTHONPATH=/install/lib/python3.11/site-packages python -m pip install --no-cache-dir --prefix=/install "litellm>=1.84.0" --no-deps
 
 FROM python:3.11-slim AS runtime
 
@@ -17,8 +35,17 @@ RUN groupadd -r celeryuser && useradd -r -g celeryuser -d /app -s /sbin/nologin 
 
 WORKDIR /app
 
+# Runtime system deps:
+#  - curl: kept for parity / debugging (health uses celery inspect below)
+#  - libgomp1 + libstdc++6: OpenMP + C++ runtime for xgboost/scikit-learn ('ml')
+#  - WeasyPrint native libs (pango/cairo/gdk-pixbuf/glib) + base fonts: needed
+#    for scheduled in-worker PDF rendering (report_scheduler/flash_email).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl && \
+    curl \
+    libgomp1 libstdc++6 \
+    libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 libgdk-pixbuf-2.0-0 \
+    libcairo2 libglib2.0-0 \
+    shared-mime-info fonts-dejavu-core fonts-liberation && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /install /usr/local
@@ -31,4 +58,4 @@ USER celeryuser
 HEALTHCHECK --interval=60s --timeout=10s --start-period=15s --retries=3 \
     CMD celery -A celery_app inspect ping --timeout 5 || exit 1
 
-CMD ["celery", "-A", "celery_app", "worker", "--loglevel=info", "--concurrency=4", "-Q", "default,ml,analytics,messaging,pipeline,backup"]
+CMD ["celery", "-A", "celery_app", "worker", "--loglevel=info", "--concurrency=4", "-Q", "default,ml,analytics,messaging,pipeline,backup,pricing"]

@@ -2,8 +2,8 @@
 Mobile Domain — Pydantic Schemas
 Extracted from mobile_router.py inline models.
 """
+
 from pydantic import BaseModel
-from typing import List, Optional
 
 
 class ProcessNoShowRequest(BaseModel):
@@ -13,15 +13,15 @@ class ProcessNoShowRequest(BaseModel):
 class ChangeRoomRequest(BaseModel):
     booking_id: str
     new_room_id: str
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 class QuickTaskRequest(BaseModel):
     room_id: str
     task_type: str
     priority: str = "normal"
-    assigned_to: Optional[str] = None
-    notes: Optional[str] = None
+    assigned_to: str | None = None
+    notes: str | None = None
 
 
 class QuickIssueRequest(BaseModel):
@@ -38,11 +38,11 @@ class QuickOrderItem(BaseModel):
 
 class QuickOrderRequest(BaseModel):
     outlet_id: str
-    table_number: Optional[str] = None
-    items: List[QuickOrderItem] = []
-    notes: Optional[str] = None
+    table_number: str | None = None
+    items: list[QuickOrderItem] = []
+    notes: str | None = None
 
 
 class MenuPriceUpdateRequest(BaseModel):
     new_price: float
-    reason: Optional[str] = None
+    reason: str | None = None

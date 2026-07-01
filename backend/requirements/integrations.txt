@@ -1,0 +1,41 @@
+# Integrations — third-party SDKs (cloud, payments, AI providers, email).
+#
+# litellm pin note (parity preservation, Plan B per requirements-split-plan.md §4.3):
+#   `litellm==1.80.0` is intentionally pinned ONLY to provide an openai-1.x
+#   compatible dependency tree; it is NEVER the runtime version. Both
+#   `backend/Dockerfile` and `backend/scripts/post_install.sh` perform a
+#   `--no-deps` override to `litellm>=1.84.0` AFTER this file is installed,
+#   fully overwriting the 1.80.0 package and clearing CVE-2026-49468.
+#   DO NOT bump this base pin without coordinating with those overrides:
+#   litellm>=1.83.0 requires openai>=2.30.0, conflicting with the pinned
+#   openai==1.99.9. Clean upgrade (Plan A) is deferred.
+boto3==1.40.67
+botocore==1.40.67
+google-ai-generativelanguage==0.6.15
+google-api-core==2.30.0
+google-api-python-client==2.190.0
+google-auth==2.49.0.dev0
+google-auth-httplib2==0.3.0
+google-genai==1.64.0
+google-generativeai==0.8.6
+googleapis-common-protos==1.72.0
+grpcio==1.78.1
+grpcio-status==1.71.2
+httplib2==0.31.2
+iyzipay==1.0.46
+jmespath==1.0.1
+litellm==1.80.0
+openai==1.99.9
+proto-plus==1.27.1
+protobuf==5.29.6
+requests-oauthlib==2.0.0
+resend==2.29.0
+s3transfer==0.14.0
+s5cmd==0.2.0
+stripe==14.3.0
+# Task #648 — Contact Center Faz 2 sesli softphone (Twilio Voice WebRTC).
+# AccessToken üretimi, gelen TwiML ve webhook imza doğrulama için. Lazy import
+# (kurulu değilse voice katmanı fail-closed not_configured döner) — bu pin
+# yalnızca aktivasyon (Twilio secret'ları girilince) için gereklidir.
+twilio==9.4.1
+uritemplate==4.2.0

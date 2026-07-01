@@ -1,0 +1,202 @@
+name: Frontend Quality Gates
+
+on:
+    push:
+        branches: [main, develop, staging]
+    pull_request:
+        branches: [main, develop]
+
+env:
+    NODE_VERSION: '22'
+
+jobs:
+    # ============ THEME REGRESSION GUARD (HARD GATE) ============
+    # Faz 4: blocks merges on (A) a new UNCOVERED dark-mode color gap (a JSX
+    # neutral/pastel utility that would flash bright in dark mode with no
+    # matching `.dark` compat rule) or (B) a new purple/orange (retired brand
+    # hue) utility in a component. Pure Node fs-scan — no install/build needed,
+    # so it runs fast and gates every push/PR.
+    theme-guard:
+        name: Theme Guard (dark-coverage + brand-drift)
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - uses: actions/checkout@v5
+            - name: Set up Node.js
+              uses: actions/setup-node@v5
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+            - name: Run theme guard (hard gate)
+              run: node tools/theme-guard/guard.mjs
+
+    # ============ KNIP DEAD-CODE GUARD (SOFT GATE) ============
+    knip:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v5
+            - name: Set up Node.js
+              uses: actions/setup-node@v5
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+                  cache: 'yarn'
+                  cache-dependency-path: frontend/yarn.lock
+            - name: Install
+              run: cd frontend && yarn install --ignore-engines --frozen-lockfile
+            - name: Run knip (advisory)
+              # Soft gate: çıktıyı PR'da göster ama exit kodu fail etmesin.
+              # Sıfırlamak için: && exit 1 ekle.
+              run: cd frontend && yarn knip --reporter compact || true
+
+    # ============ VITEST UNIT TESTS (HARD GATE) ============
+    # Pilot Readiness Checklist hard-blocker #2: frontend Vitest suite
+    # was running locally (13 files, 117 tests, ~47s) but never gated
+    # on PRs. This job blocks merges if any frontend unit test fails.
+    # Coverage thresholds intentionally deferred to a follow-up turn.
+    vitest:
+        name: Frontend Unit Tests (Vitest)
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v5
+            - name: Set up Node.js
+              uses: actions/setup-node@v5
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+                  cache: 'yarn'
+                  cache-dependency-path: frontend/yarn.lock
+            - name: Install
+              run: cd frontend && yarn install --ignore-engines --frozen-lockfile
+            - name: Run vitest (hard gate)
+              run: cd frontend && yarn test
+
+    # ============ MOBILE UNIT TESTS (HARD GATE) ============
+    # Mobile date-math unit suite (DatePicker) via Node's built-in test
+    # runner — pure TS compiled with the already-pinned `typescript` devDep,
+    # no extra dependencies, no emulator/server. Blocks merges if the picker's
+    # date math regresses. See mobile/src/components/datePickerUtils.ts.
+    mobile-unit:
+        name: Mobile Unit Tests (node:test)
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v5
+            - name: Set up Node.js
+              uses: actions/setup-node@v5
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+                  cache: 'npm'
+                  cache-dependency-path: mobile/package-lock.json
+            - name: Install
+              run: cd mobile && npm ci
+            - name: Run mobile unit tests (hard gate)
+              run: cd mobile && npm run test:unit
+
+    # ============ E2E SMOKE (HARD GATE on PR) ============
+    e2e-smoke:
+        runs-on: ubuntu-latest
+        timeout-minutes: 25
+        # NOTE: MongoDB is intentionally NOT a `services:` entry — it must run
+        # as a single-node replica set (`--replSet`) so that the multi-document
+        # transactions in `core/atomic_checkin_checkout.py`
+        # (`session.start_transaction(read_concern="snapshot")`) succeed.
+        # GitHub Actions `services:` does not allow overriding the container
+        # CMD, so we start mongo manually below. Driver connects via
+        # `?replicaSet=rs0` so motor uses ReplicaSet topology (required for
+        # transactions even with a single member).
+        services:
+            redis:
+                image: redis:7-alpine
+                ports: ['6379:6379']
+                options: >-
+                    --health-cmd "redis-cli ping"
+                    --health-interval 10s --health-timeout 5s --health-retries 5
+        env:
+            MONGO_URL: mongodb://localhost:27017/hotel_pms_test?replicaSet=rs0&directConnection=true
+            DB_NAME: hotel_pms_test
+            REDIS_URL: redis://localhost:6379/0
+            JWT_SECRET: ci-test-secret-key-do-not-use-in-production
+            E2E_BASE_URL: http://localhost:3000
+            E2E_HOTEL_ID: '100001'
+            E2E_USERNAME: demo
+            E2E_PASSWORD: demo123
+            E2E_EMAIL: demo@syroce.com
+        steps:
+            - uses: actions/checkout@v5
+            - name: Start MongoDB (single-node replica set, required for transactions)
+              run: |
+                  docker run -d --name mongo \
+                      -p 27017:27017 \
+                      mongo:7.0 \
+                      --replSet rs0 --bind_ip_all
+                  for i in $(seq 1 30); do
+                      if docker exec mongo mongosh --quiet --eval "db.runCommand({ping:1}).ok" 2>/dev/null | grep -q 1; then
+                          echo "✓ mongod up"
+                          break
+                      fi
+                      sleep 2
+                  done
+                  docker exec mongo mongosh --quiet --eval \
+                      "rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]})"
+                  for i in $(seq 1 30); do
+                      if docker exec mongo mongosh --quiet --eval "db.hello().isWritablePrimary" 2>/dev/null | grep -q true; then
+                          echo "✓ replica set primary elected"
+                          break
+                      fi
+                      sleep 2
+                  done
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: '3.11'
+                  cache: 'pip'
+            - name: Set up Node.js
+              uses: actions/setup-node@v5
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+                  cache: 'yarn'
+                  cache-dependency-path: frontend/yarn.lock
+            - name: Install backend deps
+              run: |
+                  cd backend
+                  pip install -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+                  bash scripts/post_install.sh
+            - name: Seed demo user
+              run: cd backend && python create_demo_users.py || python scripts/create_test_user.py
+            - name: Start backend
+              run: |
+                  cd backend
+                  uvicorn server:app --host 0.0.0.0 --port 8000 &
+                  for i in $(seq 1 30); do
+                      if curl -s http://localhost:8000/api/docs >/dev/null 2>&1; then break; fi
+                      sleep 2
+                  done
+            - name: Install frontend
+              run: cd frontend && yarn install --ignore-engines --frozen-lockfile
+            - name: Install Playwright browsers
+              run: |
+                  # GitHub runner'inda Playwright ile alakasiz Microsoft apt kaynaklari
+                  # (packages.microsoft.com) 403 donup `apt-get update`'i dusuruyor; bu yuzden
+                  # `--with-deps` patliyor. Bu kaynaklari kaldir ki gercek Playwright deps kurulsun.
+                  sudo find /etc/apt/sources.list.d -type f \( -name '*.list' -o -name '*.sources' \) \
+                      -exec grep -lE 'packages\.microsoft\.com' {} + 2>/dev/null | xargs -r sudo rm -f || true
+                  cd frontend && yarn e2e:install
+            - name: Build + serve frontend
+              env:
+                  VITE_BACKEND_URL: /api
+              run: |
+                  cd frontend
+                  yarn build
+                  yarn preview --port 3000 &
+                  for i in $(seq 1 20); do
+                      if curl -s http://localhost:3000 >/dev/null 2>&1; then break; fi
+                      sleep 2
+                  done
+            - name: Run e2e smoke
+              run: cd frontend && yarn e2e
+            - name: Upload Playwright report
+              uses: actions/upload-artifact@v5
+              if: always()
+              with:
+                  name: playwright-report
+                  path: frontend/playwright-report/
+                  retention-days: 14

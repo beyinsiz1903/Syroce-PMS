@@ -2,14 +2,16 @@
 Observability — Night Audit & Operational Metrics API
 Exposes runtime metrics for load tests, night audit, and operational monitoring.
 """
-from fastapi import APIRouter, Depends
-from datetime import datetime, timezone, timedelta
-import logging
 
+import logging
+from datetime import UTC, datetime, timedelta
+
+from fastapi import APIRouter, Depends
+
+from common.context import OperationContext
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
-from common.context import OperationContext
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +27,7 @@ async def get_night_audit_metrics(
     tid = ctx.tenant_id
 
     # Last 10 runs
-    runs = await db.night_audit_runs.find(
-        {"tenant_id": tid}, {"_id": 0}
-    ).sort("started_at", -1).limit(10).to_list(10)
+    runs = await db.night_audit_runs.find({"tenant_id": tid}, {"_id": 0}).sort("started_at", -1).limit(10).to_list(10)
 
     last_run = runs[0] if runs else None
     durations = [r.get("duration_ms", 0) for r in runs if r.get("duration_ms")]
@@ -37,8 +37,8 @@ async def get_night_audit_metrics(
 
     # Business date status
     settings = await db.tenant_settings.find_one({"tenant_id": tid}, {"_id": 0})
-    business_date = (settings or {}).get("business_date", datetime.now(timezone.utc).date().isoformat())
-    today = datetime.now(timezone.utc).date().isoformat()
+    business_date = (settings or {}).get("business_date", datetime.now(UTC).date().isoformat())
+    today = datetime.now(UTC).date().isoformat()
     is_stale = business_date < today
 
     return {
@@ -57,9 +57,7 @@ async def get_night_audit_metrics(
             "avg_duration_ms": round(avg_duration),
             "avg_exceptions": round(avg_exceptions, 1),
             "total_runs": len(runs),
-            "success_rate": round(
-                len([r for r in runs if r.get("status") in ("completed", "completed_with_exceptions")]) / len(runs) * 100, 1
-            ) if runs else 0,
+            "success_rate": round(len([r for r in runs if r.get("status") in ("completed", "completed_with_exceptions")]) / len(runs) * 100, 1) if runs else 0,
         },
     }
 
@@ -71,14 +69,16 @@ async def get_operational_metrics(
     """Aggregated operational metrics for load testing and monitoring."""
     ctx = OperationContext.from_user(current_user)
     tid = ctx.tenant_id
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Room status distribution
     room_statuses = {}
-    async for doc in db.rooms.aggregate([
-        {"$match": {"tenant_id": tid}},
-        {"$group": {"_id": "$status", "count": {"$sum": 1}}},
-    ]):
+    async for doc in db.rooms.aggregate(
+        [
+            {"$match": {"tenant_id": tid}},
+            {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+        ]
+    ):
         room_statuses[doc["_id"] or "unknown"] = doc["count"]
 
     total_rooms = sum(room_statuses.values())
@@ -86,35 +86,57 @@ async def get_operational_metrics(
 
     # Today's booking pipeline
     today = now.date().isoformat()
-    arrivals = await db.bookings.count_documents({
-        "tenant_id": tid, "check_in": today,
-        "status": {"$in": ["confirmed", "guaranteed"]},
-    })
-    departures = await db.bookings.count_documents({
-        "tenant_id": tid, "check_out": today, "status": "checked_in",
-    })
-    in_house = await db.bookings.count_documents({
-        "tenant_id": tid, "status": "checked_in",
-    })
+    arrivals = await db.bookings.count_documents(
+        {
+            "tenant_id": tid,
+            "check_in": today,
+            "status": {"$in": ["confirmed", "guaranteed"]},
+        }
+    )
+    departures = await db.bookings.count_documents(
+        {
+            "tenant_id": tid,
+            "check_out": today,
+            "status": "checked_in",
+        }
+    )
+    in_house = await db.bookings.count_documents(
+        {
+            "tenant_id": tid,
+            "status": "checked_in",
+        }
+    )
 
     # Open folios
-    open_folios = await db.folios.count_documents({
-        "tenant_id": tid, "status": "open",
-    })
+    open_folios = await db.folios.count_documents(
+        {
+            "tenant_id": tid,
+            "status": "open",
+        }
+    )
 
     # HK tasks
-    hk_pending = await db.housekeeping_tasks.count_documents({
-        "tenant_id": tid, "status": {"$in": ["new", "assigned"]},
-    })
-    hk_in_progress = await db.housekeeping_tasks.count_documents({
-        "tenant_id": tid, "status": "in_progress",
-    })
+    hk_pending = await db.housekeeping_tasks.count_documents(
+        {
+            "tenant_id": tid,
+            "status": {"$in": ["new", "assigned"]},
+        }
+    )
+    hk_in_progress = await db.housekeeping_tasks.count_documents(
+        {
+            "tenant_id": tid,
+            "status": "in_progress",
+        }
+    )
 
     # Audit events last hour
     one_hour_ago = (now - timedelta(hours=1)).isoformat()
-    audit_events_1h = await db.audit_logs.count_documents({
-        "tenant_id": tid, "timestamp": {"$gte": one_hour_ago},
-    })
+    audit_events_1h = await db.audit_logs.count_documents(
+        {
+            "tenant_id": tid,
+            "timestamp": {"$gte": one_hour_ago},
+        }
+    )
 
     return {
         "timestamp": now.isoformat(),

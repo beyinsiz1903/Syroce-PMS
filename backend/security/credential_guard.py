@@ -2,10 +2,11 @@
 Security — Credential Guard
 Detects default/weak credentials and enforces credential policies.
 """
+
 import logging
 import re
-from datetime import datetime, timezone
-from typing import Dict, Any
+from datetime import UTC, datetime
+from typing import Any
 
 from core.database import db
 
@@ -13,15 +14,27 @@ logger = logging.getLogger(__name__)
 
 # Common weak passwords to detect
 _WEAK_PASSWORDS = {
-    "password", "123456", "12345678", "admin", "admin123",
-    "demo123", "test123", "hotel123", "password123", "qwerty",
-    "letmein", "welcome", "monkey", "master", "dragon",
+    "password",
+    "123456",
+    "12345678",
+    "admin",
+    "admin123",
+    "demo123",
+    "test123",
+    "hotel123",
+    "password123",
+    "qwerty",
+    "letmein",
+    "welcome",
+    "monkey",
+    "master",
+    "dragon",
 }
 
 _WEAK_PATTERNS = [
-    r"^(.)\1+$",            # All same character
-    r"^[0-9]{1,6}$",        # Short numeric only
-    r"^(admin|test|demo)",   # Common test prefixes
+    r"^(.)\1+$",  # All same character
+    r"^[0-9]{1,6}$",  # Short numeric only
+    r"^(admin|test|demo)",  # Common test prefixes
 ]
 
 
@@ -29,14 +42,15 @@ class CredentialGuard:
     """Detects weak credentials and enforces password policies."""
 
     @staticmethod
-    async def scan_weak_credentials(tenant_id: str = None) -> Dict[str, Any]:
+    async def scan_weak_credentials(tenant_id: str = None) -> dict[str, Any]:
         """Scan for users with known weak passwords or default credentials.
         Limits to admin/super_admin roles first, then samples others for performance.
         """
-        from passlib.context import CryptContext
-        pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        from core._pwd import BcryptContext
 
-        query: Dict[str, Any] = {}
+        pwd_ctx = BcryptContext()
+
+        query: dict[str, Any] = {}
         if tenant_id:
             query["tenant_id"] = tenant_id
         # Prioritize admin/privileged users for credential scanning
@@ -50,10 +64,14 @@ class CredentialGuard:
         # Also check a sample of other users
         other_query = dict(query)
         other_query["role"] = {"$nin": ["admin", "super_admin", "supervisor"]}
-        others = await db.users.find(
-            other_query,
-            {"_id": 0, "id": 1, "email": 1, "tenant_id": 1, "role": 1, "hashed_password": 1, "password": 1},
-        ).limit(50).to_list(50)
+        others = (
+            await db.users.find(
+                other_query,
+                {"_id": 0, "id": 1, "email": 1, "tenant_id": 1, "role": 1, "hashed_password": 1, "password": 1},
+            )
+            .limit(50)
+            .to_list(50)
+        )
         users.extend(others)
 
         # Only check top 3 most common weak passwords for speed
@@ -67,14 +85,16 @@ class CredentialGuard:
             for weak_pw in quick_check:
                 try:
                     if pwd_ctx.verify(weak_pw, hashed):
-                        findings.append({
-                            "user_id": user["id"],
-                            "email": user.get("email"),
-                            "tenant_id": user.get("tenant_id"),
-                            "role": user.get("role"),
-                            "issue": "Uses known weak password",
-                            "severity": "critical" if user.get("role") in ("admin", "super_admin") else "high",
-                        })
+                        findings.append(
+                            {
+                                "user_id": user["id"],
+                                "email": user.get("email"),
+                                "tenant_id": user.get("tenant_id"),
+                                "role": user.get("role"),
+                                "issue": "Uses known weak password",
+                                "severity": "critical" if user.get("role") in ("admin", "super_admin") else "high",
+                            }
+                        )
                         break
                 except Exception:
                     continue
@@ -83,11 +103,11 @@ class CredentialGuard:
             "scanned_users": len(users),
             "weak_credentials_found": len(findings),
             "findings": findings,
-            "scanned_at": datetime.now(timezone.utc).isoformat(),
+            "scanned_at": datetime.now(UTC).isoformat(),
         }
 
     @staticmethod
-    def validate_password_strength(password: str) -> Dict[str, Any]:
+    def validate_password_strength(password: str) -> dict[str, Any]:
         """Validate password meets minimum complexity requirements."""
         issues = []
         if len(password) < 8:

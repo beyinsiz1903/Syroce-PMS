@@ -1,0 +1,379 @@
+"""
+Revenue / Pricing Domain Router
+Extracted from legacy_routes.py — Phase B Domain Separation
+"""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from datetime import UTC, datetime
+from datetime import date as DateType
+from typing import Any
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import BaseModel, ConfigDict, Field
+
+from core.database import db
+from core.security import (
+    get_current_user,
+    security,
+)
+from models.enums import CancellationPolicyType, ChannelType, MarketSegment, RateType
+from models.schemas import Package, RatePlan, User
+from modules.pms_core.role_permission_service import require_op  # v92 DW
+from shared_kernel.idempotency import begin_idempotency, get_idempotency_key
+
+logger = logging.getLogger(__name__)
+
+try:
+    from cache_manager import cached
+except ImportError:
+
+    def cached(ttl=300, key_prefix=""):
+        def decorator(func):
+            return func
+
+        return decorator
+
+
+router = APIRouter(prefix="/api", tags=["Revenue / Pricing"])
+
+
+# ── Inline Models ──
+
+
+class RatePlanFilter(BaseModel):
+    channel: ChannelType | None = None
+    company_id: str | None = None
+    date: DateType | None = None
+
+
+class RatePlanCreate(BaseModel):
+    name: str
+    code: str
+    type: RateType = RateType.BAR
+    currency: str = "EUR"
+    base_price: float
+    room_type: str = "Standard"  # Default room type
+    market_segment: MarketSegment | None = None
+    channel_restrictions: list[ChannelType] = []
+    company_ids: list[str] = []
+    valid_from: DateType | None = None
+    valid_to: DateType | None = None
+    days_of_week: list[int] = []
+    min_stay: int | None = None
+    max_stay: int | None = None
+    cancellation_policy: CancellationPolicyType | None = None
+
+
+class PackageCreate(BaseModel):
+    name: str
+    code: str
+    description: str | None = None
+    included_services: list[str] = []
+    price_type: str = "per_room"
+    additional_amount: float = 0.0
+    linked_rate_plan_ids: list[str] = []
+
+
+class DynamicRestrictionsRequest(BaseModel):
+    date: str
+    room_type: str
+    min_los: int | None = None  # Minimum Length of Stay
+    cta: bool = False  # Closed to Arrival
+    ctd: bool = False  # Closed to Departure
+    stop_sell: bool = False
+
+
+class DemandForecast(BaseModel):
+    """Demand forecast model"""
+
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    tenant_id: str
+    date: str
+    room_type: str | None = None
+    forecasted_occupancy: float
+    confidence: float
+    factors: dict[str, Any] = {}  # events, seasonality, historical
+    model_version: str = "ml-v1"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class CompetitorRate(BaseModel):
+    """Competitor rate scraping"""
+
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    tenant_id: str
+    competitor_name: str
+    date: str
+    room_type: str
+    rate: float
+    source: str  # google_hotels, booking_com, expedia
+    scraped_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class RateOverrideRequest(BaseModel):
+    room_type: str
+    date: str
+    new_rate: float
+    reason: str
+    requires_approval: bool = True
+
+
+# ─── Endpoints (split: rates) ───
+
+
+@router.get("/rates/rate-plans", response_model=list[RatePlan])
+async def list_rate_plans(channel: ChannelType | None = None, company_id: str | None = None, stay_date: str | None = None, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    current_user = await get_current_user(credentials)
+    query: dict[str, Any] = {"tenant_id": current_user.tenant_id, "is_active": True}
+
+    if channel:
+        query["$or"] = [
+            {"channel_restrictions": {"$size": 0}},
+            {"channel_restrictions": channel.value},
+        ]
+    if company_id:
+        query["company_ids"] = company_id
+    if stay_date:
+        try:
+            d = datetime.fromisoformat(stay_date).date()
+            or_filters = []
+            or_filters.append({"valid_from": None})
+            or_filters.append({"valid_to": None})
+            query["$and"] = [
+                {
+                    "$or": [
+                        {"valid_from": {"$lte": d.isoformat()}},
+                        {"valid_from": None},
+                    ]
+                },
+                {
+                    "$or": [
+                        {"valid_to": {"$gte": d.isoformat()}},
+                        {"valid_to": None},
+                    ]
+                },
+            ]
+        except Exception:
+            pass
+
+    cursor = db.rate_plans.find(query).sort("name", 1)
+    results: list[RatePlan] = []
+    async for doc in cursor:
+        # Normalize date strings to actual date
+        if "valid_from" in doc and isinstance(doc["valid_from"], str):
+            try:
+                doc["valid_from"] = datetime.fromisoformat(doc["valid_from"]).date().isoformat()
+            except Exception:
+                pass
+        if "valid_to" in doc and isinstance(doc["valid_to"], str):
+            try:
+                doc["valid_to"] = datetime.fromisoformat(doc["valid_to"]).date().isoformat()
+            except Exception:
+                pass
+        results.append(RatePlan(**doc))
+    return results
+
+
+@router.post("/rates/rate-plans", response_model=RatePlan)
+async def create_rate_plan(
+    payload: RatePlanCreate,
+    http_request: Request,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v95 DW
+):
+    # Zero-Bloat: header-gated Idempotency-Key. Without the header this is a
+    # NO-OP and behaviour is byte-identical to before (pilot_drift=0).
+    idem_key = get_idempotency_key(http_request)
+    guard, replay = await begin_idempotency(
+        db,
+        http_request,
+        tenant_id=current_user.tenant_id,
+        scope="rates.rate_plans",
+        payload=payload.model_dump(),
+    )
+    if replay is not None:
+        return replay
+
+    data = payload.model_dump()
+    data["tenant_id"] = current_user.tenant_id
+    # Map base_price to base_rate for the RatePlan model and keep base_price for compatibility
+    base_price = data.get("base_price")
+    data["base_rate"] = base_price
+    data["base_price"] = base_price  # Keep for compatibility
+    if data.get("valid_from"):
+        data["valid_from"] = data["valid_from"].isoformat()
+    if data.get("valid_to"):
+        data["valid_to"] = data["valid_to"].isoformat()
+    if idem_key:
+        # Crash-retry backstop: a deterministic id makes a re-attempt AFTER the
+        # idempotency sentinel expired converge on the SAME record instead of
+        # inserting a duplicate (there is no unique business index here).
+        data["id"] = str(
+            uuid.uuid5(
+                uuid.NAMESPACE_OID,
+                f"{current_user.tenant_id}:rates.rate_plans:{idem_key}",
+            )
+        )
+        existing = await db.rate_plans.find_one({"tenant_id": current_user.tenant_id, "id": data["id"]}, {"_id": 0})
+        if existing is not None:
+            rate_plan = RatePlan(**existing)
+            await guard.complete(rate_plan.model_dump())
+            return rate_plan
+    rate_plan = RatePlan(**data)
+    await db.rate_plans.insert_one(rate_plan.model_dump())
+    await guard.complete(rate_plan.model_dump())
+    return rate_plan
+
+
+@router.get("/rates/packages", response_model=list[Package])
+async def list_packages(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    current_user = await get_current_user(credentials)
+    cursor = db.packages.find({"tenant_id": current_user.tenant_id, "is_active": True}).sort("name", 1)
+    results: list[Package] = []
+    async for doc in cursor:
+        results.append(Package(**doc))
+    return results
+
+
+@router.post("/rates/packages", response_model=Package)
+async def create_package(
+    payload: PackageCreate,
+    http_request: Request,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_rates")),  # v95 DW
+):
+    # Zero-Bloat: header-gated Idempotency-Key. Without the header this is a
+    # NO-OP and behaviour is byte-identical to before (pilot_drift=0).
+    idem_key = get_idempotency_key(http_request)
+    guard, replay = await begin_idempotency(
+        db,
+        http_request,
+        tenant_id=current_user.tenant_id,
+        scope="rates.packages",
+        payload=payload.model_dump(),
+    )
+    if replay is not None:
+        return replay
+
+    data = payload.model_dump()
+    data["tenant_id"] = current_user.tenant_id
+    if idem_key:
+        # Crash-retry backstop: deterministic id converges a post-sentinel-expiry
+        # retry on the same record (no unique business index here).
+        data["id"] = str(
+            uuid.uuid5(
+                uuid.NAMESPACE_OID,
+                f"{current_user.tenant_id}:rates.packages:{idem_key}",
+            )
+        )
+        existing = await db.packages.find_one({"tenant_id": current_user.tenant_id, "id": data["id"]}, {"_id": 0})
+        if existing is not None:
+            package = Package(**existing)
+            await guard.complete(package.model_dump())
+            return package
+    package = Package(**data)
+    await db.packages.insert_one(package.model_dump())
+    await guard.complete(package.model_dump())
+    return package
+
+
+@router.get("/rates/campaigns")
+async def get_active_campaigns(
+    status: str | None = None,  # active, upcoming, expired
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    """
+    Get active promotional campaigns
+    """
+    await get_current_user(credentials)
+
+    # Kampanya kaydı için gerçek koleksiyon/kaynak yok -> fail-closed (sabit kampanyalar kaldırıldı)
+    return {"campaigns": [], "count": 0, "data_available": False, "message": "Kampanya verisi yok (kampanya yönetimi kaynağı yapılandırılmamış).", "total_revenue": 0, "total_bookings": 0}
+
+
+# 2. GET /api/rates/discount-codes - Discount codes
+
+
+@router.get("/rates/discount-codes")
+async def get_discount_codes(active_only: bool = True, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """
+    Get discount codes
+    """
+    await get_current_user(credentials)
+
+    # İndirim kodu için gerçek koleksiyon/kaynak yok -> fail-closed (sabit kodlar kaldırıldı)
+    return {"discount_codes": [], "count": 0, "data_available": False, "message": "İndirim kodu verisi yok (indirim kodu yönetimi kaynağı yapılandırılmamış).", "total_usage": 0}
+
+
+# 3. POST /api/rates/override - Rate override
+
+
+@router.post("/rates/override")
+async def create_rate_override(
+    request: RateOverrideRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("override_rate")),  # v92 DW
+):
+    """
+    Create rate override (with optional approval flow)
+    """
+    current_user = await get_current_user(credentials)
+
+    override = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "room_type": request.room_type,
+        "date": request.date,
+        "new_rate": request.new_rate,
+        "reason": request.reason,
+        "created_by": current_user.name,
+        "created_at": datetime.now(UTC).isoformat(),
+        "status": "pending_approval" if request.requires_approval else "applied",
+    }
+
+    if request.requires_approval:
+        # Create approval request
+        approval = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": current_user.tenant_id,
+            "approval_type": "price_override",
+            "reference_id": override["id"],
+            "amount": request.new_rate,
+            "reason": request.reason,
+            "status": "pending",
+            "requested_by": current_user.name,
+            "request_date": datetime.now(UTC).isoformat(),
+        }
+        await db.approvals.insert_one(approval)
+
+        return {"message": "Price change sent for approval", "override_id": override["id"], "approval_id": approval["id"], "status": "pending_approval"}
+    else:
+        await db.rate_overrides.insert_one(override)
+        return {"message": "Price change applied", "override_id": override["id"], "status": "applied"}
+
+
+# 4. GET /api/rates/promotional - Promotional rates
+
+
+@router.get("/rates/promotional")
+async def get_promotional_rates(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """
+    Get promotional rates
+    """
+    await get_current_user(credentials)
+
+    # Promosyon oranı için gerçek koleksiyon/kaynak yok -> fail-closed (sabit promosyonlar kaldırıldı)
+    return {"promotional_rates": [], "count": 0, "data_available": False, "message": "Promosyon oranı verisi yok (promosyon yönetimi kaynağı yapılandırılmamış)."}
+
+
+# ============================================================================
+# CHANNEL MANAGER MOBILE
+# ============================================================================
+
+# 1. GET /api/channels/status - Channel connection status
