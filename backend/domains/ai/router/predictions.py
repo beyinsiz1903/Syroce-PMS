@@ -453,7 +453,7 @@ async def get_occupancy_prediction(
 
     start_date = datetime.now(UTC)
     window_end = start_date + timedelta(days=days)
-    
+
     start_date_iso = start_date.isoformat()
     window_end_iso = window_end.isoformat()
 
