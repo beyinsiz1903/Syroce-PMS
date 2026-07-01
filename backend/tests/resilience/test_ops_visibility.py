@@ -107,11 +107,13 @@ class TestStuckOutboxVisibility:
         cutoff_minutes = 30
 
         # Insert 4 events stuck for >30 min
+        future_time = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
         for _ in range(4):
             event = outbox_event_factory(
                 tenant_id=tenant_id,
                 status="pending",
                 created_at=_utc_past(hours=1),
+                available_at=future_time,
             )
             await db.outbox_events.insert_one(event)
 
@@ -275,7 +277,7 @@ class TestRunbookAvailability:
     """
 
     @pytest.mark.chaos_l1
-    def test_all_14_runbooks_exist(self):
+    async def test_all_14_runbooks_exist(self):
         """All 14 predefined runbooks must be accessible."""
         from controlplane.runbooks import list_runbooks
 
@@ -283,7 +285,7 @@ class TestRunbookAvailability:
         assert len(runbooks) >= 14
 
     @pytest.mark.chaos_l1
-    def test_runbook_has_required_fields(self):
+    async def test_runbook_has_required_fields(self):
         """Each runbook must have all required fields."""
         from controlplane.runbooks import list_runbooks
 
@@ -295,7 +297,7 @@ class TestRunbookAvailability:
             assert len(rb["resolution_steps"]) >= 1
 
     @pytest.mark.chaos_l1
-    def test_critical_operations_have_runbooks(self):
+    async def test_critical_operations_have_runbooks(self):
         """Critical operations must each have at least one runbook."""
         from controlplane.runbooks import list_runbooks
 
@@ -318,7 +320,7 @@ class TestRunbookAvailability:
             )
 
     @pytest.mark.chaos_l1
-    def test_specific_runbook_retrievable(self):
+    async def test_specific_runbook_retrievable(self):
         """Individual runbooks must be retrievable by ID."""
         from controlplane.runbooks import get_runbook, list_runbooks
 

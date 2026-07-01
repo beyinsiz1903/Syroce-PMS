@@ -318,7 +318,7 @@ const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies,
               <div className="grid grid-cols-3 gap-2">
               <Button 
                 size="sm"
-                onClick={() => { onViewFolio(booking.id); onClose(); }}
+                onClick={() => onViewFolio(booking.id)}
                 className="bg-green-600 hover:bg-green-700"
               >
                 <DollarSign className="w-4 h-4 mr-1" />
