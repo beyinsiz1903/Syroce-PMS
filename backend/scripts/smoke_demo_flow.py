@@ -120,7 +120,7 @@ class DemoSmokeTest:
             "steps": [],
         }
 
-    def _req(self, method, endpoint, **kwargs):
+    def _req(self, method, endpoint, idem_key=None, **kwargs):
         url = f"{self.base_url}{endpoint}"
 
         headers = kwargs.get("headers", {})
@@ -129,6 +129,9 @@ class DemoSmokeTest:
 
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
+
+        if idem_key:
+            headers["Idempotency-Key"] = idem_key
 
         kwargs["headers"] = headers
 
@@ -349,7 +352,7 @@ class DemoSmokeTest:
                     "adults": 1,
                     "children": 0,
                 }
-                resp, lat, err = self._req(method, ep, json=booking_data)
+                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-create-booking", json=booking_data)
                 success, resp = self._log_step("4. Create Booking", method, ep, resp, lat, err, expected_status=[200, 201])
                 if success:
                     self.booking_id = self.get_booking_id(resp.json())
@@ -367,15 +370,15 @@ class DemoSmokeTest:
             # Step 6: Check-in
             if self.booking_id:
                 method, ep = "POST", f"/api/pms/bookings/{self.booking_id}/check-in"
-                resp, lat, err = self._req(method, ep)
+                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-check-in")
                 self._log_step("6. Check-in", method, ep, resp, lat, err)
             else:
                 self._skip_step("6. Check-in", "Missing booking_id")
 
             # Step 7: Update room status
             if self.room_id:
-                method, ep = "POST", f"/api/housekeeping/rooms/{self.room_id}/status"
-                resp, lat, err = self._req(method, ep, json={"status": "CLEAN"})
+                method, ep = "PUT", f"/api/housekeeping/room/{self.room_id}/status?new_status=cleaning"
+                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-hk-status")
                 self._log_step("7. Room Status Update", method, ep, resp, lat, err)
             else:
                 self._skip_step("7. Room Status Update", "Missing room_id")
@@ -383,7 +386,7 @@ class DemoSmokeTest:
             # Step 8: Folio charge
             if self.folio_id:
                 method, ep = "POST", f"/api/folio/{self.folio_id}/charges"
-                resp, lat, err = self._req(method, ep, json={"amount": 50, "description": "Minibar"})
+                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-folio-charge", json={"amount": 50, "description": "Minibar"})
                 self._log_step("8. Folio Charge", method, ep, resp, lat, err, expected_status=[200, 201])
             else:
                 self._skip_step("8. Folio Charge", "Missing folio_id")
@@ -391,7 +394,7 @@ class DemoSmokeTest:
             # Step 9: Payment
             if self.folio_id:
                 method, ep = "POST", f"/api/folio/{self.folio_id}/payments"
-                resp, lat, err = self._req(method, ep, json={"amount": 50, "method": "CREDIT_CARD"})
+                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-folio-payment", json={"amount": 50, "method": "CREDIT_CARD"})
                 self._log_step("9. Folio Payment", method, ep, resp, lat, err, expected_status=[200, 201])
             else:
                 self._skip_step("9. Folio Payment", "Missing folio_id")
@@ -399,7 +402,7 @@ class DemoSmokeTest:
             # Step 10: Room move
             if self.booking_id and self.room_id and self.target_room_id:
                 method, ep = "POST", f"/api/pms/bookings/{self.booking_id}/room-move"
-                resp, lat, err = self._req(method, ep, json={"new_room_id": self.target_room_id})
+                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-room-move", json={"new_room_id": self.target_room_id})
                 self._log_step("10. Room Move", method, ep, resp, lat, err)
             else:
                 self._skip_step("10. Room Move", "Missing booking_id or target_room_id")
@@ -407,7 +410,8 @@ class DemoSmokeTest:
             # Step 11: Housekeeping task
             if self.room_id:
                 method, ep = "POST", "/api/housekeeping/tasks"
-                resp, lat, err = self._req(method, ep, json={"room_id": self.room_id, "task_type": "CLEANING"})
+                task_payload = {"room_id": self.room_id, "task_type": "cleaning", "priority": "normal", "notes": "Smoke demo flow task"}
+                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-hk-task", json=task_payload)
                 self._log_step("11. Housekeeping Task", method, ep, resp, lat, err, expected_status=[200, 201])
             else:
                 self._skip_step("11. Housekeeping Task", "Missing room_id")
@@ -415,7 +419,7 @@ class DemoSmokeTest:
             # Step 12: Check-out
             if self.booking_id:
                 method, ep = "POST", f"/api/pms/bookings/{self.booking_id}/check-out"
-                resp, lat, err = self._req(method, ep)
+                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-check-out")
                 self._log_step("12. Check-out", method, ep, resp, lat, err)
             else:
                 self._skip_step("12. Check-out", "Missing booking_id")
