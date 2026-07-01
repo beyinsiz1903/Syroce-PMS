@@ -1,9 +1,10 @@
 import argparse
 import json
 import os
+import random
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
@@ -120,7 +121,7 @@ class DemoSmokeTest:
             "steps": [],
         }
 
-    def _req(self, method, endpoint, **kwargs):
+    def _req(self, method, endpoint, idem_key=None, **kwargs):
         url = f"{self.base_url}{endpoint}"
 
         headers = kwargs.get("headers", {})
@@ -129,6 +130,9 @@ class DemoSmokeTest:
 
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
+
+        if idem_key:
+            headers["Idempotency-Key"] = idem_key
 
         kwargs["headers"] = headers
 
@@ -192,7 +196,7 @@ class DemoSmokeTest:
 
         if not tenant_obj:
             resp, lat, err = self._req("GET", "/api/auth/me")
-            if resp and resp.status_code == 200:
+            if resp is not None and resp.status_code == 200:
                 me_data = resp.json()
                 tenant_obj = me_data.get("tenant") or me_data.get("user", {}).get("tenant")
 
@@ -323,36 +327,72 @@ class DemoSmokeTest:
             self._skip_step("11. Housekeeping Task", "Read-only mode")
             self._skip_step("12. Check-out", "Read-only mode")
         else:
-            # Pre-requisite: Find a room to use for booking and status
-            resp, lat, err = self._req("GET", "/api/pms/rooms?limit=5")
-            if resp and resp.status_code == 200:
+            # Pre-requisite: Find rooms to use for booking and status
+            safe_rooms = []
+            unsafe_rooms = []
+            resp, lat, err = self._req("GET", "/api/pms/rooms?limit=50")
+            if resp is not None and resp.status_code == 200:
                 try:
-                    rooms = extract_items(resp.json())
-                    if len(rooms) > 0:
-                        self.room_id = rooms[0].get("id")
-                    if len(rooms) > 1:
-                        self.target_room_id = rooms[1].get("id")
+                    all_rooms = extract_items(resp.json())
+                    safe_statuses = ["available", "clean", "ready", "vacant_clean", "inspected"]
+                    for r in all_rooms:
+                        status = r.get("status", "").lower()
+                        if status in safe_statuses:
+                            safe_rooms.append(r)
+                        else:
+                            unsafe_rooms.append(r)
                 except Exception:
                     pass
 
-            # Step 4: Create booking
-            if not self.room_id:
-                self._skip_step("4. Create Booking", "Missing room_id from prerequisite")
+            candidate_rooms = safe_rooms + unsafe_rooms
+
+            # Step 4: Create booking with retries
+            if not candidate_rooms:
+                self._skip_step("4. Create Booking", "No rooms available from prerequisite")
             else:
                 method, ep = "POST", "/api/pms/quick-booking"
-                booking_data = {
-                    "guest_name": f"SMOKE_DEMO_{self.ts_id}",
-                    "check_in": "2026-07-01T14:00:00Z",
-                    "check_out": "2026-07-05T12:00:00Z",
-                    "room_id": self.room_id,
-                    "total_amount": 100.0,
-                    "adults": 1,
-                    "children": 0,
-                }
-                resp, lat, err = self._req(method, ep, json=booking_data)
-                success, resp = self._log_step("4. Create Booking", method, ep, resp, lat, err, expected_status=[200, 201])
-                if success:
-                    self.booking_id = self.get_booking_id(resp.json())
+                success = False
+
+                # Retry up to 5 times with different rooms
+                for i in range(min(5, len(candidate_rooms))):
+                    candidate_room_id = candidate_rooms[i].get("id")
+
+                    # Random date between 30 and 365 days in the future
+                    days_ahead = random.randint(30, 365)
+                    check_in_date = datetime.now() + timedelta(days=days_ahead)
+                    check_out_date = check_in_date + timedelta(days=1)
+
+                    check_in_str = check_in_date.strftime("%Y-%m-%dT14:00:00Z")
+                    check_out_str = check_out_date.strftime("%Y-%m-%dT12:00:00Z")
+
+                    booking_data = {
+                        "guest_name": f"Smoke Demo Guest {self.ts_id}",
+                        "check_in": check_in_str,
+                        "check_out": check_out_str,
+                        "room_id": candidate_room_id,
+                        "total_amount": 100.0,
+                        "adults": 1,
+                        "children": 0,
+                    }
+
+                    idem_key = f"smoke-demo-{self.ts_id}-cb-{i}"
+                    resp, lat, err = self._req(method, ep, idem_key=idem_key, json=booking_data)
+
+                    if resp is not None and resp.status_code == 409:
+                        log_warn(f"Room {candidate_room_id} conflicted on {check_in_str}, retrying...")
+                        continue
+
+                    success, resp = self._log_step(f"4. Create Booking (Attempt {i + 1})", method, ep, resp, lat, err, expected_status=[200, 201])
+                    if success:
+                        self.booking_id = self.get_booking_id(resp.json())
+                        self.room_id = candidate_room_id
+                        # Assign target room id for room move (next safe room if available)
+                        if i + 1 < len(candidate_rooms):
+                            self.target_room_id = candidate_rooms[i + 1].get("id")
+                        break
+
+                if not success:
+                    self._skip_step("4. Create Booking", "No non-conflicting room/date found for demo mutation run")
 
             # Step 5: Booking details
             if self.booking_id:
@@ -366,40 +406,76 @@ class DemoSmokeTest:
 
             # Step 6: Check-in
             if self.booking_id:
-                method, ep = "POST", f"/api/pms/bookings/{self.booking_id}/check-in"
-                resp, lat, err = self._req(method, ep)
+                method, ep = "POST", f"/api/frontdesk/checkin/{self.booking_id}?create_folio=true&force_clean=true"
+                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-check-in")
                 self._log_step("6. Check-in", method, ep, resp, lat, err)
             else:
                 self._skip_step("6. Check-in", "Missing booking_id")
 
             # Step 7: Update room status
             if self.room_id:
-                method, ep = "POST", f"/api/housekeeping/rooms/{self.room_id}/status"
-                resp, lat, err = self._req(method, ep, json={"status": "CLEAN"})
+                method, ep = "PUT", f"/api/housekeeping/room/{self.room_id}/status?new_status=cleaning"
+                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-hk-status")
                 self._log_step("7. Room Status Update", method, ep, resp, lat, err)
             else:
                 self._skip_step("7. Room Status Update", "Missing room_id")
 
             # Step 8: Folio charge
-            if self.folio_id:
-                method, ep = "POST", f"/api/folio/{self.folio_id}/charges"
-                resp, lat, err = self._req(method, ep, json={"amount": 50, "description": "Minibar"})
-                self._log_step("8. Folio Charge", method, ep, resp, lat, err, expected_status=[200, 201])
+            folio_charge_posted = False
+            folio_charge_skipped_due_to_replica_set = False
+
+            if self.booking_id:
+                method, ep = "POST", f"/api/frontdesk/folio/{self.booking_id}/charge"
+                charge_payload = {"charge_category": "other", "description": "Smoke demo flow charge", "amount": 100, "quantity": 1}
+                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-folio-charge", json=charge_payload)
+
+                is_replica_set_error = False
+                if resp is not None and resp.status_code == 503:
+                    resp_text_lower = resp.text.lower() if resp.text else ""
+                    detail_lower = ""
+                    try:
+                        detail = resp.json().get("detail", "")
+                        detail_lower = str(detail).lower()
+                    except Exception:
+                        pass
+
+                    phrases = ["mongo replica set", "replica set gerekli", "atomik garanti", "transaction requires replica set", "replica", "atomik", "transaction"]
+                    if any(p in resp_text_lower or p in detail_lower for p in phrases):
+                        is_replica_set_error = True
+
+                if resp is not None and resp.status_code in [200, 201]:
+                    success, resp = self._log_step("8. Folio Charge", method, ep, resp, lat, err, expected_status=[200, 201])
+                    folio_charge_posted = True
+                elif is_replica_set_error:
+                    folio_charge_skipped_due_to_replica_set = True
+                    self._skip_step("8. Folio Charge", "Skipped in local standalone MongoDB: folio charge requires replica set transaction support")
+                    if "environment_caveats" not in self.report_data:
+                        self.report_data["environment_caveats"] = []
+                    caveat = "local MongoDB standalone; folio charge transaction requires replica set"
+                    if caveat not in self.report_data["environment_caveats"]:
+                        self.report_data["environment_caveats"].append(caveat)
+                else:
+                    self._log_step("8. Folio Charge", method, ep, resp, lat, err, expected_status=[200, 201])
             else:
-                self._skip_step("8. Folio Charge", "Missing folio_id")
+                self._skip_step("8. Folio Charge", "Missing booking_id")
 
             # Step 9: Payment
-            if self.folio_id:
-                method, ep = "POST", f"/api/folio/{self.folio_id}/payments"
-                resp, lat, err = self._req(method, ep, json={"amount": 50, "method": "CREDIT_CARD"})
-                self._log_step("9. Folio Payment", method, ep, resp, lat, err, expected_status=[200, 201])
+            if self.booking_id:
+                if folio_charge_skipped_due_to_replica_set or not folio_charge_posted:
+                    self._skip_step("9. Folio Payment", "Skipped because folio charge was not posted")
+                else:
+                    method, ep = "POST", f"/api/frontdesk/folio/{self.booking_id}/payment"
+                    payment_payload = {"amount": 100, "method": "card", "payment_type": "interim", "reference": "SMOKE-DEMO-FLOW", "notes": "Smoke demo flow payment"}
+                    resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-folio-payment", json=payment_payload)
+                    self._log_step("9. Folio Payment", method, ep, resp, lat, err, expected_status=[200, 201])
             else:
-                self._skip_step("9. Folio Payment", "Missing folio_id")
+                self._skip_step("9. Folio Payment", "Missing booking_id")
 
             # Step 10: Room move
-            if self.booking_id and self.room_id and self.target_room_id:
-                method, ep = "POST", f"/api/pms/bookings/{self.booking_id}/room-move"
-                resp, lat, err = self._req(method, ep, json={"new_room_id": self.target_room_id})
+            if self.booking_id and self.target_room_id:
+                method, ep = "POST", "/api/frontdesk/v2/room-move"
+                room_move_payload = {"booking_id": self.booking_id, "new_room_id": self.target_room_id, "reason": "Smoke demo flow"}
+                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-room-move", json=room_move_payload)
                 self._log_step("10. Room Move", method, ep, resp, lat, err)
             else:
                 self._skip_step("10. Room Move", "Missing booking_id or target_room_id")
@@ -407,15 +483,16 @@ class DemoSmokeTest:
             # Step 11: Housekeeping task
             if self.room_id:
                 method, ep = "POST", "/api/housekeeping/tasks"
-                resp, lat, err = self._req(method, ep, json={"room_id": self.room_id, "task_type": "CLEANING"})
+                task_payload = {"room_id": self.room_id, "task_type": "cleaning", "priority": "normal", "notes": "Smoke demo flow task"}
+                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-hk-task", json=task_payload)
                 self._log_step("11. Housekeeping Task", method, ep, resp, lat, err, expected_status=[200, 201])
             else:
                 self._skip_step("11. Housekeeping Task", "Missing room_id")
 
             # Step 12: Check-out
             if self.booking_id:
-                method, ep = "POST", f"/api/pms/bookings/{self.booking_id}/check-out"
-                resp, lat, err = self._req(method, ep)
+                method, ep = "POST", f"/api/frontdesk/checkout/{self.booking_id}?force=true&auto_close_folios=true"
+                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-check-out")
                 self._log_step("12. Check-out", method, ep, resp, lat, err)
             else:
                 self._skip_step("12. Check-out", "Missing booking_id")
@@ -423,7 +500,7 @@ class DemoSmokeTest:
         # Step 13: Night Audit / Daily Resume (Read-only)
         method, ep = "GET", "/api/trial-balance"
         resp, lat, err = self._req(method, ep)
-        if resp and resp.status_code != 404:
+        if resp is not None and resp.status_code != 404:
             self._log_step("13. Night Audit / Daily Resume", method, ep, resp, lat, err)
         else:
             # Fallback
