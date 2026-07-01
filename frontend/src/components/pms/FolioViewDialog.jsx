@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, ClipboardList, DollarSign, RotateCcw, FileText, ArrowLeftRight, Printer, Send, Loader2, KeyRound, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Plus, ClipboardList, DollarSign, RotateCcw, FileText, ArrowLeftRight, Printer, Send, Loader2, KeyRound, RefreshCw, AlertTriangle, Receipt, CreditCard } from 'lucide-react';
 
 const VAT_OPTIONS = [
   { value: '0', label: '%0' },
@@ -323,62 +323,75 @@ th{background:#f5f5f5}
 
           {selectedFolio && (
             <div className="space-y-6">
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-lg border">
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <div className="text-sm text-gray-600">{t('pms.guest', 'Misafir')}</div>
-                    <div className="font-semibold">
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <div className="grid grid-cols-3 gap-6 divide-x divide-gray-100">
+                  <div className="px-4">
+                    <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">{t('pms.guest', 'Misafir Bilgileri')}</div>
+                    <div className="font-semibold text-gray-900 text-lg">
                       {guests.find(g => g.id === selectedFolio.guest_id)?.name || '—'}
                     </div>
                   </div>
-                  <div>
-                    <div className="text-sm text-gray-600">{t('pms.reservation', 'Rezervasyon')}</div>
-                    <div className="font-semibold">
+                  <div className="px-6">
+                    <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">{t('pms.reservation', 'Konaklama Tarihleri')}</div>
+                    <div className="font-semibold text-gray-800 text-base mt-1">
                       {(() => {
                         const booking = bookings.find(b => b.id === selectedFolio.booking_id);
                         if (!booking) return '—';
-                        return `${new Date(booking.check_in).toLocaleDateString()} - ${new Date(booking.check_out).toLocaleDateString()}`;
+                        return `${new Date(booking.check_in).toLocaleDateString()}  →  ${new Date(booking.check_out).toLocaleDateString()}`;
                       })()}
                     </div>
                   </div>
-                  <div>
-                    <div className="text-sm text-gray-600">{t('pms.currentBalance', 'Bakiye')}</div>
-                    <div className={`text-2xl font-bold ${selectedFolio.balance > 0 ? 'text-red-600' : selectedFolio.balance < 0 ? 'text-green-600' : 'text-gray-600'}`}>
+                  <div className="px-6 flex flex-col items-end justify-center">
+                    <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">{t('pms.currentBalance', 'Güncel Bakiye')}</div>
+                    <div className={`text-3xl font-black tabular-nums tracking-tight ${selectedFolio.balance > 0 ? 'text-blue-600' : selectedFolio.balance < 0 ? 'text-emerald-600' : 'text-gray-800'}`}>
                       {fmt(selectedFolio.balance)} ₺
                     </div>
-                    <div className="text-xs text-gray-500">
-                      {selectedFolio.balance > 0 ? 'Misafir borçlu' : selectedFolio.balance < 0 ? 'Otel borçlu' : 'Dengeli'}
+                    <div className="mt-2">
+                      {selectedFolio.balance > 0 ? (
+                        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">Tahsilat Bekliyor</span>
+                      ) : selectedFolio.balance < 0 ? (
+                        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">İade Bekliyor</span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-600">Bakiye Dengeli</span>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="flex gap-2 flex-wrap">
-                <Button onClick={() => setSubDialog('post-charge')} variant="default">
-                  <Plus className="w-4 h-4 mr-2" /> İşlem Ekle
-                </Button>
-                <Button onClick={() => setSubDialog('post-payment')} variant="default">
-                  <Plus className="w-4 h-4 mr-2" /> Ödeme Ekle
-                </Button>
-                <Button onClick={loadProforma} variant="outline" disabled={proformaLoading}>
-                  <FileText className="w-4 h-4 mr-2" /> {proformaLoading ? 'Hazırlanıyor…' : 'Proforma Fatura'}
-                </Button>
-                <Button onClick={loadOperations} variant="outline" disabled={opsLoading}>
-                  <ArrowLeftRight className="w-4 h-4 mr-2" /> {opsLoading ? 'Yükleniyor…' : 'Transfer Geçmişi'}
-                </Button>
-                <Button onClick={openTransferDialog} variant="outline">
-                  <Send className="w-4 h-4 mr-2" /> İşlem Aktar
-                </Button>
+              <div className="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100">
+                <div className="flex gap-2">
+                  <Button onClick={() => setSubDialog('post-charge')} variant="default" className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm">
+                    <Plus className="w-4 h-4 mr-1.5" /> İşlem Ekle
+                  </Button>
+                  <Button onClick={() => setSubDialog('post-payment')} variant="default" className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">
+                    <Plus className="w-4 h-4 mr-1.5" /> Ödeme Ekle
+                  </Button>
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={loadProforma} variant="outline" disabled={proformaLoading} className="bg-white hover:bg-gray-50">
+                    <FileText className="w-4 h-4 mr-1.5 text-gray-500" /> {proformaLoading ? 'Hazırlanıyor…' : 'Proforma Fatura'}
+                  </Button>
+                  <Button onClick={loadOperations} variant="outline" disabled={opsLoading} className="bg-white hover:bg-gray-50">
+                    <ArrowLeftRight className="w-4 h-4 mr-1.5 text-gray-500" /> {opsLoading ? 'Yükleniyor…' : 'Transfer Geçmişi'}
+                  </Button>
+                  <Button onClick={openTransferDialog} variant="outline" className="bg-white hover:bg-gray-50">
+                    <Send className="w-4 h-4 mr-1.5 text-gray-500" /> İşlem Aktar
+                  </Button>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <h3 className="text-lg font-semibold mb-3 flex items-center">
-                    <ClipboardList className="w-5 h-5 mr-2" /> İşlemler
+                  <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center">
+                    <ClipboardList className="w-5 h-5 mr-2 text-blue-600" /> İşlemler
                   </h3>
-                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                  <div className="space-y-2 max-h-[450px] overflow-y-auto pr-1">
                     {folioCharges.length === 0 ? (
-                      <div className="text-center text-gray-400 py-8">Henüz işlem yok</div>
+                      <div className="flex flex-col items-center justify-center py-12 px-4 border border-dashed border-gray-200 rounded-xl bg-gray-50 text-gray-400">
+                        <Receipt className="w-10 h-10 mb-3 text-gray-300" />
+                        <span className="font-medium">Henüz bir işlem eklenmemiş</span>
+                      </div>
                     ) :
                       folioCharges.map((charge) => {
                         const isPOSCharge = ['restaurant', 'food', 'bar', 'beverage', 'room_service'].includes(charge.charge_category);
@@ -447,12 +460,15 @@ th{background:#f5f5f5}
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-semibold mb-3 flex items-center">
-                    <DollarSign className="w-5 h-5 mr-2" /> Ödemeler
+                  <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center">
+                    <DollarSign className="w-5 h-5 mr-2 text-emerald-600" /> Ödemeler
                   </h3>
-                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                  <div className="space-y-2 max-h-[450px] overflow-y-auto pr-1">
                     {folioPayments.length === 0 ? (
-                      <div className="text-center text-gray-400 py-8">Henüz ödeme yok</div>
+                      <div className="flex flex-col items-center justify-center py-12 px-4 border border-dashed border-gray-200 rounded-xl bg-gray-50 text-gray-400">
+                        <CreditCard className="w-10 h-10 mb-3 text-gray-300" />
+                        <span className="font-medium">Henüz bir tahsilat yapılmamış</span>
+                      </div>
                     ) :
                       folioPayments.map((payment) => (
                         <Card key={payment.id} className={payment.voided ? 'opacity-60 bg-red-50/30' : ''}>
