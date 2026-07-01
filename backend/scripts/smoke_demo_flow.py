@@ -369,7 +369,7 @@ class DemoSmokeTest:
 
             # Step 6: Check-in
             if self.booking_id:
-                method, ep = "POST", f"/api/pms/bookings/{self.booking_id}/check-in"
+                method, ep = "POST", f"/api/frontdesk/checkin/{self.booking_id}?create_folio=true&force_clean=true"
                 resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-check-in")
                 self._log_step("6. Check-in", method, ep, resp, lat, err)
             else:
@@ -384,25 +384,28 @@ class DemoSmokeTest:
                 self._skip_step("7. Room Status Update", "Missing room_id")
 
             # Step 8: Folio charge
-            if self.folio_id:
-                method, ep = "POST", f"/api/folio/{self.folio_id}/charges"
-                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-folio-charge", json={"amount": 50, "description": "Minibar"})
+            if self.booking_id:
+                method, ep = "POST", f"/api/frontdesk/folio/{self.booking_id}/charge"
+                charge_payload = {"charge_category": "other", "description": "Smoke demo flow charge", "amount": 100, "quantity": 1}
+                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-folio-charge", json=charge_payload)
                 self._log_step("8. Folio Charge", method, ep, resp, lat, err, expected_status=[200, 201])
             else:
-                self._skip_step("8. Folio Charge", "Missing folio_id")
+                self._skip_step("8. Folio Charge", "Missing booking_id")
 
             # Step 9: Payment
-            if self.folio_id:
-                method, ep = "POST", f"/api/folio/{self.folio_id}/payments"
-                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-folio-payment", json={"amount": 50, "method": "CREDIT_CARD"})
+            if self.booking_id:
+                method, ep = "POST", f"/api/frontdesk/folio/{self.booking_id}/payment"
+                payment_payload = {"amount": 100, "method": "card", "payment_type": "interim", "reference": "SMOKE-DEMO-FLOW", "notes": "Smoke demo flow payment"}
+                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-folio-payment", json=payment_payload)
                 self._log_step("9. Folio Payment", method, ep, resp, lat, err, expected_status=[200, 201])
             else:
-                self._skip_step("9. Folio Payment", "Missing folio_id")
+                self._skip_step("9. Folio Payment", "Missing booking_id")
 
             # Step 10: Room move
-            if self.booking_id and self.room_id and self.target_room_id:
-                method, ep = "POST", f"/api/pms/bookings/{self.booking_id}/room-move"
-                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-room-move", json={"new_room_id": self.target_room_id})
+            if self.booking_id and self.target_room_id:
+                method, ep = "POST", "/api/frontdesk/v2/room-move"
+                room_move_payload = {"booking_id": self.booking_id, "new_room_id": self.target_room_id, "reason": "Smoke demo flow"}
+                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-room-move", json=room_move_payload)
                 self._log_step("10. Room Move", method, ep, resp, lat, err)
             else:
                 self._skip_step("10. Room Move", "Missing booking_id or target_room_id")
@@ -418,7 +421,7 @@ class DemoSmokeTest:
 
             # Step 12: Check-out
             if self.booking_id:
-                method, ep = "POST", f"/api/pms/bookings/{self.booking_id}/check-out"
+                method, ep = "POST", f"/api/frontdesk/checkout/{self.booking_id}?force=true&auto_close_folios=true"
                 resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-check-out")
                 self._log_step("12. Check-out", method, ep, resp, lat, err)
             else:
