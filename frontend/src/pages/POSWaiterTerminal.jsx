@@ -208,7 +208,7 @@ const POSWaiterTerminal = () => {
         : null;
 
       const token = localStorage.getItem('token');
-      const res = await fetch('/api/pos/create-order', {
+      const res = await fetch('/api/pos/create-order', { credentials: "include",
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

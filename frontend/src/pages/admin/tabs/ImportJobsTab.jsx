@@ -39,8 +39,8 @@ export default function ImportJobsTab() {
   const fetchData = useCallback(async () => {
     try {
       const [jobsRes, envsRes] = await Promise.all([
-        fetch(`/api/channel-manager/v2/import-jobs?limit=50`, { headers }),
-        fetch(`/api/channel-manager/v2/environments`, { headers }),
+        fetch(`/api/channel-manager/v2/import-jobs?limit=50`, { credentials: "include", headers }),
+        fetch(`/api/channel-manager/v2/environments`, { credentials: "include", headers }),
       ]);
       if (jobsRes.ok) { const d = await jobsRes.json(); setJobs(d.jobs || []); }
       if (envsRes.ok) { const d = await envsRes.json(); setEnvironments(d.environments || {}); }
@@ -55,7 +55,7 @@ export default function ImportJobsTab() {
   const runAll = async () => {
     setRunning(true);
     try {
-      const res = await fetch(`/api/channel-manager/v2/import-jobs/run-all`, { method: 'POST', headers });
+      const res = await fetch(`/api/channel-manager/v2/import-jobs/run-all`, { credentials: "include", method: 'POST', headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       toast.success('Tüm import işleri tetiklendi');
       await fetchData();
@@ -66,7 +66,7 @@ export default function ImportJobsTab() {
   const runSafetyNet = async () => {
     setRunningSafety(true);
     try {
-      const res = await fetch(`/api/channel-manager/v2/safety-net/inventory-sync`, { method: 'POST', headers });
+      const res = await fetch(`/api/channel-manager/v2/safety-net/inventory-sync`, { credentials: "include", method: 'POST', headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       toast.success('Envanter güvenlik ağı senkronizasyonu tetiklendi');
       await fetchData();
@@ -76,7 +76,7 @@ export default function ImportJobsTab() {
 
   const retryJob = async (jobId) => {
     try {
-      const res = await fetch(`/api/channel-manager/v2/import-jobs/${jobId}/retry`, { method: 'POST', headers });
+      const res = await fetch(`/api/channel-manager/v2/import-jobs/${jobId}/retry`, { credentials: "include", method: 'POST', headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       toast.success('İş yeniden denemeye alındı');
       await fetchData();

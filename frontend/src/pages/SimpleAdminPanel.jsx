@@ -17,7 +17,7 @@ const SimpleAdminPanel = () => {
 
   const fetchSystemStatus = async () => {
     try {
-      const response = await fetch(`/api/monitoring/system-health`);
+      const response = await fetch(`/api/monitoring/system-health`, { credentials: "include" });
       const data = await response.json();
       setSystemStatus(data);
       setLoading(false);

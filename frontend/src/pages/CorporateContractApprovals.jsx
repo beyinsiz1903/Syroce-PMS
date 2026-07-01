@@ -65,7 +65,7 @@ const CorporateContractApprovals = () => {
     setError(null);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('/api/sales/corporate-contracts', {
+      const res = await fetch('/api/sales/corporate-contracts', { credentials: "include",
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {

@@ -241,7 +241,7 @@ const ReportBuilder = () => {
     try {
       // Not idempotent — backend insert_one her seferinde yeni UUID üretir.
       // Transient clone retry duplicate template oluşturabilir; plain fetch.
-      const res = await fetch(`/api/reports/builder/templates`, {
+      const res = await fetch(`/api/reports/builder/templates`, { credentials: "include",
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: templateName, config: buildConfig() }),
@@ -286,7 +286,7 @@ const ReportBuilder = () => {
     try {
       // Not idempotent — ilk DELETE başarılıysa retry 404 ile false-failure
       // toast üretir; plain fetch.
-      const res = await fetch(`/api/reports/builder/templates/${id}`, {
+      const res = await fetch(`/api/reports/builder/templates/${id}`, { credentials: "include",
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });

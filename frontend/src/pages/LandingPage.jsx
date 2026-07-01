@@ -259,7 +259,7 @@ const LandingPage = () => {
   // Herhangi bir hatada yerleşik varsayılanlara döner, sayfa asla boş kalmaz.
   useEffect(() => {
     let active = true;
-    fetch('/api/site-content')
+    fetch('/api/site-content', { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => { if (active && data) setContent(mergeLandingContent(data)); })
       .catch(() => {});

@@ -154,7 +154,7 @@ const AdminLeads = () => {
   const handleCsvExport = async () => {
     try {
       const qs = buildQs().toString();
-      const res = await fetch(`/api/admin/leads/export.csv${qs ? `?${qs}` : ""}`);
+      const res = await fetch(`/api/admin/leads/export.csv${qs ? `?${qs}` : ""}`, { credentials: "include" });
       if (!res.ok) {
         toast.error("CSV indirilemedi");
         return;

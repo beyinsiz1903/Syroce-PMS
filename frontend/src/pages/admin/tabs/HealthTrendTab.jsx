@@ -75,7 +75,7 @@ const HealthTrendTab = () => {
 
   const fetchConnectors = useCallback(async () => {
     try {
-      const res = await fetch(`/api/channel-manager/v2/connectors`, { headers });
+      const res = await fetch(`/api/channel-manager/v2/connectors`, { credentials: "include", headers });
       if (res.ok) {
         const data = await res.json();
         const list = data.connectors || data || [];
@@ -91,9 +91,9 @@ const HealthTrendTab = () => {
     setLoading(true);
     try {
       const [dailyRes, weeklyRes, summaryRes] = await Promise.all([
-        fetch(`/api/channel-manager/v2/health-trend/${selectedConnector}/daily?days=30`, { headers }),
-        fetch(`/api/channel-manager/v2/health-trend/${selectedConnector}/weekly?weeks=12`, { headers }),
-        fetch(`/api/channel-manager/v2/health-trend/${selectedConnector}/summary`, { headers }),
+        fetch(`/api/channel-manager/v2/health-trend/${selectedConnector}/daily?days=30`, { credentials: "include", headers }),
+        fetch(`/api/channel-manager/v2/health-trend/${selectedConnector}/weekly?weeks=12`, { credentials: "include", headers }),
+        fetch(`/api/channel-manager/v2/health-trend/${selectedConnector}/summary`, { credentials: "include", headers }),
       ]);
       if (dailyRes.ok) setDailyTrend(await dailyRes.json());
       if (weeklyRes.ok) setWeeklyTrend(await weeklyRes.json());

@@ -82,7 +82,7 @@ const MappingCompletenessTab = () => {
 
   const fetchConnectors = useCallback(async () => {
     try {
-      const res = await fetch(`/api/channel-manager/v2/connectors`, { headers });
+      const res = await fetch(`/api/channel-manager/v2/connectors`, { credentials: "include", headers });
       if (res.ok) {
         const data = await res.json();
         const list = data.connectors || data || [];
@@ -99,7 +99,7 @@ const MappingCompletenessTab = () => {
     if (!selectedConnector) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/channel-manager/v2/mapping-completeness/${selectedConnector}`, { headers });
+      const res = await fetch(`/api/channel-manager/v2/mapping-completeness/${selectedConnector}`, { credentials: "include", headers });
       if (res.ok) {
         setReport(await res.json());
       } else {
