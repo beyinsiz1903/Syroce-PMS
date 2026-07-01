@@ -454,14 +454,17 @@ async def get_occupancy_prediction(
     start_date = datetime.now(UTC)
     window_end = start_date + timedelta(days=days)
 
+    start_date_iso = start_date.isoformat()
+    window_end_iso = window_end.isoformat()
+
     total_rooms, booking_docs = await asyncio.gather(
         db.rooms.count_documents({"tenant_id": current_user.tenant_id}),
         db.bookings.find(
             {
                 "tenant_id": current_user.tenant_id,
                 "status": {"$in": ["confirmed", "guaranteed", "checked_in"]},
-                "check_in": {"$lte": window_end},
-                "check_out": {"$gt": start_date},
+                "check_in": {"$lte": window_end_iso},
+                "check_out": {"$gt": start_date_iso},
             },
             {"_id": 0, "check_in": 1, "check_out": 1},
         ).to_list(10000),
