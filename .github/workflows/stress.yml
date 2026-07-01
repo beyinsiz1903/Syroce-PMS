@@ -1,41 +1,13 @@
 name: Full Stress Suite (one-shot)
 
 # Task #163 + #192 review fix — TÜM stress suite'ini (`yarn test:e2e:stress`)
-# tek deterministik koşuda çalıştırır: seed → F8A+F8B+F8C+F8D+F8E specs (00..28,
-# ~140 test) sırayla → cleanup. Local DigitalOcean sandbox'taki chunked `-g <pattern>`
-# koşularının (110s tool-budget gotcha — bkz `docs/GOTCHAS.md` "F8A Stress
-# Suite") yakalayamadığı ordering / state-sharing regression'larını burada
-# yakalıyoruz.
+# split/shard yapısında çalıştırır: setup (seed) -> parallel matrix shards -> teardown (cleanup).
 #
-# Kapsam (her tur eklendikçe güncellenir, tek doğruluk kaynağı:
-# `docs/STRESS_TEST_ROADMAP.md`):
-#   - F8A  (00..06, 08)   — Front Office + Folio + Housekeeping
-#   - F8B  (10..13)       — Guest Experience (QR/complaints/messaging)
-#   - F8C  (14..17)       — MICE / Event / Banquet / Group / Sales
-#   - F8D  (20..23)       — HR / Staff / Shift / Leave
-#   - F8E  (24..28)       — Finance / Cashier / Accounting / Reports / Currency
-#
-# Schedule:
-#   - Nightly cron at 02:30 UTC (stress tenant — pilot DEĞİL).
-#   - Manual `workflow_dispatch` ad-hoc doğrulama için.
-#
-# Hard-fail gates (herhangi biri → job fail):
-#   1. Playwright exit code != 0
-#       (test fail'leri, FAIL adımlar `expect().not.toBe('FAIL')`, globalSetup
-#        throw — 5 backend gate, `external_calls_made:[]`, STRESS_TENANT_ID !=
-#        PILOT_TENANT_ID, destructive flag, dry-run flag).
-#   2. globalTeardown invariants — cleanup#1 ok, cleanup#2 idempotent, pilot
-#      drift=0 (teardown throw → process exit non-zero).
-#   3. Verdict scrape: drill report `Final verdict` satırı `GO` veya
-#      `GO WITH WATCH` olmalı; `NO-GO` Playwright exit=0 olsa bile workflow'u
-#      kırar. Chunked koşunun veremediği belt-and-suspenders kontrol.
-#
-# Concurrency: aynı stress tenant üzerinde paralel seed/cleanup çakışmasını
-# engellemek için tek slot — ikinci run sıraya girer, iptal edilmez.
-#
-# Outputs: tek konsolide drill report
-#   `docs/drill_reports/YYYYMMDD_stress_<TAG>.md` (chunk sidecar YOK), plus
-#   Playwright HTML report ve trace'ler artifact olarak yüklenir.
+# Kapsam:
+#   - Shard B (Front Office Core): Specs 00..09, 95, 99 — Reservation, room move, folio, night audit.
+#   - Shard C (Operations & Service): Specs 08, 08B, 10..13, 98-maintenance, 98-messaging — Housekeeping, complaints, messaging.
+#   - Shard D (MICE & Sales & HR & Finance): Specs 14..29, 32..35B, 37..39B, 70..72, 98-pos*, 98-rms*, 99-pos* — MICE, HR, Finance.
+#   - Shard E (Security & Integrations): Specs 30, 31, 36, 40..45, 50..52B, 60..66, 96, 97, 98-auth*, 98-vcc*, 98B*, 98C*, 98D* — Security, cross-tenant isolation, CM.
 
 on:
     schedule:
@@ -55,80 +27,39 @@ on:
                 required: false
                 default: ''
 
-# Murat review #C2: aynı stress tenant üzerinde nightly cron + manuel dispatch +
-# push trigger çakışırsa biri seed yaparken diğeri cleanup yapabilir → sahte
-# kırmızı / veri karışması. Tek slot, ikinci run sıraya girer (cancel-in-progress
-# false — koşan run'ı yarıda kesip orphan data bırakmıyoruz).
 concurrency:
     group: stress-suite-one-shot
     cancel-in-progress: false
 
 env:
     NODE_VERSION: '22'
+    # Global environment vars for all jobs
+    E2E_BASE_URL: ${{ secrets.STRESS_E2E_BASE_URL }}
+    E2E_FE_BASE_URL: ${{ secrets.STRESS_FE_BASE_URL }}
+    E2E_ADMIN_EMAIL: ${{ secrets.STRESS_PILOT_ADMIN_EMAIL }}
+    E2E_ADMIN_PASSWORD: ${{ secrets.STRESS_PILOT_ADMIN_PASSWORD }}
+    E2E_STRESS_ADMIN_EMAIL: ${{ secrets.STRESS_TENANT_ADMIN_EMAIL }}
+    E2E_STRESS_ADMIN_PASSWORD: ${{ secrets.STRESS_TENANT_ADMIN_PASSWORD }}
+    E2E_STRESS_TENANT_ID: ${{ secrets.STRESS_TENANT_ID }}
+    PILOT_TENANT_ID: ${{ secrets.PILOT_TENANT_ID }}
+    E2E_ALLOW_DESTRUCTIVE_STRESS: 'true'
+    E2E_EXTERNAL_DRY_RUN: 'true'
+    HOTELRUNNER_WEBHOOK_SECRET: ${{ secrets.STRESS_HOTELRUNNER_WEBHOOK_SECRET }}
+    E2E_ROOM_COUNT: ${{ github.event.inputs.room_count || '500' }}
+    CI: 'true'
+    DISABLE_EXPO_PUSH: '1'
+    SLACK_WEBHOOK_URL: ${{ secrets.STRESS_SLACK_WEBHOOK_URL }}
 
 jobs:
-    stress:
-        name: Full stress suite (one-shot)
+    setup:
+        name: Stress Setup & Seed
         runs-on: ubuntu-latest
-        # Murat review #E: suite F8A→F8E büyüdü (~140 test). 30dk artık dar;
-        # 60dk hem mevcut kapsam hem F8F/G/H/I/J planlı eklemeler için tampon.
-        timeout-minutes: 90
-        env:
-            # Public stress environment (pilot DEĞİL). Repo secret üzerinden.
-            E2E_BASE_URL: ${{ secrets.STRESS_E2E_BASE_URL }}
-            # Murat review #D: FE render / TTI ölçen spec'ler için ayrı FE
-            # base URL desteği. Secret yoksa Playwright tarafı E2E_BASE_URL'e
-            # fallback yapar (mevcut davranış korunur — SKIP yerine API URL'i
-            # FE olarak kullanılır, BE+FE aynı origin'de döndüğü pilot'lar için).
-            E2E_FE_BASE_URL: ${{ secrets.STRESS_FE_BASE_URL }}
-            # Pilot super_admin — /api/admin/stress/* (require_super_admin) için.
-            E2E_ADMIN_EMAIL: ${{ secrets.STRESS_PILOT_ADMIN_EMAIL }}
-            E2E_ADMIN_PASSWORD: ${{ secrets.STRESS_PILOT_ADMIN_PASSWORD }}
-            # Stress tenant admin (login + post-seed snapshot'lar).
-            E2E_STRESS_ADMIN_EMAIL: ${{ secrets.STRESS_TENANT_ADMIN_EMAIL }}
-            E2E_STRESS_ADMIN_PASSWORD: ${{ secrets.STRESS_TENANT_ADMIN_PASSWORD }}
-            # Tenant isolation gates — EŞİT OLMAMALI (pre-flight enforce).
-            E2E_STRESS_TENANT_ID: ${{ secrets.STRESS_TENANT_ID }}
-            PILOT_TENANT_ID: ${{ secrets.PILOT_TENANT_ID }}
-            # Fail-closed flags — globalSetup tam "true" yoksa throw.
-            E2E_ALLOW_DESTRUCTIVE_STRESS: 'true'
-            E2E_EXTERNAL_DRY_RUN: 'true'
-            # Wave 6 (REVIEW/SKIP zeroing) — runner-side test-only HMAC secret.
-            # Spec 51-F / 52-E imzalı valid-path'i SADECE bu secret set ise sürer;
-            # yoksa honest REVIEW kalır (fake-green YOK). Bu, payload'ı İMZALAMAK
-            # için runner tarafında gerekir. KRİTİK: signed path'in 2xx PASS
-            # vermesi için stres BACKEND deployment'ı AYNI değeri kendi
-            # HOTELRUNNER_WEBHOOK_SECRET env'inde tutmalı (backend imzayı doğrular).
-            # Bu test-only bir değerdir; PROD gerçek secret kullanır.
-            # Backend-side mirror + Exely/KBS/GraphQL posture runbook:
-            #   docs/drill_reports/20260529_review_skip_wave6_candidate.md
-            HOTELRUNNER_WEBHOOK_SECRET: ${{ secrets.STRESS_HOTELRUNNER_WEBHOOK_SECRET }}
-            # Tek konsolide rapor (lokal per-chunk tag'leme override edilir).
-            STRESS_REPORT_TAG: ${{ github.event.inputs.report_tag || 'full_stress_suite' }}
-            STRESS_REPORT_TITLE: 'Full Operational Stress Suite (CI one-shot) — F8A+F8B+F8C+F8D+F8E'
-            E2E_ROOM_COUNT: ${{ github.event.inputs.room_count || '500' }}
-            CI: 'true'
-            # Task #99: F9C § 98 mobile staff spec hard-fails self-check if
-            # DISABLE_EXPO_PUSH != '1' (would otherwise risk a real Expo
-            # delivery to the registered ExponentPushToken[...] payload).
-            # Set job-wide so the nightly run doesn't need a manual override.
-            DISABLE_EXPO_PUSH: '1'
-            STRESS_SPEC_PATTERN: ${{ github.event.inputs.spec_pattern || '' }}
-            # Murat review #C1: Slack webhook job-level env'e taşındı. Step-level
-            # `env:` GitHub Actions'ta `if:` koşulundan SONRA bağlanır → mevcut
-            # step-level kullanımda `if: ... && env.SLACK_WEBHOOK_URL != ''`
-            # her zaman false döner, fail durumunda Slack'e hiç POST atılmaz.
-            # Job-level env önce bağlanır, condition güvenli çalışır.
-            SLACK_WEBHOOK_URL: ${{ secrets.STRESS_SLACK_WEBHOOK_URL }}
+        timeout-minutes: 20
         steps:
             - uses: actions/checkout@v4
 
             - name: Pre-flight — required secrets + base URL health
               id: preflight
-              # Murat review #F: secret presence + tenant-id eşitlik kontrolü
-              # halihazırda vardı; üstüne `E2E_BASE_URL` format kontrolü ve
-              # `/api/health` 2-3 retry'lı erişilebilirlik testi eklendi. Yanlış
-              # domain / down ortam → 5dk install öncesi hızlı fail.
               run: |
                   set -euo pipefail
                   missing=()
@@ -145,15 +76,10 @@ jobs:
                       echo "::error::E2E_STRESS_TENANT_ID == PILOT_TENANT_ID — fail-closed."
                       exit 1
                   fi
-                  # URL format guard (boş değil + http/https şeması).
                   if ! echo "$E2E_BASE_URL" | grep -qE '^https?://[^[:space:]]+'; then
                       echo "::error::E2E_BASE_URL formatı geçersiz: '$E2E_BASE_URL'"
                       exit 1
                   fi
-                  # Health endpoint retry — /health (warm-up gate izin verir, hep 200).
-                  # /api/health warm-up sırasında 503 döner (fresh deploy bootstrap
-                  # 90-120s sürebilir); /health route bootstrap'tan bağımsız 200 verir.
-                  # 30 deneme × 5s = 2.5 dakika ceiling (cold-start guard).
                   reachable=0
                   for attempt in $(seq 1 30); do
                       code=$(curl -sS -o /dev/null -w '%{http_code}' \
@@ -167,7 +93,7 @@ jobs:
                       sleep 5
                   done
                   if [ "$reachable" -eq 0 ]; then
-                      echo "::error::E2E_BASE_URL erişilemez (30 retry × 5s sonrası HTTP 5xx veya bağlantı yok)"
+                      echo "::error::E2E_BASE_URL erişilemez"
                       exit 1
                   fi
                   echo "✓ Pre-flight gates OK"
@@ -180,52 +106,95 @@ jobs:
                   cache-dependency-path: frontend/yarn.lock
 
             - name: Install frontend deps
-              id: install_deps
               run: cd frontend && yarn install --ignore-engines --frozen-lockfile
 
             - name: Install Playwright browsers
-              id: install_browsers
               run: |
-                  # GitHub runner'inda Playwright ile alakasiz Microsoft apt kaynaklari
-                  # (packages.microsoft.com) 403 donup `apt-get update`'i dusuruyor; bu yuzden
-                  # `--with-deps` patliyor. Bu kaynaklari kaldir ki gercek Playwright deps kurulsun.
                   sudo find /etc/apt/sources.list.d -type f \( -name '*.list' -o -name '*.sources' \) \
                       -exec grep -lE 'packages\.microsoft\.com' {} + 2>/dev/null | xargs -r sudo rm -f || true
                   cd frontend && yarn e2e:install
 
-            - name: Run full stress suite (one-shot)
-              id: run_stress
-              # `-g` filtre YOK, chunking YOK — tüm spec'ler (F8A+F8B+F8C+F8D+F8E,
-              # 00..28, ~140 test) tek Playwright process'inde sıralı koşar.
-              # workers=1 zaten playwright.stress.config.js'de zorunlu.
-              #
-              # Task #59 — targeted single-spec dispatch (F9D finance folio v.b.):
-              # `STRESS_SPEC_PATTERN` workflow_dispatch input'undan gelir, set
-              # edilirse Playwright'a positional arg olarak iletilir (path
-              # `e2e-stress/` köküne göredir; örn.
-              # `specs/99-finance-folio-surface.spec.js`). Boş = full suite.
+            - name: Run Gates and Database Seed
+              env:
+                  STRESS_SKIP_TEARDOWN: 'true'
               run: |
-                  set -euo pipefail
                   cd frontend
-                  if [ -n "${STRESS_SPEC_PATTERN}" ]; then
-                      echo "Targeted stress run: ${STRESS_SPEC_PATTERN}"
-                      yarn playwright test --config=playwright.stress.config.js "${STRESS_SPEC_PATTERN}"
-                  else
-                      yarn test:e2e:stress
-                  fi
+                  yarn playwright test --config=playwright.stress.config.js specs/00-gates.spec.js specs/01-bulk-seed-500.spec.js
+
+            - name: Upload Auth State
+              uses: actions/upload-artifact@v5
+              with:
+                  name: stress-auth
+                  path: frontend/e2e-stress/.auth/
+                  retention-days: 1
+
+    stress:
+        name: Shard ${{ matrix.shard }} - ${{ matrix.name }}
+        needs: setup
+        runs-on: ubuntu-latest
+        timeout-minutes: 45
+        strategy:
+            fail-fast: false
+            matrix:
+                shard: [B, C, D, E]
+                include:
+                    - shard: B
+                      name: "Front Office Core"
+                      spec_pattern: "specs/02-*.spec.js specs/03-*.spec.js specs/04-*.spec.js specs/05-*.spec.js specs/06-*.spec.js specs/09-*.spec.js specs/95-*.spec.js specs/99-*.spec.js specs/99B-*.spec.js"
+                      report_tag: "shard_b_front_office"
+                    - shard: C
+                      name: "Operations & Service"
+                      spec_pattern: "specs/08-*.spec.js specs/08B-*.spec.js specs/10-*.spec.js specs/11-*.spec.js specs/12-*.spec.js specs/13-*.spec.js specs/98-maintenance-workorder-lifecycle.spec.js specs/98-messaging-template-lifecycle.spec.js"
+                      report_tag: "shard_c_operations"
+                    - shard: D
+                      name: "MICE & Sales & HR & Finance"
+                      spec_pattern: "specs/14-*.spec.js specs/15-*.spec.js specs/16-*.spec.js specs/17-*.spec.js specs/18-*.spec.js specs/19-*.spec.js specs/20-*.spec.js specs/21-*.spec.js specs/22-*.spec.js specs/23-*.spec.js specs/24-*.spec.js specs/25-*.spec.js specs/26-*.spec.js specs/27-*.spec.js specs/28-*.spec.js specs/29-*.spec.js specs/32-*.spec.js specs/33-*.spec.js specs/33B-*.spec.js specs/34-*.spec.js specs/35-*.spec.js specs/35B-*.spec.js specs/37-*.spec.js specs/38-*.spec.js specs/38B-*.spec.js specs/39-*.spec.js specs/39B-*.spec.js specs/70-*.spec.js specs/71-*.spec.js specs/72-*.spec.js specs/98-mobile-cashier-surface.spec.js specs/98-payment-pos-reconciliation-dryrun.spec.js specs/98-pos-deep-lifecycle.spec.js specs/98-pos-kds-inventory.spec.js specs/98-efatura-earsiv-dryrun.spec.js specs/98-konaklama-vergisi-dryrun.spec.js specs/98-fnb-beo-generator.spec.js specs/98-golf-operational.spec.js specs/98-rms-revenue-deep.spec.js specs/98-sales-basic-lifecycle.spec.js specs/98-spa-wellness-operational.spec.js"
+                      report_tag: "shard_d_mice_hr_finance"
+                    - shard: E
+                      name: "Security & Integrations"
+                      spec_pattern: "specs/30-*.spec.js specs/31-*.spec.js specs/36-*.spec.js specs/40-*.spec.js specs/41-*.spec.js specs/41B-*.spec.js specs/42-*.spec.js specs/43-*.spec.js specs/44-*.spec.js specs/45-*.spec.js specs/50-*.spec.js specs/51-*.spec.js specs/52-*.spec.js specs/52B-*.spec.js specs/60-*.spec.js specs/61-*.spec.js specs/62-*.spec.js specs/63-*.spec.js specs/64-*.spec.js specs/65-*.spec.js specs/66-*.spec.js specs/96-*.spec.js specs/97-*.spec.js specs/98-auth-token-lifecycle.spec.js specs/98-vcc-pci-compliance.spec.js specs/98B-websocket-tenant-isolation.spec.js specs/98C-twofa-totp-lifecycle.spec.js specs/98D-peer-login-throttle.spec.js"
+                      report_tag: "shard_e_security_integrations"
+        env:
+            STRESS_SKIP_SETUP: 'true'
+            STRESS_SKIP_TEARDOWN: 'true'
+            STRESS_REPORT_TAG: ${{ matrix.report_tag }}
+            STRESS_REPORT_TITLE: 'Stress Shard ${{ matrix.shard }} — ${{ matrix.name }}'
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v5
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+                  cache: 'yarn'
+                  cache-dependency-path: frontend/yarn.lock
+
+            - name: Install frontend deps
+              run: cd frontend && yarn install --ignore-engines --frozen-lockfile
+
+            - name: Install Playwright browsers
+              run: |
+                  sudo find /etc/apt/sources.list.d -type f \( -name '*.list' -o -name '*.sources' \) \
+                      -exec grep -lE 'packages\.microsoft\.com' {} + 2>/dev/null | xargs -r sudo rm -f || true
+                  cd frontend && yarn e2e:install
+
+            - name: Download Auth State
+              uses: actions/download-artifact@v5
+              with:
+                  name: stress-auth
+                  path: frontend/e2e-stress/.auth/
+
+            - name: Run Shard Specs
+              run: |
+                  cd frontend
+                  yarn playwright test --config=playwright.stress.config.js ${{ matrix.spec_pattern }}
 
             - name: Verify drill report verdict (hard-fail on NO-GO)
               id: verdict_check
-              # Belt-and-suspenders: markdown reporter counters + teardown
-              # snapshot + sevAgg'a göre verdict satırı yazar. Grep'liyoruz ve
-              # Playwright exit code'a takılmadan NO-GO geçtiyse abort ediyoruz
-              # (örn. counters.FAIL>0 annotation üzerinden işaretlendi ama test
-              # assertion fail olmadı). Bu step her zaman koşar; aşağıdaki
-              # artifact upload'lar bu gate tripped olsa da raporu alır.
               if: always()
               run: |
                   set -euo pipefail
-                  report=$(ls -1t docs/drill_reports/*_stress_${STRESS_REPORT_TAG}.md 2>/dev/null | head -n1 || true)
+                  report=$(ls -1t docs/drill_reports/*_stress_${{ env.STRESS_REPORT_TAG }}.md 2>/dev/null | head -n1 || true)
                   verdict="UNKNOWN"
                   verdict_line=""
                   if [ -n "$report" ]; then
@@ -240,7 +209,6 @@ jobs:
                           verdict="GO"
                       fi
                   fi
-                  # Downstream notify step için persist (fail durumunda da koşar).
                   {
                       echo "verdict=$verdict"
                       echo "report_path=${report:-}"
@@ -249,7 +217,7 @@ jobs:
                       echo "VERDICT_EOF"
                   } >> "$GITHUB_OUTPUT"
                   if [ -z "$report" ]; then
-                      echo "::error::No stress drill report found for tag=${STRESS_REPORT_TAG}"
+                      echo "::error::No stress drill report found for tag=${{ env.STRESS_REPORT_TAG }}"
                       exit 1
                   fi
                   if [ "$verdict" = "NO-GO" ]; then
@@ -262,101 +230,19 @@ jobs:
                   fi
                   echo "✓ Verdict gate passed ($verdict)"
 
-            - name: Notify Slack on failure / NO-GO
-              # Task #164 — gece cron fail'inde GH Actions varsayılan author
-              # e-postası anlamsız (cron run'da author=last pusher); pilot ekibi
-              # sabaha kadar uyarısız kalmasın diye Slack'e explicit POST.
-              # `if: failure()` Playwright exit≠0 + verdict_check NO-GO abort +
-              # pre-flight/install fail'lerini kapsar. SLACK_WEBHOOK_URL job-level
-              # env'de bağlı (Murat review #C1) → condition güvenli çalışır.
-              # Webhook secret yoksa step skip (notify yokluğu job'ı battırmaz).
-              if: failure() && env.SLACK_WEBHOOK_URL != ''
-              env:
-                  PREFLIGHT_OUTCOME: ${{ steps.preflight.outcome }}
-                  INSTALL_DEPS_OUTCOME: ${{ steps.install_deps.outcome }}
-                  INSTALL_BROWSERS_OUTCOME: ${{ steps.install_browsers.outcome }}
-                  RUN_STRESS_OUTCOME: ${{ steps.run_stress.outcome }}
-                  VERDICT_CHECK_OUTCOME: ${{ steps.verdict_check.outcome }}
-                  VERDICT: ${{ steps.verdict_check.outputs.verdict || 'UNKNOWN' }}
-                  VERDICT_LINE: ${{ steps.verdict_check.outputs.verdict_line }}
-                  REPORT_PATH: ${{ steps.verdict_check.outputs.report_path }}
-                  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-                  TRIGGER: ${{ github.event_name }}
-              continue-on-error: true
-              run: |
-                  set -euo pipefail
-                  failed_steps=""
-                  for entry in \
-                      "Pre-flight=${PREFLIGHT_OUTCOME}" \
-                      "Install deps=${INSTALL_DEPS_OUTCOME}" \
-                      "Install Playwright browsers=${INSTALL_BROWSERS_OUTCOME}" \
-                      "Run full stress suite=${RUN_STRESS_OUTCOME}" \
-                      "Verify drill report verdict=${VERDICT_CHECK_OUTCOME}"; do
-                      name="${entry%%=*}"
-                      outcome="${entry#*=}"
-                      if [ "$outcome" = "failure" ]; then
-                          failed_steps="${failed_steps}• ${name}\n"
-                      fi
-                  done
-                  if [ -z "$failed_steps" ]; then
-                      failed_steps="• (unknown — see run log)\n"
-                  fi
-                  report_display="${REPORT_PATH:-(no drill report produced)}"
-                  verdict_display="${VERDICT_LINE:-(verdict line not captured)}"
-                  text=$(printf ':rotating_light: *Full Stress Suite NIGHTLY FAILED* (%s)\n*Verdict:* %s\n*Failed step(s):*\n%b*Verdict line:* `%s`\n*Drill report:* %s\n*Run:* %s\nOpen the run, download the *stress-drill-report* artifact for the full markdown.' \
-                      "$TRIGGER" "$VERDICT" "$failed_steps" "$verdict_display" "$report_display" "$RUN_URL")
-                  payload=$(jq -nc --arg t "$text" '{text:$t}')
-                  http_code=$(curl -sS -o /tmp/slack_resp -w '%{http_code}' \
-                      -X POST -H 'Content-Type: application/json' \
-                      --data "$payload" \
-                      "$SLACK_WEBHOOK_URL" || true)
-                  echo "Slack response: HTTP $http_code"
-                  cat /tmp/slack_resp || true
-                  echo
-
-            - name: Notify Slack on GO WITH WATCH (low priority)
-              # Opsiyonel düşük-öncelik uyarı: job geçti ama verdict GO WITH WATCH;
-              # ekip "yeşil ama izlemeli" kalemleri gözden kaçırmasın diye aynı
-              # webhook'a daha yumuşak bir mesaj atıyoruz. Tamamen optional —
-              # webhook secret yoksa skip; istenmezse webhook'u boş bırak.
-              if: success() && steps.verdict_check.outputs.verdict == 'GO WITH WATCH' && env.SLACK_WEBHOOK_URL != ''
-              env:
-                  VERDICT_LINE: ${{ steps.verdict_check.outputs.verdict_line }}
-                  REPORT_PATH: ${{ steps.verdict_check.outputs.report_path }}
-                  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-                  TRIGGER: ${{ github.event_name }}
-              continue-on-error: true
-              run: |
-                  set -euo pipefail
-                  text=$(printf ':warning: *Full Stress Suite nightly: GO WITH WATCH* (%s)\n*Verdict line:* `%s`\n*Drill report:* %s\n*Run:* %s\nJob geçti — fakat watch-list kalemleri için drill report'"'"'un Findings bölümünü kontrol edin.' \
-                      "$TRIGGER" "${VERDICT_LINE:-(missing)}" "${REPORT_PATH:-(missing)}" "$RUN_URL")
-                  payload=$(jq -nc --arg t "$text" '{text:$t}')
-                  http_code=$(curl -sS -o /tmp/slack_resp -w '%{http_code}' \
-                      -X POST -H 'Content-Type: application/json' \
-                      --data "$payload" \
-                      "$SLACK_WEBHOOK_URL" || true)
-                  echo "Slack response: HTTP $http_code"
-                  cat /tmp/slack_resp || true
-                  echo
-
             - name: Upload Playwright HTML report
               if: always()
               uses: actions/upload-artifact@v5
               with:
-                  name: playwright-stress-report
+                  name: playwright-stress-report-shard-${{ matrix.shard }}
                   path: frontend/playwright-stress-report/
                   retention-days: 30
 
             - name: Upload drill report (markdown)
-              # Murat review #G: artifact path tek kaynaktan (`STRESS_REPORT_TAG`
-              # env var) okusun. Önceki versiyon `github.event.inputs.report_tag
-              # || 'f8a_frontoffice_folio_hk'` hardcode kullanıyordu — job env'de
-              # tag güncellenince path geride kalıyordu. Job env zaten doğru
-              # değeri tutuyor, artifact da onu kullanıyor.
               if: always()
               uses: actions/upload-artifact@v5
               with:
-                  name: stress-drill-report
+                  name: stress-drill-report-shard-${{ matrix.shard }}
                   path: docs/drill_reports/*_stress_${{ env.STRESS_REPORT_TAG }}.md
                   retention-days: 90
                   if-no-files-found: warn
@@ -365,7 +251,46 @@ jobs:
               if: always()
               uses: actions/upload-artifact@v5
               with:
-                  name: stress-test-results
+                  name: stress-test-results-shard-${{ matrix.shard }}
                   path: frontend/test-results-stress/
                   retention-days: 14
                   if-no-files-found: ignore
+
+    teardown:
+        name: Stress Teardown & Cleanup
+        needs: [setup, stress]
+        if: always() && needs.setup.result == 'success'
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v5
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+                  cache: 'yarn'
+                  cache-dependency-path: frontend/yarn.lock
+
+            - name: Install frontend deps
+              run: cd frontend && yarn install --ignore-engines --frozen-lockfile
+
+            - name: Install Playwright browsers
+              run: |
+                  sudo find /etc/apt/sources.list.d -type f \( -name '*.list' -o -name '*.sources' \) \
+                      -exec grep -lE 'packages\.microsoft\.com' {} + 2>/dev/null | xargs -r sudo rm -f || true
+                  cd frontend && yarn e2e:install
+
+            - name: Download Auth State
+              uses: actions/download-artifact@v5
+              with:
+                  name: stress-auth
+                  path: frontend/e2e-stress/.auth/
+
+            - name: Run Cleanup and Teardown
+              env:
+                  STRESS_SKIP_SETUP: 'true'
+                  STRESS_SKIP_TEARDOWN: 'false'
+              run: |
+                  cd frontend
+                  yarn playwright test --config=playwright.stress.config.js specs/00-gates.spec.js

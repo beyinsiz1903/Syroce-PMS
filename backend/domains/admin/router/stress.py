@@ -202,7 +202,7 @@ DEFAULT_ROOMS = 10
 # Chunked insert_many — Atlas + motor: ~100 doc / batch optimum (memory
 # vs round-trip dengesi). Batch boyutu çok büyürse Atlas tarafında
 # `BSONObjTooLarge` riski; çok küçükse round-trip overhead artar.
-INSERT_CHUNK_SIZE = 100
+INSERT_CHUNK_SIZE = 1000
 
 # 20 oda tipi × 10 kat × 5 blok variety axis'leri
 ROOM_TYPES = [
@@ -2698,102 +2698,79 @@ async def stress_seed(
             orphan_cleanup["staff_members"] = res.deleted_count
         except Exception as e:
             orphan_cleanup["staff_members_error"] = str(e)[:120]
-        total_rooms_inserted = await _chunked_insert(db.rooms, rooms_docs, INSERT_CHUNK_SIZE)
-        # Authoritative split — `counts["rooms"]` MUST equal base (500) for
-        # tenant-isolation contract testing; extras are an internal stress-only
-        # pool that doesn't represent real PMS inventory.
-        counts["rooms"] = base_count
-        # User-mandated explicit alias (CI run #24 follow-up): consumers that
-        # read `base_rooms` get the same value as `rooms`; eliminates last
-        # remnant of contract ambiguity.
-        counts["base_rooms"] = base_count
-        counts["extra_room_move_targets"] = extras_count
-        counts["total_rooms"] = total_rooms_inserted
-        counts["guests"] = await _chunked_insert(db.guests, guests_docs, INSERT_CHUNK_SIZE)
-        counts["bookings"] = await _chunked_insert(db.bookings, bookings_docs, INSERT_CHUNK_SIZE)
-        counts["folios"] = await _chunked_insert(db.folios, folios_docs, INSERT_CHUNK_SIZE)
-        counts["folio_charges"] = await _chunked_insert(db.folio_charges, folio_charges_docs, INSERT_CHUNK_SIZE)
-        # Task #178: aged-booking deposit payments (empty collection before this).
-        counts["payments"] = await _chunked_insert(db.payments, payments_docs, INSERT_CHUNK_SIZE)
-        # Aged-booking count surfaced so 24h/harvest-dependent specs + global-setup
-        # can trust that older-than-24h data exists. Derived from the factory's
-        # `aged=True` marker on base bookings (pending bookings are never aged).
-        counts["aged_bookings"] = sum(1 for b in bookings_docs if b.get("aged") is True)
-        # F8N (Wave 7): B2B agency surface — 41B matrix stres-agency probe.
-        counts["agencies"] = await _chunked_insert(db.agencies, agency_docs, INSERT_CHUNK_SIZE)
-        counts["room_night_locks"] = await _chunked_insert(db.room_night_locks, rnl_docs, INSERT_CHUNK_SIZE)
-        counts["housekeeping_tasks"] = await _chunked_insert(db.housekeeping_tasks, hk_docs, INSERT_CHUNK_SIZE)
-        # F8B Guest Experience surface
-        counts["room_qr_requests"] = await _chunked_insert(db.room_qr_requests, qr_docs, INSERT_CHUNK_SIZE)
-        counts["service_complaints"] = await _chunked_insert(db.service_complaints, complaint_docs, INSERT_CHUNK_SIZE)
-        counts["messages"] = await _chunked_insert(db.messages, message_docs, INSERT_CHUNK_SIZE)
-        counts["notifications"] = await _chunked_insert(db.notifications, notif_docs, INSERT_CHUNK_SIZE)
-        # Task #172: messaging activity-feed delivery logs (synthetic recipients).
-        counts["messaging_delivery_logs"] = await _chunked_insert(db.messaging_delivery_logs, delivery_log_docs, INSERT_CHUNK_SIZE)
-        # F8C MICE / Event / Banquet / Group Operations surface
-        counts["mice_spaces"] = await _chunked_insert(db.mice_spaces, spaces_docs, INSERT_CHUNK_SIZE)
-        counts["mice_menus"] = await _chunked_insert(db.mice_menus, menus_docs, INSERT_CHUNK_SIZE)
-        counts["mice_accounts"] = await _chunked_insert(db.mice_accounts, accounts_docs + competitors_docs, INSERT_CHUNK_SIZE)
-        counts["mice_contacts"] = await _chunked_insert(db.mice_contacts, contacts_docs, INSERT_CHUNK_SIZE)
-        counts["mice_resources"] = await _chunked_insert(db.mice_resources, resources_docs, INSERT_CHUNK_SIZE)
-        counts["mice_events"] = await _chunked_insert(db.mice_events, events_docs, INSERT_CHUNK_SIZE)
-        counts["mice_opportunities"] = await _chunked_insert(db.mice_opportunities, opportunities_docs + leads_docs, INSERT_CHUNK_SIZE)
-        counts["mice_opportunity_activities"] = await _chunked_insert(db.mice_opportunity_activities, opp_activities_docs, INSERT_CHUNK_SIZE)
-        counts["mice_packages"] = await _chunked_insert(db.mice_packages, packages_docs, INSERT_CHUNK_SIZE)
-        # F8D HR / Staff / Shift / Leave / Department surface
-        counts["hr_departments"] = await _chunked_insert(db.hr_departments, hr_dept_docs, INSERT_CHUNK_SIZE)
-        counts["hr_positions"] = await _chunked_insert(db.hr_positions, hr_pos_docs, INSERT_CHUNK_SIZE)
-        counts["staff_members"] = await _chunked_insert(db.staff_members, hr_staff_docs, INSERT_CHUNK_SIZE)
-        counts["leave_balances"] = await _chunked_insert(db.leave_balances, hr_leave_balance_docs, INSERT_CHUNK_SIZE)
-        counts["attendance_records"] = await _chunked_insert(db.attendance_records, hr_attendance_docs, INSERT_CHUNK_SIZE)
-        counts["shift_schedules"] = await _chunked_insert(db.shift_schedules, hr_shift_sched_docs, INSERT_CHUNK_SIZE)
-        counts["leave_requests"] = await _chunked_insert(db.leave_requests, hr_leave_req_docs, INSERT_CHUNK_SIZE)
-        counts["shift_swap_requests"] = await _chunked_insert(db.shift_swap_requests, hr_shift_swap_docs, INSERT_CHUNK_SIZE)
-        counts["performance_reviews"] = await _chunked_insert(db.performance_reviews, hr_perf_docs, INSERT_CHUNK_SIZE)
-        # F8D-v2 (Task #205) — perf templates + leave accrual policies.
-        counts["performance_templates"] = await _chunked_insert(db.performance_templates, hr_perf_template_docs, INSERT_CHUNK_SIZE)
-        counts["leave_accrual_policies"] = await _chunked_insert(db.leave_accrual_policies, hr_leave_accrual_policy_docs, INSERT_CHUNK_SIZE)
-        # performance_checkins + leave_balance_adjustments + shift_conflicts:
-        # NOT seeded — specs 32/34/35 write their own rows (cleanup via unified
-        # STRESS_COLLECTIONS sweep tagged stress_seed=True+stress_prefix).
-        # F8E Finance / Cashier / Accounting surface
-        counts["cashier_shifts"] = await _chunked_insert(db.cashier_shifts, cashier_shifts_docs, INSERT_CHUNK_SIZE)
-        counts["cashier_transactions"] = await _chunked_insert(db.cashier_transactions, cashier_txn_docs, INSERT_CHUNK_SIZE)
-        counts["suppliers"] = await _chunked_insert(db.suppliers, suppliers_docs, INSERT_CHUNK_SIZE)
-        counts["expenses"] = await _chunked_insert(db.expenses, expenses_docs, INSERT_CHUNK_SIZE)
-        counts["accounting_invoices"] = await _chunked_insert(db.accounting_invoices, invoices_docs, INSERT_CHUNK_SIZE)
-        counts["bank_accounts"] = await _chunked_insert(db.bank_accounts, bank_accounts_docs, INSERT_CHUNK_SIZE)
-        counts["inventory_items"] = await _chunked_insert(db.inventory_items, inventory_items_docs, INSERT_CHUNK_SIZE)
-        counts["stock_movements"] = await _chunked_insert(db.stock_movements, stock_movements_docs, INSERT_CHUNK_SIZE)
-        counts["cash_flow"] = await _chunked_insert(db.cash_flow, cash_flow_docs, INSERT_CHUNK_SIZE)
-        counts["city_ledger_accounts"] = await _chunked_insert(db.city_ledger_accounts, city_ledger_accounts_docs, INSERT_CHUNK_SIZE)
-
-        # F8L v2 (Task #25) — synthetic pending_assignment bookings.
-        # These rows mimic OTA-imported reservations that could not claim
-        # a room atomically (`allocation_source="pending_assignment"`,
-        # `room_id=None`, status in PENDING_QUERY's accepted set). They
-        # let spec 52B verify the bulk-resolve succeeded[]/failed[]
-        # contract deterministically without firing any external HTTP
-        # call (OTA import — the real-world producer — is blocked by
-        # `E2E_EXTERNAL_DRY_RUN=true`). Far-future stay window guarantees
-        # no collision with the baseline RNLs seeded above, so resolve
-        # against ANY stress room succeeds. Tagged with the standard
-        # `stress_seed=True` + `stress_prefix=<prefix>` markers so the
-        # unified cleanup sweep covers them; the room_night_locks rows
-        # written by a successful resolve reference stress-tenant-only
-        # room_ids that are rotated every run (fresh UUIDs after each
-        # cleanup), so any residue is harmless.
+        # F8L v2 (Task #25) — obedience pending_booking factory.
         pending_bookings_docs = _build_pending_booking_docs(
             payload.seed_pending_bookings,
             stress_tid,
             prefix,
             now,
         )
-        counts["pending_bookings"] = await _chunked_insert(
-            db.bookings,
-            pending_bookings_docs,
-            INSERT_CHUNK_SIZE,
-        )
+
+        # Define tasks for concurrent seeding inserts
+        tasks = {
+            "rooms": _chunked_insert(db.rooms, rooms_docs, INSERT_CHUNK_SIZE),
+            "guests": _chunked_insert(db.guests, guests_docs, INSERT_CHUNK_SIZE),
+            "bookings": _chunked_insert(db.bookings, bookings_docs, INSERT_CHUNK_SIZE),
+            "folios": _chunked_insert(db.folios, folios_docs, INSERT_CHUNK_SIZE),
+            "folio_charges": _chunked_insert(db.folio_charges, folio_charges_docs, INSERT_CHUNK_SIZE),
+            "payments": _chunked_insert(db.payments, payments_docs, INSERT_CHUNK_SIZE),
+            "agencies": _chunked_insert(db.agencies, agency_docs, INSERT_CHUNK_SIZE),
+            "room_night_locks": _chunked_insert(db.room_night_locks, rnl_docs, INSERT_CHUNK_SIZE),
+            "housekeeping_tasks": _chunked_insert(db.housekeeping_tasks, hk_docs, INSERT_CHUNK_SIZE),
+            "room_qr_requests": _chunked_insert(db.room_qr_requests, qr_docs, INSERT_CHUNK_SIZE),
+            "service_complaints": _chunked_insert(db.service_complaints, complaint_docs, INSERT_CHUNK_SIZE),
+            "messages": _chunked_insert(db.messages, message_docs, INSERT_CHUNK_SIZE),
+            "notifications": _chunked_insert(db.notifications, notif_docs, INSERT_CHUNK_SIZE),
+            "messaging_delivery_logs": _chunked_insert(db.messaging_delivery_logs, delivery_log_docs, INSERT_CHUNK_SIZE),
+            "mice_spaces": _chunked_insert(db.mice_spaces, spaces_docs, INSERT_CHUNK_SIZE),
+            "mice_menus": _chunked_insert(db.mice_menus, menus_docs, INSERT_CHUNK_SIZE),
+            "mice_accounts": _chunked_insert(db.mice_accounts, accounts_docs + competitors_docs, INSERT_CHUNK_SIZE),
+            "mice_contacts": _chunked_insert(db.mice_contacts, contacts_docs, INSERT_CHUNK_SIZE),
+            "mice_resources": _chunked_insert(db.mice_resources, resources_docs, INSERT_CHUNK_SIZE),
+            "mice_events": _chunked_insert(db.mice_events, events_docs, INSERT_CHUNK_SIZE),
+            "mice_opportunities": _chunked_insert(db.mice_opportunities, opportunities_docs + leads_docs, INSERT_CHUNK_SIZE),
+            "mice_opportunity_activities": _chunked_insert(db.mice_opportunity_activities, opp_activities_docs, INSERT_CHUNK_SIZE),
+            "mice_packages": _chunked_insert(db.mice_packages, packages_docs, INSERT_CHUNK_SIZE),
+            "hr_departments": _chunked_insert(db.hr_departments, hr_dept_docs, INSERT_CHUNK_SIZE),
+            "hr_positions": _chunked_insert(db.hr_positions, hr_pos_docs, INSERT_CHUNK_SIZE),
+            "staff_members": _chunked_insert(db.staff_members, hr_staff_docs, INSERT_CHUNK_SIZE),
+            "leave_balances": _chunked_insert(db.leave_balances, hr_leave_balance_docs, INSERT_CHUNK_SIZE),
+            "attendance_records": _chunked_insert(db.attendance_records, hr_attendance_docs, INSERT_CHUNK_SIZE),
+            "shift_schedules": _chunked_insert(db.shift_schedules, hr_shift_sched_docs, INSERT_CHUNK_SIZE),
+            "leave_requests": _chunked_insert(db.leave_requests, hr_leave_req_docs, INSERT_CHUNK_SIZE),
+            "shift_swap_requests": _chunked_insert(db.shift_swap_requests, hr_shift_swap_docs, INSERT_CHUNK_SIZE),
+            "performance_reviews": _chunked_insert(db.performance_reviews, hr_perf_docs, INSERT_CHUNK_SIZE),
+            "performance_templates": _chunked_insert(db.performance_templates, hr_perf_template_docs, INSERT_CHUNK_SIZE),
+            "leave_accrual_policies": _chunked_insert(db.leave_accrual_policies, hr_leave_accrual_policy_docs, INSERT_CHUNK_SIZE),
+            "cashier_shifts": _chunked_insert(db.cashier_shifts, cashier_shifts_docs, INSERT_CHUNK_SIZE),
+            "cashier_transactions": _chunked_insert(db.cashier_transactions, cashier_txn_docs, INSERT_CHUNK_SIZE),
+            "suppliers": _chunked_insert(db.suppliers, suppliers_docs, INSERT_CHUNK_SIZE),
+            "expenses": _chunked_insert(db.expenses, expenses_docs, INSERT_CHUNK_SIZE),
+            "accounting_invoices": _chunked_insert(db.accounting_invoices, invoices_docs, INSERT_CHUNK_SIZE),
+            "bank_accounts": _chunked_insert(db.bank_accounts, bank_accounts_docs, INSERT_CHUNK_SIZE),
+            "inventory_items": _chunked_insert(db.inventory_items, inventory_items_docs, INSERT_CHUNK_SIZE),
+            "stock_movements": _chunked_insert(db.stock_movements, stock_movements_docs, INSERT_CHUNK_SIZE),
+            "cash_flow": _chunked_insert(db.cash_flow, cash_flow_docs, INSERT_CHUNK_SIZE),
+            "city_ledger_accounts": _chunked_insert(db.city_ledger_accounts, city_ledger_accounts_docs, INSERT_CHUNK_SIZE),
+            "pending_bookings": _chunked_insert(db.bookings, pending_bookings_docs, INSERT_CHUNK_SIZE),
+        }
+
+        # Run all inserts in parallel
+        keys = list(tasks.keys())
+        coroutines = list(tasks.values())
+        results = await asyncio.gather(*coroutines)
+
+        # Populate counts dictionary
+        for k, res in zip(keys, results):
+            counts[k] = res
+
+        # Post-process specific counts
+        total_rooms_inserted = counts["rooms"]
+        counts["rooms"] = base_count
+        counts["base_rooms"] = base_count
+        counts["extra_room_move_targets"] = extras_count
+        counts["total_rooms"] = total_rooms_inserted
+        counts["aged_bookings"] = sum(1 for b in bookings_docs if b.get("aged") is True)
         # city_ledger_transactions is NOT seeded — specs write transactions
         # against the seeded city_ledger_accounts; cleanup loop still scrubs
         # the collection via the unified STRESS_COLLECTIONS sweep.

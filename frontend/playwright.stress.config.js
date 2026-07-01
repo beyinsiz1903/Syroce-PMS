@@ -32,8 +32,8 @@ export default defineConfig({
     forbidOnly: !!process.env.CI,
     retries: 0,
     workers: 1,
-    globalSetup: './e2e-stress/global-setup.js',
-    globalTeardown: './e2e-stress/global-teardown.js',
+    globalSetup: process.env.STRESS_SKIP_SETUP === 'true' ? undefined : './e2e-stress/global-setup.js',
+    globalTeardown: process.env.STRESS_SKIP_TEARDOWN === 'true' ? undefined : './e2e-stress/global-teardown.js',
     reporter: [
         ['list'],
         ['html', { open: 'never', outputFolder: 'playwright-stress-report' }],
