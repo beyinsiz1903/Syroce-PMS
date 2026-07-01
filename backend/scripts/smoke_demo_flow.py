@@ -76,6 +76,7 @@ class DemoSmokeTest:
         self.ts_id = datetime.now().strftime("%Y%m%d%H%M%S")
         self.booking_id = None
         self.room_id = None
+        self.target_room_id = None
         self.folio_id = None
         self.report_data = {
             "timestamp": datetime.now().isoformat(),
@@ -238,24 +239,29 @@ class DemoSmokeTest:
             resp, lat, err = self._req("GET", "/api/pms/rooms?limit=5")
             if resp and resp.status_code == 200:
                 rooms = resp.json().get("rooms", [])
-                if rooms:
+                if len(rooms) > 0:
                     self.room_id = rooms[0].get("id")
+                if len(rooms) > 1:
+                    self.target_room_id = rooms[1].get("id")
 
             # Step 4: Create booking
-            method, ep = "POST", "/api/pms/quick-booking"
-            booking_data = {
-                "guest_name": f"SMOKE_DEMO_{self.ts_id}",
-                "check_in": "2026-07-01T14:00:00Z",
-                "check_out": "2026-07-05T12:00:00Z",
-                "room_id": self.room_id or "mock_room",
-                "total_amount": 100.0,
-                "adults": 1,
-                "children": 0
-            }
-            resp, lat, err = self._req(method, ep, json=booking_data)
-            success, resp = self._log_step("4. Create Booking", method, ep, resp, lat, err, expected_status=[200, 201])
-            if success:
-                self.booking_id = self.get_booking_id(resp.json())
+            if not self.room_id:
+                self._skip_step("4. Create Booking", "Missing room_id from prerequisite")
+            else:
+                method, ep = "POST", "/api/pms/quick-booking"
+                booking_data = {
+                    "guest_name": f"SMOKE_DEMO_{self.ts_id}",
+                    "check_in": "2026-07-01T14:00:00Z",
+                    "check_out": "2026-07-05T12:00:00Z",
+                    "room_id": self.room_id,
+                    "total_amount": 100.0,
+                    "adults": 1,
+                    "children": 0
+                }
+                resp, lat, err = self._req(method, ep, json=booking_data)
+                success, resp = self._log_step("4. Create Booking", method, ep, resp, lat, err, expected_status=[200, 201])
+                if success:
+                    self.booking_id = self.get_booking_id(resp.json())
 
             # Step 5: Booking details
             if self.booking_id:
@@ -300,13 +306,12 @@ class DemoSmokeTest:
                 self._skip_step("9. Folio Payment", "Missing folio_id")
 
             # Step 10: Room move
-            if self.booking_id and self.room_id:
+            if self.booking_id and self.room_id and self.target_room_id:
                 method, ep = "POST", f"/api/pms/bookings/{self.booking_id}/room-move"
-                # Passing the same room or mock just for structure
-                resp, lat, err = self._req(method, ep, json={"new_room_id": self.room_id})
+                resp, lat, err = self._req(method, ep, json={"new_room_id": self.target_room_id})
                 self._log_step("10. Room Move", method, ep, resp, lat, err)
             else:
-                self._skip_step("10. Room Move", "Missing booking_id or room_id")
+                self._skip_step("10. Room Move", "Missing booking_id or target_room_id")
 
             # Step 11: Housekeeping task
             if self.room_id:
