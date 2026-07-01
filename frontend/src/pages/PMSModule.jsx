@@ -828,41 +828,62 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           </div>
         </div>
 
-        <Card className="border-slate-200 bg-white">
-          <CardContent className="p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                {t('pms.quickActions', 'Hızlı İşlemler')}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={() => setOpenDialog('booking')}>
-                  <Plus className="w-4 h-4 mr-1.5" />{t('pms.newBooking', 'Yeni Rezervasyon')}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setOpenDialog('guest')}>
-                  <UserPlus className="w-4 h-4 mr-1.5" />{t('pms.newGuest', 'Yeni Misafir')}
-                </Button>
-                <Button size="sm" variant="outline" onClick={async () => {
-                  try { const response = await axios.get('/reports/daily-flash'); if (response.data) { toast.success('Flash rapor hazır'); setActiveTab('reports'); } else { toast.info('Flash rapor verisi yok'); }
-                  } catch (error) { toast.error('Rapor oluşturulamadı'); }
-                }}>
-                  <FileText className="w-4 h-4 mr-1.5" />{t('pms.flashReport', 'Flash Rapor')}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => loadData()}>
-                  <RefreshCw className="w-4 h-4 mr-1.5" />{t('common.refresh', 'Yenile')}
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
         <Tabs value={activeTab} className="w-full" onValueChange={(v) => { setActiveTab(v); window.location.hash = v; }}>
-          <TabsList className="flex flex-wrap h-auto w-full gap-1 p-1">
-            {visibleTabs.map((tab) => {
-              const Icon = tab.icon;
-              const label = tab.labelKey ? t(tab.labelKey) : tab.labelText;
-              return (<TabsTrigger key={tab.key} value={tab.key} data-testid={tab.testId}>{Icon ? <Icon className="w-4 h-4 mr-2" /> : null}{label}</TabsTrigger>);
-            })}
-          </TabsList>
+          <div className="flex flex-col lg:flex-row gap-6 items-start">
+            {/* Sol Menü (Sidebar) */}
+            <div className="w-full lg:w-[260px] shrink-0 space-y-4">
+              <Card className="border-slate-200 bg-white lg:sticky lg:top-6 shadow-sm">
+                <CardContent className="p-3">
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3 px-2">
+                    {t('pms.quickActions', 'Hızlı İşlemler')}
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('booking')}>
+                      <Plus className="w-4 h-4 mr-2.5 text-slate-500" />{t('pms.newBooking', 'Yeni Rezervasyon')}
+                    </Button>
+                    <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('guest')}>
+                      <UserPlus className="w-4 h-4 mr-2.5 text-slate-500" />{t('pms.newGuest', 'Yeni Misafir')}
+                    </Button>
+                    <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={async () => {
+                      try { const response = await axios.get('/reports/daily-flash'); if (response.data) { toast.success('Flash rapor hazır'); setActiveTab('reports'); } else { toast.info('Flash rapor verisi yok'); }
+                      } catch (error) { toast.error('Rapor oluşturulamadı'); }
+                    }}>
+                      <FileText className="w-4 h-4 mr-2.5 text-slate-500" />{t('pms.flashReport', 'Flash Rapor')}
+                    </Button>
+                    <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => loadData()}>
+                      <RefreshCw className="w-4 h-4 mr-2.5 text-slate-500" />{t('common.refresh', 'Yenile')}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-slate-200 bg-white lg:sticky lg:top-[280px] shadow-sm hidden lg:block">
+                <CardContent className="p-2">
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 mt-2 px-3">
+                    Modüller
+                  </div>
+                  <TabsList className="flex flex-col h-auto bg-transparent w-full space-y-0.5 p-0 items-stretch">
+                    {visibleTabs.map((tab) => {
+                      const Icon = tab.icon;
+                      const label = tab.labelKey ? t(tab.labelKey) : tab.labelText;
+                      return (
+                        <TabsTrigger 
+                          key={tab.key} 
+                          value={tab.key} 
+                          data-testid={tab.testId}
+                          className="w-full justify-start px-3 py-2.5 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:shadow-none hover:bg-slate-100 rounded-md font-medium text-sm text-slate-600 transition-colors"
+                        >
+                          {Icon ? <Icon className="w-4 h-4 mr-3 opacity-70" /> : null}{label}
+                        </TabsTrigger>
+                      );
+                    })}
+                  </TabsList>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Ana Çalışma Alanı (Sağ Taraf) */}
+            <div className="flex-1 min-w-0 w-full bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden p-0 sm:p-4">
 
           {/* Perf fix: yalnız aktif sekme mount. Lazy chunk ilk ziyarette
               indirilir; sonra browser/HTTP cache. TanStack Query cache veriyi
@@ -913,8 +934,11 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           {activeTab === 'kbs' && <TabsContent value="kbs" className="space-y-4"><KBSNotification bookings={bookings} guests={guests} /></TabsContent>}
           {activeTab === 'kvkk' && <TabsContent value="kvkk" className="space-y-4"><KVKKManager /></TabsContent>}
           </Suspense>
+            </div>
+          </div>
         </Tabs>
 
+        {/* Dialogs */}
         <FolioDialog open={openDialog === 'folio'} onClose={() => setOpenDialog(null)} folio={folio} bookingId={selectedBooking} onFolioUpdated={() => loadFolio(selectedBooking)} />
         <RoomCreateDialog open={openDialog === 'room'} onClose={() => setOpenDialog(null)} onRoomCreated={loadData} />
         <RoomImageUploadDialog open={openDialog === 'room-images'} onClose={() => setOpenDialog(null)} selectedRoom={selectedRoom} setSelectedRoom={setSelectedRoom} onDataRefresh={loadData} />
