@@ -1,9 +1,10 @@
 import argparse
 import json
 import os
+import random
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
@@ -326,36 +327,72 @@ class DemoSmokeTest:
             self._skip_step("11. Housekeeping Task", "Read-only mode")
             self._skip_step("12. Check-out", "Read-only mode")
         else:
-            # Pre-requisite: Find a room to use for booking and status
-            resp, lat, err = self._req("GET", "/api/pms/rooms?limit=5")
+            # Pre-requisite: Find rooms to use for booking and status
+            safe_rooms = []
+            unsafe_rooms = []
+            resp, lat, err = self._req("GET", "/api/pms/rooms?limit=50")
             if resp and resp.status_code == 200:
                 try:
-                    rooms = extract_items(resp.json())
-                    if len(rooms) > 0:
-                        self.room_id = rooms[0].get("id")
-                    if len(rooms) > 1:
-                        self.target_room_id = rooms[1].get("id")
+                    all_rooms = extract_items(resp.json())
+                    safe_statuses = ["available", "clean", "ready", "vacant_clean", "inspected"]
+                    for r in all_rooms:
+                        status = r.get("status", "").lower()
+                        if status in safe_statuses:
+                            safe_rooms.append(r)
+                        else:
+                            unsafe_rooms.append(r)
                 except Exception:
                     pass
 
-            # Step 4: Create booking
-            if not self.room_id:
-                self._skip_step("4. Create Booking", "Missing room_id from prerequisite")
+            candidate_rooms = safe_rooms + unsafe_rooms
+
+            # Step 4: Create booking with retries
+            if not candidate_rooms:
+                self._skip_step("4. Create Booking", "No rooms available from prerequisite")
             else:
                 method, ep = "POST", "/api/pms/quick-booking"
-                booking_data = {
-                    "guest_name": f"SMOKE_DEMO_{self.ts_id}",
-                    "check_in": "2026-07-01T14:00:00Z",
-                    "check_out": "2026-07-05T12:00:00Z",
-                    "room_id": self.room_id,
-                    "total_amount": 100.0,
-                    "adults": 1,
-                    "children": 0,
-                }
-                resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-create-booking", json=booking_data)
-                success, resp = self._log_step("4. Create Booking", method, ep, resp, lat, err, expected_status=[200, 201])
-                if success:
-                    self.booking_id = self.get_booking_id(resp.json())
+                success = False
+
+                # Retry up to 5 times with different rooms
+                for i in range(min(5, len(candidate_rooms))):
+                    candidate_room_id = candidate_rooms[i].get("id")
+
+                    # Random date between 30 and 365 days in the future
+                    days_ahead = random.randint(30, 365)
+                    check_in_date = datetime.now() + timedelta(days=days_ahead)
+                    check_out_date = check_in_date + timedelta(days=1)
+
+                    check_in_str = check_in_date.strftime("%Y-%m-%dT14:00:00Z")
+                    check_out_str = check_out_date.strftime("%Y-%m-%dT12:00:00Z")
+
+                    booking_data = {
+                        "guest_name": f"Smoke Demo Guest {self.ts_id}",
+                        "check_in": check_in_str,
+                        "check_out": check_out_str,
+                        "room_id": candidate_room_id,
+                        "total_amount": 100.0,
+                        "adults": 1,
+                        "children": 0,
+                    }
+
+                    idem_key = f"smoke-demo-{self.ts_id}-cb-{i}"
+                    resp, lat, err = self._req(method, ep, idem_key=idem_key, json=booking_data)
+
+                    if resp and resp.status_code == 409:
+                        log_warn(f"Room {candidate_room_id} conflicted on {check_in_str}, retrying...")
+                        continue
+
+                    success, resp = self._log_step(f"4. Create Booking (Attempt {i + 1})", method, ep, resp, lat, err, expected_status=[200, 201])
+                    if success:
+                        self.booking_id = self.get_booking_id(resp.json())
+                        self.room_id = candidate_room_id
+                        # Assign target room id for room move (next safe room if available)
+                        if i + 1 < len(candidate_rooms):
+                            self.target_room_id = candidate_rooms[i + 1].get("id")
+                        break
+
+                if not success:
+                    self._skip_step("4. Create Booking", "No non-conflicting room/date found for demo mutation run")
 
             # Step 5: Booking details
             if self.booking_id:
