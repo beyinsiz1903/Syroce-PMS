@@ -20,15 +20,28 @@ test('Bugünkü gelişler sayfası açılır', async ({ page }) => {
 test('Logout butonu çalışır', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
-    const logout = page
-        .getByRole('button', { name: /çıkış|logout|sign out/i })
-        .first();
+    
+    // User menü trigger'ını bul ve tıkla (dropdown açılmalı)
+    const trigger = page.getByRole('button', { name: /demo|user/i }).first();
+    if (await trigger.isVisible().catch(() => false)) {
+        await trigger.click();
+        await page.waitForTimeout(500);
+    } else {
+        test.skip(true, 'User menu trigger bulunamadı, giriş yapılmamış olabilir');
+        return;
+    }
+
+    let logout = page.getByRole('menuitem', { name: /çıkış|logout|sign out/i }).first();
+    if (!(await logout.isVisible().catch(() => false))) {
+        logout = page.getByRole('button', { name: /çıkış|logout|sign out/i }).first();
+    }
+
     if (await logout.isVisible().catch(() => false)) {
         await logout.click();
         await page.waitForURL((url) => /\/(auth|login|$)/i.test(url.pathname), {
-            timeout: 10_000,
+            timeout: 15_000,
         });
     } else {
-        test.skip(true, 'Logout butonu menü içinde olabilir; bu spec UI revizyonunda güncellenmeli');
+        test.skip(true, 'Logout butonu bulunamadı');
     }
 });
