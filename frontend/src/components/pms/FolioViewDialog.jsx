@@ -682,107 +682,142 @@ th{background:#f5f5f5}
           </DialogHeader>
           {proforma && (
             <div id="proforma-printable" className="space-y-4 text-sm">
-              <div className="flex justify-between border-b pb-3">
+              <div className="flex justify-between items-start border-b-2 border-gray-200 pb-6 mb-6">
                 <div>
-                  <div className="font-bold text-base">{proforma.hotel?.name || '—'}</div>
-                  <div className="muted text-xs text-gray-600">{proforma.hotel?.address || ''}</div>
-                  {proforma.hotel?.tax_no && <div className="text-xs text-gray-600">VKN: {proforma.hotel.tax_no} {proforma.hotel?.tax_office ? `(${proforma.hotel.tax_office})` : ''}</div>}
+                  <div className="text-2xl font-black text-gray-900 tracking-tight">{proforma.hotel?.name || '—'}</div>
+                  <div className="text-sm text-gray-500 mt-1">{proforma.hotel?.address || ''}</div>
+                  {proforma.hotel?.tax_no && <div className="text-sm text-gray-500 mt-1">
+                    <span className="font-medium text-gray-700">VKN:</span> {proforma.hotel.tax_no} {proforma.hotel?.tax_office ? `(${proforma.hotel.tax_office})` : ''}
+                  </div>}
                 </div>
                 <div className="text-right">
-                  <div className="font-semibold">PROFORMA</div>
-                  <div className="text-xs text-gray-600">No: {proforma.folio?.folio_number}</div>
-                  <div className="text-xs text-gray-600">{new Date(proforma.generated_at).toLocaleString()}</div>
+                  <div className="text-3xl font-light text-gray-400 tracking-widest uppercase mb-2">PROFORMA</div>
+                  <div className="text-sm text-gray-700"><span className="font-medium">Fatura No:</span> {proforma.folio?.folio_number}</div>
+                  <div className="text-sm text-gray-700"><span className="font-medium">Tarih:</span> {new Date(proforma.generated_at).toLocaleString()}</div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="font-semibold">Misafir</div>
-                  <div>{proforma.guest?.name || '—'}</div>
-                  {proforma.guest?.email && <div className="text-xs text-gray-600">{proforma.guest.email}</div>}
-                  {proforma.guest?.phone && <div className="text-xs text-gray-600">{proforma.guest.phone}</div>}
-                  {proforma.guest?.tc_no && <div className="text-xs text-gray-600">TC: {proforma.guest.tc_no}</div>}
+              <div className="grid grid-cols-2 gap-8 mb-8">
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Müşteri Bilgileri</div>
+                  <div className="font-bold text-gray-800 text-lg">{proforma.guest?.name || '—'}</div>
+                  {proforma.guest?.email && <div className="text-sm text-gray-600 mt-1">{proforma.guest.email}</div>}
+                  {proforma.guest?.phone && <div className="text-sm text-gray-600 mt-1">{proforma.guest.phone}</div>}
+                  {proforma.guest?.tc_no && <div className="text-sm text-gray-600 mt-1"><span className="font-medium">TC/Pasaport:</span> {proforma.guest.tc_no}</div>}
                 </div>
-                <div>
-                  <div className="font-semibold">Konaklama</div>
-                  {proforma.booking?.room_number && <div>Oda: {proforma.booking.room_number}</div>}
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Konaklama Detayları</div>
+                  {proforma.booking?.room_number && <div className="text-sm text-gray-700"><span className="font-medium">Oda:</span> {proforma.booking.room_number}</div>}
                   {proforma.booking?.check_in && (
-                    <div className="text-xs text-gray-600">
-                      {new Date(proforma.booking.check_in).toLocaleDateString()} → {proforma.booking?.check_out ? new Date(proforma.booking.check_out).toLocaleDateString() : ''}
+                    <div className="text-sm text-gray-700 mt-1">
+                      <span className="font-medium">Tarih:</span> {new Date(proforma.booking.check_in).toLocaleDateString()} → {proforma.booking?.check_out ? new Date(proforma.booking.check_out).toLocaleDateString() : ''}
                     </div>
                   )}
                   {(proforma.booking?.adults != null) && (
-                    <div className="text-xs text-gray-600">{proforma.booking.adults} yetişkin {proforma.booking.children ? `+ ${proforma.booking.children} çocuk` : ''}</div>
+                    <div className="text-sm text-gray-700 mt-1">
+                      <span className="font-medium">Kişi:</span> {proforma.booking.adults} yetişkin {proforma.booking.children ? `+ ${proforma.booking.children} çocuk` : ''}
+                    </div>
                   )}
                 </div>
               </div>
 
-              <div>
-                <div className="font-semibold mb-1">İşlemler</div>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Tarih</th>
-                      <th>Açıklama</th>
-                      <th className="right">Birim</th>
-                      <th className="right">Adet</th>
-                      <th className="right">Ara Toplam</th>
-                      <th className="right">İnd.</th>
-                      <th className="right">Net</th>
-                      <th className="right">KDV</th>
-                      <th className="right">Toplam</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(proforma.charges || []).map((c) => (
-                      <tr key={c.id}>
-                        <td>{new Date(c.date || c.created_at).toLocaleDateString()}</td>
-                        <td>{c.description}{c.discount_reason ? ` (${c.discount_reason})` : ''}</td>
-                        <td className="right">{fmt(c.unit_price)}</td>
-                        <td className="right">{c.quantity}</td>
-                        <td className="right">{fmt(c.subtotal ?? c.amount)}</td>
-                        <td className="right">{fmt(c.discount_amount)}</td>
-                        <td className="right">{fmt(c.amount)}</td>
-                        <td className="right">{fmt(c.vat_amount)} {c.vat_rate ? `(%${c.vat_rate})` : ''}</td>
-                        <td className="right">{fmt(c.total)}</td>
+              <div className="mb-8">
+                <div className="text-lg font-bold text-gray-800 mb-3">Hizmet Dökümü</div>
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Tarih</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Açıklama</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Birim</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-center">Adet</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Ara Toplam</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">İnd.</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Net</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">KDV</th>
+                        <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase tracking-wider text-right">Toplam</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="font-semibold mb-1">KDV Özeti</div>
-                  <table>
-                    <thead>
-                      <tr><th>Oran</th><th className="right">Net</th><th className="right">KDV</th></tr>
                     </thead>
-                    <tbody>
-                      {(proforma.vat_breakdown || []).map((g) => (
-                        <tr key={g.vat_rate}>
-                          <td>%{g.vat_rate}</td>
-                          <td className="right">{fmt(g.net)}</td>
-                          <td className="right">{fmt(g.vat_amount)}</td>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {(proforma.charges || []).map((c) => (
+                        <tr key={c.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{new Date(c.date || c.created_at).toLocaleDateString()}</td>
+                          <td className="px-4 py-3 text-sm text-gray-800 font-medium">{c.description}{c.discount_reason ? <span className="text-xs text-gray-400 block font-normal">({c.discount_reason})</span> : ''}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{fmt(c.unit_price)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 text-center">{c.quantity}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{fmt(c.subtotal ?? c.amount)}</td>
+                          <td className="px-4 py-3 text-sm text-red-600 text-right tabular-nums">{fmt(c.discount_amount)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{fmt(c.amount)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{fmt(c.vat_amount)} <span className="text-xs text-gray-400">{c.vat_rate ? `(%${c.vat_rate})` : ''}</span></td>
+                          <td className="px-4 py-3 text-sm text-gray-900 font-bold text-right tabular-nums">{fmt(c.total)} ₺</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                <div>
-                  <div className="font-semibold mb-1">Toplamlar</div>
-                  <table className="totals">
-                    <tbody>
-                      <tr><td>Ara Toplam</td><td className="right">{fmt(proforma.totals?.subtotal)} ₺</td></tr>
-                      <tr><td>İndirim</td><td className="right">−{fmt(proforma.totals?.discount_total)} ₺</td></tr>
-                      <tr><td>Net</td><td className="right">{fmt(proforma.totals?.net_total)} ₺</td></tr>
-                      <tr><td>KDV</td><td className="right">{fmt(proforma.totals?.vat_total)} ₺</td></tr>
-                      <tr><td>Şehir Vergisi</td><td className="right">{fmt(proforma.totals?.city_tax_total)} ₺</td></tr>
-                      <tr><td>Genel Toplam</td><td className="right">{fmt(proforma.totals?.grand_total)} ₺</td></tr>
-                      <tr><td>Ödenen</td><td className="right">{fmt(proforma.totals?.payments_total)} ₺</td></tr>
-                      <tr><td>Bakiye</td><td className="right">{fmt(proforma.totals?.balance_due)} ₺</td></tr>
+              </div>
+
+              <div className="grid grid-cols-12 gap-8 mb-6">
+                <div className="col-span-5">
+                  <div className="text-sm font-bold text-gray-800 mb-2 border-b pb-2">KDV Özeti</div>
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="text-gray-500 border-b border-gray-100">
+                        <th className="py-2 font-medium">Oran</th>
+                        <th className="py-2 font-medium text-right">Matrah</th>
+                        <th className="py-2 font-medium text-right">KDV Tutarı</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {(proforma.vat_breakdown || []).map((g) => (
+                        <tr key={g.vat_rate}>
+                          <td className="py-2 text-gray-600">% {g.vat_rate}</td>
+                          <td className="py-2 text-gray-800 text-right tabular-nums">{fmt(g.net)} ₺</td>
+                          <td className="py-2 text-gray-800 text-right tabular-nums">{fmt(g.vat_amount)} ₺</td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
+                </div>
+                <div className="col-span-7 bg-gray-50 rounded-lg p-5 border border-gray-100">
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-sm text-gray-600">
+                      <span>Ara Toplam</span>
+                      <span className="tabular-nums font-medium text-gray-800">{fmt(proforma.totals?.subtotal)} ₺</span>
+                    </div>
+                    {proforma.totals?.discount_total > 0 && (
+                      <div className="flex justify-between text-sm text-red-600">
+                        <span>İndirim Toplamı</span>
+                        <span className="tabular-nums font-medium">−{fmt(proforma.totals?.discount_total)} ₺</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-sm text-gray-600">
+                      <span>Net Toplam</span>
+                      <span className="tabular-nums font-medium text-gray-800">{fmt(proforma.totals?.net_total)} ₺</span>
+                    </div>
+                    <div className="flex justify-between text-sm text-gray-600">
+                      <span>Hesaplanan KDV</span>
+                      <span className="tabular-nums font-medium text-gray-800">{fmt(proforma.totals?.vat_total)} ₺</span>
+                    </div>
+                    {proforma.totals?.city_tax_total > 0 && (
+                      <div className="flex justify-between text-sm text-gray-600">
+                        <span>Konaklama Vergisi (Şehir)</span>
+                        <span className="tabular-nums font-medium text-gray-800">{fmt(proforma.totals?.city_tax_total)} ₺</span>
+                      </div>
+                    )}
+                    <div className="pt-3 mt-3 border-t border-gray-200 flex justify-between text-xl font-bold text-gray-900">
+                      <span>Genel Toplam</span>
+                      <span className="tabular-nums">{fmt(proforma.totals?.grand_total)} ₺</span>
+                    </div>
+                    <div className="flex justify-between text-sm text-gray-600 mt-2">
+                      <span>Tahsil Edilen (Ödenen)</span>
+                      <span className="tabular-nums font-medium text-gray-800">{fmt(proforma.totals?.payments_total)} ₺</span>
+                    </div>
+                    <div className="pt-3 mt-3 border-t border-gray-200 flex justify-between text-lg font-bold text-emerald-600">
+                      <span>Kalan Bakiye</span>
+                      <span className="tabular-nums">{fmt(proforma.totals?.balance_due)} ₺</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
