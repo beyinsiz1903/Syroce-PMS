@@ -126,6 +126,7 @@ jobs:
               with:
                   name: stress-auth
                   path: frontend/e2e-stress/.auth/
+                  include-hidden-files: true
                   retention-days: 1
 
     stress:
