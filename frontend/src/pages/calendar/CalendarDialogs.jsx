@@ -782,7 +782,7 @@ export const FindRoomDialog = ({
             <Input
               type="date"
               value={findRoomCriteria.check_out}
-              min={findRoomCriteria.check_in || undefined}
+              min={findRoomCriteria.check_in || new Date().toISOString().split('T')[0]}
               onChange={(e) => setFindRoomCriteria({...findRoomCriteria, check_out: e.target.value})}
               data-testid="find-room-checkout"
             />
