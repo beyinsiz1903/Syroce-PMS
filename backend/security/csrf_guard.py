@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("security.csrf_guard")
 
-_RAW_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:8000,http://localhost:8001,http://localhost:3000")
+_RAW_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:8000,http://localhost:8001,http://localhost:3000,http://localhost:5000")
 _ALWAYS_ALLOWED_ORIGINS = [
     "https://pms.syroce.com",
     "https://www.pms.syroce.com",
