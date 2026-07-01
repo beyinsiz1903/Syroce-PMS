@@ -17,6 +17,7 @@ def parse_args():
     parser.add_argument("--username", type=str, help="Optional username for login")
     parser.add_argument("--password", type=str, help="Admin password (required unless SMOKE_PASSWORD env is set)")
     parser.add_argument("--allow-mutations", action="store_true", help="Allow state-changing (destructive) operations")
+    parser.add_argument("--force-local-mutations", action="store_true", help="Force mutations on local environment even if tenant name cannot be resolved safely")
     parser.add_argument("--read-only", action="store_true", help="Explicitly mark read-only mode (default if --allow-mutations is omitted)")
     parser.add_argument("--origin", type=str, help="Origin header for CSRF (defaults to base-url)")
 
@@ -86,13 +87,15 @@ def extract_items(data, keys=("items", "bookings", "data", "results", "rooms", "
 
 
 class DemoSmokeTest:
-    def __init__(self, base_url, email, password, allow_mutations, origin=None, hotel_id=None, username=None):
+    def __init__(self, base_url, email, password, allow_mutations, origin=None, hotel_id=None, username=None, force_local_mutations=False):
         self.base_url = base_url.rstrip("/")
         self.email = email
         self.hotel_id = hotel_id
         self.username = username
         self.password = password
-        self.allow_mutations = allow_mutations
+        self.mutations_requested = allow_mutations or force_local_mutations
+        self.allow_mutations = self.mutations_requested
+        self.force_local_mutations = force_local_mutations
         self.origin = origin.rstrip("/") if origin else self.base_url
 
         self.session = requests.Session()
@@ -106,7 +109,16 @@ class DemoSmokeTest:
         self.room_id = None
         self.target_room_id = None
         self.folio_id = None
-        self.report_data = {"timestamp": datetime.now().isoformat(), "base_url": self.base_url, "email": self.email, "mode": "mutating" if self.allow_mutations else "read-only", "steps": []}
+        self.report_data = {
+            "timestamp": datetime.now().isoformat(),
+            "base_url": self.base_url,
+            "email": self.email,
+            "mutations_requested": self.mutations_requested,
+            "mutations_enabled": self.allow_mutations,
+            "tenant_safety_reason": "",
+            "mode": "mutating" if self.allow_mutations else "read-only",
+            "steps": [],
+        }
 
     def _req(self, method, endpoint, **kwargs):
         url = f"{self.base_url}{endpoint}"
@@ -175,23 +187,68 @@ class DemoSmokeTest:
             json.dump(self.report_data, f, indent=2, default=str)
         log_info(f"JSON Report saved to {filename}")
 
-    def check_tenant_safety(self):
-        if not self.allow_mutations:
+    def _resolve_tenant_name(self, login_data):
+        tenant_obj = login_data.get("tenant") or login_data.get("user", {}).get("tenant")
+
+        if not tenant_obj:
+            resp, lat, err = self._req("GET", "/api/auth/me")
+            if resp and resp.status_code == 200:
+                me_data = resp.json()
+                tenant_obj = me_data.get("tenant") or me_data.get("user", {}).get("tenant")
+
+        if tenant_obj and isinstance(tenant_obj, dict):
+            for field in ["name", "property_name", "hotel_name", "display_name", "slug", "code"]:
+                if field in tenant_obj and tenant_obj[field]:
+                    return str(tenant_obj[field])
+
+        return login_data.get("tenant_name") or login_data.get("tenant_id") or login_data.get("user", {}).get("tenant_id")
+
+    def check_tenant_safety(self, login_data):
+        if not self.mutations_requested:
+            self.report_data["mutations_enabled"] = False
+            self.report_data["tenant_safety_reason"] = "Mutations not requested"
             return True
 
+        self.tenant_name = self._resolve_tenant_name(login_data)
+
         if not self.tenant_name:
-            log_warn("Tenant name missing in login response.")
-            log_warn("Safety fallback triggered: Mutations disabled.")
+            if self.force_local_mutations and ("localhost" in self.base_url or "127.0.0.1" in self.base_url):
+                log_warn("Tenant name missing. Forcing local mutations via --force-local-mutations flag.")
+                self.allow_mutations = True
+                self.report_data["mutations_enabled"] = True
+                self.report_data["tenant_safety_reason"] = "Forced local mutations (tenant name missing)"
+                return True
+
+            reason = "Tenant name missing and not local force. Mutations disabled."
+            log_warn(reason)
             self.allow_mutations = False
+            self.report_data["mutations_enabled"] = False
+            self.report_data["tenant_safety_reason"] = reason
             return False
 
         safe_keywords = ["test", "demo", "pilot", "sandbox", "local"]
-        if not any(kw in self.tenant_name.lower() for kw in safe_keywords):
-            log_warn(f"Tenant '{self.tenant_name}' does not appear to be a test/demo tenant.")
-            log_warn("Mutations are disabled for safety. Run against a safe environment.")
-            self.allow_mutations = False
+        if any(kw in self.tenant_name.lower() for kw in safe_keywords):
+            reason = f"Safe tenant detected: {self.tenant_name}"
+            log_info(f"Tenant safety label: {self.tenant_name}")
+            self.allow_mutations = True
+            self.report_data["mutations_enabled"] = True
+            self.report_data["tenant_safety_reason"] = reason
+            return True
 
-        return self.allow_mutations
+        if self.force_local_mutations and ("localhost" in self.base_url or "127.0.0.1" in self.base_url):
+            reason = f"Unsafe tenant '{self.tenant_name}' overridden by --force-local-mutations"
+            log_warn(reason)
+            self.allow_mutations = True
+            self.report_data["mutations_enabled"] = True
+            self.report_data["tenant_safety_reason"] = reason
+            return True
+
+        reason = f"Tenant '{self.tenant_name}' does not appear to be a test/demo tenant. Mutations disabled."
+        log_warn(reason)
+        self.allow_mutations = False
+        self.report_data["mutations_enabled"] = False
+        self.report_data["tenant_safety_reason"] = reason
+        return False
 
     def get_booking_id(self, data):
         """Robustly extract booking ID from various response schemas."""
@@ -220,8 +277,8 @@ class DemoSmokeTest:
             data = resp.json()
             self.token = data.get("access_token")
             self.tenant_id = data.get("tenant_id")
-            self.tenant_name = data.get("tenant_name")
-            self.check_tenant_safety()
+            self.check_tenant_safety(data)
+            self.report_data["mode"] = "mutating" if self.allow_mutations else "read-only"
         else:
             log_error("Login failed. Cannot proceed.")
             self.save_report()
@@ -383,5 +440,14 @@ class DemoSmokeTest:
 
 if __name__ == "__main__":
     args = parse_args()
-    test = DemoSmokeTest(base_url=args.base_url, email=args.email, password=args.password, allow_mutations=args.allow_mutations, origin=args.origin, hotel_id=args.hotel_id, username=args.username)
+    test = DemoSmokeTest(
+        base_url=args.base_url,
+        email=args.email,
+        password=args.password,
+        allow_mutations=args.allow_mutations,
+        origin=args.origin,
+        hotel_id=args.hotel_id,
+        username=args.username,
+        force_local_mutations=args.force_local_mutations,
+    )
     test.run()
