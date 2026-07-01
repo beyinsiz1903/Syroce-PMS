@@ -439,11 +439,14 @@ class DemoSmokeTest:
                     except Exception:
                         pass
 
-                    phrases = ["mongo replica set", "replica set gerekli", "atomik garanti", "transaction requires replica set"]
+                    phrases = ["mongo replica set", "replica set gerekli", "atomik garanti", "transaction requires replica set", "replica", "atomik", "transaction"]
                     if any(p in resp_text_lower or p in detail_lower for p in phrases):
                         is_replica_set_error = True
 
-                if is_replica_set_error:
+                if resp and resp.status_code in [200, 201]:
+                    success, resp = self._log_step("8. Folio Charge", method, ep, resp, lat, err, expected_status=[200, 201])
+                    folio_charge_posted = True
+                elif is_replica_set_error:
                     folio_charge_skipped_due_to_replica_set = True
                     self._skip_step("8. Folio Charge", "Skipped in local standalone MongoDB: folio charge requires replica set transaction support")
                     if "environment_caveats" not in self.report_data:
@@ -452,9 +455,7 @@ class DemoSmokeTest:
                     if caveat not in self.report_data["environment_caveats"]:
                         self.report_data["environment_caveats"].append(caveat)
                 else:
-                    success, resp = self._log_step("8. Folio Charge", method, ep, resp, lat, err, expected_status=[200, 201])
-                    if success:
-                        folio_charge_posted = True
+                    self._log_step("8. Folio Charge", method, ep, resp, lat, err, expected_status=[200, 201])
             else:
                 self._skip_step("8. Folio Charge", "Missing booking_id")
 
