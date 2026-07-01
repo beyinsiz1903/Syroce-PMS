@@ -16,6 +16,7 @@ def parse_args():
     parser.add_argument("--password", type=str, help="Admin password (required unless SMOKE_PASSWORD env is set)")
     parser.add_argument("--allow-mutations", action="store_true", help="Allow state-changing (destructive) operations")
     parser.add_argument("--read-only", action="store_true", help="Explicitly mark read-only mode (default if --allow-mutations is omitted)")
+    parser.add_argument("--origin", type=str, help="Origin header for CSRF (defaults to base-url)")
 
     args = parser.parse_args()
     if not args.password:
@@ -71,11 +72,12 @@ def redact_tokens(data):
 
 
 class DemoSmokeTest:
-    def __init__(self, base_url, email, password, allow_mutations):
+    def __init__(self, base_url, email, password, allow_mutations, origin=None):
         self.base_url = base_url.rstrip("/")
         self.email = email
         self.password = password
         self.allow_mutations = allow_mutations
+        self.origin = origin.rstrip("/") if origin else self.base_url
 
         self.session = requests.Session()
         self.token = None
@@ -92,10 +94,15 @@ class DemoSmokeTest:
 
     def _req(self, method, endpoint, **kwargs):
         url = f"{self.base_url}{endpoint}"
+        
+        headers = kwargs.get("headers", {})
+        headers["Origin"] = self.origin
+        headers["Referer"] = f"{self.origin}/"
+        
         if self.token:
-            headers = kwargs.get("headers", {})
             headers["Authorization"] = f"Bearer {self.token}"
-            kwargs["headers"] = headers
+            
+        kwargs["headers"] = headers
 
         try:
             start = time.time()
@@ -339,5 +346,5 @@ class DemoSmokeTest:
 
 if __name__ == "__main__":
     args = parse_args()
-    test = DemoSmokeTest(args.base_url, args.email, args.password, args.allow_mutations)
+    test = DemoSmokeTest(args.base_url, args.email, args.password, args.allow_mutations, args.origin)
     test.run()
