@@ -12,9 +12,9 @@ import {
 
 const API = "";
 const hdrs = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}`, 'Content-Type': 'application/json' });
-const get = async (p) => (await fetch(`${API}${p}`, { headers: hdrs() })).json();
-const post = async (p, b) => (await fetch(`${API}${p}`, { method: 'POST', headers: hdrs(), body: JSON.stringify(b) })).json();
-const doPut = async (p, b) => (await fetch(`${API}${p}`, { method: 'PUT', headers: hdrs(), body: JSON.stringify(b) })).json();
+const get = async (p) => (await fetch(`${API}${p}`, { credentials: "include", headers: hdrs() })).json();
+const post = async (p, b) => (await fetch(`${API}${p}`, { credentials: "include", method: 'POST', headers: hdrs(), body: JSON.stringify(b) })).json();
+const doPut = async (p, b) => (await fetch(`${API}${p}`, { credentials: "include", method: 'PUT', headers: hdrs(), body: JSON.stringify(b) })).json();
 
 const MODE_LABELS = { full_auto: 'Tam Otonom', supervised: 'Denetimli', advisory: 'Danışma' };
 const STATUS_MAP = {

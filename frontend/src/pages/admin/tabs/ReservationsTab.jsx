@@ -13,7 +13,7 @@ const API_BASE = "";
 
 const fetchAPI = async (path) => {
   const token = localStorage.getItem('token');
-  const res = await fetch(`${API_BASE}/api${API}${path}`, {
+  const res = await fetch(`${API_BASE}/api${API}${path}`, { credentials: "include",
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error(`API error ${res.status}`);
@@ -22,7 +22,7 @@ const fetchAPI = async (path) => {
 
 const postAPI = async (path, body = {}) => {
   const token = localStorage.getItem('token');
-  const res = await fetch(`${API_BASE}/api${API}${path}`, {
+  const res = await fetch(`${API_BASE}/api${API}${path}`, { credentials: "include",
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

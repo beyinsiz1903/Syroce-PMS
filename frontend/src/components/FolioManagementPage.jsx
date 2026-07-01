@@ -99,7 +99,7 @@ const FolioManagementPage = () => {
   };
 
   const resolveFolioId = async (bookingId, token) => {
-    const res = await fetch(`/api/folio/booking/${bookingId}`, {
+    const res = await fetch(`/api/folio/booking/${bookingId}`, { credentials: "include",
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (res.ok) {
@@ -117,7 +117,7 @@ const FolioManagementPage = () => {
       const folioId = await resolveFolioId(bookingId, token);
 
       if (folioId) {
-        const detailRes = await fetch(`/api/folio/${folioId}`, {
+        const detailRes = await fetch(`/api/folio/${folioId}`, { credentials: "include",
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (detailRes.ok) {
@@ -147,7 +147,7 @@ const FolioManagementPage = () => {
       let folioId = await resolveFolioId(selectedFolio.id, token);
 
       if (!folioId) {
-        const createRes = await fetch(`/api/folio/create`, {
+        const createRes = await fetch(`/api/folio/create`, { credentials: "include",
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -164,7 +164,7 @@ const FolioManagementPage = () => {
         folioId = newFolio.id || newFolio.folio_id;
       }
 
-      const chargeRes = await fetch(`/api/folio/${folioId}/charge`, {
+      const chargeRes = await fetch(`/api/folio/${folioId}/charge`, { credentials: "include",
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -194,7 +194,7 @@ const FolioManagementPage = () => {
 
       if (!folioId) throw new Error('Folio not found');
 
-      const payRes = await fetch(`/api/folio/${folioId}/payment`, {
+      const payRes = await fetch(`/api/folio/${folioId}/payment`, { credentials: "include",
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

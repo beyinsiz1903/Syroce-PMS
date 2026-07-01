@@ -21,7 +21,7 @@ const SecurityDashboard = ({ user, tenant, onLogout, embedded = false }) => {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`/api/security/summary`, {
+      const res = await fetch(`/api/security/summary`, { credentials: "include",
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!res.ok) throw new Error();
@@ -38,7 +38,7 @@ const SecurityDashboard = ({ user, tenant, onLogout, embedded = false }) => {
 
   const refreshToken = async () => {
     try {
-      const res = await fetch(`/api/auth/refresh-token`, {
+      const res = await fetch(`/api/auth/refresh-token`, { credentials: "include",
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });

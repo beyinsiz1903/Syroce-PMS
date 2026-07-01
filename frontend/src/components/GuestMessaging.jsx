@@ -77,7 +77,7 @@ const GuestMessaging = ({ user, bookingId, isStaff = false }) => {
 
   const fetchUnreadCount = async () => {
     try {
-      const res = await fetch(`/api/guest/messages/unread-count`, {
+      const res = await fetch(`/api/guest/messages/unread-count`, { credentials: "include",
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -91,7 +91,7 @@ const GuestMessaging = ({ user, bookingId, isStaff = false }) => {
     if (!newMessage.trim()) return;
     setSending(true);
     try {
-      const res = await fetch(`/api/guest/messages`, {
+      const res = await fetch(`/api/guest/messages`, { credentials: "include",
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -113,7 +113,7 @@ const GuestMessaging = ({ user, bookingId, isStaff = false }) => {
 
   const markAllRead = async () => {
     try {
-      await fetch(`/api/guest/messages/mark-all-read${bookingId ? `?booking_id=${bookingId}` : ''}`, {
+      await fetch(`/api/guest/messages/mark-all-read${bookingId ? `?booking_id=${bookingId}` : ''}`, { credentials: "include",
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}` },
       });

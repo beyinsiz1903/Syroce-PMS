@@ -120,7 +120,7 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`/api/production-golive/summary`, { headers });
+      const res = await fetch(`/api/production-golive/summary`, { credentials: "include", headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setData(json);
@@ -136,7 +136,7 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
   const testProvider = async (provider) => {
     setTestingProvider(provider);
     try {
-      const res = await fetch(`/api/production-golive/providers/${provider}/test`, { method: "POST", headers });
+      const res = await fetch(`/api/production-golive/providers/${provider}/test`, { credentials: "include", method: "POST", headers });
       const json = await res.json();
       setProviderTests(prev => ({ ...prev, [provider]: json }));
     } catch (e) { console.error(e); }
@@ -146,7 +146,7 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
   const testAllProviders = async () => {
     setTestingAll(true);
     try {
-      const res = await fetch(`/api/production-golive/providers/test-all`, { method: "POST", headers });
+      const res = await fetch(`/api/production-golive/providers/test-all`, { credentials: "include", method: "POST", headers });
       const json = await res.json();
       if (json.providers) setProviderTests(json.providers);
     } catch (e) { console.error(e); }
@@ -156,11 +156,11 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
   const runPrelaunch = async () => {
     setRunningPrelaunch(true);
     try {
-      const res = await fetch(`/api/production-golive/validate/run`, { method: "POST", headers });
+      const res = await fetch(`/api/production-golive/validate/run`, { credentials: "include", method: "POST", headers });
       const json = await res.json();
       setPrelaunchResult(json);
       // Refresh history
-      const hRes = await fetch(`/api/production-golive/validate/history?limit=10`, { headers });
+      const hRes = await fetch(`/api/production-golive/validate/history?limit=10`, { credentials: "include", headers });
       const hJson = await hRes.json();
       setValidationHistory(hJson.history || []);
     } catch (e) { console.error(e); }
@@ -170,9 +170,9 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
   const fetchDeployment = useCallback(async () => {
     try {
       const [riskRes, stratRes, infraRes] = await Promise.all([
-        fetch(`/api/production-golive/deployment/risk-assessment`, { headers }),
-        fetch(`/api/production-golive/deployment/strategy`, { headers }),
-        fetch(`/api/production-golive/deployment/infrastructure`, { headers }),
+        fetch(`/api/production-golive/deployment/risk-assessment`, { credentials: "include", headers }),
+        fetch(`/api/production-golive/deployment/strategy`, { credentials: "include", headers }),
+        fetch(`/api/production-golive/deployment/infrastructure`, { credentials: "include", headers }),
       ]);
       const [risk, strategy, infra] = await Promise.all([riskRes.json(), stratRes.json(), infraRes.json()]);
       setDeploymentData({ risk, strategy, infra });
@@ -183,7 +183,7 @@ export default function ProductionGoLiveDashboard({ user, tenant, onLogout }) {
   const triggerBackup = async () => {
     setTriggeringBackup(true);
     try {
-      const res = await fetch(`/api/production-golive/backup/trigger`, { method: "POST", headers });
+      const res = await fetch(`/api/production-golive/backup/trigger`, { credentials: "include", method: "POST", headers });
       const json = await res.json();
       setBackupResult(json);
     } catch (e) { console.error(e); }

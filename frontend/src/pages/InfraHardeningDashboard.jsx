@@ -73,7 +73,7 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout, embedd
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`/api/infra/summary`, {
+      const res = await fetch(`/api/infra/summary`, { credentials: "include",
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -96,7 +96,7 @@ export default function InfraHardeningDashboard({ user, tenant, onLogout, embedd
   const triggerBackup = async () => {
     try {
       setBackupTriggered(true);
-      await fetch(`/api/infra/backup/trigger`, {
+      await fetch(`/api/infra/backup/trigger`, { credentials: "include",
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });

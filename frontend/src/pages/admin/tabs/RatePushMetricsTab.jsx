@@ -15,7 +15,7 @@ const RatePushMetricsTab = () => {
 
   const fetchConnectors = useCallback(async () => {
     try {
-      const res = await fetch(`/api/channel-manager/v2/connectors`, { headers });
+      const res = await fetch(`/api/channel-manager/v2/connectors`, { credentials: "include", headers });
       if (res.ok) {
         const data = await res.json();
         const list = data.connectors || data || [];
@@ -30,7 +30,7 @@ const RatePushMetricsTab = () => {
     if (!selectedConnector) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/channel-manager/v2/rate-push-metrics/${selectedConnector}?days=30`, { headers });
+      const res = await fetch(`/api/channel-manager/v2/rate-push-metrics/${selectedConnector}?days=30`, { credentials: "include", headers });
       if (res.ok) setMetrics(await res.json());
     } catch (e) { console.error(e); }
     setLoading(false);

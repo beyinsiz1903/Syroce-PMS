@@ -19,7 +19,7 @@ function useAuth() {
 }
 
 async function fetchAPI(path, headers) {
-  const res = await fetch(`${API}${path}`, { headers });
+  const res = await fetch(`${API}${path}`, { credentials: "include", headers });
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
 }
@@ -129,7 +129,7 @@ function RevenueTab() {
   const runPipeline = async () => {
     setRunning(true);
     try {
-      const result = await fetch(`/api/data-intelligence/revenue/run-pipeline`, {
+      const result = await fetch(`/api/data-intelligence/revenue/run-pipeline`, { credentials: "include",
         method: 'POST', headers, body: JSON.stringify({}),
       }).then(r => r.json());
       setPipelineResult(result);
