@@ -196,7 +196,7 @@ class DemoSmokeTest:
 
         if not tenant_obj:
             resp, lat, err = self._req("GET", "/api/auth/me")
-            if resp and resp.status_code == 200:
+            if resp is not None and resp.status_code == 200:
                 me_data = resp.json()
                 tenant_obj = me_data.get("tenant") or me_data.get("user", {}).get("tenant")
 
@@ -331,7 +331,7 @@ class DemoSmokeTest:
             safe_rooms = []
             unsafe_rooms = []
             resp, lat, err = self._req("GET", "/api/pms/rooms?limit=50")
-            if resp and resp.status_code == 200:
+            if resp is not None and resp.status_code == 200:
                 try:
                     all_rooms = extract_items(resp.json())
                     safe_statuses = ["available", "clean", "ready", "vacant_clean", "inspected"]
@@ -378,7 +378,7 @@ class DemoSmokeTest:
                     idem_key = f"smoke-demo-{self.ts_id}-cb-{i}"
                     resp, lat, err = self._req(method, ep, idem_key=idem_key, json=booking_data)
 
-                    if resp and resp.status_code == 409:
+                    if resp is not None and resp.status_code == 409:
                         log_warn(f"Room {candidate_room_id} conflicted on {check_in_str}, retrying...")
                         continue
 
@@ -430,7 +430,7 @@ class DemoSmokeTest:
                 resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-folio-charge", json=charge_payload)
 
                 is_replica_set_error = False
-                if resp and resp.status_code == 503:
+                if resp is not None and resp.status_code == 503:
                     resp_text_lower = resp.text.lower() if resp.text else ""
                     detail_lower = ""
                     try:
@@ -443,7 +443,7 @@ class DemoSmokeTest:
                     if any(p in resp_text_lower or p in detail_lower for p in phrases):
                         is_replica_set_error = True
 
-                if resp and resp.status_code in [200, 201]:
+                if resp is not None and resp.status_code in [200, 201]:
                     success, resp = self._log_step("8. Folio Charge", method, ep, resp, lat, err, expected_status=[200, 201])
                     folio_charge_posted = True
                 elif is_replica_set_error:
@@ -500,7 +500,7 @@ class DemoSmokeTest:
         # Step 13: Night Audit / Daily Resume (Read-only)
         method, ep = "GET", "/api/trial-balance"
         resp, lat, err = self._req(method, ep)
-        if resp and resp.status_code != 404:
+        if resp is not None and resp.status_code != 404:
             self._log_step("13. Night Audit / Daily Resume", method, ep, resp, lat, err)
         else:
             # Fallback
