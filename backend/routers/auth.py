@@ -1272,8 +1272,11 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
     tenant_id = payload.get("tenant_id")
     old_jti = payload.get("jti")
     old_exp = payload.get("exp")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Malformed refresh token" if rotation_kind == "refresh" else "Malformed access token")
+    if not user_id or not tenant_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Malformed refresh token" if rotation_kind == "refresh" else "Malformed access token"
+        )
 
     set_tenant_context(tenant_id)
     try:

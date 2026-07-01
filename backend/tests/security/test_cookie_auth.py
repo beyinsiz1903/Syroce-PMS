@@ -112,3 +112,39 @@ async def test_refresh_token_sets_tenant_context():
         # Assert tenant context is cleared after the request finishes
         assert get_current_tenant_id() is None
 
+
+@pytest.mark.asyncio
+async def test_refresh_token_missing_tenant_id():
+    from routers.auth import refresh_token
+    from fastapi import Request, Response, HTTPException
+    import jwt
+    from core.security import JWT_SECRET, JWT_ALGORITHM
+    from core.tenant_db import get_current_tenant_id, clear_tenant_context
+    
+    # Ensure context is clear at start
+    clear_tenant_context()
+    
+    # Create a mock refresh token payload MISSING tenant_id
+    payload = {
+        "type": "refresh",
+        "user_id": "user123",
+        "jti": "jti123",
+        "exp": 9999999999
+    }
+    token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    
+    # Mock request cookies
+    mock_request = MagicMock(spec=Request)
+    mock_request.cookies = {"refresh_token": token}
+    mock_response = MagicMock(spec=Response)
+    
+    with pytest.raises(HTTPException) as exc_info:
+        await refresh_token(request=mock_request, response=mock_response, body={})
+        
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "Malformed refresh token"
+    
+    # Assert tenant context remains unset
+    assert get_current_tenant_id() is None
+
+
