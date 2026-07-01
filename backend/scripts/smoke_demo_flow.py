@@ -73,6 +73,18 @@ def redact_tokens(data):
     return data
 
 
+def extract_items(data, keys=("items", "bookings", "data", "results", "rooms", "tasks")):
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in keys:
+            value = data.get(key)
+            if isinstance(value, list):
+                return value
+        return []
+    return []
+
+
 class DemoSmokeTest:
     def __init__(self, base_url, email, password, allow_mutations, origin=None, hotel_id=None, username=None):
         self.base_url = base_url.rstrip("/")
@@ -98,14 +110,14 @@ class DemoSmokeTest:
 
     def _req(self, method, endpoint, **kwargs):
         url = f"{self.base_url}{endpoint}"
-        
+
         headers = kwargs.get("headers", {})
         headers["Origin"] = self.origin
         headers["Referer"] = f"{self.origin}/"
-        
+
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
-            
+
         kwargs["headers"] = headers
 
         try:
@@ -200,9 +212,9 @@ class DemoSmokeTest:
             login_payload["hotel_id"] = self.hotel_id
         if self.username:
             login_payload["username"] = self.username
-            
+
         resp, lat, err = self._req(method, ep, json=login_payload)
-        
+
         success, resp = self._log_step("1. Login", method, ep, resp, lat, err, expected_status=[200, 201])
         if success:
             data = resp.json()
@@ -227,9 +239,12 @@ class DemoSmokeTest:
 
         # Read-only fallback for Booking details
         if success and not self.allow_mutations:
-            bookings = resp.json().get("bookings", [])
-            if bookings and len(bookings) > 0:
-                self.booking_id = self.get_booking_id(bookings[0])
+            try:
+                bookings = extract_items(resp.json())
+                if bookings and len(bookings) > 0:
+                    self.booking_id = self.get_booking_id(bookings[0])
+            except Exception:
+                pass
 
         if not self.allow_mutations:
             log_info("Read-only mode active. Mutating steps will be SKIPPED.")
@@ -254,11 +269,14 @@ class DemoSmokeTest:
             # Pre-requisite: Find a room to use for booking and status
             resp, lat, err = self._req("GET", "/api/pms/rooms?limit=5")
             if resp and resp.status_code == 200:
-                rooms = resp.json().get("rooms", [])
-                if len(rooms) > 0:
-                    self.room_id = rooms[0].get("id")
-                if len(rooms) > 1:
-                    self.target_room_id = rooms[1].get("id")
+                try:
+                    rooms = extract_items(resp.json())
+                    if len(rooms) > 0:
+                        self.room_id = rooms[0].get("id")
+                    if len(rooms) > 1:
+                        self.target_room_id = rooms[1].get("id")
+                except Exception:
+                    pass
 
             # Step 4: Create booking
             if not self.room_id:
@@ -356,13 +374,5 @@ class DemoSmokeTest:
 
 if __name__ == "__main__":
     args = parse_args()
-    test = DemoSmokeTest(
-        base_url=args.base_url,
-        email=args.email,
-        password=args.password,
-        allow_mutations=args.allow_mutations,
-        origin=args.origin,
-        hotel_id=args.hotel_id,
-        username=args.username
-    )
+    test = DemoSmokeTest(base_url=args.base_url, email=args.email, password=args.password, allow_mutations=args.allow_mutations, origin=args.origin, hotel_id=args.hotel_id, username=args.username)
     test.run()
