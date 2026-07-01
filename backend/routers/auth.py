@@ -298,7 +298,7 @@ def _build_token_response(user: User, tenant, response: Response = None) -> Toke
             secure=COOKIE_SECURE,
             samesite="lax",
             max_age=REFRESH_TOKEN_EXPIRATION_DAYS * 86400,
-            path="/api/auth/refresh-token",
+            path="/",
         )
 
     return TokenResponse(
@@ -1353,9 +1353,9 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
             value=new_refresh,
             httponly=True,
             secure=COOKIE_SECURE,
-            samesite="lax", # Should probably be lax to match login, wait, /api/auth/logout sets "none" if secure
+            samesite="lax",
             max_age=REFRESH_TOKEN_EXPIRATION_DAYS * 86400,
-            path="/api/auth/refresh-token",
+            path="/",
         )
         
     return resp_data
@@ -1471,7 +1471,7 @@ async def logout(
     )
 
     response.delete_cookie("access_token", path="/", httponly=True, secure=COOKIE_SECURE, samesite="none" if COOKIE_SECURE else "lax")
-    response.delete_cookie("refresh_token", path="/api/auth/refresh-token", httponly=True, secure=COOKIE_SECURE, samesite="none" if COOKIE_SECURE else "lax")
+    response.delete_cookie("refresh_token", path="/", httponly=True, secure=COOKIE_SECURE, samesite="none" if COOKIE_SECURE else "lax")
 
     return {"message": "Çıkış başarılı"}
 
