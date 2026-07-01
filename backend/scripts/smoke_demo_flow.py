@@ -421,27 +421,46 @@ class DemoSmokeTest:
                 self._skip_step("7. Room Status Update", "Missing room_id")
 
             # Step 8: Folio charge
-            folio_charge_skipped = False
+            folio_charge_posted = False
+            folio_charge_skipped_due_to_replica_set = False
+
             if self.booking_id:
                 method, ep = "POST", f"/api/frontdesk/folio/{self.booking_id}/charge"
                 charge_payload = {"charge_category": "other", "description": "Smoke demo flow charge", "amount": 100, "quantity": 1}
                 resp, lat, err = self._req(method, ep, idem_key=f"smoke-demo-{self.ts_id}-folio-charge", json=charge_payload)
 
-                if resp and resp.status_code == 503 and ("Mongo replica set gerekli" in resp.text or "atomik garanti" in resp.text):
-                    folio_charge_skipped = True
+                is_replica_set_error = False
+                if resp and resp.status_code == 503:
+                    resp_text_lower = resp.text.lower() if resp.text else ""
+                    detail_lower = ""
+                    try:
+                        detail = resp.json().get("detail", "")
+                        detail_lower = str(detail).lower()
+                    except Exception:
+                        pass
+
+                    phrases = ["mongo replica set", "replica set gerekli", "atomik garanti", "transaction requires replica set"]
+                    if any(p in resp_text_lower or p in detail_lower for p in phrases):
+                        is_replica_set_error = True
+
+                if is_replica_set_error:
+                    folio_charge_skipped_due_to_replica_set = True
                     self._skip_step("8. Folio Charge", "Skipped in local standalone MongoDB: folio charge requires replica set transaction support")
                     if "environment_caveats" not in self.report_data:
                         self.report_data["environment_caveats"] = []
-                    self.report_data["environment_caveats"].append("local MongoDB standalone; folio charge transaction requires replica set")
+                    caveat = "local MongoDB standalone; folio charge transaction requires replica set"
+                    if caveat not in self.report_data["environment_caveats"]:
+                        self.report_data["environment_caveats"].append(caveat)
                 else:
-                    self._log_step("8. Folio Charge", method, ep, resp, lat, err, expected_status=[200, 201])
+                    success, resp = self._log_step("8. Folio Charge", method, ep, resp, lat, err, expected_status=[200, 201])
+                    if success:
+                        folio_charge_posted = True
             else:
                 self._skip_step("8. Folio Charge", "Missing booking_id")
-                folio_charge_skipped = True
 
             # Step 9: Payment
             if self.booking_id:
-                if folio_charge_skipped:
+                if folio_charge_skipped_due_to_replica_set or not folio_charge_posted:
                     self._skip_step("9. Folio Payment", "Skipped because folio charge was not posted")
                 else:
                     method, ep = "POST", f"/api/frontdesk/folio/{self.booking_id}/payment"
