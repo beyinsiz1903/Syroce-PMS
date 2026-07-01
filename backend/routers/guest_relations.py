@@ -85,7 +85,7 @@ async def _analyze_guest_preferences(db: Any, tenant_id: str, guest_id: str, gue
 async def get_guest_profile_analysis(
     guest_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_hr")),
+    _perm=Depends(require_op("view_guest_list")),
 ):
     """Retrieve historical preference analysis for a guest."""
     db = get_system_db()
@@ -102,7 +102,7 @@ async def get_guest_profile_analysis(
 @router.get("/preparations/directives")
 async def list_preparation_directives(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_hr")),
+    _perm=Depends(require_op("view_guest_list")),
 ):
     """List generated guest room preparation directives."""
     db = get_system_db()
