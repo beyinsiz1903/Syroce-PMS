@@ -82,11 +82,11 @@ const RoomsTab = ({
   const [showGuestDropdown, setShowGuestDropdown] = useState(false);
   const guestSearchTimerRef = React.useRef(null);
 
-  const today = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const today = useMemo(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0], []);
   const tomorrow = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() + 1);
-    return d.toISOString().split('T')[0];
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
   }, []);
 
   // Build a map of room_number -> current guest info from active bookings

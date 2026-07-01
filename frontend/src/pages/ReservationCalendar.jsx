@@ -408,8 +408,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     const lo = sel.startStr <= sel.endStr ? sel.startStr : sel.endStr;
     const hi = sel.startStr <= sel.endStr ? sel.endStr : sel.startStr;
 
-    const today = new Date().toISOString().split('T')[0];
-    const minDate = hotelBusinessDate && hotelBusinessDate < today ? hotelBusinessDate : today;
+    const localToday = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
+    const minDate = hotelBusinessDate && hotelBusinessDate < localToday ? hotelBusinessDate : localToday;
     if (lo < minDate) {
       toast.error(`Geçmiş tarihe rezervasyon yapilamaz (minimum: ${minDate})`);
       return;
@@ -489,8 +489,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
     // Gecmis tarih kontrolu: PMS business date hala aktif is gunudur
     // (gun sonu yapilmadiysa business_date takvim tarihinden geride olabilir).
-    const today = new Date().toISOString().split('T')[0];
-    const minDate = hotelBusinessDate && hotelBusinessDate < today ? hotelBusinessDate : today;
+    const localToday = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
+    const minDate = hotelBusinessDate && hotelBusinessDate < localToday ? hotelBusinessDate : localToday;
     if (newBooking.check_in < minDate) {
       toast.error(`Geçmiş tarihe rezervasyon yapilamaz (minimum: ${minDate})`);
       return;
@@ -502,6 +502,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         const newGuest = {
           id: `guest_${Date.now()}`, name: newBooking.guest_name,
           email: newBooking.guest_email || '', phone: newBooking.guest_phone || '',
+          id_number: '',
           tenant_id: user.tenant_id, created_at: new Date().toISOString()
         };
         await axios.post('/pms/guests', newGuest);
