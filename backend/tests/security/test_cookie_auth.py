@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 from models.schemas import User
 
@@ -61,3 +61,54 @@ async def test_logout_clears_cookies():
     # check refresh_token
     refresh_cookie = [args[0][0] for args in call_args_list if args[0][0] == "refresh_token"]
     assert len(refresh_cookie) == 1
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_sets_tenant_context():
+    from routers.auth import refresh_token
+    from fastapi import Request, Response
+    import jwt
+    from core.security import JWT_SECRET, JWT_ALGORITHM
+    from core.tenant_db import get_current_tenant_id
+    
+    # Create a mock refresh token payload
+    payload = {
+        "type": "refresh",
+        "user_id": "user123",
+        "tenant_id": "tenantABC",
+        "jti": "jti123",
+        "exp": 9999999999
+    }
+    token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    
+    # Mock request cookies
+    mock_request = MagicMock(spec=Request)
+    mock_request.cookies = {"refresh_token": token}
+    mock_response = MagicMock(spec=Response)
+    
+    mock_db = AsyncMock()
+    
+    async def mock_find_one(*args, **kwargs):
+        # Assert tenant context is set during the database lookup
+        assert get_current_tenant_id() == "tenantABC"
+        return {"id": "user123", "tenant_id": "tenantABC", "is_active": True}
+        
+    mock_db.users.find_one = AsyncMock(side_effect=mock_find_one)
+    mock_db.audit_logs.insert_one = AsyncMock()
+    
+    with patch("routers.auth.db", mock_db), \
+         patch("routers.auth.revoke_jti", return_value=True), \
+         patch("routers.auth.create_token", return_value="access_token_val"), \
+         patch("routers.auth.create_refresh_token", return_value=("refresh_token_val", None)):
+         
+        resp = await refresh_token(request=mock_request, response=mock_response, body={})
+        
+        # Verify that db.users.find_one was called
+        assert mock_db.users.find_one.call_count == 1
+        # Check that response was successfully generated
+        assert resp["access_token"] == "access_token_val"
+        assert resp["refresh_token"] == "refresh_token_val"
+        
+        # Assert tenant context is cleared after the request finishes
+        assert get_current_tenant_id() is None
+

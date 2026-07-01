@@ -32,7 +32,7 @@ from core.security import (
     revoke_jti,
     verify_password,
 )
-from core.tenant_db import get_system_db
+from core.tenant_db import get_system_db, set_tenant_context, clear_tenant_context
 from models.enums import UserRole
 from models.schemas import (
     GuestRegister,
@@ -1235,34 +1235,20 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
     old_exp: int | None = None
     rotation_kind: str = "access"
 
+    payload = None
     if submitted_refresh:
         # ── Path A: V3 mobile refresh-token flow ──
         try:
-            rt_payload = _jwt.decode(submitted_refresh, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            payload = _jwt.decode(submitted_refresh, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         except _jwt.ExpiredSignatureError:
             raise HTTPException(status_code=401, detail="Refresh token expired — please login again")
         except _jwt.InvalidTokenError:
             raise HTTPException(status_code=401, detail="Invalid refresh token")
-        if rt_payload.get("type") != "refresh":
+        if payload.get("type") != "refresh":
             # An access token sent in the refresh-token slot is rejected so
             # callers can't blur the distinction (defence in depth).
             raise HTTPException(status_code=401, detail="Wrong token type for refresh")
-        user_id = rt_payload.get("user_id")
-        tenant_id = rt_payload.get("tenant_id")
-        old_jti = rt_payload.get("jti")
-        old_exp = rt_payload.get("exp")
         rotation_kind = "refresh"
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Malformed refresh token")
-        # Resolve user (no Depends → tolerates missing/expired access token).
-        user_doc = await db.users.find_one({"id": user_id}, {"_id": 0})
-        if not user_doc:
-            raise HTTPException(status_code=401, detail="User no longer exists")
-        # Enforce the same invariants `get_current_user` would have applied,
-        # so a refresh cannot bypass an `is_active=False` lock-out, a
-        # `tokens_invalid_before` mass-revocation, or a tenant mismatch.
-        _enforce_refresh_invariants(user_doc, rt_payload, kind="refresh")
-        user_email = user_doc.get("email", "")
     else:
         # ── Path B: legacy access-token rotation ──
         # Manually decode + load user so we can produce the same audit row
@@ -1272,66 +1258,75 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
             raise HTTPException(status_code=401, detail="Missing bearer token")
         token = auth.split(" ", 1)[1].strip()
         try:
-            ax_payload = _jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            payload = _jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         except _jwt.ExpiredSignatureError:
             raise HTTPException(status_code=401, detail="Access token expired — send refresh_token in body")
         except _jwt.InvalidTokenError:
             raise HTTPException(status_code=401, detail="Invalid access token")
         # Reject refresh tokens sent in the bearer slot — same defence in depth.
-        if ax_payload.get("type") == "refresh":
+        if payload.get("type") == "refresh":
             raise HTTPException(status_code=401, detail="Refresh token cannot be used as bearer")
-        user_id = ax_payload.get("user_id")
-        tenant_id = ax_payload.get("tenant_id")
-        old_jti = ax_payload.get("jti")
-        old_exp = ax_payload.get("exp")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Malformed access token")
+        rotation_kind = "access"
+
+    user_id = payload.get("user_id")
+    tenant_id = payload.get("tenant_id")
+    old_jti = payload.get("jti")
+    old_exp = payload.get("exp")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Malformed refresh token" if rotation_kind == "refresh" else "Malformed access token")
+
+    set_tenant_context(tenant_id)
+    try:
+        # Resolve user (no Depends → tolerates missing/expired access token).
         user_doc = await db.users.find_one({"id": user_id}, {"_id": 0})
         if not user_doc:
             raise HTTPException(status_code=401, detail="User no longer exists")
-        # Same invariants as Path A: a Path-B bearer rotation also bypasses
-        # `Depends(get_current_user)` (we manually decode), so we need to
-        # re-apply the lock-out / watermark / tenant-mismatch guards here.
-        _enforce_refresh_invariants(user_doc, ax_payload, kind="access")
+        
+        # Enforce the same invariants `get_current_user` would have applied,
+        # so a refresh cannot bypass an `is_active=False` lock-out, a
+        # `tokens_invalid_before` mass-revocation, or a tenant mismatch.
+        _enforce_refresh_invariants(user_doc, payload, kind=rotation_kind)
         user_email = user_doc.get("email", "")
 
-    # v44 race-hardening: only the request that wins the revocation insert
-    # is allowed to mint a fresh token. Concurrent refreshes with the same
-    # old jti → only one rotates, the others get 401.
-    if old_jti and old_exp:
-        try:
-            won = await revoke_jti(
-                old_jti,
-                int(old_exp),
-                user_id=user_id,
-                tenant_id=tenant_id,
-                reason=f"{rotation_kind}_rotation",
-            )
-        except Exception as e:
-            logger.error("refresh_token: revoke_jti raised: %s", e)
-            raise HTTPException(status_code=503, detail="Token rotation unavailable, please retry")
-        if not won:
-            raise HTTPException(status_code=401, detail="Refresh replay rejected — please login again")
+        # v44 race-hardening: only the request that wins the revocation insert
+        # is allowed to mint a fresh token. Concurrent refreshes with the same
+        # old jti → only one rotates, the others get 401.
+        if old_jti and old_exp:
+            try:
+                won = await revoke_jti(
+                    old_jti,
+                    int(old_exp),
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                    reason=f"{rotation_kind}_rotation",
+                )
+            except Exception as e:
+                logger.error("refresh_token: revoke_jti raised: %s", e)
+                raise HTTPException(status_code=503, detail="Token rotation unavailable, please retry")
+            if not won:
+                raise HTTPException(status_code=401, detail="Refresh replay rejected — please login again")
 
-    new_access = create_token(user_id, tenant_id)
-    new_refresh: str | None = None
-    if rotation_kind == "refresh":
-        new_refresh, _ = create_refresh_token(user_id, tenant_id)
+        new_access = create_token(user_id, tenant_id)
+        new_refresh: str | None = None
+        if rotation_kind == "refresh":
+            new_refresh, _ = create_refresh_token(user_id, tenant_id)
 
-    # Audit log
-    await db.audit_logs.insert_one(
-        {
-            "id": str(__import__("uuid").uuid4()),
-            "tenant_id": tenant_id,
-            "user_id": user_id,
-            "user_email": user_email,
-            "action": "token_refresh",
-            "resource_type": "auth",
-            "details": f"Token refreshed via {rotation_kind} (rotated jti={old_jti or 'legacy'})",
-            "ip_address": "",
-            "timestamp": datetime.now(UTC).isoformat(),
-        }
-    )
+        # Audit log
+        await db.audit_logs.insert_one(
+            {
+                "id": str(__import__("uuid").uuid4()),
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "user_email": user_email,
+                "action": "token_refresh",
+                "resource_type": "auth",
+                "details": f"Token refreshed via {rotation_kind} (rotated jti={old_jti or 'legacy'})",
+                "ip_address": "",
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
+    finally:
+        clear_tenant_context()
 
     response: dict[str, object] = {
         "access_token": new_access,
