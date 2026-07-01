@@ -1328,16 +1328,37 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
     finally:
         clear_tenant_context()
 
-    response: dict[str, object] = {
+    resp_data: dict[str, object] = {
         "access_token": new_access,
         "token_type": "bearer",
         "expires_in": JWT_EXPIRATION_MINUTES * 60,
     }
+    
+    response.set_cookie(
+        key="access_token",
+        value=new_access,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+        max_age=JWT_EXPIRATION_MINUTES * 60,
+        path="/",
+    )
+    
     if new_refresh:
-        response["refresh_token"] = new_refresh
-        response["refresh_expires_in"] = REFRESH_TOKEN_EXPIRATION_DAYS * 24 * 3600
-    return response
-
+        resp_data["refresh_token"] = new_refresh
+        resp_data["refresh_expires_in"] = REFRESH_TOKEN_EXPIRATION_DAYS * 24 * 3600
+        
+        response.set_cookie(
+            key="refresh_token",
+            value=new_refresh,
+            httponly=True,
+            secure=COOKIE_SECURE,
+            samesite="lax", # Should probably be lax to match login, wait, /api/auth/logout sets "none" if secure
+            max_age=REFRESH_TOKEN_EXPIRATION_DAYS * 86400,
+            path="/api/auth/refresh-token",
+        )
+        
+    return resp_data
 
 @router.post("/auth/logout")
 async def logout(
