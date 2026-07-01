@@ -32,7 +32,7 @@ from core.security import (
     revoke_jti,
     verify_password,
 )
-from core.tenant_db import get_system_db, set_tenant_context, clear_tenant_context
+from core.tenant_db import clear_tenant_context, get_system_db, set_tenant_context
 from models.enums import UserRole
 from models.schemas import (
     GuestRegister,
@@ -1273,10 +1273,7 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
     old_jti = payload.get("jti")
     old_exp = payload.get("exp")
     if not user_id or not tenant_id:
-        raise HTTPException(
-            status_code=401,
-            detail="Malformed refresh token" if rotation_kind == "refresh" else "Malformed access token"
-        )
+        raise HTTPException(status_code=401, detail="Malformed refresh token" if rotation_kind == "refresh" else "Malformed access token")
 
     set_tenant_context(tenant_id)
     try:
@@ -1284,7 +1281,7 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
         user_doc = await db.users.find_one({"id": user_id}, {"_id": 0})
         if not user_doc:
             raise HTTPException(status_code=401, detail="User no longer exists")
-        
+
         # Enforce the same invariants `get_current_user` would have applied,
         # so a refresh cannot bypass an `is_active=False` lock-out, a
         # `tokens_invalid_before` mass-revocation, or a tenant mismatch.
@@ -1452,20 +1449,8 @@ async def logout(
         }
     )
 
-    response.delete_cookie(
-        "access_token",
-        path="/",
-        httponly=True,
-        secure=COOKIE_SECURE,
-        samesite="none" if COOKIE_SECURE else "lax"
-    )
-    response.delete_cookie(
-        "refresh_token",
-        path="/api/auth/refresh-token",
-        httponly=True,
-        secure=COOKIE_SECURE,
-        samesite="none" if COOKIE_SECURE else "lax"
-    )
+    response.delete_cookie("access_token", path="/", httponly=True, secure=COOKIE_SECURE, samesite="none" if COOKIE_SECURE else "lax")
+    response.delete_cookie("refresh_token", path="/api/auth/refresh-token", httponly=True, secure=COOKIE_SECURE, samesite="none" if COOKIE_SECURE else "lax")
 
     return {"message": "Çıkış başarılı"}
 

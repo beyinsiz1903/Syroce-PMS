@@ -250,7 +250,7 @@ async def is_jti_revoked(jti: str) -> bool:
         # Fail-closed for revocation: if we can't check, refuse to honour the
         # token. Better a flaky logout than a permanent bypass.
         logger.error("is_jti_revoked lookup failed for %s: %s", jti, e)
-        return False # Changed from True to False to prevent infinite logout loop on DB errors
+        return False  # Changed from True to False to prevent infinite logout loop on DB errors
 
 
 def hash_password(password: str) -> str:
@@ -310,10 +310,11 @@ async def get_current_user(
 ):
     """Decode JWT token and return the authenticated User."""
     # Import here to avoid circular imports with schemas
-    from models.schemas import User
-    from security.encrypted_lookup import decrypt_user_doc
     from fastapi.security import HTTPAuthorizationCredentials
     from starlette.requests import Request as StarletteRequest
+
+    from models.schemas import User
+    from security.encrypted_lookup import decrypt_user_doc
 
     # Support backwards compatibility for manual calls like: get_current_user(credentials)
     # where credentials object is passed as the first positional argument `request`.
@@ -438,6 +439,7 @@ async def get_current_user(
         raise
     except Exception as e:
         import traceback
+
         logger.info(f"Auth error: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication failed")
 
