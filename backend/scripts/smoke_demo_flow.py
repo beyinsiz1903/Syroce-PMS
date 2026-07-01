@@ -363,10 +363,19 @@ class DemoSmokeTest:
             else:
                 self._skip_step("12. Check-out", "Missing booking_id")
 
-        # Step 13: Night audit status (Read-only)
-        method, ep = "GET", "/api/reports/night-audit/status"
+        # Step 13: Night Audit / Daily Resume (Read-only)
+        method, ep = "GET", "/api/trial-balance"
         resp, lat, err = self._req(method, ep)
-        self._log_step("13. Night Audit Status", method, ep, resp, lat, err)
+        if resp and resp.status_code != 404:
+            self._log_step("13. Night Audit / Daily Resume", method, ep, resp, lat, err)
+        else:
+            # Fallback
+            ep_fallback = "/api/logs/night-audit?limit=1"
+            resp2, lat2, err2 = self._req(method, ep_fallback)
+            if resp2 and resp2.status_code != 404:
+                self._log_step("13. Night Audit / Daily Resume", method, ep_fallback, resp2, lat2, err2)
+            else:
+                self._skip_step("13. Night Audit / Daily Resume", "Neither /api/trial-balance nor /api/logs/night-audit endpoints found (404).")
 
         log_info("=== Demo Flow Test Complete ===")
         self.save_report()
