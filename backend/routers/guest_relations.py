@@ -14,8 +14,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from core.database import db
 from core.security import get_current_user
-from core.tenant_db import get_system_db
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
 
@@ -42,9 +42,11 @@ async def _analyze_guest_preferences(db: Any, tenant_id: str, guest_id: str, gue
         if past_booking and past_booking.get("pillow_type"):
             pillow = past_booking["pillow_type"]
 
-    # 2. SPA preferences
+    # 2. SPA preferences (guest_id-specific with guest_name fallback)
     spa_pref = "SPA geçmişi bulunamadı. Genel aroma terapi önerilir."
-    spa_appts = await db.spa_appointments.find({"tenant_id": tenant_id, "guest_name": guest_name}).to_list(100)
+    spa_appts = await db.spa_appointments.find({"tenant_id": tenant_id, "guest_id": guest_id}).to_list(100)
+    if not spa_appts and guest_name:
+        spa_appts = await db.spa_appointments.find({"tenant_id": tenant_id, "guest_name": guest_name}).to_list(100)
 
     if spa_appts:
         services: dict[str, int] = {}
@@ -62,9 +64,19 @@ async def _analyze_guest_preferences(db: Any, tenant_id: str, guest_id: str, gue
         fav_oil = max(set(oils), key=oils.count) if oils else "aroma"
         spa_pref = f"{most_frequent_service} ({fav_oil} yağı tercihi)"
 
-    # 3. Minibar preferences
+    # 3. Minibar preferences (guest-specific via bookings -> folios -> folio_postings)
     minibar_pref = "Standart minibar kurulumu."
-    postings = await db.folio_postings.find({"tenant_id": tenant_id, "description": {"$regex": "Minibar", "$options": "i"}}).to_list(200)
+    guest_bookings = await db.bookings.find({"guest_id": guest_id, "tenant_id": tenant_id}, {"_id": 0, "id": 1}).to_list(100)
+    booking_ids = [b["id"] for b in guest_bookings if "id" in b]
+
+    postings = []
+    if booking_ids:
+        guest_folios = await db.folios.find({"booking_id": {"$in": booking_ids}, "tenant_id": tenant_id}, {"_id": 0, "id": 1}).to_list(100)
+        folio_ids = [f["id"] for f in guest_folios if "id" in f]
+        if folio_ids:
+            postings = await db.folio_postings.find(
+                {"folio_id": {"$in": folio_ids}, "tenant_id": tenant_id, "description": {"$regex": "Minibar", "$options": "i"}}
+            ).to_list(200)
 
     if postings:
         counts = {"Soda": 0, "Bira": 0, "Kola": 0, "Çikolata": 0, "Su": 0}
@@ -88,7 +100,6 @@ async def get_guest_profile_analysis(
     _perm=Depends(require_op("view_guest_list")),
 ):
     """Retrieve historical preference analysis for a guest."""
-    db = get_system_db()
     tenant_id = current_user.tenant_id
 
     guest = await db.guests.find_one({"id": guest_id, "tenant_id": tenant_id})
@@ -105,7 +116,6 @@ async def list_preparation_directives(
     _perm=Depends(require_op("view_guest_list")),
 ):
     """List generated guest room preparation directives."""
-    db = get_system_db()
     directives = await db.guest_prep_directives.find({"tenant_id": current_user.tenant_id}).sort("created_at", -1).to_list(200)
     return {"directives": directives}
 
@@ -113,10 +123,9 @@ async def list_preparation_directives(
 @router.post("/preparations/trigger")
 async def trigger_room_preparations(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),
+    _perm=Depends(require_op("manage_guests")),
 ):
     """Find tomorrow's arrivals, generate prep directives, and issue automated tasks."""
-    db = get_system_db()
     tenant_id = current_user.tenant_id
 
     now = datetime.now(UTC)

@@ -51,7 +51,13 @@ class _MockCollection:
             if d.get("tenant_id") == flt.get("tenant_id"):
                 match = True
                 for k, v in flt.items():
-                    if k != "tenant_id" and k != "pillow_type" and k != "status" and d.get(k) != v:
+                    if k in ("tenant_id", "pillow_type", "status", "description"):
+                        continue
+                    val = d.get(k)
+                    if isinstance(v, dict) and "$in" in v:
+                        if val not in v["$in"]:
+                            match = False
+                    elif val != v:
                         match = False
                 if match:
                     return dict(d)
@@ -63,7 +69,13 @@ class _MockCollection:
             if flt.get("tenant_id") == flt.get("tenant_id"):
                 match = True
                 for k, v in flt.items():
-                    if k != "tenant_id" and k != "description" and k != "status" and d.get(k) != v:
+                    if k in ("tenant_id", "description", "status"):
+                        continue
+                    val = d.get(k)
+                    if isinstance(v, dict) and "$in" in v:
+                        if val not in v["$in"]:
+                            match = False
+                    elif val != v:
                         match = False
                 if match:
                     matching.append(dict(d))
@@ -111,15 +123,24 @@ class _FakeDB:
             {
                 "id": "spa-1",
                 "tenant_id": TENANT_ID,
+                "guest_id": _GUEST_ID,
                 "guest_name": "Jane Doe",
                 "service_name": "Derin Doku Masajı",
                 "notes": "lavanta yağı ile ovalama yapıldı"
+            }
+        ])
+        self.folios = _MockCollection("folios", [
+            {
+                "id": "folio-gr-1",
+                "tenant_id": TENANT_ID,
+                "booking_id": _BOOKING_ID
             }
         ])
         self.folio_postings = _MockCollection("folio_postings", [
             {
                 "id": "post-1",
                 "tenant_id": TENANT_ID,
+                "folio_id": "folio-gr-1",
                 "description": "Minibar: Soda tüketimi"
             }
         ])
@@ -130,7 +151,7 @@ class _FakeDB:
 @pytest.fixture
 def env(monkeypatch):
     fake_db = _FakeDB()
-    monkeypatch.setattr(gr_router, "get_system_db", lambda: fake_db)
+    monkeypatch.setattr(gr_router, "db", fake_db)
 
     app = FastAPI()
     app.include_router(gr_api_router)
