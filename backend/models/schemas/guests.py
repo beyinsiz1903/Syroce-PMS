@@ -11,7 +11,7 @@ class GuestCreate(BaseModel):
     name: str
     email: str = ""
     phone: str
-    id_number: str
+    id_number: str = ""
     nationality: str | None = None
     address: str | None = None
     vip_status: bool = False
