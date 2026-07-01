@@ -450,11 +450,11 @@ const RoomsTab = ({
               data-testid={`room-card-${room.room_number}`}
             >
               <CardContent className="p-3">
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-lg font-bold" style={{ fontFamily: 'Manrope' }}>{room.room_number}</span>
-                  <div className="flex gap-1 items-center">
-                    {catLabel && <Badge className={`text-[10px] border ${catLabel.cls}`}>{catLabel.text}</Badge>}
-                    <Badge className={`border ${statusColors[room.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>{statusLabelsTr[room.status] || room.status}</Badge>
+                <div className="flex justify-between items-start mb-2 gap-2">
+                  <span className="text-lg font-bold shrink-0 leading-none" style={{ fontFamily: 'Manrope' }}>{room.room_number}</span>
+                  <div className="flex flex-wrap justify-end gap-1">
+                    {catLabel && <Badge className={`text-[10px] px-1.5 py-0 h-4 min-h-[16px] leading-tight shrink-0 whitespace-nowrap border ${catLabel.cls}`}>{catLabel.text}</Badge>}
+                    <Badge className={`text-[10px] px-1.5 py-0 h-4 min-h-[16px] leading-tight shrink-0 whitespace-nowrap border ${statusColors[room.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>{statusLabelsTr[room.status] || room.status}</Badge>
                   </div>
                 </div>
                 <p className="text-sm text-slate-600">{room.room_type}</p>
