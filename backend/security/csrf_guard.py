@@ -7,17 +7,32 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("security.csrf_guard")
 
-_RAW_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:8000,http://localhost:8001,http://localhost:3000,http://localhost:5000,http://localhost")
+# Localhost origins are ALWAYS allowed for local development, regardless of
+# the ALLOWED_ORIGINS env var (which is set for production deployments and
+# would otherwise overwrite the defaults, dropping localhost:5000).
+_DEV_ORIGINS = [
+    "http://localhost",
+    "http://localhost:3000",
+    "http://localhost:5000",
+    "http://localhost:5173",
+    "http://localhost:8000",
+    "http://localhost:8001",
+]
 _ALWAYS_ALLOWED_ORIGINS = [
     "https://pms.syroce.com",
     "https://www.pms.syroce.com",
     "https://syroce.com",
     "https://syroce-b2b-api.syroce.com",
-    "https://pms.syroce.com",
-    "https://www.pms.syroce.com"
 ]
-ALLOWED_ORIGINS = {o.strip().lower() for o in _RAW_ORIGINS.split(",") if o.strip()}
-ALLOWED_ORIGINS.update({o.lower() for o in _ALWAYS_ALLOWED_ORIGINS})
+# Build the final set: dev origins + always-allowed + any extra from env var.
+# The env var ADDS to the base set (not replaces), so production deployments
+# that set ALLOWED_ORIGINS still keep localhost working locally.
+_ENV_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "")
+ALLOWED_ORIGINS: set[str] = set()
+ALLOWED_ORIGINS.update(o.lower() for o in _DEV_ORIGINS)
+ALLOWED_ORIGINS.update(o.lower() for o in _ALWAYS_ALLOWED_ORIGINS)
+if _ENV_ORIGINS:
+    ALLOWED_ORIGINS.update(o.strip().lower() for o in _ENV_ORIGINS.split(",") if o.strip())
 
 CSRF_PROTECTED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
