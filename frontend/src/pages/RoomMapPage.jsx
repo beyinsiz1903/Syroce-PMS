@@ -11,12 +11,21 @@ import EmptyState from '@/components/EmptyState';
 const today = () => new Date().toISOString().slice(0, 10);
 
 const STATUS_META = {
-  occupied:     { color: 'bg-rose-100 border-rose-300 text-rose-900',       dotCls: 'bg-rose-500',     label: 'Dolu' },
-  dirty:        { color: 'bg-amber-50 border-amber-300 text-amber-900',     dotCls: 'bg-amber-500',    label: 'Kirli' },
-  clean:        { color: 'bg-emerald-50 border-emerald-200 text-emerald-900', dotCls: 'bg-emerald-500', label: 'Temiz' },
-  available:    { color: 'bg-white border-slate-200 text-slate-700',         dotCls: 'bg-slate-300',   label: 'Müsait' },
-  out_of_order: { color: 'bg-slate-200 border-slate-400 text-slate-700',     dotCls: 'bg-slate-500',   label: 'Engelli' },
-  maintenance:  { color: 'bg-slate-100 border-slate-300 text-slate-600',     dotCls: 'bg-slate-400',   label: 'Bakımda' },
+  occupied:     { color: 'bg-rose-50/80 border-rose-200 text-rose-950 shadow-sm',       dotCls: 'bg-rose-500',     label: 'Dolu' },
+  dirty:        { color: 'bg-amber-50/80 border-amber-200 text-amber-950 shadow-sm',     dotCls: 'bg-amber-500',    label: 'Kirli' },
+  clean:        { color: 'bg-emerald-50/80 border-emerald-200 text-emerald-950 shadow-sm', dotCls: 'bg-emerald-500', label: 'Temiz' },
+  available:    { color: 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50',         dotCls: 'bg-slate-300',   label: 'Müsait' },
+  out_of_order: { color: 'bg-slate-100 border-slate-300 text-slate-700 opacity-80',     dotCls: 'bg-slate-500',   label: 'Engelli' },
+  maintenance:  { color: 'bg-blue-50/80 border-blue-200 text-blue-800',         dotCls: 'bg-blue-400',   label: 'Bakımda' },
+};
+
+const formatShortDate = (iso) => {
+  if (!iso) return '';
+  try { 
+    return new Date(iso).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' }); 
+  } catch(e) { 
+    return iso.slice(0,10); 
+  }
 };
 
 function statusMeta(status, occupied) {
@@ -49,26 +58,30 @@ function RoomCell({ room, onDrop }) {
           e.dataTransfer.setData('source_room_id', String(room.id));
         }
       }}
-      className={`border rounded-lg p-2 min-h-[92px] transition ${meta.color} ${over ? 'ring-2 ring-amber-400 ring-offset-1' : ''} ${occupied ? 'cursor-move' : ''}`}
+      className={`relative overflow-hidden border rounded-xl p-3 h-[104px] flex flex-col justify-between transition-all duration-200 ${meta.color} ${over ? 'ring-2 ring-primary ring-offset-2 scale-[1.02] shadow-md z-10' : 'hover:shadow-md'} ${occupied ? 'cursor-move hover:-translate-y-0.5' : ''}`}
       data-testid={`room-cell-${room.room_number}`}
     >
       <div className="flex items-center justify-between">
-        <div className="font-bold text-sm">{room.room_number}</div>
-        <span className={`w-2 h-2 rounded-full ${meta.dotCls}`} title={meta.label} />
+        <div className="font-bold text-[15px] tracking-tight">{room.room_number}</div>
+        <span className={`w-2.5 h-2.5 rounded-full shadow-sm ${meta.dotCls}`} title={meta.label} />
       </div>
-      {occupied ? (
-        <div className="mt-1.5 text-xs">
-          <div className="font-semibold flex items-center gap-1 truncate">
-            {room.booking.vip && <Crown className="w-3 h-3 text-amber-600" />}
-            {room.booking.guest_name}
-          </div>
-          <div className="text-[11px] opacity-75 mt-0.5">
-            {room.booking.adults}+{room.booking.children} · {room.booking.check_out?.slice(5)} {t('cm.pages_RoomMapPage.cikis')}
-          </div>
-        </div>
-      ) : (
-        <div className="text-[11px] mt-2 opacity-70">{meta.label}{room.room_type ? ` · ${room.room_type}` : ''}</div>
-      )}
+      <div className="flex flex-col flex-1 overflow-hidden mt-1.5 w-full">
+        {occupied ? (
+          <>
+            <div className="font-semibold text-xs flex items-center gap-1.5 truncate w-full" title={room.booking.guest_name}>
+              {room.booking.vip && <Crown className="w-3.5 h-3.5 text-amber-500 shrink-0 drop-shadow-sm" />}
+              <span className="truncate">{room.booking.guest_name}</span>
+            </div>
+            <div className="text-[10px] opacity-80 mt-auto truncate w-full flex items-center gap-1 font-medium">
+              <span>{room.booking.adults}Y {room.booking.children}Ç</span>
+              <span className="opacity-50">·</span>
+              <span className="truncate">{formatShortDate(room.booking.check_out)} {t('cm.pages_RoomMapPage.cikis')}</span>
+            </div>
+          </>
+        ) : (
+          <div className="text-[11px] mt-auto opacity-70 truncate w-full font-medium">{meta.label}{room.room_type ? ` · ${room.room_type}` : ''}</div>
+        )}
+      </div>
     </div>
   );
 }
@@ -78,13 +91,15 @@ function UnassignedItem({ b }) {
     <div
       draggable
       onDragStart={e => e.dataTransfer.setData('booking_id', b.booking_id)}
-      className="border border-sky-300 bg-sky-50 rounded p-2 cursor-move text-xs hover:border-sky-400 transition"
+      className="border border-sky-200 bg-sky-50/80 rounded-xl p-3 cursor-move text-xs hover:border-sky-400 hover:shadow-md transition-all duration-200 flex flex-col justify-between h-[84px]"
     >
-      <div className="font-semibold flex items-center gap-1 truncate">
-        {b.vip && <Crown className="w-3 h-3 text-amber-600" />}
-        {b.guest_name}
+      <div className="font-semibold flex items-center gap-1.5 w-full truncate" title={b.guest_name}>
+        {b.vip && <Crown className="w-3.5 h-3.5 text-amber-500 shrink-0 drop-shadow-sm" />}
+        <span className="truncate text-sky-950">{b.guest_name}</span>
       </div>
-      <div className="text-[10px] text-slate-600">{b.check_in?.slice(5)} → {b.check_out?.slice(5)} · {b.adults}+{b.children}</div>
+      <div className="text-[10px] text-sky-700/80 mt-auto truncate w-full font-medium">
+        {formatShortDate(b.check_in)} → {formatShortDate(b.check_out)} · {b.adults}Y {b.children}Ç
+      </div>
     </div>
   );
 }
@@ -263,12 +278,14 @@ export default function RoomMapPage({ user, tenant, onLogout }) {
         )}
 
         {data && Object.entries(byFloor).sort().map(([floor, rooms]) => (
-          <Card key={floor} className="p-3 border-slate-200">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-semibold text-slate-700">Kat {floor}</div>
-              <div className="text-xs text-slate-500">{rooms.length} oda</div>
+          <Card key={floor} className="p-4 border-slate-200 bg-white/50 shadow-sm backdrop-blur-sm">
+            <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-2">
+              <div className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-semibold">Kat {floor}</span>
+              </div>
+              <div className="text-xs font-medium text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-100">{rooms.length} oda</div>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
               {rooms.map(r => <RoomCell key={r.id} room={r} onDrop={assign} />)}
             </div>
           </Card>

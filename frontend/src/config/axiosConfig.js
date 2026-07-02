@@ -133,6 +133,9 @@ axios.interceptors.response.use(
         original.headers = original.headers || {};
         if (result.token !== "cookie_managed") {
            original.headers.Authorization = `Bearer ${result.token}`;
+        } else {
+           delete original.headers.Authorization;
+           delete axios.defaults.headers.common["Authorization"];
         }
         return axios(original);
       }
