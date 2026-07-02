@@ -144,11 +144,16 @@ function App() {
     // This is safe against persistent XSS because it lives only in JS memory, not localStorage.
     if (token) {
       axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-      // In development or E2E/test environments (where webdriver is present), write the token to
-      // localStorage as a fallback. This prevents Playwright from dropping the cookie across browser contexts.
+      // refresh_token must be stored so the 401 interceptor can use Path A
+      // (body token) when the in-memory access_token is gone (page reload,
+      // Safari ITP blocking the httpOnly cookie). Access_token stays
+      // in-memory only (more secure); refresh_token in localStorage is the
+      // standard SPA pattern (Auth0, etc.) for cookie-less environments.
+      if (refreshToken) localStorage.setItem("refresh_token", refreshToken);
+      // In development or E2E/test environments also persist the access_token
+      // so Playwright doesn't drop it across browser contexts.
       if (window.navigator.webdriver || import.meta.env.DEV) {
         localStorage.setItem("token", token);
-        if (refreshToken) localStorage.setItem("refresh_token", refreshToken);
       }
     }
 

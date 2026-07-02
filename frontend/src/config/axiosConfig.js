@@ -87,8 +87,6 @@ function _hardLogout() {
 //   { invalid: true }  — 401/400; refresh token gerçekten ölmüş, hard logout
 async function _attemptRefresh() {
   const refreshToken = localStorage.getItem("refresh_token");
-  // Don't immediately return invalid if refreshToken is missing; we might have a cookie.
-  // But pass it in the body if we do have it.
   if (!_refreshInFlight) {
     _refreshInFlight = axios
       .post(
@@ -100,24 +98,24 @@ async function _attemptRefresh() {
         const newAccess = r?.data?.access_token;
         const newRefresh = r?.data?.refresh_token;
         if (!newAccess) return { invalid: true };
-        
-        // In development or E2E tests, cookies might not work across origins, so we fallback to localStorage
+
+        // Always update the in-memory axios default so subsequent requests
+        // are authenticated even in cookie-less environments (Safari ITP).
+        axios.defaults.headers.common["Authorization"] = `Bearer ${newAccess}`;
+        localStorage.setItem("token_ts", String(Date.now()));
+
+        // Rotate the stored refresh_token if the backend issued a new one.
+        if (newRefresh) localStorage.setItem("refresh_token", newRefresh);
+
+        // In development or E2E tests, also persist the access_token.
         if (window.navigator.webdriver || import.meta.env.DEV) {
           localStorage.setItem("token", newAccess);
-          if (newRefresh) localStorage.setItem("refresh_token", newRefresh);
-          localStorage.setItem("token_ts", String(Date.now()));
-          return { token: newAccess };
         }
 
-        // Backend sets HttpOnly cookies for access/refresh tokens now.
-        // We no longer store tokens in localStorage to prevent XSS theft.
-        localStorage.setItem("token_ts", String(Date.now()));
-        return { token: "cookie_managed" };
+        return { token: newAccess };
       })
       .catch((err) => {
         const status = err?.response?.status;
-        // 5xx veya ağ hatası → transient; oturum korunur, çağıran reddedilir.
-        // 4xx (özellikle 401/400) → refresh token gerçekten geçersiz/expired.
         if (!status || status >= 500) return { transient: true };
         return { invalid: true };
       })
@@ -143,24 +141,21 @@ axios.interceptors.response.use(
       const result = await _attemptRefresh();
       if (result?.token) {
         original.headers = original.headers || {};
-        if (result.token !== "cookie_managed") {
-           original.headers.Authorization = `Bearer ${result.token}`;
-        } else {
-           delete original.headers.Authorization;
-           delete axios.defaults.headers.common["Authorization"];
-        }
+        // Always set the new token on the retried request.
+        // axios.defaults.headers.common["Authorization"] was already updated
+        // by _attemptRefresh, so subsequent calls are also covered.
+        original.headers.Authorization = `Bearer ${result.token}`;
         return axios(original);
       }
       if (result?.transient) {
-        // Geçici sunucu/ağ hatası — oturumu silme; çağıran kendi
-        // hata akışını çalıştırsın (toast, retry, vs.).
         console.warn("Refresh transient failure (5xx/network); session preserved");
         return Promise.reject(error);
       }
       console.warn("401 Unauthorized - refresh failed, clearing session. URL:", original.url);
       _hardLogout();
-    } else if (error.response?.status === 401) {
-      console.warn("401 Unauthorized - clearing session. URL:", original.url);
+    } else if (error.response?.status === 401 && !original._skipAuthRetry) {
+      // A _retried request returned 401 again → hard fail.
+      console.warn("401 Unauthorized after retry - clearing session. URL:", original.url);
       _hardLogout();
     }
     if (error.response?.data?.detail) {
