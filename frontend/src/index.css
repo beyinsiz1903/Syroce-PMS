@@ -976,3 +976,10 @@ code {
 /* --- Arka plan: data-active amber sekme + staff teal hover --- */
 .dark .data-\[state\=active\]\:bg-amber-50\/40[data-state=active] { background-color: rgb(69 26 3 / 0.4); }
 .dark .hover\:bg-teal-200:hover { background-color: #0f766e; }
+
+/* Theme Guard Additions */
+.dark .border-gray-200\/60 { @apply border-gray-700/60; }
+.dark .hover\:bg-gray-200\/50:hover { @apply bg-gray-700/50; }
+.dark .divide-gray-50 > :not([hidden]) ~ :not([hidden]) { @apply border-gray-800; }
+.dark .focus\:bg-gray-50:focus { @apply bg-gray-800; }
+.dark .group:hover .group-hover\:text-blue-900 { @apply text-blue-300; }

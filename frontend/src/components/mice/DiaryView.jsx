@@ -56,7 +56,10 @@ const DiaryView = ({ spaceById, spaces }) => {
   useEffect(() => {
     axios.get('/mice/diary', { params: { date_from: monthRange.from, date_to: monthRange.to } })
       .then((r) => setItems(r.data.events || []))
-      .catch(() => toast.error('Takvim yüklenemedi'));
+      .catch((e) => {
+        const msg = e.response ? `HTTP ${e.response.status}` : e.message;
+        toast.error(`Takvim yüklenemedi: ${msg}`);
+      });
   }, [monthRange.from, monthRange.to]);
 
   const eventsByDate = useMemo(() => {

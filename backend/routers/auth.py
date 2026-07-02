@@ -1333,7 +1333,7 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
         "token_type": "bearer",
         "expires_in": JWT_EXPIRATION_MINUTES * 60,
     }
-    
+
     response.set_cookie(
         key="access_token",
         value=new_access,
@@ -1343,11 +1343,11 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
         max_age=JWT_EXPIRATION_MINUTES * 60,
         path="/",
     )
-    
+
     if new_refresh:
         resp_data["refresh_token"] = new_refresh
         resp_data["refresh_expires_in"] = REFRESH_TOKEN_EXPIRATION_DAYS * 24 * 3600
-        
+
         response.set_cookie(
             key="refresh_token",
             value=new_refresh,
@@ -1357,7 +1357,7 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
             max_age=REFRESH_TOKEN_EXPIRATION_DAYS * 86400,
             path="/",
         )
-        
+
     return resp_data
 
 @router.post("/auth/logout")

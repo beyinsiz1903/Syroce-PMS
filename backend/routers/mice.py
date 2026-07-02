@@ -168,7 +168,8 @@ async def list_spaces(current_user: User = Depends(get_current_user)) -> dict:
     await _ensure_indexes()
     db = get_system_db()
     cur = db.mice_spaces.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("name", 1)
-    items = [doc async for doc in cur]
+    docs = await cur.to_list(length=None)
+    items = docs
     if not items:
         try:
             require_catalog(current_user)
@@ -294,7 +295,8 @@ async def _list_menus_cached(current_user: User) -> dict:
     user would later see (would block the seed bootstrap for TTL window)."""
     db = get_system_db()
     cur = db.mice_menus.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("type", 1)
-    return {"menus": [doc async for doc in cur]}
+    menus = await cur.to_list(length=None)
+    return {"menus": menus}
 
 
 @router.get("/menus")
@@ -465,7 +467,8 @@ async def list_accounts(
                 ],
             }
     cur = db.mice_accounts.find(flt, {"_id": 0}).sort("name", 1).limit(500)
-    return {"accounts": [d async for d in cur]}
+    accounts = await cur.to_list(length=None)
+    return {"accounts": accounts}
 
 
 _CLIENT_ACCT_FILTER = {
@@ -581,7 +584,8 @@ async def list_contacts(account_id: str, current_user: User = Depends(get_curren
         {"tenant_id": current_user.tenant_id, "account_id": account_id},
         {"_id": 0},
     ).sort("name", 1)
-    return {"contacts": [d async for d in cur]}
+    contacts = await cur.to_list(length=None)
+    return {"contacts": contacts}
 
 
 @router.post("/accounts/{account_id}/contacts")
@@ -646,7 +650,8 @@ async def list_resources(current_user: User = Depends(get_current_user)) -> dict
     await _ensure_indexes()
     db = get_system_db()
     cur = db.mice_resources.find({"tenant_id": current_user.tenant_id}, {"_id": 0}).sort("type", 1)
-    return {"resources": [d async for d in cur]}
+    resources = await cur.to_list(length=None)
+    return {"resources": resources}
 
 
 @router.post("/resources")
@@ -850,7 +855,8 @@ async def _validate_setup_capacity(tenant_id: str, bookings: list[dict]) -> None
     space_ids = {sb["space_id"] for sb in bookings if sb.get("space_id")}
     if not space_ids:
         return
-    spaces = {s["id"]: s async for s in db.mice_spaces.find({"tenant_id": tenant_id, "id": {"$in": list(space_ids)}})}
+        _l = await db.mice_spaces.find({"tenant_id": tenant_id, "id": {"$in": list(space_ids)}}).to_list(length=None)
+    spaces = {s["id"]: s for s in _l}
     for sb in bookings:
         sp = spaces.get(sb["space_id"])
         if not sp:
@@ -893,7 +899,8 @@ async def _check_resource_inventory_conflict(
     ends = [sb["ends_at"] if isinstance(sb["ends_at"], str) else sb["ends_at"].isoformat() for sb in bookings]
     env_start, env_end = min(starts), max(ends)
 
-    inventories = {i["id"]: i async for i in db.mice_resources.find({"tenant_id": tenant_id, "id": {"$in": list(inv_ids)}}, session=session)}
+        _l = await db.mice_resources.find({"tenant_id": tenant_id, "id": {"$in": list(inv_ids)}}, session=session).to_list(length=None)
+    inventories = {i["id"]: i for i in _l}
 
     # Build a per-inventory requested quantity map for this event.
     requested: dict[str, float] = {}
@@ -1503,7 +1510,8 @@ async def diary(
         },
         {"_id": 0, "name": 1, "status": 1, "client_name": 1, "expected_pax": 1, "start_date": 1, "end_date": 1, "space_bookings": 1, "id": 1, "totals": 1},
     )
-    return {"events": [d async for d in cur]}
+    events = await cur.to_list(length=None)
+    return {"events": events}
 
 
 # ── BEO (Banquet Event Order) ──────────────────────────────────
@@ -1513,7 +1521,8 @@ async def beo(event_id: str, current_user: User = Depends(get_current_user)) -> 
     event = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not event:
         raise HTTPException(404, "Etkinlik bulunamadı")
-    spaces_by_id = {s["id"]: s async for s in db.mice_spaces.find({"tenant_id": current_user.tenant_id})}
+        _l = await db.mice_spaces.find({"tenant_id": current_user.tenant_id}).to_list(length=None)
+    spaces_by_id = {s["id"]: s for s in _l}
     space_lines = []
     for sb in event.get("space_bookings", []):
         sp = spaces_by_id.get(sb["space_id"], {})
@@ -1997,7 +2006,8 @@ async def kitchen_ticket(event_id: str, current_user: User = Depends(get_current
 
     pax = int(event.get("expected_pax") or 0)
     menu_ids = [r["menu_id"] for r in event.get("resources", []) if r.get("menu_id")]
-    menus = {m["id"]: m async for m in db.mice_menus.find({"tenant_id": current_user.tenant_id, "id": {"$in": menu_ids}})}
+        _l = await db.mice_menus.find({"tenant_id": current_user.tenant_id, "id": {"$in": menu_ids}}).to_list(length=None)
+    menus = {m["id"]: m for m in _l}
 
     # Earliest meal/break in the agenda → kitchen prep deadline.
     meals = [a for a in event.get("agenda", []) if a.get("kind") in {"meal", "break"}]
@@ -2196,7 +2206,8 @@ async def list_fnb_orders(
     if not event:
         raise HTTPException(404, "Etkinlik bulunamadı")
     cur = db.mice_fnb_orders.find({"tenant_id": current_user.tenant_id, "event_id": event_id}, {"_id": 0}).sort("sent_at", -1)
-    return {"orders": [d async for d in cur]}
+    orders = await cur.to_list(length=None)
+    return {"orders": orders}
 
 
 @router.get("/fnb-orders/open")
@@ -2220,7 +2231,7 @@ async def list_open_fnb_orders(
         },
         {"_id": 0},
     ).sort("sent_at", 1)
-    orders = [d async for d in cur]
+    orders = await cur.to_list(length=None)
     return {"orders": orders, "count": len(orders)}
 
 
@@ -2339,7 +2350,8 @@ async def ops_sheet(
         "start_date": {"$lte": date},
         "end_date": {"$gte": date},
     }
-    spaces_by_id = {s["id"]: s async for s in db.mice_spaces.find({"tenant_id": current_user.tenant_id})}
+        _l = await db.mice_spaces.find({"tenant_id": current_user.tenant_id}).to_list(length=None)
+    spaces_by_id = {s["id"]: s for s in _l}
     rows = []
     async for ev in db.mice_events.find(q, {"_id": 0}):
         for sb in ev.get("space_bookings", []):
