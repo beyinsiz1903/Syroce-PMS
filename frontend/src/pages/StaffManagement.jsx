@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -15,6 +15,93 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
 import { deptLabel, positionLabel, employmentTypeLabel, EMPLOYMENT_TYPE_OPTIONS } from '@/lib/hrLabels';
 import UserProvisionDialog from '@/components/UserProvisionDialog';
+import { FixedSizeList } from 'react-window';
+
+// ── Virtualized staff table ───────────────────────────────────────────────
+const SM_ROW_H = 52;
+const SM_GRID = '1fr 108px 108px 140px 84px 84px 110px 72px 90px';
+const SM_MIN_W = 890;
+
+const SmStaffRow = React.memo(function SmStaffRow({ data, index, style }) {
+  const {
+    filtered, equipmentByStaff, warningsByStaff, trainingsByStaff,
+    navigate, openEdit, offboardStaff, t,
+  } = data;
+  const s = filtered[index];
+  if (!s) return null;
+  const eqCount = equipmentByStaff[s.id] || 0;
+  const wn = warningsByStaff[s.id] || { final: false, written: 0 };
+  const trCount = trainingsByStaff[s.id] || 0;
+  const hasCompliance = eqCount > 0 || wn.final || wn.written > 0 || trCount > 0;
+  return (
+    <div
+      style={{ ...style, display: 'grid', gridTemplateColumns: SM_GRID, minWidth: SM_MIN_W, alignItems: 'center' }}
+      className="border-t border-slate-100 hover:bg-slate-50 text-sm"
+    >
+      <div className="py-1.5 px-2 min-w-0 overflow-hidden">
+        <button type="button" onClick={() => navigate(`/staff/${s.id}`)}
+          className="font-medium text-slate-900 hover:text-sky-700 hover:underline text-left truncate max-w-full block">
+          {s.name}
+        </button>
+      </div>
+      <div className="text-slate-600 text-xs truncate px-1">{deptLabel(s.department)}</div>
+      <div className="text-slate-600 text-xs truncate px-1">{positionLabel(s.position)}</div>
+      <div className="text-slate-600 px-1 overflow-hidden">
+        <div className="text-xs truncate">{s.email || '\u2014'}</div>
+        {s.phone && <div className="text-xs text-slate-400 truncate">{s.phone}</div>}
+      </div>
+      <div className="text-slate-600 text-xs px-1">{s.hire_date || '\u2014'}</div>
+      <div className="text-slate-600 text-xs px-1">{employmentTypeLabel(s.employment_type)}</div>
+      <div className="px-1">
+        {hasCompliance ? (
+          <div className="flex flex-wrap gap-0.5">
+            {eqCount > 0 && (
+              <StatusBadge intent="warning" title={`${eqCount} a\u00e7\u0131k zimmet`}>
+                <Package className="w-3 h-3 mr-0.5 inline" />{eqCount}
+              </StatusBadge>
+            )}
+            {wn.final && (
+              <StatusBadge intent="danger" title={t('cm.pages_StaffManagement.son_ihtar_mevcut')}>
+                <AlertTriangle className="w-3 h-3 mr-0.5 inline" />{t('cm.pages_StaffManagement.son_ihtar')}
+              </StatusBadge>
+            )}
+            {!wn.final && wn.written > 0 && (
+              <StatusBadge intent="warning" title={`${wn.written} yaz\u0131l\u0131 uyar\u0131`}>
+                <AlertTriangle className="w-3 h-3 mr-0.5 inline" />{wn.written}
+              </StatusBadge>
+            )}
+            {trCount > 0 && (
+              <StatusBadge intent="warning" title={`${trCount} e\u011fitim 60 g\u00fcn i\u00e7inde`}>
+                <GraduationCap className="w-3 h-3 mr-0.5 inline" />{trCount}
+              </StatusBadge>
+            )}
+          </div>
+        ) : (
+          <span className="text-slate-300 text-xs">\u2014</span>
+        )}
+      </div>
+      <div className="px-1">
+        {s.derived_from === 'users'
+          ? <StatusBadge intent="neutral">{t('cm.pages_StaffManagement.kullan\u0131c\u0131')}</StatusBadge>
+          : <StatusBadge intent="info">{t('cm.pages_StaffManagement.hr')}</StatusBadge>}
+      </div>
+      <div className="flex items-center justify-end gap-0.5 pr-1">
+        <Button size="sm" variant="ghost" onClick={() => navigate(`/staff/${s.id}`)} title={t('cm.pages_StaffManagement.profil')} className="h-7 w-7 p-0">
+          <ExternalLink className="w-3.5 h-3.5" />
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => openEdit(s)} title="D\u00fczenle" className="h-7 w-7 p-0">
+          <Pencil className="w-3.5 h-3.5" />
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => offboardStaff(s)}
+          title={t('cm.pages_StaffManagement.i_\u015Ften_ayr\u0131l\u0131\u015F_silmez_pasifle\u015F')}
+          className="h-7 w-7 p-0 text-rose-600 hover:text-rose-700 hover:bg-rose-50">
+          <UserMinus className="w-3.5 h-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+});
+
 const EMPTY_STAFF = {
   name: '',
   email: '',
@@ -68,6 +155,20 @@ const StaffManagement = () => {
     default_hourly_rate: ''
   });
   const [syncingDepts, setSyncingDepts] = useState(false);
+
+  // Virtual table container measurement
+  const tableContainerRef = useRef(null);
+  const [tableWidth, setTableWidth] = useState(SM_MIN_W);
+  useEffect(() => {
+    const el = tableContainerRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(([entry]) => {
+      setTableWidth(entry.contentRect.width);
+    });
+    obs.observe(el);
+    setTableWidth(el.offsetWidth);
+    return () => obs.disconnect();
+  }, []);
 
   // v2 Foundation: source tab + gelişmiş filtreler.
   // source: 'hr' (gerçek personel) | 'users' (sistem kullanıcıları)
@@ -182,6 +283,11 @@ const StaffManagement = () => {
     if (!q) return rows;
     return rows.filter(s => (s.name || '').toLowerCase().includes(q) || (s.email || '').toLowerCase().includes(q) || (s.department || '').toLowerCase().includes(q) || (s.position || '').toLowerCase().includes(q));
   }, [staff, search, filterPosition]);
+  // itemData for react-window SmStaffRow (navigate/handlers are stable across renders)
+  const staffRowData = useMemo(() => ({
+    filtered, equipmentByStaff, warningsByStaff, trainingsByStaff,
+    navigate, openEdit, offboardStaff, t,
+  }), [filtered, equipmentByStaff, warningsByStaff, trainingsByStaff, navigate, openEdit, offboardStaff, t]);
   const activeFilterCount = (filterDept ? 1 : 0) + (filterPosition ? 1 : 0) + (filterEmpType ? 1 : 0) + (filterHireFrom ? 1 : 0) + (filterHireTo ? 1 : 0);
   const resetFilters = () => {
     setFilterDept('');
@@ -205,7 +311,7 @@ const StaffManagement = () => {
     id: null,
     derived: false
   });
-  const openEdit = s => {
+  const openEdit = useCallback(s => {
     setStaffDialog({
       open: true,
       mode: 'edit',
@@ -224,7 +330,7 @@ const StaffManagement = () => {
         annual_leave_entitlement: s.annual_leave_entitlement ?? 14
       }
     });
-  };
+  }, []); // setStaffDialog is a stable setState setter
   const submitStaff = async e => {
     e.preventDefault();
     const f = staffDialog.form;
@@ -271,7 +377,7 @@ const StaffManagement = () => {
       setSavingStaff(false);
     }
   };
-  const offboardStaff = async s => {
+  const offboardStaff = useCallback(async s => {
     // Personel ASLA silinmez. "Ayrılış" = pasifleştirme; bordro/devam/izin
     // kayıtları korunur, sadece aktif listeden çıkar. Yanlışlıkla tıklamayı
     // önlemek için ad-yazarak onay iste.
@@ -295,7 +401,7 @@ const StaffManagement = () => {
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Ayrılış işlenemedi');
     }
-  };
+  }, [loadAll]); // promptDialog/confirmDialog/axios/toast are stable imports
   const addDepartment = async e => {
     e.preventDefault();
     if (!newDept.name.trim()) return;
@@ -470,91 +576,48 @@ const StaffManagement = () => {
             </div>
           </div>}
 
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-500 border-b">
-                  <th className="py-2">{t("cm.pages_StaffManagement.ad_soyad")}</th>
-                  <th>{t("cm.pages_StaffManagement.departman")}</th>
-                  <th>{t("cm.pages_StaffManagement.pozisyon")}</th>
-                  <th>{t("cm.pages_StaffManagement.i_leti\u015Fim")}</th>
-                  <th>{t("cm.pages_StaffManagement.i_\u015Fe_giri\u015F")}</th>
-                  <th>{t("cm.pages_StaffManagement.tip")}</th>
-                  <th>{t("cm.pages_StaffManagement.uyumluluk")}</th>
-                  <th>{t("cm.pages_StaffManagement.kaynak")}</th>
-                  <th className="text-right">{t("cm.pages_StaffManagement.i_\u015Flem")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(s => <tr key={s.id} className="border-t border-slate-100 hover:bg-slate-50">
-                    <td className="py-2">
-                      <button type="button" onClick={() => navigate(`/staff/${s.id}`)} className="font-medium text-slate-900 hover:text-sky-700 hover:underline text-left">
-                        {s.name}
-                      </button>
-                    </td>
-                    <td className="text-slate-600">{deptLabel(s.department)}</td>
-                    <td className="text-slate-600">{positionLabel(s.position)}</td>
-                    <td className="text-slate-600">
-                      <div className="text-xs">{s.email || '—'}</div>
-                      {s.phone && <div className="text-xs text-slate-400">{s.phone}</div>}
-                    </td>
-                    <td className="text-slate-600 text-xs">{s.hire_date || '—'}</td>
-                    <td className="text-slate-600 text-xs">{employmentTypeLabel(s.employment_type)}</td>
-                    <td>
-                      {(() => {
-                    const eqCount = equipmentByStaff[s.id] || 0;
-                    const wn = warningsByStaff[s.id] || {
-                      final: false,
-                      written: 0
-                    };
-                    const trCount = trainingsByStaff[s.id] || 0;
-                    if (!eqCount && !wn.final && !wn.written && !trCount) {
-                      return <span className="text-slate-300 text-xs">—</span>;
-                    }
-                    return <div className="flex flex-wrap gap-1">
-                            {eqCount > 0 && <StatusBadge intent="warning" title={`${eqCount} açık zimmet (iade alınmadı)`}>
-                                <Package className="w-3 h-3 mr-0.5 inline" />{eqCount}
-                              </StatusBadge>}
-                            {wn.final && <StatusBadge intent="danger" title={t("cm.pages_StaffManagement.son_ihtar_mevcut")}>
-                                <AlertTriangle className="w-3 h-3 mr-0.5 inline" />{t("cm.pages_StaffManagement.son_ihtar")}</StatusBadge>}
-                            {!wn.final && wn.written > 0 && <StatusBadge intent="warning" title={`${wn.written} yazılı uyarı`}>
-                                <AlertTriangle className="w-3 h-3 mr-0.5 inline" />{wn.written}
-                              </StatusBadge>}
-                            {trCount > 0 && <StatusBadge intent="warning" title={`${trCount} eğitim 60 gün içinde tazelenmeli`}>
-                                <GraduationCap className="w-3 h-3 mr-0.5 inline" />{trCount}
-                              </StatusBadge>}
-                          </div>;
-                  })()}
-                    </td>
-                    <td>
-                      {s.derived_from === 'users' ? <StatusBadge intent="neutral">{t("cm.pages_StaffManagement.kullan\u0131c\u0131")}</StatusBadge> : <StatusBadge intent="info">{t("cm.pages_StaffManagement.hr")}</StatusBadge>}
-                    </td>
-                    <td className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button size="sm" variant="ghost" onClick={() => navigate(`/staff/${s.id}`)} title={t("cm.pages_StaffManagement.profil")}>
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(s)} title={s.derived_from === 'users' ? 'İletişim bilgilerini düzenle (rol/departman için Kullanıcı Yönetimi)' : 'Düzenle'}>
-                          <Pencil className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => offboardStaff(s)} title={t("cm.pages_StaffManagement.i_\u015Ften_ayr\u0131l\u0131\u015F_silmez_pasifle\u015F")} className="text-rose-600 hover:text-rose-700 hover:bg-rose-50">
-                          <UserMinus className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>)}
-                {filtered.length === 0 && <tr>
-                    <td colSpan={9} className="py-10 text-center">
-                      <div className="space-y-2">
-                        <p className="text-slate-500">{staff.length === 0 ? 'Henüz personel yok' : 'Arama sonucu yok'}</p>
-                        {staff.length === 0 && <Button size="sm" onClick={openCreate}>
-                            <UserPlus className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.i_lk_personeli_ekle")}</Button>}
-                      </div>
-                    </td>
-                  </tr>}
-              </tbody>
-            </table>
+        <CardContent className="p-0 pt-1">
+          <div className="overflow-x-auto" ref={tableContainerRef}>
+            {/* Sticky header — CSS grid mirrors SmStaffRow column template */}
+            <div
+              role="row"
+              className="grid text-left text-xs font-medium text-slate-500 border-b bg-white"
+              style={{ gridTemplateColumns: SM_GRID, minWidth: SM_MIN_W }}
+            >
+              <div className="py-2 px-2">{t("cm.pages_StaffManagement.ad_soyad")}</div>
+              <div className="py-2 px-1">{t("cm.pages_StaffManagement.departman")}</div>
+              <div className="py-2 px-1">{t("cm.pages_StaffManagement.pozisyon")}</div>
+              <div className="py-2 px-1">{t("cm.pages_StaffManagement.i_leti\u015Fim")}</div>
+              <div className="py-2 px-1">{t("cm.pages_StaffManagement.i_\u015Fe_giri\u015F")}</div>
+              <div className="py-2 px-1">{t("cm.pages_StaffManagement.tip")}</div>
+              <div className="py-2 px-1">{t("cm.pages_StaffManagement.uyumluluk")}</div>
+              <div className="py-2 px-1">{t("cm.pages_StaffManagement.kaynak")}</div>
+              <div className="py-2 px-1 text-right">{t("cm.pages_StaffManagement.i_\u015Flem")}</div>
+            </div>
+            {filtered.length === 0 ? (
+              <div className="py-10 text-center" style={{ minWidth: SM_MIN_W }}>
+                <div className="space-y-2">
+                  <p className="text-slate-500">{staff.length === 0 ? 'Hen\u00fcz personel yok' : 'Arama sonucu yok'}</p>
+                  {staff.length === 0 && (
+                    <Button size="sm" onClick={openCreate}>
+                      <UserPlus className="w-4 h-4 mr-1.5" />{t("cm.pages_StaffManagement.i_lk_personeli_ekle")}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <FixedSizeList
+                height={Math.min(filtered.length * SM_ROW_H, 520)}
+                itemCount={filtered.length}
+                itemSize={SM_ROW_H}
+                itemData={staffRowData}
+                width={Math.max(tableWidth, SM_MIN_W)}
+                style={{ overflowX: 'hidden' }}
+                aria-label="Personel listesi"
+              >
+                {SmStaffRow}
+              </FixedSizeList>
+            )}
           </div>
         </CardContent>
       </Card>

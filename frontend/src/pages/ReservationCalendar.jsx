@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
+import { FixedSizeList } from 'react-window';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -38,6 +39,112 @@ const ReservationSidebar = lazy(() => import('@/components/ReservationSidebar'))
 const FolioDetailView = lazy(() => import('@/pages/FolioDetailView'));
 const ReservationDetailModal = lazy(() => import('@/pages/ReservationDetailModal'));
 const BookingConflictDialog = lazy(() => import('@/components/pms/BookingConflictDialog'));
+
+// ── Unassigned panel constants & virtualized row ──────────────────────────
+const UA_ITEM_H = 152; // px per unassigned booking card
+const UA_BORDER = {
+  overdue: 'border-l-red-500',
+  today: 'border-l-amber-500',
+  tomorrow: 'border-l-amber-400',
+  future: 'border-l-blue-400',
+};
+const UA_BADGE = {
+  overdue: 'bg-red-100 text-red-700',
+  today: 'bg-amber-100 text-amber-700',
+  tomorrow: 'bg-amber-100 text-amber-700',
+  future: 'bg-blue-100 text-blue-700',
+};
+
+const UnassignedCard = React.memo(function UnassignedCard({ data, index, style }) {
+  const { sorted, rooms, bookings, onBookingClick, onNoShow, onAssign, t } = data;
+  const booking = sorted[index];
+  if (!booking) return null;
+  const checkIn = booking.check_in
+    ? new Date(booking.check_in).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) : '-';
+  const checkOut = booking.check_out
+    ? new Date(booking.check_out).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) : '-';
+  const urgency = getUnassignedUrgency(booking);
+  const borderColor = UA_BORDER[urgency.level] || 'border-l-blue-400';
+  const badgeColor = UA_BADGE[urgency.level] || 'bg-blue-100 text-blue-700';
+  const bCheckIn = new Date(booking.check_in);
+  const bCheckOut = new Date(booking.check_out);
+  const matchingRooms = rooms.filter(r =>
+    (r.room_type || '').toLowerCase() === (booking.room_type || '').toLowerCase() &&
+    !bookings.some(ob =>
+      ob.room_id === r.id && ob.id !== booking.id &&
+      ob.status !== 'cancelled' && ob.status !== 'checked_out' && ob.status !== 'no_show' &&
+      new Date(ob.check_in) < bCheckOut && new Date(ob.check_out) > bCheckIn
+    )
+  );
+  return (
+    <div style={{ ...style, padding: '6px 16px 0' }}>
+      <div
+        className={`bg-white border rounded-lg p-4 hover:shadow-md transition-shadow border-l-4 ${borderColor} ${urgency.level === 'overdue' ? 'ring-1 ring-red-200' : ''}`}
+        data-testid={`unassigned-item-${index}`}
+      >
+        <div className="flex items-start justify-between mb-2">
+          <div
+            className="flex items-center gap-2 cursor-pointer flex-1 min-w-0"
+            onClick={() => booking.id && onBookingClick(booking.id)}
+          >
+            <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+              <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-gray-800 truncate" data-testid={`unassigned-guest-${index}`}>
+                {booking.guest_name || 'Bilinmeyen Misafir'}
+              </p>
+              <p className="text-xs text-gray-400 truncate">{booking.room_type || ''}</p>
+            </div>
+          </div>
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold flex-shrink-0 ml-2 ${badgeColor}`}>
+            {urgency.label}
+          </span>
+        </div>
+        <div className="flex items-center gap-4 text-xs text-gray-500 mt-2">
+          <div className="flex items-center gap-1">
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+            <span>{checkIn}</span>
+            <svg className="w-3 h-3 mx-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            <span>{checkOut}</span>
+          </div>
+          {booking.total_amount > 0 && (
+            <span className="font-medium text-gray-700">{booking.total_amount.toLocaleString('tr-TR')} TL</span>
+          )}
+        </div>
+        <div className="mt-3 flex items-center gap-2">
+          {matchingRooms.length > 0 ? (
+            <div className="flex items-center gap-1.5 flex-1">
+              <select
+                className="border rounded px-2 py-1 text-xs h-7 flex-1 max-w-[160px]"
+                defaultValue=""
+                data-testid={`quick-assign-select-${index}`}
+                onChange={e => { const v = e.target.value; if (v) onAssign(booking.id, v, booking.guest_name); }}
+              >
+                <option value="">{t('cm.pages_ReservationCalendar.oda_sec')}</option>
+                {matchingRooms.map(r => (
+                  <option key={r.id} value={r.id}>{r.room_number} - {r.room_type}</option>
+                ))}
+              </select>
+              <span className="text-[10px] text-green-600 font-medium">{matchingRooms.length} {t('cm.pages_ReservationCalendar.musait_873fb')}</span>
+            </div>
+          ) : (
+            <span className="text-[10px] text-red-500 font-medium">{t('cm.pages_ReservationCalendar.musait_oda_yok')}</span>
+          )}
+          <button
+            type="button"
+            className="text-xs h-7 px-2 rounded border border-amber-300 text-amber-700 hover:bg-amber-50 flex items-center"
+            data-testid={`no-show-btn-${index}`}
+            onClick={e => { e.stopPropagation(); onNoShow(booking); }}
+          >
+            <svg className="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+            No-Show
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
 
 const DEBUG_ROOMS = false;
 
@@ -1095,23 +1202,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           : futureList;
         const sorted = sortByUrgency(filteredList);
 
-        const urgencyBorderColors = {
-          overdue: 'border-l-red-500',
-          today: 'border-l-amber-500',
-          tomorrow: 'border-l-amber-400',
-          future: 'border-l-blue-400',
-        };
-        const urgencyBadgeColors = {
-          overdue: 'bg-red-100 text-red-700',
-          today: 'bg-amber-100 text-amber-700',
-          tomorrow: 'bg-amber-100 text-amber-700',
-          future: 'bg-blue-100 text-blue-700',
-        };
-
         return (
           <>
             <div className="fixed inset-0 bg-black/40 z-50 transition-opacity" onClick={() => { setShowUnassignedPanel(false); setUnassignedFilter('all'); }} data-testid="unassigned-panel-backdrop" />
-            <div className="fixed top-0 right-0 h-full w-[560px] max-w-[90vw] bg-white z-50 shadow-2xl overflow-y-auto animate-in slide-in-from-right" data-testid="unassigned-panel">
+            <div className="fixed top-0 right-0 h-full w-[560px] max-w-[90vw] bg-white z-50 shadow-2xl flex flex-col animate-in slide-in-from-right" data-testid="unassigned-panel">
               <div className="sticky top-0 z-10 bg-white border-b">
                 <div className="px-5 py-4 flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -1143,7 +1237,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                         <div className={`text-lg font-bold ${tomorrowList.length > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{tomorrowList.length}</div>
                         <div className="text-[10px] text-gray-500">{t('cm.pages_ReservationCalendar.yarin')}</div>
                       </div>
-                      <div className={`rounded-lg p-2 text-center cursor-pointer transition-colors bg-blue-50 hover:bg-blue-100`} onClick={() => setUnassignedFilter('future')}>
+                      <div className="rounded-lg p-2 text-center cursor-pointer transition-colors bg-blue-50 hover:bg-blue-100" onClick={() => setUnassignedFilter('future')}>
                         <div className="text-lg font-bold text-blue-600">{futureList.length}</div>
                         <div className="text-[10px] text-gray-500">Gelecek</div>
                       </div>
@@ -1169,120 +1263,50 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                 )}
               </div>
 
-              <div className="p-4 space-y-3">
-                {sorted.length === 0 ? (
-                  <div className="text-center py-12 text-gray-400" data-testid="no-unassigned-msg">
-                    <CalendarIcon className="w-10 h-10 mx-auto mb-3 opacity-40" />
-                    <p className="text-sm font-medium">{activeFilter === 'all' ? 'Atanmamış rezervasyon yok' : 'Bu filtrede sonuc yok'}</p>
-                    <p className="text-xs mt-1">{activeFilter === 'all' ? 'Tüm rezervasyonlar odalara atanmis' : 'Diger filtreleri deneyin'}</p>
-                  </div>
-                ) : (
-                  sorted.map((booking, idx) => {
-                    const checkIn = booking.check_in ? new Date(booking.check_in).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) : '-';
-                    const checkOut = booking.check_out ? new Date(booking.check_out).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) : '-';
-                    const urgency = getUnassignedUrgency(booking);
-                    const borderColor = urgencyBorderColors[urgency.level] || 'border-l-blue-400';
-                    const badgeColor = urgencyBadgeColors[urgency.level] || 'bg-blue-100 text-blue-700';
-                    const bCheckIn = new Date(booking.check_in);
-                    const bCheckOut = new Date(booking.check_out);
-                    const matchingRooms = rooms.filter(r =>
-                      (r.room_type || '').toLowerCase() === (booking.room_type || '').toLowerCase() &&
-                      !bookings.some(ob =>
-                        ob.room_id === r.id &&
-                        ob.id !== booking.id &&
-                        ob.status !== 'cancelled' && ob.status !== 'checked_out' && ob.status !== 'no_show' &&
-                        new Date(ob.check_in) < bCheckOut && new Date(ob.check_out) > bCheckIn
-                      )
-                    );
-                    return (
-                      <div
-                        key={booking.id || idx}
-                        className={`bg-white border rounded-lg p-4 hover:shadow-md transition-shadow border-l-4 ${borderColor} ${urgency.level === 'overdue' ? 'ring-1 ring-red-200' : ''}`}
-                        data-testid={`unassigned-item-${idx}`}
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div
-                            className="flex items-center gap-2 cursor-pointer flex-1"
-                            onClick={() => { if (booking.id) { setDetailModalBookingId(booking.id); setShowDetailModal(true); }}}
-                          >
-                            <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
-                              <User className="w-3.5 h-3.5 text-gray-500" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-semibold text-gray-800" data-testid={`unassigned-guest-${idx}`}>
-                                {booking.guest_name || 'Bilinmeyen Misafir'}
-                              </p>
-                              <p className="text-xs text-gray-400">{booking.room_type || ''}</p>
-                            </div>
-                          </div>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${badgeColor}`}>
-                            {urgency.label}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-4 text-xs text-gray-500 mt-2">
-                          <div className="flex items-center gap-1">
-                            <CalendarIcon className="w-3 h-3" />
-                            <span>{checkIn}</span>
-                            <ArrowRight className="w-3 h-3 mx-0.5" />
-                            <span>{checkOut}</span>
-                          </div>
-                          {booking.total_amount > 0 && (
-                            <span className="font-medium text-gray-700">{booking.total_amount.toLocaleString('tr-TR')} TL</span>
-                          )}
-                        </div>
-
-                        <div className="mt-3 flex items-center gap-2">
-                          {matchingRooms.length > 0 ? (
-                            <div className="flex items-center gap-1.5 flex-1">
-                              <select
-                                className="border rounded px-2 py-1 text-xs h-7 flex-1 max-w-[160px]"
-                                defaultValue=""
-                                data-testid={`quick-assign-select-${idx}`}
-                                onChange={async (e) => {
-                                  const roomId = e.target.value;
-                                  if (!roomId) return;
-                                  try {
-                                    await axios.put(`/pms/bookings/${booking.id}`, { room_id: roomId });
-                                    toast.success(`${booking.guest_name || 'Misafir'} odaya atandi`);
-                                    loadCalendarData();
-                                  } catch (err) {
-                                    toast.error(err.response?.data?.detail || 'Atama başarısız');
-                                  }
-                                }}
-                              >
-                                <option value="">{t('cm.pages_ReservationCalendar.oda_sec')}</option>
-                                {matchingRooms.map(r => (
-                                  <option key={r.id} value={r.id}>
-                                    {r.room_number} - {r.room_type}
-                                  </option>
-                                ))}
-                              </select>
-                              <span className="text-[10px] text-green-600 font-medium">{matchingRooms.length} {t('cm.pages_ReservationCalendar.musait_873fb')}</span>
-                            </div>
-                          ) : (
-                            <span className="text-[10px] text-red-500 font-medium">{t('cm.pages_ReservationCalendar.musait_oda_yok')}</span>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs h-7 border-amber-300 text-amber-700 hover:bg-amber-50"
-                            data-testid={`no-show-btn-${idx}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setNoShowBookingId(booking.id);
-                              setNoShowReason('misafir_gelmedi');
-                              setShowNoShowDialog(true);
-                            }}
-                          >
-                            <Ban className="w-3 h-3 mr-1" />
-                            No-Show
-                          </Button>
-                        </div>
+              {/* Virtualized booking list — only visible cards are rendered */}
+              {(() => {
+                if (sorted.length === 0) {
+                  return (
+                    <div className="flex-1 flex items-center justify-center">
+                      <div className="text-center py-12 text-gray-400" data-testid="no-unassigned-msg">
+                        <CalendarIcon className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                        <p className="text-sm font-medium">{activeFilter === 'all' ? 'Atanmamış rezervasyon yok' : 'Bu filtrede sonuc yok'}</p>
+                        <p className="text-xs mt-1">{activeFilter === 'all' ? 'Tüm rezervasyonlar odalara atanmis' : 'Diger filtreleri deneyin'}</p>
                       </div>
-                    );
-                  })
-                )}
-              </div>
+                    </div>
+                  );
+                }
+                const panelHeaderH = allUnassigned.length > 0 ? 228 : 80;
+                const listH = Math.max(300, (typeof window !== 'undefined' ? window.innerHeight : 800) - panelHeaderH);
+                const listItemData = {
+                  sorted,
+                  rooms,
+                  bookings,
+                  onBookingClick: (id) => { setDetailModalBookingId(id); setShowDetailModal(true); },
+                  onNoShow: (booking) => { setNoShowBookingId(booking.id); setNoShowReason('misafir_gelmedi'); setShowNoShowDialog(true); },
+                  onAssign: async (bookingId, roomId, guestName) => {
+                    try {
+                      await axios.put(`/pms/bookings/${bookingId}`, { room_id: roomId });
+                      toast.success(`${guestName || 'Misafir'} odaya atandı`);
+                      loadCalendarData();
+                    } catch (err) {
+                      toast.error(err.response?.data?.detail || 'Atama başarısız');
+                    }
+                  },
+                  t,
+                };
+                return (
+                  <FixedSizeList
+                    height={listH}
+                    itemCount={sorted.length}
+                    itemSize={UA_ITEM_H}
+                    itemData={listItemData}
+                    width="100%"
+                  >
+                    {UnassignedCard}
+                  </FixedSizeList>
+                );
+              })()}
             </div>
           </>
         );
