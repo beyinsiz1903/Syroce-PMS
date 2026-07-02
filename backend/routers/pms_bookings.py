@@ -237,8 +237,8 @@ async def get_arrivals(
     (inclusive, ISO date strings). Defaults to today if no range is given.
     Status is restricted to confirmed / guaranteed / checked_in.
     """
-    from datetime import date, timedelta
     import zoneinfo
+    from datetime import date, timedelta
 
     tz_name = "Europe/Istanbul"
     # Safely fetch timezone setting (ignoring schema proxy limits if any)
@@ -250,7 +250,7 @@ async def get_arrivals(
             tz_name = settings["timezone"]
     except Exception:
         pass
-    
+
     tz = zoneinfo.ZoneInfo(tz_name)
     today_str = datetime.now(tz).date().isoformat()
     start = start_date or today_str
