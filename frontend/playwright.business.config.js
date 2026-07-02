@@ -53,6 +53,10 @@ export default defineConfig({
         actionTimeout: 15_000,
         navigationTimeout: 30_000,
         storageState: 'e2e-business/.auth/admin.json',
+        extraHTTPHeaders: {
+            'Origin': BASE_URL,
+            'Referer': BASE_URL
+        }
     },
     projects,
 });

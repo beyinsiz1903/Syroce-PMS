@@ -505,8 +505,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           id_number: '',
           tenant_id: user.tenant_id, created_at: new Date().toISOString()
         };
-        await axios.post('/pms/guests', newGuest);
-        guestId = newGuest.id;
+        const response = await axios.post('/pms/guests', newGuest);
+        guestId = response.data.id;
         toast.success('Yeni misafir oluşturuldu!');
       } catch (error) {
         toast.error('Misafir oluşturulamadı: ' + (error.response?.data?.detail || error.message));
@@ -523,11 +523,18 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       setShowNewBookingDialog(false);
       loadCalendarData();
     } catch (error) {
+      console.log('CREATE_BOOKING_ERROR_CAUGHT', {
+        status: error?.response?.status,
+        detail: error?.response?.data?.detail,
+        message: error?.message
+      });
       const conflict = parseBookingConflict(error);
       if (conflict) {
+        console.log('CONFLICT_PARSED_SUCCESSFULLY', conflict);
         setBookingConflict(conflict);
         return;
       }
+      console.log('CONFLICT_PARSE_FAILED', error);
       const detail = error.response?.data?.detail;
       toast.error(typeof detail === 'string' ? detail : (detail?.message || 'Rezervasyon oluşturulamadı'));
     }

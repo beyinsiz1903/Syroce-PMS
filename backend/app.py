@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, ORJSONResponse
+from fastapi.responses import FileResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 
@@ -207,7 +207,6 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
         docs_url="/api/docs",
         redoc_url="/api/redoc",
         openapi_url="/api/openapi.json",
-        default_response_class=ORJSONResponse,
         openapi_tags=[
             {"name": "PMS / Dashboard", "description": "Dashboard, KPI ve Executive raporlari"},
             {"name": "PMS / Front Desk", "description": "Check-in, Check-out, Walk-in, Folio islemleri"},

@@ -5,7 +5,7 @@ import { makeApi, safePost } from './fixtures/api.js';
 import { factory, trackEntity } from './fixtures/data-factory.js';
 import {
     pickAvailableRoom, createTestBooking, addExtraCharge,
-    getBookingDetail, cancelBooking, farFutureDates,
+    getBookingDetail, cancelBooking, farFutureDates, closeFolio, recordPayment,
 } from './fixtures/pms-flow.js';
 
 const M = 'split-folio';
@@ -59,14 +59,14 @@ async function setupSplitPanel(page, api, scope, testInfo, dates, guestName, reg
         });
         return { outcome: 'review', reason: 'booking_create_overbooking_409' };
     }
+    const bookingId = created.bookingId;
     rec(testInfo, {
         module: M, scope, step: 'POST /api/pms/quick-booking',
         status: created.ok ? PASS : FAIL, endpoint: '/api/pms/quick-booking',
-        http: created.status, note: created.ok ? `id=${created.bookingId}` : (created.reason || ''),
+        http: created.status, note: created.ok ? `id=${bookingId}` : (created.reason || ''),
     });
-    expect(created.bookingId, 'Booking create returned no id').toBeTruthy();
-    const bookingId = created.bookingId;
-    reg(bookingId, guestName);
+    expect(created.ok, `Booking create FAILED: ${created.reason || created.status}`).toBe(true);
+    reg(bookingId, guestName); // Cleanup kaydını parent'a bırak.
 
     // ── 3) extra_charge ekle (API) — split-charge için kaynak kalem ──
     const extra = await addExtraCharge(api, bookingId, {
@@ -94,6 +94,18 @@ async function setupSplitPanel(page, api, scope, testInfo, dates, guestName, reg
         http: split.status, note: split.ok ? 'orphan folio_charge oluştu' : (split.body?.slice(0, 160) || ''),
     });
     expect(split.ok, `split-charge başarısız: ${split.status} ${split.body?.slice(0, 160) || ''}`).toBe(true);
+
+    // ── 4.5) Varsayılan oluşturulan folyoları kapat (folio yok önkoşulu için) ──
+    const preDetail = await getBookingDetail(api, bookingId);
+    const preFolios = Array.isArray(preDetail.json?.folios) ? preDetail.json.folios : [];
+    for (const f of preFolios) {
+        if ((f.status || '').toLowerCase() === 'open') {
+            if (f.balance > 0) {
+                await recordPayment(api, bookingId, { amount: f.balance, method: 'cash' });
+            }
+            await closeFolio(api, f.id);
+        }
+    }
 
     // ── 5) Ön-koşul doğrula (API/HARD): AÇIK folio YOK + orphan folio_charge VAR ──
     const detail = await getBookingDetail(api, bookingId);

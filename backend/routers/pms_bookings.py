@@ -237,9 +237,22 @@ async def get_arrivals(
     (inclusive, ISO date strings). Defaults to today if no range is given.
     Status is restricted to confirmed / guaranteed / checked_in.
     """
+    import zoneinfo
     from datetime import date, timedelta
 
-    today_str = datetime.now(UTC).date().isoformat()
+    tz_name = "Europe/Istanbul"
+    # Safely fetch timezone setting (ignoring schema proxy limits if any)
+    try:
+        from core.tenant_db import get_current_tenant_id
+        tid = get_current_tenant_id() or current_user.tenant_id
+        settings = await db.tenant_settings.find_one({"tenant_id": tid}, {"_id": 0, "timezone": 1})
+        if settings and settings.get("timezone"):
+            tz_name = settings["timezone"]
+    except Exception:
+        pass
+
+    tz = zoneinfo.ZoneInfo(tz_name)
+    today_str = datetime.now(tz).date().isoformat()
     start = start_date or today_str
     end = end_date or start
 

@@ -229,13 +229,11 @@ async def detailed_health_check(request: Request):
 
     status_code = status.HTTP_200_OK if overall_status == "healthy" else status.HTTP_503_SERVICE_UNAVAILABLE
 
-    # Use ORJSONResponse so the body is real JSON (the previous
-    # ``str(dict)`` produced Python repr — single-quoted, ``True`` instead
-    # of ``true`` — which broke strict JSON clients and any downstream
-    # parser).
-    from fastapi.responses import ORJSONResponse
+    # Use JSONResponse so the body is real JSON
+    # (FastAPI >0.100 natively serializes this fast without custom response classes)
+    from fastapi.responses import JSONResponse
 
-    return ORJSONResponse(content=response, status_code=status_code)
+    return JSONResponse(content=response, status_code=status_code)
 
 
 @health_router.get("/db", include_in_schema=False)
@@ -248,20 +246,20 @@ async def health_db_check(request: Request):
     """
     import time
 
-    from fastapi.responses import ORJSONResponse
+    from fastapi.responses import JSONResponse
 
     t0 = time.time()
     try:
         db = request.app.state.db
         await db.command("ping")
         ms = int((time.time() - t0) * 1000)
-        return ORJSONResponse(
+        return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={"status": "ok", "db": "ok", "latency_ms": ms},
         )
     except Exception as e:
         ms = int((time.time() - t0) * 1000)
-        return ORJSONResponse(
+        return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={
                 "status": "degraded",
@@ -290,7 +288,7 @@ async def deep_health_check(request: Request):
     """
     import time
 
-    from fastapi.responses import ORJSONResponse
+    from fastapi.responses import JSONResponse
 
     result = {
         "timestamp": datetime.utcnow().isoformat(),
@@ -520,4 +518,4 @@ async def deep_health_check(request: Request):
 
     result["overall"] = "ok" if overall_ok else "degraded"
     sc = status.HTTP_200_OK if overall_ok else status.HTTP_503_SERVICE_UNAVAILABLE
-    return ORJSONResponse(status_code=sc, content=result)
+    return JSONResponse(status_code=sc, content=result)
