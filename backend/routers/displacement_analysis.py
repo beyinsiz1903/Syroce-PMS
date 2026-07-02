@@ -130,3 +130,14 @@ async def get_history(
     current_user: User = Depends(get_current_user),
 ):
     return await engine.get_history(current_user.tenant_id, limit)
+
+
+@router.get("/overview")
+@cached(ttl=120, key_prefix="displacement_overview")
+async def displacement_overview(
+    days: int = Query(14, ge=1, le=60),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    """Alias for /market-overview — used by DataIntelligenceDashboard and audit endpoints."""
+    return await engine.get_market_overview(current_user.tenant_id, days)

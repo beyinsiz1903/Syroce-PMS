@@ -214,3 +214,35 @@ async def get_upsell_opportunities(
         "opportunities": dash.get("upsell_opportunities", []),
         "total_potential": sum(o.get("potential", 0) for o in dash.get("upsell_opportunities", [])),
     }
+
+
+@router.get("/overview")
+@cached(ttl=300, key_prefix="data_intelligence_overview")
+async def get_data_intelligence_overview(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    """Aggregate overview combining revenue, operations, and guest intelligence KPIs.
+    Used by DataIntelligenceDashboard summary widget and audit endpoints.
+    """
+    revenue_dash = await revenue_pipeline.get_forecast_dashboard(current_user.tenant_id)
+    ops_dash = await operational_ai.get_dashboard(current_user.tenant_id, None)
+    guest_dash = await guest_intelligence.get_dashboard(current_user.tenant_id, 10)
+    return {
+        "revenue": {
+            "forecast_accuracy": revenue_dash.get("model_accuracy", 0),
+            "recommendations_pending": len(revenue_dash.get("pricing_recommendations", [])),
+            "adr_trend": revenue_dash.get("adr_trend", []),
+        },
+        "operations": {
+            "room_readiness_score": ops_dash.get("room_readiness_score", 0),
+            "staffing_status": ops_dash.get("staffing_status", "unknown"),
+            "maintenance_alerts": ops_dash.get("maintenance_risk_count", 0),
+        },
+        "guests": {
+            "total_analyzed": guest_dash.get("total_guests", 0),
+            "high_churn_count": len(guest_dash.get("high_churn_guests", [])),
+            "upsell_opportunities": len(guest_dash.get("upsell_opportunities", [])),
+        },
+        "status": "ok",
+    }

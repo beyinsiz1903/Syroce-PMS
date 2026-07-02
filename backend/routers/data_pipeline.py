@@ -127,3 +127,9 @@ async def execute_pipeline(
 @router.get("/health")
 async def get_pipeline_health(tenant: TenantContext = Depends(get_current_tenant)):
     return await pipeline_orchestrator.get_pipeline_health(tenant.tenant_id)
+
+
+@router.get("/status")
+async def get_pipeline_status(tenant: TenantContext = Depends(get_current_tenant)):
+    """Alias for /health — used by DataPipelineDashboard status widget."""
+    return await pipeline_orchestrator.get_pipeline_health(tenant.tenant_id)

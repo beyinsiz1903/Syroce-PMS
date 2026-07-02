@@ -264,6 +264,17 @@ async def conflict_queue_count(
     return {"count": total}
 
 
+@router.get("/stats")
+async def conflict_queue_stats(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("edit_booking")),
+):
+    """Alias for /count — returns pending conflict queue stats for frontend KPI widgets."""
+    q = {**PENDING_QUERY, "tenant_id": current_user.tenant_id}
+    total = await db.bookings.count_documents(q)
+    return {"count": total, "total": total, "status": "ok"}
+
+
 @router.post("/{booking_id}/resolve")
 async def resolve_pending_booking(
     booking_id: str,
