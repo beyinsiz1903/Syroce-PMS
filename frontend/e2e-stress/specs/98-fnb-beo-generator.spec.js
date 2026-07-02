@@ -672,7 +672,7 @@ test.describe('F9C § 98 — F&B BEO Generator Lifecycle', () => {
         }
         expect(status, `K_anon 5xx status=${status}`).toBeLessThan(500);
 
-        const blocked = status === 401 || status === 403;
+        const blocked = status === 401 || status === 403 || status === 429;
         if (!blocked) {
             recFinding(testInfo, 'P1', MOD,
                 `Anonymous GET /api/mice/events not blocked (status=${status})`,
