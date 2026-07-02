@@ -9,11 +9,16 @@ import Layout from '@/components/MaybeLayout';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { promptDialog } from '@/lib/dialogs';
-
 const BACKEND = "";
-
-export default function SecurityCenter({ user, tenant, onLogout, embedded = false }) {
-  const { t } = useTranslation();
+export default function SecurityCenter({
+  user,
+  tenant,
+  onLogout,
+  embedded = false
+}) {
+  const {
+    t
+  } = useTranslation();
   const [activeTab, setActiveTab] = useState('2fa');
   const [twoFAStatus, setTwoFAStatus] = useState(null);
   const [setupData, setSetupData] = useState(null);
@@ -27,88 +32,127 @@ export default function SecurityCenter({ user, tenant, onLogout, embedded = fals
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const token = localStorage.getItem('token');
-  const headers = { Authorization: `Bearer ${token}` };
-
+  const headers = {
+    Authorization: `Bearer ${token}`
+  };
   const fetch2FAStatus = useCallback(async () => {
     try {
-      const res = await axios.get(`/2fa/status`, { headers });
+      const res = await axios.get(`/2fa/status`, {
+        headers
+      });
       setTwoFAStatus(res.data);
-    } catch (e) { console.error(e); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    } catch (e) {
+      console.error(e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
-
   const fetchIPRules = useCallback(async () => {
     try {
-      const res = await axios.get(`/security/ip/rules`, { headers });
+      const res = await axios.get(`/security/ip/rules`, {
+        headers
+      });
       setIpRules(res.data.rules || []);
-    } catch (e) { console.error(e); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    } catch (e) {
+      console.error(e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  useEffect(() => { fetch2FAStatus(); fetchIPRules(); }, []);
-
+  useEffect(() => {
+    fetch2FAStatus();
+    fetchIPRules();
+  }, []);
   const setup2FA = async () => {
     setLoading(true);
     try {
-      const res = await axios.post(`/2fa/setup`, {}, { headers });
+      const res = await axios.post(`/2fa/setup`, {}, {
+        headers
+      });
       setSetupData(res.data);
       setMessage('');
-    } catch (e) { setMessage(e.response?.data?.detail || 'Hata'); }
+    } catch (e) {
+      setMessage(e.response?.data?.detail || 'Hata');
+    }
     setLoading(false);
   };
-
   const verify2FA = async () => {
     setLoading(true);
     try {
-      const res = await axios.post(`/2fa/setup/confirm`, { code: verifyCode }, { headers });
+      const res = await axios.post(`/2fa/setup/confirm`, {
+        code: verifyCode
+      }, {
+        headers
+      });
       setBackupCodes(res.data.backup_codes);
       setMessage(res.data.message || '2FA etkinlestirildi');
       setSetupData(null);
       fetch2FAStatus();
-    } catch (e) { setMessage(e.response?.data?.detail || 'Gecersiz kod'); }
+    } catch (e) {
+      setMessage(e.response?.data?.detail || 'Gecersiz kod');
+    }
     setLoading(false);
   };
-
   const disable2FA = async () => {
-    const code = await promptDialog({ message: '2FA kodunuzu girin:' });
+    const code = await promptDialog({
+      message: '2FA kodunuzu girin:'
+    });
     if (!code) return;
-    const password = await promptDialog({ message: 'Sifrenizi girin:' });
+    const password = await promptDialog({
+      message: 'Sifrenizi girin:'
+    });
     if (!password) return;
     try {
-      await axios.post(`/2fa/disable`, { code, password }, { headers });
+      await axios.post(`/2fa/disable`, {
+        code,
+        password
+      }, {
+        headers
+      });
       setMessage('2FA devre disi birakildi');
       fetch2FAStatus();
-    } catch (e) { setMessage(e.response?.data?.detail || 'Hata'); }
+    } catch (e) {
+      setMessage(e.response?.data?.detail || 'Hata');
+    }
   };
-
   const addIPRule = async () => {
     if (!newIP) return;
     try {
       await axios.post(`/security/ip/rules`, {
-        ip_address: newIP, rule_type: newIPType, description: newIPDesc
-      }, { headers });
-      setNewIP(''); setNewIPDesc('');
+        ip_address: newIP,
+        rule_type: newIPType,
+        description: newIPDesc
+      }, {
+        headers
+      });
+      setNewIP('');
+      setNewIPDesc('');
       fetchIPRules();
-    } catch (e) { setMessage(e.response?.data?.detail || 'Hata'); }
+    } catch (e) {
+      setMessage(e.response?.data?.detail || 'Hata');
+    }
   };
-
-  const deleteIPRule = async (ruleId) => {
+  const deleteIPRule = async ruleId => {
     try {
-      await axios.delete(`/security/ip/rules/${ruleId}`, { headers });
+      await axios.delete(`/security/ip/rules/${ruleId}`, {
+        headers
+      });
       fetchIPRules();
-    } catch (e) { setMessage(e.response?.data?.detail || 'Hata'); }
+    } catch (e) {
+      setMessage(e.response?.data?.detail || 'Hata');
+    }
   };
-
   const checkIP = async () => {
     try {
-      const res = await axios.post(`/security/ip/check`, {}, { headers });
+      const res = await axios.post(`/security/ip/check`, {}, {
+        headers
+      });
       setIpCheck(res.data);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+    }
   };
-
-  return (
-    <Layout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout}>
+  return <Layout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout}>
       <div className="p-6 space-y-6">
         <div className="flex justify-between items-center">
           <div>
@@ -117,11 +161,9 @@ export default function SecurityCenter({ user, tenant, onLogout, embedded = fals
           </div>
         </div>
 
-        {message && (
-          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700">
+        {message && <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700">
             {message}
-          </div>
-        )}
+          </div>}
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
@@ -134,62 +176,43 @@ export default function SecurityCenter({ user, tenant, onLogout, embedded = fals
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   Iki Faktorlu Dogrulama (2FA)
-                  {twoFAStatus?.enabled ? (
-                    <Badge className="bg-green-100 text-green-700">Aktif</Badge>
-                  ) : (
-                    <Badge variant="outline">Devre Disi</Badge>
-                  )}
+                  {twoFAStatus?.enabled ? <Badge className="bg-green-100 text-green-700">Aktif</Badge> : <Badge variant="outline">Devre Disi</Badge>}
                 </CardTitle>
                 <CardDescription>
                   TOTP tabanli ek güvenlik katmani. Google Authenticator veya benzer uygulamalarla kullanin.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {!twoFAStatus?.enabled && !setupData && (
-                  <Button onClick={setup2FA} disabled={loading}>
+                {!twoFAStatus?.enabled && !setupData && <Button onClick={setup2FA} disabled={loading}>
                     {loading ? 'Hazirlaniyor...' : '2FA Etkinlestir'}
-                  </Button>
-                )}
+                  </Button>}
 
-                {setupData && (
-                  <div className="space-y-4">
+                {setupData && <div className="space-y-4">
                     <div className="p-4 bg-gray-50 rounded-lg text-center">
                       <p className="mb-2 font-medium">QR Kodu Tarayin</p>
                       <img src={setupData.qr_code} alt="QR Code" className="mx-auto w-48 h-48" />
                       <p className="mt-2 text-sm text-gray-500">Manuel giriş: <code className="bg-gray-200 px-2 py-1 rounded">{setupData.manual_entry_key}</code></p>
                     </div>
                     <div className="flex gap-2">
-                      <Input
-                        value={verifyCode}
-                        onChange={(e) => setVerifyCode(e.target.value)}
-                        placeholder="6 haneli kod"
-                        maxLength={6}
-                      />
+                      <Input value={verifyCode} onChange={e => setVerifyCode(e.target.value)} placeholder="6 haneli kod" maxLength={6} />
                       <Button onClick={verify2FA} disabled={loading || verifyCode.length !== 6}>
                         Dogrula
                       </Button>
                     </div>
-                  </div>
-                )}
+                  </div>}
 
-                {backupCodes && (
-                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                {backupCodes && <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                     <p className="font-medium text-yellow-800 mb-2">Yedek Kodlariniz (guvenli yere kaydedin!)</p>
                     <div className="grid grid-cols-2 gap-1">
-                      {backupCodes.map((code, i) => (
-                        <code key={i} className="bg-white px-2 py-1 rounded text-sm">{code}</code>
-                      ))}
+                      {backupCodes.map((code, i) => <code key={code.id || i} className="bg-white px-2 py-1 rounded text-sm">{code}</code>)}
                     </div>
-                  </div>
-                )}
+                  </div>}
 
-                {twoFAStatus?.enabled && (
-                  <div className="space-y-2">
+                {twoFAStatus?.enabled && <div className="space-y-2">
                     <p className="text-sm text-gray-600">Yedek kod sayısı: {twoFAStatus.backup_codes_remaining}</p>
                     <p className="text-sm text-gray-600">Son doğrulama: {twoFAStatus.last_verified || 'Bilinmiyor'}</p>
                     <Button variant="destructive" onClick={disable2FA}>2FA Devre Disi Birak</Button>
-                  </div>
-                )}
+                  </div>}
               </CardContent>
             </Card>
           </TabsContent>
@@ -204,29 +227,27 @@ export default function SecurityCenter({ user, tenant, onLogout, embedded = fals
                 <div className="flex gap-2 items-end">
                   <div className="flex-1">
                     <label className="text-sm font-medium">IP Adresi</label>
-                    <Input value={newIP} onChange={(e) => setNewIP(e.target.value)} placeholder="192.168.1.1 veya 10.0.0.0/24" />
+                    <Input value={newIP} onChange={e => setNewIP(e.target.value)} placeholder="192.168.1.1 veya 10.0.0.0/24" />
                   </div>
                   <div>
                     <label className="text-sm font-medium">Tip</label>
-                    <select className="w-full border rounded px-3 py-2" value={newIPType} onChange={(e) => setNewIPType(e.target.value)}>
+                    <select className="w-full border rounded px-3 py-2" value={newIPType} onChange={e => setNewIPType(e.target.value)}>
                       <option value="whitelist">Beyaz Liste</option>
                       <option value="blacklist">Kara Liste</option>
                     </select>
                   </div>
                   <div className="flex-1">
                     <label className="text-sm font-medium">Açıklama</label>
-                    <Input value={newIPDesc} onChange={(e) => setNewIPDesc(e.target.value)} placeholder="Ofis IP" />
+                    <Input value={newIPDesc} onChange={e => setNewIPDesc(e.target.value)} placeholder="Ofis IP" />
                   </div>
                   <Button onClick={addIPRule}>{t("common.add")}</Button>
                 </div>
 
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={checkIP}>IP Kontrol Et</Button>
-                  {ipCheck && (
-                    <Badge className={ipCheck.allowed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}>
+                  {ipCheck && <Badge className={ipCheck.allowed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}>
                       {ipCheck.client_ip}: {ipCheck.allowed ? 'Izin Verildi' : 'Engellendi'}
-                    </Badge>
-                  )}
+                    </Badge>}
                 </div>
 
                 <div className="border rounded-lg">
@@ -241,8 +262,7 @@ export default function SecurityCenter({ user, tenant, onLogout, embedded = fals
                       </tr>
                     </thead>
                     <tbody>
-                      {ipRules.map(rule => (
-                        <tr key={rule.id} className="border-t">
+                      {ipRules.map(rule => <tr key={rule.id} className="border-t">
                           <td className="p-3 font-mono text-sm">{rule.ip_address}</td>
                           <td className="p-3">
                             <Badge className={rule.rule_type === 'whitelist' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}>
@@ -258,11 +278,8 @@ export default function SecurityCenter({ user, tenant, onLogout, embedded = fals
                           <td className="p-3">
                             <Button variant="ghost" size="sm" className="text-red-500" onClick={() => deleteIPRule(rule.id)}>{t("common.delete")}</Button>
                           </td>
-                        </tr>
-                      ))}
-                      {ipRules.length === 0 && (
-                        <tr><td colSpan="5" className="p-8 text-center text-gray-400">Henüz kural eklenmemis</td></tr>
-                      )}
+                        </tr>)}
+                      {ipRules.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-gray-400">Henüz kural eklenmemis</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -271,6 +288,5 @@ export default function SecurityCenter({ user, tenant, onLogout, embedded = fals
           </TabsContent>
         </Tabs>
       </div>
-    </Layout>
-  );
+    </Layout>;
 }

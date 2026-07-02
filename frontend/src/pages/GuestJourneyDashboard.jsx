@@ -1,38 +1,37 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
-import {
-  User, MessageSquare, Star, Clock, CheckCircle, AlertCircle, Send,
-  Mail, Phone, Globe, RefreshCw, FileText, PlusCircle, ArrowRight
-} from 'lucide-react';
+import { User, MessageSquare, Star, Clock, CheckCircle, AlertCircle, Send, Mail, Phone, Globe, RefreshCw, FileText, PlusCircle, ArrowRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import Layout from '@/components/Layout';
-
 const API = "";
-
 const STATUS_COLORS = {
   open: 'bg-red-100 text-red-800',
   assigned: 'bg-amber-100 text-amber-800',
   in_progress: 'bg-sky-100 text-sky-800',
   resolved: 'bg-emerald-100 text-emerald-800',
   closed: 'bg-slate-100 text-slate-600',
-  escalated: 'bg-indigo-100 text-indigo-800',
+  escalated: 'bg-indigo-100 text-indigo-800'
 };
-
 const TYPE_ICONS = {
   housekeeping: '',
   maintenance: '',
   concierge: '',
   room_service: '',
   amenity: '',
-  complaint: '',
+  complaint: ''
 };
-
-export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
-  const { t } = useTranslation();
+export default function GuestJourneyDashboard({
+  user,
+  tenant,
+  onLogout
+}) {
+  const {
+    t
+  } = useTranslation();
   const [dashboard, setDashboard] = useState(null);
   const [requests, setRequests] = useState(null);
   const [templates, setTemplates] = useState(null);
@@ -40,22 +39,23 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [statusFilter, setStatusFilter] = useState(null);
   const [typeFilter, setTypeFilter] = useState(null);
-
   const token = localStorage.getItem('token');
-  const headers = { Authorization: `Bearer ${token}` };
-
+  const headers = {
+    Authorization: `Bearer ${token}`
+  };
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
       let reqParams = '?limit=50';
       if (statusFilter) reqParams += `&status=${statusFilter}`;
       if (typeFilter) reqParams += `&request_type=${typeFilter}`;
-
-      const [dashRes, reqRes, tplRes] = await Promise.all([
-        axios.get(`/guest-journey/satisfaction-dashboard`, { headers }),
-        axios.get(`/guest-journey/guest-requests${reqParams}`, { headers }),
-        axios.get(`/guest-journey/message-templates`, { headers }),
-      ]);
+      const [dashRes, reqRes, tplRes] = await Promise.all([axios.get(`/guest-journey/satisfaction-dashboard`, {
+        headers
+      }), axios.get(`/guest-journey/guest-requests${reqParams}`, {
+        headers
+      }), axios.get(`/guest-journey/message-templates`, {
+        headers
+      })]);
       setDashboard(dashRes.data);
       setRequests(reqRes.data);
       setTemplates(tplRes.data);
@@ -64,42 +64,51 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
     } finally {
       setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [statusFilter, typeFilter]);
-
-  useEffect(() => { fetchAll(); }, [fetchAll]);
-
+  useEffect(() => {
+    fetchAll();
+  }, [fetchAll]);
   const updateRequestStatus = async (requestId, newStatus) => {
     try {
       await axios.post(`/guest-journey/guest-request/status`, {
-        request_id: requestId, new_status: newStatus
-      }, { headers });
+        request_id: requestId,
+        new_status: newStatus
+      }, {
+        headers
+      });
       fetchAll();
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error(err);
+    }
   };
-
-  const tabs = [
-    { id: 'dashboard', label: 'Özet', icon: Star },
-    { id: 'requests', label: 'Talepler', icon: MessageSquare },
-    { id: 'messaging', label: 'Mesajlasma', icon: Send },
-    { id: 'reviews', label: 'Degerlendirmeler', icon: Star },
-  ];
-
+  const tabs = [{
+    id: 'dashboard',
+    label: 'Özet',
+    icon: Star
+  }, {
+    id: 'requests',
+    label: 'Talepler',
+    icon: MessageSquare
+  }, {
+    id: 'messaging',
+    label: 'Mesajlasma',
+    icon: Send
+  }, {
+    id: 'reviews',
+    label: 'Degerlendirmeler',
+    icon: Star
+  }];
   if (loading) {
-    return (
-      <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
+    return <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
         <div className="flex items-center justify-center h-64" data-testid="journey-loading">
           <RefreshCw className="w-8 h-8 animate-spin text-teal-600" />
         </div>
-      </Layout>
-    );
+      </Layout>;
   }
-
   const rep = dashboard?.reputation || {};
   const dist = rep?.distribution || {};
-
-  return (
-    <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
+  return <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="pms">
       <div className="space-y-6 p-4 lg:p-6" data-testid="guest-journey-dashboard">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -149,37 +158,28 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
         {/* Tabs */}
         <div className="flex space-x-1 bg-slate-100 rounded-lg p-1" data-testid="journey-tabs">
           {tabs.map(t => {
-            const Icon = t.icon;
-            return (
-              <button key={t.id} onClick={() => setActiveTab(t.id)}
-                data-testid={`journey-tab-${t.id}`}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === t.id ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
+          const Icon = t.icon;
+          return <button key={t.id} onClick={() => setActiveTab(t.id)} data-testid={`journey-tab-${t.id}`} className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === t.id ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
                 <Icon className="w-4 h-4" /> {t.label}
-              </button>
-            );
-          })}
+              </button>;
+        })}
         </div>
 
         {/* Dashboard Tab */}
-        {activeTab === 'dashboard' && (
-          <div className="space-y-6">
+        {activeTab === 'dashboard' && <div className="space-y-6">
             {/* Resolution by Type */}
             <Card>
               <CardHeader><CardTitle className="text-base">Talep Tipi Bazli Cozum Suresi</CardTitle></CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-4" data-testid="resolution-by-type">
-                  {Object.entries(dashboard?.avg_resolution_by_type || {}).map(([type, mins]) => (
-                    <div key={type} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
+                  {Object.entries(dashboard?.avg_resolution_by_type || {}).map(([type, mins]) => <div key={type} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
                       <span className="text-2xl">{TYPE_ICONS[type] || '?'}</span>
                       <div>
                         <p className="text-sm font-medium capitalize">{type.replace(/_/g, ' ')}</p>
                         <p className="text-xs text-slate-500">{mins} dk ortalama</p>
                       </div>
-                    </div>
-                  ))}
-                  {Object.keys(dashboard?.avg_resolution_by_type || {}).length === 0 && (
-                    <p className="text-slate-400 text-sm col-span-3 text-center py-4">Henüz veri yok</p>
-                  )}
+                    </div>)}
+                  {Object.keys(dashboard?.avg_resolution_by_type || {}).length === 0 && <p className="text-slate-400 text-sm col-span-3 text-center py-4">Henüz veri yok</p>}
                 </div>
               </CardContent>
             </Card>
@@ -188,15 +188,11 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
             <Card>
               <CardHeader><CardTitle className="text-base">Aktif Talep Kuyrugu</CardTitle></CardHeader>
               <CardContent>
-                {(dashboard?.request_queue || []).length === 0 ? (
-                  <div className="text-center py-8 text-slate-400" data-testid="empty-queue">
+                {(dashboard?.request_queue || []).length === 0 ? <div className="text-center py-8 text-slate-400" data-testid="empty-queue">
                     <CheckCircle className="w-12 h-12 mx-auto mb-3 opacity-30" />
                     <p>Tüm talepler cozulmus</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2" data-testid="request-queue">
-                    {(dashboard?.request_queue || []).map((r, i) => (
-                      <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                  </div> : <div className="space-y-2" data-testid="request-queue">
+                    {(dashboard?.request_queue || []).map((r, i) => <div key={r.id || i} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
                         <div className="flex items-center gap-3">
                           <span className="text-lg">{TYPE_ICONS[r.request_type] || '?'}</span>
                           <div>
@@ -208,37 +204,25 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
                           <Badge className={STATUS_COLORS[r.status] || ''}>{r.status}</Badge>
                           {r.priority === 'urgent' && <Badge variant="destructive">Acil</Badge>}
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      </div>)}
+                  </div>}
               </CardContent>
             </Card>
-          </div>
-        )}
+          </div>}
 
         {/* Requests Tab */}
-        {activeTab === 'requests' && (
-          <div className="space-y-4">
+        {activeTab === 'requests' && <div className="space-y-4">
             {/* Filters */}
             <div className="flex flex-wrap gap-2" data-testid="request-filters">
               <div className="flex gap-1">
-                {[null, 'open', 'assigned', 'in_progress', 'resolved'].map(s => (
-                  <Button key={s || 'all'} variant={statusFilter === s ? 'default' : 'outline'} size="sm"
-                    data-testid={`filter-status-${s || 'all'}`}
-                    onClick={() => setStatusFilter(s)}>
+                {[null, 'open', 'assigned', 'in_progress', 'resolved'].map(s => <Button key={s || 'all'} variant={statusFilter === s ? 'default' : 'outline'} size="sm" data-testid={`filter-status-${s || 'all'}`} onClick={() => setStatusFilter(s)}>
                     {s ? s.replace(/_/g, ' ') : 'Tumu'}
-                  </Button>
-                ))}
+                  </Button>)}
               </div>
               <div className="flex gap-1">
-                {[null, 'housekeeping', 'maintenance', 'concierge', 'room_service', 'complaint'].map(t => (
-                  <Button key={t || 'all_type'} variant={typeFilter === t ? 'default' : 'outline'} size="sm"
-                    data-testid={`filter-type-${t || 'all'}`}
-                    onClick={() => setTypeFilter(t)}>
+                {[null, 'housekeeping', 'maintenance', 'concierge', 'room_service', 'complaint'].map(t => <Button key={t || 'all_type'} variant={typeFilter === t ? 'default' : 'outline'} size="sm" data-testid={`filter-type-${t || 'all'}`} onClick={() => setTypeFilter(t)}>
                     {t ? `${TYPE_ICONS[t] || ''} ${t.replace(/_/g, ' ')}` : 'Tüm Tipler'}
-                  </Button>
-                ))}
+                  </Button>)}
               </div>
             </div>
 
@@ -258,8 +242,7 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {(requests?.requests || []).map((r, i) => (
-                        <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
+                      {(requests?.requests || []).map((r, i) => <tr key={r.id || i} className="border-b border-slate-100 hover:bg-slate-50">
                           <td className="py-2 px-4">
                             <span className="text-lg mr-1">{TYPE_ICONS[r.request_type] || '?'}</span>
                             <span className="capitalize text-xs">{r.request_type?.replace(/_/g, ' ')}</span>
@@ -276,43 +259,29 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
                             {r.created_at?.replace('T', ' ').slice(0, 16)}
                           </td>
                           <td className="py-2 px-4 text-center">
-                            {r.status === 'open' && (
-                              <Button variant="outline" size="sm" onClick={() => updateRequestStatus(r.id, 'in_progress')}
-                                data-testid={`start-${r.id}`}>Basla</Button>
-                            )}
-                            {r.status === 'in_progress' && (
-                              <Button variant="outline" size="sm" onClick={() => updateRequestStatus(r.id, 'resolved')}
-                                data-testid={`resolve-${r.id}`}>Coz</Button>
-                            )}
+                            {r.status === 'open' && <Button variant="outline" size="sm" onClick={() => updateRequestStatus(r.id, 'in_progress')} data-testid={`start-${r.id}`}>Basla</Button>}
+                            {r.status === 'in_progress' && <Button variant="outline" size="sm" onClick={() => updateRequestStatus(r.id, 'resolved')} data-testid={`resolve-${r.id}`}>Coz</Button>}
                           </td>
-                        </tr>
-                      ))}
-                      {(requests?.requests || []).length === 0 && (
-                        <tr><td colSpan={7} className="text-center py-8 text-slate-400">Talep bulunamadı</td></tr>
-                      )}
+                        </tr>)}
+                      {(requests?.requests || []).length === 0 && <tr><td colSpan={7} className="text-center py-8 text-slate-400">Talep bulunamadı</td></tr>}
                     </tbody>
                   </table>
                 </div>
               </CardContent>
             </Card>
-          </div>
-        )}
+          </div>}
 
         {/* Messaging Tab */}
-        {activeTab === 'messaging' && (
-          <div className="space-y-6">
+        {activeTab === 'messaging' && <div className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Otomatik Mesaj Sablonlari</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3" data-testid="message-templates">
-                  {(templates?.templates || []).map((t, i) => (
-                    <div key={i} className="flex items-start gap-3 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                  {(templates?.templates || []).map((t, i) => <div key={t.id || i} className="flex items-start gap-3 p-4 bg-slate-50 rounded-lg border border-slate-200">
                       <div className="shrink-0 mt-0.5">
-                        {t.channel === 'email' ? <Mail className="w-5 h-5 text-sky-500" /> :
-                         t.channel === 'sms' ? <Phone className="w-5 h-5 text-emerald-500" /> :
-                         <Globe className="w-5 h-5 text-teal-500" />}
+                        {t.channel === 'email' ? <Mail className="w-5 h-5 text-sky-500" /> : t.channel === 'sms' ? <Phone className="w-5 h-5 text-emerald-500" /> : <Globe className="w-5 h-5 text-teal-500" />}
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
@@ -323,17 +292,14 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
                         {t.subject && <p className="text-sm text-slate-600 mt-1">Konu: {t.subject}</p>}
                         <p className="text-xs text-slate-500 mt-1">{t.body}</p>
                       </div>
-                    </div>
-                  ))}
+                    </div>)}
                 </div>
               </CardContent>
             </Card>
-          </div>
-        )}
+          </div>}
 
         {/* Reviews Tab */}
-        {activeTab === 'reviews' && (
-          <div className="space-y-6">
+        {activeTab === 'reviews' && <div className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Average Rating */}
               <Card>
@@ -349,44 +315,38 @@ export default function GuestJourneyDashboard({ user, tenant, onLogout }) {
                 <CardContent>
                   <div className="space-y-2" data-testid="rating-distribution">
                     {[5, 4, 3, 2, 1].map(r => {
-                      const count = dist[r] || 0;
-                      const pct = rep.total_reviews ? (count / rep.total_reviews * 100) : 0;
-                      return (
-                        <div key={r} className="flex items-center gap-3">
+                  const count = dist[r] || 0;
+                  const pct = rep.total_reviews ? count / rep.total_reviews * 100 : 0;
+                  return <div key={r} className="flex items-center gap-3">
                           <span className="text-sm font-medium w-4">{r}</span>
                           <Star className="w-4 h-4 text-amber-400" />
                           <div className="flex-1 bg-slate-200 rounded-full h-3">
-                            <div className="h-3 rounded-full bg-amber-400 transition-all" style={{ width: `${pct}%` }} />
+                            <div className="h-3 rounded-full bg-amber-400 transition-all" style={{
+                        width: `${pct}%`
+                      }} />
                           </div>
                           <span className="text-xs text-slate-500 w-12 text-right">{count} ({pct.toFixed(0)}%)</span>
-                        </div>
-                      );
-                    })}
+                        </div>;
+                })}
                   </div>
                 </CardContent>
               </Card>
             </div>
 
             {/* Monthly Trend */}
-            {(rep.recent_trend || []).length > 0 && (
-              <Card>
+            {(rep.recent_trend || []).length > 0 && <Card>
                 <CardHeader><CardTitle className="text-base">Aylık Puan Trendi</CardTitle></CardHeader>
                 <CardContent>
                   <div className="flex gap-4 overflow-x-auto pb-2" data-testid="monthly-trend">
-                    {(rep.recent_trend || []).map((m, i) => (
-                      <div key={i} className="flex-shrink-0 text-center p-3 bg-slate-50 rounded-lg min-w-[100px]">
+                    {(rep.recent_trend || []).map((m, i) => <div key={m.id || i} className="flex-shrink-0 text-center p-3 bg-slate-50 rounded-lg min-w-[100px]">
                         <p className="text-xs text-slate-500">{m.month}</p>
                         <p className="text-xl font-bold text-slate-900 mt-1">{m.avg_rating}</p>
                         <p className="text-xs text-slate-400">{m.count} yorum</p>
-                      </div>
-                    ))}
+                      </div>)}
                   </div>
                 </CardContent>
-              </Card>
-            )}
-          </div>
-        )}
+              </Card>}
+          </div>}
       </div>
-    </Layout>
-  );
+    </Layout>;
 }

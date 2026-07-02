@@ -6,33 +6,37 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Radio, RefreshCw, Zap, ArrowDownToLine, AlertTriangle, Activity } from "lucide-react";
-
 const API = "";
-
-function StatusDot({ status }) {
+function StatusDot({
+  status
+}) {
   const color = status === "healthy" ? "bg-emerald-500" : status === "disconnected" ? "bg-red-500" : "bg-amber-500";
   return <span className={`inline-block w-2.5 h-2.5 rounded-full ${color} animate-pulse`} />;
 }
-
 export default function EventBusDashboard() {
-  const { t } = useTranslation();
+  const {
+    t
+  } = useTranslation();
   const [status, setStatus] = useState(null);
   const [metrics, setMetrics] = useState(null);
   const [channels, setChannels] = useState([]);
   const [replaySummary, setReplaySummary] = useState(null);
   const [loading, setLoading] = useState(true);
-
   const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-  const headers = { Authorization: `Bearer ${token}` };
-
+  const headers = {
+    Authorization: `Bearer ${token}`
+  };
   const fetchData = useCallback(async () => {
     try {
-      const [statusRes, metricsRes, channelsRes, replayRes] = await Promise.all([
-        axios.get(`/event-bus/status`, { headers }),
-        axios.get(`/event-bus/metrics`, { headers }),
-        axios.get(`/event-bus/channels`, { headers }),
-        axios.get(`/event-bus/replay/summary`, { headers }),
-      ]);
+      const [statusRes, metricsRes, channelsRes, replayRes] = await Promise.all([axios.get(`/event-bus/status`, {
+        headers
+      }), axios.get(`/event-bus/metrics`, {
+        headers
+      }), axios.get(`/event-bus/channels`, {
+        headers
+      }), axios.get(`/event-bus/replay/summary`, {
+        headers
+      })]);
       setStatus(statusRes.data);
       setMetrics(metricsRes.data);
       setChannels(channelsRes.data);
@@ -42,28 +46,30 @@ export default function EventBusDashboard() {
     } finally {
       setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
-
-  useEffect(() => { fetchData(); const iv = setInterval(fetchData, 15000); return () => clearInterval(iv); }, [fetchData]);
-
+  useEffect(() => {
+    fetchData();
+    const iv = setInterval(fetchData, 15000);
+    return () => clearInterval(iv);
+  }, [fetchData]);
   const publishTest = async () => {
     try {
-      await axios.post(`/event-bus/publish?event_type=test_event&priority=normal`, {}, { headers });
+      await axios.post(`/event-bus/publish?event_type=test_event&priority=normal`, {}, {
+        headers
+      });
       toast.success("Test event yayinlandi");
       fetchData();
-    } catch { toast.error("Event yayın başarısız"); }
+    } catch {
+      toast.error("Event yayın başarısız");
+    }
   };
-
   if (loading) return <div className="flex justify-center p-12" data-testid="event-bus-loading"><RefreshCw className="w-8 h-8 animate-spin text-zinc-400" /></div>;
-
   const backendStatus = status?.backend_status || "unknown";
   const mode = status?.mode || "in_memory";
   const redisConfigured = status?.redis_configured || false;
   const fallbackAvailable = status?.fallback_available || false;
-
-  return (
-    <div className="space-y-6 p-6 max-w-7xl mx-auto" data-testid="event-bus-dashboard">
+  return <div className="space-y-6 p-6 max-w-7xl mx-auto" data-testid="event-bus-dashboard">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-100">{t("techDashboards.eventBus")}</h1>
@@ -122,8 +128,7 @@ export default function EventBusDashboard() {
       </div>
 
       {/* Redis Delivery Metrics */}
-      {metrics?.redis_delivery_metrics && (
-        <Card className="bg-zinc-900/60 border-zinc-800" data-testid="redis-delivery-metrics">
+      {metrics?.redis_delivery_metrics && <Card className="bg-zinc-900/60 border-zinc-800" data-testid="redis-delivery-metrics">
           <CardHeader className="pb-3">
             <CardTitle className="text-base text-zinc-200 flex items-center gap-2">
               <Radio className="w-4 h-4" /> Redis Delivery Metrikleri
@@ -149,8 +154,7 @@ export default function EventBusDashboard() {
               </div>
             </div>
           </CardContent>
-        </Card>
-      )}
+        </Card>}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Backend Details */}
@@ -159,12 +163,10 @@ export default function EventBusDashboard() {
             <CardTitle className="text-base text-zinc-200">Backend Detaylari</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {status?.backend_details && Object.entries(status.backend_details).map(([key, val]) => (
-              <div key={key} className="flex justify-between py-1 border-b border-zinc-800 last:border-0">
+            {status?.backend_details && Object.entries(status.backend_details).map(([key, val]) => <div key={key} className="flex justify-between py-1 border-b border-zinc-800 last:border-0">
                 <span className="text-xs text-zinc-400">{key}</span>
                 <span className="text-xs font-mono text-zinc-200">{typeof val === "object" ? JSON.stringify(val) : String(val)}</span>
-              </div>
-            ))}
+              </div>)}
           </CardContent>
         </Card>
 
@@ -176,23 +178,16 @@ export default function EventBusDashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {metrics?.top_event_types && Object.entries(metrics.top_event_types).length > 0 ? (
-              Object.entries(metrics.top_event_types).map(([type, count]) => (
-                <div key={type} className="flex justify-between py-1 border-b border-zinc-800 last:border-0">
+            {metrics?.top_event_types && Object.entries(metrics.top_event_types).length > 0 ? Object.entries(metrics.top_event_types).map(([type, count]) => <div key={type} className="flex justify-between py-1 border-b border-zinc-800 last:border-0">
                   <span className="text-xs font-mono text-zinc-300">{type}</span>
                   <Badge variant="outline" className="text-xs">{count}</Badge>
-                </div>
-              ))
-            ) : (
-              <p className="text-xs text-zinc-500">Henüz event yayinlanmadi</p>
-            )}
+                </div>) : <p className="text-xs text-zinc-500">Henüz event yayinlanmadi</p>}
           </CardContent>
         </Card>
       </div>
 
       {/* Replay Summary */}
-      {replaySummary && (
-        <Card className="bg-zinc-900/60 border-zinc-800" data-testid="replay-summary">
+      {replaySummary && <Card className="bg-zinc-900/60 border-zinc-800" data-testid="replay-summary">
           <CardHeader className="pb-3">
             <CardTitle className="text-base text-zinc-200">Replay Ozeti (24h)</CardTitle>
           </CardHeader>
@@ -200,39 +195,29 @@ export default function EventBusDashboard() {
             <div className="text-sm text-zinc-300 mb-3">
               Toplam tekrar oynatilabilir: <span className="font-bold">{replaySummary.replayable_events_24h || 0}</span>
             </div>
-            {replaySummary.by_type?.length > 0 && (
-              <div className="space-y-1">
-                {replaySummary.by_type.map((t, i) => (
-                  <div key={i} className="flex justify-between py-1 border-b border-zinc-800 last:border-0">
+            {replaySummary.by_type?.length > 0 && <div className="space-y-1">
+                {replaySummary.by_type.map((t, i) => <div key={t.id || i} className="flex justify-between py-1 border-b border-zinc-800 last:border-0">
                     <span className="text-xs font-mono text-zinc-300">{t.event_type}</span>
                     <span className="text-xs text-zinc-400">{t.count} event, seq: {t.last_sequence}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+                  </div>)}
+              </div>}
           </CardContent>
-        </Card>
-      )}
+        </Card>}
 
       {/* Channels */}
-      {channels?.length > 0 && (
-        <Card className="bg-zinc-900/60 border-zinc-800" data-testid="channels-list">
+      {channels?.length > 0 && <Card className="bg-zinc-900/60 border-zinc-800" data-testid="channels-list">
           <CardHeader className="pb-3">
             <CardTitle className="text-base text-zinc-200">Aktif Channellar</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {channels.map((ch, i) => (
-              <div key={i} className="flex items-center justify-between p-2 bg-zinc-800/60 rounded-lg">
+            {channels.map((ch, i) => <div key={ch.id || i} className="flex items-center justify-between p-2 bg-zinc-800/60 rounded-lg">
                 <span className="text-xs font-mono text-zinc-300">{ch.channel}</span>
                 <div className="flex gap-3">
                   <span className="text-xs text-zinc-400">Sessions: {ch.active_sessions}</span>
                   <span className="text-xs text-zinc-400">Events: {ch.events_published}</span>
                 </div>
-              </div>
-            ))}
+              </div>)}
           </CardContent>
-        </Card>
-      )}
-    </div>
-  );
+        </Card>}
+    </div>;
 }

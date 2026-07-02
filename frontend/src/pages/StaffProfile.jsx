@@ -76,7 +76,9 @@ const CHANGE_TYPE_LABEL = {
   demotion: 'İndirim'
 };
 const StaffProfile = () => {
-  const { t } = useTranslation();
+  const {
+    t
+  } = useTranslation();
   const {
     id
   } = useParams();
@@ -694,7 +696,7 @@ const StaffProfile = () => {
                     <th className="py-2">{t("cm.pages_StaffProfile.tarih")}</th><th>{t("cm.pages_StaffProfile.giri\u015F")}</th><th>{t("cm.pages_StaffProfile.\xE7\u0131k\u0131\u015F")}</th><th className="text-right">{t("cm.pages_StaffProfile.saat")}</th>
                   </tr></thead>
                   <tbody>
-                    {(att.records || []).map((r, i) => <tr key={i} className="border-t border-slate-100">
+                    {(att.records || []).map((r, i) => <tr key={r.id || i} className="border-t border-slate-100">
                         <td className="py-2">{r.date}</td>
                         <td>{(r.clock_in || '').slice(11, 16) || '—'}</td>
                         <td>{(r.clock_out || '').slice(11, 16) || '—'}</td>
@@ -820,7 +822,7 @@ const StaffProfile = () => {
                     <th className="text-right">{t("cm.pages_StaffProfile.mesai")}</th><th className="text-right">{t("cm.pages_StaffProfile.br\xFCt")}</th><th className="text-right">{t("cm.pages_StaffProfile.net")}</th>
                   </tr></thead>
                   <tbody>
-                    {(pay.recent || []).map((row, i) => <tr key={i} className="border-t border-slate-100">
+                    {(pay.recent || []).map((row, i) => <tr key={row.id || i} className="border-t border-slate-100">
                         <td className="py-2">{row.period_month}</td>
                         <td className="text-right">{(row.total_hours || 0).toFixed(1)}</td>
                         <td className="text-right text-amber-700">{(row.overtime_hours || 0).toFixed(1)}</td>

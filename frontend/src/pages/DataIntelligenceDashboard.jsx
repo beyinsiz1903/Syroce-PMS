@@ -4,22 +4,24 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import {
-  TrendingUp, TrendingDown, Brain, Users, Activity, Shield,
-  AlertTriangle, Target, Zap, BarChart3, Clock, Star,
-  ArrowUpRight, ArrowDownRight, Loader2, RefreshCw, ChevronRight,
-} from 'lucide-react';
-
+import { TrendingUp, TrendingDown, Brain, Users, Activity, Shield, AlertTriangle, Target, Zap, BarChart3, Clock, Star, ArrowUpRight, ArrowDownRight, Loader2, RefreshCw, ChevronRight } from 'lucide-react';
 const API = "";
-
 function useAuth() {
   const token = localStorage.getItem('token');
-  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-  return { token, headers };
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  };
+  return {
+    token,
+    headers
+  };
 }
-
 async function fetchAPI(path, headers) {
-  const res = await fetch(`${API}${path}`, { credentials: "include", headers });
+  const res = await fetch(`${API}${path}`, {
+    credentials: "include",
+    headers
+  });
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
 }
@@ -28,74 +30,85 @@ async function fetchAPI(path, headers) {
 // MINI COMPONENTS
 // ═══════════════════════════════════════════════════════════
 
-function StatCard({ title, value, subtitle, icon: Icon, trend, color = 'blue', testId }) {
+function StatCard({
+  title,
+  value,
+  subtitle,
+  icon: Icon,
+  trend,
+  color = 'blue',
+  testId
+}) {
   const colors = {
     blue: 'from-blue-500/10 to-blue-600/5 border-blue-500/20',
     green: 'from-emerald-500/10 to-emerald-600/5 border-emerald-500/20',
     amber: 'from-amber-500/10 to-amber-600/5 border-amber-500/20',
     red: 'from-red-500/10 to-red-600/5 border-red-500/20',
-    purple: 'from-violet-500/10 to-violet-600/5 border-violet-500/20',
+    purple: 'from-violet-500/10 to-violet-600/5 border-violet-500/20'
   };
-  return (
-    <div data-testid={testId} className={`rounded-xl border bg-gradient-to-br ${colors[color] || colors.blue} p-4`}>
+  return <div data-testid={testId} className={`rounded-xl border bg-gradient-to-br ${colors[color] || colors.blue} p-4`}>
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{title}</span>
         {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
       </div>
       <div className="text-2xl font-bold">{value}</div>
       {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
-      {trend !== undefined && (
-        <div className={`flex items-center gap-1 mt-1 text-xs ${trend >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+      {trend !== undefined && <div className={`flex items-center gap-1 mt-1 text-xs ${trend >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
           {trend >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
           {Math.abs(trend)}%
-        </div>
-      )}
-    </div>
-  );
+        </div>}
+    </div>;
 }
-
-function ConfidenceBadge({ band }) {
+function ConfidenceBadge({
+  band
+}) {
   const map = {
-    high: { label: 'Yüksek Guven', cls: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
-    medium: { label: 'Orta Guven', cls: 'bg-amber-100 text-amber-800 border-amber-200' },
-    low: { label: 'Düşük Guven', cls: 'bg-red-100 text-red-800 border-red-200' },
+    high: {
+      label: 'Yüksek Guven',
+      cls: 'bg-emerald-100 text-emerald-800 border-emerald-200'
+    },
+    medium: {
+      label: 'Orta Guven',
+      cls: 'bg-amber-100 text-amber-800 border-amber-200'
+    },
+    low: {
+      label: 'Düşük Guven',
+      cls: 'bg-red-100 text-red-800 border-red-200'
+    }
   };
   const m = map[band] || map.low;
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${m.cls}`}>{m.label}</span>;
 }
-
-function PressureBadge({ score }) {
+function PressureBadge({
+  score
+}) {
   if (score > 70) return <Badge variant="destructive" className="text-xs">Kritik ({score})</Badge>;
   if (score > 40) return <Badge className="bg-amber-100 text-amber-800 text-xs border-amber-200">Orta ({score})</Badge>;
   return <Badge className="bg-emerald-100 text-emerald-800 text-xs border-emerald-200">Normal ({score})</Badge>;
 }
-
 function LoadingState() {
-  return (
-    <div data-testid="loading-state" className="flex items-center justify-center py-20">
+  return <div data-testid="loading-state" className="flex items-center justify-center py-20">
       <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       <span className="ml-3 text-muted-foreground">Veriler yükleniyor...</span>
-    </div>
-  );
+    </div>;
 }
-
-function ErrorState({ message, onRetry }) {
-  return (
-    <div data-testid="error-state" className="flex flex-col items-center justify-center py-20">
+function ErrorState({
+  message,
+  onRetry
+}) {
+  return <div data-testid="error-state" className="flex flex-col items-center justify-center py-20">
       <AlertTriangle className="h-10 w-10 text-red-400 mb-3" />
       <p className="text-sm text-muted-foreground mb-3">{message || 'Veri yuklenirken hata olustu'}</p>
       {onRetry && <Button variant="outline" size="sm" onClick={onRetry}><RefreshCw className="h-3 w-3 mr-1" />Tekrar Dene</Button>}
-    </div>
-  );
+    </div>;
 }
-
-function EmptyState({ message }) {
-  return (
-    <div data-testid="empty-state" className="flex flex-col items-center justify-center py-16">
+function EmptyState({
+  message
+}) {
+  return <div data-testid="empty-state" className="flex flex-col items-center justify-center py-16">
       <BarChart3 className="h-10 w-10 text-muted-foreground/40 mb-3" />
       <p className="text-sm text-muted-foreground">{message || 'Henüz veri bulunmuyor'}</p>
-    </div>
-  );
+    </div>;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -103,13 +116,14 @@ function EmptyState({ message }) {
 // ═══════════════════════════════════════════════════════════
 
 function RevenueTab() {
-  const { headers } = useAuth();
+  const {
+    headers
+  } = useAuth();
   const [data, setData] = useState(null);
   const [pipelineResult, setPipelineResult] = useState(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState(null);
-
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
@@ -121,16 +135,19 @@ function RevenueTab() {
     } finally {
       setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
-
-  useEffect(() => { loadData(); }, [loadData]);
-
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
   const runPipeline = async () => {
     setRunning(true);
     try {
-      const result = await fetch(`/api/data-intelligence/revenue/run-pipeline`, { credentials: "include",
-        method: 'POST', headers, body: JSON.stringify({}),
+      const result = await fetch(`/api/data-intelligence/revenue/run-pipeline`, {
+        credentials: "include",
+        method: 'POST',
+        headers,
+        body: JSON.stringify({})
       }).then(r => r.json());
       setPipelineResult(result);
       await loadData();
@@ -140,19 +157,15 @@ function RevenueTab() {
       setRunning(false);
     }
   };
-
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={loadData} />;
   if (!data) return <EmptyState message="Revenue verisi bulunamadı" />;
-
   const forecast = data.demand_forecast || {};
   const forecastList = forecast.forecast || [];
   const cancellation = data.cancellation_risk || {};
   const autopricing = data.autopricing || {};
   const recs = data.ml_recommendations || [];
-
-  return (
-    <div data-testid="revenue-tab" className="space-y-6">
+  return <div data-testid="revenue-tab" className="space-y-6">
       {/* Action Bar */}
       <div className="flex items-center justify-between">
         <div>
@@ -174,15 +187,13 @@ function RevenueTab() {
       </div>
 
       {/* Pipeline Result */}
-      {pipelineResult && pipelineResult.recommendations && (
-        <Card data-testid="pipeline-result">
+      {pipelineResult && pipelineResult.recommendations && <Card data-testid="pipeline-result">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Pipeline Sonuclari</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {pipelineResult.recommendations.map((rec, i) => (
-                <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border">
+              {pipelineResult.recommendations.map((rec, i) => <div key={rec.id || i} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-medium text-sm">{rec.room_type}</span>
@@ -198,27 +209,21 @@ function RevenueTab() {
                       </span>
                     </div>
                     {/* Explainability */}
-                    {rec.recommendation_reasons && (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {rec.recommendation_reasons.map((r, j) => (
-                          <span key={j} className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-background border">
+                    {rec.recommendation_reasons && <div className="flex flex-wrap gap-1.5 mt-2">
+                        {rec.recommendation_reasons.map((r, j) => <span key={j} className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-background border">
                             {r.direction === 'up' ? <TrendingUp className="h-3 w-3 mr-1 text-emerald-500" /> : <TrendingDown className="h-3 w-3 mr-1 text-red-400" />}
                             {r.detail}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                          </span>)}
+                      </div>}
                   </div>
                   <div className="text-right ml-4">
                     <div className="text-lg font-bold">{Math.round((rec.confidence_score || 0) * 100)}%</div>
                     <div className="text-xs text-muted-foreground">guven</div>
                   </div>
-                </div>
-              ))}
+                </div>)}
             </div>
           </CardContent>
-        </Card>
-      )}
+        </Card>}
 
       {/* Demand Forecast Chart (table-style) */}
       <Card data-testid="demand-forecast">
@@ -226,29 +231,25 @@ function RevenueTab() {
           <CardTitle className="text-base">Talep Tahmini (14 Gun)</CardTitle>
         </CardHeader>
         <CardContent>
-          {forecastList.length === 0 ? <EmptyState message="Tahmin verisi yok" /> : (
-            <div className="space-y-1.5">
-              {forecastList.slice(0, 14).map((f, i) => (
-                <div key={i} className="flex items-center gap-3 text-sm">
+          {forecastList.length === 0 ? <EmptyState message="Tahmin verisi yok" /> : <div className="space-y-1.5">
+              {forecastList.slice(0, 14).map((f, i) => <div key={f.id || i} className="flex items-center gap-3 text-sm">
                   <span className="w-20 text-xs text-muted-foreground">{f.date?.slice(5)}</span>
                   <div className="flex-1 h-5 bg-muted rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full ${f.demand_level === 'high' ? 'bg-emerald-500' : f.demand_level === 'medium' ? 'bg-amber-400' : 'bg-red-400'}`}
-                      style={{ width: `${Math.min(f.predicted_occupancy_pct || 0, 100)}%` }} />
+                    <div className={`h-full rounded-full ${f.demand_level === 'high' ? 'bg-emerald-500' : f.demand_level === 'medium' ? 'bg-amber-400' : 'bg-red-400'}`} style={{
+                width: `${Math.min(f.predicted_occupancy_pct || 0, 100)}%`
+              }} />
                   </div>
                   <span className="w-12 text-xs font-medium text-right">{f.predicted_occupancy_pct}%</span>
                   <Badge variant="outline" className="text-xs w-14 justify-center">
                     {f.demand_level === 'high' ? 'Yüksek' : f.demand_level === 'medium' ? 'Orta' : 'Düşük'}
                   </Badge>
-                </div>
-              ))}
-            </div>
-          )}
+                </div>)}
+            </div>}
         </CardContent>
       </Card>
 
       {/* Recent ML Recommendations */}
-      {recs.length > 0 && (
-        <Card data-testid="recent-recommendations">
+      {recs.length > 0 && <Card data-testid="recent-recommendations">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Son ML Onerileri</CardTitle>
           </CardHeader>
@@ -266,8 +267,7 @@ function RevenueTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {recs.slice(0, 10).map((r, i) => (
-                    <tr key={i} className="border-b last:border-0">
+                  {recs.slice(0, 10).map((r, i) => <tr key={r.id || i} className="border-b last:border-0">
                       <td className="py-2 font-medium">{r.room_type}</td>
                       <td className="py-2">{r.current_rate?.toLocaleString()} TL</td>
                       <td className="py-2">{r.suggested_rate?.toLocaleString()} TL</td>
@@ -278,16 +278,13 @@ function RevenueTab() {
                           {r.status === 'applied' ? 'Uygulandı' : r.status === 'pending' ? 'Bekliyor' : r.status === 'rejected' ? 'Reddedildi' : r.status}
                         </Badge>
                       </td>
-                    </tr>
-                  ))}
+                    </tr>)}
                 </tbody>
               </table>
             </div>
           </CardContent>
-        </Card>
-      )}
-    </div>
-  );
+        </Card>}
+    </div>;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -295,11 +292,12 @@ function RevenueTab() {
 // ═══════════════════════════════════════════════════════════
 
 function OperationalTab() {
-  const { headers } = useAuth();
+  const {
+    headers
+  } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
@@ -311,15 +309,14 @@ function OperationalTab() {
     } finally {
       setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
-
-  useEffect(() => { loadData(); }, [loadData]);
-
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={loadData} />;
   if (!data) return <EmptyState />;
-
   const checkin = data.check_in_load || {};
   const hk = data.housekeeping_workload || {};
   const readiness = data.room_readiness || {};
@@ -327,9 +324,7 @@ function OperationalTab() {
   const hkWorkload = hk.workload || {};
   const hkStaffing = hk.staffing_recommendation || {};
   const checkinStaffing = checkin.staffing_recommendation || {};
-
-  return (
-    <div data-testid="operational-tab" className="space-y-6">
+  return <div data-testid="operational-tab" className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold">Operational AI</h3>
         <p className="text-sm text-muted-foreground">Operasyon tahmin ve personel onerileri</p>
@@ -384,20 +379,17 @@ function OperationalTab() {
           <CardTitle className="text-base">Check-in Saatlik Dağılım</CardTitle>
         </CardHeader>
         <CardContent>
-          {Object.keys(checkin.hourly_forecast || {}).length === 0 ? <EmptyState message="Saatlik veri yok" /> : (
-            <div className="space-y-1.5">
-              {Object.entries(checkin.hourly_forecast || {}).map(([hour, info]) => (
-                <div key={hour} className="flex items-center gap-3 text-sm">
+          {Object.keys(checkin.hourly_forecast || {}).length === 0 ? <EmptyState message="Saatlik veri yok" /> : <div className="space-y-1.5">
+              {Object.entries(checkin.hourly_forecast || {}).map(([hour, info]) => <div key={hour} className="flex items-center gap-3 text-sm">
                   <span className="w-14 text-xs font-mono text-muted-foreground">{hour}</span>
                   <div className="flex-1 h-4 bg-muted rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full ${info.pressure === 'high' ? 'bg-red-500' : info.pressure === 'medium' ? 'bg-amber-400' : 'bg-emerald-400'}`}
-                      style={{ width: `${Math.min((info.predicted_arrivals / Math.max(checkin.total_expected_arrivals || 1, 1)) * 300, 100)}%` }} />
+                    <div className={`h-full rounded-full ${info.pressure === 'high' ? 'bg-red-500' : info.pressure === 'medium' ? 'bg-amber-400' : 'bg-emerald-400'}`} style={{
+                width: `${Math.min(info.predicted_arrivals / Math.max(checkin.total_expected_arrivals || 1, 1) * 300, 100)}%`
+              }} />
                   </div>
                   <span className="w-8 text-xs font-medium text-right">{Math.round(info.predicted_arrivals)}</span>
-                </div>
-              ))}
-            </div>
-          )}
+                </div>)}
+            </div>}
         </CardContent>
       </Card>
 
@@ -425,8 +417,7 @@ function OperationalTab() {
       </Card>
 
       {/* Maintenance Risk */}
-      {(maint.risk_items || []).length > 0 && (
-        <Card data-testid="maintenance-risk-table">
+      {(maint.risk_items || []).length > 0 && <Card data-testid="maintenance-risk-table">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Bakım Ariza Risk Tablosu</CardTitle>
           </CardHeader>
@@ -443,8 +434,7 @@ function OperationalTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(maint.risk_items || []).slice(0, 10).map((r, i) => (
-                    <tr key={i} className="border-b last:border-0">
+                  {(maint.risk_items || []).slice(0, 10).map((r, i) => <tr key={r.id || i} className="border-b last:border-0">
                       <td className="py-2 font-medium">{r.room_id}</td>
                       <td className="py-2">{Math.round(r.risk_score * 100)}%</td>
                       <td className="py-2">
@@ -454,16 +444,13 @@ function OperationalTab() {
                       </td>
                       <td className="py-2">{r.issue_count}</td>
                       <td className="py-2 text-xs text-muted-foreground">{r.recommendation}</td>
-                    </tr>
-                  ))}
+                    </tr>)}
                 </tbody>
               </table>
             </div>
           </CardContent>
-        </Card>
-      )}
-    </div>
-  );
+        </Card>}
+    </div>;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -471,11 +458,12 @@ function OperationalTab() {
 // ═══════════════════════════════════════════════════════════
 
 function GuestTab() {
-  const { headers } = useAuth();
+  const {
+    headers
+  } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
@@ -487,26 +475,22 @@ function GuestTab() {
     } finally {
       setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
-
-  useEffect(() => { loadData(); }, [loadData]);
-
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={loadData} />;
   if (!data) return <EmptyState />;
-
   const valDist = data.value_distribution || {};
   const segDist = data.segment_distribution || {};
   const churnSummary = data.churn_risk_summary || {};
   const topGuests = data.top_value_guests || [];
   const highChurn = data.high_churn_guests || [];
   const upsellOps = data.upsell_opportunities || [];
-
   const totalGuests = data.guests_analyzed || 0;
-
-  return (
-    <div data-testid="guest-tab" className="space-y-6">
+  return <div data-testid="guest-tab" className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold">Guest Intelligence</h3>
         <p className="text-sm text-muted-foreground">Misafir değeri, segmentasyon, kayip riski ve satış firsatlari</p>
@@ -527,18 +511,31 @@ function GuestTab() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-4 gap-3">
-            {[
-              { tier: 'platinum', label: 'Platinum', color: 'bg-violet-500', count: valDist.platinum || 0 },
-              { tier: 'gold', label: 'Gold', color: 'bg-amber-400', count: valDist.gold || 0 },
-              { tier: 'silver', label: 'Silver', color: 'bg-gray-400', count: valDist.silver || 0 },
-              { tier: 'bronze', label: 'Bronze', color: 'bg-amber-300', count: valDist.bronze || 0 },
-            ].map(t => (
-              <div key={t.tier} className="text-center p-3 rounded-lg bg-muted/50 border">
+            {[{
+            tier: 'platinum',
+            label: 'Platinum',
+            color: 'bg-violet-500',
+            count: valDist.platinum || 0
+          }, {
+            tier: 'gold',
+            label: 'Gold',
+            color: 'bg-amber-400',
+            count: valDist.gold || 0
+          }, {
+            tier: 'silver',
+            label: 'Silver',
+            color: 'bg-gray-400',
+            count: valDist.silver || 0
+          }, {
+            tier: 'bronze',
+            label: 'Bronze',
+            color: 'bg-amber-300',
+            count: valDist.bronze || 0
+          }].map(t => <div key={t.tier} className="text-center p-3 rounded-lg bg-muted/50 border">
                 <div className={`w-3 h-3 rounded-full ${t.color} mx-auto mb-2`} />
                 <div className="text-xl font-bold">{t.count}</div>
                 <div className="text-xs text-muted-foreground">{t.label}</div>
-              </div>
-            ))}
+              </div>)}
           </div>
         </CardContent>
       </Card>
@@ -549,16 +546,12 @@ function GuestTab() {
           <CardTitle className="text-base">Segment Dagilimi</CardTitle>
         </CardHeader>
         <CardContent>
-          {Object.keys(segDist).length === 0 ? <EmptyState message="Segment verisi yok" /> : (
-            <div className="space-y-2">
-              {Object.entries(segDist).sort((a, b) => b[1] - a[1]).map(([seg, count]) => (
-                <div key={seg} className="flex items-center justify-between p-2 rounded bg-muted/50">
+          {Object.keys(segDist).length === 0 ? <EmptyState message="Segment verisi yok" /> : <div className="space-y-2">
+              {Object.entries(segDist).sort((a, b) => b[1] - a[1]).map(([seg, count]) => <div key={seg} className="flex items-center justify-between p-2 rounded bg-muted/50">
                   <span className="text-sm font-medium">{seg.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>
                   <Badge variant="secondary" className="text-xs">{count}</Badge>
-                </div>
-              ))}
-            </div>
-          )}
+                </div>)}
+            </div>}
         </CardContent>
       </Card>
 
@@ -569,19 +562,15 @@ function GuestTab() {
             <CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-red-500" />Yüksek Kayip Riski</CardTitle>
           </CardHeader>
           <CardContent>
-            {highChurn.length === 0 ? <EmptyState message="Yüksek riskli misafir yok" /> : (
-              <div className="space-y-2">
-                {highChurn.map((g, i) => (
-                  <div key={i} className="flex items-center justify-between p-2 rounded bg-red-50 border border-red-100">
+            {highChurn.length === 0 ? <EmptyState message="Yüksek riskli misafir yok" /> : <div className="space-y-2">
+                {highChurn.map((g, i) => <div key={g.id || i} className="flex items-center justify-between p-2 rounded bg-red-50 border border-red-100">
                     <div>
                       <div className="text-sm font-medium">{g.name || g.guest_id}</div>
                       <div className="text-xs text-muted-foreground">{g.next_action}</div>
                     </div>
                     <Badge variant="destructive" className="text-xs">{Math.round(g.churn_score * 100)}%</Badge>
-                  </div>
-                ))}
-              </div>
-            )}
+                  </div>)}
+              </div>}
           </CardContent>
         </Card>
 
@@ -591,26 +580,21 @@ function GuestTab() {
             <CardTitle className="text-base flex items-center gap-2"><Target className="h-4 w-4 text-emerald-500" />Upsell Firsatlari</CardTitle>
           </CardHeader>
           <CardContent>
-            {upsellOps.length === 0 ? <EmptyState message="Upsell firsati yok" /> : (
-              <div className="space-y-2">
-                {upsellOps.map((u, i) => (
-                  <div key={i} className="flex items-center justify-between p-2 rounded bg-emerald-50 border border-emerald-100">
+            {upsellOps.length === 0 ? <EmptyState message="Upsell firsati yok" /> : <div className="space-y-2">
+                {upsellOps.map((u, i) => <div key={u.id || i} className="flex items-center justify-between p-2 rounded bg-emerald-50 border border-emerald-100">
                     <div>
                       <div className="text-sm font-medium">{u.name || u.guest_id}</div>
                       <div className="text-xs text-muted-foreground">{u.top_recommendation}</div>
                     </div>
                     <span className="text-sm font-bold text-emerald-700">{u.potential?.toLocaleString()} TL</span>
-                  </div>
-                ))}
-              </div>
-            )}
+                  </div>)}
+              </div>}
           </CardContent>
         </Card>
       </div>
 
       {/* Top Value Guests */}
-      {topGuests.length > 0 && (
-        <Card data-testid="top-value-guests">
+      {topGuests.length > 0 && <Card data-testid="top-value-guests">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">En Degerli Misafirler</CardTitle>
           </CardHeader>
@@ -626,24 +610,20 @@ function GuestTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {topGuests.map((g, i) => (
-                    <tr key={i} className="border-b last:border-0">
+                  {topGuests.map((g, i) => <tr key={g.id || i} className="border-b last:border-0">
                       <td className="py-2 font-medium">{g.name || g.guest_id}</td>
                       <td className="py-2">{g.value_score}</td>
                       <td className="py-2">{g.total_revenue?.toLocaleString()} TL</td>
                       <td className="py-2">
                         <Badge variant="outline" className="text-xs capitalize">{g.tier}</Badge>
                       </td>
-                    </tr>
-                  ))}
+                    </tr>)}
                 </tbody>
               </table>
             </div>
           </CardContent>
-        </Card>
-      )}
-    </div>
-  );
+        </Card>}
+    </div>;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -651,9 +631,10 @@ function GuestTab() {
 // ═══════════════════════════════════════════════════════════
 
 export default function DataIntelligenceDashboard() {
-  const { t } = useTranslation();
-  return (
-    <div data-testid="data-intelligence-dashboard" className="p-6 max-w-[1400px] mx-auto">
+  const {
+    t
+  } = useTranslation();
+  return <div data-testid="data-intelligence-dashboard" className="p-6 max-w-[1400px] mx-auto">
       <div className="mb-6">
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Brain className="h-6 w-6" />
@@ -681,6 +662,5 @@ export default function DataIntelligenceDashboard() {
         <TabsContent value="operational"><OperationalTab /></TabsContent>
         <TabsContent value="guests"><GuestTab /></TabsContent>
       </Tabs>
-    </div>
-  );
+    </div>;
 }

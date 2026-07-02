@@ -405,7 +405,7 @@ function EnvironmentTab({
                   {check.status === "pass" ? <CheckCircle2 className="w-3 h-3 text-emerald-400" /> : check.status === "warn" ? <AlertTriangle className="w-3 h-3 text-amber-400" /> : <XCircle className="w-3 h-3 text-red-400" />}
                   <span className="text-[11px] text-zinc-300">{check.name.replace(/_/g, " ")}</span>
                 </div>)}
-              {catData.issues?.length > 0 && catData.issues.map((issue, i) => <p key={i} className="text-[10px] text-amber-400/80 flex items-center gap-1 mt-1">
+              {catData.issues?.length > 0 && catData.issues.map((issue, i) => <p key={issue.id || i} className="text-[10px] text-amber-400/80 flex items-center gap-1 mt-1">
                   <AlertTriangle className="w-2.5 h-2.5 shrink-0" /> {issue}
                 </p>)}
             </CardContent>
@@ -585,7 +585,7 @@ function MonitoringTab({
       {data.alerts && data.alerts.length > 0 && <Card className="bg-zinc-900/50 border-zinc-800">
           <CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-xs">{t("cm.pages_ProductionRolloutPage.active_alerts")}</CardTitle></CardHeader>
           <CardContent className="px-4 pb-3 space-y-1">
-            {(data.alerts || []).map((alert, i) => <div key={i} className="flex items-center gap-2 text-xs bg-zinc-800/50 rounded px-2 py-1">
+            {(data.alerts || []).map((alert, i) => <div key={alert.id || i} className="flex items-center gap-2 text-xs bg-zinc-800/50 rounded px-2 py-1">
                 <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
                 <span className="text-zinc-300">{alert.rule_name || alert.alert_type || "Alert"}</span>
                 <Badge className="text-[8px] bg-red-500/10 text-red-400 border-red-500/20 ml-auto">{alert.severity}</Badge>

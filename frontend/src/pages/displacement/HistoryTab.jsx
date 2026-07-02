@@ -5,12 +5,16 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { fmt } from './helpers';
 import { REC_STYLES, LoadingState, EmptyState } from './shared';
-
-const HistoryTab = ({ user, tenant, onLogout } = {}) => {  
-  const { t } = useTranslation();
+const HistoryTab = ({
+  user,
+  tenant,
+  onLogout
+} = {}) => {
+  const {
+    t
+  } = useTranslation();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     (async () => {
       try {
@@ -23,23 +27,16 @@ const HistoryTab = ({ user, tenant, onLogout } = {}) => {
       }
     })();
   }, []);
-
   if (loading) return <LoadingState text={t('displacement.loadingHistory', 'Loading history...')} />;
-
   if (!data.length) {
-    return (
-      <EmptyState text={t('displacement.noHistory', 'No saved analyses yet. Run an analysis and save it to see history here.')} />
-    );
+    return <EmptyState text={t('displacement.noHistory', 'No saved analyses yet. Run an analysis and save it to see history here.')} />;
   }
-
-  return (
-    <div className="space-y-3">
+  return <div className="space-y-3">
       {data.map((item, i) => {
-        const rec = item.recommendation?.action;
-        const recS = REC_STYLES[rec] || REC_STYLES.conditional;
-        const RecI = recS.icon;
-        return (
-          <Card key={i}>
+      const rec = item.recommendation?.action;
+      const recS = REC_STYLES[rec] || REC_STYLES.conditional;
+      const RecI = recS.icon;
+      return <Card key={item.id || i}>
             <CardContent className="p-4">
               <div className="flex items-center gap-4">
                 <RecI className={`w-6 h-6 ${recS.color}`} />
@@ -62,11 +59,8 @@ const HistoryTab = ({ user, tenant, onLogout } = {}) => {
                 </div>
               </div>
             </CardContent>
-          </Card>
-        );
-      })}
-    </div>
-  );
+          </Card>;
+    })}
+    </div>;
 };
-
 export default HistoryTab;

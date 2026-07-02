@@ -55,7 +55,9 @@ const startOfWeek = date => {
   return d;
 };
 const ShiftPlannerPage = () => {
-  const { t } = useTranslation();
+  const {
+    t
+  } = useTranslation();
   const navigate = useNavigate();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [shifts, setShifts] = useState([]);
@@ -478,7 +480,7 @@ const ShiftPlannerPage = () => {
           </CardHeader>
           <CardContent>
             <div className="text-xs grid gap-1 md:grid-cols-2 lg:grid-cols-3">
-              {coverage.gaps.slice(0, 12).map((g, i) => <div key={i} className="rounded border border-rose-200 bg-white px-2 py-1">
+              {coverage.gaps.slice(0, 12).map((g, i) => <div key={g.id || i} className="rounded border border-rose-200 bg-white px-2 py-1">
                   <span className="font-medium">{g.date}</span> • <span className="capitalize">{g.department}</span> ({g.shift_type})
                   <span className="ml-1 text-rose-700">{g.actual}/{g.min_staff}</span>
                 </div>)}

@@ -58,7 +58,7 @@ function CategoryCard({
         <span>{t("cm.pages_GoLiveDashboardPage.contrib")}{contribution}</span>
       </div>
       {issues && issues.length > 0 && <div className="mt-2 space-y-0.5">
-          {issues.map((iss, i) => <p key={i} className="text-[10px] text-amber-400/80 flex items-center gap-1">
+          {issues.map((iss, i) => <p key={iss.id || i} className="text-[10px] text-amber-400/80 flex items-center gap-1">
               <AlertTriangle className="w-2.5 h-2.5 shrink-0" /> {iss}
             </p>)}
         </div>}

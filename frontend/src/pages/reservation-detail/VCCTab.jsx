@@ -6,40 +6,22 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import {
-  CreditCard,
-  Eye,
-  EyeOff,
-  Trash2,
-  Lock,
-  ShieldAlert,
-  Plus,
-  Loader2,
-  Copy,
-  CheckCircle2,
-} from 'lucide-react';
+import { CreditCard, Eye, EyeOff, Trash2, Lock, ShieldAlert, Plus, Loader2, Copy, CheckCircle2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-
 const MAX_VIEWS = 3;
-
 function formatCardNumber(num) {
   if (!num) return '';
   return num.replace(/\s/g, '').replace(/(.{4})/g, '$1 ').trim();
 }
-
-export function VCCTab({ booking, onRefresh }) {
-  const { t } = useTranslation();
+export function VCCTab({
+  booking,
+  onRefresh
+}) {
+  const {
+    t
+  } = useTranslation();
   const bookingId = booking?.id;
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -54,9 +36,8 @@ export function VCCTab({ booking, onRefresh }) {
     card_number: '',
     expiry: '',
     cvv: '',
-    card_type: 'virtual',
+    card_type: 'virtual'
   });
-
   const load = useCallback(async () => {
     if (!bookingId) return;
     setLoading(true);
@@ -69,11 +50,9 @@ export function VCCTab({ booking, onRefresh }) {
       setLoading(false);
     }
   }, [bookingId]);
-
   useEffect(() => {
     load();
   }, [load]);
-
   const handleStore = async () => {
     if (!form.card_holder || !form.card_number || !form.expiry) {
       toast.error('Kart sahibi, numara ve son kullanma zorunludur');
@@ -84,7 +63,13 @@ export function VCCTab({ booking, onRefresh }) {
       await axios.post(`/pms/reservations/${bookingId}/vcc`, form);
       toast.success('Kart güvenli şekilde kaydedildi');
       setShowForm(false);
-      setForm({ card_holder: '', card_number: '', expiry: '', cvv: '', card_type: 'virtual' });
+      setForm({
+        card_holder: '',
+        card_number: '',
+        expiry: '',
+        cvv: '',
+        card_type: 'virtual'
+      });
       await load();
       onRefresh?.();
     } catch (e) {
@@ -93,7 +78,6 @@ export function VCCTab({ booking, onRefresh }) {
       setBusy(false);
     }
   };
-
   const handleReveal = async () => {
     setShowConfirm(false);
     setBusy(true);
@@ -103,7 +87,7 @@ export function VCCTab({ booking, onRefresh }) {
       setRevealInfo({
         view_count: res.data?.view_count,
         remaining_views: res.data?.remaining_views,
-        locked: res.data?.locked,
+        locked: res.data?.locked
       });
       await load();
     } catch (e) {
@@ -112,7 +96,6 @@ export function VCCTab({ booking, onRefresh }) {
       setBusy(false);
     }
   };
-
   const handleDelete = async () => {
     setShowDelete(false);
     setBusy(true);
@@ -129,30 +112,23 @@ export function VCCTab({ booking, onRefresh }) {
       setBusy(false);
     }
   };
-
   const copyToClipboard = (text, label) => {
     if (!text) return;
     navigator.clipboard?.writeText(String(text).replace(/\s/g, ''));
     toast.success(`${label} panoya kopyalandı`);
   };
-
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12 text-gray-500">
+    return <div className="flex items-center justify-center py-12 text-gray-500">
         <Loader2 className="w-5 h-5 animate-spin mr-2" /> {t('cm.pages_reservationdetail_VCCTab.yukleniyor')}
-      </div>
-    );
+      </div>;
   }
-
   const hasVcc = !!status?.has_vcc;
   const vcc = status?.vcc || {};
   const viewCount = vcc.view_count ?? 0;
   const maxViews = vcc.max_views ?? MAX_VIEWS;
   const remaining = Math.max(0, maxViews - viewCount);
   const locked = !!vcc.locked;
-
-  return (
-    <div className="max-w-3xl space-y-4" data-testid="vcc-tab">
+  return <div className="max-w-3xl space-y-4" data-testid="vcc-tab">
       {/* Warning banner */}
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2 text-sm text-amber-800">
         <ShieldAlert className="w-4 h-4 mt-0.5 flex-shrink-0" />
@@ -165,64 +141,51 @@ export function VCCTab({ booking, onRefresh }) {
         </div>
       </div>
 
-      {!hasVcc ? (
-        <Card>
+      {!hasVcc ? <Card>
           <CardContent className="p-6 text-center">
             <CreditCard className="w-10 h-10 text-gray-300 mx-auto mb-2" />
             <div className="text-sm text-gray-600 mb-4">
               {t('cm.pages_reservationdetail_VCCTab.bu_rezervasyon_icin_kayitli_sanal_kart_y')}
             </div>
-            {!showForm ? (
-              <Button onClick={() => setShowForm(true)} variant="outline">
+            {!showForm ? <Button onClick={() => setShowForm(true)} variant="outline">
                 <Plus className="w-4 h-4 mr-2" /> {t('cm.pages_reservationdetail_VCCTab.manuel_kart_ekle')}
-              </Button>
-            ) : (
-              <div className="text-left space-y-3 max-w-md mx-auto">
+              </Button> : <div className="text-left space-y-3 max-w-md mx-auto">
                 <div>
                   <Label className="text-xs">Kart Sahibi *</Label>
-                  <Input
-                    value={form.card_holder}
-                    onChange={(e) => setForm({ ...form, card_holder: e.target.value })}
-                    placeholder="AD SOYAD"
-                  />
+                  <Input value={form.card_holder} onChange={e => setForm({
+              ...form,
+              card_holder: e.target.value
+            })} placeholder="AD SOYAD" />
                 </div>
                 <div>
                   <Label className="text-xs">{t('cm.pages_reservationdetail_VCCTab.kart_numarasi')}</Label>
-                  <Input
-                    value={form.card_number}
-                    onChange={(e) => setForm({ ...form, card_number: e.target.value })}
-                    placeholder="4111 1111 1111 1111"
-                    maxLength={25}
-                  />
+                  <Input value={form.card_number} onChange={e => setForm({
+              ...form,
+              card_number: e.target.value
+            })} placeholder="4111 1111 1111 1111" maxLength={25} />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <Label className="text-xs">Son Kullanma (AA/YY) *</Label>
-                    <Input
-                      value={form.expiry}
-                      onChange={(e) => setForm({ ...form, expiry: e.target.value })}
-                      placeholder="12/28"
-                      maxLength={7}
-                    />
+                    <Input value={form.expiry} onChange={e => setForm({
+                ...form,
+                expiry: e.target.value
+              })} placeholder="12/28" maxLength={7} />
                   </div>
                   <div>
                     <Label className="text-xs">CVV</Label>
-                    <Input
-                      value={form.cvv}
-                      onChange={(e) => setForm({ ...form, cvv: e.target.value })}
-                      placeholder="123"
-                      maxLength={4}
-                      type="password"
-                    />
+                    <Input value={form.cvv} onChange={e => setForm({
+                ...form,
+                cvv: e.target.value
+              })} placeholder="123" maxLength={4} type="password" />
                   </div>
                 </div>
                 <div>
                   <Label className="text-xs">{t('cm.pages_reservationdetail_VCCTab.kart_turu')}</Label>
-                  <select
-                    className="w-full border rounded px-3 py-2 text-sm"
-                    value={form.card_type}
-                    onChange={(e) => setForm({ ...form, card_type: e.target.value })}
-                  >
+                  <select className="w-full border rounded px-3 py-2 text-sm" value={form.card_type} onChange={e => setForm({
+              ...form,
+              card_type: e.target.value
+            })}>
                     <option value="virtual">Sanal (VCC)</option>
                     <option value="credit">Kredi</option>
                     <option value="debit">Banka</option>
@@ -237,23 +200,18 @@ export function VCCTab({ booking, onRefresh }) {
                     {t('cm.pages_reservationdetail_VCCTab.guvenli_kaydet')}
                   </Button>
                 </div>
-              </div>
-            )}
+              </div>}
           </CardContent>
-        </Card>
-      ) : (
-        <Card>
+        </Card> : <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base flex items-center gap-2">
                 <CreditCard className="w-5 h-5" /> {t('cm.pages_reservationdetail_VCCTab.kayitli_kart')}
               </CardTitle>
               <div className="flex items-center gap-2">
-                {locked && (
-                  <Badge className="bg-red-100 text-red-700 border-red-300">
+                {locked && <Badge className="bg-red-100 text-red-700 border-red-300">
                     <Lock className="w-3 h-3 mr-1" /> Kilitli
-                  </Badge>
-                )}
+                  </Badge>}
                 <Badge variant="outline" className="font-mono text-xs">
                   {viewCount}/{maxViews} {t('cm.pages_reservationdetail_VCCTab.goruntuleme')}
                 </Badge>
@@ -289,46 +247,27 @@ export function VCCTab({ booking, onRefresh }) {
                 </span>
               </div>
               <div className="flex gap-1">
-                {Array.from({ length: maxViews }).map((_, i) => (
-                  <div
-                    key={i}
-                    className={`h-2 flex-1 rounded ${
-                      i < viewCount ? 'bg-red-400' : 'bg-green-400'
-                    }`}
-                  />
-                ))}
+                {Array.from({
+              length: maxViews
+            }).map((_, i) => <div key={_.id || i} className={`h-2 flex-1 rounded ${i < viewCount ? 'bg-red-400' : 'bg-green-400'}`} />)}
               </div>
             </div>
 
             {/* Actions */}
             <div className="flex gap-2 justify-end flex-wrap">
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => setShowDelete(true)}
-                disabled={busy}
-              >
+              <Button variant="destructive" size="sm" onClick={() => setShowDelete(true)} disabled={busy}>
                 <Trash2 className="w-4 h-4 mr-2" /> {t('cm.pages_reservationdetail_VCCTab.sil')}
               </Button>
-              <Button
-                onClick={() => setShowConfirm(true)}
-                disabled={busy || locked || remaining === 0}
-                size="sm"
-              >
-                {locked || remaining === 0 ? (
-                  <>
+              <Button onClick={() => setShowConfirm(true)} disabled={busy || locked || remaining === 0} size="sm">
+                {locked || remaining === 0 ? <>
                     <EyeOff className="w-4 h-4 mr-2" /> {t('cm.pages_reservationdetail_VCCTab.goruntulenemez')}
-                  </>
-                ) : (
-                  <>
+                  </> : <>
                     <Eye className="w-4 h-4 mr-2" /> {t('cm.pages_reservationdetail_VCCTab.karti_goruntule')}{remaining} {t('cm.pages_reservationdetail_VCCTab.kaldi')}
-                  </>
-                )}
+                  </>}
               </Button>
             </div>
           </CardContent>
-        </Card>
-      )}
+        </Card>}
 
       {/* Confirm reveal */}
       <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
@@ -369,15 +308,12 @@ export function VCCTab({ booking, onRefresh }) {
       </AlertDialog>
 
       {/* Revealed card modal */}
-      <Dialog
-        open={!!revealed}
-        onOpenChange={(o) => {
-          if (!o) {
-            setRevealed(null);
-            setRevealInfo(null);
-          }
-        }}
-      >
+      <Dialog open={!!revealed} onOpenChange={o => {
+      if (!o) {
+        setRevealed(null);
+        setRevealInfo(null);
+      }
+    }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -385,19 +321,14 @@ export function VCCTab({ booking, onRefresh }) {
               Kart Bilgileri
             </DialogTitle>
           </DialogHeader>
-          {revealed && (
-            <div className="space-y-3">
+          {revealed && <div className="space-y-3">
               <div className="bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-xl p-5">
                 <div className="text-xs opacity-80 mb-1">Kart Sahibi</div>
                 <div className="font-semibold uppercase mb-4">{revealed.card_holder}</div>
                 <div className="text-xs opacity-80 mb-1">{t('cm.pages_reservationdetail_VCCTab.kart_numarasi_8d703')}</div>
                 <div className="font-mono text-lg tracking-wider flex items-center justify-between">
                   <span>{formatCardNumber(revealed.card_number)}</span>
-                  <button
-                    onClick={() => copyToClipboard(revealed.card_number, 'Kart numarası')}
-                    className="opacity-70 hover:opacity-100"
-                    title="Kopyala"
-                  >
+                  <button onClick={() => copyToClipboard(revealed.card_number, 'Kart numarası')} className="opacity-70 hover:opacity-100" title="Kopyala">
                     <Copy className="w-4 h-4" />
                   </button>
                 </div>
@@ -415,37 +346,29 @@ export function VCCTab({ booking, onRefresh }) {
                     <div className="text-xs opacity-80 mb-1">CVV</div>
                     <div className="font-mono flex items-center gap-2">
                       {revealed.cvv || '—'}
-                      {revealed.cvv && (
-                        <button onClick={() => copyToClipboard(revealed.cvv, 'CVV')}>
+                      {revealed.cvv && <button onClick={() => copyToClipboard(revealed.cvv, 'CVV')}>
                           <Copy className="w-3 h-3 opacity-70" />
-                        </button>
-                      )}
+                        </button>}
                     </div>
                   </div>
                 </div>
               </div>
               <div className="bg-amber-50 border border-amber-200 rounded p-2 text-xs text-amber-800">
                 <strong>{t('cm.pages_reservationdetail_VCCTab.uyari')}</strong> {t('cm.pages_reservationdetail_VCCTab.bu_bilgi_tarayicida_saklanmaz_pencereyi_')} <strong>{revealInfo?.remaining_views ?? 0}</strong>.
-                {revealInfo?.locked && (
-                  <div className="mt-1 text-red-700 font-medium">
+                {revealInfo?.locked && <div className="mt-1 text-red-700 font-medium">
                     {t('cm.pages_reservationdetail_VCCTab.kart_artik_kilitlendi_bir_daha_goruntule')}
-                  </div>
-                )}
+                  </div>}
               </div>
-            </div>
-          )}
+            </div>}
           <DialogFooter>
-            <Button
-              onClick={() => {
-                setRevealed(null);
-                setRevealInfo(null);
-              }}
-            >
+            <Button onClick={() => {
+            setRevealed(null);
+            setRevealInfo(null);
+          }}>
               {t('cm.pages_reservationdetail_VCCTab.kapat')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  );
+    </div>;
 }

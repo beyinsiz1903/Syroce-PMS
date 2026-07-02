@@ -6,27 +6,34 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, RefreshCw, TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react';
 import { API, StatusDot, ScoreRing, MetricCard } from '../shared';
 import { useTranslation } from 'react-i18next';
-
 const ReliabilityTab = () => {
-  const { t } = useTranslation();
+  const {
+    t
+  } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-
   const fetchData = useCallback(async () => {
     setLoading(true);
-    try { const { data: d } = await axios.get(`${API}/reliability`); setData(d); } catch { /* silent */ }
+    try {
+      const {
+        data: d
+      } = await axios.get(`${API}/reliability`);
+      setData(d);
+    } catch {/* silent */}
     setLoading(false);
   }, []);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
-
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>;
   if (!data) return null;
-
-  const classColors = { stable: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30', healthy: 'bg-blue-500/15 text-blue-400 border-blue-500/30', degraded: 'bg-amber-500/15 text-amber-400 border-amber-500/30', unstable: 'bg-red-500/15 text-red-400 border-red-500/30' };
-
-  return (
-    <div className="space-y-4">
+  const classColors = {
+    stable: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    healthy: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+    degraded: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+    unstable: 'bg-red-500/15 text-red-400 border-red-500/30'
+  };
+  return <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-slate-300">Connector Reliability Monitoring</h3>
         <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchData}><RefreshCw className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_admin_tabs_ReliabilityTab.yenile')}</Button>
@@ -40,8 +47,7 @@ const ReliabilityTab = () => {
       </div>
 
       <div className="space-y-3">
-        {(data.connectors || []).map(c => (
-          <Card key={c.connector_id} data-testid={`reliability-${c.connector_id}`} className="bg-slate-800/50 border-slate-700">
+        {(data.connectors || []).map(c => <Card key={c.connector_id} data-testid={`reliability-${c.connector_id}`} className="bg-slate-800/50 border-slate-700">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
@@ -77,23 +83,16 @@ const ReliabilityTab = () => {
                 </div>
               </div>
 
-              {c.failure_patterns?.length > 0 && (
-                <div className="mt-3 space-y-1">
+              {c.failure_patterns?.length > 0 && <div className="mt-3 space-y-1">
                   <p className="text-[10px] text-slate-500 font-medium">{t('cm.pages_admin_tabs_ReliabilityTab.hata_patternleri')}</p>
-                  {c.failure_patterns.map((p, i) => (
-                    <div key={i} className="flex items-center gap-2 bg-slate-900/30 rounded p-1.5">
-                      <Badge className={`border text-[9px] ${p.severity === 'critical' ? 'bg-red-500/15 text-red-400 border-red-500/30' : 'bg-amber-500/15 text-amber-400 border-amber-500/30'}`}>{p.pattern?.replace(/_/g,' ')}</Badge>
+                  {c.failure_patterns.map((p, i) => <div key={p.id || i} className="flex items-center gap-2 bg-slate-900/30 rounded p-1.5">
+                      <Badge className={`border text-[9px] ${p.severity === 'critical' ? 'bg-red-500/15 text-red-400 border-red-500/30' : 'bg-amber-500/15 text-amber-400 border-amber-500/30'}`}>{p.pattern?.replace(/_/g, ' ')}</Badge>
                       <span className="text-[10px] text-slate-400 truncate">{p.detail}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    </div>)}
+                </div>}
             </CardContent>
-          </Card>
-        ))}
+          </Card>)}
       </div>
-    </div>
-  );
+    </div>;
 };
-
 export default ReliabilityTab;

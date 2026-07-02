@@ -6,35 +6,40 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Activity, RefreshCw, AlertCircle, Clock, Gauge, BarChart3 } from "lucide-react";
-
 const API = "";
-
-function HealthDot({ status }) {
+function HealthDot({
+  status
+}) {
   const color = status === "healthy" ? "bg-emerald-500" : status === "degraded" ? "bg-amber-500" : "bg-red-500";
   return <span className={`inline-block w-2 h-2 rounded-full ${color}`} />;
 }
-
 export default function ObservabilityDashboard() {
-  const { t } = useTranslation();
+  const {
+    t
+  } = useTranslation();
   const [dashMetrics, setDashMetrics] = useState(null);
   const [traces, setTraces] = useState(null);
   const [errorSummary, setErrorSummary] = useState(null);
   const [health, setHealth] = useState(null);
   const [recentTraces, setRecentTraces] = useState([]);
   const [loading, setLoading] = useState(true);
-
   const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-  const headers = { Authorization: `Bearer ${token}` };
-
+  const headers = {
+    Authorization: `Bearer ${token}`
+  };
   const fetchData = useCallback(async () => {
     try {
-      const [metricsRes, traceRes, errorRes, healthRes, recentRes] = await Promise.all([
-        axios.get(`/observability/metrics`, { headers }),
-        axios.get(`/observability/traces/summary?hours=1`, { headers }),
-        axios.get(`/observability/errors/summary?hours=24`, { headers }),
-        axios.get(`/observability/health`, { headers }),
-        axios.get(`/observability/traces?limit=20&slow_only=false`, { headers }),
-      ]);
+      const [metricsRes, traceRes, errorRes, healthRes, recentRes] = await Promise.all([axios.get(`/observability/metrics`, {
+        headers
+      }), axios.get(`/observability/traces/summary?hours=1`, {
+        headers
+      }), axios.get(`/observability/errors/summary?hours=24`, {
+        headers
+      }), axios.get(`/observability/health`, {
+        headers
+      }), axios.get(`/observability/traces?limit=20&slow_only=false`, {
+        headers
+      })]);
       setDashMetrics(metricsRes.data);
       setTraces(traceRes.data);
       setErrorSummary(errorRes.data);
@@ -45,30 +50,36 @@ export default function ObservabilityDashboard() {
     } finally {
       setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
-
-  useEffect(() => { fetchData(); const iv = setInterval(fetchData, 20000); return () => clearInterval(iv); }, [fetchData]);
-
+  useEffect(() => {
+    fetchData();
+    const iv = setInterval(fetchData, 20000);
+    return () => clearInterval(iv);
+  }, [fetchData]);
   const flushMetrics = async () => {
     try {
-      await axios.post(`/observability/metrics/flush`, {}, { headers });
+      await axios.post(`/observability/metrics/flush`, {}, {
+        headers
+      });
       toast.success("Metrikler flush edildi");
-    } catch { toast.error("Flush başarısız"); }
+    } catch {
+      toast.error("Flush başarısız");
+    }
   };
-
   const flushTraces = async () => {
     try {
-      await axios.post(`/observability/traces/flush`, {}, { headers });
+      await axios.post(`/observability/traces/flush`, {}, {
+        headers
+      });
       toast.success("Trace'ler flush edildi");
       fetchData();
-    } catch { toast.error("Flush başarısız"); }
+    } catch {
+      toast.error("Flush başarısız");
+    }
   };
-
   if (loading) return <div className="flex justify-center p-12" data-testid="obs-loading"><RefreshCw className="w-8 h-8 animate-spin text-zinc-400" /></div>;
-
-  return (
-    <div className="space-y-6 p-6 max-w-7xl mx-auto" data-testid="observability-dashboard">
+  return <div className="space-y-6 p-6 max-w-7xl mx-auto" data-testid="observability-dashboard">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-100">{t("techDashboards.observability")}</h1>
@@ -84,8 +95,7 @@ export default function ObservabilityDashboard() {
       </div>
 
       {/* Service Health */}
-      {health && (
-        <Card className={`border ${health.overall_status === "healthy" ? "bg-emerald-950/20 border-emerald-900/30" : health.overall_status === "degraded" ? "bg-amber-950/20 border-amber-900/30" : "bg-red-950/20 border-red-900/30"}`} data-testid="service-health">
+      {health && <Card className={`border ${health.overall_status === "healthy" ? "bg-emerald-950/20 border-emerald-900/30" : health.overall_status === "degraded" ? "bg-amber-950/20 border-amber-900/30" : "bg-red-950/20 border-red-900/30"}`} data-testid="service-health">
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2 text-zinc-200">
               <Activity className="w-4 h-4" /> Servis Sagligi
@@ -94,8 +104,7 @@ export default function ObservabilityDashboard() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-              {health.services && Object.entries(health.services).map(([name, info]) => (
-                <div key={name} className="p-3 bg-zinc-800/60 rounded-lg">
+              {health.services && Object.entries(health.services).map(([name, info]) => <div key={name} className="p-3 bg-zinc-800/60 rounded-lg">
                   <div className="flex items-center gap-1.5 mb-1">
                     <HealthDot status={info.status} />
                     <span className="text-xs font-medium text-zinc-300 capitalize">{name.replace(/_/g, " ")}</span>
@@ -103,12 +112,10 @@ export default function ObservabilityDashboard() {
                   {info.latency_ms != null && <span className="text-xs text-zinc-500">{info.latency_ms}ms</span>}
                   {info.mode && <span className="text-xs text-zinc-500 block">{info.mode}</span>}
                   {info.failures_1h != null && <span className="text-xs text-zinc-500 block">fail: {info.failures_1h}</span>}
-                </div>
-              ))}
+                </div>)}
             </div>
           </CardContent>
-        </Card>
-      )}
+        </Card>}
 
       {/* Metrics Overview */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4" data-testid="metrics-overview">
@@ -152,20 +159,14 @@ export default function ObservabilityDashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-1 max-h-80 overflow-y-auto">
-            {traces?.endpoints?.length > 0 ? (
-              traces.endpoints.map((ep, i) => (
-                <div key={i} className="flex items-center justify-between py-1.5 border-b border-zinc-800 last:border-0">
+            {traces?.endpoints?.length > 0 ? traces.endpoints.map((ep, i) => <div key={ep.id || i} className="flex items-center justify-between py-1.5 border-b border-zinc-800 last:border-0">
                   <span className="text-xs font-mono text-zinc-300 truncate flex-1">{ep.path}</span>
                   <div className="flex gap-3 ml-2 shrink-0">
                     <span className="text-xs text-zinc-400">{ep.count}x</span>
                     <span className={`text-xs ${ep.avg_ms > 1000 ? "text-red-400" : "text-zinc-400"}`}>{ep.avg_ms}ms</span>
                     {ep.slow > 0 && <Badge variant="destructive" className="text-xs">{ep.slow} slow</Badge>}
                   </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-xs text-zinc-500">Henüz trace verisi yok. Flush yaparak veri toplayin.</p>
-            )}
+                </div>) : <p className="text-xs text-zinc-500">Henüz trace verisi yok. Flush yaparak veri toplayin.</p>}
           </CardContent>
         </Card>
 
@@ -185,27 +186,21 @@ export default function ObservabilityDashboard() {
               <div className="p-2 bg-zinc-800/60 rounded-lg">
                 <div className="text-xs text-zinc-400">Ciddiyet</div>
                 <div className="flex gap-1 mt-1 flex-wrap">
-                  {errorSummary?.by_severity && Object.entries(errorSummary.by_severity).map(([sev, cnt]) => (
-                    <Badge key={sev} variant={sev === "critical" ? "destructive" : "secondary"} className="text-xs">
+                  {errorSummary?.by_severity && Object.entries(errorSummary.by_severity).map(([sev, cnt]) => <Badge key={sev} variant={sev === "critical" ? "destructive" : "secondary"} className="text-xs">
                       {sev}: {cnt}
-                    </Badge>
-                  ))}
+                    </Badge>)}
                 </div>
               </div>
             </div>
-            {errorSummary?.top_errors?.length > 0 && (
-              <div className="space-y-1">
-                {errorSummary.top_errors.slice(0, 8).map((e, i) => (
-                  <div key={i} className="flex justify-between py-1 border-b border-zinc-800 last:border-0">
+            {errorSummary?.top_errors?.length > 0 && <div className="space-y-1">
+                {errorSummary.top_errors.slice(0, 8).map((e, i) => <div key={e.id || i} className="flex justify-between py-1 border-b border-zinc-800 last:border-0">
                     <span className="text-xs text-zinc-300">{e.error_type}</span>
                     <div className="flex gap-2">
                       <Badge variant={e.severity === "critical" ? "destructive" : "outline"} className="text-xs">{e.severity}</Badge>
                       <span className="text-xs text-zinc-400">{e.count}x</span>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  </div>)}
+              </div>}
           </CardContent>
         </Card>
       </div>
@@ -216,10 +211,8 @@ export default function ObservabilityDashboard() {
           <CardTitle className="text-base text-zinc-200">Son Trace'ler</CardTitle>
         </CardHeader>
         <CardContent>
-          {recentTraces.length > 0 ? (
-            <div className="space-y-1 max-h-72 overflow-y-auto">
-              {recentTraces.map((t, i) => (
-                <div key={i} className={`flex items-center justify-between py-1.5 border-b border-zinc-800 last:border-0 ${t.is_slow ? "bg-amber-950/10" : ""}`}>
+          {recentTraces.length > 0 ? <div className="space-y-1 max-h-72 overflow-y-auto">
+              {recentTraces.map((t, i) => <div key={t.id || i} className={`flex items-center justify-between py-1.5 border-b border-zinc-800 last:border-0 ${t.is_slow ? "bg-amber-950/10" : ""}`}>
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <Badge variant="outline" className="text-xs shrink-0">{t.method}</Badge>
                     <span className="text-xs font-mono text-zinc-300 truncate">{t.request_path}</span>
@@ -229,18 +222,13 @@ export default function ObservabilityDashboard() {
                     <span className={`text-xs ${t.duration_ms > 1000 ? "text-red-400 font-bold" : "text-zinc-400"}`}>{t.duration_ms}ms</span>
                     {t.is_slow && <Badge variant="destructive" className="text-xs">SLOW</Badge>}
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-zinc-500">Henüz trace verisi yok. Trace flush yaparak veritabanina kaydedin.</p>
-          )}
+                </div>)}
+            </div> : <p className="text-xs text-zinc-500">Henüz trace verisi yok. Trace flush yaparak veritabanina kaydedin.</p>}
         </CardContent>
       </Card>
 
       {/* Application Metrics */}
-      {dashMetrics && (
-        <Card className="bg-zinc-900/60 border-zinc-800" data-testid="app-metrics">
+      {dashMetrics && <Card className="bg-zinc-900/60 border-zinc-800" data-testid="app-metrics">
           <CardHeader className="pb-3">
             <CardTitle className="text-base text-zinc-200">Uygulama Metrikleri</CardTitle>
           </CardHeader>
@@ -264,8 +252,6 @@ export default function ObservabilityDashboard() {
               </div>
             </div>
           </CardContent>
-        </Card>
-      )}
-    </div>
-  );
+        </Card>}
+    </div>;
 }

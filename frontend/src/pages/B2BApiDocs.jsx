@@ -466,7 +466,7 @@ export default function B2BApiDocs() {
                       who: isEn ? 'Hotel Admin' : 'Otel Yöneticisi',
                       ep: 'DELETE /api/b2b/api-keys/{agency_id}',
                       auth: 'JWT'
-                    }].map((r, i) => <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                    }].map((r, i) => <tr key={r.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
                           <td className="px-4 py-2.5 font-medium text-slate-700">{r.action}</td>
                           <td className="px-4 py-2.5 text-slate-500">{r.who}</td>
                           <td className="px-4 py-2.5 font-mono text-[12px] text-emerald-700">{r.ep}</td>
@@ -584,7 +584,7 @@ export default function B2BApiDocs() {
                       color: 'red',
                       desc: isEn ? 'Internal server error' : 'Sunucu hatası',
                       example: isEn ? 'Contact support if persistent' : 'Devam ederse destek ile iletisime gecin'
-                    }].map((r, i) => <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                    }].map((r, i) => <tr key={r.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
                           <td className="px-4 py-2.5"><span className={`font-mono font-bold text-${r.color}-700`}>{r.code}</span></td>
                           <td className="px-4 py-2.5 font-medium text-slate-700">{r.status}</td>
                           <td className="px-4 py-2.5 text-slate-600">{r.desc}</td>
@@ -645,7 +645,7 @@ export default function B2BApiDocs() {
                       limit: '5',
                       window: isEn ? 'per minute' : 'dakika basina',
                       ex: 'rooming-list upload, KBS report'
-                    }].map((r, i) => <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                    }].map((r, i) => <tr key={r.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
                           <td className="px-4 py-2.5 font-medium text-slate-700">{r.type}</td>
                           <td className="px-4 py-2.5"><span className="font-mono font-bold text-[#C09D63]">{r.limit}</span> {isEn ? 'requests' : 'istek'}</td>
                           <td className="px-4 py-2.5 text-slate-500">{r.window}</td>
@@ -706,7 +706,7 @@ export default function B2BApiDocs() {
                       type: 'string',
                       def: isEn ? 'Today' : 'Bugün',
                       desc: isEn ? 'Filter by date (YYYY-MM-DD)' : 'Tarihe göre filtre (YYYY-MM-DD)'
-                    }].map((p, i) => <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                    }].map((p, i) => <tr key={p.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
                           <td className="px-4 py-2.5 font-mono text-[13px] text-emerald-700">{p.name}</td>
                           <td className="px-4 py-2.5 text-slate-500 font-mono text-[13px]">{p.type}</td>
                           <td className="px-4 py-2.5 text-slate-500">{p.def}</td>
@@ -781,7 +781,7 @@ export default function B2BApiDocs() {
                       def: '50',
                       max: '200',
                       filters: 'status'
-                    }].map((r, i) => <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                    }].map((r, i) => <tr key={r.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
                           <td className="px-4 py-2.5 font-mono text-[12px] text-emerald-700">{r.ep}</td>
                           <td className="px-4 py-2.5 text-slate-700">{r.def}</td>
                           <td className="px-4 py-2.5 text-slate-700">{r.max}</td>
@@ -820,7 +820,7 @@ export default function B2BApiDocs() {
                       format: 'ISO 8601',
                       example: '2026-07-15T14:30:00+00:00',
                       used: 'created_at, updated_at (response only)'
-                    }].map((r, i) => <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                    }].map((r, i) => <tr key={r.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
                           <td className="px-4 py-2.5 font-medium text-slate-700">{r.type}</td>
                           <td className="px-4 py-2.5 font-mono text-[13px] text-emerald-700">{r.format}</td>
                           <td className="px-4 py-2.5 font-mono text-[13px] text-slate-600">{r.example}</td>

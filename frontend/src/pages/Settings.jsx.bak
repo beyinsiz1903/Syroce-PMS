@@ -2,20 +2,13 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import {
-  Settings as SettingsIcon, Users, CreditCard, Shield, Plus, Trash2,
-  Building2, Zap, Crown, ArrowRight, CheckCircle2, Lock, AlertTriangle,
-  ArrowDown, Sparkles, Clock, Receipt, Save, Pencil, X, FileText, Upload, Image,
-  DoorOpen, RefreshCw, Infinity as InfinityIcon, UserCheck, MessageSquare,
-  KeyRound, Copy, Plug
-} from 'lucide-react';
+import { Settings as SettingsIcon, Users, CreditCard, Shield, Plus, Trash2, Building2, Zap, Crown, ArrowRight, CheckCircle2, Lock, AlertTriangle, ArrowDown, Sparkles, Clock, Receipt, Save, Pencil, X, FileText, Upload, Image, DoorOpen, RefreshCw, Infinity as InfinityIcon, UserCheck, MessageSquare, KeyRound, Copy, Plug } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -25,7 +18,6 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import BulkRoomsDialog from '@/components/pms/BulkRoomsDialog';
 import { useCurrency } from '@/context/CurrencyContext';
 import { formatCurrency } from '@/lib/currency';
-
 import { confirmDialog } from '@/lib/dialogs';
 
 // ─── Plan Config (Sprint A: gradient/blue/green/orange/pink yok) ──────
@@ -33,87 +25,124 @@ import { confirmDialog } from '@/lib/dialogs';
 // gösterimde useCurrency.format ile aktif tenant para birimine çevrilir.
 const PLAN_CONFIG = {
   basic: {
-    key: 'basic', priceEUR: 79, priceYearlyEUR: 790,
-    maxRooms: 15, maxUsers: 3,
+    key: 'basic',
+    priceEUR: 79,
+    priceYearlyEUR: 790,
+    maxRooms: 15,
+    maxUsers: 3,
     icon: Building2,
-    iconBg: 'bg-emerald-100', iconText: 'text-emerald-700',
-    lightBg: 'bg-emerald-50', borderColor: 'border-emerald-200',
-    pillIntent: 'success',
+    iconBg: 'bg-emerald-100',
+    iconText: 'text-emerald-700',
+    lightBg: 'bg-emerald-50',
+    borderColor: 'border-emerald-200',
+    pillIntent: 'success'
   },
   professional: {
-    key: 'professional', priceEUR: 299, priceYearlyEUR: 2990,
-    maxRooms: 80, maxUsers: 15,
+    key: 'professional',
+    priceEUR: 299,
+    priceYearlyEUR: 2990,
+    maxRooms: 80,
+    maxUsers: 15,
     icon: Zap,
-    iconBg: 'bg-sky-100', iconText: 'text-sky-700',
-    lightBg: 'bg-sky-50', borderColor: 'border-sky-200',
-    pillIntent: 'info',
+    iconBg: 'bg-sky-100',
+    iconText: 'text-sky-700',
+    lightBg: 'bg-sky-50',
+    borderColor: 'border-sky-200',
+    pillIntent: 'info'
   },
   enterprise: {
-    key: 'enterprise', priceEUR: 799, priceYearlyEUR: 7990,
-    maxRooms: null, maxUsers: null,
+    key: 'enterprise',
+    priceEUR: 799,
+    priceYearlyEUR: 7990,
+    maxRooms: null,
+    maxUsers: null,
     icon: Crown,
-    iconBg: 'bg-indigo-100', iconText: 'text-indigo-700',
-    lightBg: 'bg-indigo-50', borderColor: 'border-indigo-200',
-    pillIntent: 'neutral',
-  },
+    iconBg: 'bg-indigo-100',
+    iconText: 'text-indigo-700',
+    lightBg: 'bg-indigo-50',
+    borderColor: 'border-indigo-200',
+    pillIntent: 'neutral'
+  }
 };
 
 // Sprint A intent paleti (indigo/sky/emerald/amber/rose/slate). Pink/violet/teal/cyan/yellow yok.
 const ROLE_COLORS = {
-  admin:         'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200',
-  super_admin:   'bg-indigo-100 text-indigo-800 ring-1 ring-indigo-300',
-  manager:       'bg-sky-50 text-sky-700 ring-1 ring-sky-200',
-  supervisor:    'bg-sky-50 text-sky-700 ring-1 ring-sky-200',
-  front_desk:    'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-  housekeeping:  'bg-amber-50 text-amber-800 ring-1 ring-amber-200',
-  finance:       'bg-slate-100 text-slate-700 ring-1 ring-slate-300',
-  procurement:   'bg-amber-50 text-amber-800 ring-1 ring-amber-200',
-  sales:         'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
-  revenue:       'bg-slate-100 text-slate-700 ring-1 ring-slate-300',
-  maintenance:   'bg-slate-100 text-slate-700 ring-1 ring-slate-300',
-  fnb:           'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
-  spa:           'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-  concierge:     'bg-sky-50 text-sky-700 ring-1 ring-sky-200',
+  admin: 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200',
+  super_admin: 'bg-indigo-100 text-indigo-800 ring-1 ring-indigo-300',
+  manager: 'bg-sky-50 text-sky-700 ring-1 ring-sky-200',
+  supervisor: 'bg-sky-50 text-sky-700 ring-1 ring-sky-200',
+  front_desk: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+  housekeeping: 'bg-amber-50 text-amber-800 ring-1 ring-amber-200',
+  finance: 'bg-slate-100 text-slate-700 ring-1 ring-slate-300',
+  procurement: 'bg-amber-50 text-amber-800 ring-1 ring-amber-200',
+  sales: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
+  revenue: 'bg-slate-100 text-slate-700 ring-1 ring-slate-300',
+  maintenance: 'bg-slate-100 text-slate-700 ring-1 ring-slate-300',
+  fnb: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
+  spa: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+  concierge: 'bg-sky-50 text-sky-700 ring-1 ring-sky-200',
   night_auditor: 'bg-slate-100 text-slate-700 ring-1 ring-slate-300',
-  staff:         'bg-slate-100 text-slate-700 ring-1 ring-slate-300',
+  staff: 'bg-slate-100 text-slate-700 ring-1 ring-slate-300'
 };
 
 // Para birimi i18n etiketleri için yardımcı (UI tarafında gösterilen ad).
-const CURRENCY_OPTIONS = [
-  { code: 'TRY', label: 'currencyName.TRY', fallback: 'Türk Lirası', sym: '₺' },
-  { code: 'EUR', label: 'currencyName.EUR', fallback: 'Euro',         sym: '€' },
-  { code: 'USD', label: 'currencyName.USD', fallback: 'ABD Doları',   sym: '$' },
-  { code: 'GBP', label: 'currencyName.GBP', fallback: 'İngiliz Sterlini', sym: '£' },
-];
-
-const Settings = ({ user, tenant, onLogout }) => {
-  const { t } = useTranslation();
-  const { code: currencyCode, format: formatCurrencyTenant, refresh: refreshCurrency } = useCurrency();
-
-  const getRoleLabel = useCallback((role) => ({
+const CURRENCY_OPTIONS = [{
+  code: 'TRY',
+  label: 'currencyName.TRY',
+  fallback: 'Türk Lirası',
+  sym: '₺'
+}, {
+  code: 'EUR',
+  label: 'currencyName.EUR',
+  fallback: 'Euro',
+  sym: '€'
+}, {
+  code: 'USD',
+  label: 'currencyName.USD',
+  fallback: 'ABD Doları',
+  sym: '$'
+}, {
+  code: 'GBP',
+  label: 'currencyName.GBP',
+  fallback: 'İngiliz Sterlini',
+  sym: '£'
+}];
+const Settings = ({
+  user,
+  tenant,
+  onLogout
+}) => {
+  const {
+    t
+  } = useTranslation();
+  const {
+    code: currencyCode,
+    format: formatCurrencyTenant,
+    refresh: refreshCurrency
+  } = useCurrency();
+  const getRoleLabel = useCallback(role => ({
     label: t(`settings.roles.${role}`) || role,
-    color: ROLE_COLORS[role] || 'bg-slate-100 text-slate-700 ring-1 ring-slate-300',
+    color: ROLE_COLORS[role] || 'bg-slate-100 text-slate-700 ring-1 ring-slate-300'
   }), [t]);
-
   const PLANS = useMemo(() => ({
     basic: {
       ...PLAN_CONFIG.basic,
       label: t('settings.basic'),
       features: ['PMS Core', t('calendar.title'), 'Dashboard', t('guest.title'), t('housekeeping.title'), t('reports.title'), t('mobile.title'), t('invoice.title')],
-      description: t('settings.basic') + ' - ' + (PLAN_CONFIG.basic.maxRooms ? `1-${PLAN_CONFIG.basic.maxRooms} ${t('common.rooms')}` : ''),
+      description: t('settings.basic') + ' - ' + (PLAN_CONFIG.basic.maxRooms ? `1-${PLAN_CONFIG.basic.maxRooms} ${t('common.rooms')}` : '')
     },
     professional: {
       ...PLAN_CONFIG.professional,
       label: t('settings.professional'),
       features: [t('settings.basic') + ' +', 'Channel Manager', t('folio.title'), t('nightAudit.title'), t('finance.title'), t('dashboard.costManagement'), t('reports.title'), 'Rate Management', 'Booking Engine'],
-      description: t('settings.professional') + ' - ' + (PLAN_CONFIG.professional.maxRooms ? `15-${PLAN_CONFIG.professional.maxRooms} ${t('common.rooms')}` : ''),
+      description: t('settings.professional') + ' - ' + (PLAN_CONFIG.professional.maxRooms ? `15-${PLAN_CONFIG.professional.maxRooms} ${t('common.rooms')}` : '')
     },
     enterprise: {
       ...PLAN_CONFIG.enterprise,
       label: t('settings.enterprise'),
       features: [t('settings.professional') + ' +', 'Revenue Management (RMS)', t('aiModule.title'), t('dashboard.multiProperty'), t('dashboard.groupSales'), t('dashboard.salesCRM'), t('loyalty.title'), 'GM Dashboard', 'API', 'White Label', 'Audit Trail'],
-      description: t('settings.enterprise') + ' - 80+ ' + t('common.rooms'),
-    },
+      description: t('settings.enterprise') + ' - 80+ ' + t('common.rooms')
+    }
   }), [t]);
 
   // Plan değişimi sonrası activeTab'ı koru (window.location.reload state kaybını önler).
@@ -122,22 +151,35 @@ const Settings = ({ user, tenant, onLogout }) => {
       const saved = sessionStorage.getItem('settings:activeTab');
       if (saved) sessionStorage.removeItem('settings:activeTab');
       return saved || 'team';
-    } catch { return 'team'; }
+    } catch {
+      return 'team';
+    }
   });
 
   // B2B Connect (Seçenek B — acente oto-saglama)
   const [b2bInfo, setB2bInfo] = useState(null);
   const [b2bRequests, setB2bRequests] = useState([]);
   const [b2bLoading, setB2bLoading] = useState(false);
-  const [b2bCodeOnce, setB2bCodeOnce] = useState('');   // ham kod yalniz 1 kez
+  const [b2bCodeOnce, setB2bCodeOnce] = useState(''); // ham kod yalniz 1 kez
   const [b2bBusy, setB2bBusy] = useState(false);
 
   // Team
   const [team, setTeam] = useState([]);
   const [teamLoading, setTeamLoading] = useState(true);
-  const [teamMeta, setTeamMeta] = useState({ tier: 'basic', allowed_roles: ['admin'], max_users: 3, can_add: true });
+  const [teamMeta, setTeamMeta] = useState({
+    tier: 'basic',
+    allowed_roles: ['admin'],
+    max_users: 3,
+    can_add: true
+  });
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newMember, setNewMember] = useState({ email: '', name: '', phone: '', role: 'admin', password: '' });
+  const [newMember, setNewMember] = useState({
+    email: '',
+    name: '',
+    phone: '',
+    role: 'admin',
+    password: ''
+  });
   const [saving, setSaving] = useState(false);
 
   // Subscription
@@ -162,41 +204,51 @@ const Settings = ({ user, tenant, onLogout }) => {
   const [invoiceSaving, setInvoiceSaving] = useState(false);
 
   // Room management (super_admin only)
-  const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
+  const isSuperAdmin = user?.role === 'super_admin' || Array.isArray(user?.roles) && user.roles.includes('super_admin');
   // Misafir Talepleri görünürlük ayarı: admin + super_admin yapılandırabilir.
-  const isAdmin = isSuperAdmin || user?.role === 'admin' || (Array.isArray(user?.roles) && user.roles.includes('admin'));
+  const isAdmin = isSuperAdmin || user?.role === 'admin' || Array.isArray(user?.roles) && user.roles.includes('admin');
   const [roomsList, setRoomsList] = useState([]);
   const [roomsLoading, setRoomsLoading] = useState(false);
   const [showBulkRoomsDialog, setShowBulkRoomsDialog] = useState(false);
   const [showAddRoomDialog, setShowAddRoomDialog] = useState(false);
-  const [newRoom, setNewRoom] = useState({ room_number: '', room_type: 'standard', floor: 1, capacity: 2, base_price: 100 });
+  const [newRoom, setNewRoom] = useState({
+    room_number: '',
+    room_type: 'standard',
+    floor: 1,
+    capacity: 2,
+    base_price: 100
+  });
   const [roomSaving, setRoomSaving] = useState(false);
 
   // Misafir Talepleri görünürlüğü (admin)
-  const [grSettings, setGrSettings] = useState({ visible_roles: [], available_roles: [], always_allowed: [] });
+  const [grSettings, setGrSettings] = useState({
+    visible_roles: [],
+    available_roles: [],
+    always_allowed: []
+  });
   const [grLoading, setGrLoading] = useState(false);
   const [grSaving, setGrSaving] = useState(false);
-
   const currentTier = useMemo(() => {
     const t = tenant?.subscription_tier || 'basic';
     if (t === 'pro') return 'professional';
     if (t === 'ultra') return 'enterprise';
     return t;
   }, [tenant]);
-
   const currentPlan = PLANS[currentTier] || PLANS.basic;
   const PlanIcon = currentPlan.icon;
 
   // Plan ücretini aktif tenant para biriminde formatla.
-  const fmtPlanPrice = useCallback((eurAmount) => {
+  const fmtPlanPrice = useCallback(eurAmount => {
     if (!Number.isFinite(eurAmount)) return '—';
-    if (currencyCode === 'EUR') return formatCurrency(eurAmount, 'EUR', { decimals: 0 });
+    if (currencyCode === 'EUR') return formatCurrency(eurAmount, 'EUR', {
+      decimals: 0
+    });
     // Plan ücretleri sözleşme gereği EUR; tenant TRY ise tenant biriminde
     // göstermek yerine "EUR" işaretiyle dönmek daha doğru (FX dönüşüm yok).
     try {
-      return formatCurrencyTenant
-        ? `${formatCurrency(eurAmount, 'EUR', { decimals: 0 })}`
-        : `${eurAmount}€`;
+      return formatCurrencyTenant ? `${formatCurrency(eurAmount, 'EUR', {
+        decimals: 0
+      })}` : `${eurAmount}€`;
     } catch {
       return `${eurAmount}€`;
     }
@@ -212,14 +264,15 @@ const Settings = ({ user, tenant, onLogout }) => {
         tier: res.data?.tier || 'basic',
         allowed_roles: res.data?.allowed_roles || ['admin'],
         max_users: res.data?.max_users || 3,
-        can_add: res.data?.can_add !== false,
+        can_add: res.data?.can_add !== false
       });
     } catch (err) {
       console.error('Team load failed', err);
       toast.error(err?.response?.data?.detail || 'Ekip listesi alınamadı');
-    } finally { setTeamLoading(false); }
+    } finally {
+      setTeamLoading(false);
+    }
   }, []);
-
   const loadSubscription = useCallback(async () => {
     try {
       const res = await axios.get('/subscription/current');
@@ -229,7 +282,6 @@ const Settings = ({ user, tenant, onLogout }) => {
       toast.error(err?.response?.data?.detail || 'Abonelik bilgisi alınamadı');
     }
   }, []);
-
   const loadBillingHistory = useCallback(async () => {
     setBillingLoading(true);
     try {
@@ -238,9 +290,10 @@ const Settings = ({ user, tenant, onLogout }) => {
     } catch (err) {
       console.error('Billing load failed', err);
       toast.error(err?.response?.data?.detail || 'Fatura geçmişi alınamadı');
-    } finally { setBillingLoading(false); }
+    } finally {
+      setBillingLoading(false);
+    }
   }, []);
-
   const loadInvoiceSettings = useCallback(async () => {
     setInvoiceLoading(true);
     try {
@@ -249,9 +302,10 @@ const Settings = ({ user, tenant, onLogout }) => {
     } catch (err) {
       console.error('Invoice settings load failed', err);
       toast.error(err?.response?.data?.detail || 'Fatura ayarları alınamadı');
-    } finally { setInvoiceLoading(false); }
+    } finally {
+      setInvoiceLoading(false);
+    }
   }, []);
-
   const loadRooms = useCallback(async () => {
     if (!isSuperAdmin) return;
     setRoomsLoading(true);
@@ -261,25 +315,24 @@ const Settings = ({ user, tenant, onLogout }) => {
     } catch (err) {
       console.error('Rooms load failed', err);
       toast.error(err?.response?.data?.detail || 'Oda listesi alınamadı');
-    } finally { setRoomsLoading(false); }
+    } finally {
+      setRoomsLoading(false);
+    }
   }, [isSuperAdmin]);
-
   const loadB2B = useCallback(async () => {
     if (!isAdmin) return;
     setB2bLoading(true);
     try {
-      const [infoRes, reqRes] = await Promise.all([
-        axios.get('/b2b/connect-info'),
-        axios.get('/b2b/connect-requests'),
-      ]);
+      const [infoRes, reqRes] = await Promise.all([axios.get('/b2b/connect-info'), axios.get('/b2b/connect-requests')]);
       setB2bInfo(infoRes.data || null);
       setB2bRequests(reqRes.data?.items || []);
     } catch (err) {
       console.error('B2B load failed', err);
       toast.error(err?.response?.data?.detail || 'B2B bilgileri alınamadı');
-    } finally { setB2bLoading(false); }
+    } finally {
+      setB2bLoading(false);
+    }
   }, [isAdmin]);
-
   const copyToClipboard = useCallback(async (text, label) => {
     if (!text) return;
     try {
@@ -289,12 +342,11 @@ const Settings = ({ user, tenant, onLogout }) => {
       toast.error('Kopyalanamadı');
     }
   }, []);
-
   const handleRegenerateCode = useCallback(async () => {
-    if (b2bInfo?.has_active_code && !await confirmDialog({
+    if (b2bInfo?.has_active_code && !(await confirmDialog({
       message: 'Yeni bağlantı kodu üretilsin mi? Eski kod geçersiz olur; bağlı acentelerin yeni kodla güncellenmesi gerekir.',
-      variant: 'danger',
-    })) return;
+      variant: 'danger'
+    }))) return;
     setB2bBusy(true);
     try {
       const res = await axios.post('/b2b/connect-codes/regenerate');
@@ -303,13 +355,14 @@ const Settings = ({ user, tenant, onLogout }) => {
       await loadB2B();
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Kod üretilemedi');
-    } finally { setB2bBusy(false); }
+    } finally {
+      setB2bBusy(false);
+    }
   }, [b2bInfo, loadB2B]);
-
-  const handleApproveRequest = useCallback(async (req) => {
-    if (!await confirmDialog({
-      message: `"${req.agency_name}" bağlantısı onaylansın mı? Onayda bu acenteye API key üretilecek.`,
-    })) return;
+  const handleApproveRequest = useCallback(async req => {
+    if (!(await confirmDialog({
+      message: `"${req.agency_name}" bağlantısı onaylansın mı? Onayda bu acenteye API key üretilecek.`
+    }))) return;
     setB2bBusy(true);
     try {
       const res = await axios.post(`/b2b/connect-requests/${req.id}/approve`);
@@ -317,24 +370,28 @@ const Settings = ({ user, tenant, onLogout }) => {
       await loadB2B();
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Onaylanamadı');
-    } finally { setB2bBusy(false); }
+    } finally {
+      setB2bBusy(false);
+    }
   }, [loadB2B]);
-
-  const handleRejectRequest = useCallback(async (req) => {
-    if (!await confirmDialog({
+  const handleRejectRequest = useCallback(async req => {
+    if (!(await confirmDialog({
       message: `"${req.agency_name}" bağlantı isteği reddedilsin mi?`,
-      variant: 'danger',
-    })) return;
+      variant: 'danger'
+    }))) return;
     setB2bBusy(true);
     try {
-      await axios.post(`/b2b/connect-requests/${req.id}/reject`, { reason: '' });
+      await axios.post(`/b2b/connect-requests/${req.id}/reject`, {
+        reason: ''
+      });
       toast.success('İstek reddedildi');
       await loadB2B();
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Reddedilemedi');
-    } finally { setB2bBusy(false); }
+    } finally {
+      setB2bBusy(false);
+    }
   }, [loadB2B]);
-
   const loadGuestRequestSettings = useCallback(async () => {
     if (!isAdmin) return;
     setGrLoading(true);
@@ -343,36 +400,43 @@ const Settings = ({ user, tenant, onLogout }) => {
       setGrSettings({
         visible_roles: res.data?.visible_roles || [],
         available_roles: res.data?.available_roles || [],
-        always_allowed: res.data?.always_allowed || [],
+        always_allowed: res.data?.always_allowed || []
       });
     } catch (err) {
       console.error('Guest request settings load failed', err);
       toast.error(err?.response?.data?.detail || 'Misafir talep ayarları alınamadı');
-    } finally { setGrLoading(false); }
+    } finally {
+      setGrLoading(false);
+    }
   }, [isAdmin]);
-
   const toggleGuestRequestRole = useCallback((role, checked) => {
-    setGrSettings((prev) => {
+    setGrSettings(prev => {
       const set = new Set(prev.visible_roles);
-      if (checked) set.add(role); else set.delete(role);
-      return { ...prev, visible_roles: Array.from(set) };
+      if (checked) set.add(role);else set.delete(role);
+      return {
+        ...prev,
+        visible_roles: Array.from(set)
+      };
     });
   }, []);
-
   const saveGuestRequestSettings = useCallback(async () => {
     setGrSaving(true);
     try {
       const res = await axios.put('/messaging/guest-requests/settings', {
-        visible_roles: grSettings.visible_roles,
+        visible_roles: grSettings.visible_roles
       });
-      setGrSettings((prev) => ({ ...prev, visible_roles: res.data?.visible_roles || prev.visible_roles }));
+      setGrSettings(prev => ({
+        ...prev,
+        visible_roles: res.data?.visible_roles || prev.visible_roles
+      }));
       toast.success('Misafir talep görünürlüğü kaydedildi');
     } catch (err) {
       console.error('Guest request settings save failed', err);
       toast.error(err?.response?.data?.detail || 'Ayar kaydedilemedi');
-    } finally { setGrSaving(false); }
+    } finally {
+      setGrSaving(false);
+    }
   }, [grSettings.visible_roles]);
-
   useEffect(() => {
     // Only load what is needed for the active tab (Lazy fan-out reduction)
     if (activeTab === 'hotel' || activeTab === 'plan') {
@@ -406,13 +470,13 @@ const Settings = ({ user, tenant, onLogout }) => {
         address: tenant.address || '',
         location: tenant.location || '',
         description: tenant.description || '',
-        total_rooms: tenant.total_rooms || 0,
+        total_rooms: tenant.total_rooms || 0
       });
     }
   }, [tenant]);
 
   // ─── Self check (id veya _id eşleşmesi) ───────
-  const isSameUser = useCallback((member) => {
+  const isSameUser = useCallback(member => {
     if (!user) return false;
     const ids = [user.id, user._id].filter(Boolean);
     return ids.includes(member.id) || ids.includes(member._id);
@@ -421,38 +485,55 @@ const Settings = ({ user, tenant, onLogout }) => {
   // ─── Team Handlers ─────────────────────────────
   const handleAddMember = async () => {
     if (!newMember.email || !newMember.name || !newMember.password) {
-      toast.error('Email, isim ve şifre zorunludur'); return;
+      toast.error('Email, isim ve şifre zorunludur');
+      return;
     }
     if (newMember.password.length < 6) {
-      toast.error('Şifre en az 6 karakter olmalıdır'); return;
+      toast.error('Şifre en az 6 karakter olmalıdır');
+      return;
     }
     setSaving(true);
     try {
       const res = await axios.post('/hotel/team', newMember);
       toast.success(res.data?.message || 'Ekip üyesi eklendi');
       setShowAddModal(false);
-      setNewMember({ email: '', name: '', phone: '', role: teamMeta.allowed_roles[0] || 'admin', password: '' });
+      setNewMember({
+        email: '',
+        name: '',
+        phone: '',
+        role: teamMeta.allowed_roles[0] || 'admin',
+        password: ''
+      });
       await loadTeam();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Ekip üyesi eklenemedi');
-    } finally { setSaving(false); }
+    } finally {
+      setSaving(false);
+    }
   };
-
   const handleUpdateRole = async (userId, newRole) => {
     try {
-      await axios.patch(`/hotel/team/${userId}/role`, { role: newRole });
+      await axios.patch(`/hotel/team/${userId}/role`, {
+        role: newRole
+      });
       toast.success('Rol güncellendi');
       await loadTeam();
-    } catch (err) { toast.error(err.response?.data?.detail || 'Rol güncellenemedi'); }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Rol güncellenemedi');
+    }
   };
-
   const handleRemoveMember = async (userId, name) => {
-    if (!await confirmDialog({ message: `${name} adlı kullanıcıyı silmek istediğinize emin misiniz?`, variant: 'danger' })) return;
+    if (!(await confirmDialog({
+      message: `${name} adlı kullanıcıyı silmek istediğinize emin misiniz?`,
+      variant: 'danger'
+    }))) return;
     try {
       await axios.delete(`/hotel/team/${userId}`);
       toast.success('Ekip üyesi silindi');
       await loadTeam();
-    } catch (err) { toast.error(err.response?.data?.detail || 'Silinemedi'); }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Silinemedi');
+    }
   };
 
   // ─── Plan Change Handler ───────────────────────
@@ -462,17 +543,21 @@ const Settings = ({ user, tenant, onLogout }) => {
     try {
       const res = await axios.post('/subscription/change-plan', {
         new_tier: selectedPlan,
-        billing_cycle: billingCycle,
+        billing_cycle: billingCycle
       });
       toast.success(res.data?.message || 'Plan güncellendi');
       setShowPlanModal(false);
       // Modüller App.jsx mount'unda yükleniyor; aktif tab'ı koruyup soft reload.
-      try { sessionStorage.setItem('settings:activeTab', activeTab); } catch { /* ignore */ }
+      try {
+        sessionStorage.setItem('settings:activeTab', activeTab);
+      } catch {/* ignore */}
       await Promise.all([loadSubscription(), loadBillingHistory(), loadTeam()]);
       setTimeout(() => window.location.reload(), 600);
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Plan değiştirilemedi');
-    } finally { setSaving(false); }
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ─── Hotel Info Handler ────────────────────────
@@ -481,7 +566,6 @@ const Settings = ({ user, tenant, onLogout }) => {
     if (!limit) return false;
     return Number(hotelForm.total_rooms) > Number(limit);
   }, [currentPlan.maxRooms, hotelForm.total_rooms]);
-
   const handleSaveHotelInfo = async () => {
     if (overRoomLimit) {
       toast.error(`Mevcut planınızda en fazla ${currentPlan.maxRooms} oda tanımlanabilir. Önce planınızı yükseltin.`);
@@ -500,15 +584,19 @@ const Settings = ({ user, tenant, onLogout }) => {
       if (updatedTenant) {
         try {
           const stored = JSON.parse(localStorage.getItem('tenant') || '{}');
-          const merged = { ...stored, ...updatedTenant };
+          const merged = {
+            ...stored,
+            ...updatedTenant
+          };
           localStorage.setItem('tenant', JSON.stringify(merged));
-        } catch { /* ignore */ }
+        } catch {/* ignore */}
       }
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Güncellenemedi');
-    } finally { setHotelSaving(false); }
+    } finally {
+      setHotelSaving(false);
+    }
   };
-
   const handleSaveInvoiceSettings = async () => {
     setInvoiceSaving(true);
     try {
@@ -518,18 +606,21 @@ const Settings = ({ user, tenant, onLogout }) => {
       const payload = {
         ...invoiceSettings,
         currency: codeUpper,
-        currency_symbol: symLookup?.sym || codeUpper,
+        currency_symbol: symLookup?.sym || codeUpper
       };
       const res = await axios.put('/pms/hotel-settings', payload);
       toast.success('Fatura ayarları kaydedildi');
       setInvoiceSettings(res.data?.settings || payload);
-      try { await refreshCurrency(); } catch { /* ignore */ }
+      try {
+        await refreshCurrency();
+      } catch {/* ignore */}
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Kaydedilemedi');
-    } finally { setInvoiceSaving(false); }
+    } finally {
+      setInvoiceSaving(false);
+    }
   };
-
-  const handleLogoUpload = (e) => {
+  const handleLogoUpload = e => {
     const file = e.target.files?.[0];
     // Input'u sıfırla ki aynı dosya tekrar seçilebilsin.
     if (e.target) e.target.value = '';
@@ -545,7 +636,7 @@ const Settings = ({ user, tenant, onLogout }) => {
       return;
     }
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = event => {
       // Boyut/dimension doğrulama: çok büyük çözünürlüklerde uyar.
       const dataUrl = event.target.result;
       const probe = new window.Image();
@@ -554,7 +645,10 @@ const Settings = ({ user, tenant, onLogout }) => {
           toast.error('Logo en fazla 2000×2000 piksel olabilir.');
           return;
         }
-        setInvoiceSettings(prev => ({ ...prev, logo_data: dataUrl }));
+        setInvoiceSettings(prev => ({
+          ...prev,
+          logo_data: dataUrl
+        }));
       };
       probe.onerror = () => toast.error('Logo görseli okunamadı.');
       probe.src = dataUrl;
@@ -564,34 +658,48 @@ const Settings = ({ user, tenant, onLogout }) => {
   };
 
   // Room CRUD (super_admin)
-  const handleCreateRoom = async (e) => {
+  const handleCreateRoom = async e => {
     e.preventDefault();
     if (!newRoom.room_number?.toString().trim()) {
-      toast.error('Oda numarası zorunludur'); return;
+      toast.error('Oda numarası zorunludur');
+      return;
     }
     if (!Number.isFinite(newRoom.floor) || newRoom.floor < 0) {
-      toast.error('Kat negatif olamaz'); return;
+      toast.error('Kat negatif olamaz');
+      return;
     }
     if (!Number.isFinite(newRoom.capacity) || newRoom.capacity < 1) {
-      toast.error('Kapasite en az 1 olmalıdır'); return;
+      toast.error('Kapasite en az 1 olmalıdır');
+      return;
     }
     if (!Number.isFinite(newRoom.base_price) || newRoom.base_price < 0) {
-      toast.error('Taban fiyat negatif olamaz'); return;
+      toast.error('Taban fiyat negatif olamaz');
+      return;
     }
     setRoomSaving(true);
     try {
       await axios.post('/pms/rooms', newRoom);
       toast.success('Oda oluşturuldu');
       setShowAddRoomDialog(false);
-      setNewRoom({ room_number: '', room_type: 'standard', floor: 1, capacity: 2, base_price: 100 });
+      setNewRoom({
+        room_number: '',
+        room_type: 'standard',
+        floor: 1,
+        capacity: 2,
+        base_price: 100
+      });
       loadRooms();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Oda oluşturulamadı');
-    } finally { setRoomSaving(false); }
+    } finally {
+      setRoomSaving(false);
+    }
   };
-
   const handleDeleteRoom = async (roomId, roomNumber) => {
-    if (!await confirmDialog({ message: `${roomNumber} numaralı odayı silmek istediğinize emin misiniz?`, variant: 'danger' })) return;
+    if (!(await confirmDialog({
+      message: `${roomNumber} numaralı odayı silmek istediğinize emin misiniz?`,
+      variant: 'danger'
+    }))) return;
     try {
       await axios.post('/pms/rooms/bulk/delete', {
         ids: [roomId],
@@ -609,7 +717,6 @@ const Settings = ({ user, tenant, onLogout }) => {
   const currentIdx = tierOrder.indexOf(currentTier);
   const upgradeTiers = tierOrder.filter((_, i) => i > currentIdx);
   const downgradeTiers = tierOrder.filter((_, i) => i < currentIdx);
-
   const openPlanModal = (tierKey, action) => {
     setSelectedPlan(tierKey);
     setPlanAction(action);
@@ -619,32 +726,12 @@ const Settings = ({ user, tenant, onLogout }) => {
 
   // ─── Yenile butonu (her tab için) ───────────
   const refreshActiveTab = useCallback(() => {
-    if (activeTab === 'team') loadTeam();
-    else if (activeTab === 'plan') loadSubscription();
-    else if (activeTab === 'billing') loadBillingHistory();
-    else if (activeTab === 'hotel') loadSubscription();
-    else if (activeTab === 'invoice') loadInvoiceSettings();
-    else if (activeTab === 'rooms') loadRooms();
-    else if (activeTab === 'b2b') loadB2B();
+    if (activeTab === 'team') loadTeam();else if (activeTab === 'plan') loadSubscription();else if (activeTab === 'billing') loadBillingHistory();else if (activeTab === 'hotel') loadSubscription();else if (activeTab === 'invoice') loadInvoiceSettings();else if (activeTab === 'rooms') loadRooms();else if (activeTab === 'b2b') loadB2B();
   }, [activeTab, loadTeam, loadSubscription, loadBillingHistory, loadInvoiceSettings, loadRooms, loadB2B]);
-
-  const tabBusy = (
-    (activeTab === 'team' && teamLoading)
-    || (activeTab === 'billing' && billingLoading)
-    || (activeTab === 'invoice' && invoiceLoading)
-    || (activeTab === 'rooms' && roomsLoading)
-  );
-
-  return (
-    <>
+  const tabBusy = activeTab === 'team' && teamLoading || activeTab === 'billing' && billingLoading || activeTab === 'invoice' && invoiceLoading || activeTab === 'rooms' && roomsLoading;
+  return <>
       <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
-        <PageHeader
-          icon={SettingsIcon}
-          iconClassName="text-slate-700"
-          title="Ayarlar"
-          subtitle={t('settings.subtitle')}
-          actions={
-            <>
+        <PageHeader icon={SettingsIcon} iconClassName="text-slate-700" title="Ayarlar" subtitle={t('settings.subtitle')} actions={<>
               <StatusBadge intent={currentPlan.pillIntent || 'neutral'} icon={PlanIcon}>
                 {currentPlan.label}
               </StatusBadge>
@@ -652,9 +739,7 @@ const Settings = ({ user, tenant, onLogout }) => {
                 <RefreshCw className={`w-4 h-4 mr-1.5 ${tabBusy ? 'animate-spin' : ''}`} />
                 Yenile
               </Button>
-            </>
-          }
-        />
+            </>} />
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList className={`grid w-full ${isSuperAdmin ? 'grid-cols-7' : isAdmin ? 'grid-cols-6' : 'grid-cols-5'}`}>
@@ -673,50 +758,36 @@ const Settings = ({ user, tenant, onLogout }) => {
             <TabsTrigger value="invoice" className="flex items-center gap-1.5 text-xs sm:text-sm" data-testid="invoice-settings-tab">
               <FileText className="w-4 h-4" /> Fatura & Para Birimi
             </TabsTrigger>
-            {isSuperAdmin && (
-              <TabsTrigger value="rooms" className="flex items-center gap-1.5 text-xs sm:text-sm" data-testid="rooms-settings-tab">
+            {isSuperAdmin && <TabsTrigger value="rooms" className="flex items-center gap-1.5 text-xs sm:text-sm" data-testid="rooms-settings-tab">
                 <DoorOpen className="w-4 h-4" /> Oda Yönetimi
-              </TabsTrigger>
-            )}
-            {isAdmin && (
-              <TabsTrigger value="b2b" className="flex items-center gap-1.5 text-xs sm:text-sm" data-testid="b2b-settings-tab">
+              </TabsTrigger>}
+            {isAdmin && <TabsTrigger value="b2b" className="flex items-center gap-1.5 text-xs sm:text-sm" data-testid="b2b-settings-tab">
                 <Plug className="w-4 h-4" /> B2B Entegrasyon
-              </TabsTrigger>
-            )}
+              </TabsTrigger>}
           </TabsList>
 
           {/* ═══════════ TEAM TAB ═══════════ */}
           <TabsContent value="team" className="space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <KpiCard icon={Users} label="Toplam Üye" value={team.length} intent="default" className="shadow-sm rounded-xl border-slate-200" />
-              <KpiCard
-                icon={UserCheck}
-                label="Max Kullanıcı"
-                value={teamMeta.max_users === 999 ? '∞' : teamMeta.max_users}
-                intent="info"
-                className="shadow-sm rounded-xl border-slate-200"
-              />
+              <KpiCard icon={UserCheck} label="Max Kullanıcı" value={teamMeta.max_users === 999 ? '∞' : teamMeta.max_users} intent="info" className="shadow-sm rounded-xl border-slate-200" />
               <KpiCard icon={Shield} label="Kullanılabilir Rol" value={teamMeta.allowed_roles.length} intent="success" className="shadow-sm rounded-xl border-slate-200" />
               <KpiCard icon={Crown} label="Plan" value={<span className="capitalize">{teamMeta.tier}</span>} intent="neutral" className="shadow-sm rounded-xl border-slate-200" />
             </div>
 
-            {teamMeta.tier === 'basic' && (
-              <div className="p-4 rounded-xl bg-amber-50/80 border border-amber-200/60 flex items-start gap-3 shadow-sm">
+            {teamMeta.tier === 'basic' && <div className="p-4 rounded-xl bg-amber-50/80 border border-amber-200/60 flex items-start gap-3 shadow-sm">
                 <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5 drop-shadow-sm" />
                 <div>
                   <p className="text-sm font-semibold text-amber-900">Basic planda sadece "Yönetici" rolü kullanılabilir</p>
                   <p className="text-xs text-amber-700/80 mt-1 font-medium">Departman rolleri için Professional plana yükseltin.</p>
                   <button onClick={() => setActiveTab('plan')} className="text-[13px] font-bold text-amber-800 mt-2 hover:text-amber-950 flex items-center gap-1.5 transition-colors">Planı yükselt <ArrowRight className="w-3.5 h-3.5" /></button>
                 </div>
-              </div>
-            )}
+              </div>}
 
-            {!teamMeta.can_add && (
-              <div className="p-4 rounded-xl bg-rose-50/80 border border-rose-200/60 flex items-start gap-3 shadow-sm text-sm text-rose-800 font-medium">
+            {!teamMeta.can_add && <div className="p-4 rounded-xl bg-rose-50/80 border border-rose-200/60 flex items-start gap-3 shadow-sm text-sm text-rose-800 font-medium">
                 <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0 drop-shadow-sm" />
                 <div>Kullanıcı limitine ulaşıldı ({teamMeta.max_users}). Lütfen planınızı yükseltin.</div>
-              </div>
-            )}
+              </div>}
 
             <Card className="rounded-xl shadow-sm border-slate-200 overflow-hidden">
               <CardHeader className="flex flex-row items-center justify-between bg-slate-50/50 border-b border-slate-100 pb-4 pt-5 px-5">
@@ -727,26 +798,27 @@ const Settings = ({ user, tenant, onLogout }) => {
                   </CardTitle>
                   <CardDescription className="text-xs mt-1">Ekip üyelerinizi ve yetkilerini yönetin</CardDescription>
                 </div>
-                <Button size="sm" className="shadow-sm" onClick={() => { setNewMember({ email: '', name: '', phone: '', role: teamMeta.allowed_roles[0] || 'admin', password: '' }); setShowAddModal(true); }} disabled={!teamMeta.can_add}>
+                <Button size="sm" className="shadow-sm" onClick={() => {
+                setNewMember({
+                  email: '',
+                  name: '',
+                  phone: '',
+                  role: teamMeta.allowed_roles[0] || 'admin',
+                  password: ''
+                });
+                setShowAddModal(true);
+              }} disabled={!teamMeta.can_add}>
                   <Plus className="w-4 h-4 mr-1.5" /> Üye Ekle {!teamMeta.can_add && <Lock className="w-3 h-3 ml-1.5 opacity-70" />}
                 </Button>
               </CardHeader>
               <CardContent className="p-0">
-                {teamLoading ? (
-                  <div className="p-10 text-center text-slate-400 font-medium">{t("common.loading")}</div>
-                ) : team.length === 0 ? (
-                  <div className="p-10 text-center text-slate-400 font-medium">Henüz ekip üyesi yok</div>
-                ) : (
-                  <div className="divide-y divide-slate-100">
-                    {team.map((member) => {
-                      const roleInfo = getRoleLabel(member.role);
-                      const isMe = isSameUser(member);
-                      const editDisabled = isMe || member.role === 'super_admin';
-                      const allowedForSelect = teamMeta.allowed_roles.includes(member.role)
-                        ? teamMeta.allowed_roles
-                        : [...teamMeta.allowed_roles, member.role];
-                      return (
-                        <div key={member.id} className="flex flex-col sm:flex-row sm:items-center justify-between px-5 py-3.5 hover:bg-slate-50/80 transition-colors gap-3 sm:gap-0">
+                {teamLoading ? <div className="p-10 text-center text-slate-400 font-medium">{t("common.loading")}</div> : team.length === 0 ? <div className="p-10 text-center text-slate-400 font-medium">Henüz ekip üyesi yok</div> : <div className="divide-y divide-slate-100">
+                    {team.map(member => {
+                  const roleInfo = getRoleLabel(member.role);
+                  const isMe = isSameUser(member);
+                  const editDisabled = isMe || member.role === 'super_admin';
+                  const allowedForSelect = teamMeta.allowed_roles.includes(member.role) ? teamMeta.allowed_roles : [...teamMeta.allowed_roles, member.role];
+                  return <div key={member.id} className="flex flex-col sm:flex-row sm:items-center justify-between px-5 py-3.5 hover:bg-slate-50/80 transition-colors gap-3 sm:gap-0">
                           <div className="flex items-center gap-3.5 min-w-0">
                             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 border border-slate-300/50 flex items-center justify-center text-sm font-bold text-slate-600 shadow-sm shrink-0">
                               {(member.name || '?')[0].toUpperCase()}
@@ -760,40 +832,24 @@ const Settings = ({ user, tenant, onLogout }) => {
                             </div>
                           </div>
                           <div className="flex items-center gap-3 sm:pl-4">
-                            {member.role === 'super_admin' ? (
-                              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 rounded-md border border-slate-200">
+                            {member.role === 'super_admin' ? <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 rounded-md border border-slate-200">
                                 <Crown className="w-3.5 h-3.5 text-slate-500" />
                                 <span className="text-xs font-semibold text-slate-700">Super Admin</span>
-                              </div>
-                            ) : (
-                              <Select
-                                value={member.role}
-                                onValueChange={(v) => handleUpdateRole(member.id, v)}
-                                disabled={editDisabled}
-                              >
-                                <SelectTrigger
-                                  className={`h-9 w-[170px] text-[13px] font-semibold ${roleInfo.color} shadow-sm disabled:opacity-60 disabled:cursor-not-allowed transition-all focus:ring-2`}
-                                >
+                              </div> : <Select value={member.role} onValueChange={v => handleUpdateRole(member.id, v)} disabled={editDisabled}>
+                                <SelectTrigger className={`h-9 w-[170px] text-[13px] font-semibold ${roleInfo.color} shadow-sm disabled:opacity-60 disabled:cursor-not-allowed transition-all focus:ring-2`}>
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent className="shadow-lg rounded-xl border-slate-200">
-                                  {allowedForSelect.map((r) => (
-                                    <SelectItem key={r} value={r} className="text-[13px] font-medium focus:bg-slate-50">{getRoleLabel(r).label}</SelectItem>
-                                  ))}
+                                  {allowedForSelect.map(r => <SelectItem key={r} value={r} className="text-[13px] font-medium focus:bg-slate-50">{getRoleLabel(r).label}</SelectItem>)}
                                 </SelectContent>
-                              </Select>
-                            )}
-                            {!isMe && member.role !== 'super_admin' && (
-                              <Button variant="ghost" size="icon" className="text-rose-400 hover:text-rose-600 hover:bg-rose-50 h-9 w-9 rounded-lg transition-colors" onClick={() => handleRemoveMember(member.id, member.name)}>
+                              </Select>}
+                            {!isMe && member.role !== 'super_admin' && <Button variant="ghost" size="icon" className="text-rose-400 hover:text-rose-600 hover:bg-rose-50 h-9 w-9 rounded-lg transition-colors" onClick={() => handleRemoveMember(member.id, member.name)}>
                                 <Trash2 className="w-4 h-4" />
-                              </Button>
-                            )}
+                              </Button>}
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                        </div>;
+                })}
+                  </div>}
               </CardContent>
             </Card>
 
@@ -806,17 +862,16 @@ const Settings = ({ user, tenant, onLogout }) => {
               </CardHeader>
               <CardContent className="px-5 pb-5">
                 <div className="flex flex-wrap gap-2.5">
-                  {teamMeta.allowed_roles.map((r) => {
-                    const info = getRoleLabel(r);
-                    return <span key={r} className={`text-xs px-3 py-1.5 rounded-full ${info.color} font-bold shadow-sm border`}>{info.label}</span>;
-                  })}
+                  {teamMeta.allowed_roles.map(r => {
+                  const info = getRoleLabel(r);
+                  return <span key={r} className={`text-xs px-3 py-1.5 rounded-full ${info.color} font-bold shadow-sm border`}>{info.label}</span>;
+                })}
                 </div>
                 {teamMeta.tier !== 'enterprise' && <p className="text-xs font-medium text-slate-500 mt-4 bg-slate-50 p-2.5 rounded-lg border border-slate-100">Daha fazla rol ve departman ayrımı için {teamMeta.tier === 'basic' ? 'Professional' : 'Enterprise'} plana yükseltin.</p>}
               </CardContent>
             </Card>
 
-            {isAdmin && (
-              <Card data-testid="guest-request-visibility-card" className="rounded-xl shadow-sm border-slate-200">
+            {isAdmin && <Card data-testid="guest-request-visibility-card" className="rounded-xl shadow-sm border-slate-200">
                 <CardHeader className="pb-3 pt-5 px-5">
                   <CardTitle className="text-[15px] font-bold text-slate-800 flex items-center gap-2">
                     <MessageSquare className="w-4.5 h-4.5 text-slate-500" /> Misafir Talepleri Görünürlüğü
@@ -826,33 +881,17 @@ const Settings = ({ user, tenant, onLogout }) => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4 px-5 pb-5">
-                  {grLoading ? (
-                    <div className="text-sm font-medium text-slate-400">{t('common.loading')}</div>
-                  ) : grSettings.available_roles.length === 0 ? (
-                    <div className="text-sm font-medium text-slate-400">Seçilebilir rol bulunamadı</div>
-                  ) : (
-                    <>
+                  {grLoading ? <div className="text-sm font-medium text-slate-400">{t('common.loading')}</div> : grSettings.available_roles.length === 0 ? <div className="text-sm font-medium text-slate-400">Seçilebilir rol bulunamadı</div> : <>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {grSettings.available_roles.map((r) => {
-                          const always = grSettings.always_allowed.includes(r.value);
-                          const checked = always || grSettings.visible_roles.includes(r.value);
-                          return (
-                            <label
-                              key={r.value}
-                              className={`flex items-center gap-3 p-3 rounded-xl border transition-all duration-200 ${checked ? 'border-sky-200 bg-sky-50/50 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'} ${always ? 'opacity-70 cursor-not-allowed grayscale-[30%]' : 'cursor-pointer'}`}
-                            >
-                              <Checkbox
-                                checked={checked}
-                                disabled={always}
-                                onCheckedChange={(v) => toggleGuestRequestRole(r.value, v === true)}
-                                data-testid={`gr-role-${r.value}`}
-                                className={checked && !always ? 'border-sky-500 bg-sky-500 text-white' : ''}
-                              />
+                        {grSettings.available_roles.map(r => {
+                    const always = grSettings.always_allowed.includes(r.value);
+                    const checked = always || grSettings.visible_roles.includes(r.value);
+                    return <label key={r.value} className={`flex items-center gap-3 p-3 rounded-xl border transition-all duration-200 ${checked ? 'border-sky-200 bg-sky-50/50 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'} ${always ? 'opacity-70 cursor-not-allowed grayscale-[30%]' : 'cursor-pointer'}`}>
+                              <Checkbox checked={checked} disabled={always} onCheckedChange={v => toggleGuestRequestRole(r.value, v === true)} data-testid={`gr-role-${r.value}`} className={checked && !always ? 'border-sky-500 bg-sky-500 text-white' : ''} />
                               <span className="text-[13px] font-bold text-slate-800">{r.label}</span>
                               {always && <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 ml-auto bg-slate-100 px-2 py-0.5 rounded-md">Her zaman</span>}
-                            </label>
-                          );
-                        })}
+                            </label>;
+                  })}
                       </div>
                       <div className="flex justify-end pt-2 border-t border-slate-100">
                         <Button size="sm" onClick={saveGuestRequestSettings} disabled={grSaving} data-testid="button-save-gr-visibility" className="shadow-sm">
@@ -860,11 +899,9 @@ const Settings = ({ user, tenant, onLogout }) => {
                           Değişiklikleri Kaydet
                         </Button>
                       </div>
-                    </>
-                  )}
+                    </>}
                 </CardContent>
-              </Card>
-            )}
+              </Card>}
           </TabsContent>
 
           {/* ═══════════ PLAN TAB ═══════════ */}
@@ -887,31 +924,24 @@ const Settings = ({ user, tenant, onLogout }) => {
                   <div className="text-right">
                     <p className="text-3xl font-bold text-slate-900">{fmtPlanPrice(currentPlan.priceEUR)}</p>
                     <p className="text-xs text-slate-500">/ ay</p>
-                    {subscription?.status && (
-                      <div className="mt-1">
-                        <StatusBadge
-                          intent={subscription.status === 'active' ? 'success' : 'danger'}
-                          icon={CheckCircle2}
-                        >
+                    {subscription?.status && <div className="mt-1">
+                        <StatusBadge intent={subscription.status === 'active' ? 'success' : 'danger'} icon={CheckCircle2}>
                           {subscription.status === 'active' ? 'Aktif' : subscription.status}
                         </StatusBadge>
-                      </div>
-                    )}
+                      </div>}
                   </div>
                 </div>
               </CardContent>
             </Card>
 
             {/* Upgrade options */}
-            {upgradeTiers.length > 0 && (
-              <>
+            {upgradeTiers.length > 0 && <>
                 <h2 className="text-lg font-semibold flex items-center gap-2"><Sparkles className="w-5 h-5 text-amber-500" /> Yükselt</h2>
                 <div className="grid md:grid-cols-2 gap-4">
-                  {upgradeTiers.map((tierKey) => {
-                    const plan = PLANS[tierKey]; const Icon = plan.icon;
-                    return (
-                      <Card key={tierKey} className={`border-2 hover:shadow-lg transition-all cursor-pointer group ${plan.borderColor}`}
-                        onClick={() => openPlanModal(tierKey, 'upgrade')}>
+                  {upgradeTiers.map(tierKey => {
+                const plan = PLANS[tierKey];
+                const Icon = plan.icon;
+                return <Card key={tierKey} className={`border-2 hover:shadow-lg transition-all cursor-pointer group ${plan.borderColor}`} onClick={() => openPlanModal(tierKey, 'upgrade')}>
                         <CardContent className="p-5">
                           <div className="flex items-start justify-between mb-3">
                             <div className={`p-2.5 rounded-xl ${plan.iconBg} ${plan.iconText}`}><Icon className="w-6 h-6" /></div>
@@ -920,34 +950,29 @@ const Settings = ({ user, tenant, onLogout }) => {
                           <h3 className="text-lg font-bold text-slate-900">{plan.label}</h3>
                           <p className="text-xs text-slate-500 mb-3">{plan.description}</p>
                           <ul className="space-y-1">
-                            {plan.features.slice(0, 5).map((f, i) => (<li key={i} className="flex items-center gap-1.5 text-xs text-slate-600"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />{f}</li>))}
+                            {plan.features.slice(0, 5).map((f, i) => <li key={f.id || i} className="flex items-center gap-1.5 text-xs text-slate-600"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />{f}</li>)}
                             {plan.features.length > 5 && <li className="text-xs text-slate-400 pl-5">+{plan.features.length - 5} daha</li>}
                           </ul>
-                          <Button
-                            type="button"
-                            className="mt-4 w-full"
-                            onClick={(e) => { e.stopPropagation(); openPlanModal(tierKey, 'upgrade'); }}
-                          >
+                          <Button type="button" className="mt-4 w-full" onClick={e => {
+                      e.stopPropagation();
+                      openPlanModal(tierKey, 'upgrade');
+                    }}>
                             Yükselt <ArrowRight className="w-4 h-4 ml-1" />
                           </Button>
                         </CardContent>
-                      </Card>
-                    );
-                  })}
+                      </Card>;
+              })}
                 </div>
-              </>
-            )}
+              </>}
 
             {/* Downgrade options */}
-            {downgradeTiers.length > 0 && (
-              <>
+            {downgradeTiers.length > 0 && <>
                 <h2 className="text-sm font-medium text-slate-500 flex items-center gap-2 mt-6"><ArrowDown className="w-4 h-4" /> Plan Düşür</h2>
                 <div className="grid md:grid-cols-2 gap-3">
-                  {downgradeTiers.map((tierKey) => {
-                    const plan = PLANS[tierKey]; const Icon = plan.icon;
-                    return (
-                      <Card key={tierKey} className="border border-slate-200 hover:border-slate-300 transition cursor-pointer"
-                        onClick={() => openPlanModal(tierKey, 'downgrade')}>
+                  {downgradeTiers.map(tierKey => {
+                const plan = PLANS[tierKey];
+                const Icon = plan.icon;
+                return <Card key={tierKey} className="border border-slate-200 hover:border-slate-300 transition cursor-pointer" onClick={() => openPlanModal(tierKey, 'downgrade')}>
                         <CardContent className="p-4 flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <div className={`p-2 rounded-lg ${plan.iconBg}`}><Icon className={`w-5 h-5 ${plan.iconText}`} /></div>
@@ -960,30 +985,26 @@ const Settings = ({ user, tenant, onLogout }) => {
                             <ArrowDown className="w-3 h-3 mr-1" /> Düşür
                           </Button>
                         </CardContent>
-                      </Card>
-                    );
-                  })}
+                      </Card>;
+              })}
                 </div>
-              </>
-            )}
+              </>}
 
             {/* Current features */}
             <Card>
               <CardHeader><CardTitle className="text-sm">{t('settings.planFeatures')}</CardTitle></CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {currentPlan.features.map((f, i) => (<div key={i} className="flex items-center gap-2 text-sm text-slate-700"><CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />{f}</div>))}
+                  {currentPlan.features.map((f, i) => <div key={f.id || i} className="flex items-center gap-2 text-sm text-slate-700"><CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />{f}</div>)}
                 </div>
               </CardContent>
             </Card>
 
-            {currentTier === 'enterprise' && (
-              <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-200 text-center">
+            {currentTier === 'enterprise' && <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-200 text-center">
                 <Crown className="w-8 h-8 text-indigo-600 mx-auto mb-2" />
                 <p className="text-sm font-bold text-indigo-800">En üst plandasınız!</p>
                 <p className="text-xs text-indigo-700">Tüm modüller ve özellikler aktif.</p>
-              </div>
-            )}
+              </div>}
           </TabsContent>
 
           {/* ═══════════ BILLING HISTORY TAB ═══════════ */}
@@ -996,10 +1017,7 @@ const Settings = ({ user, tenant, onLogout }) => {
               </Button>
             </div>
 
-            {billingLoading ? (
-              <div className="text-center py-12 text-slate-400">{t("common.loading")}</div>
-            ) : billingHistory.length === 0 ? (
-              <Card>
+            {billingLoading ? <div className="text-center py-12 text-slate-400">{t("common.loading")}</div> : billingHistory.length === 0 ? <Card>
                 <CardContent className="p-12 text-center">
                   <Receipt className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                   <h3 className="text-lg font-semibold text-slate-500">Henüz işlem geçmişi yok</h3>
@@ -1009,15 +1027,12 @@ const Settings = ({ user, tenant, onLogout }) => {
                     Plan değiştir
                   </Button>
                 </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-3">
-                {billingHistory.map((record) => {
-                  const isUpgrade = record.action === 'upgrade';
-                  const fromPlan = PLANS[record.from_tier];
-                  const toPlan = PLANS[record.to_tier];
-                  return (
-                    <Card key={record.id} className="hover:shadow-sm transition">
+              </Card> : <div className="space-y-3">
+                {billingHistory.map(record => {
+              const isUpgrade = record.action === 'upgrade';
+              const fromPlan = PLANS[record.from_tier];
+              const toPlan = PLANS[record.to_tier];
+              return <Card key={record.id} className="hover:shadow-sm transition">
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
@@ -1034,14 +1049,22 @@ const Settings = ({ user, tenant, onLogout }) => {
                                 </span>
                               </div>
                               <div className="flex items-center gap-3 mt-1 text-xs text-slate-500 flex-wrap">
-                                <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{new Date(record.created_at).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{new Date(record.created_at).toLocaleDateString('tr-TR', {
+                              day: 'numeric',
+                              month: 'long',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}</span>
                                 <span>{record.billing_cycle === 'yearly' ? 'Yıllık' : 'Aylık'}</span>
                                 {record.user_name && <span>İşlem: {record.user_name}</span>}
                               </div>
                             </div>
                           </div>
                           <div className="text-right">
-                            <p className="text-lg font-bold text-slate-900">{formatCurrency(Number(record.amount) || 0, record.currency || 'EUR', { decimals: 0 })}</p>
+                            <p className="text-lg font-bold text-slate-900">{formatCurrency(Number(record.amount) || 0, record.currency || 'EUR', {
+                          decimals: 0
+                        })}</p>
                             <p className="text-[10px] text-slate-500">{record.billing_cycle === 'yearly' ? 'yıl' : 'ay'}</p>
                             <div className="mt-1">
                               <StatusBadge intent={record.status === 'completed' ? 'success' : 'neutral'}>
@@ -1050,17 +1073,13 @@ const Settings = ({ user, tenant, onLogout }) => {
                             </div>
                           </div>
                         </div>
-                        {record.valid_until && (
-                          <div className="mt-2 pt-2 border-t text-xs text-slate-500">
+                        {record.valid_until && <div className="mt-2 pt-2 border-t text-xs text-slate-500">
                             Geçerlilik: {new Date(record.valid_until).toLocaleDateString('tr-TR')} tarihine kadar
-                          </div>
-                        )}
+                          </div>}
                       </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
+                    </Card>;
+            })}
+              </div>}
           </TabsContent>
 
           {/* ═══════════ HOTEL INFO TAB ═══════════ */}
@@ -1072,67 +1091,86 @@ const Settings = ({ user, tenant, onLogout }) => {
                     <CardTitle>{t('settings.hotelInfo')}</CardTitle>
                     <CardDescription>İsim, adres ve iletişim bilgileri</CardDescription>
                   </div>
-                  {!editMode ? (
-                    <Button variant="outline" size="sm" onClick={() => setEditMode(true)}>
+                  {!editMode ? <Button variant="outline" size="sm" onClick={() => setEditMode(true)}>
                       <Pencil className="w-4 h-4 mr-1" /> Düzenle
-                    </Button>
-                  ) : (
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => { setEditMode(false); setHotelForm({ property_name: tenant?.property_name || '', phone: tenant?.phone || tenant?.contact_phone || '', email: tenant?.email || tenant?.contact_email || '', address: tenant?.address || '', location: tenant?.location || '', description: tenant?.description || '', total_rooms: tenant?.total_rooms || 0 }); }}>
+                    </Button> : <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => {
+                    setEditMode(false);
+                    setHotelForm({
+                      property_name: tenant?.property_name || '',
+                      phone: tenant?.phone || tenant?.contact_phone || '',
+                      email: tenant?.email || tenant?.contact_email || '',
+                      address: tenant?.address || '',
+                      location: tenant?.location || '',
+                      description: tenant?.description || '',
+                      total_rooms: tenant?.total_rooms || 0
+                    });
+                  }}>
                         <X className="w-4 h-4 mr-1" /> İptal
                       </Button>
                       <Button size="sm" onClick={handleSaveHotelInfo} disabled={hotelSaving || overRoomLimit}>
                         <Save className="w-4 h-4 mr-1" /> {hotelSaving ? 'Kaydediyor...' : 'Kaydet'}
                       </Button>
-                    </div>
-                  )}
+                    </div>}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
                   <Label>Otel Adı</Label>
-                  <Input value={hotelForm.property_name || ''} readOnly={!editMode} className={!editMode ? 'bg-slate-50' : ''} onChange={(e) => setHotelForm({ ...hotelForm, property_name: e.target.value })} />
+                  <Input value={hotelForm.property_name || ''} readOnly={!editMode} className={!editMode ? 'bg-slate-50' : ''} onChange={e => setHotelForm({
+                  ...hotelForm,
+                  property_name: e.target.value
+                })} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label>Telefon</Label>
-                    <Input value={hotelForm.phone || ''} readOnly={!editMode} className={!editMode ? 'bg-slate-50' : ''} onChange={(e) => setHotelForm({ ...hotelForm, phone: e.target.value })} placeholder="+905551234567" />
+                    <Input value={hotelForm.phone || ''} readOnly={!editMode} className={!editMode ? 'bg-slate-50' : ''} onChange={e => setHotelForm({
+                    ...hotelForm,
+                    phone: e.target.value
+                  })} placeholder="+905551234567" />
                   </div>
                   <div>
                     <Label>E-posta</Label>
-                    <Input type="email" value={hotelForm.email || ''} readOnly={!editMode} className={!editMode ? 'bg-slate-50' : ''} onChange={(e) => setHotelForm({ ...hotelForm, email: e.target.value })} />
+                    <Input type="email" value={hotelForm.email || ''} readOnly={!editMode} className={!editMode ? 'bg-slate-50' : ''} onChange={e => setHotelForm({
+                    ...hotelForm,
+                    email: e.target.value
+                  })} />
                   </div>
                 </div>
                 <div>
                   <Label>Adres</Label>
-                  <Input value={hotelForm.address || ''} readOnly={!editMode} className={!editMode ? 'bg-slate-50' : ''} onChange={(e) => setHotelForm({ ...hotelForm, address: e.target.value })} />
+                  <Input value={hotelForm.address || ''} readOnly={!editMode} className={!editMode ? 'bg-slate-50' : ''} onChange={e => setHotelForm({
+                  ...hotelForm,
+                  address: e.target.value
+                })} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label>Lokasyon / Şehir</Label>
-                    <Input value={hotelForm.location || ''} readOnly={!editMode} className={!editMode ? 'bg-slate-50' : ''} onChange={(e) => setHotelForm({ ...hotelForm, location: e.target.value })} />
+                    <Input value={hotelForm.location || ''} readOnly={!editMode} className={!editMode ? 'bg-slate-50' : ''} onChange={e => setHotelForm({
+                    ...hotelForm,
+                    location: e.target.value
+                  })} />
                   </div>
                   <div>
                     <Label>Toplam Oda Sayısı</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={hotelForm.total_rooms ?? ''}
-                      readOnly={!editMode}
-                      className={`${!editMode ? 'bg-slate-50' : ''} ${overRoomLimit ? 'border-rose-400 focus-visible:ring-rose-400' : ''}`}
-                      onChange={(e) => setHotelForm({ ...hotelForm, total_rooms: parseInt(e.target.value) || 0 })}
-                    />
-                    {editMode && currentPlan.maxRooms && (
-                      <p className={`text-[11px] mt-1 ${overRoomLimit ? 'text-rose-600 font-medium' : 'text-slate-500'}`}>
+                    <Input type="number" min={0} value={hotelForm.total_rooms ?? ''} readOnly={!editMode} className={`${!editMode ? 'bg-slate-50' : ''} ${overRoomLimit ? 'border-rose-400 focus-visible:ring-rose-400' : ''}`} onChange={e => setHotelForm({
+                    ...hotelForm,
+                    total_rooms: parseInt(e.target.value) || 0
+                  })} />
+                    {editMode && currentPlan.maxRooms && <p className={`text-[11px] mt-1 ${overRoomLimit ? 'text-rose-600 font-medium' : 'text-slate-500'}`}>
                         Plan limiti: max {currentPlan.maxRooms} oda
                         {overRoomLimit && ' — Kaydetmek için planı yükseltin.'}
-                      </p>
-                    )}
+                      </p>}
                   </div>
                 </div>
                 <div>
                   <Label>Açıklama</Label>
-                  <textarea value={hotelForm.description || ''} readOnly={!editMode} className={`w-full border rounded-md px-3 py-2 text-sm min-h-[80px] ${!editMode ? 'bg-slate-50' : ''} focus:outline-none focus:ring-2 focus:ring-indigo-500`} onChange={(e) => setHotelForm({ ...hotelForm, description: e.target.value })} placeholder="Otel hakkında kısa açıklama..." />
+                  <textarea value={hotelForm.description || ''} readOnly={!editMode} className={`w-full border rounded-md px-3 py-2 text-sm min-h-[80px] ${!editMode ? 'bg-slate-50' : ''} focus:outline-none focus:ring-2 focus:ring-indigo-500`} onChange={e => setHotelForm({
+                  ...hotelForm,
+                  description: e.target.value
+                })} placeholder="Otel hakkında kısa açıklama..." />
                 </div>
               </CardContent>
             </Card>
@@ -1144,7 +1182,7 @@ const Settings = ({ user, tenant, onLogout }) => {
                 <div className="flex justify-between">
                   <span className="text-slate-500">Durum</span>
                   <StatusBadge intent={subscription?.status === 'active' ? 'success' : 'neutral'}>
-                    {subscription?.status === 'active' ? 'Aktif' : (subscription?.status || '—')}
+                    {subscription?.status === 'active' ? 'Aktif' : subscription?.status || '—'}
                   </StatusBadge>
                 </div>
                 <div className="flex justify-between"><span className="text-slate-500">Oda</span><span className="font-semibold">{subscription?.rooms_count || 0} / {currentPlan.maxRooms || '∞'}</span></div>
@@ -1170,31 +1208,22 @@ const Settings = ({ user, tenant, onLogout }) => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {invoiceLoading ? (
-                  <div className="text-center py-8 text-slate-400">Yükleniyor...</div>
-                ) : (
-                  <>
+                {invoiceLoading ? <div className="text-center py-8 text-slate-400">Yükleniyor...</div> : <>
                     {/* Logo Upload */}
                     <div>
                       <Label>Otel Logosu</Label>
                       <div className="flex items-center gap-4 mt-2">
-                        {invoiceSettings.logo_data ? (
-                          <div className="relative">
+                        {invoiceSettings.logo_data ? <div className="relative">
                             <img src={invoiceSettings.logo_data} alt="Logo" className="h-16 max-w-[200px] object-contain border rounded-lg p-2" />
-                            <button
-                              type="button"
-                              onClick={() => setInvoiceSettings(prev => ({ ...prev, logo_data: null }))}
-                              className="absolute -top-2 -right-2 w-5 h-5 bg-rose-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-rose-600"
-                              aria-label="Logoyu kaldır"
-                            >
+                            <button type="button" onClick={() => setInvoiceSettings(prev => ({
+                        ...prev,
+                        logo_data: null
+                      }))} className="absolute -top-2 -right-2 w-5 h-5 bg-rose-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-rose-600" aria-label="Logoyu kaldır">
                               <X className="w-3 h-3" />
                             </button>
-                          </div>
-                        ) : (
-                          <div className="h-16 w-32 border-2 border-dashed rounded-lg flex items-center justify-center text-slate-400">
+                          </div> : <div className="h-16 w-32 border-2 border-dashed rounded-lg flex items-center justify-center text-slate-400">
                             <Image className="w-6 h-6" />
-                          </div>
-                        )}
+                          </div>}
                         <div className="flex flex-col gap-1">
                           <Button asChild variant="outline" size="sm" className="w-fit">
                             <label className="cursor-pointer">
@@ -1211,21 +1240,33 @@ const Settings = ({ user, tenant, onLogout }) => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <Label>Otel Adı (Fatura)</Label>
-                        <Input value={invoiceSettings.hotel_name || ''} onChange={e => setInvoiceSettings(prev => ({ ...prev, hotel_name: e.target.value }))} placeholder="Otel adı" />
+                        <Input value={invoiceSettings.hotel_name || ''} onChange={e => setInvoiceSettings(prev => ({
+                      ...prev,
+                      hotel_name: e.target.value
+                    }))} placeholder="Otel adı" />
                       </div>
                       <div>
                         <Label>E-posta</Label>
-                        <Input value={invoiceSettings.hotel_email || ''} onChange={e => setInvoiceSettings(prev => ({ ...prev, hotel_email: e.target.value }))} placeholder="info@otel.com" />
+                        <Input value={invoiceSettings.hotel_email || ''} onChange={e => setInvoiceSettings(prev => ({
+                      ...prev,
+                      hotel_email: e.target.value
+                    }))} placeholder="info@otel.com" />
                       </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <Label>Telefon</Label>
-                        <Input value={invoiceSettings.hotel_phone || ''} onChange={e => setInvoiceSettings(prev => ({ ...prev, hotel_phone: e.target.value }))} />
+                        <Input value={invoiceSettings.hotel_phone || ''} onChange={e => setInvoiceSettings(prev => ({
+                      ...prev,
+                      hotel_phone: e.target.value
+                    }))} />
                       </div>
                       <div>
                         <Label>Adres</Label>
-                        <Input value={invoiceSettings.hotel_address || ''} onChange={e => setInvoiceSettings(prev => ({ ...prev, hotel_address: e.target.value }))} />
+                        <Input value={invoiceSettings.hotel_address || ''} onChange={e => setInvoiceSettings(prev => ({
+                      ...prev,
+                      hotel_address: e.target.value
+                    }))} />
                       </div>
                     </div>
 
@@ -1233,11 +1274,17 @@ const Settings = ({ user, tenant, onLogout }) => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <Label>Vergi Numarası</Label>
-                        <Input value={invoiceSettings.tax_id || ''} onChange={e => setInvoiceSettings(prev => ({ ...prev, tax_id: e.target.value }))} placeholder="1234567890" data-testid="tax-id-input" />
+                        <Input value={invoiceSettings.tax_id || ''} onChange={e => setInvoiceSettings(prev => ({
+                      ...prev,
+                      tax_id: e.target.value
+                    }))} placeholder="1234567890" data-testid="tax-id-input" />
                       </div>
                       <div>
                         <Label>Vergi Dairesi</Label>
-                        <Input value={invoiceSettings.tax_office || ''} onChange={e => setInvoiceSettings(prev => ({ ...prev, tax_office: e.target.value }))} placeholder="Beyoğlu" data-testid="tax-office-input" />
+                        <Input value={invoiceSettings.tax_office || ''} onChange={e => setInvoiceSettings(prev => ({
+                      ...prev,
+                      tax_office: e.target.value
+                    }))} placeholder="Beyoğlu" data-testid="tax-office-input" />
                       </div>
                     </div>
 
@@ -1247,19 +1294,17 @@ const Settings = ({ user, tenant, onLogout }) => {
                       <p className="text-xs text-amber-800 mt-1 mb-3">
                         Bu seçim panel, faturalar, channel manager ve raporlar dahil tüm tutarları etkiler.
                       </p>
-                      <Select
-                        value={invoiceSettings.currency || 'TRY'}
-                        onValueChange={(code) => setInvoiceSettings(prev => ({ ...prev, currency: code }))}
-                      >
+                      <Select value={invoiceSettings.currency || 'TRY'} onValueChange={code => setInvoiceSettings(prev => ({
+                    ...prev,
+                    currency: code
+                  }))}>
                         <SelectTrigger data-testid="currency-select" className="w-full bg-white">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {CURRENCY_OPTIONS.map(opt => (
-                            <SelectItem key={opt.code} value={opt.code}>
-                              {(t(opt.label) === opt.label ? opt.fallback : t(opt.label))} ({opt.sym})
-                            </SelectItem>
-                          ))}
+                          {CURRENCY_OPTIONS.map(opt => <SelectItem key={opt.code} value={opt.code}>
+                              {t(opt.label) === opt.label ? opt.fallback : t(opt.label)} ({opt.sym})
+                            </SelectItem>)}
                         </SelectContent>
                       </Select>
                     </div>
@@ -1267,25 +1312,32 @@ const Settings = ({ user, tenant, onLogout }) => {
                     {/* Invoice Header/Footer */}
                     <div>
                       <Label>Fatura Üst Bilgi</Label>
-                      <textarea value={invoiceSettings.invoice_header || ''} onChange={e => setInvoiceSettings(prev => ({ ...prev, invoice_header: e.target.value }))} className="w-full border rounded-md px-3 py-2 text-sm min-h-[60px] focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Fatura başlığı..." />
+                      <textarea value={invoiceSettings.invoice_header || ''} onChange={e => setInvoiceSettings(prev => ({
+                    ...prev,
+                    invoice_header: e.target.value
+                  }))} className="w-full border rounded-md px-3 py-2 text-sm min-h-[60px] focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Fatura başlığı..." />
                     </div>
                     <div>
                       <Label>Fatura Alt Bilgi</Label>
-                      <textarea value={invoiceSettings.invoice_footer || ''} onChange={e => setInvoiceSettings(prev => ({ ...prev, invoice_footer: e.target.value }))} className="w-full border rounded-md px-3 py-2 text-sm min-h-[60px] focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Fatura alt notu..." />
+                      <textarea value={invoiceSettings.invoice_footer || ''} onChange={e => setInvoiceSettings(prev => ({
+                    ...prev,
+                    invoice_footer: e.target.value
+                  }))} className="w-full border rounded-md px-3 py-2 text-sm min-h-[60px] focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Fatura alt notu..." />
                     </div>
                     <div>
                       <Label>Ek Notlar</Label>
-                      <textarea value={invoiceSettings.invoice_notes || ''} onChange={e => setInvoiceSettings(prev => ({ ...prev, invoice_notes: e.target.value }))} className="w-full border rounded-md px-3 py-2 text-sm min-h-[60px] focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Ek bilgiler..." />
+                      <textarea value={invoiceSettings.invoice_notes || ''} onChange={e => setInvoiceSettings(prev => ({
+                    ...prev,
+                    invoice_notes: e.target.value
+                  }))} className="w-full border rounded-md px-3 py-2 text-sm min-h-[60px] focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Ek bilgiler..." />
                     </div>
-                  </>
-                )}
+                  </>}
               </CardContent>
             </Card>
           </TabsContent>
 
           {/* ═══════════ ROOMS MANAGEMENT TAB (super_admin only) ═══════════ */}
-          {isSuperAdmin && (
-            <TabsContent value="rooms" className="space-y-4" data-testid="rooms-settings-content">
+          {isSuperAdmin && <TabsContent value="rooms" className="space-y-4" data-testid="rooms-settings-content">
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between">
@@ -1309,24 +1361,14 @@ const Settings = ({ user, tenant, onLogout }) => {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {roomsLoading ? (
-                    <div className="text-center py-8 text-slate-400">Yükleniyor...</div>
-                  ) : roomsList.length === 0 ? (
-                    <div className="text-center py-12 text-slate-400">
+                  {roomsLoading ? <div className="text-center py-8 text-slate-400">Yükleniyor...</div> : roomsList.length === 0 ? <div className="text-center py-12 text-slate-400">
                       <DoorOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
                       <p className="text-lg font-medium">Henüz oda eklenmemiş</p>
                       <p className="text-sm mt-1">Yukarıdaki butonlarla oda ekleyebilirsiniz</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
+                    </div> : <div className="space-y-2">
                       <div className="text-sm text-slate-500 mb-3">Toplam {roomsList.length} oda</div>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {roomsList.map(room => (
-                          <div
-                            key={room.id}
-                            className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 transition-colors"
-                            data-testid={`settings-room-${room.room_number}`}
-                          >
+                        {roomsList.map(room => <div key={room.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 transition-colors" data-testid={`settings-room-${room.room_number}`}>
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
                                 <span className="text-sm font-bold text-indigo-700">{room.room_number}</span>
@@ -1338,29 +1380,19 @@ const Settings = ({ user, tenant, onLogout }) => {
                             </div>
                             <div className="flex items-center gap-2">
                               <Badge variant="outline" className="text-xs">{room.status}</Badge>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-rose-500 hover:text-rose-700 hover:bg-rose-50"
-                                onClick={() => handleDeleteRoom(room.id, room.room_number)}
-                                data-testid={`delete-room-${room.room_number}`}
-                              >
+                              <Button variant="ghost" size="sm" className="text-rose-500 hover:text-rose-700 hover:bg-rose-50" onClick={() => handleDeleteRoom(room.id, room.room_number)} data-testid={`delete-room-${room.room_number}`}>
                                 <Trash2 className="w-4 h-4" />
                               </Button>
                             </div>
-                          </div>
-                        ))}
+                          </div>)}
                       </div>
-                    </div>
-                  )}
+                    </div>}
                 </CardContent>
               </Card>
-            </TabsContent>
-          )}
+            </TabsContent>}
 
           {/* ═══════════ B2B ENTEGRASYON TAB ═══════════ */}
-          {isAdmin && (
-            <TabsContent value="b2b" className="space-y-4" data-testid="b2b-settings-content">
+          {isAdmin && <TabsContent value="b2b" className="space-y-4" data-testid="b2b-settings-content">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -1395,8 +1427,7 @@ const Settings = ({ user, tenant, onLogout }) => {
 
                   <div className="border-t pt-4">
                     <Label>Bağlantı Kodu</Label>
-                    {b2bCodeOnce ? (
-                      <div className="mt-1 rounded-md border border-amber-300 bg-amber-50 p-3 space-y-2">
+                    {b2bCodeOnce ? <div className="mt-1 rounded-md border border-amber-300 bg-amber-50 p-3 space-y-2">
                         <div className="flex items-center gap-2 text-sm font-medium text-amber-800">
                           <AlertTriangle className="w-4 h-4" /> Bu kod yalnızca bir kez gösterilir. Güvenli saklayın.
                         </div>
@@ -1407,16 +1438,9 @@ const Settings = ({ user, tenant, onLogout }) => {
                           </Button>
                         </div>
                         <button onClick={() => setB2bCodeOnce('')} className="text-xs text-slate-500 hover:underline">Gizle</button>
-                      </div>
-                    ) : (
-                      <div className="mt-1 flex items-center gap-2 text-sm text-slate-600">
-                        {b2bInfo?.has_active_code ? (
-                          <span className="font-mono">{b2bInfo.code_prefix}</span>
-                        ) : (
-                          <span>Henüz bağlantı kodu üretilmedi.</span>
-                        )}
-                      </div>
-                    )}
+                      </div> : <div className="mt-1 flex items-center gap-2 text-sm text-slate-600">
+                        {b2bInfo?.has_active_code ? <span className="font-mono">{b2bInfo.code_prefix}</span> : <span>Henüz bağlantı kodu üretilmedi.</span>}
+                      </div>}
                     <div className="mt-3">
                       <Button onClick={handleRegenerateCode} disabled={b2bBusy} data-testid="b2b-regenerate-code" className="bg-black text-white hover:bg-black/90">
                         <RefreshCw className="w-4 h-4 mr-1" />
@@ -1440,22 +1464,12 @@ const Settings = ({ user, tenant, onLogout }) => {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {b2bLoading ? (
-                    <div className="py-8 text-center text-sm text-slate-500">Yükleniyor...</div>
-                  ) : b2bRequests.length === 0 ? (
-                    <div className="py-8 text-center text-sm text-slate-500">Henüz bağlantı isteği yok.</div>
-                  ) : (
-                    <div className="space-y-2" data-testid="b2b-requests-list">
-                      {b2bRequests.map((req) => (
-                        <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md border p-3">
+                  {b2bLoading ? <div className="py-8 text-center text-sm text-slate-500">Yükleniyor...</div> : b2bRequests.length === 0 ? <div className="py-8 text-center text-sm text-slate-500">Henüz bağlantı isteği yok.</div> : <div className="space-y-2" data-testid="b2b-requests-list">
+                      {b2bRequests.map(req => <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md border p-3">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
                               <span className="font-medium truncate">{req.agency_name}</span>
-                              <span className={`text-xs px-2 py-0.5 rounded-full ${
-                                req.status === 'pending' ? 'bg-amber-100 text-amber-800'
-                                : req.status === 'approved' ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-red-100 text-red-800'
-                              }`}>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${req.status === 'pending' ? 'bg-amber-100 text-amber-800' : req.status === 'approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
                                 {req.status === 'pending' ? 'Bekliyor' : req.status === 'approved' ? 'Onaylandı' : 'Reddedildi'}
                               </span>
                             </div>
@@ -1465,24 +1479,19 @@ const Settings = ({ user, tenant, onLogout }) => {
                               {req.key_prefix ? <span className="font-mono">{req.key_prefix}</span> : null}
                             </div>
                           </div>
-                          {req.status === 'pending' ? (
-                            <div className="flex items-center gap-2 shrink-0">
+                          {req.status === 'pending' ? <div className="flex items-center gap-2 shrink-0">
                               <Button size="sm" onClick={() => handleApproveRequest(req)} disabled={b2bBusy} className="bg-black text-white hover:bg-black/90" data-testid="b2b-approve">
                                 <CheckCircle2 className="w-4 h-4 mr-1" /> Onayla
                               </Button>
                               <Button size="sm" variant="outline" onClick={() => handleRejectRequest(req)} disabled={b2bBusy} data-testid="b2b-reject">
                                 <X className="w-4 h-4 mr-1" /> Reddet
                               </Button>
-                            </div>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                            </div> : null}
+                        </div>)}
+                    </div>}
                 </CardContent>
               </Card>
-            </TabsContent>
-          )}
+            </TabsContent>}
         </Tabs>
       </div>
 
@@ -1491,26 +1500,37 @@ const Settings = ({ user, tenant, onLogout }) => {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><Plus className="w-5 h-5" /> Ekip Üyesi Ekle</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <div><Label>İsim *</Label><Input value={newMember.name} onChange={(e) => setNewMember({ ...newMember, name: e.target.value })} placeholder="Ahmet Yılmaz" /></div>
-            <div><Label>{t('common.email')} *</Label><Input type="email" value={newMember.email} onChange={(e) => setNewMember({ ...newMember, email: e.target.value })} placeholder={t('auth.emailPlaceholder')} /></div>
-            <div><Label>Telefon</Label><Input value={newMember.phone} onChange={(e) => setNewMember({ ...newMember, phone: e.target.value })} placeholder="+905551234567" /></div>
+            <div><Label>İsim *</Label><Input value={newMember.name} onChange={e => setNewMember({
+              ...newMember,
+              name: e.target.value
+            })} placeholder="Ahmet Yılmaz" /></div>
+            <div><Label>{t('common.email')} *</Label><Input type="email" value={newMember.email} onChange={e => setNewMember({
+              ...newMember,
+              email: e.target.value
+            })} placeholder={t('auth.emailPlaceholder')} /></div>
+            <div><Label>Telefon</Label><Input value={newMember.phone} onChange={e => setNewMember({
+              ...newMember,
+              phone: e.target.value
+            })} placeholder="+905551234567" /></div>
             <div>
               <Label>Şifre *</Label>
-              <Input type="password" value={newMember.password} onChange={(e) => setNewMember({ ...newMember, password: e.target.value })} placeholder="Min 6 karakter" />
-              {newMember.password && newMember.password.length < 6 && (
-                <p className="text-[11px] text-rose-600 mt-1">Şifre en az 6 karakter olmalıdır</p>
-              )}
+              <Input type="password" value={newMember.password} onChange={e => setNewMember({
+              ...newMember,
+              password: e.target.value
+            })} placeholder="Min 6 karakter" />
+              {newMember.password && newMember.password.length < 6 && <p className="text-[11px] text-rose-600 mt-1">Şifre en az 6 karakter olmalıdır</p>}
             </div>
             <div>
               <Label>Rol</Label>
-              <Select value={newMember.role} onValueChange={(v) => setNewMember({ ...newMember, role: v })}>
+              <Select value={newMember.role} onValueChange={v => setNewMember({
+              ...newMember,
+              role: v
+            })}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {teamMeta.allowed_roles.map((r) => (
-                    <SelectItem key={r} value={r}>{getRoleLabel(r).label}</SelectItem>
-                  ))}
+                  {teamMeta.allowed_roles.map(r => <SelectItem key={r} value={r}>{getRoleLabel(r).label}</SelectItem>)}
                 </SelectContent>
               </Select>
               {teamMeta.tier === 'basic' && <p className="text-[11px] text-amber-700 mt-1">Basic planda sadece Yönetici rolü kullanılabilir</p>}
@@ -1533,12 +1553,12 @@ const Settings = ({ user, tenant, onLogout }) => {
             </DialogTitle>
           </DialogHeader>
           {selectedPlan && PLANS[selectedPlan] && (() => {
-            const plan = PLANS[selectedPlan]; const Icon = plan.icon;
-            const priceEUR = billingCycle === 'yearly' ? plan.priceYearlyEUR : plan.priceEUR;
-            const period = billingCycle === 'yearly' ? '/yıl' : '/ay';
-            const isDowngrade = planAction === 'downgrade';
-            return (
-              <div className="space-y-4">
+          const plan = PLANS[selectedPlan];
+          const Icon = plan.icon;
+          const priceEUR = billingCycle === 'yearly' ? plan.priceYearlyEUR : plan.priceEUR;
+          const period = billingCycle === 'yearly' ? '/yıl' : '/ay';
+          const isDowngrade = planAction === 'downgrade';
+          return <div className="space-y-4">
                 <div className={`p-4 rounded-xl ${plan.lightBg} border ${plan.borderColor}`}>
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-xl ${plan.iconBg} ${plan.iconText}`}><Icon className="w-6 h-6" /></div>
@@ -1546,8 +1566,7 @@ const Settings = ({ user, tenant, onLogout }) => {
                   </div>
                 </div>
 
-                {isDowngrade && (
-                  <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-2">
+                {isDowngrade && <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-2">
                     <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
                     <div>
                       <p className="text-sm font-medium text-amber-800">Plan düşürme uyarısı</p>
@@ -1555,8 +1574,7 @@ const Settings = ({ user, tenant, onLogout }) => {
                         Mevcut planınıza ait modüller devre dışı kalacaktır. Oda ve kullanıcı sayınız yeni plan limitlerini aşıyorsa düşürme yapılamaz.
                       </p>
                     </div>
-                  </div>
-                )}
+                  </div>}
 
                 <div className="flex items-center justify-center gap-3 p-3 bg-slate-50 rounded-lg">
                   <button type="button" className={`px-4 py-2 rounded-lg text-sm font-medium transition ${billingCycle === 'monthly' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`} onClick={() => setBillingCycle('monthly')}>Aylık</button>
@@ -1568,7 +1586,7 @@ const Settings = ({ user, tenant, onLogout }) => {
                 <div className="text-center py-2"><p className="text-4xl font-bold text-slate-900">{fmtPlanPrice(priceEUR)}</p><p className="text-sm text-slate-500">{period}</p></div>
 
                 <ul className="space-y-1.5 max-h-40 overflow-y-auto">
-                  {plan.features.map((f, i) => (<li key={i} className="flex items-center gap-2 text-sm text-slate-700"><CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />{f}</li>))}
+                  {plan.features.map((f, i) => <li key={f.id || i} className="flex items-center gap-2 text-sm text-slate-700"><CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />{f}</li>)}
                 </ul>
 
                 <div className="flex justify-end gap-2 pt-2">
@@ -1577,9 +1595,8 @@ const Settings = ({ user, tenant, onLogout }) => {
                     {saving ? 'İşleniyor...' : isDowngrade ? `${plan.label} Plana Düşür` : `${plan.label} Plana Yükselt`}
                   </Button>
                 </div>
-              </div>
-            );
-          })()}
+              </div>;
+        })()}
         </DialogContent>
       </Dialog>
 
@@ -1590,11 +1607,17 @@ const Settings = ({ user, tenant, onLogout }) => {
           <form onSubmit={handleCreateRoom} className="space-y-3">
             <div>
               <Label>Oda Numarası *</Label>
-              <Input value={newRoom.room_number} onChange={(e) => setNewRoom({ ...newRoom, room_number: e.target.value })} placeholder="101" required data-testid="new-room-number" />
+              <Input value={newRoom.room_number} onChange={e => setNewRoom({
+              ...newRoom,
+              room_number: e.target.value
+            })} placeholder="101" required data-testid="new-room-number" />
             </div>
             <div>
               <Label>Oda Tipi</Label>
-              <Select value={newRoom.room_type} onValueChange={(v) => setNewRoom({ ...newRoom, room_type: v })}>
+              <Select value={newRoom.room_type} onValueChange={v => setNewRoom({
+              ...newRoom,
+              room_type: v
+            })}>
                 <SelectTrigger data-testid="new-room-type"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="standard">Standard</SelectItem>
@@ -1607,16 +1630,25 @@ const Settings = ({ user, tenant, onLogout }) => {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Kat</Label>
-                <Input type="number" min={0} value={newRoom.floor} onChange={(e) => setNewRoom({ ...newRoom, floor: parseInt(e.target.value) || 0 })} required />
+                <Input type="number" min={0} value={newRoom.floor} onChange={e => setNewRoom({
+                ...newRoom,
+                floor: parseInt(e.target.value) || 0
+              })} required />
               </div>
               <div>
                 <Label>Kapasite</Label>
-                <Input type="number" min={1} value={newRoom.capacity} onChange={(e) => setNewRoom({ ...newRoom, capacity: parseInt(e.target.value) || 1 })} required />
+                <Input type="number" min={1} value={newRoom.capacity} onChange={e => setNewRoom({
+                ...newRoom,
+                capacity: parseInt(e.target.value) || 1
+              })} required />
               </div>
             </div>
             <div>
               <Label>Taban Fiyat</Label>
-              <Input type="number" min={0} step="0.01" value={newRoom.base_price} onChange={(e) => setNewRoom({ ...newRoom, base_price: parseFloat(e.target.value) || 0 })} required />
+              <Input type="number" min={0} step="0.01" value={newRoom.base_price} onChange={e => setNewRoom({
+              ...newRoom,
+              base_price: parseFloat(e.target.value) || 0
+            })} required />
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" onClick={() => setShowAddRoomDialog(false)}>İptal</Button>
@@ -1627,14 +1659,7 @@ const Settings = ({ user, tenant, onLogout }) => {
       </Dialog>
 
       {/* ─── Bulk Rooms Dialog (super_admin) ─── */}
-      <BulkRoomsDialog
-        open={showBulkRoomsDialog}
-        onClose={() => setShowBulkRoomsDialog(false)}
-        onRoomsCreated={loadRooms}
-        user={user}
-      />
-    </>
-  );
+      <BulkRoomsDialog open={showBulkRoomsDialog} onClose={() => setShowBulkRoomsDialog(false)} onRoomsCreated={loadRooms} user={user} />
+    </>;
 };
-
 export default Settings;

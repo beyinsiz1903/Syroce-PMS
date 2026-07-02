@@ -8,34 +8,50 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Plus, Trash2, RefreshCw, GitCompare } from 'lucide-react';
 import { fmt, fmtPct, tomorrow, dayAfter } from './helpers';
-
-const CompareTab = ({ user, tenant, onLogout } = {}) => {  
-  const { t } = useTranslation();
+const CompareTab = ({
+  user,
+  tenant,
+  onLogout
+} = {}) => {
+  const {
+    t
+  } = useTranslation();
   const [form, setForm] = useState({
     check_in: tomorrow(),
     check_out: dayAfter(tomorrow()),
-    rooms_requested: 10,
+    rooms_requested: 10
   });
-  const [scenarios, setScenarios] = useState([
-    { name: t('displacement.scenarioA', 'Scenario A'), rate: 120, ancillary: 10, commission: 0 },
-    { name: t('displacement.scenarioB', 'Scenario B'), rate: 100, ancillary: 20, commission: 5 },
-  ]);
+  const [scenarios, setScenarios] = useState([{
+    name: t('displacement.scenarioA', 'Scenario A'),
+    rate: 120,
+    ancillary: 10,
+    commission: 0
+  }, {
+    name: t('displacement.scenarioB', 'Scenario B'),
+    rate: 100,
+    ancillary: 20,
+    commission: 5
+  }]);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
-
   const addScenario = () => {
     if (scenarios.length >= 5) return;
-    setScenarios([...scenarios, { name: `${t('displacement.scenario', 'Scenario')} ${String.fromCharCode(65 + scenarios.length)}`, rate: 100, ancillary: 0, commission: 0 }]);
+    setScenarios([...scenarios, {
+      name: `${t('displacement.scenario', 'Scenario')} ${String.fromCharCode(65 + scenarios.length)}`,
+      rate: 100,
+      ancillary: 0,
+      commission: 0
+    }]);
   };
-
-  const removeScenario = (idx) => {
+  const removeScenario = idx => {
     setScenarios(scenarios.filter((_, i) => i !== idx));
   };
-
   const updateScenario = (idx, field, value) => {
-    setScenarios(scenarios.map((s, i) => i === idx ? { ...s, [field]: value } : s));
+    setScenarios(scenarios.map((s, i) => i === idx ? {
+      ...s,
+      [field]: value
+    } : s));
   };
-
   const runCompare = async () => {
     setLoading(true);
     setResult(null);
@@ -48,8 +64,8 @@ const CompareTab = ({ user, tenant, onLogout } = {}) => {
           name: s.name,
           rate: Number(s.rate),
           ancillary: Number(s.ancillary),
-          commission: Number(s.commission),
-        })),
+          commission: Number(s.commission)
+        }))
       });
       setResult(res.data);
     } catch (e) {
@@ -58,9 +74,7 @@ const CompareTab = ({ user, tenant, onLogout } = {}) => {
       setLoading(false);
     }
   };
-
-  return (
-    <div className="space-y-6">
+  return <div className="space-y-6">
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -72,21 +86,29 @@ const CompareTab = ({ user, tenant, onLogout } = {}) => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <div>
               <Label className="text-xs">{t('displacement.checkIn', 'Check-in')}</Label>
-              <Input type="date" value={form.check_in} onChange={e => setForm({ ...form, check_in: e.target.value })} />
+              <Input type="date" value={form.check_in} onChange={e => setForm({
+              ...form,
+              check_in: e.target.value
+            })} />
             </div>
             <div>
               <Label className="text-xs">{t('displacement.checkOut', 'Check-out')}</Label>
-              <Input type="date" value={form.check_out} onChange={e => setForm({ ...form, check_out: e.target.value })} />
+              <Input type="date" value={form.check_out} onChange={e => setForm({
+              ...form,
+              check_out: e.target.value
+            })} />
             </div>
             <div>
               <Label className="text-xs">{t('displacement.roomsRequested', 'Rooms Requested')}</Label>
-              <Input type="number" min={1} value={form.rooms_requested} onChange={e => setForm({ ...form, rooms_requested: e.target.value })} />
+              <Input type="number" min={1} value={form.rooms_requested} onChange={e => setForm({
+              ...form,
+              rooms_requested: e.target.value
+            })} />
             </div>
           </div>
 
           <div className="space-y-3">
-            {scenarios.map((sc, i) => (
-              <div key={i} className="flex items-end gap-3 p-3 border rounded-lg bg-gray-50">
+            {scenarios.map((sc, i) => <div key={sc.id || i} className="flex items-end gap-3 p-3 border rounded-lg bg-gray-50">
                 <div className="flex-1">
                   <Label className="text-xs">{t('displacement.name', 'Name')}</Label>
                   <Input value={sc.name} onChange={e => updateScenario(i, 'name', e.target.value)} />
@@ -103,13 +125,10 @@ const CompareTab = ({ user, tenant, onLogout } = {}) => {
                   <Label className="text-xs">{t('displacement.commShort', 'Comm%')}</Label>
                   <Input type="number" min={0} max={100} value={sc.commission} onChange={e => updateScenario(i, 'commission', e.target.value)} />
                 </div>
-                {scenarios.length > 1 && (
-                  <Button size="icon" variant="ghost" onClick={() => removeScenario(i)} className="text-red-500">
+                {scenarios.length > 1 && <Button size="icon" variant="ghost" onClick={() => removeScenario(i)} className="text-red-500">
                     <Trash2 className="w-4 h-4" />
-                  </Button>
-                )}
-              </div>
-            ))}
+                  </Button>}
+              </div>)}
           </div>
 
           <div className="flex items-center gap-3 mt-4">
@@ -124,25 +143,21 @@ const CompareTab = ({ user, tenant, onLogout } = {}) => {
         </CardContent>
       </Card>
 
-      {result && (
-        <Card>
+      {result && <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base font-semibold">{t('displacement.comparisonResults', 'Comparison Results')}</CardTitle>
-              {result.best_scenario && (
-                <Badge className="bg-emerald-100 text-emerald-700">
+              {result.best_scenario && <Badge className="bg-emerald-100 text-emerald-700">
                   {t('displacement.bestChoice', 'Best')}: {result.best_scenario}
-                </Badge>
-              )}
+                </Badge>}
             </div>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {(result.scenarios || []).map((sc, i) => {
-                const isAccept = sc.recommendation === 'accept';
-                const isBest = sc.scenario_name === result.best_scenario;
-                return (
-                  <div key={i} className={`p-4 rounded-xl border-2 ${isBest ? 'border-emerald-400 bg-emerald-50/50 ring-2 ring-emerald-200' : 'border-gray-200 bg-white'}`}>
+            const isAccept = sc.recommendation === 'accept';
+            const isBest = sc.scenario_name === result.best_scenario;
+            return <div key={sc.id || i} className={`p-4 rounded-xl border-2 ${isBest ? 'border-emerald-400 bg-emerald-50/50 ring-2 ring-emerald-200' : 'border-gray-200 bg-white'}`}>
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="font-semibold text-sm">{sc.scenario_name || `Scenario ${i + 1}`}</h4>
                       <Badge className={isAccept ? 'bg-emerald-100 text-emerald-700' : sc.recommendation === 'conditional' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}>
@@ -177,15 +192,11 @@ const CompareTab = ({ user, tenant, onLogout } = {}) => {
                         <span className="font-medium">{fmtPct(sc.roi_pct)}</span>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  </div>;
+          })}
             </div>
           </CardContent>
-        </Card>
-      )}
-    </div>
-  );
+        </Card>}
+    </div>;
 };
-
 export default CompareTab;

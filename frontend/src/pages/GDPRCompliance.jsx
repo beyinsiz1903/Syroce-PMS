@@ -5,14 +5,17 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { AlertTriangle } from 'lucide-react';
-
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
-
 const BACKEND = "";
-
-export default function GDPRCompliance({ user, tenant, onLogout }) {
-  const { t } = useTranslation();
+export default function GDPRCompliance({
+  user,
+  tenant,
+  onLogout
+}) {
+  const {
+    t
+  } = useTranslation();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [complianceStatus, setComplianceStatus] = useState(null);
   const [retentionPolicy, setRetentionPolicy] = useState(null);
@@ -20,31 +23,35 @@ export default function GDPRCompliance({ user, tenant, onLogout }) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const token = localStorage.getItem('token');
-  const headers = { Authorization: `Bearer ${token}` };
-
+  const headers = {
+    Authorization: `Bearer ${token}`
+  };
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [statusRes, policyRes, dpaRes] = await Promise.all([
-        axios.get(`/gdpr/compliance-status`, { headers }),
-        axios.get(`/gdpr/retention-policy`, { headers }),
-        axios.get(`/gdpr/dpa`, { headers })
-      ]);
+      const [statusRes, policyRes, dpaRes] = await Promise.all([axios.get(`/gdpr/compliance-status`, {
+        headers
+      }), axios.get(`/gdpr/retention-policy`, {
+        headers
+      }), axios.get(`/gdpr/dpa`, {
+        headers
+      })]);
       setComplianceStatus(statusRes.data);
       setRetentionPolicy(policyRes.data);
       setDPAs(dpaRes.data.agreements || []);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+    }
     setLoading(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  useEffect(() => { fetchData(); }, []);
-
+  useEffect(() => {
+    fetchData();
+  }, []);
   const cs = complianceStatus;
-
-  return (
-    <>
+  return <>
       <div className="p-6 space-y-6">
         <div className="flex justify-between items-center">
           <div>
@@ -66,8 +73,7 @@ export default function GDPRCompliance({ user, tenant, onLogout }) {
           </TabsList>
 
           <TabsContent value="dashboard" className="space-y-4">
-            {cs && (
-              <>
+            {cs && <>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <Card>
                     <CardContent className="pt-6">
@@ -104,53 +110,41 @@ export default function GDPRCompliance({ user, tenant, onLogout }) {
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {cs.compliance_checks && Object.entries(cs.compliance_checks).map(([key, val]) => (
-                        <div key={key} className="flex items-center gap-2 p-2 rounded border">
+                      {cs.compliance_checks && Object.entries(cs.compliance_checks).map(([key, val]) => <div key={key} className="flex items-center gap-2 p-2 rounded border">
                           <span className={`w-3 h-3 rounded-full ${val ? 'bg-green-500' : 'bg-red-500'}`} />
                           <span className="text-sm">{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
-                        </div>
-                      ))}
+                        </div>)}
                     </div>
                   </CardContent>
                 </Card>
 
-                {cs.recommendations?.length > 0 && (
-                  <Card>
+                {cs.recommendations?.length > 0 && <Card>
                     <CardHeader><CardTitle>Oneriler</CardTitle></CardHeader>
                     <CardContent>
                       <ul className="space-y-2">
-                        {cs.recommendations.map((r, i) => (
-                          <li key={i} className="flex items-center gap-2 text-sm">
+                        {cs.recommendations.map((r, i) => <li key={r.id || i} className="flex items-center gap-2 text-sm">
                             <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" /> {r}
-                          </li>
-                        ))}
+                          </li>)}
                       </ul>
                     </CardContent>
-                  </Card>
-                )}
+                  </Card>}
 
-                {cs.recent_actions?.length > 0 && (
-                  <Card>
+                {cs.recent_actions?.length > 0 && <Card>
                     <CardHeader><CardTitle>Son KVKK Islemleri</CardTitle></CardHeader>
                     <CardContent>
                       <div className="space-y-2">
-                        {cs.recent_actions.map((a, i) => (
-                          <div key={i} className="flex justify-between p-2 bg-gray-50 rounded text-sm">
+                        {cs.recent_actions.map((a, i) => <div key={a.id || i} className="flex justify-between p-2 bg-gray-50 rounded text-sm">
                             <span>{a.action}</span>
                             <span className="text-gray-400">{a.timestamp ? new Date(a.timestamp).toLocaleString('tr-TR') : ''}</span>
-                          </div>
-                        ))}
+                          </div>)}
                       </div>
                     </CardContent>
-                  </Card>
-                )}
-              </>
-            )}
+                  </Card>}
+              </>}
           </TabsContent>
 
           <TabsContent value="retention" className="space-y-4">
-            {retentionPolicy && (
-              <Card>
+            {retentionPolicy && <Card>
                 <CardHeader>
                   <CardTitle>Veri Saklama Politikasi</CardTitle>
                   <CardDescription>Her veri kategorisi için saklama suresi</CardDescription>
@@ -182,8 +176,7 @@ export default function GDPRCompliance({ user, tenant, onLogout }) {
                     </div>
                   </div>
                 </CardContent>
-              </Card>
-            )}
+              </Card>}
           </TabsContent>
 
           <TabsContent value="dpa" className="space-y-4">
@@ -193,27 +186,20 @@ export default function GDPRCompliance({ user, tenant, onLogout }) {
                 <CardDescription>Ucuncu parti veri isleyicileri ile yapilan sozlesmeler</CardDescription>
               </CardHeader>
               <CardContent>
-                {dpas.length === 0 ? (
-                  <p className="text-center py-8 text-gray-400">Henüz sozlesme eklenmemis</p>
-                ) : (
-                  <div className="space-y-3">
-                    {dpas.map((dpa, i) => (
-                      <div key={i} className="p-4 border rounded">
+                {dpas.length === 0 ? <p className="text-center py-8 text-gray-400">Henüz sozlesme eklenmemis</p> : <div className="space-y-3">
+                    {dpas.map((dpa, i) => <div key={dpa.id || i} className="p-4 border rounded">
                         <div className="flex justify-between">
                           <p className="font-medium">{dpa.processor_name}</p>
                           <Badge>{dpa.status}</Badge>
                         </div>
                         <p className="text-sm text-gray-600 mt-1">{dpa.purpose}</p>
                         <p className="text-sm text-gray-400">Saklama: {dpa.retention_period_days} gun</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      </div>)}
+                  </div>}
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
       </div>
-    </>
-  );
+    </>;
 }

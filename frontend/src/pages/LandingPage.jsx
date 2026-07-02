@@ -570,7 +570,7 @@ const LandingPage = () => {
               }, {
                 x: 80,
                 y: 78
-              }].map((p, i) => <g key={i}>
+              }].map((p, i) => <g key={p.id || i}>
                     <line x1="50" y1="55" x2={p.x} y2={p.y} stroke="url(#syroceLine)" strokeWidth="0.18" strokeLinecap="round" />
                     {!reduce && <motion.circle r="0.5" fill="rgba(125,255,240,0.95)" initial={{
                   cx: 50,

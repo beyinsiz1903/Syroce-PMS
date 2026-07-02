@@ -281,7 +281,7 @@ export default function AuditTimelinePage({
 
                 {entityTrail && <div className="mt-3 space-y-2">
                     <p className="text-xs text-gray-600">{entityTrail.entity_type}: {entityTrail.entity_id} ({entityTrail.count || 0}{t("cm.pages_AuditTimelinePage.events")}</p>
-                    {(entityTrail.trail || []).map((t, i) => <div key={i} className="bg-gray-50 border border-gray-200 rounded p-2 text-xs">
+                    {(entityTrail.trail || []).map((t, i) => <div key={t.id || i} className="bg-gray-50 border border-gray-200 rounded p-2 text-xs">
                         <p className="text-gray-800">{t.operation_name || t.action}</p>
                         <p className="text-gray-500">{t.timestamp ? new Date(t.timestamp).toLocaleString("tr-TR") : "—"}</p>
                       </div>)}

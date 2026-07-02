@@ -22,7 +22,7 @@ export const ChannelManagerDashboardV2 = lazy(() => import("@/pages/ChannelManag
 export const MappingManager = lazy(() => import("@/pages/MappingManager"));
 export const ReservationLineage = lazy(() => import("@/pages/ReservationLineage"));
 export const ReservationCalendar = lazy(() => import("@/pages/ReservationCalendar"));
-export const Settings = lazy(() => import("@/pages/Settings"));
+export const Settings = lazy(() => import("@/pages/settings"));
 export const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 export const PCIComplianceDashboard = lazy(() => import("@/pages/PCIComplianceDashboard"));
 export const XchangePage = lazy(() => import("@/pages/XchangePage"));
@@ -72,7 +72,7 @@ export const MobileDashboard = lazy(() => import("@/pages/MobileDashboard"));
 export const MobileHousekeeping = lazy(() => import("@/pages/MobileHousekeeping"));
 export const MobileFrontDesk = lazy(() => import("@/pages/MobileFrontDesk"));
 export const MobileFnB = lazy(() => import("@/pages/MobileFnB"));
-export const MobileMaintenance = lazy(() => import("@/pages/MobileMaintenance"));
+export const MobileMaintenance = lazy(() => import("@/pages/maintenance"));
 export const MobileFinance = lazy(() => import("@/pages/MobileFinance"));
 export const MobileSecurity = lazy(() => import("@/pages/MobileSecurity"));
 export const MobileGM = lazy(() => import("@/pages/MobileGM"));

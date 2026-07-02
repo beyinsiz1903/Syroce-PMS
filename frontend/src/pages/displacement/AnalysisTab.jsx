@@ -6,16 +6,17 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  TrendingUp, TrendingDown, BarChart3, Plus, Save, ArrowRight,
-  Info, Target, ArrowUpRight, ArrowDownRight, RefreshCw,
-  CheckCircle2, XCircle,
-} from 'lucide-react';
+import { TrendingUp, TrendingDown, BarChart3, Plus, Save, ArrowRight, Info, Target, ArrowUpRight, ArrowDownRight, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
 import { fmt, fmtPct, tomorrow, dayAfter } from './helpers';
 import { REC_STYLES, SummaryCard } from './shared';
-
-const AnalysisTab = ({ user, tenant, onLogout } = {}) => {  
-  const { t } = useTranslation();
+const AnalysisTab = ({
+  user,
+  tenant,
+  onLogout
+} = {}) => {
+  const {
+    t
+  } = useTranslation();
   const [form, setForm] = useState({
     group_name: '',
     check_in: tomorrow(),
@@ -23,24 +24,24 @@ const AnalysisTab = ({ user, tenant, onLogout } = {}) => {
     rooms_requested: 10,
     proposed_rate: 100,
     ancillary_per_room: 0,
-    commission_pct: 0,
+    commission_pct: 0
   });
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-
   const handleChange = (field, value) => {
-    setForm(prev => ({ ...prev, [field]: value }));
+    setForm(prev => ({
+      ...prev,
+      [field]: value
+    }));
   };
-
   const buildPayload = () => ({
     ...form,
     rooms_requested: Number(form.rooms_requested),
     proposed_rate: Number(form.proposed_rate),
     ancillary_per_room: Number(form.ancillary_per_room),
-    commission_pct: Number(form.commission_pct),
+    commission_pct: Number(form.commission_pct)
   });
-
   const runAnalysis = async () => {
     setLoading(true);
     setResult(null);
@@ -53,7 +54,6 @@ const AnalysisTab = ({ user, tenant, onLogout } = {}) => {
       setLoading(false);
     }
   };
-
   const saveAnalysis = async () => {
     setSaving(true);
     try {
@@ -64,13 +64,10 @@ const AnalysisTab = ({ user, tenant, onLogout } = {}) => {
       setSaving(false);
     }
   };
-
   const rec = result?.recommendation;
   const recStyle = rec ? REC_STYLES[rec.action] || REC_STYLES.conditional : null;
   const RecIcon = recStyle?.icon || Info;
-
-  return (
-    <div className="space-y-6">
+  return <div className="space-y-6">
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -118,8 +115,7 @@ const AnalysisTab = ({ user, tenant, onLogout } = {}) => {
         </CardContent>
       </Card>
 
-      {result && (
-        <>
+      {result && <>
           <div className={`rounded-xl border-2 p-5 ${recStyle?.bg} ${recStyle?.border}`}>
             <div className="flex items-start gap-4">
               <RecIcon className={`w-8 h-8 mt-0.5 ${recStyle?.color}`} />
@@ -145,12 +141,7 @@ const AnalysisTab = ({ user, tenant, onLogout } = {}) => {
             <SummaryCard label={t('displacement.displacedRevenue', 'Displaced Revenue')} value={`₺${fmt(result.summary.total_displaced_revenue)}`} icon={TrendingDown} color="text-red-600" />
             <SummaryCard label={t('displacement.proposedRevenue', 'Proposed Revenue')} value={`₺${fmt(result.summary.total_proposed_revenue)}`} icon={TrendingUp} color="text-blue-600" />
             <SummaryCard label={t('displacement.ancillaryRevenue', 'Ancillary Revenue')} value={`₺${fmt(result.summary.total_ancillary_revenue)}`} icon={Plus} color="text-indigo-600" />
-            <SummaryCard
-              label={t('displacement.netDisplacement', 'Net Displacement')}
-              value={`₺${fmt(result.summary.net_displacement)}`}
-              icon={result.summary.net_displacement >= 0 ? ArrowUpRight : ArrowDownRight}
-              color={result.summary.net_displacement >= 0 ? 'text-emerald-600' : 'text-red-600'}
-            />
+            <SummaryCard label={t('displacement.netDisplacement', 'Net Displacement')} value={`₺${fmt(result.summary.net_displacement)}`} icon={result.summary.net_displacement >= 0 ? ArrowUpRight : ArrowDownRight} color={result.summary.net_displacement >= 0 ? 'text-emerald-600' : 'text-red-600'} />
             <SummaryCard label={t('displacement.roi', 'ROI')} value={fmtPct(result.summary.roi_pct)} icon={Target} color="text-indigo-600" />
             <SummaryCard label={t('displacement.revparDelta', 'RevPAR Delta')} value={`₺${fmt(result.summary.revpar_delta)}`} icon={BarChart3} color="text-cyan-600" />
           </div>
@@ -176,8 +167,7 @@ const AnalysisTab = ({ user, tenant, onLogout } = {}) => {
                     </tr>
                   </thead>
                   <tbody>
-                    {(result.daily_analysis || []).map((d, i) => (
-                      <tr key={i} className="border-b last:border-0 hover:bg-gray-50">
+                    {(result.daily_analysis || []).map((d, i) => <tr key={d.id || i} className="border-b last:border-0 hover:bg-gray-50">
                         <td className="py-2 pr-3 font-mono text-xs">{d.date?.slice(5)}</td>
                         <td className="py-2 pr-3 text-xs text-gray-500">{d.day_of_week?.slice(0, 3)}</td>
                         <td className="py-2 pr-3 text-right">
@@ -193,13 +183,9 @@ const AnalysisTab = ({ user, tenant, onLogout } = {}) => {
                           ₺{fmt(d.net_displacement)}
                         </td>
                         <td className="py-2 pr-3 text-center">
-                          {d.recommendation === 'accept' ?
-                            <CheckCircle2 className="w-4 h-4 text-emerald-500 inline" /> :
-                            <XCircle className="w-4 h-4 text-red-500 inline" />
-                          }
+                          {d.recommendation === 'accept' ? <CheckCircle2 className="w-4 h-4 text-emerald-500 inline" /> : <XCircle className="w-4 h-4 text-red-500 inline" />}
                         </td>
-                      </tr>
-                    ))}
+                      </tr>)}
                   </tbody>
                 </table>
               </div>
@@ -231,10 +217,7 @@ const AnalysisTab = ({ user, tenant, onLogout } = {}) => {
               </div>
             </CardContent>
           </Card>
-        </>
-      )}
-    </div>
-  );
+        </>}
+    </div>;
 };
-
 export default AnalysisTab;

@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,19 +9,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import {
-  Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink,
-  Building2, ArrowDownUp, CalendarCheck, Activity,
-  AlertTriangle, Loader2, Search, Download, ExternalLink, FlaskConical,
-  Wand2, Trash2
-} from 'lucide-react';
+import { Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink, Building2, ArrowDownUp, CalendarCheck, Activity, AlertTriangle, Loader2, Search, Download, ExternalLink, FlaskConical, Wand2, Trash2 } from 'lucide-react';
 import TestBookingVerification from '@/components/TestBookingVerification';
 import { useTranslation } from 'react-i18next';
-
 const API = "";
-
-const ExelyIntegration = ({ user, tenant, onLogout }) => {
-  const { t } = useTranslation();
+const ExelyIntegration = ({
+  user,
+  tenant,
+  onLogout
+}) => {
+  const {
+    t
+  } = useTranslation();
   const [activeTab, setActiveTab] = useState('connection');
   const [loading, setLoading] = useState(false);
   const [connection, setConnection] = useState(null);
@@ -36,66 +34,112 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
   const [autoMapSuggestions, setAutoMapSuggestions] = useState(null);
   const [autoMapLoading, setAutoMapLoading] = useState(false);
   const [mappingStatus, setMappingStatus] = useState(null);
-
   const [connectForm, setConnectForm] = useState({
-    username: '', password: '', hotel_code: '', endpoint_url: '',
-    property_name: '', currency: 'TRY', auto_sync_reservations: true, sync_interval_minutes: 15,
+    username: '',
+    password: '',
+    hotel_code: '',
+    endpoint_url: '',
+    property_name: '',
+    currency: 'TRY',
+    auto_sync_reservations: true,
+    sync_interval_minutes: 15
   });
-
-  const headers = { Authorization: `Bearer ${user?.token || user?.access_token}` };
-
+  const headers = {
+    Authorization: `Bearer ${user?.token || user?.access_token}`
+  };
   const fetchConnection = useCallback(async () => {
     try {
-      const { data } = await axios.get(`/channel-manager/exely/connection`, { headers });
+      const {
+        data
+      } = await axios.get(`/channel-manager/exely/connection`, {
+        headers
+      });
       setConnection(data);
       if (data.connection?.room_types) setRoomTypes(data.connection.room_types);
       if (data.connection?.rate_plans) setRatePlans(data.connection.rate_plans);
-    } catch { setConnection({ connected: false }); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    } catch {
+      setConnection({
+        connected: false
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
-
   const fetchAll = useCallback(async () => {
     if (!connection?.connected) return;
     try {
-      const [mappingsRes, logsRes, localRes, statusRes] = await Promise.all([
-        axios.get(`/channel-manager/exely/room-mappings`, { headers }).catch(() => ({ data: { mappings: [] } })),
-        axios.get(`/channel-manager/exely/sync-logs?limit=20`, { headers }).catch(() => ({ data: { logs: [] } })),
-        axios.get(`/channel-manager/exely/reservations/local`, { headers }).catch(() => ({ data: { reservations: [] } })),
-        axios.get(`/channel-manager/exely/sync/status`, { headers }).catch(() => ({ data: {} })),
-      ]);
+      const [mappingsRes, logsRes, localRes, statusRes] = await Promise.all([axios.get(`/channel-manager/exely/room-mappings`, {
+        headers
+      }).catch(() => ({
+        data: {
+          mappings: []
+        }
+      })), axios.get(`/channel-manager/exely/sync-logs?limit=20`, {
+        headers
+      }).catch(() => ({
+        data: {
+          logs: []
+        }
+      })), axios.get(`/channel-manager/exely/reservations/local`, {
+        headers
+      }).catch(() => ({
+        data: {
+          reservations: []
+        }
+      })), axios.get(`/channel-manager/exely/sync/status`, {
+        headers
+      }).catch(() => ({
+        data: {}
+      }))]);
       setMappings(mappingsRes.data.mappings || []);
       setSyncLogs(logsRes.data.logs || []);
       setReservations(localRes.data.reservations || []);
       setSyncStatus(statusRes.data);
-    } catch (e) { console.error(e); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    } catch (e) {
+      console.error(e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [connection?.connected]);
-
-  useEffect(() => { fetchConnection(); }, [fetchConnection]);
-  useEffect(() => { fetchAll(); }, [fetchAll]);
-
+  useEffect(() => {
+    fetchConnection();
+  }, [fetchConnection]);
+  useEffect(() => {
+    fetchAll();
+  }, [fetchAll]);
   const fetchMappingStatus = useCallback(async () => {
     try {
-      const { data } = await axios.get(`/channel-manager/auto-map/status/exely`, { headers });
+      const {
+        data
+      } = await axios.get(`/channel-manager/auto-map/status/exely`, {
+        headers
+      });
       setMappingStatus(data);
-    } catch { /* ignore */ }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    } catch {/* ignore */}
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  useEffect(() => { if (connection?.connected) fetchMappingStatus(); }, [connection?.connected]);
-
+  useEffect(() => {
+    if (connection?.connected) fetchMappingStatus();
+  }, [connection?.connected]);
   const handleAutoMapSuggest = async () => {
     setAutoMapLoading(true);
     try {
-      const { data } = await axios.post(`/channel-manager/auto-map/suggest`, { provider: 'exely' }, { headers });
+      const {
+        data
+      } = await axios.post(`/channel-manager/auto-map/suggest`, {
+        provider: 'exely'
+      }, {
+        headers
+      });
       setAutoMapSuggestions(data);
       setAutoMapOpen(true);
-    } catch (e) { toast.error(e.response?.data?.detail || 'Otomatik esleme onerisi alinamadi'); }
-    finally { setAutoMapLoading(false); }
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Otomatik esleme onerisi alinamadi');
+    } finally {
+      setAutoMapLoading(false);
+    }
   };
-
-  const handleAutoMapApply = async (selectedSuggestions) => {
+  const handleAutoMapApply = async selectedSuggestions => {
     if (!selectedSuggestions?.length) return;
     setAutoMapLoading(true);
     try {
@@ -106,27 +150,36 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
           provider_room_code: s.provider_room_code,
           provider_room_name: s.provider_room_name,
           provider_rate_plan_code: s.provider_rate_plan_code,
-          provider_rate_plan_name: s.provider_rate_plan_name,
-        })),
+          provider_rate_plan_name: s.provider_rate_plan_name
+        }))
       };
-      const { data } = await axios.post(`/channel-manager/auto-map/apply`, payload, { headers });
+      const {
+        data
+      } = await axios.post(`/channel-manager/auto-map/apply`, payload, {
+        headers
+      });
       toast.success(data.message);
       setAutoMapOpen(false);
       fetchAll();
       fetchMappingStatus();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Esleme uygulanamadi'); }
-    finally { setAutoMapLoading(false); }
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Esleme uygulanamadi');
+    } finally {
+      setAutoMapLoading(false);
+    }
   };
-
-  const handleDeleteMapping = async (mappingId) => {
+  const handleDeleteMapping = async mappingId => {
     try {
-      await axios.delete(`/channel-manager/exely/room-mappings/${mappingId}`, { headers });
+      await axios.delete(`/channel-manager/exely/room-mappings/${mappingId}`, {
+        headers
+      });
       toast.success('Esleme silindi');
       fetchAll();
       fetchMappingStatus();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Silme hatası'); }
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Silme hatası');
+    }
   };
-
   const handleConnect = async () => {
     if (!connectForm.username || !connectForm.password || !connectForm.hotel_code) {
       toast.error('Kullanıcı adı, şifre ve otel kodu zorunludur');
@@ -134,82 +187,113 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
     }
     setLoading(true);
     try {
-      const payload = { ...connectForm };
+      const payload = {
+        ...connectForm
+      };
       if (!payload.endpoint_url) delete payload.endpoint_url;
-      const { data } = await axios.post(`/channel-manager/exely/connect`, payload, { headers });
+      const {
+        data
+      } = await axios.post(`/channel-manager/exely/connect`, payload, {
+        headers
+      });
       toast.success(data.message);
-      setConnection({ connected: true, connection: data });
+      setConnection({
+        connected: true,
+        connection: data
+      });
       if (data.room_types) setRoomTypes(data.room_types);
       if (data.rate_plans) setRatePlans(data.rate_plans);
       fetchConnection();
       fetchAll();
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Bağlantı hatası');
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   };
-
   const handleDisconnect = async () => {
     try {
-      await axios.delete(`/channel-manager/exely/disconnect`, { headers });
+      await axios.delete(`/channel-manager/exely/disconnect`, {
+        headers
+      });
       toast.success('Exely baglantisi kesildi');
-      setConnection({ connected: false });
-    } catch (e) { toast.error(e.response?.data?.detail || 'Hata'); }
+      setConnection({
+        connected: false
+      });
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Hata');
+    }
   };
-
   const handleTest = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.post(`/channel-manager/exely/test`, {}, { headers });
-      if (data.connected) toast.success(`Bağlantı basarili (${data.duration_ms}ms)`);
-      else toast.error(`Bağlantı hatası: ${data.error}`);
-    } catch (e) { toast.error(e.response?.data?.detail || 'Test hatası'); }
-    finally { setLoading(false); }
+      const {
+        data
+      } = await axios.post(`/channel-manager/exely/test`, {}, {
+        headers
+      });
+      if (data.connected) toast.success(`Bağlantı basarili (${data.duration_ms}ms)`);else toast.error(`Bağlantı hatası: ${data.error}`);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Test hatası');
+    } finally {
+      setLoading(false);
+    }
   };
-
   const handleDiscover = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get(`/channel-manager/exely/rooms/discover`, { headers });
+      const {
+        data
+      } = await axios.get(`/channel-manager/exely/rooms/discover`, {
+        headers
+      });
       setRoomTypes(data.room_types || []);
       setRatePlans(data.rate_plans || []);
       toast.success(`${(data.room_types || []).length} oda tipi, ${(data.rate_plans || []).length} fiyat plani kesfedildi`);
-    } catch (e) { toast.error(e.response?.data?.detail || 'Kesfetme hatası'); }
-    finally { setLoading(false); }
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Kesfetme hatası');
+    } finally {
+      setLoading(false);
+    }
   };
-
   const handlePull = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.post(`/channel-manager/exely/sync/reservations/pull`, {}, { headers });
+      const {
+        data
+      } = await axios.post(`/channel-manager/exely/sync/reservations/pull`, {}, {
+        headers
+      });
       toast.success(data.message);
       fetchAll();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Pull hatası'); }
-    finally { setLoading(false); }
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Pull hatası');
+    } finally {
+      setLoading(false);
+    }
   };
-
-  const handleImport = async (resId) => {
+  const handleImport = async resId => {
     try {
-      const { data } = await axios.post(`/channel-manager/exely/reservations/${resId}/import`, {}, { headers });
+      const {
+        data
+      } = await axios.post(`/channel-manager/exely/reservations/${resId}/import`, {}, {
+        headers
+      });
       toast.success(`${data.message} - Oda: ${data.room_number}`);
       fetchAll();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Import hatası'); }
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Import hatası');
+    }
   };
-
   const isConnected = connection?.connected;
-
-  return (
-    <>
+  return <>
       <div className="p-4 md:p-6 space-y-6" data-testid="exely-integration">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900" data-testid="exely-page-title">Exely Entegrasyonu</h1>
             <p className="text-sm text-slate-500 mt-1">{t('cm.pages_ExelyIntegration.soap_channel_manager_ota_standart_rezerv')}</p>
           </div>
-          <Badge
-            data-testid="exely-connection-badge"
-            variant={isConnected ? 'default' : 'destructive'}
-            className={isConnected ? 'bg-emerald-600' : ''}
-          >
+          <Badge data-testid="exely-connection-badge" variant={isConnected ? 'default' : 'destructive'} className={isConnected ? 'bg-emerald-600' : ''}>
             {isConnected ? <><CheckCircle className="w-3 h-3 mr-1" /> Bagli</> : <><XCircle className="w-3 h-3 mr-1" /> Bagli Degil</>}
           </Badge>
         </div>
@@ -226,8 +310,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
 
           {/* Connection Tab */}
           <TabsContent value="connection" className="space-y-4 mt-4">
-            {!isConnected ? (
-              <Card>
+            {!isConnected ? <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2"><Network className="w-5 h-5" /> Exely SOAP Baglantisi Kur</CardTitle>
                   <CardDescription>Exely channel manager WSSE kimlik bilgilerinizi girin</CardDescription>
@@ -236,35 +319,45 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="exely-user">{t('cm.pages_ExelyIntegration.kullanici_adi')}</Label>
-                      <Input id="exely-user" data-testid="exely-username-input" placeholder={t('cm.pages_ExelyIntegration.exely_kullanici_adi')}
-                        value={connectForm.username} onChange={e => setConnectForm(p => ({ ...p, username: e.target.value }))} />
+                      <Input id="exely-user" data-testid="exely-username-input" placeholder={t('cm.pages_ExelyIntegration.exely_kullanici_adi')} value={connectForm.username} onChange={e => setConnectForm(p => ({
+                    ...p,
+                    username: e.target.value
+                  }))} />
                     </div>
                     <div>
                       <Label htmlFor="exely-pass">{t('cm.pages_ExelyIntegration.sifre')}</Label>
-                      <Input id="exely-pass" data-testid="exely-password-input" type="password" placeholder={t('cm.pages_ExelyIntegration.exely_sifre')}
-                        value={connectForm.password} onChange={e => setConnectForm(p => ({ ...p, password: e.target.value }))} />
+                      <Input id="exely-pass" data-testid="exely-password-input" type="password" placeholder={t('cm.pages_ExelyIntegration.exely_sifre')} value={connectForm.password} onChange={e => setConnectForm(p => ({
+                    ...p,
+                    password: e.target.value
+                  }))} />
                     </div>
                     <div>
                       <Label htmlFor="exely-hotel">Otel Kodu</Label>
-                      <Input id="exely-hotel" data-testid="exely-hotel-code-input" placeholder="Ornek: 12345"
-                        value={connectForm.hotel_code} onChange={e => setConnectForm(p => ({ ...p, hotel_code: e.target.value }))} />
+                      <Input id="exely-hotel" data-testid="exely-hotel-code-input" placeholder="Ornek: 12345" value={connectForm.hotel_code} onChange={e => setConnectForm(p => ({
+                    ...p,
+                    hotel_code: e.target.value
+                  }))} />
                     </div>
                     <div>
                       <Label htmlFor="exely-name">{t('cm.pages_ExelyIntegration.tesis_adi_opsiyonel')}</Label>
-                      <Input id="exely-name" data-testid="exely-name-input" placeholder="Ornek: Otelim"
-                        value={connectForm.property_name} onChange={e => setConnectForm(p => ({ ...p, property_name: e.target.value }))} />
+                      <Input id="exely-name" data-testid="exely-name-input" placeholder="Ornek: Otelim" value={connectForm.property_name} onChange={e => setConnectForm(p => ({
+                    ...p,
+                    property_name: e.target.value
+                  }))} />
                     </div>
                     <div>
                       <Label htmlFor="exely-url">Endpoint URL (opsiyonel)</Label>
-                      <Input id="exely-url" data-testid="exely-url-input" placeholder="https://www.exely.com/ota/OTA"
-                        value={connectForm.endpoint_url} onChange={e => setConnectForm(p => ({ ...p, endpoint_url: e.target.value }))} />
+                      <Input id="exely-url" data-testid="exely-url-input" placeholder="https://www.exely.com/ota/OTA" value={connectForm.endpoint_url} onChange={e => setConnectForm(p => ({
+                    ...p,
+                    endpoint_url: e.target.value
+                  }))} />
                     </div>
                     <div>
                       <Label htmlFor="exely-currency">Para Birimi</Label>
-                      <select id="exely-currency" data-testid="exely-currency-select"
-                        value={connectForm.currency}
-                        onChange={e => setConnectForm(p => ({ ...p, currency: e.target.value }))}
-                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                      <select id="exely-currency" data-testid="exely-currency-select" value={connectForm.currency} onChange={e => setConnectForm(p => ({
+                    ...p,
+                    currency: e.target.value
+                  }))} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
                         <option value="TRY">TRY - Turk Lirasi</option>
                         <option value="USD">USD - Amerikan Dolari</option>
                         <option value="EUR">EUR - Euro</option>
@@ -274,13 +367,17 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                     </div>
                     <div>
                       <Label htmlFor="exely-interval">Sync Araligi (dk)</Label>
-                      <Input id="exely-interval" type="number" min={5} max={60}
-                        value={connectForm.sync_interval_minutes} onChange={e => setConnectForm(p => ({ ...p, sync_interval_minutes: parseInt(e.target.value) || 15 }))} />
+                      <Input id="exely-interval" type="number" min={5} max={60} value={connectForm.sync_interval_minutes} onChange={e => setConnectForm(p => ({
+                    ...p,
+                    sync_interval_minutes: parseInt(e.target.value) || 15
+                  }))} />
                     </div>
                   </div>
                   <div className="flex items-center gap-2 pt-2">
-                    <Switch checked={connectForm.auto_sync_reservations}
-                      onCheckedChange={v => setConnectForm(p => ({ ...p, auto_sync_reservations: v }))} />
+                    <Switch checked={connectForm.auto_sync_reservations} onCheckedChange={v => setConnectForm(p => ({
+                  ...p,
+                  auto_sync_reservations: v
+                }))} />
                     <Label>{t('cm.pages_ExelyIntegration.otomatik_rezervasyon_sync')}</Label>
                   </div>
                   <Button data-testid="exely-connect-btn" onClick={handleConnect} disabled={loading} className="w-full">
@@ -288,9 +385,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                     Baglan
                   </Button>
                 </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-4">
+              </Card> : <div className="space-y-4">
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2"><CheckCircle className="w-5 h-5 text-emerald-600" /> {t('cm.pages_ExelyIntegration.exely_baglantisi_aktif')}</CardTitle>
@@ -309,21 +404,20 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                       </Button>
                       <div className="flex items-center gap-2 ml-auto">
                         <Label className="text-sm text-slate-600 whitespace-nowrap">Para Birimi:</Label>
-                        <select
-                          data-testid="exely-currency-change"
-                          value={connection.connection?.currency || 'TRY'}
-                          onChange={async (e) => {
-                            const newCurrency = e.target.value;
-                            try {
-                              await axios.patch(`/channel-manager/exely/currency`, { currency: newCurrency }, { headers });
-                              toast.success(`Para birimi ${newCurrency} olarak güncellendi`);
-                              fetchConnection();
-                            } catch (err) {
-                              toast.error(err.response?.data?.detail || 'Para birimi güncellenemedi');
-                            }
-                          }}
-                          className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        >
+                        <select data-testid="exely-currency-change" value={connection.connection?.currency || 'TRY'} onChange={async e => {
+                      const newCurrency = e.target.value;
+                      try {
+                        await axios.patch(`/channel-manager/exely/currency`, {
+                          currency: newCurrency
+                        }, {
+                          headers
+                        });
+                        toast.success(`Para birimi ${newCurrency} olarak güncellendi`);
+                        fetchConnection();
+                      } catch (err) {
+                        toast.error(err.response?.data?.detail || 'Para birimi güncellenemedi');
+                      }
+                    }} className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
                           <option value="TRY">TRY</option>
                           <option value="USD">USD</option>
                           <option value="EUR">EUR</option>
@@ -332,8 +426,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                         </select>
                       </div>
                     </div>
-                    {syncStatus && (
-                      <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {syncStatus && <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
                         <div className="bg-slate-50 rounded-lg p-3 border">
                           <p className="text-xs text-slate-500">{t('cm.pages_ExelyIntegration.toplam_rezervasyon')}</p>
                           <p className="text-lg font-bold" data-testid="exely-total-reservations">{syncStatus.total_reservations || 0}</p>
@@ -350,14 +443,12 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                           <p className="text-xs text-slate-500">Scheduler</p>
                           <p className="text-lg font-bold">{syncStatus.scheduler_running ? 'Aktif' : 'Durdu'}</p>
                         </div>
-                      </div>
-                    )}
+                      </div>}
                   </CardContent>
                 </Card>
 
                 {/* Webhook section removed - using PULL mode only */}
-              </div>
-            )}
+              </div>}
           </TabsContent>
 
           {/* Rooms Tab */}
@@ -374,12 +465,8 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                 </Button>
               </CardHeader>
               <CardContent className="space-y-6">
-                {roomTypes.length === 0 && ratePlans.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-8">{t('cm.pages_ExelyIntegration.henuz_oda_rate_kesfedilmedi_kesfet_buton')}</p>
-                ) : (
-                  <>
-                    {roomTypes.length > 0 && (
-                      <div>
+                {roomTypes.length === 0 && ratePlans.length === 0 ? <p className="text-sm text-slate-500 text-center py-8">{t('cm.pages_ExelyIntegration.henuz_oda_rate_kesfedilmedi_kesfet_buton')}</p> : <>
+                    {roomTypes.length > 0 && <div>
                         <h3 className="text-sm font-semibold text-slate-700 mb-2">{t('cm.pages_ExelyIntegration.oda_tipleri')}{roomTypes.length})</h3>
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm" data-testid="exely-room-types-table">
@@ -391,20 +478,16 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                               </tr>
                             </thead>
                             <tbody>
-                              {roomTypes.map((rt, i) => (
-                                <tr key={i} className="border-b last:border-0">
+                              {roomTypes.map((rt, i) => <tr key={rt.id || i} className="border-b last:border-0">
                                   <td className="py-2 pr-4 font-mono text-xs">{rt.code}</td>
                                   <td className="py-2 pr-4 font-medium">{rt.name}</td>
                                   <td className="py-2">{rt.quantity || '-'}</td>
-                                </tr>
-                              ))}
+                                </tr>)}
                             </tbody>
                           </table>
                         </div>
-                      </div>
-                    )}
-                    {ratePlans.length > 0 && (
-                      <div>
+                      </div>}
+                    {ratePlans.length > 0 && <div>
                         <h3 className="text-sm font-semibold text-slate-700 mb-2">Fiyat Planlari ({ratePlans.length})</h3>
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm" data-testid="exely-rate-plans-table">
@@ -415,19 +498,15 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                               </tr>
                             </thead>
                             <tbody>
-                              {ratePlans.map((rp, i) => (
-                                <tr key={i} className="border-b last:border-0">
+                              {ratePlans.map((rp, i) => <tr key={rp.id || i} className="border-b last:border-0">
                                   <td className="py-2 pr-4 font-mono text-xs">{rp.code}</td>
                                   <td className="py-2 font-medium">{rp.name || rp.code}</td>
-                                </tr>
-                              ))}
+                                </tr>)}
                             </tbody>
                           </table>
                         </div>
-                      </div>
-                    )}
-                  </>
-                )}
+                      </div>}
+                  </>}
               </CardContent>
             </Card>
           </TabsContent>
@@ -446,10 +525,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                 </Button>
               </CardHeader>
               <CardContent>
-                {reservations.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-8">{t('cm.pages_ExelyIntegration.henuz_rezervasyon_yok_rezervasyonlari_ce')}</p>
-                ) : (
-                  <div className="overflow-x-auto">
+                {reservations.length === 0 ? <p className="text-sm text-slate-500 text-center py-8">{t('cm.pages_ExelyIntegration.henuz_rezervasyon_yok_rezervasyonlari_ce')}</p> : <div className="overflow-x-auto">
                     <table className="w-full text-sm" data-testid="exely-reservations-table">
                       <thead>
                         <tr className="border-b text-left text-slate-500">
@@ -465,8 +541,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                         </tr>
                       </thead>
                       <tbody>
-                        {reservations.map((res, i) => (
-                          <tr key={i} className="border-b last:border-0">
+                        {reservations.map((res, i) => <tr key={res.id || i} className="border-b last:border-0">
                             <td className="py-2 pr-4 font-mono text-xs">{res.external_id}</td>
                             <td className="py-2 pr-4 font-medium">{res.guest_name}</td>
                             <td className="py-2 pr-4"><Badge variant="outline">{res.channel_display || res.channel}</Badge></td>
@@ -484,26 +559,14 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                               </Badge>
                             </td>
                             <td className="py-2">
-                              {res.pms_status !== 'imported' && res.state === 'confirmed' ? (
-                                <Button
-                                  data-testid={`exely-import-btn-${i}`}
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 text-xs"
-                                  onClick={() => handleImport(res.id || res.external_id)}
-                                >
+                              {res.pms_status !== 'imported' && res.state === 'confirmed' ? <Button data-testid={`exely-import-btn-${i}`} size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleImport(res.id || res.external_id)}>
                                   <Download className="w-3 h-3 mr-1" /> PMS'e Aktar
-                                </Button>
-                              ) : res.pms_status === 'imported' ? (
-                                <span className="text-xs text-emerald-600 font-medium">Aktarildi</span>
-                              ) : null}
+                                </Button> : res.pms_status === 'imported' ? <span className="text-xs text-emerald-600 font-medium">Aktarildi</span> : null}
                             </td>
-                          </tr>
-                        ))}
+                          </tr>)}
                       </tbody>
                     </table>
-                  </div>
-                )}
+                  </div>}
               </CardContent>
             </Card>
           </TabsContent>
@@ -516,8 +579,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
           {/* Mappings Tab */}
           <TabsContent value="mappings" className="space-y-4 mt-4">
             {/* Mapping Status Bar */}
-            {mappingStatus && (
-              <Card data-testid="exely-mapping-status">
+            {mappingStatus && <Card data-testid="exely-mapping-status">
                 <CardContent className="py-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
@@ -527,30 +589,20 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                         <span className="text-slate-400"> / {mappingStatus.total_pms_types} PMS oda tipi</span>
                       </div>
                       <div className="w-32 bg-slate-200 rounded-full h-2">
-                        <div
-                          className="h-2 rounded-full transition-all"
-                          style={{
-                            width: `${mappingStatus.completion_pct}%`,
-                            backgroundColor: mappingStatus.completion_pct === 100 ? '#22c55e' : mappingStatus.completion_pct >= 50 ? '#f59e0b' : '#ef4444',
-                          }}
-                        />
+                        <div className="h-2 rounded-full transition-all" style={{
+                      width: `${mappingStatus.completion_pct}%`,
+                      backgroundColor: mappingStatus.completion_pct === 100 ? '#22c55e' : mappingStatus.completion_pct >= 50 ? '#f59e0b' : '#ef4444'
+                    }} />
                       </div>
                       <span className="text-xs text-slate-500">%{mappingStatus.completion_pct}</span>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleAutoMapSuggest}
-                      disabled={autoMapLoading}
-                      data-testid="exely-auto-map-btn"
-                    >
+                    <Button variant="outline" size="sm" onClick={handleAutoMapSuggest} disabled={autoMapLoading} data-testid="exely-auto-map-btn">
                       {autoMapLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Wand2 className="w-4 h-4 mr-1" />}
                       Otomatik Esle
                     </Button>
                   </div>
                 </CardContent>
-              </Card>
-            )}
+              </Card>}
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
@@ -558,22 +610,17 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                   <CardTitle>{t('cm.pages_ExelyIntegration.oda_eslemeleri')}</CardTitle>
                   <CardDescription>PMS oda tipleri ile Exely oda/fiyat planlarini esleyin</CardDescription>
                 </div>
-                {!mappingStatus && (
-                  <Button variant="outline" size="sm" onClick={handleAutoMapSuggest} disabled={autoMapLoading} data-testid="exely-auto-map-btn-alt">
+                {!mappingStatus && <Button variant="outline" size="sm" onClick={handleAutoMapSuggest} disabled={autoMapLoading} data-testid="exely-auto-map-btn-alt">
                     {autoMapLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Wand2 className="w-4 h-4 mr-1" />}
                     Otomatik Esle
-                  </Button>
-                )}
+                  </Button>}
               </CardHeader>
               <CardContent>
-                {mappings.length === 0 ? (
-                  <div className="text-center py-8">
+                {mappings.length === 0 ? <div className="text-center py-8">
                     <ArrowDownUp className="w-10 h-10 text-slate-300 mx-auto mb-3" />
                     <p className="text-sm text-slate-500">{t('cm.pages_ExelyIntegration.henuz_oda_eslemesi_yok')}</p>
                     <p className="text-xs text-slate-400 mt-1">Odalar kesfedildikten sonra esleme yapilabilir</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
+                  </div> : <div className="overflow-x-auto">
                     <table className="w-full text-sm" data-testid="exely-mappings-table">
                       <thead>
                         <tr className="border-b text-left text-slate-500">
@@ -586,8 +633,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                         </tr>
                       </thead>
                       <tbody>
-                        {mappings.map((m, i) => (
-                          <tr key={m.id || i} className="border-b last:border-0" data-testid={`exely-mapping-row-${i}`}>
+                        {mappings.map((m, i) => <tr key={m.id || i} className="border-b last:border-0" data-testid={`exely-mapping-row-${i}`}>
                             <td className="py-2 pr-4 font-medium">{m.pms_room_type}</td>
                             <td className="py-2 pr-4 font-mono text-xs">{m.exely_room_code}</td>
                             <td className="py-2 pr-4 font-mono text-xs">{m.exely_rate_plan_code}</td>
@@ -604,16 +650,13 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                                 <Trash2 className="w-3.5 h-3.5" />
                               </Button>
                             </td>
-                          </tr>
-                        ))}
+                          </tr>)}
                       </tbody>
                     </table>
-                  </div>
-                )}
+                  </div>}
 
                 {/* Unmapped PMS Types Warning */}
-                {mappingStatus && mappingStatus.unmapped_count > 0 && (
-                  <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg" data-testid="exely-unmapped-warning">
+                {mappingStatus && mappingStatus.unmapped_count > 0 && <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg" data-testid="exely-unmapped-warning">
                     <div className="flex items-start gap-2">
                       <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
                       <div>
@@ -623,8 +666,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                         </p>
                       </div>
                     </div>
-                  </div>
-                )}
+                  </div>}
               </CardContent>
             </Card>
 
@@ -634,14 +676,11 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2"><Wand2 className="w-5 h-5" /> Otomatik Esleme Onerileri</DialogTitle>
                 </DialogHeader>
-                {autoMapSuggestions && (
-                  <div className="space-y-4 mt-2">
-                    {autoMapSuggestions.suggestions.length > 0 ? (
-                      <>
+                {autoMapSuggestions && <div className="space-y-4 mt-2">
+                    {autoMapSuggestions.suggestions.length > 0 ? <>
                         <p className="text-sm text-slate-600">{t('cm.pages_ExelyIntegration.isim_benzerligine_gore_eslesme_onerileri')}</p>
                         <div className="space-y-2">
-                          {autoMapSuggestions.suggestions.map((s, i) => (
-                            <div key={i} className="flex items-center justify-between p-3 bg-slate-50 border rounded-lg" data-testid={`auto-map-suggestion-${i}`}>
+                          {autoMapSuggestions.suggestions.map((s, i) => <div key={s.id || i} className="flex items-center justify-between p-3 bg-slate-50 border rounded-lg" data-testid={`auto-map-suggestion-${i}`}>
                               <div className="flex items-center gap-3">
                                 <div>
                                   <p className="font-medium text-sm">{s.pms_room_name}</p>
@@ -656,51 +695,38 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                               <Badge className={s.confidence === 'high' ? 'bg-emerald-100 text-emerald-800' : s.confidence === 'medium' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'}>
                                 %{Math.round(s.similarity_score * 100)}
                               </Badge>
-                            </div>
-                          ))}
+                            </div>)}
                         </div>
                         <Button className="w-full" onClick={() => handleAutoMapApply(autoMapSuggestions.suggestions)} disabled={autoMapLoading} data-testid="auto-map-apply-btn">
                           {autoMapLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />}
                           {t('cm.pages_ExelyIntegration.tum_onerileri_uygula')}{autoMapSuggestions.suggestions.length})
                         </Button>
-                      </>
-                    ) : (
-                      <div className="text-center py-4">
+                      </> : <div className="text-center py-4">
                         <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
                         <p className="text-sm text-slate-600">{t('cm.pages_ExelyIntegration.otomatik_eslestirilecek_yeni_oda_tipi_bu')}</p>
-                      </div>
-                    )}
+                      </div>}
 
                     {/* Unmapped PMS types */}
-                    {autoMapSuggestions.unmapped_pms_types?.length > 0 && (
-                      <div className="border-t pt-4">
+                    {autoMapSuggestions.unmapped_pms_types?.length > 0 && <div className="border-t pt-4">
                         <p className="text-sm font-medium text-amber-700 mb-2">{t('cm.pages_ExelyIntegration.eslenmemis_pms_oda_tipleri_provider_da_k')}</p>
                         <div className="flex flex-wrap gap-2">
-                          {autoMapSuggestions.unmapped_pms_types.map((t, i) => (
-                            <Badge key={i} variant="outline" className="bg-amber-50 border-amber-300 text-amber-700" data-testid={`unmapped-pms-${i}`}>
+                          {autoMapSuggestions.unmapped_pms_types.map((t, i) => <Badge key={t.id || i} variant="outline" className="bg-amber-50 border-amber-300 text-amber-700" data-testid={`unmapped-pms-${i}`}>
                               <AlertTriangle className="w-3 h-3 mr-1" /> {t.name} ({t.room_count} oda)
-                            </Badge>
-                          ))}
+                            </Badge>)}
                         </div>
                         <p className="text-xs text-slate-500 mt-2">Bu oda tiplerini Exely panelinden olusturup tekrar esleme yapabilirsiniz.</p>
-                      </div>
-                    )}
+                      </div>}
 
                     {/* Unmapped provider rooms */}
-                    {autoMapSuggestions.unmapped_provider_rooms?.length > 0 && (
-                      <div className="border-t pt-4">
+                    {autoMapSuggestions.unmapped_provider_rooms?.length > 0 && <div className="border-t pt-4">
                         <p className="text-sm font-medium text-blue-700 mb-2">Eslenmemis Provider Odalari:</p>
                         <div className="flex flex-wrap gap-2">
-                          {autoMapSuggestions.unmapped_provider_rooms.map((r, i) => (
-                            <Badge key={i} variant="outline" className="bg-blue-50 border-blue-300 text-blue-700">
+                          {autoMapSuggestions.unmapped_provider_rooms.map((r, i) => <Badge key={r.id || i} variant="outline" className="bg-blue-50 border-blue-300 text-blue-700">
                               {r.name} ({r.code})
-                            </Badge>
-                          ))}
+                            </Badge>)}
                         </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+                      </div>}
+                  </div>}
               </DialogContent>
             </Dialog>
           </TabsContent>
@@ -718,18 +744,10 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                 </Button>
               </CardHeader>
               <CardContent>
-                {syncLogs.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-8">{t('cm.pages_ExelyIntegration.henuz_log_kaydi_yok')}</p>
-                ) : (
-                  <div className="space-y-2" data-testid="exely-sync-logs">
-                    {syncLogs.map((log, i) => (
-                      <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border">
+                {syncLogs.length === 0 ? <p className="text-sm text-slate-500 text-center py-8">{t('cm.pages_ExelyIntegration.henuz_log_kaydi_yok')}</p> : <div className="space-y-2" data-testid="exely-sync-logs">
+                    {syncLogs.map((log, i) => <div key={log.id || i} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border">
                         <div className="flex items-center gap-3">
-                          {log.status === 'success' ? (
-                            <CheckCircle className="w-4 h-4 text-emerald-600" />
-                          ) : (
-                            <AlertTriangle className="w-4 h-4 text-red-500" />
-                          )}
+                          {log.status === 'success' ? <CheckCircle className="w-4 h-4 text-emerald-600" /> : <AlertTriangle className="w-4 h-4 text-red-500" />}
                           <div>
                             <p className="text-sm font-medium">{log.sync_type}</p>
                             <p className="text-xs text-slate-500">{log.initiator} &middot; {log.records_synced} {t('cm.pages_ExelyIntegration.kayit')}</p>
@@ -739,17 +757,13 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                           <p className="text-xs text-slate-500">{new Date(log.timestamp).toLocaleString('tr-TR')}</p>
                           {log.duration_ms > 0 && <p className="text-xs text-slate-400">{log.duration_ms}ms</p>}
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      </div>)}
+                  </div>}
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
       </div>
-    </>
-  );
+    </>;
 };
-
 export default ExelyIntegration;

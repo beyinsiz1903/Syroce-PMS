@@ -5,44 +5,39 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
-} from '@/components/ui/dialog';
-import {
-  Loader2, FileText, Send, Download, Calendar, X as XIcon,
-  AlertTriangle, CheckCircle2, TrendingUp, DollarSign, ExternalLink,
-} from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Loader2, FileText, Send, Download, Calendar, X as XIcon, AlertTriangle, CheckCircle2, TrendingUp, DollarSign, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-
 const today = () => new Date().toISOString().slice(0, 10);
-
-function KpiCard({ label, value, sub, accent = 'slate', icon: Icon, onClick }) {
-  const { t } = useTranslation();
+function KpiCard({
+  label,
+  value,
+  sub,
+  accent = 'slate',
+  icon: Icon,
+  onClick
+}) {
+  const {
+    t
+  } = useTranslation();
   const tone = {
     slate: 'border-slate-200 bg-white',
     amber: 'border-amber-300 bg-amber-50/60',
     emerald: 'border-emerald-200 bg-emerald-50/40',
     rose: 'border-rose-200 bg-rose-50/40',
-    sky: 'border-sky-200 bg-sky-50/40',
+    sky: 'border-sky-200 bg-sky-50/40'
   }[accent];
   const valueColor = {
     slate: 'text-slate-900',
     amber: 'text-amber-700',
     emerald: 'text-emerald-700',
     rose: 'text-rose-700',
-    sky: 'text-sky-700',
+    sky: 'text-sky-700'
   }[accent];
-  const interactive = onClick
-    ? 'cursor-pointer hover:shadow-md hover:border-amber-400 transition-all'
-    : '';
+  const interactive = onClick ? 'cursor-pointer hover:shadow-md hover:border-amber-400 transition-all' : '';
   const Tag = onClick ? 'button' : 'div';
-  return (
-    <Tag
-      type={onClick ? 'button' : undefined}
-      onClick={onClick}
-      className={`border rounded-lg p-3 text-left w-full ${tone} ${interactive}`}
-    >
+  return <Tag type={onClick ? 'button' : undefined} onClick={onClick} className={`border rounded-lg p-3 text-left w-full ${tone} ${interactive}`}>
       <div className="flex items-center justify-between">
         <div className="text-[10px] uppercase text-slate-500 tracking-wide">{label}</div>
         <div className="flex items-center gap-1">
@@ -52,25 +47,33 @@ function KpiCard({ label, value, sub, accent = 'slate', icon: Icon, onClick }) {
       </div>
       <div className={`text-2xl font-bold mt-1 ${valueColor}`}>{value}</div>
       {sub && <div className="text-xs text-slate-500 mt-1">{sub}</div>}
-    </Tag>
-  );
+    </Tag>;
 }
-
 function fmtDate(iso) {
   if (!iso) return '—';
   try {
-    return new Date(iso).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  } catch { return iso; }
+    return new Date(iso).toLocaleDateString('tr-TR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  } catch {
+    return iso;
+  }
 }
-
-function OpenFoliosDialog({ open, onClose, businessDate }) {
-  const { t } = useTranslation();
+function OpenFoliosDialog({
+  open,
+  onClose,
+  businessDate
+}) {
+  const {
+    t
+  } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [folios, setFolios] = useState([]);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState(null);
   const [reloadTick, setReloadTick] = useState(0);
-
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
@@ -81,9 +84,14 @@ function OpenFoliosDialog({ open, onClose, businessDate }) {
     setTotal(0);
     (async () => {
       try {
-        const { data } = await api.get('/folio/list', {
-          params: { status: 'open', limit: 500 },
-          signal: controller.signal,
+        const {
+          data
+        } = await api.get('/folio/list', {
+          params: {
+            status: 'open',
+            limit: 500
+          },
+          signal: controller.signal
         });
         if (!active) return;
         setFolios(data.folios || []);
@@ -96,15 +104,16 @@ function OpenFoliosDialog({ open, onClose, businessDate }) {
         if (active) setLoading(false);
       }
     })();
-    return () => { active = false; controller.abort(); };
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [open, reloadTick]);
 
   // Çıkışı geçmiş ama folyo açık → kritik
   const overdue = folios.filter(f => f.check_out && f.check_out < businessDate);
   const inHouse = folios.filter(f => !(f.check_out && f.check_out < businessDate));
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+  return <Dialog open={open} onOpenChange={o => !o && onClose()}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -116,32 +125,19 @@ function OpenFoliosDialog({ open, onClose, businessDate }) {
           </DialogDescription>
         </DialogHeader>
 
-        {loading ? (
-          <div className="py-12 text-center">
+        {loading ? <div className="py-12 text-center">
             <Loader2 className="inline w-6 h-6 animate-spin text-slate-400" />
-          </div>
-        ) : error ? (
-          <div className="py-8 text-center">
+          </div> : error ? <div className="py-8 text-center">
             <AlertTriangle className="inline w-8 h-8 text-rose-500 mb-2" />
             <div className="text-sm text-rose-700 mb-3">{t('cm.pages_EodReportPage.folyolar_yuklenemedi')} {error}</div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setReloadTick(t => t + 1)}
-              className="border-amber-300 text-amber-700 hover:bg-amber-50"
-            >
+            <Button variant="outline" size="sm" onClick={() => setReloadTick(t => t + 1)} className="border-amber-300 text-amber-700 hover:bg-amber-50">
               Tekrar Dene
             </Button>
-          </div>
-        ) : folios.length === 0 ? (
-          <div className="py-12 text-center text-slate-500">
+          </div> : folios.length === 0 ? <div className="py-12 text-center text-slate-500">
             <CheckCircle2 className="inline w-8 h-8 text-emerald-500 mb-2" /><br />
             {t('cm.pages_EodReportPage.acik_folyo_yok')}
-          </div>
-        ) : (
-          <div className="max-h-[60vh] overflow-auto">
-            {overdue.length > 0 && (
-              <div className="mb-4">
+          </div> : <div className="max-h-[60vh] overflow-auto">
+            {overdue.length > 0 && <div className="mb-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Badge className="bg-rose-100 text-rose-800 border-rose-200">
                     {t('cm.pages_EodReportPage.cikisi_gecmis')} {overdue.length}
@@ -149,10 +145,8 @@ function OpenFoliosDialog({ open, onClose, businessDate }) {
                   <span className="text-xs text-slate-500">{t('cm.pages_EodReportPage.oncelikli_inceleme')}</span>
                 </div>
                 <FolioTable rows={overdue} highlight />
-              </div>
-            )}
-            {inHouse.length > 0 && (
-              <div>
+              </div>}
+            {inHouse.length > 0 && <div>
                 <div className="flex items-center gap-2 mb-2">
                   <Badge className="bg-sky-100 text-sky-800 border-sky-200">
                     Tesiste — {inHouse.length}
@@ -160,19 +154,19 @@ function OpenFoliosDialog({ open, onClose, businessDate }) {
                   <span className="text-xs text-slate-500">{t('cm.pages_EodReportPage.cikista_otomatik_kapanir')}</span>
                 </div>
                 <FolioTable rows={inHouse} />
-              </div>
-            )}
-          </div>
-        )}
+              </div>}
+          </div>}
       </DialogContent>
-    </Dialog>
-  );
+    </Dialog>;
 }
-
-function FolioTable({ rows, highlight = false }) {
-  const { t } = useTranslation();
-  return (
-    <div className="border border-slate-200 rounded-md overflow-hidden">
+function FolioTable({
+  rows,
+  highlight = false
+}) {
+  const {
+    t
+  } = useTranslation();
+  return <div className="border border-slate-200 rounded-md overflow-hidden">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-slate-600 text-xs">
           <tr>
@@ -185,11 +179,7 @@ function FolioTable({ rows, highlight = false }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((f) => (
-            <tr
-              key={f.id}
-              className={`border-t border-slate-100 ${highlight ? 'bg-rose-50/40' : 'hover:bg-slate-50'}`}
-            >
+          {rows.map(f => <tr key={f.id} className={`border-t border-slate-100 ${highlight ? 'bg-rose-50/40' : 'hover:bg-slate-50'}`}>
               <td className="px-3 py-2 font-medium text-slate-900">{f.room_number || '—'}</td>
               <td className="px-3 py-2 text-slate-700">{f.guest_name || '—'}</td>
               <td className="px-3 py-2 text-slate-600">{fmtDate(f.check_in)}</td>
@@ -200,35 +190,44 @@ function FolioTable({ rows, highlight = false }) {
               <td className="px-3 py-2 text-xs text-slate-400 font-mono">
                 #{(f.id || '').slice(0, 8)}
               </td>
-            </tr>
-          ))}
+            </tr>)}
         </tbody>
       </table>
-    </div>
-  );
+    </div>;
 }
-
-function ProgressKpi({ label, actual, expected, accent = 'sky' }) {
-  const { t } = useTranslation();
-  const pct = expected > 0 ? Math.min(100, Math.round((actual / expected) * 100)) : 0;
+function ProgressKpi({
+  label,
+  actual,
+  expected,
+  accent = 'sky'
+}) {
+  const {
+    t
+  } = useTranslation();
+  const pct = expected > 0 ? Math.min(100, Math.round(actual / expected * 100)) : 0;
   const barColor = pct >= 100 ? 'bg-emerald-500' : pct >= 70 ? 'bg-sky-500' : 'bg-amber-500';
-  return (
-    <div className="border border-slate-200 bg-white rounded-lg p-3">
+  return <div className="border border-slate-200 bg-white rounded-lg p-3">
       <div className="text-[10px] uppercase text-slate-500 tracking-wide">{label}</div>
       <div className="flex items-baseline gap-1.5 mt-1">
         <span className="text-2xl font-bold text-slate-900">{actual}</span>
         <span className="text-sm text-slate-500">/ {expected}</span>
       </div>
       <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-        <div className={`${barColor} h-full transition-all`} style={{ width: `${pct}%` }} />
+        <div className={`${barColor} h-full transition-all`} style={{
+        width: `${pct}%`
+      }} />
       </div>
       <div className="text-[11px] text-slate-500 mt-1">{pct}{t('cm.pages_EodReportPage.tamamlandi')}</div>
-    </div>
-  );
+    </div>;
 }
-
-export default function EodReportPage({ user, tenant, onLogout }) {
-  const { t } = useTranslation();
+export default function EodReportPage({
+  user,
+  tenant,
+  onLogout
+}) {
+  const {
+    t
+  } = useTranslation();
   const [businessDate, setBusinessDate] = useState(today());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -238,32 +237,50 @@ export default function EodReportPage({ user, tenant, onLogout }) {
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [lastResult, setLastResult] = useState(null);
   const [showOpenFolios, setShowOpenFolios] = useState(false);
-
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get('/pms/eod-report/preview', { params: { business_date: businessDate } });
+      const {
+        data
+      } = await api.get('/pms/eod-report/preview', {
+        params: {
+          business_date: businessDate
+        }
+      });
       setData(data);
-    } catch (e) { toast.error('Yükleme hatası: ' + (e.response?.data?.detail || e.message)); }
-    finally { setLoading(false); }
+    } catch (e) {
+      toast.error('Yükleme hatası: ' + (e.response?.data?.detail || e.message));
+    } finally {
+      setLoading(false);
+    }
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
-  useEffect(() => { load();   }, [businessDate]);
-
+  useEffect(() => {
+    load();
+  }, [businessDate]);
   const downloadPdf = async () => {
     setDownloadingPdf(true);
     try {
-      const r = await api.get('/pms/eod-report/pdf', { params: { business_date: businessDate }, responseType: 'blob' });
+      const r = await api.get('/pms/eod-report/pdf', {
+        params: {
+          business_date: businessDate
+        },
+        responseType: 'blob'
+      });
       const url = URL.createObjectURL(r.data);
       const a = document.createElement('a');
-      a.href = url; a.download = `gun-sonu-${businessDate}.pdf`; a.click();
+      a.href = url;
+      a.download = `gun-sonu-${businessDate}.pdf`;
+      a.click();
       URL.revokeObjectURL(url);
-    } catch (e) { toast.error('Hata: ' + e.message); }
-    finally { setDownloadingPdf(false); }
+    } catch (e) {
+      toast.error('Hata: ' + e.message);
+    } finally {
+      setDownloadingPdf(false);
+    }
   };
-
-  const addRecipient = (raw) => {
+  const addRecipient = raw => {
     const list = (raw || recipientInput).split(/[,\s;]+/).map(s => s.trim()).filter(Boolean);
     const valid = list.filter(e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
     if (valid.length === 0 && (raw || recipientInput).trim()) {
@@ -273,9 +290,7 @@ export default function EodReportPage({ user, tenant, onLogout }) {
     setRecipients(prev => [...new Set([...prev, ...valid])]);
     setRecipientInput('');
   };
-
-  const removeRecipient = (email) => setRecipients(prev => prev.filter(e => e !== email));
-
+  const removeRecipient = email => setRecipients(prev => prev.filter(e => e !== email));
   const send = async () => {
     if (recipients.length === 0) {
       toast.error('En az bir alıcı ekleyin');
@@ -283,17 +298,22 @@ export default function EodReportPage({ user, tenant, onLogout }) {
     }
     setSending(true);
     try {
-      const { data: res } = await api.post('/pms/eod-report/send', { business_date: businessDate, recipients });
+      const {
+        data: res
+      } = await api.post('/pms/eod-report/send', {
+        business_date: businessDate,
+        recipients
+      });
       setLastResult(res);
       toast.success(`${res.sent}/${res.total} alıcıya gönderildi`);
-    } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
-    finally { setSending(false); }
+    } catch (e) {
+      toast.error('Hata: ' + (e.response?.data?.detail || e.message));
+    } finally {
+      setSending(false);
+    }
   };
-
   const isAuditPending = data && (data.open_folios > 0 || data.open_handovers > 0);
-
-  return (
-    <>
+  return <>
       <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4" data-testid="eod-report-page">
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -302,11 +322,14 @@ export default function EodReportPage({ user, tenant, onLogout }) {
               <FileText className="w-6 h-6 text-amber-600" /> {t('cm.pages_EodReportPage.gun_sonu_raporu')}
             </h1>
             <p className="text-sm text-slate-500 mt-1">
-              {new Date(businessDate).toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric', weekday: 'long' })}
+              {new Date(businessDate).toLocaleDateString('tr-TR', {
+              day: '2-digit',
+              month: 'long',
+              year: 'numeric',
+              weekday: 'long'
+            })}
               {' · '}
-              {data?.audit_status === 'completed'
-                ? <span className="text-emerald-700 font-medium">{t('cm.pages_EodReportPage.audit_tamamlandi')}</span>
-                : <span className="text-amber-700 font-medium">{t('cm.pages_EodReportPage.audit_henuz_yapilmadi')}</span>}
+              {data?.audit_status === 'completed' ? <span className="text-emerald-700 font-medium">{t('cm.pages_EodReportPage.audit_tamamlandi')}</span> : <span className="text-amber-700 font-medium">{t('cm.pages_EodReportPage.audit_henuz_yapilmadi')}</span>}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -316,8 +339,7 @@ export default function EodReportPage({ user, tenant, onLogout }) {
         </div>
 
         {/* Risk banner */}
-        {isAuditPending && (
-          <div className="flex items-start gap-3 bg-amber-50 border border-amber-300 rounded-lg p-3">
+        {isAuditPending && <div className="flex items-start gap-3 bg-amber-50 border border-amber-300 rounded-lg p-3">
             <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div className="text-sm text-amber-900">
               <div className="font-semibold">{t('cm.pages_EodReportPage.kapanmamis_kalem_var')}</div>
@@ -328,29 +350,15 @@ export default function EodReportPage({ user, tenant, onLogout }) {
                 {t('cm.pages_EodReportPage.gun_sonu_kapatilmadan_once_tamamlanmalid')}
               </div>
             </div>
-          </div>
-        )}
+          </div>}
 
         {loading && <div className="text-center py-8"><Loader2 className="inline w-5 h-5 animate-spin text-slate-400" /></div>}
 
-        {data && (
-          <>
+        {data && <>
             {/* Finansal blok — büyük */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <KpiCard
-                label="Doluluk"
-                value={`${data.occupancy_rate}%`}
-                sub={`${data.occupied} / ${data.rooms_total} oda dolu`}
-                accent="sky"
-                icon={TrendingUp}
-              />
-              <KpiCard
-                label={t('cm.pages_EodReportPage.toplam_gelir')}
-                value={`${(data.revenue_total || 0).toLocaleString('tr-TR')} ₺`}
-                sub={`Ödeme ${(data.payments_total || 0).toLocaleString('tr-TR')} ₺ · Ekstra ${(data.extras_total || 0).toLocaleString('tr-TR')} ₺`}
-                accent="emerald"
-                icon={DollarSign}
-              />
+              <KpiCard label="Doluluk" value={`${data.occupancy_rate}%`} sub={`${data.occupied} / ${data.rooms_total} oda dolu`} accent="sky" icon={TrendingUp} />
+              <KpiCard label={t('cm.pages_EodReportPage.toplam_gelir')} value={`${(data.revenue_total || 0).toLocaleString('tr-TR')} ₺`} sub={`Ödeme ${(data.payments_total || 0).toLocaleString('tr-TR')} ₺ · Ekstra ${(data.extras_total || 0).toLocaleString('tr-TR')} ₺`} accent="emerald" icon={DollarSign} />
             </div>
 
             {/* Operasyonel blok — yatay küçük */}
@@ -363,24 +371,10 @@ export default function EodReportPage({ user, tenant, onLogout }) {
 
             {/* Risk blok — vurgulu */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <KpiCard
-                label={t('cm.pages_EodReportPage.acik_folyo_fa529')}
-                value={data.open_folios}
-                sub={data.open_folios > 0 ? 'Detayları görmek için tıklayın' : 'Tüm folyolar kapalı'}
-                accent={data.open_folios > 0 ? 'amber' : 'emerald'}
-                icon={data.open_folios > 0 ? AlertTriangle : CheckCircle2}
-                onClick={data.open_folios > 0 ? () => setShowOpenFolios(true) : undefined}
-              />
-              <KpiCard
-                label={t('cm.pages_EodReportPage.onaylanmamis_devir')}
-                value={data.open_handovers}
-                sub={data.open_handovers > 0 ? 'Vardiya notu beklemede' : 'Tüm devirler onaylı'}
-                accent={data.open_handovers > 0 ? 'amber' : 'emerald'}
-                icon={data.open_handovers > 0 ? AlertTriangle : CheckCircle2}
-              />
+              <KpiCard label={t('cm.pages_EodReportPage.acik_folyo_fa529')} value={data.open_folios} sub={data.open_folios > 0 ? 'Detayları görmek için tıklayın' : 'Tüm folyolar kapalı'} accent={data.open_folios > 0 ? 'amber' : 'emerald'} icon={data.open_folios > 0 ? AlertTriangle : CheckCircle2} onClick={data.open_folios > 0 ? () => setShowOpenFolios(true) : undefined} />
+              <KpiCard label={t('cm.pages_EodReportPage.onaylanmamis_devir')} value={data.open_handovers} sub={data.open_handovers > 0 ? 'Vardiya notu beklemede' : 'Tüm devirler onaylı'} accent={data.open_handovers > 0 ? 'amber' : 'emerald'} icon={data.open_handovers > 0 ? AlertTriangle : CheckCircle2} />
             </div>
-          </>
-        )}
+          </>}
 
         {/* Gönderim bloğu */}
         <Card className="p-4 space-y-3 border-slate-200">
@@ -392,30 +386,20 @@ export default function EodReportPage({ user, tenant, onLogout }) {
           <div>
             <Label className="text-xs text-slate-700">{t('cm.pages_EodReportPage.alicilar')}</Label>
             <div className="mt-1.5 border border-slate-200 rounded-md p-2 bg-white min-h-[42px] flex flex-wrap gap-1.5 items-center focus-within:border-amber-400 focus-within:ring-1 focus-within:ring-amber-400">
-              {recipients.map(email => (
-                <span key={email} className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-900 text-xs px-2 py-1 rounded-md">
+              {recipients.map(email => <span key={email} className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-900 text-xs px-2 py-1 rounded-md">
                   {email}
                   <button onClick={() => removeRecipient(email)} className="hover:text-amber-700" aria-label={t('cm.pages_EodReportPage.sil')}>
                     <XIcon className="w-3 h-3" />
                   </button>
-                </span>
-              ))}
-              <input
-                value={recipientInput}
-                onChange={e => setRecipientInput(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
-                    e.preventDefault();
-                    addRecipient();
-                  } else if (e.key === 'Backspace' && !recipientInput && recipients.length) {
-                    removeRecipient(recipients[recipients.length - 1]);
-                  }
-                }}
-                onBlur={() => recipientInput && addRecipient()}
-                placeholder={recipients.length === 0 ? 'ornek@otel.com — Enter ile ekle' : ''}
-                className="flex-1 min-w-[160px] outline-none text-sm bg-transparent"
-                data-testid="eod-recipient-input"
-              />
+                </span>)}
+              <input value={recipientInput} onChange={e => setRecipientInput(e.target.value)} onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
+                e.preventDefault();
+                addRecipient();
+              } else if (e.key === 'Backspace' && !recipientInput && recipients.length) {
+                removeRecipient(recipients[recipients.length - 1]);
+              }
+            }} onBlur={() => recipientInput && addRecipient()} placeholder={recipients.length === 0 ? 'ornek@otel.com — Enter ile ekle' : ''} className="flex-1 min-w-[160px] outline-none text-sm bg-transparent" data-testid="eod-recipient-input" />
             </div>
             <div className="text-[11px] text-slate-500 mt-1">{t('cm.pages_EodReportPage.birden_fazla_adres_icin_her_birini_enter')}</div>
           </div>
@@ -426,39 +410,26 @@ export default function EodReportPage({ user, tenant, onLogout }) {
               {t('cm.pages_EodReportPage.e_posta_gonder')}
             </Button>
             <Button onClick={downloadPdf} disabled={downloadingPdf} variant="outline" className="border-slate-300">
-              {downloadingPdf
-                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t('cm.pages_EodReportPage.hazirlaniyor')}</>
-                : <><Download className="w-4 h-4 mr-2" /> {t('cm.pages_EodReportPage.pdf_indir')}</>}
+              {downloadingPdf ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t('cm.pages_EodReportPage.hazirlaniyor')}</> : <><Download className="w-4 h-4 mr-2" /> {t('cm.pages_EodReportPage.pdf_indir')}</>}
             </Button>
           </div>
 
-          {lastResult && (
-            <div className="border-t border-slate-200 pt-3 space-y-1.5">
+          {lastResult && <div className="border-t border-slate-200 pt-3 space-y-1.5">
               <div className="text-sm font-medium text-slate-900">
                 {t('cm.pages_EodReportPage.son_gonderim')} {lastResult.sent}/{lastResult.total} {t('cm.pages_EodReportPage.basarili')}
               </div>
-              {(lastResult.results || []).map((r, i) => (
-                <div key={i} className="flex items-center gap-2 text-xs">
-                  <Badge className={r.sent
-                    ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
-                    : 'bg-rose-100 text-rose-700 border-rose-200'}>
+              {(lastResult.results || []).map((r, i) => <div key={r.id || i} className="flex items-center gap-2 text-xs">
+                  <Badge className={r.sent ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-rose-100 text-rose-700 border-rose-200'}>
                     {r.sent ? 'Gönderildi' : 'Hata'}
                   </Badge>
                   <span className="text-slate-700">{r.to}</span>
                   {r.id && <span className="text-slate-400">#{r.id.slice(0, 8)}</span>}
                   {r.error && <span className="text-rose-600">{r.error}</span>}
-                </div>
-              ))}
-            </div>
-          )}
+                </div>)}
+            </div>}
         </Card>
       </div>
 
-      <OpenFoliosDialog
-        open={showOpenFolios}
-        onClose={() => setShowOpenFolios(false)}
-        businessDate={businessDate}
-      />
-    </>
-  );
+      <OpenFoliosDialog open={showOpenFolios} onClose={() => setShowOpenFolios(false)} businessDate={businessDate} />
+    </>;
 }
