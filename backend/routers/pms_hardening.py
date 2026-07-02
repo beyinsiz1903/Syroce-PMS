@@ -10,8 +10,8 @@ from pydantic import BaseModel
 
 from cache_manager import cached  # Tur 3: tenant-aware cache for slow trends
 from core.database import db
-from core.security import get_current_user
-from core.tenant_db import TenantViolationError, set_tenant_context
+from core.security import get_current_user, require_module, require_super_admin
+from core.tenant_db import TenantViolationError, get_current_tenant_id
 from models.schemas import User
 from modules.pms_core.auto_housekeeping_service import AutoHousekeepingService
 from modules.pms_core.dashboard_trends_service import DashboardTrendsService
@@ -207,10 +207,14 @@ async def api_check_in(req: CheckInRequest, current_user: User = Depends(get_cur
     perm_svc.enforce_permission(current_user.role, "check_in")
     # STRICT_TENANT_MODE requires tenant context to be set before any
     # tenant-scoped collection access inside the atomic transaction.
-    set_tenant_context(current_user.tenant_id)
+    # The context is already set by TenantContextMiddleware.
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="Tenant context is missing. Cannot check-in without a selected hotel.")
+
     try:
         result = await front_desk.check_in(
-            current_user.tenant_id, req.booking_id,
+            tenant_id, req.booking_id,
             current_user.id, current_user.name, req.override_reason,
         )
     except TenantViolationError as e:
@@ -249,10 +253,13 @@ async def api_checkout(req: CheckoutRequest, current_user: User = Depends(get_cu
 
     perm_svc.enforce_permission(current_user.role, "checkout")
     # Set tenant context required by STRICT_TENANT_MODE before atomic transaction.
-    set_tenant_context(current_user.tenant_id)
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="Tenant context is missing. Cannot checkout without a selected hotel.")
+
     try:
         result = await front_desk.checkout(
-            current_user.tenant_id, req.booking_id,
+            tenant_id, req.booking_id,
             current_user.id, current_user.name, req.force,
         )
     except TenantViolationError as e:
