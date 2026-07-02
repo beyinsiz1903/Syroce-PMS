@@ -20,6 +20,7 @@ class FrontDeskService:
     async def check_in(self, tenant_id: str, booking_id: str, user_id: str, user_name: str, override_reason: str = None) -> dict:
         """Full check-in flow — delegates to atomic transaction."""
         from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
+        from pymongo.errors import OperationFailure
 
         try:
             result = await check_in_booking_atomic(
@@ -36,12 +37,25 @@ class FrontDeskService:
             if "not ready" in error_msg:
                 resp["blocker"] = "room_not_ready"
             return resp
+        except OperationFailure as e:
+            # MongoDB standalone (local dev) does not support multi-document
+            # transactions — they require a replica set or mongos sharded cluster.
+            # Raise as CheckInError so the handler returns a clean 503, not a 500.
+            if "replica set" in str(e).lower() or e.code == 20:
+                raise CheckInError(
+                    "Check-in requires MongoDB replica set mode. "
+                    "Local dev environments running standalone MongoDB cannot execute "
+                    "atomic transactions. Configure MongoDB as a single-node replica set "
+                    "(rs.initiate()) or use the MONGO_DISABLE_TRANSACTIONS=1 env flag."
+                ) from e
+            raise
 
     # ── CHECKOUT ──
 
     async def checkout(self, tenant_id: str, booking_id: str, user_id: str, user_name: str, force: bool = False) -> dict:
         """Full checkout flow — delegates to atomic transaction."""
         from core.atomic_checkin_checkout import CheckOutError, check_out_booking_atomic
+        from pymongo.errors import OperationFailure
 
         try:
             result = await check_out_booking_atomic(
@@ -58,6 +72,15 @@ class FrontDeskService:
             if "unpaid balance" in error_msg:
                 resp["blockers"] = [{"type": "unpaid_balance", "message": error_msg}]
             return resp
+        except OperationFailure as e:
+            if "replica set" in str(e).lower() or e.code == 20:
+                raise CheckOutError(
+                    "Check-out requires MongoDB replica set mode. "
+                    "Local dev environments running standalone MongoDB cannot execute "
+                    "atomic transactions. Configure MongoDB as a single-node replica set "
+                    "(rs.initiate()) or use the MONGO_DISABLE_TRANSACTIONS=1 env flag."
+                ) from e
+            raise
 
     async def get_checkout_blockers(self, tenant_id: str, booking_id: str) -> list[dict]:
         """Check for conditions that block checkout."""
