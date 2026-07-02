@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import DOMPurify from 'dompurify';
 import axios from 'axios';
 import { toast } from 'sonner';
 
@@ -159,7 +160,16 @@ export default function DepositTracking({ user, tenant, onLogout }) {
         { selected_charge_ids: [], billing_name: deposit.guest_name || null },
         { headers }
       );
-      setInvoiceHtml(res.data.invoice_html || res.data.html || '');
+      // XSS guard: sanitize backend-generated invoice HTML before rendering.
+      // ALLOW_DATA_ATTR: false prevents data-* attribute exfiltration.
+      // FORCE_BODY: true ensures top-level tags (html/head/body) are stripped.
+      const rawHtml = res.data.invoice_html || res.data.html || '';
+      const clean = DOMPurify.sanitize(rawHtml, {
+        USE_PROFILES: { html: true },
+        FORCE_BODY: true,
+        ALLOW_DATA_ATTR: false,
+      });
+      setInvoiceHtml(clean);
     } catch (e) {
       toast.error('Fatura oluşturulamadı');
       setInvoiceHtml('');
@@ -170,7 +180,10 @@ export default function DepositTracking({ user, tenant, onLogout }) {
   const printInvoice = () => {
     const win = window.open('', '_blank');
     if (win) {
-      win.document.write(invoiceHtml);
+      // invoiceHtml is already sanitized at fetch time; re-sanitize defensively
+      // since document.write() bypasses React's HTML escaping entirely.
+      const safe = DOMPurify.sanitize(invoiceHtml, { USE_PROFILES: { html: true }, FORCE_BODY: true });
+      win.document.write(safe);
       win.document.close();
       setTimeout(() => win.print(), 500);
     }

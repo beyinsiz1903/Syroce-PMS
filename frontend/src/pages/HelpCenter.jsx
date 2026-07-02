@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import DOMPurify from "dompurify";
 import axios from "axios";
 import { toast } from "sonner";
 
@@ -105,7 +106,9 @@ function renderMarkdown(src) {
     }
     out.push(`<p class="my-2 leading-relaxed text-sm text-gray-800">${inline(buf.join(" "))}</p>`);
   }
-  return { __html: out.join("\n") };
+  // XSS guard: DOMPurify pass after the hand-written markdown renderer
+  // provides defence-in-depth against mXSS / attribute-injection edge cases.
+  return { __html: DOMPurify.sanitize(out.join("\n"), { USE_PROFILES: { html: true } }) };
 }
 
 export default function HelpCenter({ user, tenant, onLogout }) {

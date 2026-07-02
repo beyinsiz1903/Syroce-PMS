@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import DOMPurify from "dompurify";
 import axios from "axios";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
@@ -97,7 +98,10 @@ function renderMarkdown(src) {
     }
     out.push(`<p class="my-2 leading-relaxed text-sm text-gray-800">${inline(buf.join(" "))}</p>`);
   }
-  return { __html: out.join("\n") };
+  // XSS guard: even though the markdown renderer above HTML-escapes raw input
+  // before interpolation, a final DOMPurify pass ensures any edge-cases
+  // (e.g. crafted attribute injection, mXSS via browser HTML parser) are blocked.
+  return { __html: DOMPurify.sanitize(out.join("\n"), { USE_PROFILES: { html: true } }) };
 }
 
 export default function Academy({ user }) {
