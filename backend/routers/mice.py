@@ -855,7 +855,7 @@ async def _validate_setup_capacity(tenant_id: str, bookings: list[dict]) -> None
     space_ids = {sb["space_id"] for sb in bookings if sb.get("space_id")}
     if not space_ids:
         return
-        _l = await db.mice_spaces.find({"tenant_id": tenant_id, "id": {"$in": list(space_ids)}}).to_list(length=None)
+    _l = await db.mice_spaces.find({"tenant_id": tenant_id, "id": {"$in": list(space_ids)}}).to_list(length=None)
     spaces = {s["id"]: s for s in _l}
     for sb in bookings:
         sp = spaces.get(sb["space_id"])
@@ -899,7 +899,7 @@ async def _check_resource_inventory_conflict(
     ends = [sb["ends_at"] if isinstance(sb["ends_at"], str) else sb["ends_at"].isoformat() for sb in bookings]
     env_start, env_end = min(starts), max(ends)
 
-        _l = await db.mice_resources.find({"tenant_id": tenant_id, "id": {"$in": list(inv_ids)}}, session=session).to_list(length=None)
+    _l = await db.mice_resources.find({"tenant_id": tenant_id, "id": {"$in": list(inv_ids)}}, session=session).to_list(length=None)
     inventories = {i["id"]: i for i in _l}
 
     # Build a per-inventory requested quantity map for this event.
@@ -1521,7 +1521,7 @@ async def beo(event_id: str, current_user: User = Depends(get_current_user)) -> 
     event = await db.mice_events.find_one({"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 0})
     if not event:
         raise HTTPException(404, "Etkinlik bulunamadı")
-        _l = await db.mice_spaces.find({"tenant_id": current_user.tenant_id}).to_list(length=None)
+    _l = await db.mice_spaces.find({"tenant_id": current_user.tenant_id}).to_list(length=None)
     spaces_by_id = {s["id"]: s for s in _l}
     space_lines = []
     for sb in event.get("space_bookings", []):
@@ -2006,7 +2006,7 @@ async def kitchen_ticket(event_id: str, current_user: User = Depends(get_current
 
     pax = int(event.get("expected_pax") or 0)
     menu_ids = [r["menu_id"] for r in event.get("resources", []) if r.get("menu_id")]
-        _l = await db.mice_menus.find({"tenant_id": current_user.tenant_id, "id": {"$in": menu_ids}}).to_list(length=None)
+    _l = await db.mice_menus.find({"tenant_id": current_user.tenant_id, "id": {"$in": menu_ids}}).to_list(length=None)
     menus = {m["id"]: m for m in _l}
 
     # Earliest meal/break in the agenda → kitchen prep deadline.
@@ -2350,7 +2350,7 @@ async def ops_sheet(
         "start_date": {"$lte": date},
         "end_date": {"$gte": date},
     }
-        _l = await db.mice_spaces.find({"tenant_id": current_user.tenant_id}).to_list(length=None)
+    _l = await db.mice_spaces.find({"tenant_id": current_user.tenant_id}).to_list(length=None)
     spaces_by_id = {s["id"]: s for s in _l}
     rows = []
     async for ev in db.mice_events.find(q, {"_id": 0}):
