@@ -19,8 +19,9 @@ class FrontDeskService:
 
     async def check_in(self, tenant_id: str, booking_id: str, user_id: str, user_name: str, override_reason: str = None) -> dict:
         """Full check-in flow — delegates to atomic transaction."""
-        from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
         from pymongo.errors import OperationFailure
+
+        from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
 
         try:
             result = await check_in_booking_atomic(
@@ -54,8 +55,9 @@ class FrontDeskService:
 
     async def checkout(self, tenant_id: str, booking_id: str, user_id: str, user_name: str, force: bool = False) -> dict:
         """Full checkout flow — delegates to atomic transaction."""
-        from core.atomic_checkin_checkout import CheckOutError, check_out_booking_atomic
         from pymongo.errors import OperationFailure
+
+        from core.atomic_checkin_checkout import CheckOutError, check_out_booking_atomic
 
         try:
             result = await check_out_booking_atomic(
