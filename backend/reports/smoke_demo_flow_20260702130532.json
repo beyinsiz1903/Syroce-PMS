@@ -1,0 +1,21 @@
+{
+  "timestamp": "2026-07-02T13:05:32.859111",
+  "base_url": "http://localhost:8000",
+  "email": "demo@syroce.com",
+  "mutations_requested": false,
+  "mutations_enabled": false,
+  "tenant_safety_reason": "",
+  "mode": "read-only",
+  "steps": [
+    {
+      "step": "1. Login",
+      "method": "POST",
+      "endpoint": "/api/auth/login",
+      "status_code": 401,
+      "latency_ms": 189,
+      "success": false,
+      "response_summary": "{\"detail\": \"Otel ID, kullan\\u0131c\\u0131 ad\\u0131 veya \\u015fifre hatal\\u0131\"}",
+      "error_reason": "Unexpected Status 401"
+    }
+  ]
+}

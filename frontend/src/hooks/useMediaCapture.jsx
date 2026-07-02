@@ -64,6 +64,9 @@ export default function useMediaCapture() {
       }
 
       setUploading(true);
+      // Intentional: authToken is stored in the offline upload queue so the
+      // ServiceWorker can authenticate the deferred upload when connectivity
+      // is restored. Cookies are not accessible in the SW context.
       const authToken = localStorage.getItem('token')?.replace('Bearer ', '') || null;
       const requestPayload = {
         module,

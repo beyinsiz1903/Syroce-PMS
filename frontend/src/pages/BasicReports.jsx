@@ -197,9 +197,7 @@ const BasicReports = ({
     setError(null);
     try {
       const json = await fetchJsonWithRetry(BACKEND_URL + '/api/reports/basic-dashboard', {
-        headers: {
-          'Authorization': 'Bearer ' + localStorage.getItem('token')
-        }
+        credentials: 'include',
       });
       setData(json);
     } catch (err) {
@@ -223,9 +221,7 @@ const BasicReports = ({
     setOfficialError(null);
     try {
       const result = await fetchJsonWithRetry(BACKEND_URL + '/api/reports/official-guest-list?date=' + (dateParam || officialDate), {
-        headers: {
-          'Authorization': 'Bearer ' + localStorage.getItem('token')
-        }
+        credentials: 'include',
       });
       setOfficialRows(result?.rows || []);
     } catch (err) {

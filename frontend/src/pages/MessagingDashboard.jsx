@@ -27,31 +27,12 @@ import { toast } from 'sonner';
 import { confirmDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
 
-// ── HTTP wrapper (axios — silent refresh + uniform error toasts) ────────
-const api = axios.create();
-api.interceptors.request.use((cfg) => {
-  const t = localStorage.getItem('token');
-  if (t) cfg.headers.Authorization = `Bearer ${t}`;
-  return cfg;
-});
-api.interceptors.response.use(
-  (r) => r,
-  (err) => {
-    const status = err?.response?.status;
-    if (status === 401) {
-      toast.error('Oturum süresi doldu. Lütfen tekrar giriş yapın.');
-    } else if (status === 403) {
-      toast.error('Bu işlem için yetkiniz yok.');
-    } else if (status >= 500) {
-      toast.error('Sunucu hatası. Lütfen tekrar deneyin.');
-    }
-    return Promise.reject(err);
-  },
-);
-const get  = async (p)    => (await api.get(p)).data;
-const post = async (p, b) => (await api.post(p, b)).data;
-const put  = async (p, b) => (await api.put(p, b)).data;
-const del  = async (p)    => (await api.delete(p)).data;
+// ── HTTP wrappers — use the globally configured axios instance (axiosConfig.js)
+// which already sets withCredentials:true (cookie auth) + token fallback for dev.
+const get  = async (p)    => (await axios.get(p)).data;
+const post = async (p, b) => (await axios.post(p, b)).data;
+const put  = async (p, b) => (await axios.put(p, b)).data;
+const del  = async (p)    => (await axios.delete(p)).data;
 
 // Safe wrapper — returns { ok, data, error } so call sites don't throw
 const safe = async (fn) => {

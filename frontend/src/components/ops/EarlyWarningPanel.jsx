@@ -6,10 +6,7 @@ import { Button } from '@/components/ui/button';
 import { AlertTriangle, TrendingUp, TrendingDown, Activity, Zap, Clock, Target, RefreshCw, ChevronRight, Gauge, Info, AlertCircle, CheckCircle2, Eye, Play, Square, Sparkles, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 const API = "";
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('token');
-  return token ? {} : {};
-};
+
 
 // ── Mini Sparkline Component ─────────────────────────────────────────
 const MiniSparkline = ({

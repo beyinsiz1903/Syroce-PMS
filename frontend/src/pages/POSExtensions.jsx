@@ -28,12 +28,11 @@ const TABS = [{
   label: "Mali Yazıcı"
 }];
 async function apiFetch(path, opts = {}) {
-  const token = localStorage.getItem("access_token");
   const headers = {
     "Content-Type": "application/json",
     ...(opts.headers || {})
   };
-  if (token) headers.Authorization = `Bearer ${localStorage.getItem('token')}`;
+  // credentials: 'include' sends the httpOnly cookie automatically.
   const res = await fetch(path, {
     ...opts,
     headers,

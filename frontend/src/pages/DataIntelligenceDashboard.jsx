@@ -10,10 +10,8 @@ function useAuth() {
   const headers = {
     'Content-Type': 'application/json'
   };
-  return {
-    token: localStorage.getItem('token') || null,
-    headers
-  };
+  // Auth is handled via httpOnly cookie (credentials: 'include' in fetchAPI).
+  return { headers };
 }
 async function fetchAPI(path, headers) {
   const res = await fetch(`${API}${path}`, {

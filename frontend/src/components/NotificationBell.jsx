@@ -55,8 +55,6 @@ const NotificationBell = () => {
   }, [isOpen, unreadCount]);
   const loadNotifications = async () => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) return;
       const response = await axios.get(`/notifications/list?limit=20`, {
         headers: {}
       });

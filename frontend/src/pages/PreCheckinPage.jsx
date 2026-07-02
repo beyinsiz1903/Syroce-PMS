@@ -39,7 +39,7 @@ export default function PreCheckinPage() {
 
   useEffect(() => {
     if (!token) return;
-    axios.get(`/quick-id/precheckin/${localStorage.getItem('token')}/info`)
+    axios.get(`/quick-id/precheckin/${token}/info`)
       .then(r => setInfo(r.data))
       .catch(e => setLoadErr(e?.response?.data?.detail || 'QR kodu geçersiz veya süresi dolmuş'));
   }, []);
@@ -57,7 +57,7 @@ export default function PreCheckinPage() {
     setScanning(true);
     try {
       const b64 = await fileToBase64(file);
-      const r = await axios.post(`/quick-id/precheckin/${localStorage.getItem('token')}/scan`, {
+      const r = await axios.post(`/quick-id/precheckin/${token}/scan`, {
         image_base64: b64,
         kvkk_consent: true,
       });

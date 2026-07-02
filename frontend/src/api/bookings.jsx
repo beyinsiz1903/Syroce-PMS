@@ -12,12 +12,11 @@ async function _fetchJson(url, { method = "GET", body } = {}) {
   const headers = {
     "Content-Type": "application/json",
   };
-  const token = localStorage.getItem('token');
-  if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(url, {
     method,
     headers,
+    credentials: "include",
     body: body ? JSON.stringify(body) : undefined,
   });
 

@@ -265,7 +265,6 @@ function BlockedCheckins({
 
 /* ─── NIGHT AUDIT PANEL ─── */
 function NightAuditPanel({
-  token,
   onRefresh,
   t
 }) {
@@ -318,7 +317,6 @@ function NightAuditPanel({
 
 /* ─── MULTI-PROPERTY AUDIT PANEL ─── */
 function MultiPropertyAuditPanel({
-  token,
   t
 }) {
   const [board, setBoard] = useState(null);
@@ -392,7 +390,6 @@ function MultiPropertyAuditPanel({
 
 /* ─── AUTO HOUSEKEEPING PANEL ─── */
 function AutoHousekeepingPanel({
-  token,
   t
 }) {
   const [suggestions, setSuggestions] = useState(null);
@@ -449,7 +446,6 @@ function AutoHousekeepingPanel({
 
 /* ─── AUDIT TRAIL PANEL ─── */
 function AuditTrailPanel({
-  token,
   t
 }) {
   const [trail, setTrail] = useState([]);
@@ -665,28 +661,28 @@ export default function PMSOperationalDashboard({
           <TabsContent value="night-audit">
             <Card className="bg-white dark:bg-card border-gray-200 dark:border-slate-700 shadow-sm">
               <CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-sm text-blue-600">{t("pmsOperations.nightAuditControl")}</CardTitle></CardHeader>
-              <CardContent className="px-4 pb-4"><NightAuditPanel token={localStorage.getItem('token')} onRefresh={fetchData} t={t} /></CardContent>
+              <CardContent className="px-4 pb-4"><NightAuditPanel onRefresh={fetchData} t={t} /></CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="multi-property">
             <Card className="bg-white dark:bg-card border-gray-200 dark:border-slate-700 shadow-sm">
               <CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-sm text-blue-600">{t("pmsOperations.multiPropertyAudit")}</CardTitle></CardHeader>
-              <CardContent className="px-4 pb-4"><MultiPropertyAuditPanel token={localStorage.getItem('token')} t={t} /></CardContent>
+              <CardContent className="px-4 pb-4"><MultiPropertyAuditPanel t={t} /></CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="housekeeping">
             <Card className="bg-white dark:bg-card border-gray-200 dark:border-slate-700 shadow-sm">
               <CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-sm text-blue-600">{t("pmsOperations.autoHKAssignment")}</CardTitle></CardHeader>
-              <CardContent className="px-4 pb-4"><AutoHousekeepingPanel token={localStorage.getItem('token')} t={t} /></CardContent>
+              <CardContent className="px-4 pb-4"><AutoHousekeepingPanel t={t} /></CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="audit-trail">
             <Card className="bg-white dark:bg-card border-gray-200 dark:border-slate-700 shadow-sm">
               <CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-sm text-gray-500 dark:text-slate-400">{t("pmsOperations.auditTrailRecent")}</CardTitle></CardHeader>
-              <CardContent className="px-4 pb-4"><AuditTrailPanel token={localStorage.getItem('token')} t={t} /></CardContent>
+              <CardContent className="px-4 pb-4"><AuditTrailPanel t={t} /></CardContent>
             </Card>
           </TabsContent>
         </Tabs>

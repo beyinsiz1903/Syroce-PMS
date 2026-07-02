@@ -63,9 +63,10 @@ const vendorApi = axios.create({
   baseURL: BACKEND_URL
 });
 vendorApi.interceptors.request.use(config => {
+  // Use the vendor-specific token — never the hotel staff JWT ('token').
   const token = localStorage.getItem(VENDOR_TOKEN_KEY);
   if (token) {
-    config.headers.Authorization = `Bearer ${localStorage.getItem('token')}`;
+    config.headers.Authorization = `Bearer ${token}`;
   } else if (config.headers) {
     delete config.headers.Authorization;
     delete config.headers.common?.Authorization;

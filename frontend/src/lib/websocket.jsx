@@ -24,6 +24,10 @@ class WebSocketManager {
   }
 
   _readAuthFromStorage() {
+    // WebSocket handshakes do not carry cookies (browser restriction),
+    // so the token must be sent via socket.io's auth object.
+    // This is the only legitimate place where we read the token from
+    // localStorage for network auth — all HTTP calls use httpOnly cookies.
     try {
       const token = typeof localStorage !== 'undefined'
         ? localStorage.getItem('token')

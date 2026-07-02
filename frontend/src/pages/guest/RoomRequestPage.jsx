@@ -445,7 +445,7 @@ export default function RoomRequestPage() {
         <GuestThread
           tenantId={tenantId}
           roomId={roomId}
-          token={localStorage.getItem('token')}
+          token={token}
           t={t}
           lang={lang}
           rtl={rtl}

@@ -70,6 +70,9 @@ async function registerBackgroundSync() {
 }
 
 async function queueCheckin({ bookingId, idempotencyKey }) {
+  // Background sync runs in a ServiceWorker context where httpOnly cookies
+  // are not accessible. The token is read from localStorage intentionally
+  // to authenticate offline-queued requests when connectivity is restored.
   const authToken = localStorage.getItem('token')?.replace('Bearer ', '') || null;
   await enqueueCheckin({
     id: idempotencyKey,

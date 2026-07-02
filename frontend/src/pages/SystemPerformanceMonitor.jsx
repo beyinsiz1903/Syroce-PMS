@@ -25,7 +25,6 @@ const SystemPerformanceMonitor = ({
   const [autoRefresh, setAutoRefresh] = useState(true);
   const loadData = useCallback(async () => {
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('access_token');
       const headers = {};
       const [perfRes, dbRes] = await Promise.all([axios.get(`/system/performance`, {
         headers

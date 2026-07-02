@@ -9,10 +9,7 @@ import { alertDialog } from '@/lib/dialogs';
 import { AlertTriangle, CheckCircle2, Clock, RefreshCw, XCircle, ArrowRight, ChevronRight, Activity, Send, RotateCcw, Bell, Inbox, Timer, User, Link2, Hash, Calendar, AlertCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 const API = "";
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('token');
-  return token ? {} : {};
-};
+
 
 // ── Helper Components ──────────────────────────────────────────────
 

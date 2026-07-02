@@ -5,10 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, AlertTriangle, AlertCircle, CheckCircle2, Wifi, WifiOff, TrendingUp, Clock, Activity, Shield } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('token');
-  return token ? {} : {};
-};
+
 const RiskBadge = ({
   risk
 }) => {

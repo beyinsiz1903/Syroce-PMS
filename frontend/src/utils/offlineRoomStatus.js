@@ -75,6 +75,9 @@ async function registerBackgroundSync() {
 }
 
 async function queueRoomStatus({ roomId, roomStatus, key }) {
+  // Background sync runs in a ServiceWorker context where httpOnly cookies
+  // are not accessible. The token is read from localStorage intentionally
+  // to authenticate offline-queued requests when connectivity is restored.
   const authToken = localStorage.getItem('token')?.replace('Bearer ', '') || null;
   // id == key → aynı oda için tekrar kuyruğa alma son durumun üstüne yazar
   // (coalesce / last-write-wins).
