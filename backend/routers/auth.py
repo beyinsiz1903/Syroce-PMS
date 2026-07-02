@@ -287,7 +287,7 @@ def _build_token_response(user: User, tenant, response: Response = None) -> Toke
             value=access,
             httponly=True,
             secure=COOKIE_SECURE,
-            samesite="lax",
+            samesite="none" if COOKIE_SECURE else "lax",
             max_age=JWT_EXPIRATION_MINUTES * 60,
             path="/",
         )
@@ -296,7 +296,7 @@ def _build_token_response(user: User, tenant, response: Response = None) -> Toke
             value=refresh,
             httponly=True,
             secure=COOKIE_SECURE,
-            samesite="lax",
+            samesite="none" if COOKIE_SECURE else "lax",
             max_age=REFRESH_TOKEN_EXPIRATION_DAYS * 86400,
             path="/",
         )
@@ -1339,7 +1339,7 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
         value=new_access,
         httponly=True,
         secure=COOKIE_SECURE,
-        samesite="lax",
+        samesite="none" if COOKIE_SECURE else "lax",
         max_age=JWT_EXPIRATION_MINUTES * 60,
         path="/",
     )
@@ -1353,7 +1353,7 @@ async def refresh_token(request: Request, response: Response, body: dict | None 
             value=new_refresh,
             httponly=True,
             secure=COOKIE_SECURE,
-            samesite="lax",
+            samesite="none" if COOKIE_SECURE else "lax",
             max_age=REFRESH_TOKEN_EXPIRATION_DAYS * 86400,
             path="/",
         )
