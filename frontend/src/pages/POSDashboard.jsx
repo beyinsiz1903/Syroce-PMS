@@ -3,51 +3,89 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 
-import POSTableManagement from '../components/POSTableManagement';
-import POSMenuItems from '../components/POSMenuItems';
-import POSOutletManagement from '../components/POSOutletManagement';
-import POSReports from '../components/POSReports';
-import POSPrinterSettings from '../components/POSPrinterSettings';
-import { Card, CardContent } from '../components/ui/card';
-import { Button } from '../components/ui/button';
-import { Badge } from '../components/ui/badge';
+import POSTableManagement   from '../components/POSTableManagement';
+import POSMenuItems         from '../components/POSMenuItems';
+import POSOutletManagement  from '../components/POSOutletManagement';
+import POSReports           from '../components/POSReports';
+import POSPrinterSettings   from '../components/POSPrinterSettings';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '../components/ui/select';
-import {
-  Tabs, TabsContent, TabsList, TabsTrigger,
-} from '../components/ui/tabs';
-import {
-  UtensilsCrossed, Menu, ArrowLeft, BarChart3, Sparkles,
-  Store, LayoutGrid, AlertCircle, Coffee, Tablet, Printer,
+  UtensilsCrossed, BarChart3, Sparkles, Store, LayoutGrid,
+  AlertCircle, Coffee, Tablet, Printer, Menu as MenuIcon,
+  TrendingUp, ShoppingBag, ArrowLeft, ChevronRight,
 } from 'lucide-react';
 
-const POSDashboard = ({ user, tenant, onLogout }) => {
+/* ── helper ── */
+const fmt = (n, digits = 0) =>
+  Number(n || 0).toLocaleString('tr-TR', { maximumFractionDigits: digits });
+
+/* ── stat card ── */
+function StatCard({ icon: Icon, label, value, sub, color = 'amber', loading, testId }) {
+  const ring = {
+    amber:   'from-amber-50  to-orange-50  border-amber-200  text-amber-600',
+    green:   'from-emerald-50 to-green-50  border-emerald-200 text-emerald-600',
+    blue:    'from-blue-50   to-indigo-50  border-blue-200   text-blue-600',
+    purple:  'from-purple-50 to-violet-50  border-purple-200 text-purple-600',
+  }[color];
+  return (
+    <div className={`rounded-2xl border bg-gradient-to-br p-5 flex items-center gap-4 shadow-sm ${ring}`}>
+      <div className={`w-12 h-12 rounded-xl bg-white/80 shadow-sm flex items-center justify-center shrink-0`}>
+        <Icon className="w-6 h-6" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-0.5">{label}</p>
+        {loading ? (
+          <div className="h-7 w-16 bg-gray-200 rounded animate-pulse" />
+        ) : (
+          <p className="text-2xl font-extrabold text-gray-900 leading-none" data-testid={testId}>
+            {value}
+          </p>
+        )}
+        {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
+      </div>
+    </div>
+  );
+}
+
+/* ── quick-action button ── */
+function QuickBtn({ icon: Icon, label, onClick, testId, accent = false }) {
+  return (
+    <button
+      data-testid={testId}
+      onClick={onClick}
+      className={`group flex items-center gap-2.5 px-4 py-2.5 rounded-xl font-semibold text-sm
+        border transition-all duration-150
+        ${accent
+          ? 'bg-amber-500 hover:bg-amber-600 border-amber-500 text-white shadow-md shadow-amber-200'
+          : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300'
+        }`}
+    >
+      <Icon className="w-4 h-4" />
+      {label}
+      <ChevronRight className="w-3.5 h-3.5 opacity-40 group-hover:opacity-80 transition-opacity" />
+    </button>
+  );
+}
+
+/* ── main ── */
+const POSDashboard = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [outlets, setOutlets] = useState([]);
-  const [selectedOutletId, setSelectedOutletId] = useState('all');
-  const [stats, setStats] = useState({
-    outlet_count: 0,
-    menu_count: 0,
-    today_orders: 0,
-    today_revenue: 0,
-  });
-  const [loadingStats, setLoadingStats] = useState(true);
 
-  // Outlets sadece bir kez yüklenir (POSOutletManagement değişiklikte onChange tetikler).
-  // Eski kod selectedOutletId her değiştiğinde outlets'ı da yeniden çekiyordu.
+  const [outlets,         setOutlets]         = useState([]);
+  const [selectedOutletId, setSelectedOutletId] = useState('all');
+  const [stats,           setStats]           = useState({ outlet_count: 0, menu_count: 0, today_orders: 0, today_revenue: 0 });
+  const [loadingStats,    setLoadingStats]    = useState(true);
+
+  /* ── data ── */
   const loadOutlets = useCallback(async () => {
     try {
-      const res = await axios.get('/pos/outlets');
+      const res  = await axios.get('/pos/outlets');
       const list = Array.isArray(res.data) ? res.data : (res.data.outlets || []);
       const active = list.filter(o => o.status !== 'inactive');
       setOutlets(active);
       return active;
-    } catch (err) {
-      console.error('Outlets yüklenemedi:', err);
-      return [];
-    }
+    } catch { return []; }
   }, []);
 
   const loadStats = useCallback(async () => {
@@ -56,212 +94,205 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
       const params = selectedOutletId !== 'all' ? { outlet_id: selectedOutletId } : {};
       const [menuRes, zRes] = await Promise.all([
         axios.get('/pos/menu-items', { params }).catch(() => ({ data: [] })),
-        axios.get('/pos/z-report', { params }).catch(() => ({ data: { transaction_count: 0, gross_sales: 0 } })),
+        axios.get('/pos/z-report',   { params }).catch(() => ({ data: { transaction_count: 0, gross_sales: 0 } })),
       ]);
       const menuList = Array.isArray(menuRes.data) ? menuRes.data : (menuRes.data.menu_items || []);
       setStats(prev => ({
         ...prev,
-        menu_count: menuList.length,
-        today_orders: zRes.data.transaction_count || 0,
-        today_revenue: zRes.data.gross_sales || 0,
+        menu_count:    menuList.length,
+        today_orders:  zRes.data.transaction_count || 0,
+        today_revenue: zRes.data.gross_sales       || 0,
       }));
-    } catch (err) {
-      console.error('Istatistikler yüklenemedi:', err);
-    } finally {
+    } catch { /* silent */ } finally {
       setLoadingStats(false);
     }
   }, [selectedOutletId]);
 
-  // İlk mount: outlets bir kere; outlets değişince outlet_count güncelle.
-  useEffect(() => {
-    loadOutlets();
-  }, [loadOutlets]);
-  useEffect(() => {
-    setStats(prev => ({ ...prev, outlet_count: outlets.length }));
-  }, [outlets.length]);
-  useEffect(() => {
-    loadStats();
-  }, [loadStats]);
+  useEffect(() => { loadOutlets(); }, [loadOutlets]);
+  useEffect(() => { setStats(prev => ({ ...prev, outlet_count: outlets.length })); }, [outlets.length]);
+  useEffect(() => { loadStats(); }, [loadStats]);
 
-  // POSOutletManagement create/update/deactivate sonrası hem outlets listesini
-  // hem de stats'ı tazele (yoksa selector/outlet_count tam sayfa yenilemeye
-  // kadar stale kalır — architect review #2).
   const handleOutletsChanged = useCallback(async () => {
     await loadOutlets();
     await loadStats();
   }, [loadOutlets, loadStats]);
 
   const currentOutletId = selectedOutletId === 'all' ? null : selectedOutletId;
-  const selectedOutlet = outlets.find(o => o.id === selectedOutletId);
 
+  /* ── render ── */
   return (
-    <>
-      <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center gap-3">
-              <UtensilsCrossed className="w-8 h-8 text-amber-600" />
-              {t('posDashboard.title')}
-            </h1>
-            <p className="text-gray-600 mt-1">{t('posDashboard.subtitle')}</p>
-          </div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <Button onClick={() => navigate('/pos/terminal')}
-              data-testid="nav-waiter-terminal">
-              <Tablet className="w-4 h-4 mr-2" />
-              Garson Terminali
-            </Button>
-            <Button variant="outline" onClick={() => navigate('/staff/room-service')}
-              data-testid="nav-staff-room-service">
-              <Coffee className="w-4 h-4 mr-2" />
-              {t('staffRoomService.title')}
-            </Button>
-            <Button variant="outline" onClick={() => navigate('/fnb-complete')}
-              data-testid="nav-fnb-complete">
-              <UtensilsCrossed className="w-4 h-4 mr-2" />
-              {t('posDashboard.fnbSuite')}
-            </Button>
-            <Button variant="outline" onClick={() => navigate('/admin/features')}>
-              <Sparkles className="w-4 h-4 mr-2" />
-              {t('posDashboard.allFeatures')}
-            </Button>
-            <Button onClick={() => navigate('/')}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              {t('nav.dashboard')}
-            </Button>
-          </div>
-        </div>
-
-        {/* Outlet Selector + Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <Card className="md:col-span-2 bg-gradient-to-br from-amber-50 to-amber-50 border-amber-200">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Store className="w-4 h-4 text-amber-600" />
-                <span className="text-sm font-semibold">{t('posDashboard.activeOutlet')}</span>
+    <div className="min-h-screen bg-gray-50">
+      {/* ── Page header ── */}
+      <div className="bg-white border-b border-gray-200 shadow-sm">
+        <div className="px-6 py-5">
+          {/* top row */}
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-amber-100 flex items-center justify-center">
+                <UtensilsCrossed className="w-6 h-6 text-amber-600" />
               </div>
-              <Select value={selectedOutletId} onValueChange={setSelectedOutletId}>
-                <SelectTrigger data-testid="select-outlet" className="bg-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t('posDashboard.allOutlets')}</SelectItem>
-                  {outlets.map(o => (
-                    <SelectItem key={o.id} value={o.id}>
-                      {o.outlet_name || o.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedOutlet && (
-                <div className="mt-2 flex items-center gap-2 text-xs text-gray-600">
-                  <Badge variant="outline">{selectedOutlet.outlet_type}</Badge>
-                  {selectedOutlet.location && <span>{selectedOutlet.location}</span>}
-                </div>
-              )}
-              {outlets.length === 0 && !loadingStats && (
-                <div className="mt-2 flex items-start gap-2 text-xs text-amber-700 bg-amber-50 p-2 rounded">
-                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-                  <span>{t('posDashboard.noOutletsHint')}</span>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 text-center">
-              <p className="text-sm text-gray-600 mb-1">{t('posDashboard.outletCount')}</p>
-              <p className="text-3xl font-bold text-amber-600" data-testid="stat-outlets">
-                {stats.outlet_count}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 text-center">
-              <p className="text-sm text-gray-600 mb-1">{t('posDashboard.menuCount')}</p>
-              <p className="text-3xl font-bold text-green-600" data-testid="stat-menu">
-                {stats.menu_count}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 text-center">
-              <p className="text-sm text-gray-600 mb-1">{t('posDashboard.todaysRevenue')}</p>
-              <p className="text-2xl font-bold text-blue-600" data-testid="stat-revenue">
-                {Number(stats.today_revenue).toLocaleString('tr-TR', {
-                  maximumFractionDigits: 0,
-                })}
-                <span className="text-sm ml-1">TL</span>
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                {stats.today_orders} {t('posDashboard.transactions')}
-              </p>
-            </CardContent>
-          </Card>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900 leading-tight">
+                  {t('posDashboard.title', 'Satış Noktası Paneli')}
+                </h1>
+                <p className="text-sm text-gray-500">
+                  {t('posDashboard.subtitle', 'Satış Noktası · Masa, Menü ve Sipariş Yönetimi')}
+                </p>
+              </div>
+            </div>
+
+            {/* quick actions */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <QuickBtn accent icon={Tablet}          label="Garson Terminali"   onClick={() => navigate('/pos/terminal')}      testId="nav-waiter-terminal" />
+              <QuickBtn        icon={Coffee}          label={t('staffRoomService.title', 'Oda Servisi Siparişleri')} onClick={() => navigate('/staff/room-service')} testId="nav-staff-room-service" />
+              <QuickBtn        icon={UtensilsCrossed} label={t('posDashboard.fnbSuite', 'F&B Paketi')}    onClick={() => navigate('/fnb-complete')}       testId="nav-fnb-complete" />
+              <QuickBtn        icon={Sparkles}        label={t('posDashboard.allFeatures', 'Tüm Özellikler')} onClick={() => navigate('/admin/features')} />
+              <QuickBtn        icon={ArrowLeft}       label={t('nav.dashboard', 'Kontrol Paneli')}        onClick={() => navigate('/')} />
+            </div>
+          </div>
         </div>
 
-        {/* Tabs */}
+        {/* ── Stat bar ── */}
+        <div className="px-6 pb-5">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatCard
+              icon={Store}       label={t('posDashboard.outletCount', 'Satış Noktası')}
+              value={stats.outlet_count} color="amber" loading={loadingStats} testId="stat-outlets"
+            />
+            <StatCard
+              icon={MenuIcon}    label={t('posDashboard.menuCount', 'Menü Ürünü')}
+              value={stats.menu_count}   color="green" loading={loadingStats} testId="stat-menu"
+            />
+            <StatCard
+              icon={ShoppingBag} label={t('posDashboard.todaysOrders', 'Bugün Sipariş')}
+              value={stats.today_orders} color="purple" loading={loadingStats}
+            />
+            <StatCard
+              icon={TrendingUp}  label={t('posDashboard.todaysRevenue', 'Bugün Ciro')}
+              value={`${fmt(stats.today_revenue)} ₺`}
+              sub={`${stats.today_orders} ${t('posDashboard.transactions', 'işlem')}`}
+              color="blue" loading={loadingStats} testId="stat-revenue"
+            />
+          </div>
+        </div>
+
+        {/* Outlet selector strip */}
+        <div className="px-6 pb-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              <Store className="w-3.5 h-3.5 inline mr-1" />
+              Filtre:
+            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <OutletPill
+                label="Tümü (toplam)"
+                active={selectedOutletId === 'all'}
+                onClick={() => setSelectedOutletId('all')}
+                testId="select-outlet-all"
+              />
+              {outlets.map(o => (
+                <OutletPill
+                  key={o.id}
+                  label={o.outlet_name || o.name}
+                  active={selectedOutletId === o.id}
+                  onClick={() => setSelectedOutletId(o.id)}
+                  testId={`select-outlet-${o.id}`}
+                />
+              ))}
+            </div>
+            {outlets.length === 0 && !loadingStats && (
+              <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                {t('posDashboard.noOutletsHint', 'Henüz satış noktası yok — "Satış Noktaları" sekmesinden ekleyin')}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Tabs body ── */}
+      <div className="px-6 py-6">
         <Tabs defaultValue="outlets" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 md:grid-cols-5 max-w-3xl">
-            <TabsTrigger value="outlets" data-testid="tab-outlets">
-              <Store className="w-4 h-4 mr-2" />
-              {t('posDashboard.outlets')}
-            </TabsTrigger>
-            <TabsTrigger value="menu" data-testid="tab-menu">
-              <Menu className="w-4 h-4 mr-2" />
-              {t('posDashboard.menuItems')}
-            </TabsTrigger>
-            <TabsTrigger value="tables" data-testid="tab-tables">
-              <LayoutGrid className="w-4 h-4 mr-2" />
-              {t('posDashboard.tables')}
-            </TabsTrigger>
-            <TabsTrigger value="reports" data-testid="tab-reports">
-              <BarChart3 className="w-4 h-4 mr-2" />
-              {t('posDashboard.reports')}
-            </TabsTrigger>
-            <TabsTrigger value="printers" data-testid="tab-printers">
-              <Printer className="w-4 h-4 mr-2" />
-              Yazicilar
-            </TabsTrigger>
+          <TabsList className="inline-flex h-10 items-center rounded-xl bg-white border border-gray-200 shadow-sm p-1 gap-0.5 mb-6">
+            {[
+              { value: 'outlets',  icon: Store,       label: t('posDashboard.outlets',   'Satış Noktaları'), testId: 'tab-outlets' },
+              { value: 'menu',     icon: MenuIcon,    label: t('posDashboard.menuItems', 'Menü Kalemleri'), testId: 'tab-menu' },
+              { value: 'tables',   icon: LayoutGrid,  label: t('posDashboard.tables',    'Masalar'),         testId: 'tab-tables' },
+              { value: 'reports',  icon: BarChart3,   label: t('posDashboard.reports',   'Raporlar'),        testId: 'tab-reports' },
+              { value: 'printers', icon: Printer,     label: 'Yazıcılar',                                   testId: 'tab-printers' },
+            ].map(({ value, icon: Icon, label, testId }) => (
+              <TabsTrigger
+                key={value}
+                value={value}
+                data-testid={testId}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium
+                  text-gray-500 data-[state=active]:bg-amber-500 data-[state=active]:text-white
+                  data-[state=active]:shadow-sm hover:text-gray-800 transition-all"
+              >
+                <Icon className="w-4 h-4" />
+                {label}
+              </TabsTrigger>
+            ))}
           </TabsList>
 
-          <TabsContent value="outlets" className="mt-6">
+          <TabsContent value="outlets">
             <POSOutletManagement onChange={handleOutletsChanged} />
           </TabsContent>
 
-          <TabsContent value="menu" className="mt-6">
-            <POSMenuItems
-              outletId={currentOutletId}
-              onItemSelect={() => { /* hook for cart add — implemented in POSOrderEntry */ }}
-            />
+          <TabsContent value="menu">
+            <POSMenuItems outletId={currentOutletId} onItemSelect={() => {}} />
           </TabsContent>
 
-          <TabsContent value="tables" className="mt-6">
+          <TabsContent value="tables">
             {currentOutletId ? (
               <POSTableManagement outletId={currentOutletId} />
             ) : outlets.length > 0 ? (
               <POSTableManagement outletId={outlets[0].id} />
             ) : (
-              <Card>
-                <CardContent className="p-8 text-center text-gray-500">
-                  <LayoutGrid className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                  <p>{t('posDashboard.createOutletFirst')}</p>
-                </CardContent>
-              </Card>
+              <EmptyTabState
+                icon={LayoutGrid}
+                text={t('posDashboard.createOutletFirst', 'Önce bir satış noktası oluşturun')}
+              />
             )}
           </TabsContent>
 
-          <TabsContent value="reports" className="mt-6">
+          <TabsContent value="reports">
             <POSReports outletId={currentOutletId} />
           </TabsContent>
 
-          <TabsContent value="printers" className="mt-6">
+          <TabsContent value="printers">
             <POSPrinterSettings />
           </TabsContent>
         </Tabs>
       </div>
-    </>
+    </div>
   );
 };
+
+/* ── tiny helpers ── */
+function OutletPill({ label, active, onClick, testId }) {
+  return (
+    <button
+      data-testid={testId}
+      onClick={onClick}
+      className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
+        active
+          ? 'bg-amber-500 border-amber-500 text-white shadow-sm'
+          : 'bg-white border-gray-200 text-gray-600 hover:border-amber-300 hover:text-amber-700'
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function EmptyTabState({ icon: Icon, text }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-12 text-center">
+      <Icon className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+      <p className="text-gray-500 text-sm">{text}</p>
+    </div>
+  );
+}
 
 export default POSDashboard;
