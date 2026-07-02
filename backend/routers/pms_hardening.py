@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from cache_manager import cached  # Tur 3: tenant-aware cache for slow trends
 from core.database import db
 from core.security import get_current_user
+from core.tenant_db import TenantViolationError, set_tenant_context
 from models.schemas import User
 from modules.pms_core.auto_housekeeping_service import AutoHousekeepingService
 from modules.pms_core.dashboard_trends_service import DashboardTrendsService
@@ -193,11 +194,40 @@ class ExceptionResolveRequest(BaseModel):
 
 @router.post("/check-in", tags=["front-desk"])
 async def api_check_in(req: CheckInRequest, current_user: User = Depends(get_current_user)):
-    """Check-in a guest with room readiness validation."""
+    """Check-in a guest with room readiness validation.
+
+    Returns:
+      200 — success
+      400 — invalid booking state (already checked in, cancelled, etc.)
+      409 — room not ready (cleaning/dirty) — use override_reason to force
+      500 — unexpected server error (logged, detail returned)
+    """
+    from core.atomic_checkin_checkout import CheckInError
+
     perm_svc.enforce_permission(current_user.role, "check_in")
-    result = await front_desk.check_in(current_user.tenant_id, req.booking_id, current_user.id, current_user.name, req.override_reason)
-    if not result["success"]:
-        raise HTTPException(status_code=400, detail=result)
+    # STRICT_TENANT_MODE requires tenant context to be set before any
+    # tenant-scoped collection access inside the atomic transaction.
+    set_tenant_context(current_user.tenant_id)
+    try:
+        result = await front_desk.check_in(
+            current_user.tenant_id, req.booking_id,
+            current_user.id, current_user.name, req.override_reason,
+        )
+    except TenantViolationError as e:
+        raise HTTPException(status_code=500, detail=f"Tenant context error: {e}")
+    except CheckInError as e:
+        error_msg = str(e)
+        status_code = 409 if ("not ready" in error_msg or "cleaning" in error_msg or "dirty" in error_msg) else 400
+        raise HTTPException(status_code=status_code, detail={"success": False, "error": error_msg})
+    except Exception as e:
+        import logging
+        logging.getLogger("pms_hardening").exception("Unexpected check-in error booking=%s", req.booking_id)
+        raise HTTPException(status_code=500, detail=f"Check-in failed unexpectedly: {type(e).__name__}: {e}")
+
+    if not result.get("success"):
+        error_msg = result.get("error", "Check-in failed")
+        status_code = 409 if result.get("blocker") == "room_not_ready" else 400
+        raise HTTPException(status_code=status_code, detail=result)
     # Fire reservation.updated to subscribed agency webhooks (non-blocking, GC-safe).
     from routers.webhook_retry_service import schedule_emit_reservation_updated
 
@@ -207,11 +237,39 @@ async def api_check_in(req: CheckInRequest, current_user: User = Depends(get_cur
 
 @router.post("/checkout", tags=["front-desk"])
 async def api_checkout(req: CheckoutRequest, current_user: User = Depends(get_current_user)):
-    """Checkout a guest with folio balance validation."""
+    """Checkout a guest with folio balance validation.
+
+    Returns:
+      200 — success
+      400 — invalid booking state (not checked in, etc.)
+      409 — unpaid folio balance (use force=true to override if permitted)
+      500 — unexpected server error
+    """
+    from core.atomic_checkin_checkout import CheckOutError
+
     perm_svc.enforce_permission(current_user.role, "checkout")
-    result = await front_desk.checkout(current_user.tenant_id, req.booking_id, current_user.id, current_user.name, req.force)
-    if not result["success"]:
-        raise HTTPException(status_code=400, detail=result)
+    # Set tenant context required by STRICT_TENANT_MODE before atomic transaction.
+    set_tenant_context(current_user.tenant_id)
+    try:
+        result = await front_desk.checkout(
+            current_user.tenant_id, req.booking_id,
+            current_user.id, current_user.name, req.force,
+        )
+    except TenantViolationError as e:
+        raise HTTPException(status_code=500, detail=f"Tenant context error: {e}")
+    except CheckOutError as e:
+        error_msg = str(e)
+        status_code = 409 if "unpaid balance" in error_msg else 400
+        raise HTTPException(status_code=status_code, detail={"success": False, "error": error_msg})
+    except Exception as e:
+        import logging
+        logging.getLogger("pms_hardening").exception("Unexpected checkout error booking=%s", req.booking_id)
+        raise HTTPException(status_code=500, detail=f"Checkout failed unexpectedly: {type(e).__name__}: {e}")
+
+    if not result.get("success"):
+        error_msg = result.get("error", "Checkout failed")
+        status_code = 409 if result.get("blockers") else 400
+        raise HTTPException(status_code=status_code, detail=result)
     # Folio finalization shifts revenue/payment buckets → drop dashboards.
     from domains.pms.night_audit.router import invalidate_finance_cache
 
