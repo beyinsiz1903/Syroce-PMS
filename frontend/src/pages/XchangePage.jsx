@@ -133,13 +133,17 @@ export default function XchangePage() {
   }, [loadCatalog, loadDeliveries]);
 
   useEffect(() => { loadAll(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { loadDeliveries().catch(() => {}); }, [filterPartner, filterStatus, pageCursor, loadDeliveries]);
+  useEffect(() => { loadDeliveries().catch((e) => {
+    console.warn('[XchangePage] loadDeliveries (filter change) failed:', e?.response?.status ?? e?.message);
+  }); }, [filterPartner, filterStatus, pageCursor, loadDeliveries]);
 
   // Auto-refresh interval
   useEffect(() => {
     if (refreshTimer.current) { clearInterval(refreshTimer.current); refreshTimer.current = null; }
     if (autoRefresh) {
-      refreshTimer.current = setInterval(() => { loadDeliveries().catch(() => {}); }, 30000);
+      refreshTimer.current = setInterval(() => { loadDeliveries().catch((e) => {
+        console.warn('[XchangePage] loadDeliveries (auto-refresh) failed:', e?.response?.status ?? e?.message);
+      }); }, 30000);
     }
     return () => { if (refreshTimer.current) clearInterval(refreshTimer.current); };
   }, [autoRefresh, loadDeliveries]);

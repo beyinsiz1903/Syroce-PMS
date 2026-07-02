@@ -383,7 +383,9 @@ function AutoHousekeepingPanel({ token, t }) {
   useEffect(() => {
     axios.get(`/pms-core/housekeeping/assignment-suggestions`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => setSuggestions(r.data))
-      .catch(() => {})
+      .catch((e) => {
+        console.warn('[PMSOpsDashboard] housekeeping suggestions fetch failed:', e?.response?.status ?? e?.message);
+      })
       .finally(() => setLoading(false));
   }, [token]);
 
@@ -449,7 +451,10 @@ function AuditTrailPanel({ token, t }) {
   const [trail, setTrail] = useState([]);
   useEffect(() => {
     axios.get(`/pms-core/audit-trail?limit=30`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => setTrail(r.data.trail || [])).catch(() => {});
+      .then(r => setTrail(r.data.trail || []))
+      .catch((e) => {
+        console.warn('[PMSOpsDashboard] audit-trail fetch failed:', e?.response?.status ?? e?.message);
+      });
   }, [token]);
 
   if (!trail.length) return <p className="text-sm text-gray-400 dark:text-slate-500 py-4">{t("pmsOperations.noAuditTrail")}</p>;

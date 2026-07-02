@@ -32,7 +32,9 @@ function playAlarmBeep() {
   const ctx = getAlarmCtx();
   if (!ctx) return;
   if (ctx.state === 'suspended') {
-    ctx.resume().catch(() => {});
+    ctx.resume().catch((e) => {
+      console.debug('[WakeUpCallsPage] AudioContext.resume() blocked (browser autoplay policy):', e?.name);
+    });
   }
   const beep = (start, freq = 880) => {
     try {

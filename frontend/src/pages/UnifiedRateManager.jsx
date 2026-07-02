@@ -82,8 +82,9 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
     try {
       const { data } = await axios.get(`${UNIFIED_PREFIX}/circuit-breakers`, { headers });
       setBreakers(Array.isArray(data?.breakers) ? data.breakers : []);
-    } catch {
+    } catch (e) {
       // silent — admin-level endpoint, not all roles can read
+      console.warn('[UnifiedRateManager] fetchBreakers skipped (likely insufficient role):', e?.response?.status);
     }
   }, []);
 
@@ -144,7 +145,9 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
     if (!provider) return;
     axios.get(`${UNIFIED_PREFIX}/push-providers`, { headers })
       .then(res => setPushProviders(res.data?.providers || []))
-      .catch(() => {});
+      .catch((e) => {
+        console.warn('[UnifiedRateManager] fetchPushProviders failed (non-critical):', e?.response?.status ?? e?.message);
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [provider]);
 
@@ -152,7 +155,9 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
   useEffect(() => {
     axios.get(`${UNIFIED_PREFIX}/agencies`, { headers })
       .then(res => setAgencies(res.data?.agencies || []))
-      .catch(() => {});
+      .catch((e) => {
+        console.warn('[UnifiedRateManager] fetchAgencies failed (non-critical):', e?.response?.status ?? e?.message);
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 

@@ -426,7 +426,9 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
     try {
       const resp = await _retryGet(`/ops-events/early-warnings/summary`);
       setEarlyWarningSummary(resp.data);
-    } catch (e) { /* silently ignore */ }
+    } catch (e) {
+      console.warn('[ChannelOps] fetchEarlyWarningSummary failed (non-critical):', e?.response?.status ?? e?.message);
+    }
   }, []);
 
   const fetchDashboard = useCallback(async () => {
@@ -448,7 +450,9 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
         headers: getAuthHeaders(),
       });
       setDlqItems(resp.data?.items || []);
-    } catch (e) { /* silently ignore */ }
+    } catch (e) {
+      console.warn('[ChannelOps] fetchDlq failed (non-critical):', e?.response?.status ?? e?.message);
+    }
   }, []);
 
   const fetchDeliveries = useCallback(async (lim) => {
@@ -461,7 +465,9 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
       setDeliveries(items);
       // Daha fazla var mi? Sayfa dolduysa ve max'a ulasilmadiysa "Daha Fazla" goster.
       setDeliveriesHasMore(items.length >= useLimit && useLimit < 200);
-    } catch (e) { /* silently ignore */ }
+    } catch (e) {
+      console.warn('[ChannelOps] fetchDeliveries failed (non-critical):', e?.response?.status ?? e?.message);
+    }
   }, [deliveriesLimit]);
 
   const fetchOpsEvents = useCallback(async (lim) => {
@@ -473,7 +479,9 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
       const items = resp.data?.events || [];
       setOpsEvents(items);
       setOpsEventsHasMore(items.length >= useLimit && useLimit < 200);
-    } catch (e) { /* silently ignore */ }
+    } catch (e) {
+      console.warn('[ChannelOps] fetchOpsEvents failed (non-critical):', e?.response?.status ?? e?.message);
+    }
   }, [opsEventsLimit]);
 
   const loadMoreDeliveries = () => {
@@ -495,7 +503,9 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
         headers: getAuthHeaders(),
       });
       setPrioritizedIncidents(resp.data);
-    } catch (e) { /* silently ignore */ }
+    } catch (e) {
+      console.warn('[ChannelOps] fetchPrioritizedIncidents failed (non-critical):', e?.response?.status ?? e?.message);
+    }
   }, []);
 
   // Sprint 2: Fetch connectors health
@@ -505,7 +515,9 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
         headers: getAuthHeaders(),
       });
       setConnectorsHealth(resp.data);
-    } catch (e) { /* silently ignore */ }
+    } catch (e) {
+      console.warn('[ChannelOps] fetchConnectorsHealth failed (non-critical):', e?.response?.status ?? e?.message);
+    }
   }, []);
 
   useEffect(() => {

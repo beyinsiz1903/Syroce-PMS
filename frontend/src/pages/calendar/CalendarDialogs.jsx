@@ -399,7 +399,9 @@ const RoomChangePanel = ({ booking, onMoved, onClose }) => {
         to_room_id: selectedRoom.id,
         reason,
         timestamp: new Date().toISOString(),
-      }).catch(() => {});
+      }).catch((e) => {
+        console.warn('[CalendarDialogs] room-move-history log failed (non-critical):', e?.response?.status ?? e?.message);
+      });
       if (onMoved) onMoved();
       if (onClose) onClose();
     } catch (err) {

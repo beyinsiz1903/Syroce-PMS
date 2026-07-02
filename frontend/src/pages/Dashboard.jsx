@@ -571,7 +571,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
 
   return (
     <>
-      <div className="p-4 md:p-6 space-y-4">
+      <div className="p-4 md:p-6 space-y-4" role="main" aria-label="Ana gösterge paneli">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold mb-1 dark:text-slate-100" style={{ fontFamily: 'Space Grotesk' }}>
             {t('dashboard.welcome')}, {user.name}
@@ -580,16 +580,20 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
         </div>
 
         {loading ? (
-          <div className="text-center py-12">{t('common.loading')}</div>
+          <div className="text-center py-12" role="status" aria-live="polite" aria-label="Veriler yükleniyor">{t('common.loading')}</div>
         ) : (
           <>
             {/* AI Daily Briefing Card */}
             {aiBriefing && (
-              <Card className="bg-gradient-to-br from-slate-900 via-slate-800 to-amber-700 text-white mb-4 border-0 shadow-lg">
+              <Card
+                className="bg-gradient-to-br from-slate-900 via-slate-800 to-amber-700 text-white mb-4 border-0 shadow-lg"
+                role="region"
+                aria-label="Yapay zeka günlük brifing"
+              >
                 <CardHeader className="p-4">
                   <CardTitle className="flex items-center justify-between text-base md:text-lg">
                     <span className="flex items-center gap-2">
-                      <Sparkles className="w-5 h-5 text-amber-300" />
+                      <Sparkles className="w-5 h-5 text-amber-300" aria-hidden="true" />
                       {aiBriefing.ai_powered ? t('ai.dailyBriefing') : t('ai.dailySummary')}
                     </span>
                     <Button 
@@ -598,6 +602,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                       onClick={loadAIBriefing}
                       className="text-white hover:bg-white/20 text-xs"
                       disabled={loadingAI}
+                      aria-label={loadingAI ? 'AI brifing yükleniyor' : 'AI brifingini yenile'}
+                      aria-busy={loadingAI}
                     >
                       {loadingAI ? t('ai.loading') : t('ai.refreshInsights')}
                     </Button>
@@ -665,53 +671,53 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
               // Sabit envanter için düz çizgi (görsel tutarlılık).
               const rooms7 = totalRooms > 0 ? Array(7).fill(totalRooms) : [];
               return (
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-3">
-                <Card className="hover:shadow-md transition-shadow border-slate-200">
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-3" role="list" aria-label="Otel KPI metrikleri">
+                <Card className="hover:shadow-md transition-shadow border-slate-200" role="listitem">
                   <CardContent className="p-4 text-center">
                     <div className="flex flex-col items-center space-y-2">
-                      <div className="p-2 bg-slate-100 rounded-lg">
-                        <BedDouble className="w-6 h-6 text-slate-600" />
+                      <div className="p-2 bg-slate-100 rounded-lg" aria-hidden="true">
+                        <BedDouble className="w-6 h-6 text-slate-600" aria-hidden="true" />
                       </div>
-                      <div className="text-2xl font-bold text-slate-900">{stats.pms.total_rooms}</div>
+                      <div className="text-2xl font-bold text-slate-900" aria-label={`Toplam oda sayısı: ${stats.pms.total_rooms}`}>{stats.pms.total_rooms}</div>
                       <div className="text-xs font-medium text-slate-600">{t('dashboard.totalRooms')}</div>
                       <Sparkline values={rooms7} stroke="#64748b" fill="rgba(100,116,139,0.10)" />
                     </div>
                   </CardContent>
                 </Card>
 
-                <Card className="hover:shadow-md transition-shadow border-amber-200 bg-amber-50/30">
+                <Card className="hover:shadow-md transition-shadow border-amber-200 bg-amber-50/30" role="listitem">
                   <CardContent className="p-4 text-center">
                     <div className="flex flex-col items-center space-y-2">
-                      <div className="p-2 bg-amber-100 rounded-lg">
-                        <Hotel className="w-6 h-6 text-amber-700" />
+                      <div className="p-2 bg-amber-100 rounded-lg" aria-hidden="true">
+                        <Hotel className="w-6 h-6 text-amber-700" aria-hidden="true" />
                       </div>
-                      <div className="text-2xl font-bold text-amber-800">{(typeof stats.pms.occupancy_rate === 'number' ? stats.pms.occupancy_rate : 0).toFixed(1)}%</div>
+                      <div className="text-2xl font-bold text-amber-800" aria-label={`Doluluk oranı: ${(typeof stats.pms.occupancy_rate === 'number' ? stats.pms.occupancy_rate : 0).toFixed(1)} yüzde`}>{(typeof stats.pms.occupancy_rate === 'number' ? stats.pms.occupancy_rate : 0).toFixed(1)}%</div>
                       <div className="text-xs font-medium text-slate-600">{t('dashboard.occupancyRate')}</div>
                       <Sparkline values={occ7} stroke="#d97706" fill="rgba(217,119,6,0.12)" />
                     </div>
                   </CardContent>
                 </Card>
 
-                <Card className="hover:shadow-md transition-shadow border-emerald-200">
+                <Card className="hover:shadow-md transition-shadow border-emerald-200" role="listitem">
                   <CardContent className="p-4 text-center">
                     <div className="flex flex-col items-center space-y-2">
-                      <div className="p-2 bg-emerald-100 rounded-lg">
-                        <Calendar className="w-6 h-6 text-emerald-700" />
+                      <div className="p-2 bg-emerald-100 rounded-lg" aria-hidden="true">
+                        <Calendar className="w-6 h-6 text-emerald-700" aria-hidden="true" />
                       </div>
-                      <div className="text-2xl font-bold text-slate-900">{stats.pms.today_checkins}</div>
+                      <div className="text-2xl font-bold text-slate-900" aria-label={`Bugünkü check-in sayısı: ${stats.pms.today_checkins}`}>{stats.pms.today_checkins}</div>
                       <div className="text-xs font-medium text-slate-600">{t('dashboard.todayCheckins')}</div>
                       <Sparkline values={book7} stroke="#059669" fill="rgba(5,150,105,0.12)" />
                     </div>
                   </CardContent>
                 </Card>
 
-                <Card className="hover:shadow-md transition-shadow border-sky-200">
+                <Card className="hover:shadow-md transition-shadow border-sky-200" role="listitem">
                   <CardContent className="p-4 text-center">
                     <div className="flex flex-col items-center space-y-2">
-                      <div className="p-2 bg-sky-100 rounded-lg">
-                        <Users className="w-6 h-6 text-sky-700" />
+                      <div className="p-2 bg-sky-100 rounded-lg" aria-hidden="true">
+                        <Users className="w-6 h-6 text-sky-700" aria-hidden="true" />
                       </div>
-                      <div className="text-2xl font-bold text-slate-900">{stats.pms.total_guests}</div>
+                      <div className="text-2xl font-bold text-slate-900" aria-label={`Toplam misafir sayısı: ${stats.pms.total_guests}`}>{stats.pms.total_guests}</div>
                       <div className="text-xs font-medium text-slate-600">{t('dashboard.totalGuests')}</div>
                       <Sparkline values={guests7} stroke="#0284c7" fill="rgba(2,132,199,0.12)" />
                     </div>
@@ -746,9 +752,10 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                     onClick={() => navigate('/app/migration-observability')}
                     className="rounded-full bg-white text-slate-900 hover:bg-amber-50"
                     data-testid="migration-observability-dashboard-open-button"
+                    aria-label="Migration Observability panelini aç"
                   >
                     {t('dashboard.openPanel')}
-                    <ArrowRight className="ml-2 h-4 w-4" />
+                    <ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" />
                   </Button>
                 </div>
               </CardContent>

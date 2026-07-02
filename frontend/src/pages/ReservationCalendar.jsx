@@ -783,8 +783,13 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // ─── Render ────────────────────────────────────────────────
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="calendar">
-      <div className="flex flex-col h-[calc(100vh-72px)] overflow-hidden -mb-28">
-        <div className="flex-none p-4 pb-3 bg-gray-50 border-b border-gray-200 space-y-3" data-testid="calendar-sticky-header">
+      <div className="flex flex-col h-[calc(100vh-72px)] overflow-hidden -mb-28" role="main" aria-label="Rezervasyon takvimi">
+        <div
+          className="flex-none p-4 pb-3 bg-gray-50 border-b border-gray-200 space-y-3"
+          data-testid="calendar-sticky-header"
+          role="toolbar"
+          aria-label="Takvim kontrol araçları"
+        >
         <CalendarHeader
           dateRange={dateRange}
           daysToShow={daysToShow}
@@ -822,31 +827,36 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         />
 
         {/* Compact Legend */}
-        <div className="flex-none bg-white border rounded-lg px-4 py-2" data-testid="calendar-legend">
+        <div
+          className="flex-none bg-white border rounded-lg px-4 py-2"
+          data-testid="calendar-legend"
+          role="region"
+          aria-label="Renk kodu lejantı"
+        >
           <div className="flex items-center justify-between text-xs text-gray-500">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#16a34a' }}></div>
+            <ul className="flex items-center gap-4" role="list" aria-label="Rezervasyon durumu renk kodları">
+              <li className="flex items-center gap-1.5" role="listitem">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#16a34a' }} aria-hidden="true"></div>
                 <span>Iceride (Check-in)</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#f97316' }}></div>
+              </li>
+              <li className="flex items-center gap-1.5" role="listitem">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#f97316' }} aria-hidden="true"></div>
                 <span>{t('cm.pages_ReservationCalendar.bugun_gelis')}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#2563eb' }}></div>
+              </li>
+              <li className="flex items-center gap-1.5" role="listitem">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#2563eb' }} aria-hidden="true"></div>
                 <span>Onaylanmis</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#f87171' }}></div>
+              </li>
+              <li className="flex items-center gap-1.5" role="listitem">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#f87171' }} aria-hidden="true"></div>
                 <span>{t('cm.pages_ReservationCalendar.gecmis_check_out')}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-green-500"></div>
+              </li>
+              <li className="flex items-center gap-1.5" role="listitem">
+                <div className="w-2 h-2 rounded-full bg-green-500" aria-hidden="true"></div>
                 <span>{t('cm.pages_ReservationCalendar.musait')}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-red-500"></div>
+              </li>
+              <li className="flex items-center gap-1.5" role="listitem">
+                <div className="w-2 h-2 rounded-full bg-red-500" aria-hidden="true"></div>
                 <span>{t('cm.pages_ReservationCalendar.dolu')}</span>
               </div>
             </div>

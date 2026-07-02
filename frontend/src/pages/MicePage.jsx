@@ -181,8 +181,12 @@ const MicePage = ({ user, tenant, onLogout }) => {
   // Event form needs menus + resources for the selection dropdowns; load
   // them on demand the first time the form opens.
   const ensureFormCollections = () => {
-    if (!loadedTabs.has('menus')) loadMenus().catch(() => {});
-    if (!loadedTabs.has('resources')) loadResourcesList().catch(() => {});
+    if (!loadedTabs.has('menus')) loadMenus().catch((e) => {
+      console.warn('[MicePage] loadMenus (on-demand) failed:', e?.response?.status ?? e?.message);
+    });
+    if (!loadedTabs.has('resources')) loadResourcesList().catch((e) => {
+      console.warn('[MicePage] loadResourcesList (on-demand) failed:', e?.response?.status ?? e?.message);
+    });
   };
 
   const spaceById = useMemo(() => Object.fromEntries(spaces.map((s) => [s.id, s])), [spaces]);

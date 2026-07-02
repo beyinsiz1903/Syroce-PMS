@@ -238,7 +238,11 @@ const AuthPage = ({ onLogin }) => {
   const mobileInputStyle = isMobile ? { fontSize: '16px' } : {};
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#05070f] px-4 py-10 text-slate-100 antialiased">
+    <div
+      className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#05070f] px-4 py-10 text-slate-100 antialiased"
+      role="main"
+      aria-label="Syroce PMS — Giriş ve Kayıt Sayfası"
+    >
       {/* Arka plan: LandingPage marka gradyan + neon bloblar */}
       <div aria-hidden className="pointer-events-none absolute inset-0">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(34,211,238,0.10),_transparent_60%),radial-gradient(ellipse_at_bottom,_rgba(99,102,241,0.10),_transparent_60%)]" />
@@ -293,8 +297,14 @@ const AuthPage = ({ onLogin }) => {
                 <p className="mt-1 text-sm text-slate-300">{twoFAChallenge.user_email}</p>
                 <p className="mt-2 text-xs text-slate-400">{t('auth.twoFAHint')}</p>
               </div>
-              <form onSubmit={handleTwoFAVerify} className="space-y-3">
+              <form
+                onSubmit={handleTwoFAVerify}
+                className="space-y-3"
+                role="form"
+                aria-label="İki faktörlü doğrulama formu"
+              >
                 <Input
+                  id="twofa-code"
                   autoFocus
                   autoComplete="one-time-code"
                   inputMode="text"
@@ -302,7 +312,11 @@ const AuthPage = ({ onLogin }) => {
                   value={twoFACode}
                   onChange={(e) => setTwoFACode(e.target.value)}
                   className={cn(fieldClass, 'mt-0 text-center text-xl tracking-[0.3em]')}
+                  aria-label="İki faktörlü doğrulama kodu"
+                  aria-required="true"
+                  aria-describedby="twofa-hint"
                 />
+                <p id="twofa-hint" className="sr-only">6 haneli doğrulama kodunuzu giriniz</p>
                 <CtaButton type="submit" disabled={loading || twoFACode.trim().length < 6}>
                   {loading ? t('auth.twoFAVerifying') : t('auth.twoFAVerifyButton')}
                 </CtaButton>
@@ -317,17 +331,23 @@ const AuthPage = ({ onLogin }) => {
               </form>
             </div>
           ) : (
-            <Tabs defaultValue="login">
-              <TabsList className="mb-5 grid w-full grid-cols-2 rounded-xl border border-white/10 bg-white/[0.04] p-1">
+            <Tabs defaultValue="login" aria-label="Giriş veya kayıt sekmesi">
+              <TabsList
+                className="mb-5 grid w-full grid-cols-2 rounded-xl border border-white/10 bg-white/[0.04] p-1"
+                role="tablist"
+                aria-label="Hesap erişimi sekmeleri"
+              >
                 <TabsTrigger
                   value="login"
                   className="rounded-lg text-slate-300 data-[state=active]:bg-white/10 data-[state=active]:text-white data-[state=active]:shadow-none"
+                  aria-label="Giriş sekmesi"
                 >
                   {t('common.login')}
                 </TabsTrigger>
                 <TabsTrigger
                   value="register"
                   className="rounded-lg text-slate-300 data-[state=active]:bg-white/10 data-[state=active]:text-white data-[state=active]:shadow-none"
+                  aria-label="Kayıt olma sekmesi"
                 >
                   {t('common.register')}
                 </TabsTrigger>
@@ -336,10 +356,17 @@ const AuthPage = ({ onLogin }) => {
               {/* Otel Girişi */}
               <TabsContent value="login" className="space-y-4">
                 {!showForgotPassword ? (
-                  <form onSubmit={handleHotelLogin} className="space-y-4">
+                  <form
+                    onSubmit={handleHotelLogin}
+                    className="space-y-4"
+                    role="form"
+                    aria-label="Otel yönetici giriş formu"
+                    noValidate
+                  >
                     <div>
-                      <Label className={labelClass}>{t('common.email')}</Label>
+                      <Label htmlFor="hotel-login-email" className={labelClass}>{t('common.email')}</Label>
                       <Input
+                        id="hotel-login-email"
                         type="email"
                         value={hotelLoginData.email}
                         onChange={(e) => setHotelLoginData({ ...hotelLoginData, email: e.target.value })}
@@ -351,11 +378,14 @@ const AuthPage = ({ onLogin }) => {
                         autoComplete="email"
                         className={fieldClass}
                         style={mobileInputStyle}
+                        aria-required="true"
+                        aria-label="E-posta adresi"
                       />
                     </div>
                     <div>
-                      <Label className={labelClass}>{t('common.password')}</Label>
+                      <Label htmlFor="hotel-login-password" className={labelClass}>{t('common.password')}</Label>
                       <Input
+                        id="hotel-login-password"
                         type="password"
                         value={hotelLoginData.password}
                         onChange={(e) => setHotelLoginData({ ...hotelLoginData, password: e.target.value })}
@@ -365,6 +395,8 @@ const AuthPage = ({ onLogin }) => {
                         autoComplete="current-password"
                         className={fieldClass}
                         style={mobileInputStyle}
+                        aria-required="true"
+                        aria-label="Şifre"
                       />
                     </div>
                     <div className="flex justify-end">
@@ -372,6 +404,7 @@ const AuthPage = ({ onLogin }) => {
                         type="button"
                         onClick={() => setShowForgotPassword(true)}
                         className={linkClass}
+                        aria-label="Şifremi unuttum — şifre sıfırlama formunu aç"
                       >
                         {t('auth.forgotPassword')}
                       </button>
@@ -380,6 +413,8 @@ const AuthPage = ({ onLogin }) => {
                       type="submit"
                       disabled={loading}
                       data-testid="hotel-login-btn"
+                      aria-label={loading ? 'Giriş yapılıyor, lütfen bekleyin' : 'Giriş yap'}
+                      aria-busy={loading}
                       onClick={(e) => {
                         if (!loading) {
                           const form = e.target.closest('form');
@@ -402,6 +437,7 @@ const AuthPage = ({ onLogin }) => {
                         setForgotPasswordStep('email');
                       }}
                       className={cn(linkClass, 'mb-2 inline-block')}
+                      aria-label="Giriş sayfasına geri dön"
                     >
                       ← {t('auth.backToLogin')}
                     </button>
@@ -505,32 +541,45 @@ const AuthPage = ({ onLogin }) => {
                     </CtaButton>
                   </div>
                 ) : registrationStep === 'form' ? (
-                  <form onSubmit={handleHotelRegister} className="space-y-4">
+                  <form
+                    onSubmit={handleHotelRegister}
+                    className="space-y-4"
+                    role="form"
+                    aria-label="Yeni otel hesabı kayıt formu"
+                    noValidate
+                  >
                     <div>
-                      <Label className={labelClass}>{t('auth.hotelName')}</Label>
+                      <Label htmlFor="reg-hotel-name" className={labelClass}>{t('auth.hotelName')}</Label>
                       <Input
+                        id="reg-hotel-name"
                         value={hotelRegisterData.property_name}
                         onChange={(e) => setHotelRegisterData({ ...hotelRegisterData, property_name: e.target.value })}
                         required
                         placeholder={t('auth.hotelNamePlaceholder')}
                         className={fieldClass}
                         style={mobileInputStyle}
+                        aria-required="true"
+                        aria-label="Otel adı"
                       />
                     </div>
                     <div>
-                      <Label className={labelClass}>{t('auth.authorizedPerson')}</Label>
+                      <Label htmlFor="reg-authorized-person" className={labelClass}>{t('auth.authorizedPerson')}</Label>
                       <Input
+                        id="reg-authorized-person"
                         value={hotelRegisterData.name}
                         onChange={(e) => setHotelRegisterData({ ...hotelRegisterData, name: e.target.value })}
                         required
                         placeholder={t('auth.authorizedPersonPlaceholder')}
                         className={fieldClass}
                         style={mobileInputStyle}
+                        aria-required="true"
+                        aria-label="Yetkili kişi adı"
                       />
                     </div>
                     <div>
-                      <Label className={labelClass}>{t('common.email')}</Label>
+                      <Label htmlFor="reg-email" className={labelClass}>{t('common.email')}</Label>
                       <Input
+                        id="reg-email"
                         type="email"
                         value={hotelRegisterData.email}
                         onChange={(e) => setHotelRegisterData({ ...hotelRegisterData, email: e.target.value })}
@@ -539,12 +588,16 @@ const AuthPage = ({ onLogin }) => {
                         placeholder={t('auth.emailPlaceholder')}
                         className={fieldClass}
                         style={mobileInputStyle}
+                        aria-required="true"
+                        aria-label="E-posta adresi"
+                        aria-describedby="reg-email-hint"
                       />
-                      <p className="mt-1 text-xs text-slate-500">{t('auth.passwordResetEmailNote')}</p>
+                      <p id="reg-email-hint" className="mt-1 text-xs text-slate-500">{t('auth.passwordResetEmailNote')}</p>
                     </div>
                     <div>
-                      <Label className={labelClass}>{t('auth.username')}</Label>
+                      <Label htmlFor="reg-username" className={labelClass}>{t('auth.username')}</Label>
                       <Input
+                        id="reg-username"
                         value={hotelRegisterData.username}
                         onChange={(e) => setHotelRegisterData({ ...hotelRegisterData, username: e.target.value.replace(/\s/g, '').toLowerCase() })}
                         required
@@ -557,12 +610,16 @@ const AuthPage = ({ onLogin }) => {
                         placeholder={t('auth.usernamePlaceholder')}
                         className={fieldClass}
                         style={mobileInputStyle}
+                        aria-required="true"
+                        aria-label="Kullanıcı adı"
+                        aria-describedby="reg-username-hint"
                       />
-                      <p className="mt-1 text-xs text-slate-500">{t('auth.usernameHint')}</p>
+                      <p id="reg-username-hint" className="mt-1 text-xs text-slate-500">{t('auth.usernameHint')}</p>
                     </div>
                     <div>
-                      <Label className={labelClass}>{t('common.phone')}</Label>
+                      <Label htmlFor="reg-phone" className={labelClass}>{t('common.phone')}</Label>
                       <Input
+                        id="reg-phone"
                         value={hotelRegisterData.phone}
                         onChange={(e) => setHotelRegisterData({ ...hotelRegisterData, phone: e.target.value })}
                         required
@@ -570,11 +627,14 @@ const AuthPage = ({ onLogin }) => {
                         placeholder={t('auth.phonePlaceholder')}
                         className={fieldClass}
                         style={mobileInputStyle}
+                        aria-required="true"
+                        aria-label="Telefon numarası"
                       />
                     </div>
                     <div>
-                      <Label className={labelClass}>{t('common.password')}</Label>
+                      <Label htmlFor="reg-password" className={labelClass}>{t('common.password')}</Label>
                       <Input
+                        id="reg-password"
                         type="password"
                         value={hotelRegisterData.password}
                         onChange={(e) => setHotelRegisterData({ ...hotelRegisterData, password: e.target.value })}
@@ -584,9 +644,16 @@ const AuthPage = ({ onLogin }) => {
                         placeholder={t('auth.minSixCharsPlaceholder')}
                         className={fieldClass}
                         style={mobileInputStyle}
+                        aria-required="true"
+                        aria-label="Şifre — en az 6 karakter"
                       />
                     </div>
-                    <CtaButton type="submit" disabled={loading}>
+                    <CtaButton
+                      type="submit"
+                      disabled={loading}
+                      aria-label={loading ? 'Hesap oluşturuluyor, lütfen bekleyin' : 'Hesabımı oluştur'}
+                      aria-busy={loading}
+                    >
                       {loading ? t('common.loading') : t('auth.createMyAccountSubmit')}
                     </CtaButton>
                   </form>
@@ -613,13 +680,19 @@ const AuthPage = ({ onLogin }) => {
                         />
                         <p className="mt-1 text-xs text-slate-500">{t('auth.codeValidFor')}</p>
                       </div>
-                      <CtaButton type="submit" disabled={loading}>
+                      <CtaButton
+                        type="submit"
+                        disabled={loading}
+                        aria-label={loading ? 'Doğrulama yapılıyor' : 'Hesabımı oluştur ve doğrula'}
+                        aria-busy={loading}
+                      >
                         {loading ? t('auth.verifying') : t('auth.createMyAccount')}
                       </CtaButton>
                       <button
                         type="button"
                         onClick={() => setRegistrationStep('form')}
                         className={cn(linkClass, 'w-full text-center')}
+                        aria-label="Kayıt formuna geri dön"
                       >
                         ← {t('auth.goBack')}
                       </button>

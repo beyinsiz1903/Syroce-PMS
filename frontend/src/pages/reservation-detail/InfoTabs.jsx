@@ -250,7 +250,7 @@ export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate, n
                   <Input value={guestForm.anniversary_date || ''} onChange={e => setGuestForm(p => ({ ...p, anniversary_date: e.target.value }))} placeholder="Yıldönümü (MM-DD)" className="h-8 text-xs" />
                 </div>
               </div>
-              <Button size="sm" onClick={async () => { await handleSave(); /* highlights refresh */ const gid = guest?.id || booking?.guest_id; if (gid) api.get(`/pms/guests/${gid}/highlights`).then(r => setHighlights(r.data)).catch(() => {}); }} className="w-full h-8"><Check className="w-3 h-3 mr-1" /> Kaydet</Button>
+              <Button size="sm" onClick={async () => { await handleSave(); /* highlights refresh */ const gid = guest?.id || booking?.guest_id; if (gid) api.get(`/pms/guests/${gid}/highlights`).then(r => setHighlights(r.data)).catch((e) => { console.warn('[InfoTabs] highlights refresh failed:', e?.response?.status ?? e?.message); }); }} className="w-full h-8"><Check className="w-3 h-3 mr-1" /> Kaydet</Button>
             </div>
           ) : (
             <div className="space-y-3">

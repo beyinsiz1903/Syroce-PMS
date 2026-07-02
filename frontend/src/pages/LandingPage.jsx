@@ -262,7 +262,9 @@ const LandingPage = () => {
     fetch('/api/site-content', { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => { if (active && data) setContent(mergeLandingContent(data)); })
-      .catch(() => {});
+      .catch((e) => {
+        console.warn('[LandingPage] site-content fetch failed (non-critical):', e?.message);
+      });
     return () => { active = false; };
   }, []);
 

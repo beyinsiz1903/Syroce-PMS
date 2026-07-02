@@ -25,7 +25,9 @@ class OfflineDB {
     // IndexedDB yoksa (SSR / test ortami) cokmeyi onle: initPromise reject
     // olursa bile islenmemis-rejection uretmemesi icin sessiz catch ekle.
     this.initPromise = this.init();
-    this.initPromise.catch(() => {});
+    this.initPromise.catch((e) => {
+      console.debug('[OfflineQueueDB] IndexedDB init failed (expected in SSR/test):', e?.message);
+    });
   }
 
   init() {
@@ -97,7 +99,9 @@ class OfflineDB {
   async ensureOpen() {
     if (this.db) return this.db;
     this.initPromise = this.init();
-    this.initPromise.catch(() => {});
+    this.initPromise.catch((e) => {
+      console.debug('[OfflineQueueDB] IndexedDB re-init failed (expected in SSR/test):', e?.message);
+    });
     return this.initPromise;
   }
 

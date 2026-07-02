@@ -108,7 +108,9 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
     if (open) {
       axios.get('/admin/property-types').then(r => {
         setPropertyTypes(r.data.property_types || []);
-      }).catch(() => {});
+      }).catch((e) => {
+        console.warn('[CreateTenantModal] property-types fetch failed:', e?.response?.status ?? e?.message);
+      });
     }
   }, [open]);
 

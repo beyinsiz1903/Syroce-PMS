@@ -88,7 +88,9 @@ export default function BiometricVerifyDialog({
       streamRef.current = s;
       if (videoRef.current) {
         videoRef.current.srcObject = s;
-        await videoRef.current.play().catch(() => {});
+        await videoRef.current.play().catch((e) => {
+        console.debug('[BiometricVerifyDialog] video.play() blocked (browser autoplay policy):', e?.name);
+      });
       }
       setStreamReady(true);
     } catch (e) {

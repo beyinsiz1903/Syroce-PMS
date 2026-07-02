@@ -561,7 +561,9 @@ function HistoryTab({ campaigns, loading }) {
   const { t } = useTranslation();
   const [stats, setStats] = useState(null);
   useEffect(() => {
-    axios.get(`${API}/stats`).then(r => setStats(r.data)).catch(() => {});
+    axios.get(`${API}/stats`).then(r => setStats(r.data)).catch((e) => {
+      console.warn('[MailingPage] stats fetch failed (non-critical):', e?.response?.status ?? e?.message);
+    });
   }, []);
   if (loading) return <div className="text-center py-8 text-muted-foreground">{t('cm.pages_MailingPage.yukleniyor_b597b')}</div>;
   return (
