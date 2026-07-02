@@ -858,8 +858,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               <li className="flex items-center gap-1.5" role="listitem">
                 <div className="w-2 h-2 rounded-full bg-red-500" aria-hidden="true"></div>
                 <span>{t('cm.pages_ReservationCalendar.dolu')}</span>
-              </div>
-            </div>
+              </li>
+            </ul>
             <div className="flex items-center gap-3 text-gray-400">
               <span>{t('cm.pages_ReservationCalendar.tikla_yeni_rez')}</span>
               <span>{t('cm.pages_ReservationCalendar.cift_tikla_detay')}</span>
