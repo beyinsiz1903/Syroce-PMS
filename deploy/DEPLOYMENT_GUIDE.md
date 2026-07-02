@@ -71,7 +71,7 @@ Tam proje dosyalarini kopyalama:
 
 ```bash
 rsync -avz --exclude='node_modules' --exclude='.git' --exclude='__pycache__' \
-    --exclude='test_reports' --exclude='frontend/build' --exclude='.emergent' \
+    --exclude='test_reports' --exclude='frontend/build' --exclude='.ai_logs' \
     ./ root@31.186.24.133:/opt/syroce-pms/
 ```
 
