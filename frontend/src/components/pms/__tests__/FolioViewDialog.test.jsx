@@ -161,7 +161,7 @@ describe('FolioViewDialog — empty/loading/picker states', () => {
     expect(screen.getByText(/Dengeli/i)).toBeInTheDocument();
   });
 
-  it('selectedFolio.balance>0 → "Misafir borçlu" + kırmızı', () => {
+  it('selectedFolio.balance>0 → "Tahsilat Bekliyor" + kırmızı', () => {
     const selectedFolio = { id: 'f1', folio_number: 'F-X', folio_type: 'guest', balance: 100 };
     render(
       <FolioViewDialog
@@ -170,7 +170,7 @@ describe('FolioViewDialog — empty/loading/picker states', () => {
         folios={[selectedFolio]}
       />
     );
-    expect(screen.getByText(/Misafir borçlu/i)).toBeInTheDocument();
+    expect(screen.getByText(/Tahsilat Bekliyor/i)).toBeInTheDocument();
   });
 
   it('folios prop default=[] (geriye dönük uyumluluk: prop verilmezse crash yok)', () => {
@@ -183,6 +183,6 @@ describe('FolioViewDialog — empty/loading/picker states', () => {
         />
       )
     ).not.toThrow();
-    expect(screen.getByTestId('folio-loading')).toBeInTheDocument();
+    expect(screen.getByTestId('folio-empty')).toBeInTheDocument();
   });
 });

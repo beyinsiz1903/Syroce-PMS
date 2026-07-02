@@ -54,7 +54,8 @@ async def _applied_versions(db) -> set[str]:
         {"status": STATUS_APPLIED},
         {"_id": 0, "version": 1},
     )
-    async for doc in cursor:
+    docs = await cursor.to_list(length=None)
+    for doc in docs:
         v = doc.get("version")
         if v:
             out.add(v)

@@ -17,6 +17,7 @@ const BookingsTab = ({
   isLite,
   roomsCount,
   activeTab,
+  setReservationDetailId,
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();

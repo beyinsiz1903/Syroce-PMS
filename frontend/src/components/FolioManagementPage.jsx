@@ -298,7 +298,7 @@ const FolioManagementPage = () => {
                 {selectedFolio ? `Folio Details - ${selectedFolio.folio_number}` : 'Select a Folio'}
               </CardTitle>
               {selectedFolio && (
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button
                     onClick={() => {
                       setSelectedBookingId(selectedFolio.id);
