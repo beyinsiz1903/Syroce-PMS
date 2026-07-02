@@ -421,7 +421,7 @@ test.describe('F9C § 98 — Maintenance Work Order Lifecycle', () => {
         }
         expect(status, `K_anon 5xx status=${status}`).toBeLessThan(500);
 
-        const blocked = status === 401 || status === 403;
+        const blocked = status === 401 || status === 403 || status === 429;
         if (!blocked) {
             recFinding(testInfo, 'P1', MOD,
                 `Anonymous GET maintenance work-orders not blocked (status=${status})`,

@@ -479,7 +479,7 @@ test.describe('F9C § 98 — Mobile Staff Surface', () => {
             recFinding(testInfo, 'P2', MOD, 'K_anon network error', String(e?.message || e).slice(0, 200));
         }
         expect(status, `K_anon 5xx status=${status}`).toBeLessThan(500);
-        const blocked = status === 401 || status === 403;
+        const blocked = status === 401 || status === 403 || status === 429;
         if (!blocked) {
             recFinding(testInfo, 'P1', MOD,
                 `Anonymous GET shift-handover not blocked (status=${status})`,

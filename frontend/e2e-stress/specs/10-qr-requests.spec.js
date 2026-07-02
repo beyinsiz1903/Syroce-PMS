@@ -102,7 +102,8 @@ test.describe('F8B § 10 — Room QR requests', () => {
             const subUrl = `/api/public/room-qr/${stressTid}/${room.id}/submit?t=${encodeURIComponent(token)}`;
             const t0 = Date.now();
             const r = await request.post(subUrl, {
-                data: {
+                headers: { 'Origin': process.env.E2E_BASE_URL || 'http://localhost:8000' },
+                    data: {
                     category: 'cleaning',
                     description: `F8B public submit ${i}`,
                     priority: 'normal', language: 'tr',

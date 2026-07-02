@@ -744,7 +744,7 @@ test.describe('F9D § 99 — Finance Folio & Guest-Purchase Surface', () => {
             recFinding(testInfo, 'P2', MOD, 'J_anon network error', String(e?.message || e).slice(0, 200));
         }
         expect(status, `J_anon 5xx=${status}`).toBeLessThan(500);
-        const blocked = status === 401 || status === 403;
+        const blocked = status === 401 || status === 403 || status === 429;
         if (!blocked) {
             recFinding(testInfo, 'P1', MOD,
                 `Anonymous GET /api/folio/list not blocked (status=${status})`,

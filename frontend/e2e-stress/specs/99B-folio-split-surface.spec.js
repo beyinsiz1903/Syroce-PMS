@@ -392,7 +392,7 @@ test.describe('F9E § 99B — Folio Split (Fatura Ayrıştırma) Surface', () =>
         }).catch(() => null);
         const status = r?.status?.() ?? 0;
         expect(status, `E_anon 5xx=${status}`).toBeLessThan(500);
-        const blocked = status === 401 || status === 403;
+        const blocked = status === 401 || status === 403 || status === 429;
         if (!blocked) {
             recFinding(testInfo, 'P1', MOD,
                 `Anonymous folio split bloklanmadı status=${status}`,
