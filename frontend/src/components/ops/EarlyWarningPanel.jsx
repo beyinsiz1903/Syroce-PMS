@@ -293,9 +293,7 @@ const EarlyWarningPanel = ({
   const [selectedWarning, setSelectedWarning] = useState(null);
   const fetchSummary = useCallback(async () => {
     try {
-      const resp = await axios.get(`/ops-events/early-warnings/summary`, {
-        headers: getAuthHeaders()
-      });
+      const resp = await axios.get(`/ops-events/early-warnings/summary`);
       setSummary(resp.data);
     } catch (err) {
       console.error('Early warning summary fetch error:', err);
@@ -303,9 +301,7 @@ const EarlyWarningPanel = ({
   }, []);
   const fetchTrends = useCallback(async () => {
     try {
-      const resp = await axios.get(`/ops-events/early-warnings/trends?hours=6`, {
-        headers: getAuthHeaders()
-      });
+      const resp = await axios.get(`/ops-events/early-warnings/trends?hours=6`);
       setTrends(resp.data);
     } catch (err) {
       console.error('Trends fetch error:', err);
@@ -313,9 +309,7 @@ const EarlyWarningPanel = ({
   }, []);
   const fetchEngineStatus = useCallback(async () => {
     try {
-      const resp = await axios.get(`/ops-events/early-warnings/engine/status`, {
-        headers: getAuthHeaders()
-      });
+      const resp = await axios.get(`/ops-events/early-warnings/engine/status`);
       setEngineStatus(resp.data);
     } catch (err) {
       console.error('Engine status fetch error:', err);
@@ -324,9 +318,7 @@ const EarlyWarningPanel = ({
   const toggleEngine = async () => {
     try {
       const endpoint = engineStatus?.running ? 'stop' : 'start';
-      await axios.post(`/ops-events/early-warnings/engine/${endpoint}`, {}, {
-        headers: getAuthHeaders()
-      });
+      await axios.post(`/ops-events/early-warnings/engine/${endpoint}`, {});
       await fetchEngineStatus();
     } catch (err) {
       console.error('Engine toggle error:', err);
@@ -335,9 +327,7 @@ const EarlyWarningPanel = ({
   const forceCheck = async () => {
     setRefreshing(true);
     try {
-      await axios.post(`/ops-events/early-warnings/force-check`, {}, {
-        headers: getAuthHeaders()
-      });
+      await axios.post(`/ops-events/early-warnings/force-check`, {});
       await fetchSummary();
     } catch (err) {
       console.error('Force check error:', err);

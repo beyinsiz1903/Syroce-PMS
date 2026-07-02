@@ -214,9 +214,7 @@ const IncidentDrilldownDrawer = ({
     setLoading(true);
     setError(null);
     try {
-      const resp = await axios.get(`/ops-events/timeline/${corrId}`, {
-        headers: getAuthHeaders()
-      });
+      const resp = await axios.get(`/ops-events/timeline/${corrId}`);
       setTimelineData(resp.data);
       setIncidentData(null);
     } catch (err) {
@@ -229,16 +227,12 @@ const IncidentDrilldownDrawer = ({
     setLoading(true);
     setError(null);
     try {
-      const resp = await axios.get(`/ops-events/incident/${evId}/summary`, {
-        headers: getAuthHeaders()
-      });
+      const resp = await axios.get(`/ops-events/incident/${evId}/summary`);
       setIncidentData(resp.data);
 
       // If incident has correlation_id, also fetch full timeline
       if (resp.data.correlation_id) {
-        const timelineResp = await axios.get(`/ops-events/timeline/${resp.data.correlation_id}`, {
-          headers: getAuthHeaders()
-        });
+        const timelineResp = await axios.get(`/ops-events/timeline/${resp.data.correlation_id}`);
         setTimelineData(timelineResp.data);
       } else {
         setTimelineData(null);
@@ -253,9 +247,7 @@ const IncidentDrilldownDrawer = ({
     if (!timelineData?.dlq_item?.id) return;
     setRetrying(true);
     try {
-      await axios.post(`/ops-events/webhook-dlq/${timelineData.dlq_item.id}/retry`, {}, {
-        headers: getAuthHeaders()
-      });
+      await axios.post(`/ops-events/webhook-dlq/${timelineData.dlq_item.id}/retry`, {});
       // Refresh data
       if (correlationId) fetchTimeline(correlationId);
       if (onRetryDlq) onRetryDlq();

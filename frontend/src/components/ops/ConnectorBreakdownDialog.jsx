@@ -59,9 +59,7 @@ const ConnectorBreakdownDialog = ({
     setLoading(true);
     setError(null);
     try {
-      const resp = await axios.get(`/ops-events/early-warnings/connector/${connectorId}`, {
-        headers: getAuthHeaders()
-      });
+      const resp = await axios.get(`/ops-events/early-warnings/connector/${connectorId}`);
       setData(resp.data);
     } catch (e) {
       setError(e?.response?.data?.detail || 'Connector dökümü alınamadı');

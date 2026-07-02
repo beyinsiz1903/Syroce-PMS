@@ -46,6 +46,23 @@ frontend/uploads/
 # `.local/` is repo-private — never commit. Specifically, `.local/.stress_env`
 # Local-only / agent scratch (sandbox creds, stress-E2E opt-in env, etc.)
 .local/.stress_env
+# Scratch / debug scripts generated during development sessions — never commit
+/test_*.py
+/fix_*.py
+/parse_*.py
+/query_*.py
+/get_logs.py
+/update_email.py
+/create_e2e_admin.py
+/fails_summary.md
+/fix_cockpit_test.js
+/test_cockpit.js
+/run_e2e_pilot.sh
+/openapi.json
+/backend.log
+/frontend.log
+/backend/backend.log
+/backend/core/security.py.bak
 # Logs and debug files
 memory/test_credentials.md
 # Mobile development
