@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from cache_manager import cached  # Tur 3: tenant-aware cache for slow trends
 from core.database import db
-from core.security import get_current_user, require_module, require_super_admin
+from core.security import get_current_user
 from core.tenant_db import TenantViolationError, get_current_tenant_id
 from models.schemas import User
 from modules.pms_core.auto_housekeeping_service import AutoHousekeepingService

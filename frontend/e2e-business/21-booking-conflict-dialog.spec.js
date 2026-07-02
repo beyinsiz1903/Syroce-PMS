@@ -4,7 +4,8 @@ import { attachObservers } from './fixtures/observers.js';
 import { makeApi, safePost } from './fixtures/api.js';
 import { factory, trackEntity } from './fixtures/data-factory.js';
 import {
-    pickAvailableRoom, createTestBooking, cancelBooking, farFutureDates,
+    pickAvailableRoom, createTestBooking,
+    cancelBooking, todayDates,
 } from './fixtures/pms-flow.js';
 
 const M = 'reservation';
@@ -28,7 +29,7 @@ test.describe('Scope 3 — Booking conflict dialog (end-to-end wiring)', () => {
     test('E2E: Quick-booking 409 surfaces BookingConflictDialog (RoomsTab)', async ({ baseURL, page }, testInfo) => {
         const api = await makeApi(baseURL);
         const obs = attachObservers(page);
-        const dates = farFutureDates();
+        const dates = todayDates();
         rec(testInfo, { module: M, scope: 3, step: 'Hedef tarih aralığı', status: PASS, note: `${dates.check_in}→${dates.check_out}` });
 
         const pick = await pickAvailableRoom(api, dates);
@@ -69,7 +70,7 @@ test.describe('Scope 3 — Booking conflict dialog (end-to-end wiring)', () => {
             check_in: `${dates.check_in}T14:00:00+00:00`,
             check_out: `${dates.check_out}T11:00:00+00:00`,
             total_amount: 100,
-        });
+        }, { headers: { 'Idempotency-Key': `collide-${Date.now()}` } });
         const detail = collide.json?.detail;
         const detailIsObj = detail && typeof detail === 'object';
         const hasStructured = detailIsObj && (
@@ -85,8 +86,12 @@ test.describe('Scope 3 — Booking conflict dialog (end-to-end wiring)', () => {
         expect(collide.status, `Expected 409 on overlapping booking, got ${collide.status}: ${collide.body?.slice(0, 200) || ''}`).toBe(409);
         expect(hasStructured, `Conflict response missing structured detail (parseBookingConflict pre-condition broken): ${JSON.stringify(detail).slice(0, 200)}`).toBeTruthy();
 
+        // Baseline'i iptal et ki oda tekrar "available" görünsün ve quick-res butonu çıksın.
+        await cancelBooking(api, baseline.bookingId, 'E2E conflict test (reset for UI step)');
+
         // 3) UI: gerçek RoomsTab quick-booking yolunu sür.
         let dialogVisible = false;
+        let baseline2Id = null;
         try {
             const nav = await page.goto('/app/pms#rooms', { waitUntil: 'networkidle', timeout: 30_000 });
             rec(testInfo, { module: M, scope: 3, step: 'Navigate /app/pms#rooms', status: nav?.ok() ? PASS : REVIEW, endpoint: '/app/pms', http: nav?.status() });
@@ -130,6 +135,19 @@ test.describe('Scope 3 — Booking conflict dialog (end-to-end wiring)', () => {
             await page.locator('[data-testid="quick-res-check-in"]').first().fill(dates.check_in);
             await page.locator('[data-testid="quick-res-check-out"]').first().fill(dates.check_out);
             await page.locator('[data-testid="quick-res-total-amount"]').first().fill('100');
+
+            // Form dolduruldu, submit etmeden ÖNCE aynı odaya arkadan rezervasyon çak
+            // (Concurrent booking simülasyonu)
+            const baseline2 = await createTestBooking(api, {
+                roomId: pick.room.id, guestName: baselineGuest + ' 2',
+                check_in: dates.check_in, check_out: dates.check_out,
+                totalAmount: 100,
+            });
+            baseline2Id = baseline2.bookingId;
+            trackEntity({
+                kind: 'booking', id: baseline2Id, label: baselineGuest + ' 2',
+                cleanup: 'pending', endpoint: '/api/pms-core/cancel',
+            });
 
             await page.locator('[data-testid="quick-res-submit"]').first().click();
 

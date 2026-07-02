@@ -31,8 +31,12 @@ export async function pickAvailableRoom(api, { check_in, check_out }) {
     const r = await safeGetJson(api, `/api/pms/available-rooms?check_in=${check_in}&check_out=${check_out}`);
     if (!r.ok || !r.json) return { ok: false, status: r.status, reason: `available-rooms HTTP ${r.status}` };
     const rooms = Array.isArray(r.json.rooms) ? r.json.rooms : [];
-    const pick = rooms[0] || (Array.isArray(r.json.all_rooms) ? r.json.all_rooms[0] : null);
+    const pick = rooms.length > 0 ? rooms[0] : null;
     if (!pick || !pick.id) return { ok: false, status: r.status, reason: 'no_available_room' };
+    
+    // Force room status to available to clean up any leftover state from previous tests
+    await api.put(`/api/housekeeping/room/${pick.id}/status?new_status=available`);
+    
     return { ok: true, room: pick };
 }
 
@@ -44,9 +48,14 @@ export async function pickNAvailableRooms(api, { check_in, check_out }, n = 2) {
     const r = await safeGetJson(api, `/api/pms/available-rooms?check_in=${check_in}&check_out=${check_out}`);
     if (!r.ok || !r.json) return { ok: false, status: r.status, reason: `available-rooms HTTP ${r.status}` };
     const rooms = Array.isArray(r.json.rooms) ? r.json.rooms : [];
-    const pool = rooms.length >= n ? rooms : (Array.isArray(r.json.all_rooms) ? r.json.all_rooms : rooms);
+    const pool = rooms;
     const picks = pool.filter((x) => x && x.id).slice(0, n);
     if (picks.length < n) return { ok: false, status: r.status, reason: `only_${picks.length}_available` };
+    
+    for (const pick of picks) {
+        await api.put(`/api/housekeeping/room/${pick.id}/status?new_status=available`);
+    }
+    
     return { ok: true, rooms: picks };
 }
 
@@ -104,8 +113,21 @@ export async function checkoutBooking(api, bookingId, force = true) {
 }
 
 export async function addExtraCharge(api, bookingId, { description, amount, category = 'other', quantity = 1 }) {
-    return safePost(api, `/api/pms/reservations/${bookingId}/add-extra-charge`, {
+    // Legacy endpoint was /api/pms/reservations/${bookingId}/add-extra-charge
+    // but the tests expect to void it using folio/void-charge, which looks in db.folio_charges.
+    // So we fetch the folio first and add a folio charge instead.
+    const detail = await getBookingDetail(api, bookingId);
+    if (!detail.ok) return { ok: false, status: detail.status, reason: 'could not get booking folios' };
+    
+    const folios = detail.json?.folios || [];
+    const folio = folios[0];
+    if (!folio) return { ok: false, status: 404, reason: 'no folio found' };
+
+    return safePost(api, '/api/pms-core/folio/charge', {
+        folio_id: folio.id,
+        booking_id: bookingId,
         description, amount, category, quantity,
+        tax_rate: 0
     });
 }
 

@@ -23,7 +23,9 @@ export async function makeApi(baseURL) {
     const ctx = await request.newContext({
         baseURL,
         ignoreHTTPSErrors: true,
-        extraHTTPHeaders: token ? { Authorization: `Bearer ${token}` } : {},
+        extraHTTPHeaders: token 
+            ? { Authorization: `Bearer ${token}`, Origin: baseURL, Referer: baseURL } 
+            : { Origin: baseURL, Referer: baseURL },
     });
     return ctx;
 }

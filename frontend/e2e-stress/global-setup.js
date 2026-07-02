@@ -12,7 +12,7 @@ const STRESS_TID = process.env.E2E_STRESS_TENANT_ID;
 const PILOT_TID = process.env.PILOT_TENANT_ID || '';
 
 async function login(api, email, password) {
-    const resp = await api.post('/api/auth/login', { data: { email, password }, failOnStatusCode: false, timeout: 120_000 });
+    const resp = await api.post('/api/auth/login', { data: { email, password }, headers: { Origin: process.env.E2E_FE_BASE_URL }, failOnStatusCode: false, timeout: 120_000 });
     if (!resp.ok()) {
         const txt = await resp.text().catch(() => '');
         throw new Error(`[stress-setup] login failed (${resp.status()}): ${txt.slice(0, 200)}`);
@@ -28,7 +28,7 @@ async function login(api, email, password) {
 // döndürür) shape'lerini kabul eder.
 async function tryLogin(api, email, password, loginPath = '/api/auth/login') {
     try {
-        const resp = await api.post(loginPath, { data: { email, password }, failOnStatusCode: false, timeout: 60_000 });
+        const resp = await api.post(loginPath, { data: { email, password }, headers: { Origin: process.env.E2E_FE_BASE_URL }, failOnStatusCode: false, timeout: 60_000 });
         if (!resp.ok()) return { token: null, status: resp.status() };
         const body = await resp.json().catch(() => ({}));
         return { token: body?.access_token || body?.token || null, status: resp.status() };

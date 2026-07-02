@@ -50,13 +50,17 @@ export default async function globalSetup() {
 
     // Bearer token'ı diğer testlerin API çağrıları için ayrıca yakala
     try {
-        const apiCtx = await request.newContext({ baseURL, ignoreHTTPSErrors: true });
+        const apiCtx = await request.newContext({ 
+            baseURL, 
+            ignoreHTTPSErrors: true,
+            extraHTTPHeaders: { Origin: baseURL, Referer: baseURL }
+        });
         const resp = await apiCtx.post('/api/auth/login', { data: { email, password }, failOnStatusCode: false });
         if (resp.ok()) {
             const body = await resp.json().catch(() => ({}));
             const token = body?.access_token || body?.token;
             if (token) {
-                fs.writeFileSync(path.join(AUTH_DIR, 'token.json'), JSON.stringify({ token, capturedAt: Date.now() }, null, 2));
+                fs.writeFileSync(path.join(AUTH_DIR, 'bearer.txt'), token);
                 console.log('[global-setup] Bearer token cache yazıldı.');
             }
         } else {

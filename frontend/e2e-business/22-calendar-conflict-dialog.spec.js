@@ -94,7 +94,7 @@ test.describe('Scope 3 — Booking conflict dialog (calendar create wiring)', ()
             total_amount: 100,
             channel: 'direct',
             origin: 'ui',
-        });
+        }, { headers: { 'Idempotency-Key': `collide-${Date.now()}` } });
         const detail = collide.json?.detail;
         const detailIsObj = detail && typeof detail === 'object';
         const hasStructured = detailIsObj && (
@@ -110,8 +110,12 @@ test.describe('Scope 3 — Booking conflict dialog (calendar create wiring)', ()
         expect(collide.status, `Expected 409 on overlapping calendar booking, got ${collide.status}: ${collide.body?.slice(0, 200) || ''}`).toBe(409);
         expect(hasStructured, `Conflict response missing structured detail (parseBookingConflict pre-condition broken): ${JSON.stringify(detail).slice(0, 200)}`).toBeTruthy();
 
+        // Baseline'i iptal et ki takvim hücresi "boş" görünsün ve tıklanabilsin.
+        await cancelBooking(api, baseline.bookingId, 'E2E conflict test (reset for UI step)');
+
         // 3) UI: gerçek ReservationCalendar create yolunu sür.
         let dialogVisible = false;
+        let baseline2Id = null;
         try {
             const nav = await page.goto('/app/reservation-calendar', { waitUntil: 'networkidle', timeout: 30_000 });
             rec(testInfo, {
@@ -190,6 +194,19 @@ test.describe('Scope 3 — Booking conflict dialog (calendar create wiring)', ()
             const checkinInput = page.locator('[data-testid="new-booking-checkin"]').first();
             await checkinInput.focus();
             await page.waitForTimeout(150);
+
+            // Form dolduruldu, submit etmeden ÖNCE aynı odaya arkadan rezervasyon çak
+            // (Concurrent booking simülasyonu)
+            const baseline2 = await createTestBooking(api, {
+                roomId: pick.room.id, guestName: baselineGuest + ' 2',
+                check_in: dates.check_in, check_out: dates.check_out,
+                totalAmount: 100,
+            });
+            baseline2Id = baseline2.bookingId;
+            trackEntity({
+                kind: 'booking', id: baseline2Id, label: baselineGuest + ' 2',
+                cleanup: 'pending', endpoint: '/api/pms-core/cancel',
+            });
 
             await page.locator('[data-testid="new-booking-submit"]').first().click();
 

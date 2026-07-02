@@ -34,10 +34,10 @@ ROOM_TYPES = {
 }
 
 USERS = [
-    {"email": "gm@syroce-demo.local", "role": "admin", "name": "General Manager"},
-    {"email": "frontdesk@syroce-demo.local", "role": "front_desk", "name": "Receptionist"},
-    {"email": "housekeeping@syroce-demo.local", "role": "housekeeping", "name": "Housekeeping Supervisor"},
-    {"email": "finance@syroce-demo.local", "role": "finance", "name": "Cashier"},
+    {"email": "gm@syrocedemo.com", "role": "admin", "name": "General Manager"},
+    {"email": "frontdesk@syrocedemo.com", "role": "front_desk", "name": "Receptionist"},
+    {"email": "housekeeping@syrocedemo.com", "role": "housekeeping", "name": "Housekeeping Supervisor"},
+    {"email": "finance@syrocedemo.com", "role": "finance", "name": "Cashier"},
 ]
 
 GUEST_NAMES = [
@@ -83,27 +83,39 @@ async def seed_tenant_and_users():
     print("Seeding tenant and users...")
     now = datetime.now(UTC)
     
-    await _raw_db.tenants.insert_one({
+    tenant_doc = {
         "_id": TENANT_ID,
-        "name": HOTEL_NAME,
-        "status": "active",
+        "id": TENANT_ID,
+        "property_name": "Syroce Pilot Demo Hotel",
+        "name": "Syroce Pilot Demo Hotel",
+        "domain": "pilot.syroce.com",
+        "currency": "USD",
+        "timezone": "Europe/Istanbul",
         "created_at": now.isoformat(),
-        "updated_at": now.isoformat()
-    })
+        "updated_at": now.isoformat(),
+        "subscription_status": "active",
+        "plan": "core_small_hotel"
+    }
+    await _raw_db.tenants.insert_one(tenant_doc)
     
     hashed_pwd = hash_password(DEFAULT_PASSWORD)
     user_docs = []
+    from security.encrypted_lookup import encrypt_user_doc
     for u in USERS:
-        user_docs.append({
-            "_id": str(uuid.uuid4()),
+        user_id = str(uuid.uuid4())
+        doc = {
+            "id": user_id,
             "tenant_id": TENANT_ID,
             "email": u["email"],
-            "password_hash": hashed_pwd,
-            "full_name": u["name"],
+            "username": u["email"].split("@")[0],
+            "name": u["name"],
+            "phone": "+905551234567",
+            "hashed_password": hashed_pwd,
             "role": u["role"],
-            "is_active": True,
+            "status": "active",
             "created_at": now.isoformat()
-        })
+        }
+        user_docs.append(encrypt_user_doc(doc))
     await _raw_db.users.insert_many(user_docs)
 
 
@@ -129,8 +141,10 @@ async def seed_rooms():
             else:
                 status = "clean"
                 
+            room_id = str(uuid.uuid4())
             rooms.append({
-                "_id": str(uuid.uuid4()),
+                "_id": room_id,
+                "id": room_id,
                 "tenant_id": TENANT_ID,
                 "room_number": room_num,
                 "room_type": r_type,
@@ -153,8 +167,10 @@ async def seed_guests():
     
     for i in range(20):
         first, last = random.choice(GUEST_NAMES)
+        guest_id = str(uuid.uuid4())
         guests.append({
-            "_id": str(uuid.uuid4()),
+            "_id": guest_id,
+            "id": guest_id,
             "tenant_id": TENANT_ID,
             "first_name": first,
             "last_name": last,
@@ -209,6 +225,7 @@ async def seed_bookings_and_folios(rooms, guests):
         
         bookings.append({
             "_id": booking_id,
+            "id": booking_id,
             "tenant_id": TENANT_ID,
             "guest_id": guest["_id"],
             "room_id": room["_id"],
