@@ -300,57 +300,62 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Folio Info */}
-        <div className="p-4 bg-gray-50 rounded-lg grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-sm text-gray-600">Folio No</p>
-            <p className="font-bold">{folio.folio_number}</p>
+        <div className="p-5 bg-white border border-gray-200 shadow-sm rounded-xl grid grid-cols-4 gap-4 divide-x divide-gray-100">
+          <div className="px-2">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">Folio No</p>
+            <p className="font-semibold text-gray-900 text-sm">{folio.folio_number}</p>
           </div>
-          <div>
-            <p className="text-sm text-gray-600">{t('cm.components_SplitFolioDialog.misafir')}</p>
-            <p className="font-bold">{folio.guest_name || 'N/A'}</p>
+          <div className="px-4">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">{t('cm.components_SplitFolioDialog.misafir')}</p>
+            <p className="font-semibold text-gray-900 text-sm">{folio.guest_name || 'N/A'}</p>
           </div>
-          <div>
-            <p className="text-sm text-gray-600">{t('cm.components_SplitFolioDialog.oda')}</p>
-            <p className="font-bold">{folio.room_number || 'N/A'}</p>
+          <div className="px-4">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">{t('cm.components_SplitFolioDialog.oda')}</p>
+            <p className="font-semibold text-gray-900 text-sm">{folio.room_number || 'N/A'}</p>
           </div>
-          <div>
-            <p className="text-sm text-gray-600">{t('cm.components_SplitFolioDialog.toplam_bakiye')}</p>
-            <p className="font-bold text-green-600">{fmtTL(folioBalance)} TL</p>
+          <div className="px-4 flex flex-col justify-center">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">{t('cm.components_SplitFolioDialog.toplam_bakiye')}</p>
+            <p className="font-bold text-emerald-600 text-lg tabular-nums">{fmtTL(folioBalance)} ₺</p>
             {extraChargesTotal > 0 && (
-              <p className="text-xs text-gray-500 mt-0.5">
-                + Ekstra masraf {fmtTL(extraChargesTotal)} TL = Bölünebilir{' '}
-                <strong>{fmtTL(divisibleBalance)} TL</strong>
+              <p className="text-[10px] text-gray-500 mt-1 leading-tight">
+                + Ekstra {fmtTL(extraChargesTotal)} ₺ <br/>
+                = Bölünebilir <span className="font-semibold text-gray-700">{fmtTL(divisibleBalance)} ₺</span>
               </p>
             )}
           </div>
         </div>
 
         {/* Mode tabs */}
-        <div className="flex gap-2 border-b pb-2">
-          {[
-            { v: 'by_item', label: 'Kaleme Göre' },
-            { v: 'even', label: 'Eşit Böl' },
-            { v: 'custom', label: 'Özel Tutar' },
-          ].map((opt) => (
-            <Button
-              key={opt.v}
-              type="button"
-              variant={mode === opt.v ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setMode(opt.v)}
-            >
-              {opt.label}
-            </Button>
-          ))}
+        <div className="flex justify-center mb-6">
+          <div className="inline-flex bg-gray-100 p-1 rounded-lg border border-gray-200/60">
+            {[
+              { v: 'by_item', label: 'Kaleme Göre' },
+              { v: 'even', label: 'Eşit Böl' },
+              { v: 'custom', label: 'Özel Tutar' },
+            ].map((opt) => (
+              <button
+                key={opt.v}
+                type="button"
+                onClick={() => setMode(opt.v)}
+                className={`px-6 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
+                  mode === opt.v 
+                    ? 'bg-white text-blue-700 shadow-sm border border-gray-200/50' 
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* BY ITEM */}
         {mode === 'by_item' && (
           <>
             {folioCharges.length === 0 ? (
-              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded flex items-start gap-2">
-                <AlertTriangle className="w-5 h-5 text-yellow-700 mt-0.5" />
-                <div className="text-sm text-yellow-800">
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                <div className="text-sm font-medium text-amber-800">
                   {t('cm.components_SplitFolioDialog.bu_folioda_goruntulenebilen_masraf_kalem')}
                 </div>
               </div>
@@ -521,7 +526,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
 
         {/* Reason */}
         <div>
-          <label className="text-sm font-medium mb-2 block">{t('cm.components_SplitFolioDialog.bolme_sebebi')}</label>
+          <label className="text-sm font-bold text-gray-700 mb-2 block">{t('cm.components_SplitFolioDialog.bolme_sebebi')}</label>
           <Input
             placeholder={t('cm.components_SplitFolioDialog.orn_sirket_faturasi_ayristirma_misafir_t')}
             value={reason}
@@ -530,51 +535,51 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
         </div>
 
         {/* Preview */}
-        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <h4 className="font-semibold text-blue-900 mb-2">{t('cm.components_SplitFolioDialog.onizleme')}</h4>
-          <div className="space-y-1 text-sm">
+        <div className="p-5 bg-slate-50 border border-slate-200 rounded-xl mt-4">
+          <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-200 pb-2">{t('cm.components_SplitFolioDialog.onizleme')}</h4>
+          <div className="space-y-3 text-sm">
             <div className="flex items-center justify-between">
-              <span>Mod:</span>
-              <Badge variant="outline">
+              <span className="text-slate-600 font-medium">Aktarım Modu:</span>
+              <span className="px-3 py-1 bg-white border border-slate-200 rounded-full text-xs font-semibold text-slate-700 shadow-sm">
                 {mode === 'by_item' ? 'Kaleme Göre' : mode === 'even' ? 'Eşit Böl' : 'Özel Tutar'}
-              </Badge>
+              </span>
             </div>
             {mode === 'by_item' && (
-              <div className="flex items-center justify-between font-semibold text-blue-700">
-                <span>{t('cm.components_SplitFolioDialog.aktarilacak_tutar')}</span>
-                <span>{fmtTL(selectedTotal)} TL</span>
+              <div className="flex items-center justify-between pt-2">
+                <span className="font-semibold text-slate-700">{t('cm.components_SplitFolioDialog.aktarilacak_tutar')}</span>
+                <span className="font-black text-blue-600 text-lg tabular-nums">{fmtTL(selectedTotal)} ₺</span>
               </div>
             )}
             {mode === 'even' && (
-              <div className="flex items-center justify-between font-semibold text-blue-700">
-                <span>{t('cm.components_SplitFolioDialog.aktarilacak_toplam')}</span>
-                <span>{fmtTL(evenPerSplit * (evenSplits - 1))} TL</span>
+              <div className="flex items-center justify-between pt-2">
+                <span className="font-semibold text-slate-700">{t('cm.components_SplitFolioDialog.aktarilacak_toplam')}</span>
+                <span className="font-black text-blue-600 text-lg tabular-nums">{fmtTL(evenPerSplit * (evenSplits - 1))} ₺</span>
               </div>
             )}
             {mode === 'custom' && (
-              <div className="flex items-center justify-between font-semibold text-blue-700">
-                <span>{t('cm.components_SplitFolioDialog.aktarilacak_toplam_03d73')}</span>
-                <span>{fmtTL(customTotal)} TL</span>
+              <div className="flex items-center justify-between pt-2">
+                <span className="font-semibold text-slate-700">{t('cm.components_SplitFolioDialog.aktarilacak_toplam_03d73')}</span>
+                <span className="font-black text-blue-600 text-lg tabular-nums">{fmtTL(customTotal)} ₺</span>
               </div>
             )}
           </div>
         </div>
 
         {/* Actions */}
-        <div className="flex space-x-3">
-          <Button onClick={handleSplit} disabled={processing} className="flex-1">
-            <CheckCircle className="w-4 h-4 mr-2" />
-            {processing ? 'Bölünüyor…' : 'Bölmeyi Onayla'}
+        <div className="flex space-x-3 pt-2">
+          <Button onClick={handleSplit} disabled={processing} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white shadow-sm h-11">
+            <CheckCircle className="w-5 h-5 mr-2" />
+            <span className="font-semibold text-base">{processing ? 'Bölünüyor…' : 'Bölmeyi Onayla'}</span>
           </Button>
-          <Button variant="outline" onClick={onClose} disabled={processing}>
-            <XCircle className="w-4 h-4 mr-2" />
-            {t('cm.components_SplitFolioDialog.iptal')}
+          <Button variant="outline" onClick={onClose} disabled={processing} className="h-11 px-6">
+            <XCircle className="w-5 h-5 mr-2 text-gray-500" />
+            <span className="font-medium">{t('cm.components_SplitFolioDialog.iptal')}</span>
           </Button>
         </div>
 
-        <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
-          <p className="text-xs text-yellow-700">
-            <strong>{t('cm.components_SplitFolioDialog.uyari')}</strong> {t('cm.components_SplitFolioDialog.bu_islem_geri_alinamaz_esit_ve_ozel_modl')}
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+          <p className="text-xs text-amber-800 text-center">
+            <strong>{t('cm.components_SplitFolioDialog.uyari')}</strong>: {t('cm.components_SplitFolioDialog.bu_islem_geri_alinamaz_esit_ve_ozel_modl')}
           </p>
         </div>
       </CardContent>

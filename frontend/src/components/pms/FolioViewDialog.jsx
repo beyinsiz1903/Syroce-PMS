@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, ClipboardList, DollarSign, RotateCcw, FileText, ArrowLeftRight, Printer, Send, Loader2, KeyRound, RefreshCw } from 'lucide-react';
+import { Plus, ClipboardList, DollarSign, RotateCcw, FileText, ArrowLeftRight, Printer, Send, Loader2, KeyRound, RefreshCw, AlertTriangle, Receipt, CreditCard } from 'lucide-react';
 
 const VAT_OPTIONS = [
   { value: '0', label: '%0' },
@@ -34,6 +34,7 @@ const FolioViewDialog = ({
   onChargePosted,
   onPaymentPosted,
   onPickFolio,
+  isLoading = false,
 }) => {
   const { t } = useTranslation();
   const [subDialog, setSubDialog] = useState(null);
@@ -286,13 +287,30 @@ th{background:#f5f5f5}
             </DialogDescription>
           </DialogHeader>
 
-          {!selectedFolio && folios.length === 0 && (
+          {isLoading && (
             <div className="py-12 text-center" data-testid="folio-loading">
               <Loader2 className="w-8 h-8 mx-auto animate-spin text-indigo-500 mb-3" />
               <p className="text-sm text-gray-600">Folyo yükleniyor…</p>
               <p className="text-xs text-gray-400 mt-1">
                 Birkaç saniye sürebilir. Yanıt gelmezse sayfayı yenileyin.
               </p>
+            </div>
+          )}
+
+          {!isLoading && !selectedFolio && folios.length === 0 && (
+            <div className="py-16 text-center px-4" data-testid="folio-empty">
+              <div className="mx-auto w-16 h-16 bg-gray-50 flex items-center justify-center rounded-full mb-4 border border-gray-100 shadow-sm">
+                <FileText className="w-8 h-8 text-gray-400 opacity-80" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-800 mb-2 font-['Space_Grotesk']">Folyo Bulunamadı</h3>
+              <p className="text-sm text-gray-500 max-w-sm mx-auto leading-relaxed">
+                Bu rezervasyon için henüz oluşturulmuş bir folyo yok. Genellikle check-in işlemi yapıldığında veya rezervasyona bir harcama işlendiğinde folyo otomatik olarak açılır.
+              </p>
+              <div className="mt-6 flex justify-center">
+                <Button variant="outline" onClick={onClose} className="px-6">
+                  Kapat
+                </Button>
+              </div>
             </div>
           )}
 
@@ -323,62 +341,75 @@ th{background:#f5f5f5}
 
           {selectedFolio && (
             <div className="space-y-6">
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-lg border">
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <div className="text-sm text-gray-600">{t('pms.guest', 'Misafir')}</div>
-                    <div className="font-semibold">
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <div className="grid grid-cols-3 gap-6 divide-x divide-gray-100">
+                  <div className="px-4">
+                    <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">{t('pms.guest', 'Misafir Bilgileri')}</div>
+                    <div className="font-semibold text-gray-900 text-lg">
                       {guests.find(g => g.id === selectedFolio.guest_id)?.name || '—'}
                     </div>
                   </div>
-                  <div>
-                    <div className="text-sm text-gray-600">{t('pms.reservation', 'Rezervasyon')}</div>
-                    <div className="font-semibold">
+                  <div className="px-6">
+                    <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">{t('pms.reservation', 'Konaklama Tarihleri')}</div>
+                    <div className="font-semibold text-gray-800 text-base mt-1">
                       {(() => {
                         const booking = bookings.find(b => b.id === selectedFolio.booking_id);
                         if (!booking) return '—';
-                        return `${new Date(booking.check_in).toLocaleDateString()} - ${new Date(booking.check_out).toLocaleDateString()}`;
+                        return `${new Date(booking.check_in).toLocaleDateString()}  →  ${new Date(booking.check_out).toLocaleDateString()}`;
                       })()}
                     </div>
                   </div>
-                  <div>
-                    <div className="text-sm text-gray-600">{t('pms.currentBalance', 'Bakiye')}</div>
-                    <div className={`text-2xl font-bold ${selectedFolio.balance > 0 ? 'text-red-600' : selectedFolio.balance < 0 ? 'text-green-600' : 'text-gray-600'}`}>
+                  <div className="px-6 flex flex-col items-end justify-center">
+                    <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">{t('pms.currentBalance', 'Güncel Bakiye')}</div>
+                    <div className={`text-3xl font-black tabular-nums tracking-tight ${selectedFolio.balance > 0 ? 'text-blue-600' : selectedFolio.balance < 0 ? 'text-emerald-600' : 'text-gray-800'}`}>
                       {fmt(selectedFolio.balance)} ₺
                     </div>
-                    <div className="text-xs text-gray-500">
-                      {selectedFolio.balance > 0 ? 'Misafir borçlu' : selectedFolio.balance < 0 ? 'Otel borçlu' : 'Dengeli'}
+                    <div className="mt-2">
+                      {selectedFolio.balance > 0 ? (
+                        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">Tahsilat Bekliyor</span>
+                      ) : selectedFolio.balance < 0 ? (
+                        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">İade Bekliyor</span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-600">Bakiye Dengeli</span>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="flex gap-2 flex-wrap">
-                <Button onClick={() => setSubDialog('post-charge')} variant="default">
-                  <Plus className="w-4 h-4 mr-2" /> İşlem Ekle
-                </Button>
-                <Button onClick={() => setSubDialog('post-payment')} variant="default">
-                  <Plus className="w-4 h-4 mr-2" /> Ödeme Ekle
-                </Button>
-                <Button onClick={loadProforma} variant="outline" disabled={proformaLoading}>
-                  <FileText className="w-4 h-4 mr-2" /> {proformaLoading ? 'Hazırlanıyor…' : 'Proforma Fatura'}
-                </Button>
-                <Button onClick={loadOperations} variant="outline" disabled={opsLoading}>
-                  <ArrowLeftRight className="w-4 h-4 mr-2" /> {opsLoading ? 'Yükleniyor…' : 'Transfer Geçmişi'}
-                </Button>
-                <Button onClick={openTransferDialog} variant="outline">
-                  <Send className="w-4 h-4 mr-2" /> İşlem Aktar
-                </Button>
+              <div className="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-100">
+                <div className="flex gap-2">
+                  <Button onClick={() => setSubDialog('post-charge')} variant="default" className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm">
+                    <Plus className="w-4 h-4 mr-1.5" /> İşlem Ekle
+                  </Button>
+                  <Button onClick={() => setSubDialog('post-payment')} variant="default" className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">
+                    <Plus className="w-4 h-4 mr-1.5" /> Ödeme Ekle
+                  </Button>
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={loadProforma} variant="outline" disabled={proformaLoading} className="bg-white hover:bg-gray-50">
+                    <FileText className="w-4 h-4 mr-1.5 text-gray-500" /> {proformaLoading ? 'Hazırlanıyor…' : 'Proforma Fatura'}
+                  </Button>
+                  <Button onClick={loadOperations} variant="outline" disabled={opsLoading} className="bg-white hover:bg-gray-50">
+                    <ArrowLeftRight className="w-4 h-4 mr-1.5 text-gray-500" /> {opsLoading ? 'Yükleniyor…' : 'Transfer Geçmişi'}
+                  </Button>
+                  <Button onClick={openTransferDialog} variant="outline" className="bg-white hover:bg-gray-50">
+                    <Send className="w-4 h-4 mr-1.5 text-gray-500" /> İşlem Aktar
+                  </Button>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <h3 className="text-lg font-semibold mb-3 flex items-center">
-                    <ClipboardList className="w-5 h-5 mr-2" /> İşlemler
+                  <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center">
+                    <ClipboardList className="w-5 h-5 mr-2 text-blue-600" /> İşlemler
                   </h3>
-                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                  <div className="space-y-2 max-h-[450px] overflow-y-auto pr-1">
                     {folioCharges.length === 0 ? (
-                      <div className="text-center text-gray-400 py-8">Henüz işlem yok</div>
+                      <div className="flex flex-col items-center justify-center py-12 px-4 border border-dashed border-gray-200 rounded-xl bg-gray-50 text-gray-400">
+                        <Receipt className="w-10 h-10 mb-3 text-gray-300" />
+                        <span className="font-medium">Henüz bir işlem eklenmemiş</span>
+                      </div>
                     ) :
                       folioCharges.map((charge) => {
                         const isPOSCharge = ['restaurant', 'food', 'bar', 'beverage', 'room_service'].includes(charge.charge_category);
@@ -447,12 +478,15 @@ th{background:#f5f5f5}
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-semibold mb-3 flex items-center">
-                    <DollarSign className="w-5 h-5 mr-2" /> Ödemeler
+                  <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center">
+                    <DollarSign className="w-5 h-5 mr-2 text-emerald-600" /> Ödemeler
                   </h3>
-                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                  <div className="space-y-2 max-h-[450px] overflow-y-auto pr-1">
                     {folioPayments.length === 0 ? (
-                      <div className="text-center text-gray-400 py-8">Henüz ödeme yok</div>
+                      <div className="flex flex-col items-center justify-center py-12 px-4 border border-dashed border-gray-200 rounded-xl bg-gray-50 text-gray-400">
+                        <CreditCard className="w-10 h-10 mb-3 text-gray-300" />
+                        <span className="font-medium">Henüz bir tahsilat yapılmamış</span>
+                      </div>
                     ) :
                       folioPayments.map((payment) => (
                         <Card key={payment.id} className={payment.voided ? 'opacity-60 bg-red-50/30' : ''}>
@@ -682,107 +716,142 @@ th{background:#f5f5f5}
           </DialogHeader>
           {proforma && (
             <div id="proforma-printable" className="space-y-4 text-sm">
-              <div className="flex justify-between border-b pb-3">
+              <div className="flex justify-between items-start border-b-2 border-gray-200 pb-6 mb-6">
                 <div>
-                  <div className="font-bold text-base">{proforma.hotel?.name || '—'}</div>
-                  <div className="muted text-xs text-gray-600">{proforma.hotel?.address || ''}</div>
-                  {proforma.hotel?.tax_no && <div className="text-xs text-gray-600">VKN: {proforma.hotel.tax_no} {proforma.hotel?.tax_office ? `(${proforma.hotel.tax_office})` : ''}</div>}
+                  <div className="text-2xl font-black text-gray-900 tracking-tight">{proforma.hotel?.name || '—'}</div>
+                  <div className="text-sm text-gray-500 mt-1">{proforma.hotel?.address || ''}</div>
+                  {proforma.hotel?.tax_no && <div className="text-sm text-gray-500 mt-1">
+                    <span className="font-medium text-gray-700">VKN:</span> {proforma.hotel.tax_no} {proforma.hotel?.tax_office ? `(${proforma.hotel.tax_office})` : ''}
+                  </div>}
                 </div>
                 <div className="text-right">
-                  <div className="font-semibold">PROFORMA</div>
-                  <div className="text-xs text-gray-600">No: {proforma.folio?.folio_number}</div>
-                  <div className="text-xs text-gray-600">{new Date(proforma.generated_at).toLocaleString()}</div>
+                  <div className="text-3xl font-light text-gray-400 tracking-widest uppercase mb-2">PROFORMA</div>
+                  <div className="text-sm text-gray-700"><span className="font-medium">Fatura No:</span> {proforma.folio?.folio_number}</div>
+                  <div className="text-sm text-gray-700"><span className="font-medium">Tarih:</span> {new Date(proforma.generated_at).toLocaleString()}</div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="font-semibold">Misafir</div>
-                  <div>{proforma.guest?.name || '—'}</div>
-                  {proforma.guest?.email && <div className="text-xs text-gray-600">{proforma.guest.email}</div>}
-                  {proforma.guest?.phone && <div className="text-xs text-gray-600">{proforma.guest.phone}</div>}
-                  {proforma.guest?.tc_no && <div className="text-xs text-gray-600">TC: {proforma.guest.tc_no}</div>}
+              <div className="grid grid-cols-2 gap-8 mb-8">
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Müşteri Bilgileri</div>
+                  <div className="font-bold text-gray-800 text-lg">{proforma.guest?.name || '—'}</div>
+                  {proforma.guest?.email && <div className="text-sm text-gray-600 mt-1">{proforma.guest.email}</div>}
+                  {proforma.guest?.phone && <div className="text-sm text-gray-600 mt-1">{proforma.guest.phone}</div>}
+                  {proforma.guest?.tc_no && <div className="text-sm text-gray-600 mt-1"><span className="font-medium">TC/Pasaport:</span> {proforma.guest.tc_no}</div>}
                 </div>
-                <div>
-                  <div className="font-semibold">Konaklama</div>
-                  {proforma.booking?.room_number && <div>Oda: {proforma.booking.room_number}</div>}
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Konaklama Detayları</div>
+                  {proforma.booking?.room_number && <div className="text-sm text-gray-700"><span className="font-medium">Oda:</span> {proforma.booking.room_number}</div>}
                   {proforma.booking?.check_in && (
-                    <div className="text-xs text-gray-600">
-                      {new Date(proforma.booking.check_in).toLocaleDateString()} → {proforma.booking?.check_out ? new Date(proforma.booking.check_out).toLocaleDateString() : ''}
+                    <div className="text-sm text-gray-700 mt-1">
+                      <span className="font-medium">Tarih:</span> {new Date(proforma.booking.check_in).toLocaleDateString()} → {proforma.booking?.check_out ? new Date(proforma.booking.check_out).toLocaleDateString() : ''}
                     </div>
                   )}
                   {(proforma.booking?.adults != null) && (
-                    <div className="text-xs text-gray-600">{proforma.booking.adults} yetişkin {proforma.booking.children ? `+ ${proforma.booking.children} çocuk` : ''}</div>
+                    <div className="text-sm text-gray-700 mt-1">
+                      <span className="font-medium">Kişi:</span> {proforma.booking.adults} yetişkin {proforma.booking.children ? `+ ${proforma.booking.children} çocuk` : ''}
+                    </div>
                   )}
                 </div>
               </div>
 
-              <div>
-                <div className="font-semibold mb-1">İşlemler</div>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Tarih</th>
-                      <th>Açıklama</th>
-                      <th className="right">Birim</th>
-                      <th className="right">Adet</th>
-                      <th className="right">Ara Toplam</th>
-                      <th className="right">İnd.</th>
-                      <th className="right">Net</th>
-                      <th className="right">KDV</th>
-                      <th className="right">Toplam</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(proforma.charges || []).map((c) => (
-                      <tr key={c.id}>
-                        <td>{new Date(c.date || c.created_at).toLocaleDateString()}</td>
-                        <td>{c.description}{c.discount_reason ? ` (${c.discount_reason})` : ''}</td>
-                        <td className="right">{fmt(c.unit_price)}</td>
-                        <td className="right">{c.quantity}</td>
-                        <td className="right">{fmt(c.subtotal ?? c.amount)}</td>
-                        <td className="right">{fmt(c.discount_amount)}</td>
-                        <td className="right">{fmt(c.amount)}</td>
-                        <td className="right">{fmt(c.vat_amount)} {c.vat_rate ? `(%${c.vat_rate})` : ''}</td>
-                        <td className="right">{fmt(c.total)}</td>
+              <div className="mb-8">
+                <div className="text-lg font-bold text-gray-800 mb-3">Hizmet Dökümü</div>
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Tarih</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Açıklama</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Birim</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-center">Adet</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Ara Toplam</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">İnd.</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Net</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">KDV</th>
+                        <th className="px-4 py-3 text-xs font-bold text-gray-700 uppercase tracking-wider text-right">Toplam</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="font-semibold mb-1">KDV Özeti</div>
-                  <table>
-                    <thead>
-                      <tr><th>Oran</th><th className="right">Net</th><th className="right">KDV</th></tr>
                     </thead>
-                    <tbody>
-                      {(proforma.vat_breakdown || []).map((g) => (
-                        <tr key={g.vat_rate}>
-                          <td>%{g.vat_rate}</td>
-                          <td className="right">{fmt(g.net)}</td>
-                          <td className="right">{fmt(g.vat_amount)}</td>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {(proforma.charges || []).map((c) => (
+                        <tr key={c.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{new Date(c.date || c.created_at).toLocaleDateString()}</td>
+                          <td className="px-4 py-3 text-sm text-gray-800 font-medium">{c.description}{c.discount_reason ? <span className="text-xs text-gray-400 block font-normal">({c.discount_reason})</span> : ''}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{fmt(c.unit_price)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 text-center">{c.quantity}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{fmt(c.subtotal ?? c.amount)}</td>
+                          <td className="px-4 py-3 text-sm text-red-600 text-right tabular-nums">{fmt(c.discount_amount)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{fmt(c.amount)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{fmt(c.vat_amount)} <span className="text-xs text-gray-400">{c.vat_rate ? `(%${c.vat_rate})` : ''}</span></td>
+                          <td className="px-4 py-3 text-sm text-gray-900 font-bold text-right tabular-nums">{fmt(c.total)} ₺</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                <div>
-                  <div className="font-semibold mb-1">Toplamlar</div>
-                  <table className="totals">
-                    <tbody>
-                      <tr><td>Ara Toplam</td><td className="right">{fmt(proforma.totals?.subtotal)} ₺</td></tr>
-                      <tr><td>İndirim</td><td className="right">−{fmt(proforma.totals?.discount_total)} ₺</td></tr>
-                      <tr><td>Net</td><td className="right">{fmt(proforma.totals?.net_total)} ₺</td></tr>
-                      <tr><td>KDV</td><td className="right">{fmt(proforma.totals?.vat_total)} ₺</td></tr>
-                      <tr><td>Şehir Vergisi</td><td className="right">{fmt(proforma.totals?.city_tax_total)} ₺</td></tr>
-                      <tr><td>Genel Toplam</td><td className="right">{fmt(proforma.totals?.grand_total)} ₺</td></tr>
-                      <tr><td>Ödenen</td><td className="right">{fmt(proforma.totals?.payments_total)} ₺</td></tr>
-                      <tr><td>Bakiye</td><td className="right">{fmt(proforma.totals?.balance_due)} ₺</td></tr>
+              </div>
+
+              <div className="grid grid-cols-12 gap-8 mb-6">
+                <div className="col-span-5">
+                  <div className="text-sm font-bold text-gray-800 mb-2 border-b pb-2">KDV Özeti</div>
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="text-gray-500 border-b border-gray-100">
+                        <th className="py-2 font-medium">Oran</th>
+                        <th className="py-2 font-medium text-right">Matrah</th>
+                        <th className="py-2 font-medium text-right">KDV Tutarı</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {(proforma.vat_breakdown || []).map((g) => (
+                        <tr key={g.vat_rate}>
+                          <td className="py-2 text-gray-600">% {g.vat_rate}</td>
+                          <td className="py-2 text-gray-800 text-right tabular-nums">{fmt(g.net)} ₺</td>
+                          <td className="py-2 text-gray-800 text-right tabular-nums">{fmt(g.vat_amount)} ₺</td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
+                </div>
+                <div className="col-span-7 bg-gray-50 rounded-lg p-5 border border-gray-100">
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-sm text-gray-600">
+                      <span>Ara Toplam</span>
+                      <span className="tabular-nums font-medium text-gray-800">{fmt(proforma.totals?.subtotal)} ₺</span>
+                    </div>
+                    {proforma.totals?.discount_total > 0 && (
+                      <div className="flex justify-between text-sm text-red-600">
+                        <span>İndirim Toplamı</span>
+                        <span className="tabular-nums font-medium">−{fmt(proforma.totals?.discount_total)} ₺</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-sm text-gray-600">
+                      <span>Net Toplam</span>
+                      <span className="tabular-nums font-medium text-gray-800">{fmt(proforma.totals?.net_total)} ₺</span>
+                    </div>
+                    <div className="flex justify-between text-sm text-gray-600">
+                      <span>Hesaplanan KDV</span>
+                      <span className="tabular-nums font-medium text-gray-800">{fmt(proforma.totals?.vat_total)} ₺</span>
+                    </div>
+                    {proforma.totals?.city_tax_total > 0 && (
+                      <div className="flex justify-between text-sm text-gray-600">
+                        <span>Konaklama Vergisi (Şehir)</span>
+                        <span className="tabular-nums font-medium text-gray-800">{fmt(proforma.totals?.city_tax_total)} ₺</span>
+                      </div>
+                    )}
+                    <div className="pt-3 mt-3 border-t border-gray-200 flex justify-between text-xl font-bold text-gray-900">
+                      <span>Genel Toplam</span>
+                      <span className="tabular-nums">{fmt(proforma.totals?.grand_total)} ₺</span>
+                    </div>
+                    <div className="flex justify-between text-sm text-gray-600 mt-2">
+                      <span>Tahsil Edilen (Ödenen)</span>
+                      <span className="tabular-nums font-medium text-gray-800">{fmt(proforma.totals?.payments_total)} ₺</span>
+                    </div>
+                    <div className="pt-3 mt-3 border-t border-gray-200 flex justify-between text-lg font-bold text-emerald-600">
+                      <span>Kalan Bakiye</span>
+                      <span className="tabular-nums">{fmt(proforma.totals?.balance_due)} ₺</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -804,38 +873,54 @@ th{background:#f5f5f5}
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Hedef Folio *</Label>
+              <Label className="text-sm font-semibold text-gray-700 mb-2 block">Hedef Folio *</Label>
               <Select value={transferTargetId} onValueChange={setTransferTargetId}>
-                <SelectTrigger><SelectValue placeholder="Açık folio seçin" /></SelectTrigger>
-                <SelectContent>
+                <SelectTrigger className="h-14 bg-gray-50 border-gray-200"><SelectValue placeholder="Aktarım yapılacak folio'yu seçin" /></SelectTrigger>
+                <SelectContent className="max-w-xl">
                   {openFolios.length === 0 ? (
                     <SelectItem value="__none__" disabled>Aktarılabilir açık folio yok</SelectItem>
                   ) : openFolios.map(f => (
-                    <SelectItem key={f.id} value={f.id}>
-                      {f.folio_number} • {f.folio_type?.toUpperCase?.() || ''} • Bakiye: {fmt(f.balance)} ₺
+                    <SelectItem key={f.id} value={f.id} className="py-3 px-4 cursor-pointer focus:bg-gray-50">
+                      <div className="flex items-center justify-between w-full min-w-[400px]">
+                        <div className="flex flex-col text-left">
+                          <span className="font-bold text-gray-800 text-base">{f.folio_number}</span>
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500">{f.folio_type || 'GUEST'} FOLIO</span>
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <span className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold">Güncel Bakiye</span>
+                          <span className={`font-bold tabular-nums text-sm ${f.balance > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>{fmt(f.balance)} ₺</span>
+                        </div>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Aktarılacak İşlemler ({transferChargeIds.length} seçili)</Label>
-              <div className="border rounded max-h-72 overflow-y-auto divide-y">
+              <Label className="text-sm font-semibold text-gray-700 mb-2 block flex items-center justify-between">
+                <span>Aktarılacak İşlemler</span>
+                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{transferChargeIds.length} seçili</span>
+              </Label>
+              <div className="border border-gray-200 rounded-lg max-h-[300px] overflow-y-auto divide-y divide-gray-100 bg-white shadow-sm">
                 {folioCharges.filter(c => !c.voided).length === 0 ? (
-                  <div className="p-4 text-center text-sm text-gray-400">Aktarılabilir işlem yok</div>
+                  <div className="p-8 text-center text-sm text-gray-400 flex flex-col items-center">
+                    <AlertTriangle className="w-8 h-8 text-gray-300 mb-2" />
+                    Aktarılabilir işlem yok
+                  </div>
                 ) : folioCharges.filter(c => !c.voided).map(c => (
-                  <label key={c.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 cursor-pointer text-sm">
+                  <label key={c.id} className="flex items-center gap-4 p-3 hover:bg-blue-50/50 cursor-pointer transition-colors group">
                     <input
                       type="checkbox"
+                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
                       checked={transferChargeIds.includes(c.id)}
                       onChange={() => toggleTransferCharge(c.id)}
                     />
                     <div className="flex-1">
-                      <div className="font-medium">{c.description}</div>
-                      <div className="text-xs text-gray-500 capitalize">{c.charge_category}</div>
+                      <div className="font-semibold text-gray-800 text-sm group-hover:text-blue-900 transition-colors">{c.description}</div>
+                      <div className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">{c.charge_category} • {new Date(c.date || c.created_at).toLocaleDateString()}</div>
                     </div>
                     <div className="text-right">
-                      <div className="font-semibold">{fmt(c.total ?? c.amount)} ₺</div>
+                      <div className="font-bold tabular-nums text-gray-900">{fmt(c.total ?? c.amount)} ₺</div>
                     </div>
                   </label>
                 ))}

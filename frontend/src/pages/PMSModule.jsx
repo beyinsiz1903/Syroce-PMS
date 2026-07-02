@@ -126,6 +126,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
 
   const [folio, setFolio] = useState(null);
   const [folios, setFolios] = useState([]);
+  const [folioLoading, setFolioLoading] = useState(false);
   const [selectedFolio, setSelectedFolio] = useState(null);
   const folioReqIdRef = useRef(null);
   const [folioCharges, setFolioCharges] = useState([]);
@@ -709,6 +710,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     setFolios([]);
     setSelectedBooking(bookingId);
     setOpenDialog('folio-view');
+    setFolioLoading(true);
     // 2) Race-guard: A→B hızlı tıklamalarda A'nın geç gelen yanıtı
     //    B'nin state'ini ezmesin. selectedBookingRef'in en son istek
     //    olduğunu doğrula.
@@ -720,15 +722,18 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         ? response.data
         : (response.data?.folios || []);
       setFolios(list);
-      if (list.length === 0) {
-        toast.warning('Bu rezervasyon için folyo bulunamadı (check-in yapılmamış olabilir)');
-        return;
+      
+      if (list.length > 0) {
+        const guestFolio = list.find(f => f.folio_type === 'guest') || list[0];
+        if (guestFolio?.id) loadFolioDetails(guestFolio.id);
       }
-      const guestFolio = list.find(f => f.folio_type === 'guest') || list[0];
-      if (guestFolio?.id) loadFolioDetails(guestFolio.id);
     } catch (error) {
       if (folioReqIdRef.current !== bookingId) return; // stale yanıt
       toast.error('Folyo yüklenemedi: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      if (folioReqIdRef.current === bookingId) {
+        setFolioLoading(false);
+      }
     }
   };
 
@@ -828,41 +833,62 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           </div>
         </div>
 
-        <Card className="border-slate-200 bg-white">
-          <CardContent className="p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                {t('pms.quickActions', 'Hızlı İşlemler')}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={() => setOpenDialog('booking')}>
-                  <Plus className="w-4 h-4 mr-1.5" />{t('pms.newBooking', 'Yeni Rezervasyon')}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setOpenDialog('guest')}>
-                  <UserPlus className="w-4 h-4 mr-1.5" />{t('pms.newGuest', 'Yeni Misafir')}
-                </Button>
-                <Button size="sm" variant="outline" onClick={async () => {
-                  try { const response = await axios.get('/reports/daily-flash'); if (response.data) { toast.success('Flash rapor hazır'); setActiveTab('reports'); } else { toast.info('Flash rapor verisi yok'); }
-                  } catch (error) { toast.error('Rapor oluşturulamadı'); }
-                }}>
-                  <FileText className="w-4 h-4 mr-1.5" />{t('pms.flashReport', 'Flash Rapor')}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => loadData()}>
-                  <RefreshCw className="w-4 h-4 mr-1.5" />{t('common.refresh', 'Yenile')}
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
         <Tabs value={activeTab} className="w-full" onValueChange={(v) => { setActiveTab(v); window.location.hash = v; }}>
-          <TabsList className="flex flex-wrap h-auto w-full gap-1 p-1">
-            {visibleTabs.map((tab) => {
-              const Icon = tab.icon;
-              const label = tab.labelKey ? t(tab.labelKey) : tab.labelText;
-              return (<TabsTrigger key={tab.key} value={tab.key} data-testid={tab.testId}>{Icon ? <Icon className="w-4 h-4 mr-2" /> : null}{label}</TabsTrigger>);
-            })}
-          </TabsList>
+          <div className="flex flex-col lg:flex-row gap-6 items-start">
+            {/* Sol Menü (Sidebar) */}
+            <div className="w-full lg:w-[260px] shrink-0 space-y-4">
+              <Card className="border-slate-200 bg-white lg:sticky lg:top-6 shadow-sm">
+                <CardContent className="p-3">
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3 px-2">
+                    {t('pms.quickActions', 'Hızlı İşlemler')}
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('booking')}>
+                      <Plus className="w-4 h-4 mr-2.5 text-slate-500" />{t('pms.newBooking', 'Yeni Rezervasyon')}
+                    </Button>
+                    <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => setOpenDialog('guest')}>
+                      <UserPlus className="w-4 h-4 mr-2.5 text-slate-500" />{t('pms.newGuest', 'Yeni Misafir')}
+                    </Button>
+                    <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={async () => {
+                      try { const response = await axios.get('/reports/daily-flash'); if (response.data) { toast.success('Flash rapor hazır'); setActiveTab('reports'); } else { toast.info('Flash rapor verisi yok'); }
+                      } catch (error) { toast.error('Rapor oluşturulamadı'); }
+                    }}>
+                      <FileText className="w-4 h-4 mr-2.5 text-slate-500" />{t('pms.flashReport', 'Flash Rapor')}
+                    </Button>
+                    <Button size="sm" variant="outline" className="justify-start bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700" onClick={() => loadData()}>
+                      <RefreshCw className="w-4 h-4 mr-2.5 text-slate-500" />{t('common.refresh', 'Yenile')}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-slate-200 bg-white lg:sticky lg:top-[280px] shadow-sm hidden lg:block">
+                <CardContent className="p-2">
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 mt-2 px-3">
+                    Modüller
+                  </div>
+                  <TabsList className="flex flex-col h-auto bg-transparent w-full space-y-0.5 p-0 items-stretch">
+                    {visibleTabs.map((tab) => {
+                      const Icon = tab.icon;
+                      const label = tab.labelKey ? t(tab.labelKey) : tab.labelText;
+                      return (
+                        <TabsTrigger 
+                          key={tab.key} 
+                          value={tab.key} 
+                          data-testid={tab.testId}
+                          className="w-full justify-start px-3 py-2.5 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:shadow-none hover:bg-slate-100 rounded-md font-medium text-sm text-slate-600 transition-colors"
+                        >
+                          {Icon ? <Icon className="w-4 h-4 mr-3 opacity-70" /> : null}{label}
+                        </TabsTrigger>
+                      );
+                    })}
+                  </TabsList>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Ana Çalışma Alanı (Sağ Taraf) */}
+            <div className="flex-1 min-w-0 w-full bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden p-0 sm:p-4">
 
           {/* Perf fix: yalnız aktif sekme mount. Lazy chunk ilk ziyarette
               indirilir; sonra browser/HTTP cache. TanStack Query cache veriyi
@@ -875,20 +901,12 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           )}
           {activeTab === 'housekeeping' && (
             <HousekeepingTab roomBlocks={roomBlocks} roomStatusBoard={roomStatusBoard} dueOutRooms={dueOutRooms} stayoverRooms={stayoverRooms} arrivalRooms={arrivalRooms} housekeepingTasks={housekeepingTasks} quickUpdateRoomStatus={quickUpdateRoomStatus} setOpenDialog={setOpenDialog} setSelectedRoom={setSelectedRoom} setNewBooking={setNewBooking} setMaintenanceForm={setMaintenanceForm} setMaintenanceDialogOpen={setMaintenanceDialogOpen} handleUpdateHKTask={handleUpdateHKTask} handleAssignHKTask={handleAssignHKTask} currentUserName={user?.name} currentUserId={user?.id} loadHousekeepingData={loadHousekeepingData} onBookingCardClick={async (bookingId) => {
-              let booking = bookings.find(b => b.id === bookingId);
-              if (!booking) {
-                try {
-                  const res = await axios.get(`/pms/bookings/${bookingId}`);
-                  booking = res.data;
-                } catch { toast.error('Rezervasyon yüklenemedi'); return; }
-              }
-              setSelectedBookingDetail(booking);
-              setOpenDialog('bookingDetail');
+              setReservationDetailId(bookingId);
             }} toast={toast} loading={hkLoading} />
           )}
           {activeTab === 'rooms' && (
             <TabsContent value="rooms" className="space-y-4">
-              <RoomsTab rooms={rooms} bookings={bookings} guests={guests} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} onPayment={(bookingId) => { setSelectedBookingDetail(bookings.find(b => b.id === bookingId) || null); setOpenDialog('bookingDetail'); }} onGuestClick={(guestId) => { const guest = guests.find(g => g.id === guestId); if (guest) { setSelectedGuest(guest); setOpenDialog('guestInfo'); } }} onBookingDoubleClick={(booking) => setReservationDetailId(booking.id)} onDataRefresh={loadData} />
+              <RoomsTab rooms={rooms} bookings={bookings} guests={guests} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} onPayment={(bookingId) => { setReservationDetailId(bookingId); }} onGuestClick={(guestId) => { const guest = guests.find(g => g.id === guestId); if (guest) { setSelectedGuest(guest); setOpenDialog('guestInfo'); } }} onBookingDoubleClick={(booking) => setReservationDetailId(booking.id)} onDataRefresh={loadData} />
               {selectedRoom && <RoomFeaturesPanel room={selectedRoom} onUpdate={loadData} />}
             </TabsContent>
           )}
@@ -896,7 +914,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             <GuestsTab guests={guests} setOpenDialog={setOpenDialog} setSelectedGuest360={setSelectedGuest360} loadGuest360={loadGuest360} setNewBooking={setNewBooking} t={t} />
           )}
           {activeTab === 'bookings' && (
-            <BookingsTab bookingStats={bookingStats} bookings={bookings} groupedBookings={groupedBookings} guests={guests} rooms={rooms} companies={companies} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadBookingFolios={loadBookingFolios} loadGuest360={loadGuest360} setSelectedGuest360={setSelectedGuest360} setOpenDialog={setOpenDialog} setSelectedBooking={setSelectedBooking} setSelectedBookingDetail={setSelectedBookingDetail} toast={toast} isLite={isLite} roomsCount={roomsCount} activeTab={activeTab} />
+            <BookingsTab bookingStats={bookingStats} bookings={bookings} groupedBookings={groupedBookings} guests={guests} rooms={rooms} companies={companies} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadBookingFolios={loadBookingFolios} loadGuest360={loadGuest360} setSelectedGuest360={setSelectedGuest360} setOpenDialog={setOpenDialog} setSelectedBooking={setSelectedBooking} setSelectedBookingDetail={setSelectedBookingDetail} setReservationDetailId={setReservationDetailId} toast={toast} isLite={isLite} roomsCount={roomsCount} activeTab={activeTab} />
           )}
           {activeTab === 'cashier' && <TabsContent value="cashier" className="space-y-4"><CashierTab user={user} /></TabsContent>}
           {activeTab === 'upsell' && <TabsContent value="upsell" className="space-y-4"><UpsellTab bookings={bookings} /></TabsContent>}
@@ -913,8 +931,11 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           {activeTab === 'kbs' && <TabsContent value="kbs" className="space-y-4"><KBSNotification bookings={bookings} guests={guests} /></TabsContent>}
           {activeTab === 'kvkk' && <TabsContent value="kvkk" className="space-y-4"><KVKKManager /></TabsContent>}
           </Suspense>
+            </div>
+          </div>
         </Tabs>
 
+        {/* Dialogs */}
         <FolioDialog open={openDialog === 'folio'} onClose={() => setOpenDialog(null)} folio={folio} bookingId={selectedBooking} onFolioUpdated={() => loadFolio(selectedBooking)} />
         <RoomCreateDialog open={openDialog === 'room'} onClose={() => setOpenDialog(null)} onRoomCreated={loadData} />
         <RoomImageUploadDialog open={openDialog === 'room-images'} onClose={() => setOpenDialog(null)} selectedRoom={selectedRoom} setSelectedRoom={setSelectedRoom} onDataRefresh={loadData} />
@@ -933,7 +954,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         <CompanyDialog open={openDialog === 'company'} onClose={() => setOpenDialog(null)} newCompany={newCompany} setNewCompany={setNewCompany} onSubmit={handleCreateCompany} />
         {visitedDialogs.has('folio-view') && (
           <Suspense fallback={null}>
-            <FolioViewDialog open={openDialog === 'folio-view'} onClose={() => setOpenDialog(null)} selectedFolio={selectedFolio} folios={folios} folioCharges={folioCharges} folioPayments={folioPayments} guests={guests} bookings={bookings} onChargePosted={(folioId) => { loadFolioDetails(folioId); }} onPaymentPosted={(folioId) => { loadFolioDetails(folioId); }} onPickFolio={(folioId) => loadFolioDetails(folioId)} />
+            <FolioViewDialog open={openDialog === 'folio-view'} onClose={() => setOpenDialog(null)} selectedFolio={selectedFolio} folios={folios} folioCharges={folioCharges} folioPayments={folioPayments} guests={guests} bookings={bookings} onChargePosted={(folioId) => { loadFolioDetails(folioId); }} onPaymentPosted={(folioId) => { loadFolioDetails(folioId); }} onPickFolio={(folioId) => loadFolioDetails(folioId)} isLoading={folioLoading} />
           </Suspense>
         )}
         <HKTaskDialog open={openDialog === 'hktask'} onClose={() => setOpenDialog(null)} rooms={rooms} newHKTask={newHKTask} setNewHKTask={setNewHKTask} onSubmit={handleCreateHKTask} />

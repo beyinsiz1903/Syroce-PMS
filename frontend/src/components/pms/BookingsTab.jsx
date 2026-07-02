@@ -92,8 +92,12 @@ const BookingsTab = ({
         <VirtualizedBookingList
           bookings={bookings}
           onSelectBooking={(booking) => {
-            setSelectedBookingDetail(booking);
-            setOpenDialog('bookingDetail');
+            if (setReservationDetailId) {
+              setReservationDetailId(booking.id);
+            } else {
+              setSelectedBookingDetail(booking);
+              setOpenDialog('bookingDetail');
+            }
           }}
           height={600}
         />
