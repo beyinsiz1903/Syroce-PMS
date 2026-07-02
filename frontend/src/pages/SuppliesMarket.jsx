@@ -340,18 +340,20 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                     </div>
                     <p className="text-[13px] text-slate-500 mb-4 line-clamp-2 leading-relaxed flex-1">{p.description}</p>
                     
-                    <div className="bg-slate-50 rounded-xl p-3 mb-4 space-y-2 border border-slate-100">
-                      <div className="flex items-center justify-between text-[11px] font-medium text-slate-600">
-                        <span className="uppercase tracking-wide text-slate-400">Tedarikçi</span>
-                        <span className="text-slate-700 font-semibold">{p.vendor_name}</span>
+                    <div className="bg-slate-50 rounded-xl p-3.5 mb-4 space-y-3 border border-slate-100">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Tedarikçi</span>
+                        <span className="text-[12px] text-slate-700 font-semibold leading-snug line-clamp-1" title={p.vendor_name}>{p.vendor_name}</span>
                       </div>
-                      <div className="flex items-center justify-between text-[11px] font-medium text-slate-600">
-                        <span className="uppercase tracking-wide text-slate-400">Stok</span>
-                        <span className="text-slate-700"><b>{p.stock}</b> {p.unit}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] font-medium text-slate-600">
-                        <span className="uppercase tracking-wide text-slate-400">Koşullar</span>
-                        <span className="text-slate-700">Min: {p.moq} {p.unit} · Paket: {p.pack_size}</span>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Stok</span>
+                          <span className="text-[12px] text-slate-700"><b>{p.stock}</b> {p.unit}</span>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Koşullar</span>
+                          <span className="text-[12px] text-slate-700">Min: {p.moq} {p.unit}</span>
+                        </div>
                       </div>
                     </div>
 
