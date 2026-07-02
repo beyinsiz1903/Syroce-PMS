@@ -11,6 +11,47 @@ vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
+// The component uses t() from react-i18next for all UI strings.
+// Without a proper i18n setup in the test environment the component renders
+// raw keys (e.g. "cm.pages_CorporateContractApprovals.onayla") instead of
+// Turkish text, which breaks every assertion that looks for a translated string.
+// We provide an explicit map so t(key) returns the Turkish equivalent.
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key) => {
+      const map = {
+        'cm.pages_CorporateContractApprovals.kurumsal_s\u00f6zle\u015Fme_onaylar\u0131': 'Kurumsal S\u00f6zle\u015fme Onaylar\u0131',
+        'cm.pages_CorporateContractApprovals.yenile': 'Yenile',
+        'cm.pages_CorporateContractApprovals.toplam_s\u00f6zle\u015Fme': 'Toplam S\u00f6zle\u015fme',
+        'cm.pages_CorporateContractApprovals.onay_bekleyen': 'Onay Bekleyen',
+        'cm.pages_CorporateContractApprovals.onaylanan': 'Onaylanan',
+        'cm.pages_CorporateContractApprovals.reddedilen': 'Reddedilen',
+        'cm.pages_CorporateContractApprovals.y\u00fckleniyor': 'Y\u00fckleniyor...',
+        'cm.pages_CorporateContractApprovals.hen\u00fcz_kurumsal_s\u00f6zle\u015Fme_bulunm': 'Hen\u00fcz kurumsal s\u00f6zle\u015fme bulunmuyor.',
+        'cm.pages_CorporateContractApprovals.s\u00f6zle\u015Fmeler': 'S\u00f6zle\u015fmeler (',
+        'cm.pages_CorporateContractApprovals.t\u00fcr': 'T\u00fcr: ',
+        'cm.pages_CorporateContractApprovals.kod': 'Kod: ',
+        'cm.pages_CorporateContractApprovals.d\u00f6nem': 'D\u00f6nem: ',
+        'cm.pages_CorporateContractApprovals.onayla': 'Onayla',
+        'cm.pages_CorporateContractApprovals.reddet': 'Reddet',
+        'cm.pages_CorporateContractApprovals.onay_ge\u00e7mi\u015Fi': 'Onay Ge\u00e7mi\u015fi',
+        'cm.pages_CorporateContractApprovals.reddedilme_gerek\u00e7esi': 'Reddedilme Gerek\u00e7esi',
+        'cm.pages_CorporateContractApprovals.sonraki_ad\u0131m_gerekli_d\u00fczeltmel': 'Sonraki ad\u0131m: Gerekli d\u00fczeltmeleri yap\u0131n ve yeniden g\u00f6nderin.',
+        'cm.pages_CorporateContractApprovals.yeniden_g\u00f6nder': 'Yeniden G\u00f6nder',
+        'cm.pages_CorporateContractApprovals._durum_ge\u00e7i\u015Fleri_gerek\u00e7eler_ki': ' \u2014 durum ge\u00e7i\u015fleri, gerek\u00e7eler, kimin taraf\u0131ndan yap\u0131ld\u0131\u011f\u0131 ve zaman bilgisi.',
+        'cm.pages_CorporateContractApprovals.hen\u00fcz_onay_hareketi_yok': 'Hen\u00fcz onay hareketi yok.',
+        'cm.pages_CorporateContractApprovals.s\u00f6zle\u015Fmeyi_reddet': 'S\u00f6zle\u015fmeyi Reddet',
+        'cm.pages_CorporateContractApprovals.reddedilecek_gerek\u00e7e_zorunludu': ' reddedilecek. Gerek\u00e7e zorunludur.',
+        'cm.pages_CorporateContractApprovals.reddetme_gerek\u00e7esi': 'Reddetme Gerek\u00e7esi',
+        'cm.pages_CorporateContractApprovals.\u00f6rn_g\u00f6r\u00fc\u015f\u00fclenen_oran_politikam\u0131z': '\u00d6rn. g\u00f6r\u00fc\u015f\u00fclen oran politikam\u0131zla uy\u015fumuyor, eksik bilgi...',
+        'cm.pages_CorporateContractApprovals.vazge\u00e7': 'Vazge\u00e7',
+      };
+      return map[key] ?? key;
+    },
+    i18n: { language: 'tr', changeLanguage: () => Promise.resolve() },
+  }),
+}));
+
 // Stable token so the component's Authorization header / fetch path resolve.
 beforeEach(() => {
   localStorage.setItem('token', 'test-token');
