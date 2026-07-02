@@ -257,6 +257,15 @@ STRESS_COLLECTIONS = [
     # recipients — never real PII) tagged `stress_seed=True` + `stress_prefix`
     # so the unified cleanup loop reaches them with no extra logic.
     "messaging_delivery_logs",
+    # Task #172 / F7: Channel Manager / ARI leaks. These were not scrubbed, causing
+    # cleanup#2 idempotency failures and DB bloat. Add them to the sweep.
+    "ari_events",
+    "ari_change_sets",
+    "ari_outbound_logs",
+    "ari_drift_state",
+    "ari_drift_modes",
+    "ari_hard_fail_log",
+    "reconciliation_cases",
     # F8C (2026-05-17): MICE / Event / Banquet / Group Operations surface.
     # `mice_accounts` taşıyıcı: hem client account'ları (event organizatörü)
     # hem `account_type=banquet_competitor` rakipleri tek koleksiyonda; her

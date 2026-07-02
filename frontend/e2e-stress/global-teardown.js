@@ -90,7 +90,7 @@ export default async function globalTeardown() {
     // Architect feedback: invariants must be enforced, not just reported.
     const violations = [];
     if (!c1.ok()) violations.push(`cleanup#1 status=${c1.status()}`);
-    if (!idempotent) violations.push(`cleanup#2 NOT idempotent (deleted_counts=${JSON.stringify(c2body?.deleted_counts ?? {})})`);
+    if (!idempotent) violations.push(`cleanup#2 NOT idempotent (status=${c2.status()} body=${JSON.stringify(c2body).slice(0, 300)})`);
     const driftStep = log.steps.find((s) => s.name === 'pilot_diff');
     if (driftStep && driftStep.drift !== 0) violations.push(`pilot_drift=${driftStep.drift} (must be 0)`);
     if (violations.length) {
