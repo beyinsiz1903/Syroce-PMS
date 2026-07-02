@@ -978,8 +978,77 @@ code {
 .dark .hover\:bg-teal-200:hover { background-color: #0f766e; }
 
 /* Theme Guard Additions */
-.dark .border-gray-200\/60 { @apply border-gray-700/60; }
-.dark .hover\:bg-gray-200\/50:hover { @apply bg-gray-700/50; }
-.dark .divide-gray-50 > :not([hidden]) ~ :not([hidden]) { @apply border-gray-800; }
-.dark .focus\:bg-gray-50:focus { @apply bg-gray-800; }
-.dark .group:hover .group-hover\:text-blue-900 { @apply text-blue-300; }
+.dark .border-gray-200\/60 { border-color: rgb(55 65 81 / 0.6); }
+.dark .hover\:bg-gray-200\/50:hover { background-color: rgb(55 65 81 / 0.5); }
+.dark .divide-gray-50 > :not([hidden]) ~ :not([hidden]) { border-color: #262626; }
+.dark .focus\:bg-gray-50:focus { background-color: #262626; }
+.dark .group:hover .group-hover\:text-blue-900 { color: #93c5fd; }
+
+/* Sprint-5 Task-4 Theme Guard Gap Fixes: hue+alpha-preserving dark rules */
+/* Neutral bg/border: slate shifted to dark surface. Pastel bg: deep dark-tinted. */
+/* 950-text near-black: mapped to near-white 200 shade. Gradient: dark surface vars. */
+
+/* ── SuppliesMarket.jsx gaps ─────────────────────────────────────────────── */
+/* hover:bg-slate-200/50  — subtle hover surface on product cards */
+.dark .hover\:bg-slate-200\/50:hover { background-color: rgb(51 65 85 / 0.5); }
+
+/* border-slate-200/60  — card border with alpha */
+.dark .border-slate-200\/60 { border-color: rgb(71 85 105 / 0.6); }
+
+/* disabled:bg-slate-200  — disabled button/input fill */
+.dark .disabled\:bg-slate-200:disabled { background-color: #334155; }
+
+/* disabled:text-slate-400  — disabled label text */
+.dark .disabled\:text-slate-400:disabled { color: #64748b; }
+
+/* bg-slate-100/80  — soft input or card background with alpha */
+.dark .bg-slate-100\/80 { background-color: rgb(30 41 59 / 0.8); }
+
+/* ── RoomMapPage.jsx gaps ────────────────────────────────────────────────── */
+/* bg-rose-50/80  — danger/occupied state pill background */
+.dark .bg-rose-50\/80 { background-color: rgb(76 5 25 / 0.8); }
+
+/* text-rose-950  — near-black danger text → near-white danger in dark */
+.dark .text-rose-950 { color: #fecdd3; }
+
+/* text-amber-950  — near-black warning text → near-white warning in dark */
+.dark .text-amber-950 { color: #fde68a; }
+
+/* bg-emerald-50/80  — available/clean state pill background */
+.dark .bg-emerald-50\/80 { background-color: rgb(2 44 34 / 0.8); }
+
+/* text-emerald-950  — near-black success text → near-white in dark */
+.dark .text-emerald-950 { color: #a7f3d0; }
+
+/* bg-sky-50/80  — info/reserved state pill background */
+.dark .bg-sky-50\/80 { background-color: rgb(3 26 46 / 0.8); }
+
+/* text-sky-950  — near-black info text → near-white in dark */
+.dark .text-sky-950 { color: #bae6fd; }
+
+/* text-sky-700/80  — medium sky label with alpha → lightened for dark */
+.dark .text-sky-700\/80 { color: rgb(125 211 252 / 0.8); }
+
+/* ── Settings.jsx gaps ───────────────────────────────────────────────────── */
+/* bg-rose-50/80  — danger section/callout bg (shared rule already above) */
+
+/* border-amber-200/60  — warning card border with alpha */
+.dark .border-amber-200\/60 { border-color: rgb(180 83 9 / 0.6); }
+
+/* hover:text-amber-950  — hover state near-black warning text */
+.dark .hover\:text-amber-950:hover { color: #fde68a; }
+
+/* border-rose-200/60  — danger card border with alpha */
+.dark .border-rose-200\/60 { border-color: rgb(159 18 57 / 0.6); }
+
+/* hover:bg-slate-50/80  — hover surface on list items with alpha */
+.dark .hover\:bg-slate-50\/80:hover { background-color: rgb(30 41 59 / 0.8); }
+
+/* from-slate-100  — gradient start (light bg → dark surface) */
+.dark .from-slate-100 { --tw-gradient-from: #1e293b; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgb(30 41 59 / 0)); }
+
+/* to-slate-200  — gradient end (slightly darker → contrasting dark surface) */
+.dark .to-slate-200 { --tw-gradient-to: #334155; }
+
+/* focus:bg-slate-50  — focused input/row highlight */
+.dark .focus\:bg-slate-50:focus { background-color: #1e293b; }
