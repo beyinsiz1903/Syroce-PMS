@@ -148,6 +148,7 @@ function App() {
       // localStorage as a fallback. This prevents Playwright from dropping the cookie across browser contexts.
       if (window.navigator.webdriver || import.meta.env.DEV) {
         localStorage.setItem("token", token);
+        if (refreshToken) localStorage.setItem("refresh_token", refreshToken);
       }
     }
 

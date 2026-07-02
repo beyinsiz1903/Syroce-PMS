@@ -86,17 +86,29 @@ function _hardLogout() {
 //   { transient: true } — 5xx/ağ; oturum SİLİNMEZ, istek reddedilir
 //   { invalid: true }  — 401/400; refresh token gerçekten ölmüş, hard logout
 async function _attemptRefresh() {
+  const refreshToken = localStorage.getItem("refresh_token");
+  // Don't immediately return invalid if refreshToken is missing; we might have a cookie.
+  // But pass it in the body if we do have it.
   if (!_refreshInFlight) {
     _refreshInFlight = axios
       .post(
         "/auth/refresh-token",
-        {},
-        { headers: { Authorization: undefined }, _skipAuthRetry: true },
+        refreshToken ? { refresh_token: refreshToken } : {},
+        { _skipAuthRetry: true },
       )
       .then((r) => {
         const newAccess = r?.data?.access_token;
         const newRefresh = r?.data?.refresh_token;
         if (!newAccess) return { invalid: true };
+        
+        // In development or E2E tests, cookies might not work across origins, so we fallback to localStorage
+        if (window.navigator.webdriver || import.meta.env.DEV) {
+          localStorage.setItem("token", newAccess);
+          if (newRefresh) localStorage.setItem("refresh_token", newRefresh);
+          localStorage.setItem("token_ts", String(Date.now()));
+          return { token: newAccess };
+        }
+
         // Backend sets HttpOnly cookies for access/refresh tokens now.
         // We no longer store tokens in localStorage to prevent XSS theft.
         localStorage.setItem("token_ts", String(Date.now()));

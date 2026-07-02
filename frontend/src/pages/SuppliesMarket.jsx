@@ -332,7 +332,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                   <div key={p.id} className="bg-white rounded-2xl border border-slate-200 p-5 hover:shadow-md hover:border-blue-200 transition-all duration-300 flex flex-col group relative overflow-hidden">
                     <div className="flex items-start justify-between mb-3 gap-3">
                       <h4 className="font-bold text-[15px] leading-tight text-slate-800 flex-1">{p.name}</h4>
-                      <div className="bg-blue-50 px-2.5 py-1 rounded-lg">
+                      <div className="bg-blue-50 px-2.5 py-1 rounded-lg shrink-0 whitespace-nowrap">
                         <span className="text-[17px] font-extrabold text-blue-700 tracking-tight">
                           {fmt(p.price_try)}
                         </span>
